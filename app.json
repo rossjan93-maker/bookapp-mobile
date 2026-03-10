@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "bookapp-mobile",
+    "slug": "bookapp-mobile",
+    "scheme": "bookappmobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
