@@ -83,7 +83,7 @@ export default function LibraryScreen() {
     // update linked recommendation if one exists
     const { data: rec } = await supabase
       .from('recommendations')
-      .select('id')
+      .select('id, from_user_id, to_user_id, book_id')
       .eq('user_book_id', userBook.id)
       .maybeSingle();
 
@@ -97,6 +97,24 @@ export default function LibraryScreen() {
       const recUpdate: Record<string, unknown> = { status: recStatusMap[newStatus] };
       if (newStatus === 'finished' || newStatus === 'dnf') recUpdate.resolved_at = now;
       await supabase.from('recommendations').update(recUpdate).eq('id', rec.id);
+
+      // create credibility event when a recommended book is finished
+      if (newStatus === 'finished') {
+        const { data: existingEvent } = await supabase
+          .from('credibility_events')
+          .select('id')
+          .eq('recommendation_id', rec.id)
+          .maybeSingle();
+
+        if (!existingEvent) {
+          await supabase.from('credibility_events').insert({
+            recommendation_id: rec.id,
+            from_user_id: rec.from_user_id,
+            to_user_id: rec.to_user_id,
+            book_id: rec.book_id,
+          });
+        }
+      }
     }
 
     setItems(prev =>
