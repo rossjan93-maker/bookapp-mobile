@@ -1,0 +1,86 @@
+Make one documentation-only update pass.
+
+Do not change any code files.
+Do not change package versions.
+Do not change routes.
+Do not change auth logic.
+Do not change database files.
+Do not add packages.
+
+Goal:
+Update the project documentation to reflect the new MVP product direction.
+
+New MVP direction:
+We are not building a broad Goodreads replacement in v1.
+We are building a mobile-first social reading app centered on one loop:
+
+suggest → save → read → finish → reward
+
+Core product definition:
+A mobile-first social reading app built around trusted recommendations and measurable follow-through.
+
+Core promise:
+Get better book recommendations from people you trust, and prove whose recommendations actually land.
+
+MVP must support:
+- auth / login
+- book search and add
+- friend connections
+- user profiles
+- reading statuses:
+  - want to read
+  - reading
+  - finished
+  - DNF
+- direct user-to-user book suggestions
+- received suggestions inbox/feed
+- save suggested books to Want to Read
+- mark suggested books as started / finished
+- simple recommendation points / credibility when a suggested book is finished
+- yearly reading goal
+- minimal activity feed for reading + suggestion actions
+
+MVP should NOT include:
+- broad public social posting system
+- advanced comments/discussion threads
+- bookstore or library integrations
+- complex gamification systems
+- recommendation marketplace/economy
+- AI recommendation engine
+- book clubs
+- advanced discovery categories
+- premium features yet
+- complex review architecture
+
+Product rule:
+Every feature should be evaluated against:
+Does it strengthen the loop “suggest → save → read → finish → reward”?
+If not, it is probably not MVP.
+
+Engineering implications:
+- friend-to-friend recommendation is a first-class object
+- recommendation lifecycle/state matters:
+  - sent
+  - saved
+  - started
+  - finished
+  - ignored
+  - dnf
+- points/credibility should be based on completed recommendations, not generic social activity
+- reading state and recommendation state need to be linked cleanly
+- architecture should stay simple and avoid feature sprawl
+
+Update only these files:
+- docs/product/prd.md
+- docs/product/scope-v1.md
+- docs/decisions/ADR-002-v1-scope.md
+- docs/architecture/system-overview.md
+- docs/architecture/data-model.md
+
+Also add a short note in the docs that current placeholder tabs may change later to better reflect:
+Home/Feed, Search, Inbox, Library, Profile
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
