@@ -13,10 +13,18 @@ type PendingRequest = {
   requester: { username: string } | null;
 };
 
+type Stats = {
+  friendsCount: number;
+  recommendationsLanded: number;
+  finishedFromRecommendations: number;
+  finishedBooks: number;
+};
+
 export default function ProfileScreen() {
   const [email, setEmail] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,7 +45,14 @@ export default function ProfileScreen() {
 
       setEmail(user.email ?? null);
 
-      const [profileResult, requestsResult] = await Promise.all([
+      const [
+        profileResult,
+        requestsResult,
+        friendsResult,
+        landedResult,
+        finishedFromRecResult,
+        finishedBooksResult,
+      ] = await Promise.all([
         supabase
           .from('profiles')
           .select('username, yearly_reading_goal')
@@ -48,6 +63,24 @@ export default function ProfileScreen() {
           .select('id, requester_id, requester:profiles!friendships_requester_id_fkey(username)')
           .eq('addressee_id', user.id)
           .eq('status', 'pending'),
+        supabase
+          .from('friendships')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'accepted')
+          .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`),
+        supabase
+          .from('credibility_events')
+          .select('*', { count: 'exact', head: true })
+          .eq('from_user_id', user.id),
+        supabase
+          .from('credibility_events')
+          .select('*', { count: 'exact', head: true })
+          .eq('to_user_id', user.id),
+        supabase
+          .from('user_books')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('status', 'finished'),
       ]);
 
       if (profileResult.error) {
@@ -57,6 +90,14 @@ export default function ProfileScreen() {
       }
 
       setPendingRequests((requestsResult.data as PendingRequest[]) ?? []);
+
+      setStats({
+        friendsCount: friendsResult.count ?? 0,
+        recommendationsLanded: landedResult.count ?? 0,
+        finishedFromRecommendations: finishedFromRecResult.count ?? 0,
+        finishedBooks: finishedBooksResult.count ?? 0,
+      });
+
       setLoading(false);
     }
 
@@ -71,6 +112,7 @@ export default function ProfileScreen() {
       .eq('id', friendshipId);
     if (!error) {
       setPendingRequests(prev => prev.filter(r => r.id !== friendshipId));
+      setStats(prev => prev ? { ...prev, friendsCount: prev.friendsCount + 1 } : prev);
     }
   }
 
@@ -110,6 +152,25 @@ export default function ProfileScreen() {
           ? `${profile.yearly_reading_goal} books`
           : 'not set'}
       </Text>
+
+      {stats && (
+        <View
+          style={{
+            width: '100%',
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            marginBottom: 32,
+            borderWidth: 1,
+            borderColor: '#eee',
+            borderRadius: 8,
+          }}
+        >
+          <StatCell label="Friends" value={stats.friendsCount} borderRight borderBottom />
+          <StatCell label="Books finished" value={stats.finishedBooks} borderBottom />
+          <StatCell label="Recs landed" value={stats.recommendationsLanded} borderRight />
+          <StatCell label="Recs finished" value={stats.finishedFromRecommendations} />
+        </View>
+      )}
 
       <View style={{ width: '100%', marginBottom: 32 }}>
         <Text style={{ fontWeight: '600', marginBottom: 12 }}>
@@ -160,5 +221,35 @@ export default function ProfileScreen() {
         <Text>Sign Out</Text>
       </TouchableOpacity>
     </ScrollView>
+  );
+}
+
+function StatCell({
+  label,
+  value,
+  borderRight,
+  borderBottom,
+}: {
+  label: string;
+  value: number;
+  borderRight?: boolean;
+  borderBottom?: boolean;
+}) {
+  return (
+    <View
+      style={{
+        width: '50%',
+        alignItems: 'center',
+        paddingVertical: 16,
+        borderRightWidth: borderRight ? 1 : 0,
+        borderBottomWidth: borderBottom ? 1 : 0,
+        borderColor: '#eee',
+      }}
+    >
+      <Text style={{ fontSize: 24, fontWeight: '700', marginBottom: 4 }}>
+        {value}
+      </Text>
+      <Text style={{ fontSize: 12, color: '#999' }}>{label}</Text>
+    </View>
   );
 }
