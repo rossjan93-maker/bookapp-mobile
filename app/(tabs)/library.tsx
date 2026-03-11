@@ -102,8 +102,7 @@ export default function LibraryScreen() {
         .update(recUpdate)
         .eq('id', rec.id);
 
-      // create credibility event when a recommended book is finished
-      if (newStatus === 'finished') {
+      if (!recUpdateError && newStatus === 'finished') {
         const { data: existingEvent } = await supabase
           .from('credibility_events')
           .select('id')
