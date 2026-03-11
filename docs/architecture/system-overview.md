@@ -14,12 +14,13 @@
 | App shell and routing | Done |
 | Supabase client init | Done (`lib/supabase.ts`) |
 | Email/password auth | Done (`app/(auth)/login.tsx`) |
-| Book data | Not yet implemented |
-| Friend graph | Not yet implemented |
-| Suggestion objects | Not yet implemented |
-| Reading statuses | Not yet implemented |
-| Recommendation credibility | Not yet implemented |
-| Activity feed | Not yet implemented |
+| profiles table | Not yet implemented |
+| books table | Not yet implemented |
+| user_books table | Not yet implemented |
+| friendships table | Not yet implemented |
+| recommendations table | Not yet implemented |
+| credibility_events table | Not yet implemented |
+| activity_events table | Not yet implemented |
 
 ## Product loop
 
@@ -31,11 +32,14 @@ All data model decisions should serve this loop.
 
 ## Key architectural notes
 
-- Friend-to-friend recommendation is a first-class object, not a social post.
-- Recommendation lifecycle state (sent, saved, started, finished, ignored, dnf) must be tracked explicitly.
-- Reading state and recommendation state will be linked at the data model level.
-- Credibility/points are derived from completed recommendations only.
-- Architecture should stay simple. Avoid premature abstraction.
+- **Auth boundary**: Supabase Auth owns the user account. The app extends it via a `profiles` table keyed on `auth.users.id`.
+- **Recommendations are first-class**: a recommendation is not a social post. It is a direct object between two users with its own lifecycle state.
+- **Recommendation lifecycle**: `sent` → `saved` → `started` → `finished` (or `ignored` / `dnf`).
+- **Linked states**: `recommendations.status` and `user_books.status` must be kept in sync as the recipient acts on a recommendation.
+- **Friendships**: one row per pair (requester → addressee), no reciprocal row. Status: `pending` or `accepted`.
+- **Credibility**: derived from `credibility_events` rows only. Not from generic social activity.
+- **Activity feed**: driven by `activity_events` table. Five event types in scope for v1. Filtered by friendship graph.
+- **Simplicity**: avoid premature abstraction. Build the minimum that makes the loop work.
 
 ## Planned tab structure
 

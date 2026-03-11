@@ -26,17 +26,20 @@ That scope is superseded. Backend integration (Supabase auth) has begun. The pro
 
 ## Implications
 
-- Friend-to-friend recommendation is a first-class data object in v1.
+- Supabase Auth owns the user account. The app extends it via a `profiles` table.
+- Friend-to-friend recommendation is a first-class data object in v1, not a social post.
+- Friendship uses a `friendships` table with `pending` / `accepted` status. One row per pair, no reciprocal row.
 - Recommendation lifecycle state matters: sent, saved, started, finished, ignored, dnf.
-- Credibility/points are tied to completed recommendations, not generic social activity.
-- Reading state and recommendation state need to be linked cleanly at the data model level.
+- `recommendations.status` and `user_books.status` must be kept in sync when a recipient acts on a recommendation.
+- Credibility/points are tied to completed recommendations only, tracked via `credibility_events`.
+- Activity feed is driven by a dedicated `activity_events` table scoped to five event types.
 - Architecture should remain simple and avoid feature sprawl.
 
 ## In scope for v1
 
 - Auth / login
 - Book search and add
-- Friend connections
+- Friend connections (friendships with pending/accepted state)
 - User profiles
 - Reading statuses: Want to Read, Reading, Finished, DNF
 - Direct user-to-user book suggestions
@@ -45,7 +48,7 @@ That scope is superseded. Backend integration (Supabase auth) has begun. The pro
 - Mark a suggested book as started / finished
 - Simple recommendation credibility points when a suggested book is finished
 - Yearly reading goal
-- Minimal activity feed
+- Minimal activity feed (five event types)
 
 ## Out of scope for v1
 
