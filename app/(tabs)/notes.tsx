@@ -24,7 +24,10 @@ export default function InboxScreen() {
         return;
       }
 
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
       if (!user) {
         setError('No signed-in user.');
         setLoading(false);
@@ -35,7 +38,9 @@ export default function InboxScreen() {
 
       const { data, error: dbError } = await supabase
         .from('recommendations')
-        .select('id, book_id, sender:profiles!recommendations_from_user_id_fkey(username), book:books(title, author)')
+        .select(
+          'id, book_id, sender:profiles!recommendations_from_user_id_fkey(username), book:books(title, author)'
+        )
         .eq('to_user_id', user.id)
         .eq('status', 'sent')
         .order('created_at', { ascending: false });
@@ -45,6 +50,7 @@ export default function InboxScreen() {
       } else {
         setItems((data as InboxItem[]) ?? []);
       }
+
       setLoading(false);
     }
 
@@ -53,7 +59,9 @@ export default function InboxScreen() {
 
   async function handleSave(item: InboxItem) {
     if (!supabase || !currentUserId) return;
+
     setSavingId(item.id);
+    setError(null);
 
     const { data: existing } = await supabase
       .from('user_books')
@@ -69,11 +77,16 @@ export default function InboxScreen() {
     } else {
       const { data: newUserBook, error: insertError } = await supabase
         .from('user_books')
-        .insert({ user_id: currentUserId, book_id: item.book_id, status: 'want_to_read' })
+        .insert({
+          user_id: currentUserId,
+          book_id: item.book_id,
+          status: 'want_to_read',
+        })
         .select('id')
         .single();
 
       if (insertError || !newUserBook) {
+        setError(insertError ? `User book insert failed: ${insertError.message}` : 'User book insert failed.');
         setSavingId(null);
         return;
       }
@@ -83,20 +96,32 @@ export default function InboxScreen() {
 
     const { error: recUpdateError } = await supabase
       .from('recommendations')
-      .update({ status: 'saved', user_book_id: userBookId })
+      .update({
+        status: 'saved',
+        user_book_id: userBookId,
+      })
       .eq('id', item.id);
 
     if (recUpdateError) {
+      setError(`Recommendation update failed: ${recUpdateError.message}`);
       setSavingId(null);
       return;
     }
 
-    supabase.from('activity_events').insert({
-      actor_id: currentUserId,
-      event_type: 'recommendation_saved',
-      book_id: item.book_id,
-      recommendation_id: item.id,
-    });
+    const { error: activityError } = await supabase
+      .from('activity_events')
+      .insert({
+        actor_id: currentUserId,
+        event_type: 'recommendation_saved',
+        book_id: item.book_id,
+        recommendation_id: item.id,
+      });
+
+    if (activityError) {
+      setError(`Activity insert failed: ${activityError.message}`);
+      setSavingId(null);
+      return;
+    }
 
     setItems(prev => prev.filter(r => r.id !== item.id));
     setSavingId(null);
@@ -112,8 +137,54 @@ export default function InboxScreen() {
 
   if (error) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ color: '#c00' }}>{error}</Text>
+      <View style={{ flex: 1, padding: 16 }}>
+        <Text style={{ color: '#c00', marginBottom: 16 }}>{error}</Text>
+
+        <FlatList
+          data={items}
+          keyExtractor={item => item.id}
+          renderItem={({ item }) => (
+            <View
+              style={{
+                paddingVertical: 14,
+                borderBottomWidth: 1,
+                borderBottomColor: '#eee',
+              }}
+            >
+              <Text style={{ fontWeight: '600', marginBottom: 2 }}>
+                {item.book?.title ?? '—'}
+              </Text>
+              <Text style={{ color: '#555', fontSize: 13, marginBottom: 2 }}>
+                {item.book?.author ?? '—'}
+              </Text>
+              <Text style={{ color: '#999', fontSize: 12, marginBottom: 10 }}>
+                from {item.sender?.username ?? 'unknown'}
+              </Text>
+              <TouchableOpacity
+                onPress={() => handleSave(item)}
+                disabled={savingId !== null}
+                style={{
+                  alignSelf: 'flex-start',
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  backgroundColor: savingId === item.id ? '#999' : '#000',
+                  borderRadius: 6,
+                }}
+              >
+                {savingId === item.id ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={{ color: '#fff', fontSize: 13 }}>Save to Want to Read</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+          ListEmptyComponent={
+            <View style={{ alignItems: 'center', marginTop: 60 }}>
+              <Text style={{ color: '#999' }}>No recommendations yet.</Text>
+            </View>
+          }
+        />
       </View>
     );
   }
