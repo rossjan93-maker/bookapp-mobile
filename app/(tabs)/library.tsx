@@ -97,7 +97,10 @@ export default function LibraryScreen() {
       };
       const recUpdate: Record<string, unknown> = { status: recStatusMap[newStatus] };
       if (newStatus === 'finished' || newStatus === 'dnf') recUpdate.resolved_at = now;
-      await supabase.from('recommendations').update(recUpdate).eq('id', rec.id);
+      const { error: recUpdateError } = await supabase
+        .from('recommendations')
+        .update(recUpdate)
+        .eq('id', rec.id);
 
       // create credibility event when a recommended book is finished
       if (newStatus === 'finished') {
@@ -117,21 +120,23 @@ export default function LibraryScreen() {
         }
       }
 
-      // activity event for recommendation path
-      if (newStatus === 'reading') {
-        supabase.from('activity_events').insert({
-          actor_id: currentUserId,
-          event_type: 'recommendation_started',
-          book_id: rec.book_id,
-          recommendation_id: rec.id,
-        });
-      } else if (newStatus === 'finished') {
-        supabase.from('activity_events').insert({
-          actor_id: currentUserId,
-          event_type: 'recommendation_finished',
-          book_id: rec.book_id,
-          recommendation_id: rec.id,
-        });
+      // activity event for recommendation path — only if rec update succeeded
+      if (!recUpdateError) {
+        if (newStatus === 'reading') {
+          supabase.from('activity_events').insert({
+            actor_id: currentUserId,
+            event_type: 'recommendation_started',
+            book_id: rec.book_id,
+            recommendation_id: rec.id,
+          });
+        } else if (newStatus === 'finished') {
+          supabase.from('activity_events').insert({
+            actor_id: currentUserId,
+            event_type: 'recommendation_finished',
+            book_id: rec.book_id,
+            recommendation_id: rec.id,
+          });
+        }
       }
     } else if (newStatus === 'finished') {
       // activity event for non-recommendation finished book

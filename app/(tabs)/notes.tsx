@@ -81,10 +81,15 @@ export default function InboxScreen() {
       userBookId = newUserBook.id;
     }
 
-    await supabase
+    const { error: recUpdateError } = await supabase
       .from('recommendations')
       .update({ status: 'saved', user_book_id: userBookId })
       .eq('id', item.id);
+
+    if (recUpdateError) {
+      setSavingId(null);
+      return;
+    }
 
     supabase.from('activity_events').insert({
       actor_id: currentUserId,
