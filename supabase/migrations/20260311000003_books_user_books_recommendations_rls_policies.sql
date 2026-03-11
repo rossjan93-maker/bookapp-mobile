@@ -35,7 +35,18 @@ create policy "users can read recommendations they are involved in"
 create policy "users can insert recommendations they send"
   on recommendations for insert
   to authenticated
-  with check (auth.uid() = from_user_id);
+  with check (
+    auth.uid() = from_user_id
+    and exists (
+      select 1 from friendships
+      where status = 'accepted'
+        and (
+          (requester_id = from_user_id and addressee_id = to_user_id)
+          or
+          (requester_id = to_user_id and addressee_id = from_user_id)
+        )
+    )
+  );
 
 create policy "users can update recommendations sent to them"
   on recommendations for update
