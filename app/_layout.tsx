@@ -5,7 +5,9 @@ import { supabase } from '../lib/supabase';
 
 async function ensureProfile(userId: string, email: string) {
   if (!supabase) return;
-  const fallbackUsername = email.split('@')[0] || userId.slice(0, 8);
+  const emailPrefix = email.split('@')[0] || 'user';
+  const idSuffix = userId.replace(/-/g, '').slice(0, 6);
+  const fallbackUsername = `${emailPrefix}_${idSuffix}`;
   await supabase
     .from('profiles')
     .upsert({ id: userId, username: fallbackUsername }, { onConflict: 'id', ignoreDuplicates: true });
@@ -24,6 +26,9 @@ export default function RootLayout() {
 
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
+      if (data.session) {
+        ensureProfile(data.session.user.id, data.session.user.email ?? '');
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
