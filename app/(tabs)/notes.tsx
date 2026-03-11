@@ -86,6 +86,13 @@ export default function InboxScreen() {
       .update({ status: 'saved', user_book_id: userBookId })
       .eq('id', item.id);
 
+    supabase.from('activity_events').insert({
+      actor_id: currentUserId,
+      event_type: 'recommendation_saved',
+      book_id: item.book_id,
+      recommendation_id: item.id,
+    });
+
     setItems(prev => prev.filter(r => r.id !== item.id));
     setSavingId(null);
   }

@@ -145,21 +145,29 @@ export default function SearchScreen() {
       bookId = newBook.id;
     }
 
-    const { error: recError } = await supabase
+    const { data: newRec, error: recError } = await supabase
       .from('recommendations')
       .insert({
         from_user_id: currentUserId,
         to_user_id: friend.id,
         book_id: bookId,
         status: 'sent',
-      });
+      })
+      .select('id')
+      .single();
 
     setSendingTo(null);
     setStep('done');
 
-    if (recError) {
-      setSendResult({ ok: false, message: `Could not send: ${recError.message}` });
+    if (recError || !newRec) {
+      setSendResult({ ok: false, message: recError ? `Could not send: ${recError.message}` : 'Could not send. Try again.' });
     } else {
+      supabase.from('activity_events').insert({
+        actor_id: currentUserId,
+        event_type: 'recommendation_sent',
+        book_id: bookId,
+        recommendation_id: newRec.id,
+      });
       setSendResult({
         ok: true,
         message: `Sent "${selectedBook.title}" to ${friend.username}.`,

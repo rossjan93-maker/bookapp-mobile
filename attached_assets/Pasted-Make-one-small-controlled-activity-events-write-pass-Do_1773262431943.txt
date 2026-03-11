@@ -1,0 +1,74 @@
+Make one small controlled activity-events write pass.
+
+Do not change package versions.
+Do not add packages.
+Do not change database schema.
+Do not add migrations.
+Do not refactor unrelated files.
+Do not build the feed UI yet.
+
+Goal:
+Write activity_events rows during the existing recommendation/reading flow.
+
+Files allowed to change:
+- app/(tabs)/search.tsx
+- app/(tabs)/notes.tsx
+- app/(tabs)/library.tsx
+
+Requirements:
+
+1. When a recommendation is successfully sent in Search:
+   insert an activity_events row with:
+   - actor_id = current signed-in user
+   - event_type = recommendation_sent
+   - book_id = recommended book id
+   - recommendation_id = new recommendation row id
+
+2. When a received recommendation is saved to Want to Read in Inbox (notes.tsx):
+   insert an activity_events row with:
+   - actor_id = current signed-in user
+   - event_type = recommendation_saved
+   - book_id = recommendation.book_id
+   - recommendation_id = recommendation.id
+
+3. When a linked recommendation is moved to reading in Library:
+   insert an activity_events row with:
+   - actor_id = current signed-in user
+   - event_type = recommendation_started
+   - book_id = recommendation.book_id
+   - recommendation_id = recommendation.id
+
+4. When a linked recommendation is moved to finished in Library:
+   insert an activity_events row with:
+   - actor_id = current signed-in user
+   - event_type = recommendation_finished
+   - book_id = recommendation.book_id
+   - recommendation_id = recommendation.id
+
+5. When a non-recommendation book is moved to finished in Library:
+   insert an activity_events row with:
+   - actor_id = current signed-in user
+   - event_type = book_finished
+   - book_id = the finished book id
+   - recommendation_id = null / omitted
+
+6. Do not create activity events for:
+   - dnf
+   - want_to_read
+   - friend requests
+   - friend acceptances
+
+7. Keep the logic simple and explicit.
+8. Keep changed files to a minimum.
+9. Do not change other tabs.
+
+Important:
+- Only insert the activity event after the underlying action succeeds.
+- Do not block the main user action if activity event insert fails.
+- Do not add helper abstractions unless absolutely necessary.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps

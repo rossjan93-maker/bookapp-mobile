@@ -6,6 +6,7 @@ type UserBookStatus = 'want_to_read' | 'reading' | 'finished' | 'dnf';
 
 type UserBook = {
   id: string;
+  book_id: string;
   status: UserBookStatus;
   started_at: string | null;
   finished_at: string | null;
@@ -45,7 +46,7 @@ export default function LibraryScreen() {
 
       const { data, error: dbError } = await supabase
         .from('user_books')
-        .select('id, status, started_at, finished_at, book:books(title, author)')
+        .select('id, book_id, status, started_at, finished_at, book:books(title, author)')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -115,6 +116,30 @@ export default function LibraryScreen() {
           });
         }
       }
+
+      // activity event for recommendation path
+      if (newStatus === 'reading') {
+        supabase.from('activity_events').insert({
+          actor_id: currentUserId,
+          event_type: 'recommendation_started',
+          book_id: rec.book_id,
+          recommendation_id: rec.id,
+        });
+      } else if (newStatus === 'finished') {
+        supabase.from('activity_events').insert({
+          actor_id: currentUserId,
+          event_type: 'recommendation_finished',
+          book_id: rec.book_id,
+          recommendation_id: rec.id,
+        });
+      }
+    } else if (newStatus === 'finished') {
+      // activity event for non-recommendation finished book
+      supabase.from('activity_events').insert({
+        actor_id: currentUserId,
+        event_type: 'book_finished',
+        book_id: userBook.book_id,
+      });
     }
 
     setItems(prev =>
