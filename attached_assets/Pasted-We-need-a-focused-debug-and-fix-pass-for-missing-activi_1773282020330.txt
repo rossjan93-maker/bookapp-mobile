@@ -1,0 +1,64 @@
+We need a focused debug-and-fix pass for missing activity_events writes.
+
+Context:
+- activity_events RLS migration is already applied successfully in Supabase.
+- recommendation_saved is now writing successfully from app/(tabs)/notes.tsx.
+- But these event types are still not appearing in activity_events:
+  - recommendation_sent
+  - recommendation_started
+  - recommendation_finished
+  - book_finished
+- recommendations / credibility_events are updating elsewhere, so the flow is running, but these activity inserts appear to be failing silently.
+
+Goal:
+Find and fix why the remaining activity_events inserts are not being persisted.
+
+Scope:
+Only inspect and edit:
+- app/(tabs)/search.tsx
+- app/(tabs)/library.tsx
+- app/(tabs)/notes.tsx only if needed for consistency, but prefer not to touch it
+
+Requirements:
+1. In search.tsx:
+   - inspect the recommendation_sent activity insert
+   - make it await the activity_events insert
+   - capture the exact Supabase error if it fails
+   - surface that error in existing UI state using setSendResult
+   - do not mark success if the recommendation row failed to create
+   - keep recommendation_sent insert only after the recommendation insert succeeds
+
+2. In library.tsx:
+   - inspect the inserts for:
+     - recommendation_started
+     - recommendation_finished
+     - book_finished
+   - make each activity_events insert awaited
+   - capture exact Supabase errors if they fail
+   - surface the error using the existing error state on that screen
+   - keep existing business rules intact:
+     - recommendation_started / recommendation_finished only for linked recommendations
+     - book_finished only for non-recommendation finished books
+     - no activity event for dnf
+   - keep credibility_events creation gated behind successful recommendation update
+
+3. Keep the changes minimal and explicit.
+4. Do not add packages.
+5. Do not change schema or migrations.
+6. Do not refactor unrelated code.
+7. Do not build feed UI yet.
+
+Important:
+- I want the actual runtime issue solved, not just hidden.
+- If the activity insert error reveals a data-shape bug, enum mismatch, FK mismatch, or nullability issue, fix the app code minimally.
+- Only change logic necessary to make these activity_events writes succeed and be debuggable.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps for:
+   - recommendation_sent
+   - recommendation_started
+   - recommendation_finished
+   - book_finished
