@@ -115,7 +115,6 @@ export default function ProfileScreen() {
 
       const [
         profileRes,
-        currentlyReadingRes,
         requestsRes,
         friendsRes,
         landedRes,
@@ -126,12 +125,6 @@ export default function ProfileScreen() {
         prefsRes,
       ] = await Promise.all([
         supabase.from('profiles').select('username, yearly_reading_goal').eq('id', user.id).single(),
-        supabase
-          .from('user_books')
-          .select('id, book_id, started_at, current_page, book:books(title, author, cover_url, external_id, page_count)')
-          .eq('user_id', user.id)
-          .eq('status', 'reading')
-          .order('started_at', { ascending: false }),
         supabase
           .from('friendships')
           .select('id, requester_id, requester:profiles!friendships_requester_id_fkey(username)')
@@ -178,13 +171,30 @@ export default function ProfileScreen() {
           .maybeSingle(),
       ]);
 
+      // Currently reading: try with progress columns, fall back if migration not yet applied.
+      let crResult = await supabase
+        .from('user_books')
+        .select('id, book_id, started_at, current_page, book:books(title, author, cover_url, external_id, page_count)')
+        .eq('user_id', user.id)
+        .eq('status', 'reading')
+        .order('started_at', { ascending: false });
+
+      if (crResult.error) {
+        crResult = await supabase
+          .from('user_books')
+          .select('id, book_id, started_at, book:books(title, author, cover_url, external_id)')
+          .eq('user_id', user.id)
+          .eq('status', 'reading')
+          .order('started_at', { ascending: false });
+      }
+
       if (profileRes.error) {
         setError('Could not load profile.');
       } else {
         setProfile(profileRes.data);
       }
 
-      setCurrentlyReading((currentlyReadingRes.data as unknown as CurrentlyReading[]) ?? []);
+      setCurrentlyReading((crResult.data as unknown as CurrentlyReading[]) ?? []);
       setPendingRequests((requestsRes.data as unknown as PendingRequest[]) ?? []);
       setSentRecs((sentRecsRes.data as unknown as SentRecommendation[]) ?? []);
       setPrefs(prefsRes.data ?? null);

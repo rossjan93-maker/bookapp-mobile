@@ -61,16 +61,26 @@ export default function LibraryScreen() {
 
       setCurrentUserId(user.id);
 
-      const { data, error: dbError } = await supabase
+      // Try with progress columns (requires migration 20260313000001).
+      // Falls back to the original query if those columns don't exist yet.
+      let result = await supabase
         .from('user_books')
         .select('id, book_id, status, started_at, finished_at, current_page, book:books(title, author, cover_url, external_id, page_count)')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (dbError) {
+      if (result.error) {
+        result = await supabase
+          .from('user_books')
+          .select('id, book_id, status, started_at, finished_at, book:books(title, author, cover_url, external_id)')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+      }
+
+      if (result.error) {
         setError('Could not load library.');
       } else {
-        setItems((data as unknown as UserBook[]) ?? []);
+        setItems((result.data as unknown as UserBook[]) ?? []);
       }
       setLoading(false);
     }
