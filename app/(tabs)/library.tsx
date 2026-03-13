@@ -199,7 +199,37 @@ export default function LibraryScreen() {
     <FlatList
       data={items}
       keyExtractor={item => item.id}
-      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 32 }}
+      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 0, paddingBottom: 32 }}
+      ListHeaderComponent={
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingTop: 20,
+          paddingBottom: 16,
+          borderBottomWidth: items.length > 0 ? 1 : 0,
+          borderBottomColor: '#f3f4f6',
+          marginBottom: items.length > 0 ? 0 : 4,
+        }}>
+          <Text style={{ fontSize: 17, fontWeight: '700', color: '#1c1917' }}>
+            {items.length > 0 ? `${items.length} book${items.length === 1 ? '' : 's'}` : 'My Library'}
+          </Text>
+          <TouchableOpacity
+            onPress={() => router.push('/add-book')}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: '#1c1917',
+              borderRadius: 8,
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+              gap: 5,
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>+ Add Book</Text>
+          </TouchableOpacity>
+        </View>
+      }
       renderItem={({ item }) => {
         const isUpdating = updatingId === item.id;
         const isBlocked = updatingId !== null;
@@ -269,10 +299,36 @@ export default function LibraryScreen() {
         );
       }}
       ListEmptyComponent={
-        <View style={{ alignItems: 'center', marginTop: 60, paddingHorizontal: 24 }}>
-          <Text style={{ color: '#9ca3af', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
-            Your library is empty.{'\n'}Books you save from recommendations{'\n'}will appear here.
+        <View style={{ alignItems: 'center', paddingTop: 52, paddingHorizontal: 32 }}>
+          <Text style={{
+            fontSize: 17,
+            fontWeight: '700',
+            color: '#1c1917',
+            marginBottom: 10,
+            textAlign: 'center',
+          }}>
+            Your library is empty
           </Text>
+          <Text style={{
+            color: '#a8a29e',
+            fontSize: 14,
+            textAlign: 'center',
+            lineHeight: 22,
+            marginBottom: 28,
+          }}>
+            Add books you're reading, have finished, or want to read — from recommendations or on your own.
+          </Text>
+          <TouchableOpacity
+            onPress={() => router.push('/add-book')}
+            style={{
+              backgroundColor: '#1c1917',
+              borderRadius: 12,
+              paddingVertical: 13,
+              paddingHorizontal: 26,
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Add your first book</Text>
+          </TouchableOpacity>
         </View>
       }
     />
