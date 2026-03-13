@@ -1,0 +1,69 @@
+Make one small controlled recipient-inbox-tracker pass.
+
+Do not change package versions.
+Do not add packages.
+Do not change database schema.
+Do not add migrations.
+Do not refactor unrelated files.
+Do not build charts, leaderboards, or new feed features.
+
+Goal:
+Make the recipient side of recommendations easier to understand by showing received recommendations grouped by where they are in the lifecycle.
+
+Files allowed to change:
+- app/(tabs)/notes.tsx
+- app/(tabs)/_layout.tsx only if a title tweak is needed, but prefer not to change it
+
+Requirements:
+1. Keep the current Inbox tab behavior intact:
+   - recommendations with status = sent can still be saved to Want to Read
+   - existing save flow should continue working
+
+2. Expand the Inbox screen so it shows received recommendations in simple sections by status:
+   - New
+     - recommendation.status = sent
+   - Saved / Want to Read
+     - recommendation.status = saved
+   - Reading
+     - recommendation.status = started
+   - Finished / DNF
+     - recommendation.status = finished or dnf
+
+3. For each received recommendation, display:
+   - sender username
+   - book title
+   - book author
+   - current status text/badge
+
+4. In the New section:
+   - keep the existing "Save to Want to Read" button
+   - only show that button for status = sent items
+
+5. In the other sections:
+   - no action buttons yet
+   - just show the recommendation and its current state
+
+6. Keep the UI simple and explicit:
+   - clear section headers
+   - newest items first within each section
+   - minimal styling only
+
+7. Add minimal loading / empty / error states.
+8. Keep changed files to a minimum.
+9. Do not change other tabs.
+
+Important:
+- Use the existing recommendation lifecycle as source of truth:
+  - sent
+  - saved
+  - started
+  - finished
+  - dnf
+- Do not create duplicate queries if one broader query can support the grouped UI cleanly.
+- Do not remove the existing working save flow.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
