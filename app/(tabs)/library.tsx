@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, Text, TouchableOpacity, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../../lib/supabase';
 
 type UserBookStatus = 'want_to_read' | 'reading' | 'finished' | 'dnf';
@@ -27,7 +28,7 @@ export default function LibraryScreen() {
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     async function load() {
       if (!supabase) {
         setError('Supabase not configured.');
@@ -59,7 +60,7 @@ export default function LibraryScreen() {
     }
 
     load();
-  }, []);
+  }, []));
 
   async function handleUpdateStatus(userBook: UserBook, newStatus: UserBookStatus) {
     if (!supabase || !currentUserId) return;

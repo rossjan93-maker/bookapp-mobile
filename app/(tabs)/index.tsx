@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../../lib/supabase';
 
 type FeedEvent = {
@@ -86,7 +87,7 @@ export default function HomeScreen() {
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     async function init() {
       if (!supabase) {
         setFeedLoading(false);
@@ -105,7 +106,7 @@ export default function HomeScreen() {
       setLoadingFriendships(false);
     }
     init();
-  }, []);
+  }, []));
 
   async function loadFeed() {
     if (!supabase) return;

@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../../lib/supabase';
 
 type Profile = {
@@ -46,7 +47,7 @@ export default function ProfileScreen() {
   const [sentRecs, setSentRecs] = useState<SentRecommendation[]>([]);
   const [sentRecsError, setSentRecsError] = useState<string | null>(null);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     async function load() {
       if (!supabase) {
         setError('Supabase not configured.');
@@ -137,7 +138,7 @@ export default function ProfileScreen() {
     }
 
     load();
-  }, []);
+  }, []));
 
   async function handleAccept(friendshipId: string) {
     if (!supabase) return;

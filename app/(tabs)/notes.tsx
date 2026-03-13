@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../../lib/supabase';
 
 type InboxItem = {
@@ -17,7 +18,7 @@ export default function InboxScreen() {
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     async function load() {
       if (!supabase) {
         setError('Supabase not configured.');
@@ -53,7 +54,7 @@ export default function InboxScreen() {
     }
 
     load();
-  }, []);
+  }, []));
 
   async function handleSave(item: InboxItem) {
     if (!supabase || !currentUserId) return;
