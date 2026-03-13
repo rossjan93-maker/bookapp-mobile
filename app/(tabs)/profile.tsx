@@ -20,6 +20,22 @@ type Stats = {
   finishedBooks: number;
 };
 
+type SentRecommendation = {
+  id: string;
+  status: string;
+  created_at: string;
+  to_user: { username: string } | null;
+  book: { title: string; author: string } | null;
+};
+
+const REC_STATUS_LABELS: Record<string, string> = {
+  sent: 'Sent',
+  saved: 'Saved',
+  started: 'Reading',
+  finished: 'Finished',
+  dnf: 'DNF',
+};
+
 export default function ProfileScreen() {
   const [email, setEmail] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -27,6 +43,8 @@ export default function ProfileScreen() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sentRecs, setSentRecs] = useState<SentRecommendation[]>([]);
+  const [sentRecsError, setSentRecsError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -52,6 +70,7 @@ export default function ProfileScreen() {
         landedResult,
         finishedFromRecResult,
         finishedBooksResult,
+        sentRecsResult,
       ] = await Promise.all([
         supabase
           .from('profiles')
@@ -81,6 +100,16 @@ export default function ProfileScreen() {
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id)
           .eq('status', 'finished'),
+        supabase
+          .from('recommendations')
+          .select(
+            'id, status, created_at, ' +
+            'to_user:profiles!recommendations_to_user_id_fkey(username), ' +
+            'book:books!recommendations_book_id_fkey(title, author)'
+          )
+          .eq('from_user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(50),
       ]);
 
       if (profileResult.error) {
@@ -90,6 +119,12 @@ export default function ProfileScreen() {
       }
 
       setPendingRequests((requestsResult.data as PendingRequest[]) ?? []);
+
+      if (sentRecsResult.error) {
+        setSentRecsError('Could not load sent recommendations.');
+      } else {
+        setSentRecs((sentRecsResult.data as SentRecommendation[]) ?? []);
+      }
 
       setStats({
         friendsCount: friendsResult.count ?? 0,
@@ -204,6 +239,57 @@ export default function ProfileScreen() {
               >
                 <Text style={{ color: '#fff', fontSize: 13 }}>Accept</Text>
               </TouchableOpacity>
+            </View>
+          ))
+        )}
+      </View>
+
+      <View style={{ width: '100%', marginBottom: 32 }}>
+        <Text style={{ fontWeight: '600', marginBottom: 12 }}>
+          Recommendations Sent
+        </Text>
+
+        {sentRecsError ? (
+          <Text style={{ color: '#c00' }}>{sentRecsError}</Text>
+        ) : sentRecs.length === 0 ? (
+          <Text style={{ color: '#999' }}>No recommendations sent yet.</Text>
+        ) : (
+          sentRecs.map(rec => (
+            <View
+              key={rec.id}
+              style={{
+                paddingVertical: 12,
+                borderBottomWidth: 1,
+                borderBottomColor: '#eee',
+              }}
+            >
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <View style={{ flex: 1, marginRight: 12 }}>
+                  <Text style={{ fontWeight: '500', marginBottom: 2 }}>
+                    {rec.book?.title ?? '—'}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: '#666', marginBottom: 2 }}>
+                    {rec.book?.author ?? '—'}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#999' }}>
+                    to {rec.to_user?.username ?? '—'}
+                  </Text>
+                </View>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    color: rec.status === 'finished' ? '#080' : rec.status === 'dnf' ? '#c00' : '#555',
+                    paddingHorizontal: 8,
+                    paddingVertical: 3,
+                    borderWidth: 1,
+                    borderColor: rec.status === 'finished' ? '#080' : rec.status === 'dnf' ? '#c00' : '#ccc',
+                    borderRadius: 4,
+                    alignSelf: 'flex-start',
+                  }}
+                >
+                  {REC_STATUS_LABELS[rec.status] ?? rec.status}
+                </Text>
+              </View>
             </View>
           ))
         )}
