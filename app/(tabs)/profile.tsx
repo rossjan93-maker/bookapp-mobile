@@ -11,6 +11,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { computePacingNote, computePagePacing, computeGoalProgress } from '../../lib/pacing';
+import { computeAvgPagesPerDay } from '../../lib/signals';
 
 type Profile = {
   username: string;
@@ -54,6 +55,14 @@ type ReaderPrefs = {
   favorite_authors: string | null;
 };
 
+type ReaderSignals = {
+  completionRate: number | null;
+  avgPagesPerDay: number | null;
+  recConversionRate: number | null;
+  resolved: number;           // total finished + dnf (threshold gate)
+  totalRecsReceived: number;  // total recs received (threshold gate)
+};
+
 const REC_STATUS: Record<string, { bg: string; text: string; label: string }> = {
   sent:     { bg: '#f1f5f9', text: '#475569', label: 'Sent'          },
   saved:    { bg: '#e0f2fe', text: '#0369a1', label: 'Want to Read'  },
@@ -93,6 +102,7 @@ export default function ProfileScreen() {
     recsLanded: number;
     finishedFromRecs: number;
   } | null>(null);
+  const [signals, setSignals]           = useState<ReaderSignals | null>(null);
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState<string | null>(null);
 
@@ -123,6 +133,10 @@ export default function ProfileScreen() {
         finishedYearRes,
         sentRecsRes,
         prefsRes,
+        dnfCountRes,
+        recReceivedTotalRes,
+        recReceivedFinishedRes,
+        progressEventsRes,
       ] = await Promise.all([
         supabase.from('profiles').select('username, yearly_reading_goal').eq('id', user.id).single(),
         supabase
@@ -169,6 +183,26 @@ export default function ProfileScreen() {
           .select('favorite_genres, avoid_genres, reading_styles, favorite_authors')
           .eq('user_id', user.id)
           .maybeSingle(),
+        // ── Signal queries ──
+        supabase
+          .from('user_books')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('status', 'dnf'),
+        supabase
+          .from('recommendations')
+          .select('*', { count: 'exact', head: true })
+          .eq('to_user_id', user.id),
+        supabase
+          .from('recommendations')
+          .select('*', { count: 'exact', head: true })
+          .eq('to_user_id', user.id)
+          .eq('status', 'finished'),
+        supabase
+          .from('reading_progress_events')
+          .select('user_book_id, page, created_at')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: true }),
       ]);
 
       // Currently reading: try with progress columns, fall back if migration not yet applied.
@@ -205,6 +239,25 @@ export default function ProfileScreen() {
         finishedBooks:     finishedAllRes.count ?? 0,
         finishedThisYear:  finishedYearRes.count ?? 0,
       });
+
+      // ── Reader signals ──
+      const finished     = finishedAllRes.count ?? 0;
+      const dnf          = dnfCountRes.count ?? 0;
+      const resolved     = finished + dnf;
+      const completionRate = resolved > 0 ? +(finished / resolved).toFixed(2) : null;
+
+      const totalRecsReceived   = recReceivedTotalRes.count ?? 0;
+      const finishedRecsReceived = recReceivedFinishedRes.count ?? 0;
+      const recConversionRate = totalRecsReceived > 0
+        ? +(finishedRecsReceived / totalRecsReceived).toFixed(2)
+        : null;
+
+      type ProgressEventRow = { user_book_id: string; page: number; created_at: string };
+      const progressEvents = (progressEventsRes.data ?? []) as ProgressEventRow[];
+      const avgPagesPerDay = computeAvgPagesPerDay(progressEvents);
+
+      setSignals({ completionRate, avgPagesPerDay, recConversionRate, resolved, totalRecsReceived });
+
       setLoading(false);
     }
     load();
@@ -619,6 +672,94 @@ export default function ProfileScreen() {
           </ScrollView>
         </View>
       )}
+
+      {/* ── Reader Insights ── */}
+      {signals && (() => {
+        type InsightItem = { key: string; value: string; label: string };
+        const items: InsightItem[] = [];
+
+        // Completion rate — gated on ≥ 3 resolved books
+        if (signals.resolved >= 3 && signals.completionRate !== null) {
+          const pct = Math.round(signals.completionRate * 100);
+          items.push({
+            key: 'completion',
+            value: `${pct}%`,
+            label: pct >= 80
+              ? 'of books finished — you rarely put them down'
+              : pct >= 50
+              ? 'of books read to completion'
+              : 'of books finished — it\'s fine to DNF',
+          });
+        }
+
+        // Avg pages/day — gated on actual data
+        if (signals.avgPagesPerDay !== null) {
+          items.push({
+            key: 'pace',
+            value: `~${signals.avgPagesPerDay}`,
+            label: 'pages read per day on average',
+          });
+        }
+
+        // Rec conversion — gated on ≥ 3 recs received
+        if (signals.totalRecsReceived >= 3 && signals.recConversionRate !== null) {
+          const pct = Math.round(signals.recConversionRate * 100);
+          items.push({
+            key: 'recs',
+            value: `${pct}%`,
+            label: 'of recommendations you\'ve finished',
+          });
+        }
+
+        return (
+          <View style={{ paddingHorizontal: 20, marginBottom: 28 }}>
+            <SectionLabel>Reader Insights</SectionLabel>
+            <View style={{
+              backgroundColor: '#fff',
+              borderRadius: 14,
+              overflow: 'hidden',
+              shadowColor: '#000',
+              shadowOpacity: 0.04,
+              shadowRadius: 6,
+              shadowOffset: { width: 0, height: 1 },
+              elevation: 1,
+            }}>
+              {items.length > 0 ? items.map((insight, i) => (
+                <View
+                  key={insight.key}
+                  style={{
+                    paddingHorizontal: 18,
+                    paddingVertical: 14,
+                    borderTopWidth: i > 0 ? 1 : 0,
+                    borderTopColor: '#f5f5f4',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 14,
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 22,
+                    fontWeight: '800',
+                    color: '#1c1917',
+                    minWidth: 62,
+                  }}>
+                    {insight.value}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: '#78716c', flex: 1, lineHeight: 19 }}>
+                    {insight.label}
+                  </Text>
+                </View>
+              )) : (
+                <View style={{ paddingHorizontal: 18, paddingVertical: 18 }}>
+                  <Text style={{ fontSize: 14, color: '#a8a29e', lineHeight: 21 }}>
+                    We're still learning your reading habits. Finish a few more books to unlock insights.
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+        );
+      })()}
 
       {/* ── Friend Requests ── */}
       <View style={{ paddingHorizontal: 20, marginBottom: 28 }}>
