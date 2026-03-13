@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useContext, useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { BadgeContext } from './_layout';
 
 type InboxItem = {
   id: string;
@@ -13,10 +14,10 @@ type InboxItem = {
 };
 
 const BADGE: Record<string, { bg: string; text: string; label: string }> = {
-  sent:     { bg: '#f1f5f9', text: '#475569', label: 'New'         },
-  saved:    { bg: '#e0f2fe', text: '#0369a1', label: 'Want to Read' },
-  started:  { bg: '#dbeafe', text: '#1d4ed8', label: 'Reading'      },
-  finished: { bg: '#dcfce7', text: '#15803d', label: 'Finished'     },
+  sent:     { bg: '#f1f5f9', text: '#475569', label: 'New'           },
+  saved:    { bg: '#e0f2fe', text: '#0369a1', label: 'Want to Read'  },
+  started:  { bg: '#dbeafe', text: '#1d4ed8', label: 'Reading'       },
+  finished: { bg: '#dcfce7', text: '#15803d', label: 'Finished'      },
   dnf:      { bg: '#fee2e2', text: '#b91c1c', label: 'Did Not Finish' },
 };
 
@@ -45,11 +46,18 @@ function SectionLabel({ children }: { children: string }) {
 }
 
 export default function InboxScreen() {
+  const { setNewRecCount } = useContext(BadgeContext);
+
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [items, setItems] = useState<InboxItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const count = items.filter(r => r.status === 'sent').length;
+    setNewRecCount(count);
+  }, [items]);
 
   useFocusEffect(useCallback(() => {
     async function load() {
@@ -193,10 +201,29 @@ export default function InboxScreen() {
   return (
     <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 32 }}>
 
+      {/* ── New summary banner ── */}
+      {newItems.length > 0 && (
+        <View style={{
+          backgroundColor: '#f0f9ff',
+          borderRadius: 10,
+          borderWidth: 1,
+          borderColor: '#e0f2fe',
+          paddingHorizontal: 16,
+          paddingVertical: 12,
+          marginBottom: 20,
+        }}>
+          <Text style={{ fontSize: 14, color: '#0369a1', fontWeight: '500' }}>
+            {newItems.length === 1
+              ? 'You have 1 new recommendation.'
+              : `You have ${newItems.length} new recommendations.`}
+          </Text>
+        </View>
+      )}
+
       {/* ── New ── */}
       {newItems.length > 0 && (
         <View style={{ marginBottom: 28 }}>
-          <SectionLabel>New</SectionLabel>
+          <SectionLabel>{`New (${newItems.length})`}</SectionLabel>
           {newItems.map(item => (
             <View
               key={item.id}
