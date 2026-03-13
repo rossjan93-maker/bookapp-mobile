@@ -40,6 +40,7 @@ React Native mobile app built with Expo Router + Supabase.
 | `20260313000000_reader_preferences.sql` | `reader_preferences` table; makes `books.external_id` nullable |
 | `20260313000001_progress_and_pacing.sql` | Adds `page_count` to books; `current_page` + `progress_updated_at` to user_books |
 | `20260313000002_reader_signals.sql` | Adds `reading_progress_events` table; `sentiment` + `source` columns on user_books |
+| `20260313000003_source_attribution_backfill.sql` | Backfills `source = 'recommendation'` for historical rows via `recommendations.user_book_id` join |
 
 ## Defensive Fallbacks
 Library, profile, and notes queries include try-with-fallback patterns — they attempt queries with new columns (page_count, current_page, source, sentiment) and silently fall back to column-safe queries if migrations haven't been applied yet. This means the app always loads.

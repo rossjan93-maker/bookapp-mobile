@@ -116,6 +116,14 @@ export default function InboxScreen() {
 
     if (existing) {
       userBookId = existing.id;
+      // Correct source on any pre-existing row — the user is explicitly saving
+      // a recommendation, so the book is recommendation-sourced regardless of
+      // when the row was created. Fire-and-forget; defensive if column not yet present.
+      supabase
+        .from('user_books')
+        .update({ source: 'recommendation' })
+        .eq('id', existing.id)
+        .then(() => {});
     } else {
       // Try with source attribution; fall back if column doesn't exist yet
       let insertResult = await supabase
