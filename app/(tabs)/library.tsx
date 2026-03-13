@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, Text, TouchableOpacity, View } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 
 type UserBookStatus = 'want_to_read' | 'reading' | 'finished' | 'dnf';
