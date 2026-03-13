@@ -127,7 +127,7 @@ export default function SearchScreen() {
 
     const { data: existingBook } = await supabase
       .from('books')
-      .select('id')
+      .select('id, cover_url')
       .eq('external_id', selectedBook.externalId)
       .maybeSingle();
 
@@ -135,6 +135,12 @@ export default function SearchScreen() {
 
     if (existingBook) {
       bookId = existingBook.id;
+      if (!existingBook.cover_url && selectedBook.coverUrl) {
+        await supabase
+          .from('books')
+          .update({ cover_url: selectedBook.coverUrl })
+          .eq('id', existingBook.id);
+      }
     } else {
       const { data: newBook, error: bookInsertError } = await supabase
         .from('books')

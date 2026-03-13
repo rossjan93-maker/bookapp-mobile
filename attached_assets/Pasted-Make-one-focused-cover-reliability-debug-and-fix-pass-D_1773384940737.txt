@@ -1,0 +1,72 @@
+Make one focused cover-reliability debug-and-fix pass.
+
+Do not change package versions.
+Do not add packages.
+Do not refactor unrelated logic.
+Do not change recommendation / library / activity business rules.
+
+Goal:
+Fix the root cause so book covers populate everywhere they should, not just in Search during recommendation.
+
+Current problem:
+Book covers are appearing in Search results / recommendation flow, but are NOT reliably appearing in:
+- Home activity cards
+- Inbox
+- Library
+- Profile sent recommendations
+- Book detail screen
+
+This means the issue is likely in one or more of:
+1. books data persistence (cover_url and/or external_id not being stored for existing rows)
+2. queries not selecting the needed cover fields everywhere
+3. CoverThumb fallback logic not being enough for real stored data
+4. existing books in the DB needing a one-time safe backfill from external_id → cover_url
+
+Scope:
+Inspect and fix only what is necessary.
+
+Files allowed to change:
+- components/CoverThumb.tsx
+- app/(tabs)/index.tsx
+- app/(tabs)/notes.tsx
+- app/(tabs)/library.tsx
+- app/(tabs)/profile.tsx
+- app/book/[id].tsx
+- app/(tabs)/search.tsx only if needed
+- one migration or SQL backfill file ONLY if required to repair existing books rows
+
+Requirements:
+1. Diagnose the actual root cause, not just the UI symptom.
+2. Ensure every place that renders books has access to:
+   - cover_url
+   - external_id
+   wherever needed for fallback rendering.
+3. Keep CoverThumb as the central place for cover resolution if possible.
+4. Cover resolution order should be:
+   - books.cover_url if present
+   - derived Open Library cover from books.external_id if possible
+   - neutral placeholder only if neither is usable
+5. If the real issue is that existing books rows have null cover_url even though external_id exists:
+   - add the smallest safe one-time fix
+   - preferably a migration / SQL backfill that sets cover_url from external_id for rows where:
+     - cover_url is null
+     - external_id matches Open Library work IDs
+6. Keep future behavior correct too:
+   - newly inserted books should still store cover_url when available
+7. Do not remove the existing placeholder fallback.
+8. Preserve all current flows and styling.
+
+Important:
+- I do NOT want a cosmetic workaround only.
+- I want the root cause solved so covers populate across the app consistently.
+- If a backfill is needed, do it cleanly and minimally.
+- If some screens are missing external_id in select() joins, fix them.
+- If CoverThumb needs to handle both /works/OL... and already-built URLs more robustly, fix that.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. root cause found
+6. whether a data backfill was required
