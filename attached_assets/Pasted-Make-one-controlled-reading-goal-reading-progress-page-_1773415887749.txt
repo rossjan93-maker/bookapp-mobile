@@ -1,0 +1,157 @@
+Make one controlled “reading goal + reading progress + page-level pacing foundation” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not add real AI / LLM integrations yet.
+Do not refactor unrelated business logic.
+Do not break recommendation / credibility / activity flows.
+Do not build invite/share features in this pass.
+
+Important correction:
+There is currently NO settings screen/function in the app.
+Users cannot yet set or edit a yearly reading goal.
+So this pass must first add a clean way to set/edit the yearly reading goal inside the existing product surface, preferably Profile, before relying on pacing.
+
+Goal:
+Upgrade the app from coarse/non-functional pacing to real, usable pacing by:
+1. adding a real yearly reading goal control
+2. tracking reading progress for books in progress
+3. supporting page-count-aware pacing when available
+4. improving the currently-reading experience
+5. laying a stronger foundation for future taste-fit and reading-behavior analysis
+
+Files allowed to change:
+- app/(tabs)/profile.tsx
+- app/(tabs)/library.tsx
+- app/book/[id].tsx
+- lib/pacing.ts
+- add one small shared helper/component if truly useful
+- schema/migration only if truly required
+- app/add-book.tsx only if needed for manual page-count support
+- app/(tabs)/index.tsx only if needed for currently-reading consistency
+- add one lightweight route/file only if absolutely necessary, but prefer using Profile rather than creating a full settings area
+
+Primary product objectives
+
+A. Yearly reading goal must become editable
+Requirements:
+1. Add a clear way for the user to set and edit their yearly reading goal.
+2. Prefer doing this in Profile rather than introducing a full settings system.
+3. The yearly goal control should feel simple and intentional:
+   - inline edit
+   - modal-like section
+   - or lightweight edit screen
+4. The current yearly goal should be visible on Profile.
+5. Updating the goal should immediately affect pacing calculations.
+6. Keep schema usage minimal — reuse the existing yearly_reading_goal field on profiles if present.
+
+B. Reading progress tracking
+Users need to be able to track where they are in a book.
+
+Requirements:
+1. Add support for tracking progress on books with status = reading.
+2. At minimum, support:
+   - current_page
+   - optional progress_updated_at if useful
+3. Progress should be editable in a simple, clean way.
+4. Best place to support this:
+   - Book detail
+   - optionally lightweight entry from Library / Currently Reading
+5. Keep the UX simple and useful, not overbuilt.
+
+C. Page-count-aware pacing
+Pacing should get smarter when page count is available.
+
+Requirements:
+1. If page count is available for a book, calculate useful pacing guidance.
+2. If current_page is available, calculate:
+   - current page / total pages
+   - remaining pages
+   - target finish date
+   - pages/day needed to stay on track for the user’s yearly goal
+3. If page count is not available:
+   - gracefully fall back to a simpler pacing model based on yearly goal and reading start date
+4. Do not fake precision where data is missing.
+5. Keep pacing language readable and honest.
+
+D. Data foundation
+Add the smallest safe data foundation needed.
+
+Requirements:
+1. If necessary, add minimal schema support for:
+   - current_page on user_books
+   - page_count on books if needed
+   - optional progress_updated_at timestamp if useful
+2. Keep schema changes minimal and explicit.
+3. If page_count can be fetched from public metadata for some books, use the smallest clean approach.
+4. Manual/custom books should still work even if page_count is unknown.
+
+E. Better currently-reading experience
+Currently Reading should feel more actionable.
+
+Requirements:
+1. Improve the Currently Reading section/cards so they can show:
+   - cover
+   - title
+   - author
+   - progress if available
+   - pacing guidance if available
+2. Make progress and pace feel like active reading tools, not passive stats.
+3. Keep the design aligned with the current editorial reading-app style.
+
+F. Book detail support
+Book detail should become the main place to manage progress.
+
+Requirements:
+1. For books with status = reading, book detail should support:
+   - viewing progress
+   - editing progress
+   - seeing pacing guidance
+2. If page_count exists, show:
+   - current page / total pages
+   - remaining pages
+   - pages/day target if useful
+3. If page_count does not exist, do not show fake page math.
+4. Keep the taste-fit placeholder intact.
+
+G. Preserve all current flows
+Do not break:
+- recommendation sending
+- note sending
+- inbox lifecycle grouping
+- unread/new badge
+- manual add flow
+- library progression
+- credibility events
+- activity feed
+- friend detail screen
+- cover rendering and fallback logic
+- existing book detail routing
+- preference capture / edit taste
+
+Implementation guidance
+1. Prefer the smallest clean migration if schema changes are needed.
+2. Prefer page_count on books and current_page on user_books if that is the cleanest model.
+3. If public metadata can provide page count for some books, add it minimally.
+4. If page count is unavailable for many books, ensure the UI still works gracefully.
+5. Keep user-facing pacing language simple:
+   - “42 pages left”
+   - “12 pages/day to finish on pace”
+   - “Target finish: Mar 28”
+   - fallback: “To stay on track for your yearly goal, finish by Mar 28”
+6. Do not overbuild reading session logging yet.
+
+Important constraints
+- This pass must include a real yearly-goal edit path.
+- Do not assume a settings screen exists.
+- This is a progress-and-pacing foundation pass, not the full analytics layer.
+- Keep logic honest.
+- Prefer partial but real functionality over sophisticated guesses.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. any schema or metadata tradeoff made
+6. what was added now vs intentionally deferred for later reading analytics / AI taste-fit

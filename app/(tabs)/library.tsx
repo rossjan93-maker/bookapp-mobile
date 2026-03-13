@@ -12,14 +12,21 @@ type UserBook = {
   status: UserBookStatus;
   started_at: string | null;
   finished_at: string | null;
-  book: { title: string; author: string; cover_url: string | null; external_id: string } | null;
+  current_page: number | null;
+  book: {
+    title: string;
+    author: string;
+    cover_url: string | null;
+    external_id: string;
+    page_count: number | null;
+  } | null;
 };
 
 const STATUS_LABELS: Record<UserBookStatus, string> = {
   want_to_read: 'Want to Read',
-  reading: 'Reading',
-  finished: 'Finished',
-  dnf: 'DNF',
+  reading:      'Reading',
+  finished:     'Finished',
+  dnf:          'DNF',
 };
 
 const STATUS_BADGE: Record<UserBookStatus, { bg: string; text: string }> = {
@@ -56,14 +63,14 @@ export default function LibraryScreen() {
 
       const { data, error: dbError } = await supabase
         .from('user_books')
-        .select('id, book_id, status, started_at, finished_at, book:books(title, author, cover_url, external_id)')
+        .select('id, book_id, status, started_at, finished_at, current_page, book:books(title, author, cover_url, external_id, page_count)')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (dbError) {
         setError('Could not load library.');
       } else {
-        setItems((data as UserBook[]) ?? []);
+        setItems((data as unknown as UserBook[]) ?? []);
       }
       setLoading(false);
     }
@@ -101,9 +108,9 @@ export default function LibraryScreen() {
     if (rec) {
       const recStatusMap: Record<UserBookStatus, string> = {
         want_to_read: 'saved',
-        reading: 'started',
-        finished: 'finished',
-        dnf: 'dnf',
+        reading:      'started',
+        finished:     'finished',
+        dnf:          'dnf',
       };
       const recUpdate: Record<string, unknown> = { status: recStatusMap[newStatus] };
       if (newStatus === 'finished' || newStatus === 'dnf') recUpdate.resolved_at = now;
@@ -131,36 +138,27 @@ export default function LibraryScreen() {
 
       if (!recUpdateError) {
         if (newStatus === 'reading') {
-          const { error: activityError } = await supabase.from('activity_events').insert({
+          await supabase.from('activity_events').insert({
             actor_id: currentUserId,
             event_type: 'recommendation_started',
             book_id: rec.book_id,
             recommendation_id: rec.id,
           });
-          if (activityError) {
-            console.warn('Activity insert failed:', activityError.message);
-          }
         } else if (newStatus === 'finished') {
-          const { error: activityError } = await supabase.from('activity_events').insert({
+          await supabase.from('activity_events').insert({
             actor_id: currentUserId,
             event_type: 'recommendation_finished',
             book_id: rec.book_id,
             recommendation_id: rec.id,
           });
-          if (activityError) {
-            console.warn('Activity insert failed:', activityError.message);
-          }
         }
       }
     } else if (newStatus === 'finished') {
-      const { error: activityError } = await supabase.from('activity_events').insert({
+      await supabase.from('activity_events').insert({
         actor_id: currentUserId,
         event_type: 'book_finished',
         book_id: userBook.book_id,
       });
-      if (activityError) {
-        console.warn('Activity insert failed:', activityError.message);
-      }
     }
 
     setItems(prev =>
@@ -169,9 +167,8 @@ export default function LibraryScreen() {
           ? {
               ...item,
               status: newStatus,
-              started_at: newStatus === 'reading' ? now : item.started_at,
-              finished_at:
-                newStatus === 'finished' || newStatus === 'dnf' ? now : item.finished_at,
+              started_at:  newStatus === 'reading' ? now : item.started_at,
+              finished_at: newStatus === 'finished' || newStatus === 'dnf' ? now : item.finished_at,
             }
           : item
       )
@@ -232,9 +229,17 @@ export default function LibraryScreen() {
       }
       renderItem={({ item }) => {
         const isUpdating = updatingId === item.id;
-        const isBlocked = updatingId !== null;
-        const badge = STATUS_BADGE[item.status];
+        const isBlocked  = updatingId !== null;
+        const badge      = STATUS_BADGE[item.status];
         const hasButtons = item.status === 'want_to_read' || item.status === 'reading';
+
+        const hasProgress =
+          item.status === 'reading' &&
+          item.current_page != null && item.current_page > 0 &&
+          item.book?.page_count != null && item.book.page_count > 0;
+        const progressPct = hasProgress
+          ? Math.min(100, Math.round((item.current_page! / item.book!.page_count!) * 100))
+          : null;
 
         return (
           <View style={{ paddingTop: 16, paddingBottom: hasButtons || isUpdating ? 12 : 16, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' }}>
@@ -246,12 +251,12 @@ export default function LibraryScreen() {
                 pathname: '/book/[id]',
                 params: {
                   id: item.book_id,
-                  title: item.book?.title ?? '',
-                  author: item.book?.author ?? '',
-                  coverUrl: item.book?.cover_url ?? '',
+                  title:      item.book?.title ?? '',
+                  author:     item.book?.author ?? '',
+                  coverUrl:   item.book?.cover_url ?? '',
                   externalId: item.book?.external_id ?? '',
-                  status: item.status,
-                  startedAt: item.started_at ?? '',
+                  status:     item.status,
+                  startedAt:  item.started_at ?? '',
                 },
               })}
               style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: hasButtons || isUpdating ? 10 : 0 }}
@@ -278,22 +283,44 @@ export default function LibraryScreen() {
                     </Text>
                   </View>
                 </View>
+
+                {/* Reading progress indicator */}
+                {hasProgress && (
+                  <View style={{ marginTop: 8 }}>
+                    <View style={{
+                      height: 3,
+                      backgroundColor: '#dbeafe',
+                      borderRadius: 2,
+                      overflow: 'hidden',
+                    }}>
+                      <View style={{
+                        height: 3,
+                        width: `${progressPct ?? 0}%`,
+                        backgroundColor: '#1d4ed8',
+                        borderRadius: 2,
+                      }} />
+                    </View>
+                    <Text style={{ fontSize: 11, color: '#93c5fd', marginTop: 3 }}>
+                      p.{item.current_page} of {item.book?.page_count} · {progressPct ?? 0}%
+                    </Text>
+                  </View>
+                )}
               </View>
             </TouchableOpacity>
 
-            {/* Action buttons below, indented to align with text */}
+            {/* Action buttons */}
             {isUpdating ? (
               <ActivityIndicator color="#111827" style={{ alignSelf: 'flex-start', marginLeft: 54 }} />
             ) : item.status === 'want_to_read' ? (
               <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginLeft: 54 }}>
-                <PrimaryButton label="Start Reading" onPress={() => handleUpdateStatus(item, 'reading')} disabled={isBlocked} />
-                <OutlineButton label="Mark Finished" onPress={() => handleUpdateStatus(item, 'finished')} disabled={isBlocked} />
-                <DangerButton label="DNF" onPress={() => handleUpdateStatus(item, 'dnf')} disabled={isBlocked} />
+                <PrimaryButton label="Start Reading"  onPress={() => handleUpdateStatus(item, 'reading')}  disabled={isBlocked} />
+                <OutlineButton label="Mark Finished"  onPress={() => handleUpdateStatus(item, 'finished')} disabled={isBlocked} />
+                <DangerButton  label="DNF"            onPress={() => handleUpdateStatus(item, 'dnf')}      disabled={isBlocked} />
               </View>
             ) : item.status === 'reading' ? (
               <View style={{ flexDirection: 'row', gap: 8, marginLeft: 54 }}>
-                <PrimaryButton label="Mark Finished" onPress={() => handleUpdateStatus(item, 'finished')} disabled={isBlocked} />
-                <DangerButton label="DNF" onPress={() => handleUpdateStatus(item, 'dnf')} disabled={isBlocked} />
+                <PrimaryButton label="Mark Finished"  onPress={() => handleUpdateStatus(item, 'finished')} disabled={isBlocked} />
+                <DangerButton  label="DNF"            onPress={() => handleUpdateStatus(item, 'dnf')}      disabled={isBlocked} />
               </View>
             ) : null}
           </View>
@@ -301,32 +328,15 @@ export default function LibraryScreen() {
       }}
       ListEmptyComponent={
         <View style={{ alignItems: 'center', paddingTop: 52, paddingHorizontal: 32 }}>
-          <Text style={{
-            fontSize: 17,
-            fontWeight: '700',
-            color: '#1c1917',
-            marginBottom: 10,
-            textAlign: 'center',
-          }}>
+          <Text style={{ fontSize: 17, fontWeight: '700', color: '#1c1917', marginBottom: 10, textAlign: 'center' }}>
             Your library is empty
           </Text>
-          <Text style={{
-            color: '#a8a29e',
-            fontSize: 14,
-            textAlign: 'center',
-            lineHeight: 22,
-            marginBottom: 28,
-          }}>
+          <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 28 }}>
             Add books you're reading, have finished, or want to read — from recommendations or on your own.
           </Text>
           <TouchableOpacity
             onPress={() => router.push('/add-book')}
-            style={{
-              backgroundColor: '#1c1917',
-              borderRadius: 12,
-              paddingVertical: 13,
-              paddingHorizontal: 26,
-            }}
+            style={{ backgroundColor: '#1c1917', borderRadius: 12, paddingVertical: 13, paddingHorizontal: 26 }}
           >
             <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Add your first book</Text>
           </TouchableOpacity>
@@ -341,12 +351,7 @@ function PrimaryButton({ label, onPress, disabled }: { label: string; onPress: (
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled}
-      style={{
-        paddingHorizontal: 14,
-        paddingVertical: 7,
-        backgroundColor: disabled ? '#e5e7eb' : '#111827',
-        borderRadius: 8,
-      }}
+      style={{ paddingHorizontal: 14, paddingVertical: 7, backgroundColor: disabled ? '#e5e7eb' : '#111827', borderRadius: 8 }}
     >
       <Text style={{ fontSize: 12, fontWeight: '500', color: disabled ? '#9ca3af' : '#fff' }}>{label}</Text>
     </TouchableOpacity>
@@ -358,13 +363,7 @@ function OutlineButton({ label, onPress, disabled }: { label: string; onPress: (
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled}
-      style={{
-        paddingHorizontal: 14,
-        paddingVertical: 7,
-        borderWidth: 1,
-        borderColor: disabled ? '#e5e7eb' : '#d1d5db',
-        borderRadius: 8,
-      }}
+      style={{ paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: disabled ? '#e5e7eb' : '#d1d5db', borderRadius: 8 }}
     >
       <Text style={{ fontSize: 12, fontWeight: '500', color: disabled ? '#9ca3af' : '#374151' }}>{label}</Text>
     </TouchableOpacity>
@@ -376,13 +375,7 @@ function DangerButton({ label, onPress, disabled }: { label: string; onPress: ()
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled}
-      style={{
-        paddingHorizontal: 14,
-        paddingVertical: 7,
-        borderWidth: 1,
-        borderColor: disabled ? '#e5e7eb' : '#fca5a5',
-        borderRadius: 8,
-      }}
+      style={{ paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: disabled ? '#e5e7eb' : '#fca5a5', borderRadius: 8 }}
     >
       <Text style={{ fontSize: 12, fontWeight: '500', color: disabled ? '#9ca3af' : '#b91c1c' }}>{label}</Text>
     </TouchableOpacity>

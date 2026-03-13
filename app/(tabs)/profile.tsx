@@ -3,13 +3,14 @@ import {
   ActivityIndicator,
   ScrollView,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
-import { computePacingNote, computeGoalProgress } from '../../lib/pacing';
+import { computePacingNote, computePagePacing, computeGoalProgress } from '../../lib/pacing';
 
 type Profile = {
   username: string;
@@ -20,7 +21,14 @@ type CurrentlyReading = {
   id: string;
   book_id: string;
   started_at: string | null;
-  book: { title: string; author: string; cover_url: string | null; external_id: string } | null;
+  current_page: number | null;
+  book: {
+    title: string;
+    author: string;
+    cover_url: string | null;
+    external_id: string;
+    page_count: number | null;
+  } | null;
 };
 
 type PendingRequest = {
@@ -71,21 +79,28 @@ function SectionLabel({ children }: { children: string }) {
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const [email, setEmail] = useState<string | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [email, setEmail]               = useState<string | null>(null);
+  const [userId, setUserId]             = useState<string | null>(null);
+  const [profile, setProfile]           = useState<Profile | null>(null);
   const [currentlyReading, setCurrentlyReading] = useState<CurrentlyReading[]>([]);
-  const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
-  const [sentRecs, setSentRecs] = useState<SentRecommendation[]>([]);
-  const [prefs, setPrefs] = useState<ReaderPrefs | null>(null);
-  const [stats, setStats] = useState<{
+  const [pendingRequests, setPendingRequests]    = useState<PendingRequest[]>([]);
+  const [sentRecs, setSentRecs]         = useState<SentRecommendation[]>([]);
+  const [prefs, setPrefs]               = useState<ReaderPrefs | null>(null);
+  const [stats, setStats]               = useState<{
     friendsCount: number;
     finishedBooks: number;
     finishedThisYear: number;
     recsLanded: number;
     finishedFromRecs: number;
   } | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState<string | null>(null);
+
+  // ── Inline goal editor state ──
+  const [editingGoal, setEditingGoal]   = useState(false);
+  const [goalDraft, setGoalDraft]       = useState('');
+  const [savingGoal, setSavingGoal]     = useState(false);
+  const [goalError, setGoalError]       = useState<string | null>(null);
 
   useFocusEffect(useCallback(() => {
     async function load() {
@@ -94,6 +109,7 @@ export default function ProfileScreen() {
       if (!user) { setError('No signed-in user.'); setLoading(false); return; }
 
       setEmail(user.email ?? null);
+      setUserId(user.id);
 
       const yearStart = `${new Date().getFullYear()}-01-01T00:00:00Z`;
 
@@ -112,7 +128,7 @@ export default function ProfileScreen() {
         supabase.from('profiles').select('username, yearly_reading_goal').eq('id', user.id).single(),
         supabase
           .from('user_books')
-          .select('id, book_id, started_at, book:books(title, author, cover_url, external_id)')
+          .select('id, book_id, started_at, current_page, book:books(title, author, cover_url, external_id, page_count)')
           .eq('user_id', user.id)
           .eq('status', 'reading')
           .order('started_at', { ascending: false }),
@@ -168,21 +184,43 @@ export default function ProfileScreen() {
         setProfile(profileRes.data);
       }
 
-      setCurrentlyReading((currentlyReadingRes.data as CurrentlyReading[]) ?? []);
-      setPendingRequests((requestsRes.data as PendingRequest[]) ?? []);
-      setSentRecs((sentRecsRes.data as SentRecommendation[]) ?? []);
+      setCurrentlyReading((currentlyReadingRes.data as unknown as CurrentlyReading[]) ?? []);
+      setPendingRequests((requestsRes.data as unknown as PendingRequest[]) ?? []);
+      setSentRecs((sentRecsRes.data as unknown as SentRecommendation[]) ?? []);
       setPrefs(prefsRes.data ?? null);
       setStats({
-        friendsCount: friendsRes.count ?? 0,
-        recsLanded: landedRes.count ?? 0,
-        finishedFromRecs: finishedFromRecRes.count ?? 0,
-        finishedBooks: finishedAllRes.count ?? 0,
-        finishedThisYear: finishedYearRes.count ?? 0,
+        friendsCount:      friendsRes.count ?? 0,
+        recsLanded:        landedRes.count ?? 0,
+        finishedFromRecs:  finishedFromRecRes.count ?? 0,
+        finishedBooks:     finishedAllRes.count ?? 0,
+        finishedThisYear:  finishedYearRes.count ?? 0,
       });
       setLoading(false);
     }
     load();
   }, []));
+
+  async function handleSaveGoal() {
+    if (!supabase || !userId) return;
+    const newGoal = parseInt(goalDraft.trim(), 10);
+    if (isNaN(newGoal) || newGoal < 1 || newGoal > 365) {
+      setGoalError('Enter a number between 1 and 365.');
+      return;
+    }
+    setGoalError(null);
+    setSavingGoal(true);
+    const { error: updateErr } = await supabase
+      .from('profiles')
+      .update({ yearly_reading_goal: newGoal })
+      .eq('id', userId);
+    setSavingGoal(false);
+    if (!updateErr) {
+      setProfile(prev => prev ? { ...prev, yearly_reading_goal: newGoal } : prev);
+      setEditingGoal(false);
+    } else {
+      setGoalError('Could not save goal — try again.');
+    }
+  }
 
   async function handleAccept(friendshipId: string) {
     if (!supabase) return;
@@ -216,8 +254,8 @@ export default function ProfileScreen() {
     );
   }
 
-  const username = profile?.username ?? '—';
-  const yearlyGoal = profile?.yearly_reading_goal ?? null;
+  const username    = profile?.username ?? '—';
+  const yearlyGoal  = profile?.yearly_reading_goal ?? null;
   const goalProgress = stats ? computeGoalProgress(stats.finishedThisYear, yearlyGoal) : null;
 
   const hasTasteData = prefs && (
@@ -231,6 +269,7 @@ export default function ProfileScreen() {
     <ScrollView
       style={{ flex: 1, backgroundColor: '#faf9f7' }}
       contentContainerStyle={{ paddingBottom: 48 }}
+      keyboardShouldPersistTaps="handled"
     >
       {/* ── Hero header ── */}
       <View style={{
@@ -246,6 +285,7 @@ export default function ProfileScreen() {
         shadowOffset: { width: 0, height: 1 },
         elevation: 1,
       }}>
+        {/* Avatar + name row */}
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <View style={{
             width: 60,
@@ -280,38 +320,120 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Goal progress bar */}
-        {goalProgress && (
+        {/* ── Inline goal editor ── */}
+        {!editingGoal ? (
+          <View style={{ marginTop: 18 }}>
+            {goalProgress ? (
+              <View style={{
+                backgroundColor: '#faf9f7',
+                borderRadius: 10,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+              }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500', flex: 1, marginRight: 10 }}>
+                    {goalProgress}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => { setGoalDraft(String(yearlyGoal ?? '')); setGoalError(null); setEditingGoal(true); }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={{ fontSize: 12, color: '#78716c', textDecorationLine: 'underline' }}>Edit goal</Text>
+                  </TouchableOpacity>
+                </View>
+                {yearlyGoal && stats && (
+                  <View style={{ height: 5, backgroundColor: '#e7e5e4', borderRadius: 3, overflow: 'hidden' }}>
+                    <View style={{
+                      height: 5,
+                      width: `${Math.min(100, Math.round((stats.finishedThisYear / yearlyGoal) * 100))}%`,
+                      backgroundColor: '#1c1917',
+                      borderRadius: 3,
+                    }} />
+                  </View>
+                )}
+              </View>
+            ) : (
+              <TouchableOpacity
+                onPress={() => { setGoalDraft(''); setGoalError(null); setEditingGoal(true); }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 10,
+                  backgroundColor: '#faf9f7',
+                  borderRadius: 10,
+                  paddingHorizontal: 14,
+                  paddingVertical: 12,
+                  borderWidth: 1,
+                  borderColor: '#e7e5e4',
+                  borderStyle: 'dashed',
+                }}
+              >
+                <Text style={{ fontSize: 13, color: '#a8a29e' }}>
+                  Set a yearly reading goal →
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : (
           <View style={{
             marginTop: 18,
             backgroundColor: '#faf9f7',
             borderRadius: 10,
-            padding: 12,
+            padding: 14,
+            borderWidth: 1,
+            borderColor: '#e7e5e4',
           }}>
-            <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500' }}>{goalProgress}</Text>
-            {yearlyGoal && stats && (
-              <View style={{
-                marginTop: 8,
-                height: 4,
-                backgroundColor: '#e7e5e4',
-                borderRadius: 2,
-                overflow: 'hidden',
-              }}>
-                <View style={{
-                  height: 4,
-                  width: `${Math.min(100, Math.round((stats.finishedThisYear / yearlyGoal) * 100))}%`,
-                  backgroundColor: '#1c1917',
-                  borderRadius: 2,
-                }} />
-              </View>
-            )}
-          </View>
-        )}
-        {!yearlyGoal && (
-          <View style={{ marginTop: 14 }}>
-            <Text style={{ fontSize: 12, color: '#a8a29e' }}>
-              No reading goal set — add one in your settings to track pace.
+            <Text style={{ fontSize: 12, color: '#78716c', fontWeight: '600', marginBottom: 10 }}>
+              Books per year goal
             </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <TextInput
+                value={goalDraft}
+                onChangeText={setGoalDraft}
+                keyboardType="number-pad"
+                placeholder="24"
+                placeholderTextColor="#a8a29e"
+                returnKeyType="done"
+                onSubmitEditing={handleSaveGoal}
+                style={{
+                  width: 72,
+                  height: 40,
+                  borderWidth: 1.5,
+                  borderColor: '#d6d3d1',
+                  borderRadius: 8,
+                  paddingHorizontal: 12,
+                  fontSize: 18,
+                  fontWeight: '700',
+                  color: '#1c1917',
+                  backgroundColor: '#fff',
+                  textAlign: 'center',
+                }}
+              />
+              <TouchableOpacity
+                onPress={handleSaveGoal}
+                disabled={savingGoal}
+                style={{
+                  backgroundColor: savingGoal ? '#d6d3d1' : '#1c1917',
+                  borderRadius: 8,
+                  paddingHorizontal: 16,
+                  paddingVertical: 10,
+                }}
+              >
+                {savingGoal
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>Save</Text>
+                }
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => { setEditingGoal(false); setGoalError(null); }}
+                style={{ paddingHorizontal: 10, paddingVertical: 10 }}
+              >
+                <Text style={{ fontSize: 13, color: '#a8a29e' }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+            {goalError && (
+              <Text style={{ fontSize: 12, color: '#b91c1c', marginTop: 8 }}>{goalError}</Text>
+            )}
           </View>
         )}
       </View>
@@ -330,7 +452,7 @@ export default function ProfileScreen() {
         </View>
       )}
 
-      {/* ── Taste profile teaser ── */}
+      {/* ── Taste profile card ── */}
       <View style={{ paddingHorizontal: 20, marginBottom: 24 }}>
         <TouchableOpacity
           onPress={() => router.push('/edit-preferences')}
@@ -354,22 +476,12 @@ export default function ProfileScreen() {
             {hasTasteData ? (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
                 {prefs!.favorite_genres.slice(0, 4).map(g => (
-                  <View key={g} style={{
-                    backgroundColor: '#f5f5f4',
-                    borderRadius: 10,
-                    paddingHorizontal: 8,
-                    paddingVertical: 3,
-                  }}>
+                  <View key={g} style={{ backgroundColor: '#f5f5f4', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
                     <Text style={{ fontSize: 11, color: '#57534e' }}>{g}</Text>
                   </View>
                 ))}
                 {(prefs!.favorite_genres.length + prefs!.reading_styles.length) > 4 && (
-                  <View style={{
-                    backgroundColor: '#f5f5f4',
-                    borderRadius: 10,
-                    paddingHorizontal: 8,
-                    paddingVertical: 3,
-                  }}>
+                  <View style={{ backgroundColor: '#f5f5f4', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
                     <Text style={{ fontSize: 11, color: '#a8a29e' }}>
                       +{prefs!.favorite_genres.length + prefs!.reading_styles.length - 4} more
                     </Text>
@@ -378,7 +490,7 @@ export default function ProfileScreen() {
               </View>
             ) : (
               <Text style={{ fontSize: 13, color: '#a8a29e', lineHeight: 19 }}>
-                Tell us your genres, styles, and authors — unlocks future taste insights.
+                Genres, styles, and authors — unlocks future taste insights.
               </Text>
             )}
           </View>
@@ -398,7 +510,27 @@ export default function ProfileScreen() {
             contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}
           >
             {currentlyReading.map(item => {
-              const pacingNote = computePacingNote(item.started_at, yearlyGoal);
+              const hasPageData = !!(
+                item.current_page && item.current_page > 0 &&
+                item.book?.page_count && item.book.page_count > 0
+              );
+              const pct = hasPageData
+                ? Math.min(100, Math.round((item.current_page! / item.book!.page_count!) * 100))
+                : null;
+
+              let pacingStr: string | null = null;
+              if (hasPageData) {
+                const p = computePagePacing(
+                  item.current_page!,
+                  item.book!.page_count!,
+                  item.started_at,
+                  yearlyGoal
+                );
+                pacingStr = p.note;
+              } else {
+                pacingStr = computePacingNote(item.started_at, yearlyGoal);
+              }
+
               return (
                 <TouchableOpacity
                   key={item.id}
@@ -436,13 +568,7 @@ export default function ProfileScreen() {
                   />
                   <Text
                     numberOfLines={2}
-                    style={{
-                      fontSize: 13,
-                      fontWeight: '700',
-                      color: '#1c1917',
-                      marginTop: 10,
-                      lineHeight: 18,
-                    }}
+                    style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginTop: 10, lineHeight: 18 }}
                   >
                     {item.book?.title ?? '—'}
                   </Text>
@@ -452,17 +578,29 @@ export default function ProfileScreen() {
                   >
                     {item.book?.author ?? '—'}
                   </Text>
-                  {pacingNote && (
+
+                  {/* Progress bar */}
+                  {pct !== null && (
+                    <View style={{ marginTop: 8 }}>
+                      <View style={{ height: 3, backgroundColor: '#e7e5e4', borderRadius: 2, overflow: 'hidden' }}>
+                        <View style={{ height: 3, width: `${pct}%`, backgroundColor: '#1c1917', borderRadius: 2 }} />
+                      </View>
+                      <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 3 }}>
+                        p.{item.current_page} of {item.book?.page_count}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Pacing note */}
+                  {pacingStr && (
                     <View style={{
                       backgroundColor: '#faf9f7',
                       borderRadius: 6,
                       paddingHorizontal: 7,
                       paddingVertical: 4,
-                      marginTop: 8,
+                      marginTop: pct !== null ? 5 : 8,
                     }}>
-                      <Text style={{ fontSize: 10, color: '#78716c', lineHeight: 14 }}>
-                        {pacingNote}
-                      </Text>
+                      <Text style={{ fontSize: 10, color: '#78716c', lineHeight: 14 }}>{pacingStr}</Text>
                     </View>
                   )}
                 </TouchableOpacity>
@@ -499,12 +637,7 @@ export default function ProfileScreen() {
               </Text>
               <TouchableOpacity
                 onPress={() => handleAccept(req.id)}
-                style={{
-                  paddingHorizontal: 14,
-                  paddingVertical: 7,
-                  backgroundColor: '#1c1917',
-                  borderRadius: 8,
-                }}
+                style={{ paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#1c1917', borderRadius: 8 }}
               >
                 <Text style={{ color: '#fff', fontSize: 13, fontWeight: '500' }}>Accept</Text>
               </TouchableOpacity>
@@ -575,9 +708,7 @@ export default function ProfileScreen() {
                   paddingVertical: 3,
                   alignSelf: 'flex-start',
                 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '600', color: badge.text }}>
-                    {badge.label}
-                  </Text>
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: badge.text }}>{badge.label}</Text>
                 </View>
               </TouchableOpacity>
             );
@@ -631,9 +762,7 @@ function StatPill({
       <Text style={{ fontSize: 30, fontWeight: '800', color, letterSpacing: -0.5, lineHeight: 36 }}>
         {value}
       </Text>
-      <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 4, lineHeight: 15 }}>
-        {label}
-      </Text>
+      <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 4, lineHeight: 15 }}>{label}</Text>
     </View>
   );
 }
