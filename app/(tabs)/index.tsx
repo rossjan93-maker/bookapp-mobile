@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   ScrollView,
   Text,
   TextInput,
@@ -9,6 +8,14 @@ import {
   View,
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
+
+type FeedEvent = {
+  id: string;
+  event_type: string;
+  created_at: string;
+  actor: { username: string } | null;
+  book: { title: string; author: string } | null;
+};
 
 type ProfileResult = {
   id: string;
@@ -41,8 +48,32 @@ function getRelationship(
   return 'pending';
 }
 
-export default function FindFriendsScreen() {
+function eventText(event: FeedEvent): string {
+  const actor = event.actor?.username ?? 'Someone';
+  const title = event.book?.title ?? 'a book';
+  switch (event.event_type) {
+    case 'recommendation_sent':
+      return `${actor} recommended "${title}"`;
+    case 'recommendation_saved':
+      return `${actor} saved "${title}"`;
+    case 'recommendation_started':
+      return `${actor} started reading "${title}"`;
+    case 'recommendation_finished':
+      return `${actor} finished "${title}"`;
+    case 'book_finished':
+      return `${actor} finished "${title}"`;
+    default:
+      return `${actor} did something with "${title}"`;
+  }
+}
+
+export default function HomeScreen() {
   const [userId, setUserId] = useState<string | null>(null);
+
+  const [feed, setFeed] = useState<FeedEvent[]>([]);
+  const [feedLoading, setFeedLoading] = useState(true);
+  const [feedError, setFeedError] = useState<string | null>(null);
+
   const [friendships, setFriendships] = useState<FriendshipRow[]>([]);
   const [loadingFriendships, setLoadingFriendships] = useState(true);
 
@@ -58,20 +89,42 @@ export default function FindFriendsScreen() {
   useEffect(() => {
     async function init() {
       if (!supabase) {
+        setFeedLoading(false);
         setLoadingFriendships(false);
         return;
       }
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
+        setFeedLoading(false);
         setLoadingFriendships(false);
         return;
       }
       setUserId(user.id);
-      await loadFriendships(user.id);
+      await Promise.all([loadFeed(), loadFriendships(user.id)]);
+      setFeedLoading(false);
       setLoadingFriendships(false);
     }
     init();
   }, []);
+
+  async function loadFeed() {
+    if (!supabase) return;
+    const { data, error } = await supabase
+      .from('activity_events')
+      .select(
+        'id, event_type, created_at, ' +
+        'actor:profiles!activity_events_actor_id_fkey(username), ' +
+        'book:books!activity_events_book_id_fkey(title, author)'
+      )
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) {
+      setFeedError('Could not load feed.');
+    } else {
+      setFeed((data as FeedEvent[]) ?? []);
+    }
+  }
 
   async function loadFriendships(uid: string) {
     if (!supabase) return;
@@ -88,18 +141,15 @@ export default function FindFriendsScreen() {
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-
     const trimmed = searchQuery.trim();
     if (trimmed.length < 2) {
       setSearchResults([]);
       setSearchError(null);
       return;
     }
-
     debounceRef.current = setTimeout(() => {
       runSearch(trimmed);
     }, 300);
-
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
@@ -109,14 +159,12 @@ export default function FindFriendsScreen() {
     if (!supabase || !userId) return;
     setSearching(true);
     setSearchError(null);
-
     const { data, error } = await supabase
       .from('profiles')
       .select('id, username')
       .ilike('username', `%${query}%`)
       .neq('id', userId)
       .limit(20);
-
     if (error) {
       setSearchError('Search failed.');
     } else {
@@ -128,13 +176,11 @@ export default function FindFriendsScreen() {
   async function handleAddFriend(otherId: string) {
     if (!supabase || !userId) return;
     setAddingId(otherId);
-
     const { error } = await supabase.from('friendships').insert({
       requester_id: userId,
       addressee_id: otherId,
       status: 'pending',
     });
-
     if (!error) {
       await loadFriendships(userId);
     }
@@ -143,13 +189,10 @@ export default function FindFriendsScreen() {
 
   const acceptedFriends = friendships
     .filter(f => f.status === 'accepted')
-    .map(f => {
-      const other = f.requester_id === userId ? f.addressee : f.requester;
-      return other;
-    })
+    .map(f => (f.requester_id === userId ? f.addressee : f.requester))
     .filter(Boolean) as { id: string; username: string }[];
 
-  if (loadingFriendships) {
+  if (feedLoading || loadingFriendships) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator />
@@ -159,7 +202,44 @@ export default function FindFriendsScreen() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: 20 }}>
-      <Text style={{ fontSize: 18, fontWeight: '600', marginBottom: 20, marginTop: 8 }}>
+
+      {/* ── Activity Feed ── */}
+      <Text style={{ fontSize: 18, fontWeight: '600', marginBottom: 16, marginTop: 8 }}>
+        Activity
+      </Text>
+
+      {feedError ? (
+        <Text style={{ color: '#c00', marginBottom: 16 }}>{feedError}</Text>
+      ) : feed.length === 0 ? (
+        <Text style={{ color: '#999', marginBottom: 24 }}>
+          Nothing yet. Follow friends to see their activity.
+        </Text>
+      ) : (
+        <View style={{ marginBottom: 32 }}>
+          {feed.map(event => (
+            <View
+              key={event.id}
+              style={{
+                paddingVertical: 12,
+                borderBottomWidth: 1,
+                borderBottomColor: '#eee',
+              }}
+            >
+              <Text style={{ fontSize: 14, color: '#111' }}>
+                {eventText(event)}
+              </Text>
+              {event.book?.author ? (
+                <Text style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+                  {event.book.author}
+                </Text>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* ── Find Friends ── */}
+      <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 12 }}>
         Find Friends
       </Text>
 
@@ -181,9 +261,7 @@ export default function FindFriendsScreen() {
         />
       </View>
 
-      {searching && (
-        <ActivityIndicator style={{ marginVertical: 12 }} />
-      )}
+      {searching && <ActivityIndicator style={{ marginVertical: 12 }} />}
 
       {searchError && (
         <Text style={{ color: '#c00', marginBottom: 8 }}>{searchError}</Text>
@@ -194,13 +272,10 @@ export default function FindFriendsScreen() {
       )}
 
       {searchResults.length > 0 && (
-        <View style={{ marginBottom: 32 }}>
+        <View style={{ marginBottom: 24 }}>
           {searchResults.map(result => {
-            const rel = userId
-              ? getRelationship(userId, result.id, friendships)
-              : 'none';
+            const rel = userId ? getRelationship(userId, result.id, friendships) : 'none';
             const isAdding = addingId === result.id;
-
             return (
               <View
                 key={result.id}
@@ -214,7 +289,6 @@ export default function FindFriendsScreen() {
                 }}
               >
                 <Text style={{ fontSize: 15 }}>{result.username}</Text>
-
                 {isAdding ? (
                   <ActivityIndicator />
                 ) : rel === 'none' ? (
@@ -246,7 +320,7 @@ export default function FindFriendsScreen() {
       </Text>
 
       {acceptedFriends.length === 0 ? (
-        <Text style={{ color: '#999' }}>No friends yet.</Text>
+        <Text style={{ color: '#999', marginBottom: 24 }}>No friends yet.</Text>
       ) : (
         acceptedFriends.map(friend => (
           <View
