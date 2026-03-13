@@ -1,0 +1,81 @@
+Make one targeted “Currently Reading pacing visual polish” pass.
+
+Do not change package versions.
+Do not add packages.
+Do not refactor unrelated logic.
+Do not change schema.
+Do not touch recommendation / credibility / activity flows.
+Do not change broader Profile layout beyond the Currently Reading cards unless absolutely necessary.
+
+Goal:
+Improve the Currently Reading cards in Profile so pace state is clearer and more motivating.
+
+Scope:
+Only inspect and edit:
+- app/(tabs)/profile.tsx
+- lib/pacing.ts only if needed for wording/output
+- app/book/[id].tsx only if needed for consistency, but prefer to keep scope mainly in Profile
+
+Requirements
+
+A. Card border color should reflect pacing state
+1. Currently Reading cards should have a visible border color based on pacing state.
+2. Use:
+   - green border for ahead of pace
+   - green border for on pace
+   - amber border for behind pace
+3. Keep the look premium and subtle, not loud or gamified.
+4. The border should be clearly visible enough to scan quickly.
+
+B. Pacing copy should include effort, not just time
+1. If the user is behind pace and the app currently says something like:
+   - “Finish in 4 days to stay on pace”
+   update the displayed guidance to also translate the effort into pages/day when page data exists.
+2. Ideal examples:
+   - “32 pages/day · finish in 4 days”
+   - “On pace · 18 pages/day”
+   - “Ahead of pace · target Mar 29”
+3. Keep wording concise and readable.
+4. Do not fake pages/day when page data is missing.
+5. If only fallback date-based pacing is available, keep the existing simpler time-based copy.
+
+C. Preserve honest pacing behavior
+1. Ahead-of-pace should still feel rewarding.
+2. On-pace should still feel positive/steady.
+3. Behind-pace should clearly communicate the required effort.
+4. Do not overstate precision if the data is weak.
+
+D. Keep current design language
+1. Maintain the current editorial reading-app style.
+2. Do not redesign the whole card.
+3. Prefer small, meaningful visual changes:
+   - border color
+   - chip/copy refinement
+   - maybe subtle background tint only if it improves clarity
+4. Do not clutter the card.
+
+E. Preserve all current flows
+Do not break:
+- Profile loading
+- Currently Reading navigation
+- yearly goal editing
+- Reader Insights
+- pacing chip logic
+- book detail routing
+- library progress logic
+
+Implementation guidance
+1. Reuse the existing pacing state if already available.
+2. Prefer deriving one clean display string for the Currently Reading card.
+3. If page-based pacing exists:
+   - behind pace should show pages/day + time window
+   - on pace can show pages/day or target date, whichever reads better
+   - ahead of pace can stay more motivational
+4. If you touch lib/pacing.ts, keep changes minimal and intentional.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. pacing display changes made

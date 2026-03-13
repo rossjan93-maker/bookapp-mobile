@@ -583,6 +583,7 @@ export default function ProfileScreen() {
 
               let pacingStr: string | null = null;
               let pacingIsAhead = false;
+              let pacingState: 'ahead' | 'on_pace' | 'behind' | null = null;
               if (hasPageData) {
                 const p = computePagePacing(
                   item.current_page!,
@@ -590,7 +591,8 @@ export default function ProfileScreen() {
                   item.started_at,
                   yearlyGoal
                 );
-                pacingStr = p.note;
+                pacingStr   = p.note;
+                pacingState = p.state;
                 pacingIsAhead = p.state === 'ahead';
               } else {
                 pacingStr = computePacingNote(item.started_at, yearlyGoal);
@@ -618,6 +620,8 @@ export default function ProfileScreen() {
                     borderRadius: 14,
                     padding: 14,
                     width: 150,
+                    borderWidth: pacingState ? 1.5 : 0,
+                    borderColor: pacingState === 'behind' ? '#fcd34d' : '#86efac',
                     shadowColor: '#000',
                     shadowOpacity: 0.06,
                     shadowRadius: 8,
@@ -659,13 +663,25 @@ export default function ProfileScreen() {
                   {/* Pacing note */}
                   {pacingStr && (
                     <View style={{
-                      backgroundColor: pacingIsAhead ? '#f0fdf4' : '#faf9f7',
+                      backgroundColor: pacingIsAhead
+                        ? '#f0fdf4'
+                        : pacingState === 'behind'
+                        ? '#fef9f0'
+                        : '#faf9f7',
                       borderRadius: 6,
                       paddingHorizontal: 7,
                       paddingVertical: 4,
                       marginTop: pct !== null ? 5 : 8,
                     }}>
-                      <Text style={{ fontSize: 10, color: pacingIsAhead ? '#15803d' : '#78716c', lineHeight: 14 }}>
+                      <Text style={{
+                        fontSize: 10,
+                        lineHeight: 14,
+                        color: pacingIsAhead
+                          ? '#15803d'
+                          : pacingState === 'behind'
+                          ? '#92400e'
+                          : '#78716c',
+                      }}>
                         {pacingStr}
                       </Text>
                     </View>

@@ -117,10 +117,11 @@ export function computePagePacing(
     };
   }
 
-  const target       = targetFinishDate(startedAt, yearlyGoal);
-  const msLeft       = target.getTime() - Date.now();
-  const daysLeft     = Math.max(1, Math.ceil(msLeft / 86_400_000));
-  const ppd          = Math.ceil(pagesLeft / daysLeft);
+  const target         = targetFinishDate(startedAt, yearlyGoal);
+  const msLeft         = target.getTime() - Date.now();
+  const rawDaysLeft    = Math.ceil(msLeft / 86_400_000); // can be ≤ 0 when overdue
+  const daysLeft       = Math.max(1, rawDaysLeft);       // clamped for ppd math
+  const ppd            = Math.ceil(pagesLeft / daysLeft);
 
   // ── Determine pacing state ──
   // Compare actual reading progress % to the expected % by today.
@@ -139,13 +140,23 @@ export function computePagePacing(
   }
 
   // ── Compact chip note ──
+  // ahead:    "Ahead of pace · target Mar 29"
+  // on_pace:  "On pace · 18 pages/day"
+  // behind:   "32 pages/day · 4 days left"  (or "finish soon" when overdue)
   let note: string;
   if (state === 'ahead') {
     note = `Ahead of pace · ${shortDate(target)}`;
   } else if (state === 'on_pace') {
-    note = `On pace · ${shortDate(target)}`;
+    note = `On pace · ${ppd} pages/day`;
   } else {
-    note = `${ppd} pages/day · ${shortDate(target)}`;
+    // behind
+    if (rawDaysLeft >= 2) {
+      note = `${ppd} pages/day · ${rawDaysLeft} days left`;
+    } else if (rawDaysLeft === 1) {
+      note = `${ppd} pages/day · 1 day left`;
+    } else {
+      note = `${ppd} pages/day · finish soon`;
+    }
   }
 
   return {
