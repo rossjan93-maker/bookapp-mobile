@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { CoverThumb } from '../../components/CoverThumb';
 
 type Profile = {
   username: string;
@@ -27,7 +28,7 @@ type SentRecommendation = {
   created_at: string;
   note: string | null;
   to_user: { username: string } | null;
-  book: { title: string; author: string } | null;
+  book: { title: string; author: string; cover_url: string | null } | null;
 };
 
 const REC_STATUS: Record<string, { bg: string; text: string; label: string }> = {
@@ -122,7 +123,7 @@ export default function ProfileScreen() {
           .select(
             'id, status, created_at, note, ' +
             'to_user:profiles!recommendations_to_user_id_fkey(username), ' +
-            'book:books!recommendations_book_id_fkey(title, author)'
+            'book:books!recommendations_book_id_fkey(title, author, cover_url)'
           )
           .eq('from_user_id', user.id)
           .order('created_at', { ascending: false })
@@ -298,15 +299,15 @@ export default function ProfileScreen() {
               <View
                 key={rec.id}
                 style={{
-                  paddingVertical: 14,
+                  paddingVertical: 12,
                   borderBottomWidth: 1,
                   borderBottomColor: '#f3f4f6',
                   flexDirection: 'row',
-                  justifyContent: 'space-between',
                   alignItems: 'flex-start',
                 }}
               >
-                <View style={{ flex: 1, marginRight: 12 }}>
+                <CoverThumb url={rec.book?.cover_url} width={36} height={52} />
+                <View style={{ flex: 1, marginLeft: 12, marginRight: 10 }}>
                   <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827', marginBottom: 2 }}>
                     {rec.book?.title ?? '—'}
                   </Text>

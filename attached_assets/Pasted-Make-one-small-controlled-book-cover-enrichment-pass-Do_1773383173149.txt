@@ -1,0 +1,73 @@
+Make one small controlled book-cover enrichment pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not change database schema.
+Do not add migrations.
+Do not refactor unrelated files.
+Do not change core business logic.
+
+Goal:
+Improve the visual identity of the app by showing book covers consistently wherever books appear.
+
+Files allowed to change:
+- app/(tabs)/index.tsx
+- app/(tabs)/search.tsx
+- app/(tabs)/notes.tsx
+- app/(tabs)/library.tsx
+- app/(tabs)/profile.tsx
+- app/friend/[id].tsx
+- shared helper/component file only if truly needed and kept minimal
+
+Requirements:
+1. Use the existing books.cover_url field wherever available.
+2. In Search results:
+   - show a small cover thumbnail beside each book result
+   - if Open Library search results do not currently provide a usable cover image, add the smallest clean change needed to derive one
+   - do not overbuild a media pipeline
+
+3. In Inbox:
+   - show covers for recommendation rows/cards
+   - keep layout clean in all sections
+
+4. In Library:
+   - show covers for books in the list
+   - preserve all status actions and buttons
+
+5. In Profile → Recommendations Sent:
+   - show covers for sent recommendations
+
+6. In Home feed and Friend detail recent activity:
+   - show small covers if it improves readability without clutter
+   - skip if it makes those rows too dense
+
+7. Add a clean fallback when no cover exists:
+   - simple neutral placeholder block
+   - no broken-image look
+
+8. Keep styling aligned with the current visual system:
+   - compact
+   - modern
+   - not overly decorative
+
+9. Preserve all existing flows:
+   - recommendation sending
+   - notes
+   - inbox lifecycle
+   - library progression
+   - profile tracker
+   - friend detail
+   - activity feed
+   - unread badge
+
+Important:
+- Keep this as a presentation/data-enrichment pass.
+- If Search needs a small change to request or derive cover URLs from Open Library results, do that minimally.
+- Reuse one small Cover component if it meaningfully reduces repetition.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. any tradeoff you made about where covers were shown vs intentionally omitted

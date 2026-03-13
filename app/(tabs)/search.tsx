@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
+import { CoverThumb } from '../../components/CoverThumb';
 
 type Step = 'search' | 'friends' | 'done';
 
@@ -15,18 +16,25 @@ type BookResult = {
   key: string;
   title: string;
   author_name?: string[];
+  cover_i?: number;
 };
 
 type SelectedBook = {
   externalId: string;
   title: string;
   author: string;
+  coverUrl: string | null;
 };
 
 type Friend = {
   id: string;
   username: string;
 };
+
+function olCoverUrl(coverId?: number, size: 'S' | 'M' = 'M'): string | null {
+  if (!coverId) return null;
+  return `https://covers.openlibrary.org/b/id/${coverId}-${size}.jpg`;
+}
 
 export default function SearchScreen() {
   const [step, setStep] = useState<Step>('search');
@@ -61,7 +69,7 @@ export default function SearchScreen() {
       setSearching(true);
       try {
         const res = await fetch(
-          `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&fields=key,title,author_name&limit=10`
+          `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&fields=key,title,author_name,cover_i&limit=10`
         );
         const json = await res.json();
         setBookResults(json.docs ?? []);
@@ -81,6 +89,7 @@ export default function SearchScreen() {
       externalId: book.key,
       title: book.title,
       author: book.author_name?.[0] ?? 'Unknown author',
+      coverUrl: olCoverUrl(book.cover_i, 'M'),
     };
     setSelectedBook(selected);
     setStep('friends');
@@ -133,6 +142,7 @@ export default function SearchScreen() {
           title: selectedBook.title,
           author: selectedBook.author,
           external_id: selectedBook.externalId,
+          cover_url: selectedBook.coverUrl ?? null,
         })
         .select('id')
         .single();
@@ -223,17 +233,22 @@ export default function SearchScreen() {
             <TouchableOpacity
               onPress={() => handleSelectBook(item)}
               style={{
-                paddingVertical: 14,
+                paddingVertical: 10,
                 borderBottomWidth: 1,
                 borderBottomColor: '#f3f4f6',
+                flexDirection: 'row',
+                alignItems: 'center',
               }}
             >
-              <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827' }}>
-                {item.title}
-              </Text>
-              <Text style={{ color: '#9ca3af', fontSize: 13, marginTop: 3 }}>
-                {item.author_name?.[0] ?? 'Unknown author'}
-              </Text>
+              <CoverThumb url={olCoverUrl(item.cover_i, 'S')} width={34} height={50} />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827' }}>
+                  {item.title}
+                </Text>
+                <Text style={{ color: '#9ca3af', fontSize: 13, marginTop: 2 }}>
+                  {item.author_name?.[0] ?? 'Unknown author'}
+                </Text>
+              </View>
             </TouchableOpacity>
           )}
           ListEmptyComponent={
@@ -274,14 +289,19 @@ export default function SearchScreen() {
             marginBottom: 24,
             borderWidth: 1,
             borderColor: '#e5e7eb',
+            flexDirection: 'row',
+            alignItems: 'center',
           }}
         >
-          <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827' }}>
-            {selectedBook?.title}
-          </Text>
-          <Text style={{ color: '#6b7280', fontSize: 13, marginTop: 4 }}>
-            {selectedBook?.author}
-          </Text>
+          <CoverThumb url={selectedBook?.coverUrl} width={48} height={70} />
+          <View style={{ flex: 1, marginLeft: 14 }}>
+            <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827' }}>
+              {selectedBook?.title}
+            </Text>
+            <Text style={{ color: '#6b7280', fontSize: 13, marginTop: 4 }}>
+              {selectedBook?.author}
+            </Text>
+          </View>
         </View>
 
         <TextInput

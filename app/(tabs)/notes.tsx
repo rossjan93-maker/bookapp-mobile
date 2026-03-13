@@ -3,6 +3,7 @@ import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'rea
 import { useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { BadgeContext } from './_layout';
+import { CoverThumb } from '../../components/CoverThumb';
 
 type InboxItem = {
   id: string;
@@ -10,7 +11,7 @@ type InboxItem = {
   book_id: string;
   note: string | null;
   sender: { username: string } | null;
-  book: { title: string; author: string } | null;
+  book: { title: string; author: string; cover_url: string | null } | null;
 };
 
 const BADGE: Record<string, { bg: string; text: string; label: string }> = {
@@ -80,7 +81,7 @@ export default function InboxScreen() {
       const { data, error: dbError } = await supabase
         .from('recommendations')
         .select(
-          'id, status, book_id, note, sender:profiles!recommendations_from_user_id_fkey(username), book:books(title, author)'
+          'id, status, book_id, note, sender:profiles!recommendations_from_user_id_fkey(username), book:books(title, author, cover_url)'
         )
         .eq('to_user_id', user.id)
         .order('created_at', { ascending: false });
@@ -236,20 +237,25 @@ export default function InboxScreen() {
                 marginBottom: 10,
               }}
             >
-              <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827', marginBottom: 3 }}>
-                {item.book?.title ?? '—'}
-              </Text>
-              <Text style={{ color: '#6b7280', fontSize: 13, marginBottom: 2 }}>
-                {item.book?.author ?? '—'}
-              </Text>
-              <Text style={{ color: '#9ca3af', fontSize: 12, marginBottom: item.note ? 8 : 14 }}>
-                from {item.sender?.username ?? 'unknown'}
-              </Text>
-              {item.note ? (
-                <Text style={{ fontSize: 13, color: '#374151', fontStyle: 'italic', marginBottom: 14 }}>
-                  "{item.note}"
-                </Text>
-              ) : null}
+              <View style={{ flexDirection: 'row', marginBottom: 14 }}>
+                <CoverThumb url={item.book?.cover_url} width={48} height={70} />
+                <View style={{ flex: 1, marginLeft: 14 }}>
+                  <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827', marginBottom: 3 }}>
+                    {item.book?.title ?? '—'}
+                  </Text>
+                  <Text style={{ color: '#6b7280', fontSize: 13, marginBottom: 2 }}>
+                    {item.book?.author ?? '—'}
+                  </Text>
+                  <Text style={{ color: '#9ca3af', fontSize: 12 }}>
+                    from {item.sender?.username ?? 'unknown'}
+                  </Text>
+                  {item.note ? (
+                    <Text style={{ fontSize: 13, color: '#374151', fontStyle: 'italic', marginTop: 6 }}>
+                      "{item.note}"
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
               <TouchableOpacity
                 onPress={() => handleSave(item)}
                 disabled={savingId !== null}
@@ -309,15 +315,15 @@ function RecRow({ item }: { item: InboxItem }) {
   return (
     <View
       style={{
-        paddingVertical: 14,
+        paddingVertical: 12,
         borderBottomWidth: 1,
         borderBottomColor: '#f3f4f6',
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'flex-start',
       }}
     >
-      <View style={{ flex: 1, marginRight: 12 }}>
+      <CoverThumb url={item.book?.cover_url} width={36} height={52} />
+      <View style={{ flex: 1, marginLeft: 12, marginRight: 10 }}>
         <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827', marginBottom: 2 }}>
           {item.book?.title ?? '—'}
         </Text>

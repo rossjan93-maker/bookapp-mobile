@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { CoverThumb } from '../../components/CoverThumb';
 
 type UserBookStatus = 'want_to_read' | 'reading' | 'finished' | 'dnf';
 
@@ -11,7 +12,7 @@ type UserBook = {
   status: UserBookStatus;
   started_at: string | null;
   finished_at: string | null;
-  book: { title: string; author: string } | null;
+  book: { title: string; author: string; cover_url: string | null } | null;
 };
 
 const STATUS_LABELS: Record<UserBookStatus, string> = {
@@ -54,7 +55,7 @@ export default function LibraryScreen() {
 
       const { data, error: dbError } = await supabase
         .from('user_books')
-        .select('id, book_id, status, started_at, finished_at, book:books(title, author)')
+        .select('id, book_id, status, started_at, finished_at, book:books(title, author, cover_url)')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -90,7 +91,6 @@ export default function LibraryScreen() {
       return;
     }
 
-    // update linked recommendation if one exists
     const { data: rec } = await supabase
       .from('recommendations')
       .select('id, from_user_id, to_user_id, book_id')
@@ -128,7 +128,6 @@ export default function LibraryScreen() {
         }
       }
 
-      // activity event for recommendation path — only if rec update succeeded
       if (!recUpdateError) {
         if (newStatus === 'reading') {
           const { error: activityError } = await supabase.from('activity_events').insert({
@@ -153,7 +152,6 @@ export default function LibraryScreen() {
         }
       }
     } else if (newStatus === 'finished') {
-      // activity event for non-recommendation finished book
       const { error: activityError } = await supabase.from('activity_events').insert({
         actor_id: currentUserId,
         event_type: 'book_finished',
@@ -212,58 +210,63 @@ export default function LibraryScreen() {
               paddingVertical: 16,
               borderBottomWidth: 1,
               borderBottomColor: '#f3f4f6',
+              flexDirection: 'row',
+              alignItems: 'flex-start',
             }}
           >
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-              <View style={{ flex: 1, marginRight: 12 }}>
-                <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827', marginBottom: 3 }}>
-                  {item.book?.title ?? '—'}
-                </Text>
-                <Text style={{ color: '#6b7280', fontSize: 13 }}>
-                  {item.book?.author ?? '—'}
-                </Text>
+            <CoverThumb url={item.book?.cover_url} width={40} height={58} />
+            <View style={{ flex: 1, marginLeft: 14 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                <View style={{ flex: 1, marginRight: 10 }}>
+                  <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827', marginBottom: 3 }}>
+                    {item.book?.title ?? '—'}
+                  </Text>
+                  <Text style={{ color: '#6b7280', fontSize: 13 }}>
+                    {item.book?.author ?? '—'}
+                  </Text>
+                </View>
+                <View style={{ backgroundColor: badge.bg, borderRadius: 6, paddingHorizontal: 9, paddingVertical: 4, alignSelf: 'flex-start' }}>
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: badge.text }}>
+                    {STATUS_LABELS[item.status]}
+                  </Text>
+                </View>
               </View>
-              <View style={{ backgroundColor: badge.bg, borderRadius: 6, paddingHorizontal: 9, paddingVertical: 4, alignSelf: 'flex-start' }}>
-                <Text style={{ fontSize: 11, fontWeight: '600', color: badge.text }}>
-                  {STATUS_LABELS[item.status]}
-                </Text>
-              </View>
-            </View>
 
-            {isUpdating ? (
-              <ActivityIndicator color="#111827" style={{ alignSelf: 'flex-start', marginTop: 4 }} />
-            ) : item.status === 'want_to_read' ? (
-              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-                <PrimaryButton
-                  label="Start Reading"
-                  onPress={() => handleUpdateStatus(item, 'reading')}
-                  disabled={isBlocked}
-                />
-                <OutlineButton
-                  label="Mark Finished"
-                  onPress={() => handleUpdateStatus(item, 'finished')}
-                  disabled={isBlocked}
-                />
-                <DangerButton
-                  label="DNF"
-                  onPress={() => handleUpdateStatus(item, 'dnf')}
-                  disabled={isBlocked}
-                />
-              </View>
-            ) : item.status === 'reading' ? (
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                <PrimaryButton
-                  label="Mark Finished"
-                  onPress={() => handleUpdateStatus(item, 'finished')}
-                  disabled={isBlocked}
-                />
-                <DangerButton
-                  label="DNF"
-                  onPress={() => handleUpdateStatus(item, 'dnf')}
-                  disabled={isBlocked}
-                />
-              </View>
-            ) : null}
+              {isUpdating ? (
+                <ActivityIndicator color="#111827" style={{ alignSelf: 'flex-start', marginTop: 4 }} />
+              ) : item.status === 'want_to_read' ? (
+                <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                  <PrimaryButton
+                    label="Start Reading"
+                    onPress={() => handleUpdateStatus(item, 'reading')}
+                    disabled={isBlocked}
+                  />
+                  <OutlineButton
+                    label="Mark Finished"
+                    onPress={() => handleUpdateStatus(item, 'finished')}
+                    disabled={isBlocked}
+                  />
+                  <DangerButton
+                    label="DNF"
+                    onPress={() => handleUpdateStatus(item, 'dnf')}
+                    disabled={isBlocked}
+                  />
+                </View>
+              ) : item.status === 'reading' ? (
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <PrimaryButton
+                    label="Mark Finished"
+                    onPress={() => handleUpdateStatus(item, 'finished')}
+                    disabled={isBlocked}
+                  />
+                  <DangerButton
+                    label="DNF"
+                    onPress={() => handleUpdateStatus(item, 'dnf')}
+                    disabled={isBlocked}
+                  />
+                </View>
+              ) : null}
+            </View>
           </View>
         );
       }}
