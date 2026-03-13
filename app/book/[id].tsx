@@ -354,7 +354,7 @@ export default function BookDetailScreen() {
                 {/* No goal nudge */}
                 {!pagePacing && !datePacingNote && !yearlyGoal && (
                   <TouchableOpacity
-                    onPress={() => router.back()}
+                    onPress={() => router.push('/(tabs)/profile')}
                     style={{
                       backgroundColor: '#faf9f7',
                       borderRadius: 8,
