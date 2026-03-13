@@ -122,28 +122,37 @@ export default function LibraryScreen() {
       // activity event for recommendation path — only if rec update succeeded
       if (!recUpdateError) {
         if (newStatus === 'reading') {
-          supabase.from('activity_events').insert({
+          const { error: activityError } = await supabase.from('activity_events').insert({
             actor_id: currentUserId,
             event_type: 'recommendation_started',
             book_id: rec.book_id,
             recommendation_id: rec.id,
           });
+          if (activityError) {
+            setError(`Status updated but activity failed: ${activityError.message}`);
+          }
         } else if (newStatus === 'finished') {
-          supabase.from('activity_events').insert({
+          const { error: activityError } = await supabase.from('activity_events').insert({
             actor_id: currentUserId,
             event_type: 'recommendation_finished',
             book_id: rec.book_id,
             recommendation_id: rec.id,
           });
+          if (activityError) {
+            setError(`Status updated but activity failed: ${activityError.message}`);
+          }
         }
       }
     } else if (newStatus === 'finished') {
       // activity event for non-recommendation finished book
-      supabase.from('activity_events').insert({
+      const { error: activityError } = await supabase.from('activity_events').insert({
         actor_id: currentUserId,
         event_type: 'book_finished',
         book_id: userBook.book_id,
       });
+      if (activityError) {
+        setError(`Status updated but activity failed: ${activityError.message}`);
+      }
     }
 
     setItems(prev =>

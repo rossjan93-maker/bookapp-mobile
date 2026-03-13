@@ -162,16 +162,20 @@ export default function SearchScreen() {
     if (recError || !newRec) {
       setSendResult({ ok: false, message: recError ? `Could not send: ${recError.message}` : 'Could not send. Try again.' });
     } else {
-      supabase.from('activity_events').insert({
+      const { error: activityError } = await supabase.from('activity_events').insert({
         actor_id: currentUserId,
         event_type: 'recommendation_sent',
         book_id: bookId,
         recommendation_id: newRec.id,
       });
-      setSendResult({
-        ok: true,
-        message: `Sent "${selectedBook.title}" to ${friend.username}.`,
-      });
+      if (activityError) {
+        setSendResult({ ok: false, message: `Recommendation sent but activity failed: ${activityError.message}` });
+      } else {
+        setSendResult({
+          ok: true,
+          message: `Sent "${selectedBook.title}" to ${friend.username}.`,
+        });
+      }
     }
   }
 
