@@ -1,6 +1,6 @@
 import { useCallback, useContext, useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { BadgeContext } from './_layout';
 import { CoverThumb } from '../../components/CoverThumb';
@@ -11,7 +11,7 @@ type InboxItem = {
   book_id: string;
   note: string | null;
   sender: { username: string } | null;
-  book: { title: string; author: string; cover_url: string | null } | null;
+  book: { title: string; author: string; cover_url: string | null; external_id: string } | null;
 };
 
 const BADGE: Record<string, { bg: string; text: string; label: string }> = {
@@ -47,6 +47,7 @@ function SectionLabel({ children }: { children: string }) {
 }
 
 export default function InboxScreen() {
+  const router = useRouter();
   const { setNewRecCount } = useContext(BadgeContext);
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -81,7 +82,7 @@ export default function InboxScreen() {
       const { data, error: dbError } = await supabase
         .from('recommendations')
         .select(
-          'id, status, book_id, note, sender:profiles!recommendations_from_user_id_fkey(username), book:books(title, author, cover_url)'
+          'id, status, book_id, note, sender:profiles!recommendations_from_user_id_fkey(username), book:books(title, author, cover_url, external_id)'
         )
         .eq('to_user_id', user.id)
         .order('created_at', { ascending: false });
@@ -168,6 +169,22 @@ export default function InboxScreen() {
     setSavingId(null);
   }
 
+  function goToDetail(item: InboxItem) {
+    router.push({
+      pathname: '/book/[id]',
+      params: {
+        id: item.book_id,
+        title: item.book?.title ?? '',
+        author: item.book?.author ?? '',
+        coverUrl: item.book?.cover_url ?? '',
+        externalId: item.book?.external_id ?? '',
+        status: item.status,
+        note: item.note ?? '',
+        fromUser: item.sender?.username ?? '',
+      },
+    });
+  }
+
   if (loading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
@@ -237,8 +254,17 @@ export default function InboxScreen() {
                 marginBottom: 10,
               }}
             >
-              <View style={{ flexDirection: 'row', marginBottom: 14 }}>
-                <CoverThumb url={item.book?.cover_url} width={48} height={70} />
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => goToDetail(item)}
+                style={{ flexDirection: 'row', marginBottom: 14 }}
+              >
+                <CoverThumb
+                  url={item.book?.cover_url}
+                  externalId={item.book?.external_id}
+                  width={48}
+                  height={70}
+                />
                 <View style={{ flex: 1, marginLeft: 14 }}>
                   <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827', marginBottom: 3 }}>
                     {item.book?.title ?? '—'}
@@ -255,7 +281,7 @@ export default function InboxScreen() {
                     </Text>
                   ) : null}
                 </View>
-              </View>
+              </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => handleSave(item)}
                 disabled={savingId !== null}
@@ -283,7 +309,7 @@ export default function InboxScreen() {
         <View style={{ marginBottom: 28 }}>
           <SectionLabel>Want to Read</SectionLabel>
           {savedItems.map(item => (
-            <RecRow key={item.id} item={item} />
+            <RecRow key={item.id} item={item} onPress={() => goToDetail(item)} />
           ))}
         </View>
       )}
@@ -293,7 +319,7 @@ export default function InboxScreen() {
         <View style={{ marginBottom: 28 }}>
           <SectionLabel>Reading</SectionLabel>
           {readingItems.map(item => (
-            <RecRow key={item.id} item={item} />
+            <RecRow key={item.id} item={item} onPress={() => goToDetail(item)} />
           ))}
         </View>
       )}
@@ -303,7 +329,7 @@ export default function InboxScreen() {
         <View style={{ marginBottom: 28 }}>
           <SectionLabel>Done</SectionLabel>
           {doneItems.map(item => (
-            <RecRow key={item.id} item={item} />
+            <RecRow key={item.id} item={item} onPress={() => goToDetail(item)} />
           ))}
         </View>
       )}
@@ -311,9 +337,11 @@ export default function InboxScreen() {
   );
 }
 
-function RecRow({ item }: { item: InboxItem }) {
+function RecRow({ item, onPress }: { item: InboxItem; onPress: () => void }) {
   return (
-    <View
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={onPress}
       style={{
         paddingVertical: 12,
         borderBottomWidth: 1,
@@ -322,7 +350,12 @@ function RecRow({ item }: { item: InboxItem }) {
         alignItems: 'flex-start',
       }}
     >
-      <CoverThumb url={item.book?.cover_url} width={36} height={52} />
+      <CoverThumb
+        url={item.book?.cover_url}
+        externalId={item.book?.external_id}
+        width={36}
+        height={52}
+      />
       <View style={{ flex: 1, marginLeft: 12, marginRight: 10 }}>
         <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827', marginBottom: 2 }}>
           {item.book?.title ?? '—'}
@@ -340,6 +373,6 @@ function RecRow({ item }: { item: InboxItem }) {
         ) : null}
       </View>
       <StatusPill status={item.status} />
-    </View>
+    </TouchableOpacity>
   );
 }

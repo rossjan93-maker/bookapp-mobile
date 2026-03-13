@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 
@@ -24,11 +24,12 @@ type Stats = {
 
 type SentRecommendation = {
   id: string;
+  book_id: string;
   status: string;
   created_at: string;
   note: string | null;
   to_user: { username: string } | null;
-  book: { title: string; author: string; cover_url: string | null } | null;
+  book: { title: string; author: string; cover_url: string | null; external_id: string } | null;
 };
 
 const REC_STATUS: Record<string, { bg: string; text: string; label: string }> = {
@@ -55,6 +56,7 @@ function SectionLabel({ children }: { children: string }) {
 }
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const [email, setEmail] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
@@ -121,9 +123,9 @@ export default function ProfileScreen() {
         supabase
           .from('recommendations')
           .select(
-            'id, status, created_at, note, ' +
+            'id, book_id, status, created_at, note, ' +
             'to_user:profiles!recommendations_to_user_id_fkey(username), ' +
-            'book:books!recommendations_book_id_fkey(title, author, cover_url)'
+            'book:books!recommendations_book_id_fkey(title, author, cover_url, external_id)'
           )
           .eq('from_user_id', user.id)
           .order('created_at', { ascending: false })
@@ -296,8 +298,22 @@ export default function ProfileScreen() {
           sentRecs.map(rec => {
             const badge = REC_STATUS[rec.status] ?? { bg: '#f1f5f9', text: '#475569', label: rec.status };
             return (
-              <View
+              <TouchableOpacity
                 key={rec.id}
+                activeOpacity={0.7}
+                onPress={() => router.push({
+                  pathname: '/book/[id]',
+                  params: {
+                    id: rec.book_id,
+                    title: rec.book?.title ?? '',
+                    author: rec.book?.author ?? '',
+                    coverUrl: rec.book?.cover_url ?? '',
+                    externalId: rec.book?.external_id ?? '',
+                    status: rec.status,
+                    note: rec.note ?? '',
+                    toUser: rec.to_user?.username ?? '',
+                  },
+                })}
                 style={{
                   paddingVertical: 12,
                   borderBottomWidth: 1,
@@ -306,7 +322,12 @@ export default function ProfileScreen() {
                   alignItems: 'flex-start',
                 }}
               >
-                <CoverThumb url={rec.book?.cover_url} width={36} height={52} />
+                <CoverThumb
+                  url={rec.book?.cover_url}
+                  externalId={rec.book?.external_id}
+                  width={36}
+                  height={52}
+                />
                 <View style={{ flex: 1, marginLeft: 12, marginRight: 10 }}>
                   <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827', marginBottom: 2 }}>
                     {rec.book?.title ?? '—'}
@@ -334,7 +355,7 @@ export default function ProfileScreen() {
                     {badge.label}
                   </Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           })
         )}

@@ -1,0 +1,134 @@
+Make one controlled “cover reliability + editorial home + lightweight book detail” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not change database schema.
+Do not add migrations unless absolutely necessary.
+Do not refactor unrelated business logic.
+Do not break any current flows.
+
+Goal:
+1. Fix book covers so they reliably appear across the app
+2. Upgrade the Home screen into a more robust, cover-led reading surface
+3. Add a lightweight book detail screen
+4. Move the visual style toward the attached reference image:
+   - warm off-white background
+   - large editorial/serif-style hero heading if feasible with existing fonts, otherwise approximate with stronger typography hierarchy
+   - rounded white cards
+   - soft shadows
+   - spacious layout
+   - clean, premium reading-app feel
+   - no over-designed gradients or heavy decoration
+
+Files allowed to change:
+- components/CoverThumb.tsx
+- app/(tabs)/index.tsx
+- app/(tabs)/notes.tsx
+- app/(tabs)/library.tsx
+- app/(tabs)/profile.tsx
+- app/(tabs)/search.tsx if needed for cover consistency
+- app/friend/[id].tsx if needed for book detail linking
+- create one new route/file for book detail if needed
+- one small shared helper/component file if truly useful
+
+Primary problems to solve
+
+A. Cover images are not reliably populating in:
+- Inbox
+- Profile
+- Library
+
+Fix this robustly.
+
+Requirements for cover reliability:
+1. Continue using books.cover_url when present.
+2. Add a fallback path for older books that have no cover_url:
+   - use books.external_id if available and derive an Open Library cover URL from the work OLID
+   - example pattern: derive OLID from external_id like /works/OL12345W
+   - use that as a fallback cover source
+3. If both cover_url and external_id-derived cover fail, show the existing neutral placeholder block.
+4. Keep this logic centralized in one small reusable place if possible:
+   - either enhance CoverThumb
+   - or add a small helper used by CoverThumb
+5. If needed, expand book selects to include external_id anywhere covers are rendered.
+
+B. Home screen should become more robust and cover-led
+Current activity rows are too thin. Redesign Home so it feels more like a reading app dashboard while preserving existing functionality.
+
+Requirements for Home:
+1. Keep activity as a core part of the screen.
+2. Redesign activity rows/cards so each event can show:
+   - book cover
+   - event text
+   - optional author
+   - relative timestamp
+3. Make the screen feel editorial and welcoming, inspired by the attached image:
+   - warm background
+   - stronger heading
+   - clear sections
+   - rounded cards
+   - more visual breathing room
+4. Preserve the existing social/feed purpose.
+5. Keep Find Friends and Friends access, but integrate them into the new Home layout cleanly.
+6. Do not remove friend detail navigation.
+
+C. Lightweight book detail screen
+Add a simple tappable book detail surface.
+
+Requirements:
+1. A user should be able to tap a book from at least these places:
+   - Home activity card
+   - Inbox rows/cards
+   - Library rows
+   - Profile recommendations sent rows
+2. Create a lightweight book detail screen that shows:
+   - cover
+   - title
+   - author
+   - recommendation note if relevant and available
+   - current status if relevant and available
+   - lightweight recent context if available (for example who sent it / who you sent it to, depending on entry point)
+3. Keep it simple.
+4. Do not build full reviews/comments/history yet.
+5. Reuse existing data where possible.
+6. If different entry points provide different context, pass lightweight route params as needed rather than over-querying.
+
+Visual direction
+Use the attached image as stylistic inspiration, not something to clone exactly.
+Aim for:
+- premium reading app
+- soft cream / warm neutral page background
+- white cards with rounded corners
+- subtle shadows
+- larger type hierarchy
+- cover-first layouts
+- cleaner spacing
+- calmer, less utilitarian UI
+
+Important constraints
+- Preserve all current flows:
+  - recommendation sending
+  - note sending
+  - inbox save flow
+  - library progression
+  - activity feed logic
+  - unread badge
+  - profile tracker
+  - friend detail screen
+- Do not change recommendation/credibility logic.
+- Do not add a full design system abstraction.
+- Keep changes explicit and practical.
+
+Implementation hints
+- Most likely the missing-cover issue is because older DB rows have null cover_url. Solve that with runtime fallback from external_id.
+- If Search already stores cover_url for new books, keep that behavior.
+- For the Home redesign, prefer stronger section composition over adding lots of new data.
+- If needed, create a reusable BookRowCard / BookMeta block, but keep it minimal.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. any tradeoffs made about where book detail links were added vs omitted
+6. any cover fallback logic added and how it works
