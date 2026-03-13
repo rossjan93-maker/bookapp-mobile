@@ -1,0 +1,81 @@
+Make one targeted “date-based pacing state should also drive Currently Reading card styling” pass.
+
+Do not change package versions.
+Do not add packages.
+Do not refactor unrelated logic.
+Do not change schema.
+Do not break recommendation / credibility / activity flows.
+
+Goal:
+Right now the Currently Reading cards in Profile only show green/amber border styling when page-based pacing is available (page_count + current_page). When page_count is missing, the app falls back to date-based pacing copy like “On pace — target Mar 29”, but the card stays visually neutral.
+
+Fix that.
+
+We want date-based fallback pacing to also produce a real pacing state, so the card styling still communicates momentum even when page_count is unknown.
+
+Scope:
+Only inspect and edit:
+- lib/pacing.ts
+- app/(tabs)/profile.tsx
+- app/book/[id].tsx only if needed for consistency, but prefer to keep scope mainly to lib/pacing.ts + profile.tsx
+
+Requirements
+
+A. Date-based pacing should return a state
+1. Update the date-based pacing helper so it can return not just a string note, but also a pacing state:
+   - ahead
+   - on_pace
+   - behind
+2. This should be based on:
+   - startedAt
+   - yearlyGoal
+   - current date
+3. Keep it honest. With no page data, do not pretend to know actual pages/day.
+4. But it is still reasonable to classify momentum using time elapsed vs target finish timing.
+
+B. Currently Reading cards should use date-based state when page-based state is unavailable
+1. If page-based pacing exists, keep using it.
+2. If page-based pacing is unavailable but date-based pacing exists, use the date-based state for:
+   - border color
+   - chip styling
+3. Desired visual behavior:
+   - ahead / on_pace → green border
+   - behind → amber border
+4. Keep the style aligned with the current design language.
+
+C. Keep pacing copy honest
+1. Date-based fallback copy should remain simple and time-based.
+2. Do not add fake pages/day when page_count is missing.
+3. Examples are fine like:
+   - “Ahead of pace · target Mar 29”
+   - “On pace · target Mar 29”
+   - “Finish in 4 days to stay on pace”
+4. Do not over-engineer.
+
+D. Preserve page-based behavior
+1. Do not break the current page-based pacing state.
+2. If page_count + current_page exist, that logic remains the primary source of truth.
+3. Only use date-based state as the fallback when page-based pacing is unavailable.
+
+E. Preserve all current flows
+Do not break:
+- Profile loading
+- Currently Reading rendering
+- Reader Insights
+- yearly goal editing
+- book detail routing
+- progress tracking
+- manual page count flow
+- existing pacing copy for page-based states
+
+Implementation guidance
+1. Prefer evolving the existing date-based helper into a richer return type rather than creating lots of duplicate logic.
+2. Keep the change small and explicit.
+3. The final behavior should make cards visually informative even before page_count is known.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. how date-based pacing state now works

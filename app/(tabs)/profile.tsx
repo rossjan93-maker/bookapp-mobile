@@ -10,7 +10,7 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
-import { computePacingNote, computePagePacing, computeGoalProgress } from '../../lib/pacing';
+import { computeDatePacing, computePagePacing, computeGoalProgress } from '../../lib/pacing';
 import { computeAvgPagesPerDay } from '../../lib/signals';
 
 type Profile = {
@@ -595,7 +595,10 @@ export default function ProfileScreen() {
                 pacingState = p.state;
                 pacingIsAhead = p.state === 'ahead';
               } else {
-                pacingStr = computePacingNote(item.started_at, yearlyGoal);
+                const dp  = computeDatePacing(item.started_at, yearlyGoal);
+                pacingStr   = dp?.note ?? null;
+                pacingState = dp?.state ?? null;
+                pacingIsAhead = false; // date-based never claims 'ahead'
               }
 
               return (

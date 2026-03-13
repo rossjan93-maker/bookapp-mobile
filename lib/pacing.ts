@@ -35,30 +35,55 @@ export function targetFinishDate(
 // Date-based pacing (no page count)
 // ---------------------------------------------------------------------------
 
+export type DatePacingResult = {
+  note: string;
+  state: PacingState;
+};
+
 /**
- * Returns a short human-readable pacing note for a currently-reading book.
- * Returns null if insufficient data.
+ * Date-based pacing with a real pacing state.
+ * No page data is required — state is derived purely from time elapsed vs target.
+ * Returns null if insufficient data (no goal or no startedAt).
+ *
+ * State mapping:
+ *   behind   — target date has already passed (daysLeft < 0)
+ *   on_pace  — target date is still in the future
+ * (ahead cannot be determined honestly without page data)
  */
-export function computePacingNote(
+export function computeDatePacing(
   startedAt: string | null | undefined,
   yearlyGoal: number | null | undefined
-): string | null {
+): DatePacingResult | null {
   if (!yearlyGoal || yearlyGoal <= 0 || !startedAt) return null;
 
   const start = new Date(startedAt);
   if (isNaN(start.getTime())) return null;
 
-  const target = targetFinishDate(startedAt, yearlyGoal);
-  const daysLeft = Math.ceil(
-    (target.getTime() - Date.now()) / (24 * 60 * 60 * 1000)
-  );
+  const target   = targetFinishDate(startedAt, yearlyGoal);
+  const daysLeft = Math.ceil((target.getTime() - Date.now()) / 86_400_000);
 
-  if (daysLeft < -14) return 'Behind pace — finish when you can';
-  if (daysLeft < 0)   return 'Slightly behind — aim to finish soon';
-  if (daysLeft === 0) return 'Finish today to stay on pace';
-  if (daysLeft === 1) return 'Finish tomorrow to stay on pace';
-  if (daysLeft <= 5)  return `Finish in ${daysLeft} days to stay on pace`;
-  return `On pace — target ${shortDate(target)}`;
+  const state: PacingState = daysLeft < 0 ? 'behind' : 'on_pace';
+
+  let note: string;
+  if (daysLeft < -14)  note = 'Behind pace — finish when you can';
+  else if (daysLeft < 0)   note = 'Slightly behind — aim to finish soon';
+  else if (daysLeft === 0) note = 'Finish today to stay on pace';
+  else if (daysLeft === 1) note = 'Finish tomorrow to stay on pace';
+  else if (daysLeft <= 5)  note = `Finish in ${daysLeft} days to stay on pace`;
+  else                     note = `On pace — target ${shortDate(target)}`;
+
+  return { note, state };
+}
+
+/**
+ * Returns just the human-readable pacing note (backward-compat wrapper).
+ * Prefer computeDatePacing() when you also need the state.
+ */
+export function computePacingNote(
+  startedAt: string | null | undefined,
+  yearlyGoal: number | null | undefined
+): string | null {
+  return computeDatePacing(startedAt, yearlyGoal)?.note ?? null;
 }
 
 // ---------------------------------------------------------------------------
