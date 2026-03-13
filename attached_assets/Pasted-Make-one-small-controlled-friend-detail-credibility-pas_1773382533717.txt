@@ -1,0 +1,68 @@
+Make one small controlled friend-detail / credibility pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not change database schema.
+Do not add migrations.
+Do not refactor unrelated files.
+Do not build messaging, comments, or public profiles.
+
+Goal:
+Let a user tap into a friend-level trust/credibility view so the product starts showing “whose recommendations land.”
+
+Files allowed to change:
+- app/(tabs)/index.tsx
+- app/(tabs)/profile.tsx
+- create one new route/file if needed for a friend detail screen
+- shared helper/component file only if truly needed and kept minimal
+
+Requirements:
+1. Add a way to open a friend detail view from an existing screen.
+   Preferred entry points:
+   - Home tab → Friends list
+   - optionally Profile tab friend-related rows if useful
+   Keep it simple.
+
+2. Create a friend detail screen that shows:
+   - friend username
+   - a simple avatar/initial
+   - credibility-related stats for that friend, using existing data where possible
+
+3. On the friend detail screen, show at minimum:
+   - recommendations landed
+     - count of credibility_events where from_user_id = friend.id
+   - finished from recommendations
+     - count of credibility_events where to_user_id = friend.id
+   - optional total finished books if easy using user_books for that friend
+   - do not expose anything private beyond what the current social model already implies
+
+4. If possible with current RLS and schema, also show a lightweight recent activity or recommendation history for that friend.
+   Keep it minimal.
+   If current RLS does not support it cleanly, skip it rather than overbuilding.
+
+5. Preserve existing flows:
+   - Home feed
+   - friend discovery
+   - Inbox
+   - Library
+   - Profile
+   - sender tracker
+   - notes
+   - unread badge
+
+6. Keep the UI simple and aligned with the current visual system.
+7. Add loading / empty / error states.
+8. Keep changed files to a minimum.
+
+Important:
+- Use existing RLS and existing tables first.
+- Do not add new backend logic unless truly necessary.
+- If current RLS blocks a useful query for friend stats, identify the minimal safe change needed rather than hacking around it.
+- If a new migration is required for safe friend-level read access, create only the smallest necessary one and clearly explain why.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. any RLS limitation encountered and whether you solved it or deferred it

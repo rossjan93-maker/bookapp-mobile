@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 
 type FeedEvent = {
@@ -111,6 +111,7 @@ function InitialAvatar({ name }: { name: string }) {
 }
 
 export default function HomeScreen() {
+  const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
 
   const [feed, setFeed] = useState<FeedEvent[]>([]);
@@ -379,19 +380,24 @@ export default function HomeScreen() {
         <Text style={{ color: '#9ca3af', fontSize: 14, marginBottom: 16 }}>No friends yet.</Text>
       ) : (
         acceptedFriends.map(friend => (
-          <View
+          <TouchableOpacity
             key={friend.id}
+            onPress={() => router.push({ pathname: '/friend/[id]', params: { id: friend.id, username: friend.username } })}
             style={{
               flexDirection: 'row',
               alignItems: 'center',
+              justifyContent: 'space-between',
               paddingVertical: 10,
               borderBottomWidth: 1,
               borderBottomColor: '#f3f4f6',
             }}
           >
-            <InitialAvatar name={friend.username} />
-            <Text style={{ fontSize: 15, color: '#111827' }}>{friend.username}</Text>
-          </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <InitialAvatar name={friend.username} />
+              <Text style={{ fontSize: 15, color: '#111827' }}>{friend.username}</Text>
+            </View>
+            <Text style={{ fontSize: 18, color: '#d1d5db', marginRight: 2 }}>›</Text>
+          </TouchableOpacity>
         ))
       )}
     </ScrollView>
