@@ -7,7 +7,9 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
+import { computePacingNote } from '../../lib/pacing';
 
 const STATUS_META: Record<string, { bg: string; text: string; label: string }> = {
   want_to_read: { bg: '#f1f5f9', text: '#475569', label: 'Want to Read' },
@@ -32,23 +34,19 @@ function extractOLID(externalId: string): string | null {
 async function fetchOLMeta(externalId: string): Promise<OLMeta> {
   const olid = extractOLID(externalId);
   if (!olid) return { description: null, subjects: [] };
-
   try {
     const res = await fetch(`https://openlibrary.org/works/${olid}.json`);
     if (!res.ok) return { description: null, subjects: [] };
     const data = await res.json();
-
     let description: string | null = null;
     if (typeof data.description === 'string') {
       description = data.description;
-    } else if (data.description && typeof data.description.value === 'string') {
+    } else if (data.description?.value) {
       description = data.description.value;
     }
-
     const subjects: string[] = Array.isArray(data.subjects)
       ? data.subjects.slice(0, 8)
       : [];
-
     return { description, subjects };
   } catch {
     return { description: null, subjects: [] };
@@ -73,7 +71,6 @@ function SectionLabel({ children }: { children: string }) {
 export default function BookDetailScreen() {
   const router = useRouter();
   const {
-    id,
     title,
     author,
     coverUrl,
@@ -82,6 +79,8 @@ export default function BookDetailScreen() {
     note,
     fromUser,
     toUser,
+    startedAt,
+    readingGoal: readingGoalParam,
   } = useLocalSearchParams<{
     id?: string;
     title?: string;
@@ -92,14 +91,18 @@ export default function BookDetailScreen() {
     note?: string;
     fromUser?: string;
     toUser?: string;
+    startedAt?: string;
+    readingGoal?: string;
   }>();
 
   const [olMeta, setOlMeta] = useState<OLMeta | null>(null);
   const [metaLoading, setMetaLoading] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
+  const [pacingNote, setPacingNote] = useState<string | null>(null);
 
   const badge = status ? (STATUS_META[status] ?? null) : null;
   const hasRecContext = !!(fromUser || toUser || note);
+  const isReading = status === 'reading' || status === 'started';
 
   useEffect(() => {
     if (!externalId) return;
@@ -109,6 +112,30 @@ export default function BookDetailScreen() {
       setMetaLoading(false);
     });
   }, [externalId]);
+
+  // Compute pacing: try inline param first, then fetch yearly goal if needed
+  useEffect(() => {
+    if (!isReading || !startedAt) return;
+
+    const goalFromParam = readingGoalParam ? parseInt(readingGoalParam, 10) : NaN;
+    if (!isNaN(goalFromParam) && goalFromParam > 0) {
+      setPacingNote(computePacingNote(startedAt, goalFromParam));
+      return;
+    }
+
+    // Fallback: fetch yearly_reading_goal from profiles
+    supabase?.auth.getUser().then(async ({ data }) => {
+      if (!data.user || !supabase) return;
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('yearly_reading_goal')
+        .eq('id', data.user.id)
+        .single();
+      if (profileData?.yearly_reading_goal) {
+        setPacingNote(computePacingNote(startedAt, profileData.yearly_reading_goal));
+      }
+    });
+  }, [isReading, startedAt, readingGoalParam]);
 
   const descText = olMeta?.description ?? null;
   const DESC_LIMIT = 320;
@@ -161,19 +188,47 @@ export default function BookDetailScreen() {
           {author ?? '—'}
         </Text>
 
-        {/* ── Status badge ── */}
-        {badge && (
-          <View style={{ flexDirection: 'row', marginBottom: 24 }}>
-            <View style={{
-              backgroundColor: badge.bg,
-              borderRadius: 8,
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-            }}>
-              <Text style={{ fontSize: 12, fontWeight: '600', color: badge.text }}>
-                {badge.label}
-              </Text>
-            </View>
+        {/* ── Status + pacing ── */}
+        {(badge || (isReading && (pacingNote || startedAt))) && (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
+            {badge && (
+              <View style={{
+                backgroundColor: badge.bg,
+                borderRadius: 8,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+              }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: badge.text }}>
+                  {badge.label}
+                </Text>
+              </View>
+            )}
+            {isReading && pacingNote && (
+              <View style={{
+                backgroundColor: '#fef9f0',
+                borderRadius: 8,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderWidth: 1,
+                borderColor: '#fde68a',
+              }}>
+                <Text style={{ fontSize: 12, fontWeight: '500', color: '#92400e' }}>
+                  {pacingNote}
+                </Text>
+              </View>
+            )}
+            {isReading && !pacingNote && !readingGoalParam && (
+              <View style={{
+                backgroundColor: '#f5f5f4',
+                borderRadius: 8,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+              }}>
+                <Text style={{ fontSize: 12, color: '#a8a29e' }}>
+                  Set a reading goal to get pacing guidance
+                </Text>
+              </View>
+            )}
           </View>
         )}
 
@@ -191,13 +246,13 @@ export default function BookDetailScreen() {
             elevation: 1,
           }}>
             {fromUser ? (
-              <View style={{ marginBottom: note || toUser ? 12 : 0 }}>
+              <View style={{ marginBottom: note || toUser ? 14 : 0 }}>
                 <SectionLabel>Recommended by</SectionLabel>
                 <Text style={{ fontSize: 15, fontWeight: '600', color: '#111827' }}>{fromUser}</Text>
               </View>
             ) : null}
             {toUser ? (
-              <View style={{ marginBottom: note ? 12 : 0 }}>
+              <View style={{ marginBottom: note ? 14 : 0 }}>
                 <SectionLabel>Recommended to</SectionLabel>
                 <Text style={{ fontSize: 15, fontWeight: '600', color: '#111827' }}>{toUser}</Text>
               </View>
@@ -205,12 +260,7 @@ export default function BookDetailScreen() {
             {note ? (
               <View>
                 <SectionLabel>Their note</SectionLabel>
-                <Text style={{
-                  fontSize: 14,
-                  color: '#374151',
-                  fontStyle: 'italic',
-                  lineHeight: 22,
-                }}>
+                <Text style={{ fontSize: 14, color: '#374151', fontStyle: 'italic', lineHeight: 22 }}>
                   "{note}"
                 </Text>
               </View>
@@ -218,13 +268,11 @@ export default function BookDetailScreen() {
           </View>
         )}
 
-        {/* ── OL metadata: description ── */}
+        {/* ── OL description ── */}
         {metaLoading ? (
-          <View style={{ marginBottom: 18 }}>
-            <ActivityIndicator color="#a8a29e" size="small" />
-          </View>
+          <ActivityIndicator color="#a8a29e" size="small" style={{ marginBottom: 18, alignSelf: 'flex-start' }} />
         ) : displayDesc ? (
-          <View style={{ marginBottom: 18 }}>
+          <View style={{ marginBottom: 20 }}>
             <SectionLabel>About this book</SectionLabel>
             <Text style={{ fontSize: 14, color: '#374151', lineHeight: 23 }}>
               {displayDesc}
@@ -243,7 +291,7 @@ export default function BookDetailScreen() {
           </View>
         ) : null}
 
-        {/* ── OL subjects / genres ── */}
+        {/* ── OL subjects ── */}
         {olMeta && olMeta.subjects.length > 0 && (
           <View style={{ marginBottom: 22 }}>
             <SectionLabel>Subjects</SectionLabel>
@@ -265,7 +313,7 @@ export default function BookDetailScreen() {
           </View>
         )}
 
-        {/* ── Taste Fit (foundation placeholder) ── */}
+        {/* ── Taste Match placeholder ── */}
         {externalId ? (
           <View style={{
             backgroundColor: '#fff',
@@ -274,7 +322,6 @@ export default function BookDetailScreen() {
             borderWidth: 1,
             borderColor: '#f0ede8',
             borderStyle: 'dashed',
-            marginBottom: 8,
           }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
               <View style={{
@@ -288,13 +335,19 @@ export default function BookDetailScreen() {
                   COMING SOON
                 </Text>
               </View>
-              <Text style={{ fontSize: 14, fontWeight: '700', color: '#1c1917' }}>
-                Taste Match
-              </Text>
+              <Text style={{ fontSize: 14, fontWeight: '700', color: '#1c1917' }}>Taste Match</Text>
             </View>
             <Text style={{ fontSize: 13, color: '#a8a29e', lineHeight: 20 }}>
-              Once we know your reading history better, we'll explain why this book might (or might not) be a great fit for you.
+              Once we know your reading history and taste better, we'll explain why this book might — or might not — be a great fit for you.
             </Text>
+            <TouchableOpacity
+              onPress={() => router.push('/edit-preferences')}
+              style={{ marginTop: 12 }}
+            >
+              <Text style={{ fontSize: 13, color: '#78716c', textDecorationLine: 'underline' }}>
+                Build your taste profile →
+              </Text>
+            </TouchableOpacity>
           </View>
         ) : null}
       </View>

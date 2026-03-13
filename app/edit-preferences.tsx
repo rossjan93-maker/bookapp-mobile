@@ -1,0 +1,257 @@
+import { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { supabase } from '../lib/supabase';
+
+const GENRES = [
+  'Literary Fiction', 'Fantasy', 'Sci-Fi', 'Mystery', 'Thriller',
+  'Romance', 'Horror', 'Historical Fiction', 'Non-Fiction', 'History',
+  'Biography', 'Self-Help', 'Business', 'Science', 'Poetry',
+  'Graphic Novel', 'Young Adult', 'Classic',
+];
+
+const STYLES = [
+  'Fast-paced', 'Slow-burn', 'Character-driven', 'Plot-driven',
+  'Dense prose', 'Light read', 'Dark themes', 'Funny / Witty',
+  'Reflective', 'Action-packed',
+];
+
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <Text style={{
+      fontSize: 11,
+      fontWeight: '700',
+      color: '#a8a29e',
+      letterSpacing: 0.9,
+      textTransform: 'uppercase',
+      marginBottom: 12,
+    }}>
+      {children}
+    </Text>
+  );
+}
+
+function ChipGroup({
+  options,
+  selected,
+  onToggle,
+  activeColor,
+}: {
+  options: string[];
+  selected: string[];
+  onToggle: (val: string) => void;
+  activeColor: string;
+}) {
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 28 }}>
+      {options.map(opt => {
+        const active = selected.includes(opt);
+        return (
+          <TouchableOpacity
+            key={opt}
+            onPress={() => onToggle(opt)}
+            style={{
+              paddingHorizontal: 13,
+              paddingVertical: 8,
+              borderRadius: 20,
+              borderWidth: 1.5,
+              borderColor: active ? activeColor : '#e7e5e4',
+              backgroundColor: active ? activeColor + '22' : '#fff',
+            }}
+          >
+            <Text style={{
+              fontSize: 13,
+              fontWeight: active ? '600' : '400',
+              color: active ? activeColor : '#78716c',
+            }}>
+              {opt}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+function toggle(arr: string[], val: string): string[] {
+  return arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val];
+}
+
+export default function EditPreferencesScreen() {
+  const router = useRouter();
+  const [userId, setUserId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const [favoriteGenres, setFavoriteGenres] = useState<string[]>([]);
+  const [avoidGenres, setAvoidGenres] = useState<string[]>([]);
+  const [readingStyles, setReadingStyles] = useState<string[]>([]);
+  const [favoriteAuthors, setFavoriteAuthors] = useState('');
+
+  useEffect(() => {
+    async function load() {
+      if (!supabase) { setLoading(false); return; }
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoading(false); return; }
+      setUserId(user.id);
+
+      const { data } = await supabase
+        .from('reader_preferences')
+        .select('favorite_genres, avoid_genres, reading_styles, favorite_authors')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (data) {
+        setFavoriteGenres(data.favorite_genres ?? []);
+        setAvoidGenres(data.avoid_genres ?? []);
+        setReadingStyles(data.reading_styles ?? []);
+        setFavoriteAuthors(data.favorite_authors ?? '');
+      }
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  async function handleSave() {
+    if (!supabase || !userId) return;
+    setSaving(true);
+    setSaveSuccess(false);
+
+    const payload = {
+      user_id: userId,
+      favorite_genres: favoriteGenres,
+      avoid_genres: avoidGenres,
+      reading_styles: readingStyles,
+      favorite_authors: favoriteAuthors.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase
+      .from('reader_preferences')
+      .upsert(payload, { onConflict: 'user_id' });
+
+    setSaving(false);
+    if (!error) {
+      setSaveSuccess(true);
+      setTimeout(() => router.back(), 700);
+    }
+  }
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#faf9f7' }}>
+        <ActivityIndicator color="#78716c" />
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      style={{ flex: 1, backgroundColor: '#faf9f7' }}
+      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 60, paddingBottom: 56 }}
+      keyboardShouldPersistTaps="handled"
+    >
+      <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 20 }}>
+        <Text style={{ fontSize: 14, color: '#6b7280' }}>← Back</Text>
+      </TouchableOpacity>
+
+      <Text style={{
+        fontSize: 28,
+        fontWeight: '800',
+        color: '#1c1917',
+        letterSpacing: -0.5,
+        marginBottom: 6,
+      }}>
+        Reading Taste
+      </Text>
+      <Text style={{ fontSize: 14, color: '#a8a29e', marginBottom: 32, lineHeight: 21 }}>
+        Tell us what you enjoy. This helps us understand your taste — and will power fit insights for books you're considering.
+      </Text>
+
+      {/* ── Genres I enjoy ── */}
+      <SectionLabel>Genres I tend to enjoy</SectionLabel>
+      <ChipGroup
+        options={GENRES}
+        selected={favoriteGenres}
+        onToggle={val => setFavoriteGenres(prev => toggle(prev, val))}
+        activeColor="#1c1917"
+      />
+
+      {/* ── Genres I skip ── */}
+      <SectionLabel>Genres I usually skip</SectionLabel>
+      <ChipGroup
+        options={GENRES}
+        selected={avoidGenres}
+        onToggle={val => setAvoidGenres(prev => toggle(prev, val))}
+        activeColor="#b91c1c"
+      />
+
+      {/* ── Reading style ── */}
+      <SectionLabel>Reading style I prefer</SectionLabel>
+      <ChipGroup
+        options={STYLES}
+        selected={readingStyles}
+        onToggle={val => setReadingStyles(prev => toggle(prev, val))}
+        activeColor="#1d4ed8"
+      />
+
+      {/* ── Favorite authors ── */}
+      <SectionLabel>Authors I love</SectionLabel>
+      <View style={{
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        marginBottom: 36,
+        shadowColor: '#000',
+        shadowOpacity: 0.04,
+        shadowRadius: 4,
+        shadowOffset: { width: 0, height: 1 },
+        elevation: 1,
+      }}>
+        <TextInput
+          value={favoriteAuthors}
+          onChangeText={setFavoriteAuthors}
+          placeholder="e.g. Kazuo Ishiguro, Toni Morrison, Elena Ferrante"
+          placeholderTextColor="#a8a29e"
+          multiline
+          style={{ fontSize: 14, color: '#1c1917', lineHeight: 22, minHeight: 56 }}
+        />
+      </View>
+
+      {/* ── Save ── */}
+      <TouchableOpacity
+        onPress={handleSave}
+        disabled={saving || saveSuccess}
+        style={{
+          backgroundColor: saveSuccess ? '#15803d' : saving ? '#d6d3d1' : '#1c1917',
+          borderRadius: 13,
+          paddingVertical: 16,
+          alignItems: 'center',
+        }}
+      >
+        {saving ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>
+            {saveSuccess ? 'Saved ✓' : 'Save Preferences'}
+          </Text>
+        )}
+      </TouchableOpacity>
+
+      {favoriteGenres.length === 0 && avoidGenres.length === 0 && readingStyles.length === 0 && !favoriteAuthors && (
+        <Text style={{ fontSize: 12, color: '#a8a29e', textAlign: 'center', marginTop: 16, lineHeight: 18 }}>
+          No selections yet — tap any chip above to start building your taste profile.
+        </Text>
+      )}
+    </ScrollView>
+  );
+}

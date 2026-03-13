@@ -251,6 +251,7 @@ export default function LibraryScreen() {
                   coverUrl: item.book?.cover_url ?? '',
                   externalId: item.book?.external_id ?? '',
                   status: item.status,
+                  startedAt: item.started_at ?? '',
                 },
               })}
               style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: hasButtons || isUpdating ? 10 : 0 }}

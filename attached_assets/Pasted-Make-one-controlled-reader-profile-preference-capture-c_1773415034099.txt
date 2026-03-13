@@ -1,0 +1,182 @@
+Make one controlled “reader profile + preference capture + currently reading + pacing foundation” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not add real AI / LLM integrations yet.
+Do not refactor unrelated business logic.
+Do not break recommendation / credibility / activity flows.
+Do not build invite/share features in this pass.
+
+Goal:
+Build the foundation for future taste-fit and pacing by:
+1. capturing user reading preferences in a structured way
+2. making Profile feel materially more valuable and visually impactful
+3. adding a strong “Currently Reading” section
+4. introducing pacing logic tied to the user’s yearly reading goal
+5. laying the groundwork for future “Will I like this?” explanations without implementing AI yet
+
+This should feel like a meaningful product upgrade, not just a cosmetic pass.
+
+Files allowed to change:
+- app/(tabs)/profile.tsx
+- app/(tabs)/library.tsx if needed for reading / pacing entry points
+- app/book/[id].tsx if needed for pacing/progress display or update
+- add one new route/file if needed for preference capture or editing
+- add one small shared helper/component file if truly useful
+- schema/migration only if truly required for preference capture or pacing data
+- app/(tabs)/index.tsx only if needed for profile entry consistency
+- app/(tabs)/notes.tsx and app/(tabs)/search.tsx only if needed for consistency, otherwise avoid
+
+Primary product objectives
+
+A. Preference capture for future taste-fit
+Users need a clear way to tell the app what they tend to like.
+
+Requirements:
+1. Add a lightweight preference capture/edit experience.
+2. It should support at minimum:
+   - favorite genres
+   - genres they tend to avoid
+   - favorite authors
+   - preferred pacing/style if useful (examples: fast-paced, reflective, dense, plot-driven, character-driven)
+   - optional reading intent / mood preferences if small and clean
+3. Keep the UX simple:
+   - chips / toggles / compact text entry
+   - not a giant survey
+4. Preferences should be editable from Profile.
+5. Store preferences in the smallest safe schema possible.
+6. This is the foundation for future taste-fit, so structure the data cleanly.
+
+B. Profile redesign
+Profile needs to do more than show static counts.
+
+Requirements:
+1. Add a strong “Currently Reading” section to Profile.
+2. This section should feel visually important.
+3. Show current books with covers and useful status context.
+4. If feasible without new packages, use one of:
+   - horizontal card rail
+   - stacked cover treatment
+   - compact carousel-like scroll
+5. Redesign the stats area so these feel more impactful:
+   - Friends
+   - Books Finished
+   - Recs Landed
+   - Finished from Recs
+6. Use stronger visual hierarchy than the current grid.
+7. If helpful, incorporate stacked cover imagery or micro-visuals rather than only plain numbers.
+8. Keep Friend Requests and Recommendations Sent accessible and working.
+
+C. Currently Reading should be a first-class surface
+Requirements:
+1. The app should clearly surface books with status = reading.
+2. This should appear prominently on Profile.
+3. If useful, also improve Library / Book Detail to support the reading-state experience.
+4. For each currently reading book, try to show:
+   - cover
+   - title
+   - author
+   - reading status
+   - pacing guidance if available
+5. Make this section feel like an active reading dashboard, not just another list.
+
+D. Pacing foundation
+I want pacing to become a real part of the product.
+
+Requirements:
+1. Keep the existing yearly reading goal concept and make it more useful.
+2. For books a user starts reading, calculate a pacing target that helps them stay on track for their yearly goal.
+3. This should be grounded in the best available information.
+
+Preferred pacing logic:
+- If enough page-level information exists:
+  - use page count and user reading pace data to estimate pages/day needed
+- If page-level information is incomplete:
+  - fall back to a simpler per-book cadence / target finish date that still supports the yearly goal
+
+4. Introduce the smallest clean data foundation needed for this.
+5. If necessary, add minimal fields such as:
+   - page count support
+   - current page / reading progress
+   - progress update timestamp
+   only if truly needed and only with the smallest safe migration
+
+6. If the system does not yet have enough data to estimate a user’s reading speed, handle it gracefully:
+   - show a simple target finish date
+   - or show a lightweight “pace guidance coming into focus” style message
+   - do not fake precision
+
+7. Once a book is in Reading, the user should be able to see pacing guidance somewhere useful:
+   - Profile Currently Reading section
+   - Book Detail
+   - or both
+
+E. Future taste-fit foundation only
+Do NOT add actual AI in this pass.
+Do NOT fabricate “you will like this” explanations.
+
+Instead:
+1. Prepare the structure for a future section like:
+   - Taste Match
+   - Why this may fit you
+2. Base it on real captured signals only.
+3. If useful, show a placeholder or readiness state such as:
+   - “Tell us more about your taste to unlock fit insights”
+   - or “We’re learning your reading style”
+4. Do not add LLM/API calls yet.
+
+F. Book detail support
+If helpful, expand book detail so it can support the new reader model.
+
+When useful, book detail can show:
+- progress / current page
+- page count if available
+- pace target
+- yearly-goal relevance
+- future taste-fit placeholder
+- personal note / recommendation note context already supported
+
+Do not overbuild this.
+Only add what strengthens the new profile + pacing system.
+
+G. Preserve all current flows
+Do not break:
+- recommendation sending
+- note sending
+- inbox lifecycle grouping
+- unread/new badge
+- manual add flow
+- library progression
+- credibility events
+- activity feed
+- profile tracker
+- friend detail screen
+- cover rendering and fallback logic
+- existing book detail routing
+
+Implementation guidance
+1. Prefer one integrated reader-profile system rather than scattered fields.
+2. If a new schema object/table is needed for preferences, make it minimal and explicit.
+3. If pacing requires page data and page data is not consistently available from metadata:
+   - support graceful fallback
+   - allow manual page count / current page where appropriate if that is the cleanest path
+4. If a carousel package would be overkill, use a horizontal ScrollView or FlatList instead.
+5. Keep the design aligned with the current editorial reading-app style:
+   - warm neutrals
+   - strong hierarchy
+   - premium but simple
+   - cover-led where helpful
+
+Important constraints
+- This is a product-foundation pass, not the full AI taste-fit implementation.
+- Keep logic honest.
+- Prefer graceful partial functionality over fake sophistication.
+- Make the profile materially more compelling.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. any schema or pacing tradeoff made
+6. what was added now vs intentionally deferred for the future AI taste-fit layer
