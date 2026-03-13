@@ -116,7 +116,14 @@ export default function BookDetailScreen() {
   const [savingProgress, setSavingProgress] = useState(false);
   const [progressError, setProgressError]  = useState<string | null>(null);
 
-  const pageInputRef = useRef<TextInput>(null);
+  // Inline page-count editor (missing page count recovery)
+  const [editingPageCount, setEditingPageCount] = useState(false);
+  const [pageCountInput, setPageCountInput] = useState('');
+  const [savingPageCount, setSavingPageCount] = useState(false);
+  const [pageCountError, setPageCountError] = useState<string | null>(null);
+
+  const pageInputRef      = useRef<TextInput>(null);
+  const pageCountInputRef = useRef<TextInput>(null);
 
   const badge      = status ? (STATUS_META[status] ?? null) : null;
   const hasRecCtx  = !!(fromUser || toUser || note);
@@ -230,6 +237,29 @@ export default function BookDetailScreen() {
       Keyboard.dismiss();
     } else {
       setProgressError('Could not save — try again.');
+    }
+  }
+
+  async function handleSavePageCount() {
+    if (!supabase || !bookId) return;
+    const newCount = parseInt(pageCountInput.trim(), 10);
+    if (isNaN(newCount) || newCount < 1 || newCount > 9999) {
+      setPageCountError('Enter a number between 1 and 9,999.');
+      return;
+    }
+    setPageCountError(null);
+    setSavingPageCount(true);
+    const { error } = await supabase
+      .from('books')
+      .update({ page_count: newCount })
+      .eq('id', bookId!);
+    setSavingPageCount(false);
+    if (!error) {
+      setPageCount(newCount);
+      setEditingPageCount(false);
+      Keyboard.dismiss();
+    } else {
+      setPageCountError('Could not save — try again.');
     }
   }
 
@@ -377,6 +407,95 @@ export default function BookDetailScreen() {
                       Set a yearly reading goal on your profile to get pacing guidance →
                     </Text>
                   </TouchableOpacity>
+                )}
+
+                {/* Missing page count recovery */}
+                {!pageCount && !editingPageCount && (
+                  <View style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    backgroundColor: '#faf9f7',
+                    borderRadius: 8,
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                    marginBottom: 14,
+                    gap: 12,
+                  }}>
+                    <Text style={{ fontSize: 13, color: '#a8a29e', flex: 1, lineHeight: 18 }}>
+                      Total pages unknown — add them to unlock progress tracking.
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setPageCountInput('');
+                        setPageCountError(null);
+                        setEditingPageCount(true);
+                        setTimeout(() => pageCountInputRef.current?.focus(), 80);
+                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '600', textDecorationLine: 'underline' }}>
+                        Set pages
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {!pageCount && editingPageCount && (
+                  <View style={{ marginBottom: 14 }}>
+                    <Text style={{ fontSize: 12, color: '#78716c', fontWeight: '600', marginBottom: 8 }}>
+                      Total pages in this book
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <TextInput
+                        ref={pageCountInputRef}
+                        value={pageCountInput}
+                        onChangeText={setPageCountInput}
+                        keyboardType="number-pad"
+                        placeholder="e.g. 320"
+                        placeholderTextColor="#a8a29e"
+                        returnKeyType="done"
+                        onSubmitEditing={handleSavePageCount}
+                        style={{
+                          width: 100,
+                          height: 44,
+                          borderWidth: 1.5,
+                          borderColor: '#d6d3d1',
+                          borderRadius: 8,
+                          paddingHorizontal: 12,
+                          fontSize: 18,
+                          fontWeight: '700',
+                          color: '#1c1917',
+                          backgroundColor: '#fff',
+                          textAlign: 'center',
+                        }}
+                      />
+                      <TouchableOpacity
+                        onPress={handleSavePageCount}
+                        disabled={savingPageCount}
+                        style={{
+                          backgroundColor: savingPageCount ? '#d6d3d1' : '#1c1917',
+                          borderRadius: 8,
+                          paddingHorizontal: 16,
+                          paddingVertical: 11,
+                        }}
+                      >
+                        {savingPageCount
+                          ? <ActivityIndicator color="#fff" size="small" />
+                          : <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>Save</Text>
+                        }
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => { setEditingPageCount(false); setPageCountError(null); Keyboard.dismiss(); }}
+                        style={{ paddingHorizontal: 8, paddingVertical: 11 }}
+                      >
+                        <Text style={{ fontSize: 13, color: '#a8a29e' }}>Cancel</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {pageCountError && (
+                      <Text style={{ fontSize: 12, color: '#b91c1c', marginTop: 8 }}>{pageCountError}</Text>
+                    )}
+                  </View>
                 )}
 
                 {/* Inline progress editor */}
