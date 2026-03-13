@@ -78,6 +78,7 @@ export default function LibraryScreen() {
       .eq('id', userBook.id);
 
     if (updateError) {
+      setError('Could not update status. Please try again.');
       setUpdatingId(null);
       return;
     }
@@ -130,7 +131,7 @@ export default function LibraryScreen() {
             recommendation_id: rec.id,
           });
           if (activityError) {
-            setError(`Status updated but activity failed: ${activityError.message}`);
+            console.warn('Activity insert failed:', activityError.message);
           }
         } else if (newStatus === 'finished') {
           const { error: activityError } = await supabase.from('activity_events').insert({
@@ -140,7 +141,7 @@ export default function LibraryScreen() {
             recommendation_id: rec.id,
           });
           if (activityError) {
-            setError(`Status updated but activity failed: ${activityError.message}`);
+            console.warn('Activity insert failed:', activityError.message);
           }
         }
       }
@@ -152,7 +153,7 @@ export default function LibraryScreen() {
         book_id: userBook.book_id,
       });
       if (activityError) {
-        setError(`Status updated but activity failed: ${activityError.message}`);
+        console.warn('Activity insert failed:', activityError.message);
       }
     }
 

@@ -85,7 +85,7 @@ export default function InboxScreen() {
         .single();
 
       if (insertError || !newUserBook) {
-        setError(insertError ? `User book insert failed: ${insertError.message}` : 'User book insert failed.');
+        setError('Could not save. Please try again.');
         setSavingId(null);
         return;
       }
@@ -102,7 +102,7 @@ export default function InboxScreen() {
       .eq('id', item.id);
 
     if (recUpdateError) {
-      setError(`Recommendation update failed: ${recUpdateError.message}`);
+      setError('Could not save. Please try again.');
       setSavingId(null);
       return;
     }
@@ -117,9 +117,7 @@ export default function InboxScreen() {
       });
 
     if (activityError) {
-      setError(`Activity insert failed: ${activityError.message}`);
-      setSavingId(null);
-      return;
+      console.warn('Activity insert failed:', activityError.message);
     }
 
     setItems(prev =>
@@ -154,8 +152,10 @@ export default function InboxScreen() {
   return (
     <ScrollView contentContainerStyle={{ padding: 16 }}>
       {totalItems === 0 && (
-        <View style={{ alignItems: 'center', marginTop: 60 }}>
-          <Text style={{ color: '#999' }}>No recommendations yet.</Text>
+        <View style={{ alignItems: 'center', marginTop: 60, paddingHorizontal: 24 }}>
+          <Text style={{ color: '#999', textAlign: 'center', lineHeight: 22 }}>
+            No recommendations yet.{'\n'}Ask a friend to send you a book.
+          </Text>
         </View>
       )}
 

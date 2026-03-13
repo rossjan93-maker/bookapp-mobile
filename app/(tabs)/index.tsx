@@ -64,7 +64,7 @@ function eventText(event: FeedEvent): string {
     case 'book_finished':
       return `${actor} finished "${title}"`;
     default:
-      return `${actor} did something with "${title}"`;
+      return '';
   }
 }
 
@@ -217,25 +217,27 @@ export default function HomeScreen() {
         </Text>
       ) : (
         <View style={{ marginBottom: 32 }}>
-          {feed.map(event => (
-            <View
-              key={event.id}
-              style={{
-                paddingVertical: 12,
-                borderBottomWidth: 1,
-                borderBottomColor: '#eee',
-              }}
-            >
-              <Text style={{ fontSize: 14, color: '#111' }}>
-                {eventText(event)}
-              </Text>
-              {event.book?.author ? (
-                <Text style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
-                  {event.book.author}
-                </Text>
-              ) : null}
-            </View>
-          ))}
+          {feed.map(event => {
+            const text = eventText(event);
+            if (!text) return null;
+            return (
+              <View
+                key={event.id}
+                style={{
+                  paddingVertical: 12,
+                  borderBottomWidth: 1,
+                  borderBottomColor: '#eee',
+                }}
+              >
+                <Text style={{ fontSize: 14, color: '#111' }}>{text}</Text>
+                {event.book?.author ? (
+                  <Text style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+                    {event.book.author}
+                  </Text>
+                ) : null}
+              </View>
+            );
+          })}
         </View>
       )}
 
