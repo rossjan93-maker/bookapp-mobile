@@ -187,28 +187,30 @@ export default function SearchScreen() {
 
   if (step === 'search') {
     return (
-      <View style={{ flex: 1, padding: 16 }}>
+      <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 16 }}>
         <TextInput
-          placeholder="Search for a book"
+          placeholder="Search for a book…"
+          placeholderTextColor="#9ca3af"
           value={query}
           onChangeText={setQuery}
           style={{
-            borderWidth: 1,
-            borderColor: '#ccc',
-            borderRadius: 6,
-            padding: 10,
+            backgroundColor: '#f3f4f6',
+            borderRadius: 10,
+            paddingHorizontal: 14,
+            paddingVertical: 12,
+            fontSize: 16,
+            color: '#111827',
             marginBottom: 12,
-            marginTop: 8,
           }}
         />
 
         {query.length > 0 && query.length < 2 && (
-          <Text style={{ color: '#999', marginBottom: 8 }}>
+          <Text style={{ color: '#9ca3af', marginBottom: 8, fontSize: 13 }}>
             Type at least 2 characters to search.
           </Text>
         )}
 
-        {searching && <ActivityIndicator style={{ marginBottom: 12 }} />}
+        {searching && <ActivityIndicator color="#111827" style={{ marginBottom: 12 }} />}
 
         <FlatList
           data={bookResults}
@@ -217,20 +219,32 @@ export default function SearchScreen() {
             <TouchableOpacity
               onPress={() => handleSelectBook(item)}
               style={{
-                paddingVertical: 12,
+                paddingVertical: 14,
                 borderBottomWidth: 1,
-                borderBottomColor: '#eee',
+                borderBottomColor: '#f3f4f6',
               }}
             >
-              <Text style={{ fontWeight: '500' }}>{item.title}</Text>
-              <Text style={{ color: '#666', fontSize: 13, marginTop: 2 }}>
+              <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827' }}>
+                {item.title}
+              </Text>
+              <Text style={{ color: '#9ca3af', fontSize: 13, marginTop: 3 }}>
                 {item.author_name?.[0] ?? 'Unknown author'}
               </Text>
             </TouchableOpacity>
           )}
           ListEmptyComponent={
             !searching && query.length >= 2 ? (
-              <Text style={{ color: '#999', marginTop: 8 }}>No books found.</Text>
+              <Text style={{ color: '#9ca3af', marginTop: 12, fontSize: 14 }}>No books found.</Text>
+            ) : query.length === 0 ? (
+              <View style={{
+                alignItems: 'center',
+                marginTop: 60,
+                paddingHorizontal: 24,
+              }}>
+                <Text style={{ color: '#9ca3af', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
+                  Search for a book to recommend{'\n'}to a friend.
+                </Text>
+              </View>
             ) : null
           }
         />
@@ -240,31 +254,56 @@ export default function SearchScreen() {
 
   if (step === 'friends') {
     return (
-      <View style={{ flex: 1, padding: 16 }}>
-        <TouchableOpacity onPress={() => setStep('search')} style={{ marginBottom: 16, marginTop: 8 }}>
-          <Text style={{ color: '#555' }}>← Back to search</Text>
+      <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 16 }}>
+        <TouchableOpacity
+          onPress={() => setStep('search')}
+          style={{ marginBottom: 16 }}
+        >
+          <Text style={{ color: '#6b7280', fontSize: 14 }}>← Back to search</Text>
         </TouchableOpacity>
 
         <View
           style={{
-            padding: 12,
-            backgroundColor: '#f5f5f5',
-            borderRadius: 6,
-            marginBottom: 20,
+            backgroundColor: '#f9fafb',
+            borderRadius: 12,
+            padding: 14,
+            marginBottom: 24,
+            borderWidth: 1,
+            borderColor: '#e5e7eb',
           }}
         >
-          <Text style={{ fontWeight: '600' }}>{selectedBook?.title}</Text>
-          <Text style={{ color: '#666', fontSize: 13, marginTop: 2 }}>
+          <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827' }}>
+            {selectedBook?.title}
+          </Text>
+          <Text style={{ color: '#6b7280', fontSize: 13, marginTop: 4 }}>
             {selectedBook?.author}
           </Text>
         </View>
 
-        <Text style={{ fontWeight: '600', marginBottom: 12 }}>Send to a friend</Text>
+        <Text style={{
+          fontSize: 11,
+          fontWeight: '700',
+          color: '#9ca3af',
+          letterSpacing: 0.8,
+          textTransform: 'uppercase',
+          marginBottom: 10,
+        }}>
+          Send to a friend
+        </Text>
 
         {loadingFriends ? (
-          <ActivityIndicator />
+          <ActivityIndicator color="#111827" />
         ) : friends.length === 0 ? (
-          <Text style={{ color: '#999' }}>No accepted friends yet.</Text>
+          <View style={{
+            backgroundColor: '#f9fafb',
+            borderRadius: 10,
+            padding: 20,
+            alignItems: 'center',
+          }}>
+            <Text style={{ color: '#9ca3af', fontSize: 14, textAlign: 'center', lineHeight: 20 }}>
+              No friends yet.{'\n'}Add friends from the Home tab first.
+            </Text>
+          </View>
         ) : (
           <FlatList
             data={friends}
@@ -277,24 +316,24 @@ export default function SearchScreen() {
                   justifyContent: 'space-between',
                   paddingVertical: 12,
                   borderBottomWidth: 1,
-                  borderBottomColor: '#eee',
+                  borderBottomColor: '#f3f4f6',
                 }}
               >
-                <Text>{item.username}</Text>
+                <Text style={{ fontSize: 15, color: '#111827' }}>{item.username}</Text>
                 <TouchableOpacity
                   onPress={() => handleSend(item)}
                   disabled={sendingTo !== null}
                   style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 6,
-                    backgroundColor: sendingTo === item.id ? '#999' : '#000',
-                    borderRadius: 6,
+                    paddingHorizontal: 16,
+                    paddingVertical: 8,
+                    backgroundColor: sendingTo !== null ? '#9ca3af' : '#111827',
+                    borderRadius: 8,
                   }}
                 >
                   {sendingTo === item.id ? (
                     <ActivityIndicator color="#fff" size="small" />
                   ) : (
-                    <Text style={{ color: '#fff', fontSize: 13 }}>Send</Text>
+                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '500' }}>Send</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -306,27 +345,46 @@ export default function SearchScreen() {
   }
 
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <Text
-        style={{
-          fontSize: 16,
-          color: sendResult?.ok ? '#080' : '#c00',
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+      {sendResult?.ok ? (
+        <View style={{
+          backgroundColor: '#f0fdf4',
+          borderRadius: 12,
+          padding: 24,
+          alignItems: 'center',
+          width: '100%',
           marginBottom: 24,
-          textAlign: 'center',
-        }}
-      >
-        {sendResult?.message ?? ''}
-      </Text>
+        }}>
+          <Text style={{ fontSize: 15, color: '#15803d', textAlign: 'center', lineHeight: 22 }}>
+            {sendResult.message}
+          </Text>
+        </View>
+      ) : (
+        <View style={{
+          backgroundColor: '#fef2f2',
+          borderRadius: 12,
+          padding: 24,
+          alignItems: 'center',
+          width: '100%',
+          marginBottom: 24,
+        }}>
+          <Text style={{ fontSize: 15, color: '#b91c1c', textAlign: 'center', lineHeight: 22 }}>
+            {sendResult?.message ?? ''}
+          </Text>
+        </View>
+      )}
       <TouchableOpacity
         onPress={reset}
         style={{
-          padding: 12,
-          borderWidth: 1,
-          borderColor: '#000',
-          borderRadius: 6,
+          paddingHorizontal: 24,
+          paddingVertical: 12,
+          backgroundColor: '#111827',
+          borderRadius: 10,
         }}
       >
-        <Text>Send another recommendation</Text>
+        <Text style={{ color: '#fff', fontWeight: '500', fontSize: 14 }}>
+          Send another recommendation
+        </Text>
       </TouchableOpacity>
     </View>
   );

@@ -21,6 +21,13 @@ const STATUS_LABELS: Record<UserBookStatus, string> = {
   dnf: 'DNF',
 };
 
+const STATUS_BADGE: Record<UserBookStatus, { bg: string; text: string }> = {
+  want_to_read: { bg: '#f1f5f9', text: '#475569' },
+  reading:      { bg: '#dbeafe', text: '#1d4ed8' },
+  finished:     { bg: '#dcfce7', text: '#15803d' },
+  dnf:          { bg: '#fee2e2', text: '#b91c1c' },
+};
+
 export default function LibraryScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [items, setItems] = useState<UserBook[]>([]);
@@ -176,115 +183,150 @@ export default function LibraryScreen() {
   if (loading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator />
+        <ActivityIndicator color="#111827" />
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ color: '#c00' }}>{error}</Text>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <Text style={{ color: '#b91c1c', textAlign: 'center', fontSize: 14 }}>{error}</Text>
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, padding: 16 }}>
-      <FlatList
-        data={items}
-        keyExtractor={item => item.id}
-        renderItem={({ item }) => {
-          const isUpdating = updatingId === item.id;
-          const isBlocked = updatingId !== null;
+    <FlatList
+      data={items}
+      keyExtractor={item => item.id}
+      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 32 }}
+      renderItem={({ item }) => {
+        const isUpdating = updatingId === item.id;
+        const isBlocked = updatingId !== null;
+        const badge = STATUS_BADGE[item.status];
 
-          return (
-            <View
-              style={{
-                paddingVertical: 14,
-                borderBottomWidth: 1,
-                borderBottomColor: '#eee',
-              }}
-            >
-              <Text style={{ fontWeight: '600', marginBottom: 2 }}>
-                {item.book?.title ?? '—'}
-              </Text>
-              <Text style={{ color: '#555', fontSize: 13, marginBottom: 6 }}>
-                {item.book?.author ?? '—'}
-              </Text>
-              <Text style={{ color: '#999', fontSize: 12, marginBottom: 10 }}>
-                {STATUS_LABELS[item.status]}
-              </Text>
-
-              {isUpdating ? (
-                <ActivityIndicator style={{ alignSelf: 'flex-start' }} />
-              ) : item.status === 'want_to_read' ? (
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <StatusButton
-                    label="Mark Reading"
-                    onPress={() => handleUpdateStatus(item, 'reading')}
-                    disabled={isBlocked}
-                  />
-                  <StatusButton
-                    label="Mark Finished"
-                    onPress={() => handleUpdateStatus(item, 'finished')}
-                    disabled={isBlocked}
-                  />
-                  <StatusButton
-                    label="DNF"
-                    onPress={() => handleUpdateStatus(item, 'dnf')}
-                    disabled={isBlocked}
-                  />
-                </View>
-              ) : item.status === 'reading' ? (
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <StatusButton
-                    label="Mark Finished"
-                    onPress={() => handleUpdateStatus(item, 'finished')}
-                    disabled={isBlocked}
-                  />
-                  <StatusButton
-                    label="DNF"
-                    onPress={() => handleUpdateStatus(item, 'dnf')}
-                    disabled={isBlocked}
-                  />
-                </View>
-              ) : null}
+        return (
+          <View
+            style={{
+              paddingVertical: 16,
+              borderBottomWidth: 1,
+              borderBottomColor: '#f3f4f6',
+            }}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827', marginBottom: 3 }}>
+                  {item.book?.title ?? '—'}
+                </Text>
+                <Text style={{ color: '#6b7280', fontSize: 13 }}>
+                  {item.book?.author ?? '—'}
+                </Text>
+              </View>
+              <View style={{ backgroundColor: badge.bg, borderRadius: 6, paddingHorizontal: 9, paddingVertical: 4, alignSelf: 'flex-start' }}>
+                <Text style={{ fontSize: 11, fontWeight: '600', color: badge.text }}>
+                  {STATUS_LABELS[item.status]}
+                </Text>
+              </View>
             </View>
-          );
-        }}
-        ListEmptyComponent={
-          <View style={{ alignItems: 'center', marginTop: 60 }}>
-            <Text style={{ color: '#999' }}>Your library is empty.</Text>
+
+            {isUpdating ? (
+              <ActivityIndicator color="#111827" style={{ alignSelf: 'flex-start', marginTop: 4 }} />
+            ) : item.status === 'want_to_read' ? (
+              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                <PrimaryButton
+                  label="Start Reading"
+                  onPress={() => handleUpdateStatus(item, 'reading')}
+                  disabled={isBlocked}
+                />
+                <OutlineButton
+                  label="Mark Finished"
+                  onPress={() => handleUpdateStatus(item, 'finished')}
+                  disabled={isBlocked}
+                />
+                <DangerButton
+                  label="DNF"
+                  onPress={() => handleUpdateStatus(item, 'dnf')}
+                  disabled={isBlocked}
+                />
+              </View>
+            ) : item.status === 'reading' ? (
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <PrimaryButton
+                  label="Mark Finished"
+                  onPress={() => handleUpdateStatus(item, 'finished')}
+                  disabled={isBlocked}
+                />
+                <DangerButton
+                  label="DNF"
+                  onPress={() => handleUpdateStatus(item, 'dnf')}
+                  disabled={isBlocked}
+                />
+              </View>
+            ) : null}
           </View>
-        }
-      />
-    </View>
+        );
+      }}
+      ListEmptyComponent={
+        <View style={{ alignItems: 'center', marginTop: 60, paddingHorizontal: 24 }}>
+          <Text style={{ color: '#9ca3af', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
+            Your library is empty.{'\n'}Books you save from recommendations{'\n'}will appear here.
+          </Text>
+        </View>
+      }
+    />
   );
 }
 
-function StatusButton({
-  label,
-  onPress,
-  disabled,
-}: {
-  label: string;
-  onPress: () => void;
-  disabled: boolean;
-}) {
+function PrimaryButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled: boolean }) {
   return (
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled}
       style={{
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        borderWidth: 1,
-        borderColor: disabled ? '#ccc' : '#000',
-        borderRadius: 6,
+        paddingHorizontal: 14,
+        paddingVertical: 7,
+        backgroundColor: disabled ? '#e5e7eb' : '#111827',
+        borderRadius: 8,
       }}
     >
-      <Text style={{ fontSize: 12, color: disabled ? '#ccc' : '#000' }}>{label}</Text>
+      <Text style={{ fontSize: 12, fontWeight: '500', color: disabled ? '#9ca3af' : '#fff' }}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function OutlineButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled: boolean }) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={disabled}
+      style={{
+        paddingHorizontal: 14,
+        paddingVertical: 7,
+        borderWidth: 1,
+        borderColor: disabled ? '#e5e7eb' : '#d1d5db',
+        borderRadius: 8,
+      }}
+    >
+      <Text style={{ fontSize: 12, fontWeight: '500', color: disabled ? '#9ca3af' : '#374151' }}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function DangerButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled: boolean }) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={disabled}
+      style={{
+        paddingHorizontal: 14,
+        paddingVertical: 7,
+        borderWidth: 1,
+        borderColor: disabled ? '#e5e7eb' : '#fca5a5',
+        borderRadius: 8,
+      }}
+    >
+      <Text style={{ fontSize: 12, fontWeight: '500', color: disabled ? '#9ca3af' : '#b91c1c' }}>{label}</Text>
     </TouchableOpacity>
   );
 }

@@ -68,6 +68,48 @@ function eventText(event: FeedEvent): string {
   }
 }
 
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${Math.max(mins, 1)}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <Text style={{
+      fontSize: 11,
+      fontWeight: '700',
+      color: '#9ca3af',
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
+      marginBottom: 10,
+    }}>
+      {children}
+    </Text>
+  );
+}
+
+function InitialAvatar({ name }: { name: string }) {
+  return (
+    <View style={{
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: '#e5e7eb',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 12,
+    }}>
+      <Text style={{ fontSize: 15, fontWeight: '600', color: '#374151' }}>
+        {name.charAt(0).toUpperCase()}
+      </Text>
+    </View>
+  );
+}
+
 export default function HomeScreen() {
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -196,27 +238,33 @@ export default function HomeScreen() {
   if (feedLoading || loadingFriendships) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator />
+        <ActivityIndicator color="#111827" />
       </View>
     );
   }
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 20 }}>
+    <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 32 }}>
 
       {/* ── Activity Feed ── */}
-      <Text style={{ fontSize: 18, fontWeight: '600', marginBottom: 16, marginTop: 8 }}>
-        Activity
-      </Text>
+      <SectionLabel>Activity</SectionLabel>
 
       {feedError ? (
-        <Text style={{ color: '#c00', marginBottom: 16 }}>{feedError}</Text>
+        <Text style={{ color: '#b91c1c', marginBottom: 16, fontSize: 14 }}>{feedError}</Text>
       ) : feed.length === 0 ? (
-        <Text style={{ color: '#999', marginBottom: 24 }}>
-          Nothing yet. Follow friends to see their activity.
-        </Text>
+        <View style={{
+          backgroundColor: '#f9fafb',
+          borderRadius: 10,
+          padding: 20,
+          alignItems: 'center',
+          marginBottom: 28,
+        }}>
+          <Text style={{ color: '#9ca3af', fontSize: 14, textAlign: 'center', lineHeight: 20 }}>
+            Nothing yet.{'\n'}Add friends to see their activity here.
+          </Text>
+        </View>
       ) : (
-        <View style={{ marginBottom: 32 }}>
+        <View style={{ marginBottom: 28 }}>
           {feed.map(event => {
             const text = eventText(event);
             if (!text) return null;
@@ -224,17 +272,20 @@ export default function HomeScreen() {
               <View
                 key={event.id}
                 style={{
-                  paddingVertical: 12,
+                  paddingVertical: 14,
                   borderBottomWidth: 1,
-                  borderBottomColor: '#eee',
+                  borderBottomColor: '#f3f4f6',
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
                 }}
               >
-                <Text style={{ fontSize: 14, color: '#111' }}>{text}</Text>
-                {event.book?.author ? (
-                  <Text style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
-                    {event.book.author}
-                  </Text>
-                ) : null}
+                <Text style={{ fontSize: 14, color: '#111827', lineHeight: 20, flex: 1, marginRight: 12 }}>
+                  {text}
+                </Text>
+                <Text style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
+                  {relativeTime(event.created_at)}
+                </Text>
               </View>
             );
           })}
@@ -242,40 +293,38 @@ export default function HomeScreen() {
       )}
 
       {/* ── Find Friends ── */}
-      <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 12 }}>
-        Find Friends
-      </Text>
+      <SectionLabel>Find Friends</SectionLabel>
 
-      <View style={{ marginBottom: 8 }}>
-        <TextInput
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Search by username…"
-          autoCapitalize="none"
-          autoCorrect={false}
-          style={{
-            borderWidth: 1,
-            borderColor: '#ccc',
-            borderRadius: 8,
-            paddingHorizontal: 12,
-            paddingVertical: 10,
-            fontSize: 15,
-          }}
-        />
-      </View>
+      <TextInput
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        placeholder="Search by username…"
+        autoCapitalize="none"
+        autoCorrect={false}
+        placeholderTextColor="#9ca3af"
+        style={{
+          backgroundColor: '#f3f4f6',
+          borderRadius: 10,
+          paddingHorizontal: 14,
+          paddingVertical: 11,
+          fontSize: 15,
+          color: '#111827',
+          marginBottom: 10,
+        }}
+      />
 
-      {searching && <ActivityIndicator style={{ marginVertical: 12 }} />}
+      {searching && <ActivityIndicator color="#111827" style={{ marginVertical: 10 }} />}
 
       {searchError && (
-        <Text style={{ color: '#c00', marginBottom: 8 }}>{searchError}</Text>
+        <Text style={{ color: '#b91c1c', marginBottom: 8, fontSize: 13 }}>{searchError}</Text>
       )}
 
       {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
-        <Text style={{ color: '#999', marginBottom: 16 }}>No users found.</Text>
+        <Text style={{ color: '#9ca3af', marginBottom: 16, fontSize: 14 }}>No users found.</Text>
       )}
 
       {searchResults.length > 0 && (
-        <View style={{ marginBottom: 24 }}>
+        <View style={{ marginBottom: 20 }}>
           {searchResults.map(result => {
             const rel = userId ? getRelationship(userId, result.id, friendships) : 'none';
             const isAdding = addingId === result.id;
@@ -286,31 +335,34 @@ export default function HomeScreen() {
                   flexDirection: 'row',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  paddingVertical: 12,
+                  paddingVertical: 10,
                   borderBottomWidth: 1,
-                  borderBottomColor: '#eee',
+                  borderBottomColor: '#f3f4f6',
                 }}
               >
-                <Text style={{ fontSize: 15 }}>{result.username}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <InitialAvatar name={result.username} />
+                  <Text style={{ fontSize: 15, color: '#111827' }}>{result.username}</Text>
+                </View>
                 {isAdding ? (
-                  <ActivityIndicator />
+                  <ActivityIndicator color="#111827" size="small" />
                 ) : rel === 'none' ? (
                   <TouchableOpacity
                     onPress={() => handleAddFriend(result.id)}
                     disabled={addingId !== null}
                     style={{
-                      paddingHorizontal: 12,
-                      paddingVertical: 6,
-                      backgroundColor: addingId !== null ? '#ccc' : '#000',
-                      borderRadius: 6,
+                      paddingHorizontal: 14,
+                      paddingVertical: 7,
+                      backgroundColor: addingId !== null ? '#9ca3af' : '#111827',
+                      borderRadius: 8,
                     }}
                   >
-                    <Text style={{ color: '#fff', fontSize: 13 }}>Add Friend</Text>
+                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '500' }}>Add</Text>
                   </TouchableOpacity>
                 ) : rel === 'pending' ? (
-                  <Text style={{ color: '#999', fontSize: 13 }}>Pending</Text>
+                  <Text style={{ color: '#9ca3af', fontSize: 13 }}>Pending</Text>
                 ) : (
-                  <Text style={{ color: '#555', fontSize: 13 }}>Friends</Text>
+                  <Text style={{ color: '#6b7280', fontSize: 13 }}>Friends</Text>
                 )}
               </View>
             );
@@ -318,23 +370,27 @@ export default function HomeScreen() {
         </View>
       )}
 
-      <Text style={{ fontWeight: '600', marginBottom: 12 }}>
-        Friends{acceptedFriends.length > 0 ? ` (${acceptedFriends.length})` : ''}
-      </Text>
+      {/* ── Friends ── */}
+      <SectionLabel>
+        {acceptedFriends.length > 0 ? `Friends (${acceptedFriends.length})` : 'Friends'}
+      </SectionLabel>
 
       {acceptedFriends.length === 0 ? (
-        <Text style={{ color: '#999', marginBottom: 24 }}>No friends yet.</Text>
+        <Text style={{ color: '#9ca3af', fontSize: 14, marginBottom: 16 }}>No friends yet.</Text>
       ) : (
         acceptedFriends.map(friend => (
           <View
             key={friend.id}
             style={{
-              paddingVertical: 12,
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingVertical: 10,
               borderBottomWidth: 1,
-              borderBottomColor: '#eee',
+              borderBottomColor: '#f3f4f6',
             }}
           >
-            <Text style={{ fontSize: 15 }}>{friend.username}</Text>
+            <InitialAvatar name={friend.username} />
+            <Text style={{ fontSize: 15, color: '#111827' }}>{friend.username}</Text>
           </View>
         ))
       )}

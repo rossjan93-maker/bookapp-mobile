@@ -11,6 +11,38 @@ type InboxItem = {
   book: { title: string; author: string } | null;
 };
 
+const BADGE: Record<string, { bg: string; text: string; label: string }> = {
+  sent:     { bg: '#f1f5f9', text: '#475569', label: 'New'         },
+  saved:    { bg: '#e0f2fe', text: '#0369a1', label: 'Want to Read' },
+  started:  { bg: '#dbeafe', text: '#1d4ed8', label: 'Reading'      },
+  finished: { bg: '#dcfce7', text: '#15803d', label: 'Finished'     },
+  dnf:      { bg: '#fee2e2', text: '#b91c1c', label: 'Did Not Finish' },
+};
+
+function StatusPill({ status }: { status: string }) {
+  const b = BADGE[status] ?? { bg: '#f1f5f9', text: '#475569', label: status };
+  return (
+    <View style={{ backgroundColor: b.bg, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start' }}>
+      <Text style={{ fontSize: 11, fontWeight: '600', color: b.text }}>{b.label}</Text>
+    </View>
+  );
+}
+
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <Text style={{
+      fontSize: 11,
+      fontWeight: '700',
+      color: '#9ca3af',
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
+      marginBottom: 10,
+    }}>
+      {children}
+    </Text>
+  );
+}
+
 export default function InboxScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [items, setItems] = useState<InboxItem[]>([]);
@@ -129,58 +161,60 @@ export default function InboxScreen() {
   if (loading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator />
+        <ActivityIndicator color="#111827" />
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-        <Text style={{ color: '#c00', textAlign: 'center' }}>{error}</Text>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <Text style={{ color: '#b91c1c', textAlign: 'center', fontSize: 14 }}>{error}</Text>
       </View>
     );
   }
 
-  const newItems      = items.filter(r => r.status === 'sent');
-  const savedItems    = items.filter(r => r.status === 'saved');
-  const readingItems  = items.filter(r => r.status === 'started');
-  const doneItems     = items.filter(r => r.status === 'finished' || r.status === 'dnf');
+  const newItems     = items.filter(r => r.status === 'sent');
+  const savedItems   = items.filter(r => r.status === 'saved');
+  const readingItems = items.filter(r => r.status === 'started');
+  const doneItems    = items.filter(r => r.status === 'finished' || r.status === 'dnf');
 
-  const totalItems = items.length;
+  if (items.length === 0) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+        <Text style={{ color: '#9ca3af', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
+          No recommendations yet.{'\n'}Ask a friend to send you a book.
+        </Text>
+      </View>
+    );
+  }
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }}>
-      {totalItems === 0 && (
-        <View style={{ alignItems: 'center', marginTop: 60, paddingHorizontal: 24 }}>
-          <Text style={{ color: '#999', textAlign: 'center', lineHeight: 22 }}>
-            No recommendations yet.{'\n'}Ask a friend to send you a book.
-          </Text>
-        </View>
-      )}
+    <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 32 }}>
 
       {/* ── New ── */}
       {newItems.length > 0 && (
         <View style={{ marginBottom: 28 }}>
-          <Text style={{ fontWeight: '700', fontSize: 13, color: '#999', letterSpacing: 0.5, marginBottom: 8, textTransform: 'uppercase' }}>
-            New
-          </Text>
+          <SectionLabel>New</SectionLabel>
           {newItems.map(item => (
             <View
               key={item.id}
               style={{
-                paddingVertical: 14,
-                borderBottomWidth: 1,
-                borderBottomColor: '#eee',
+                backgroundColor: '#fff',
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: '#e5e7eb',
+                padding: 16,
+                marginBottom: 10,
               }}
             >
-              <Text style={{ fontWeight: '600', marginBottom: 2 }}>
+              <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827', marginBottom: 3 }}>
                 {item.book?.title ?? '—'}
               </Text>
-              <Text style={{ color: '#555', fontSize: 13, marginBottom: 2 }}>
+              <Text style={{ color: '#6b7280', fontSize: 13, marginBottom: 2 }}>
                 {item.book?.author ?? '—'}
               </Text>
-              <Text style={{ color: '#999', fontSize: 12, marginBottom: 10 }}>
+              <Text style={{ color: '#9ca3af', fontSize: 12, marginBottom: 14 }}>
                 from {item.sender?.username ?? 'unknown'}
               </Text>
               <TouchableOpacity
@@ -188,16 +222,16 @@ export default function InboxScreen() {
                 disabled={savingId !== null}
                 style={{
                   alignSelf: 'flex-start',
-                  paddingHorizontal: 12,
-                  paddingVertical: 6,
-                  backgroundColor: savingId === item.id ? '#999' : '#000',
-                  borderRadius: 6,
+                  paddingHorizontal: 14,
+                  paddingVertical: 8,
+                  backgroundColor: savingId === item.id ? '#9ca3af' : '#111827',
+                  borderRadius: 8,
                 }}
               >
                 {savingId === item.id ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
-                  <Text style={{ color: '#fff', fontSize: 13 }}>Save to Want to Read</Text>
+                  <Text style={{ color: '#fff', fontSize: 13, fontWeight: '500' }}>Add to Library</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -205,14 +239,12 @@ export default function InboxScreen() {
         </View>
       )}
 
-      {/* ── Saved / Want to Read ── */}
+      {/* ── Want to Read ── */}
       {savedItems.length > 0 && (
         <View style={{ marginBottom: 28 }}>
-          <Text style={{ fontWeight: '700', fontSize: 13, color: '#999', letterSpacing: 0.5, marginBottom: 8, textTransform: 'uppercase' }}>
-            Saved / Want to Read
-          </Text>
+          <SectionLabel>Want to Read</SectionLabel>
           {savedItems.map(item => (
-            <RecRow key={item.id} item={item} statusLabel="Saved" />
+            <RecRow key={item.id} item={item} />
           ))}
         </View>
       )}
@@ -220,28 +252,19 @@ export default function InboxScreen() {
       {/* ── Reading ── */}
       {readingItems.length > 0 && (
         <View style={{ marginBottom: 28 }}>
-          <Text style={{ fontWeight: '700', fontSize: 13, color: '#999', letterSpacing: 0.5, marginBottom: 8, textTransform: 'uppercase' }}>
-            Reading
-          </Text>
+          <SectionLabel>Reading</SectionLabel>
           {readingItems.map(item => (
-            <RecRow key={item.id} item={item} statusLabel="Reading" />
+            <RecRow key={item.id} item={item} />
           ))}
         </View>
       )}
 
-      {/* ── Finished / DNF ── */}
+      {/* ── Done ── */}
       {doneItems.length > 0 && (
         <View style={{ marginBottom: 28 }}>
-          <Text style={{ fontWeight: '700', fontSize: 13, color: '#999', letterSpacing: 0.5, marginBottom: 8, textTransform: 'uppercase' }}>
-            Finished / DNF
-          </Text>
+          <SectionLabel>Done</SectionLabel>
           {doneItems.map(item => (
-            <RecRow
-              key={item.id}
-              item={item}
-              statusLabel={item.status === 'finished' ? 'Finished' : 'DNF'}
-              statusColor={item.status === 'finished' ? '#080' : '#c00'}
-            />
+            <RecRow key={item.id} item={item} />
           ))}
         </View>
       )}
@@ -249,51 +272,30 @@ export default function InboxScreen() {
   );
 }
 
-function RecRow({
-  item,
-  statusLabel,
-  statusColor = '#555',
-}: {
-  item: InboxItem;
-  statusLabel: string;
-  statusColor?: string;
-}) {
+function RecRow({ item }: { item: InboxItem }) {
   return (
     <View
       style={{
-        paddingVertical: 12,
+        paddingVertical: 14,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: '#f3f4f6',
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'flex-start',
       }}
     >
       <View style={{ flex: 1, marginRight: 12 }}>
-        <Text style={{ fontWeight: '500', marginBottom: 2 }}>
+        <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827', marginBottom: 2 }}>
           {item.book?.title ?? '—'}
         </Text>
-        <Text style={{ color: '#555', fontSize: 13, marginBottom: 2 }}>
+        <Text style={{ color: '#6b7280', fontSize: 13, marginBottom: 3 }}>
           {item.book?.author ?? '—'}
         </Text>
-        <Text style={{ color: '#999', fontSize: 12 }}>
+        <Text style={{ color: '#9ca3af', fontSize: 12 }}>
           from {item.sender?.username ?? 'unknown'}
         </Text>
       </View>
-      <Text
-        style={{
-          fontSize: 11,
-          color: statusColor,
-          paddingHorizontal: 8,
-          paddingVertical: 3,
-          borderWidth: 1,
-          borderColor: statusColor,
-          borderRadius: 4,
-          alignSelf: 'flex-start',
-        }}
-      >
-        {statusLabel}
-      </Text>
+      <StatusPill status={item.status} />
     </View>
   );
 }
