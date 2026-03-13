@@ -1,0 +1,107 @@
+Make one controlled “automatic page-count enrichment via Google Books fallback” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not add real AI / LLM integrations.
+Do not refactor unrelated business logic.
+Do not break recommendation / credibility / activity flows.
+
+Goal:
+Reduce manual page-count entry by automatically enriching books with total pages when books.page_count is missing, using Google Books as a fallback metadata source.
+
+Context:
+- books.page_count already exists
+- book detail currently supports manual page count entry
+- Open Library metadata fetch is already in place but page-count coverage is incomplete
+- We want automatic recovery before falling back to manual entry
+
+Files allowed to change:
+- app/book/[id].tsx
+- app/add-book.tsx only if needed
+- app/(tabs)/search.tsx only if needed
+- add one small helper/module for metadata lookup if useful
+- no schema changes unless absolutely necessary
+
+Primary product objectives
+
+A. Automatic page-count enrichment
+Requirements:
+1. When a book has no page_count, try to fetch it automatically from Google Books.
+2. Use the cleanest available matching strategy:
+   - prefer ISBN if already available anywhere
+   - otherwise use title + author
+3. If a trustworthy page count is found:
+   - persist it to books.page_count
+   - update local UI immediately
+4. Do not overwrite an existing page_count.
+5. Keep this logic lightweight and safe.
+
+B. Best place to trigger enrichment
+Requirements:
+1. The best default place is book detail, because that is where page_count matters most for pacing and progress.
+2. If helpful, you may also enrich earlier in the lifecycle when a book is added or first encountered, but only if that stays low-risk.
+3. Do not create a heavy background pipeline in this pass.
+
+C. Matching quality
+Requirements:
+1. Be reasonably careful about matching; do not grab obviously wrong editions/books.
+2. Prefer results where title/author align closely.
+3. If the match is weak or ambiguous, do not auto-save a bad page count.
+4. In ambiguous cases, keep the existing manual page-count input as fallback.
+
+D. UI behavior
+Requirements:
+1. If page_count is successfully enriched automatically, the existing progress/pacing UI should light up immediately.
+2. Keep the manual “Set pages” recovery path for when automation fails.
+3. Do not add noisy loading states unless needed.
+4. If useful, a subtle “Fetching page count…” state inside the Reading Progress card is acceptable.
+
+E. Data persistence
+Requirements:
+1. Persist successful automatic enrichment to books.page_count so future views benefit immediately.
+2. If useful and low-risk, also persist a lightweight metadata trace such as:
+   - google_books_id
+   - isbn
+   but only if that requires no schema change or if a very small schema addition is clearly worth it
+3. If schema expansion is not clearly necessary, skip it for now.
+
+F. Preserve all current flows
+Do not break:
+- recommendation sending
+- note sending
+- inbox lifecycle grouping
+- unread/new badge
+- manual add flow
+- yearly goal editing
+- library progression
+- sentiment capture
+- progress history logging
+- activity feed
+- friend detail screen
+- cover rendering and fallback logic
+- existing book detail routing
+- preference capture / edit taste
+- reader insights
+- manual page count entry
+
+Implementation guidance
+1. Prefer one small helper for Google Books lookup if that keeps app/book/[id].tsx cleaner.
+2. Keep the lookup logic defensive and minimal.
+3. Use Google Books only when books.page_count is null.
+4. If the API requires configuration, use environment variables cleanly and do not hardcode secrets.
+5. If API configuration is missing, fail gracefully and keep manual entry working.
+6. Keep the design aligned with the current editorial reading-app style.
+
+Important constraints
+- This is a metadata enrichment pass, not a full book metadata pipeline.
+- Do not build background sync jobs.
+- Do not add analytics dashboards.
+- Prefer a trustworthy partial win over aggressive bad matches.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. any metadata or matching tradeoff made
+6. what was added now vs intentionally deferred for later deeper metadata enrichment

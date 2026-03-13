@@ -12,6 +12,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { computePacingNote, computePagePacing } from '../../lib/pacing';
+import { fetchGoogleBooksPageCount } from '../../lib/googleBooks';
 
 const STATUS_META: Record<string, { bg: string; text: string; label: string }> = {
   want_to_read: { bg: '#f1f5f9', text: '#475569', label: 'Want to Read' },
@@ -129,16 +130,18 @@ export default function BookDetailScreen() {
   const hasRecCtx  = !!(fromUser || toUser || note);
   const isReading  = status === 'reading' || status === 'started';
 
-  // ── Fetch OL metadata ──
+  // ── Fetch OL metadata + Google Books page-count fallback ──
   useEffect(() => {
     if (!externalId) return;
     setMetaLoading(true);
-    fetchOLMeta(externalId).then(meta => {
+
+    async function enrich() {
+      const meta = await fetchOLMeta(externalId!);
       setOlMeta(meta);
       setMetaLoading(false);
 
-      // Opportunistically persist page_count to DB if not already stored
       if (meta.pageCount && bookId && supabase) {
+        // OL returned a page count — persist it (no-op if already set in DB)
         supabase
           .from('books')
           .update({ page_count: meta.pageCount })
@@ -147,8 +150,28 @@ export default function BookDetailScreen() {
           .then(({ error }) => {
             if (!error) setPageCount(prev => prev ?? meta.pageCount!);
           });
+        return;
       }
-    });
+
+      // OL had no page count — try Google Books silently
+      if (bookId && title && author && supabase) {
+        const gbCount = await fetchGoogleBooksPageCount(
+          String(title ?? '').trim(),
+          String(author ?? '').trim(),
+        );
+        if (gbCount) {
+          setPageCount(prev => prev ?? gbCount);
+          supabase
+            .from('books')
+            .update({ page_count: gbCount })
+            .eq('id', bookId)
+            .is('page_count', null)
+            .then(() => {});
+        }
+      }
+    }
+
+    enrich();
   }, [externalId, bookId]);
 
   // ── Fetch reading progress + yearly goal ──
