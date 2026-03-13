@@ -104,6 +104,7 @@ export default function BookDetailScreen() {
 
   // Reading progress state
   const [userBookId, setUserBookId]     = useState<string | null>(null);
+  const [userId, setUserId]             = useState<string | null>(null);
   const [currentPage, setCurrentPage]   = useState<number | null>(null);
   const [pageCount, setPageCount]       = useState<number | null>(null);
   const [yearlyGoal, setYearlyGoal]     = useState<number | null>(null);
@@ -178,6 +179,8 @@ export default function BookDetailScreen() {
         })(),
       ]);
 
+      setUserId(user.id);
+
       if (userBookRes.data) {
         setUserBookId(userBookRes.data.id);
         const cp = userBookRes.data.current_page ?? null;
@@ -215,6 +218,13 @@ export default function BookDetailScreen() {
       .eq('id', userBookId);
     setSavingProgress(false);
     if (!error) {
+      // Log to progress history if page actually changed (fire-and-forget; table may not exist yet)
+      if (newPage !== currentPage && userId && bookId) {
+        supabase
+          .from('reading_progress_events')
+          .insert({ user_book_id: userBookId, book_id: bookId, user_id: userId, page: newPage })
+          .then(() => {});
+      }
       setCurrentPage(newPage);
       setEditingProgress(false);
       Keyboard.dismiss();

@@ -117,23 +117,33 @@ export default function InboxScreen() {
     if (existing) {
       userBookId = existing.id;
     } else {
-      const { data: newUserBook, error: insertError } = await supabase
+      // Try with source attribution; fall back if column doesn't exist yet
+      let insertResult = await supabase
         .from('user_books')
         .insert({
           user_id: currentUserId,
           book_id: item.book_id,
           status: 'want_to_read',
+          source: 'recommendation',
         })
         .select('id')
         .single();
 
-      if (insertError || !newUserBook) {
+      if (insertResult.error) {
+        insertResult = await supabase
+          .from('user_books')
+          .insert({ user_id: currentUserId, book_id: item.book_id, status: 'want_to_read' })
+          .select('id')
+          .single();
+      }
+
+      if (insertResult.error || !insertResult.data) {
         setError('Could not save. Please try again.');
         setSavingId(null);
         return;
       }
 
-      userBookId = newUserBook.id;
+      userBookId = insertResult.data.id;
     }
 
     const { error: recUpdateError } = await supabase

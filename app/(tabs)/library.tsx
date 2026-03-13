@@ -22,6 +22,15 @@ type UserBook = {
   } | null;
 };
 
+type PendingFeedback = { userBookId: string; status: 'finished' | 'dnf' };
+
+const SENTIMENT_OPTIONS: Array<{ value: 'loved' | 'liked' | 'okay' | 'not_for_me'; label: string }> = [
+  { value: 'loved',      label: 'Loved it'    },
+  { value: 'liked',      label: 'Liked it'    },
+  { value: 'okay',       label: 'Okay'        },
+  { value: 'not_for_me', label: 'Not for me'  },
+];
+
 const STATUS_LABELS: Record<UserBookStatus, string> = {
   want_to_read: 'Want to Read',
   reading:      'Reading',
@@ -42,7 +51,8 @@ export default function LibraryScreen() {
   const [items, setItems] = useState<UserBook[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [updatingId, setUpdatingId]       = useState<string | null>(null);
+  const [pendingFeedback, setPendingFeedback] = useState<PendingFeedback | null>(null);
 
   useFocusEffect(useCallback(() => {
     async function load() {
@@ -87,6 +97,17 @@ export default function LibraryScreen() {
 
     load();
   }, []));
+
+  function saveSentiment(userBookId: string, sentiment: string) {
+    setPendingFeedback(null);
+    if (!supabase) return;
+    // Fire-and-forget; sentiment column may not exist until migration is applied
+    supabase
+      .from('user_books')
+      .update({ sentiment })
+      .eq('id', userBookId)
+      .then(() => {});
+  }
 
   async function handleUpdateStatus(userBook: UserBook, newStatus: UserBookStatus) {
     if (!supabase || !currentUserId) return;
@@ -183,6 +204,12 @@ export default function LibraryScreen() {
           : item
       )
     );
+
+    // Prompt for optional sentiment feedback on finish or DNF
+    if (newStatus === 'finished' || newStatus === 'dnf') {
+      setPendingFeedback({ userBookId: userBook.id, status: newStatus });
+    }
+
     setUpdatingId(null);
   }
 
@@ -251,8 +278,11 @@ export default function LibraryScreen() {
           ? Math.min(100, Math.round((item.current_page! / item.book!.page_count!) * 100))
           : null;
 
+        const hasSentimentPrompt = pendingFeedback?.userBookId === item.id;
+        const hasExtraRow = hasButtons || isUpdating || hasSentimentPrompt;
+
         return (
-          <View style={{ paddingTop: 16, paddingBottom: hasButtons || isUpdating ? 12 : 16, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' }}>
+          <View style={{ paddingTop: 16, paddingBottom: hasExtraRow ? 12 : 16, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' }}>
 
             {/* Tappable row: cover + title/author/badge */}
             <TouchableOpacity
@@ -269,7 +299,7 @@ export default function LibraryScreen() {
                   startedAt:  item.started_at ?? '',
                 },
               })}
-              style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: hasButtons || isUpdating ? 10 : 0 }}
+              style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: hasExtraRow ? 10 : 0 }}
             >
               <CoverThumb
                 url={item.book?.cover_url}
@@ -318,8 +348,38 @@ export default function LibraryScreen() {
               </View>
             </TouchableOpacity>
 
-            {/* Action buttons */}
-            {isUpdating ? (
+            {/* Action buttons / sentiment feedback */}
+            {pendingFeedback?.userBookId === item.id ? (
+              <View style={{ marginLeft: 54, marginTop: 6 }}>
+                <Text style={{ fontSize: 11, color: '#6b7280', marginBottom: 8 }}>
+                  How was it? (optional)
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {SENTIMENT_OPTIONS.map(opt => (
+                    <TouchableOpacity
+                      key={opt.value}
+                      onPress={() => saveSentiment(item.id, opt.value)}
+                      style={{
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 20,
+                        borderWidth: 1,
+                        borderColor: '#d1d5db',
+                        backgroundColor: '#fff',
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, color: '#374151' }}>{opt.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  <TouchableOpacity
+                    onPress={() => setPendingFeedback(null)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={{ fontSize: 12, color: '#9ca3af', paddingHorizontal: 4 }}>Skip</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : isUpdating ? (
               <ActivityIndicator color="#111827" style={{ alignSelf: 'flex-start', marginLeft: 54 }} />
             ) : item.status === 'want_to_read' ? (
               <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginLeft: 54 }}>
