@@ -37,6 +37,8 @@ export default function SearchScreen() {
   const [searching, setSearching] = useState(false);
   const [selectedBook, setSelectedBook] = useState<SelectedBook | null>(null);
 
+  const [note, setNote] = useState('');
+
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loadingFriends, setLoadingFriends] = useState(false);
   const [sendingTo, setSendingTo] = useState<string | null>(null);
@@ -152,6 +154,7 @@ export default function SearchScreen() {
         to_user_id: friend.id,
         book_id: bookId,
         status: 'sent',
+        note: note.trim() || null,
       })
       .select('id')
       .single();
@@ -180,6 +183,7 @@ export default function SearchScreen() {
     setQuery('');
     setBookResults([]);
     setSelectedBook(null);
+    setNote('');
     setFriends([]);
     setSendResult(null);
     setSendingTo(null);
@@ -279,6 +283,23 @@ export default function SearchScreen() {
             {selectedBook?.author}
           </Text>
         </View>
+
+        <TextInput
+          value={note}
+          onChangeText={setNote}
+          placeholder="Add a note (optional)…"
+          placeholderTextColor="#9ca3af"
+          maxLength={280}
+          style={{
+            backgroundColor: '#f3f4f6',
+            borderRadius: 10,
+            paddingHorizontal: 14,
+            paddingVertical: 11,
+            fontSize: 14,
+            color: '#111827',
+            marginBottom: 24,
+          }}
+        />
 
         <Text style={{
           fontSize: 11,

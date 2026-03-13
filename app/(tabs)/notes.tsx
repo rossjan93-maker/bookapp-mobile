@@ -7,6 +7,7 @@ type InboxItem = {
   id: string;
   status: string;
   book_id: string;
+  note: string | null;
   sender: { username: string } | null;
   book: { title: string; author: string } | null;
 };
@@ -71,7 +72,7 @@ export default function InboxScreen() {
       const { data, error: dbError } = await supabase
         .from('recommendations')
         .select(
-          'id, status, book_id, sender:profiles!recommendations_from_user_id_fkey(username), book:books(title, author)'
+          'id, status, book_id, note, sender:profiles!recommendations_from_user_id_fkey(username), book:books(title, author)'
         )
         .eq('to_user_id', user.id)
         .order('created_at', { ascending: false });
@@ -214,9 +215,14 @@ export default function InboxScreen() {
               <Text style={{ color: '#6b7280', fontSize: 13, marginBottom: 2 }}>
                 {item.book?.author ?? '—'}
               </Text>
-              <Text style={{ color: '#9ca3af', fontSize: 12, marginBottom: 14 }}>
+              <Text style={{ color: '#9ca3af', fontSize: 12, marginBottom: item.note ? 8 : 14 }}>
                 from {item.sender?.username ?? 'unknown'}
               </Text>
+              {item.note ? (
+                <Text style={{ fontSize: 13, color: '#374151', fontStyle: 'italic', marginBottom: 14 }}>
+                  "{item.note}"
+                </Text>
+              ) : null}
               <TouchableOpacity
                 onPress={() => handleSave(item)}
                 disabled={savingId !== null}
@@ -294,6 +300,11 @@ function RecRow({ item }: { item: InboxItem }) {
         <Text style={{ color: '#9ca3af', fontSize: 12 }}>
           from {item.sender?.username ?? 'unknown'}
         </Text>
+        {item.note ? (
+          <Text style={{ fontSize: 12, color: '#6b7280', fontStyle: 'italic', marginTop: 4 }}>
+            "{item.note}"
+          </Text>
+        ) : null}
       </View>
       <StatusPill status={item.status} />
     </View>

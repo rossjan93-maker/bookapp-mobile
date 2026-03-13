@@ -25,6 +25,7 @@ type SentRecommendation = {
   id: string;
   status: string;
   created_at: string;
+  note: string | null;
   to_user: { username: string } | null;
   book: { title: string; author: string } | null;
 };
@@ -119,7 +120,7 @@ export default function ProfileScreen() {
         supabase
           .from('recommendations')
           .select(
-            'id, status, created_at, ' +
+            'id, status, created_at, note, ' +
             'to_user:profiles!recommendations_to_user_id_fkey(username), ' +
             'book:books!recommendations_book_id_fkey(title, author)'
           )
@@ -315,6 +316,11 @@ export default function ProfileScreen() {
                   <Text style={{ fontSize: 12, color: '#9ca3af' }}>
                     to {rec.to_user?.username ?? '—'}
                   </Text>
+                  {rec.note ? (
+                    <Text style={{ fontSize: 12, color: '#6b7280', fontStyle: 'italic', marginTop: 4 }}>
+                      "{rec.note}"
+                    </Text>
+                  ) : null}
                 </View>
                 <View style={{
                   backgroundColor: badge.bg,
