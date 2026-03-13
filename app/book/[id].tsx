@@ -295,6 +295,9 @@ export default function BookDetailScreen() {
     ? computePacingNote(startedAt, yearlyGoal)
     : null;
 
+  const pacingState = pagePacing?.state ?? null;
+  const isAhead     = pacingState === 'ahead';
+
   const progressPct = hasPaging
     ? Math.min(100, Math.round((currentPage! / pageCount!) * 100))
     : null;
@@ -385,23 +388,27 @@ export default function BookDetailScreen() {
                 {/* Pacing guidance */}
                 {(pagePacing || datePacingNote) && (
                   <View style={{
-                    backgroundColor: '#fef9f0',
+                    backgroundColor: isAhead ? '#f0fdf4' : '#fef9f0',
                     borderRadius: 8,
                     paddingHorizontal: 12,
                     paddingVertical: 10,
                     borderWidth: 1,
-                    borderColor: '#fde68a',
+                    borderColor: isAhead ? '#bbf7d0' : '#fde68a',
                     marginBottom: 14,
                   }}>
                     {pagePacing ? (
                       <>
-                        <Text style={{ fontSize: 13, fontWeight: '600', color: '#92400e' }}>
-                          {pagePacing.pagesPerDayNeeded != null
-                            ? `${pagePacing.pagesPerDayNeeded} pages/day`
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: isAhead ? '#15803d' : '#92400e' }}>
+                          {pacingState === 'ahead'
+                            ? 'Ahead of pace'
+                            : pacingState === 'on_pace' && pagePacing.targetDate
+                            ? 'On pace'
+                            : pagePacing.pagesPerDayNeeded != null
+                            ? `${pagePacing.pagesPerDayNeeded} pages/day to stay on pace`
                             : `${pagePacing.pagesLeft} pages left`}
                         </Text>
                         {pagePacing.targetDate && (
-                          <Text style={{ fontSize: 12, color: '#b45309', marginTop: 2 }}>
+                          <Text style={{ fontSize: 12, color: isAhead ? '#16a34a' : '#b45309', marginTop: 2 }}>
                             Target finish: {pagePacing.targetDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                           </Text>
                         )}

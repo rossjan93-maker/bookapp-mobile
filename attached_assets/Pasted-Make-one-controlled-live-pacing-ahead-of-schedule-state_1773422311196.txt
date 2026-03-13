@@ -1,0 +1,108 @@
+Make one controlled “live pacing + ahead-of-schedule states + live reader insights refresh” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not add real AI / LLM integrations yet.
+Do not refactor unrelated business logic.
+Do not break recommendation / credibility / activity flows.
+
+Goal:
+Make pacing and insights feel truly alive by:
+1. making pacing explicitly aware of the current date
+2. showing positive states like “ahead of schedule” when the reader is outperforming the target pace
+3. refreshing reader insights immediately when progress changes, so the app reflects holistic progress live
+
+Files allowed to change:
+- lib/pacing.ts
+- lib/signals.ts if needed
+- app/book/[id].tsx
+- app/(tabs)/profile.tsx
+- app/(tabs)/library.tsx if needed
+- add one small shared helper/component only if truly useful
+- no schema changes unless absolutely necessary
+
+Primary product objectives
+
+A. Pacing must account for the current date
+Requirements:
+1. Revisit pacing logic so it clearly uses the current date and the user’s yearly goal timing.
+2. For reading books with enough data, pacing should be able to express:
+   - ahead of schedule
+   - on pace
+   - behind schedule
+3. This should work for:
+   - page-based pacing when page_count + current_page exist
+   - fallback date-based pacing when page data is incomplete
+4. Keep the messaging simple and human:
+   - “Ahead of pace — you’re winning”
+   - “On pace — target Mar 28”
+   - “Behind pace — 12 pages/day to catch up”
+   or similarly polished language
+5. Do not overstate precision when data is weak.
+
+B. Positive reinforcement
+Requirements:
+1. The app should celebrate when users are ahead.
+2. Add a positive pacing state in book detail and any currently-reading surfaces where it makes sense.
+3. This should feel motivating, not cheesy.
+4. Keep the visual language aligned with the current reading-app style.
+
+C. Live insights refresh
+Reader Insights should feel current, not stale.
+
+Requirements:
+1. After a user logs page progress, any derived reader insights that depend on progress history should refresh immediately where practical.
+2. Profile should not feel like it is waiting for a cold reload to reflect meaningful progress changes.
+3. If needed, add a lightweight re-fetch or state refresh pattern after progress updates.
+4. Keep this simple and safe — no heavy architecture rewrite.
+
+D. Currently Reading should reflect momentum better
+Requirements:
+1. Update Currently Reading cards and/or book detail pacing UI so momentum is more legible.
+2. If a user is ahead, show that clearly.
+3. If a user is behind, show the catch-up pace clearly.
+4. If data is weak, keep fallback messaging honest.
+
+E. Preserve all current flows
+Do not break:
+- recommendation sending
+- note sending
+- inbox lifecycle grouping
+- unread/new badge
+- manual add flow
+- yearly goal editing
+- library progression
+- sentiment capture
+- progress history logging
+- activity feed
+- friend detail screen
+- cover rendering and fallback logic
+- existing book detail routing
+- preference capture / edit taste
+- reader insights
+
+Implementation guidance
+1. Prefer evolving existing pacing helpers rather than rewriting the whole model.
+2. Keep state transitions understandable:
+   - ahead
+   - on pace
+   - behind
+3. If live insight refresh is easiest via a focused re-query on Profile when it regains focus, that is acceptable.
+4. If a lighter local refresh is possible from page update flows, that is also acceptable.
+5. Keep the UI copy polished and motivating.
+6. Avoid fake confidence if the user has too little history.
+
+Important constraints
+- This is a pacing and responsiveness refinement pass.
+- Do not build full adaptive intelligence yet.
+- Do not add big analytics dashboards.
+- Keep the changes practical and product-facing.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. pacing logic changes made
+6. how live insight refresh works now
+7. what was added now vs intentionally deferred for later adaptive intelligence

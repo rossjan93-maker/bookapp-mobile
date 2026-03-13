@@ -582,6 +582,7 @@ export default function ProfileScreen() {
                 : null;
 
               let pacingStr: string | null = null;
+              let pacingIsAhead = false;
               if (hasPageData) {
                 const p = computePagePacing(
                   item.current_page!,
@@ -590,6 +591,7 @@ export default function ProfileScreen() {
                   yearlyGoal
                 );
                 pacingStr = p.note;
+                pacingIsAhead = p.state === 'ahead';
               } else {
                 pacingStr = computePacingNote(item.started_at, yearlyGoal);
               }
@@ -657,13 +659,15 @@ export default function ProfileScreen() {
                   {/* Pacing note */}
                   {pacingStr && (
                     <View style={{
-                      backgroundColor: '#faf9f7',
+                      backgroundColor: pacingIsAhead ? '#f0fdf4' : '#faf9f7',
                       borderRadius: 6,
                       paddingHorizontal: 7,
                       paddingVertical: 4,
                       marginTop: pct !== null ? 5 : 8,
                     }}>
-                      <Text style={{ fontSize: 10, color: '#78716c', lineHeight: 14 }}>{pacingStr}</Text>
+                      <Text style={{ fontSize: 10, color: pacingIsAhead ? '#15803d' : '#78716c', lineHeight: 14 }}>
+                        {pacingStr}
+                      </Text>
                     </View>
                   )}
                 </TouchableOpacity>

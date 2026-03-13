@@ -9,7 +9,14 @@
  *   days_per_book  = 365 / yearly_goal
  *   target_finish  = started_at + days_per_book
  *   days_left      = target_finish - today
+ *
+ * Pacing states (page-based only):
+ *   ahead    — actual % complete > expected % complete + 10 pts
+ *   on_pace  — within ±10 pts of expected
+ *   behind   — actual % complete < expected % complete - 10 pts
  */
+
+export type PacingState = 'ahead' | 'on_pace' | 'behind';
 
 export function shortDate(d: Date): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -63,13 +70,21 @@ export type PagePacingResult = {
   pagesLeft: number;
   targetDate: Date | null;
   pagesPerDayNeeded: number | null;
-  /** Ready-to-display line, e.g. "12 pages/day · target Mar 28" */
+  /** ahead / on_pace / behind relative to the expected reading pace today */
+  state: PacingState;
+  /** Ready-to-display compact line for chips, e.g. "On pace · Mar 28" */
   note: string;
 };
 
 /**
  * Returns rich pacing data when page count is known.
  * Falls back gracefully when startedAt / yearlyGoal are missing.
+ *
+ * Pacing state is computed by comparing:
+ *   actual % complete  vs.  expected % complete today
+ * where expected = (days_since_start / days_per_book) × 100
+ *
+ * A ±10 percentage-point buffer avoids flickering between states.
  */
 export function computePagePacing(
   currentPage: number,
@@ -81,7 +96,14 @@ export function computePagePacing(
   const pagesLeft = Math.max(0, pageCount - currentPage);
 
   if (pagesLeft === 0) {
-    return { percentComplete: 100, pagesLeft: 0, targetDate: null, pagesPerDayNeeded: 0, note: 'Finished!' };
+    return {
+      percentComplete: 100,
+      pagesLeft: 0,
+      targetDate: null,
+      pagesPerDayNeeded: 0,
+      state: 'on_pace',
+      note: 'Finished!',
+    };
   }
 
   if (!startedAt || !yearlyGoal || yearlyGoal <= 0) {
@@ -90,20 +112,49 @@ export function computePagePacing(
       pagesLeft,
       targetDate: null,
       pagesPerDayNeeded: null,
+      state: 'on_pace',
       note: `${pagesLeft} pages left`,
     };
   }
 
-  const target = targetFinishDate(startedAt, yearlyGoal);
-  const daysLeft = Math.max(1, Math.ceil((target.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
-  const ppd = Math.ceil(pagesLeft / daysLeft);
+  const target       = targetFinishDate(startedAt, yearlyGoal);
+  const msLeft       = target.getTime() - Date.now();
+  const daysLeft     = Math.max(1, Math.ceil(msLeft / 86_400_000));
+  const ppd          = Math.ceil(pagesLeft / daysLeft);
+
+  // ── Determine pacing state ──
+  // Compare actual reading progress % to the expected % by today.
+  const start          = new Date(startedAt);
+  const daysPerBook    = 365 / yearlyGoal;
+  const daysSinceStart = Math.max(0, (Date.now() - start.getTime()) / 86_400_000);
+  const expectedPct    = Math.min(100, (daysSinceStart / daysPerBook) * 100);
+
+  let state: PacingState;
+  if (pct >= expectedPct + 10) {
+    state = 'ahead';
+  } else if (pct >= expectedPct - 10) {
+    state = 'on_pace';
+  } else {
+    state = 'behind';
+  }
+
+  // ── Compact chip note ──
+  let note: string;
+  if (state === 'ahead') {
+    note = `Ahead of pace · ${shortDate(target)}`;
+  } else if (state === 'on_pace') {
+    note = `On pace · ${shortDate(target)}`;
+  } else {
+    note = `${ppd} pages/day · ${shortDate(target)}`;
+  }
 
   return {
     percentComplete: pct,
     pagesLeft,
     targetDate: target,
     pagesPerDayNeeded: ppd,
-    note: `${ppd} pages/day · target ${shortDate(target)}`,
+    state,
+    note,
   };
 }
 
