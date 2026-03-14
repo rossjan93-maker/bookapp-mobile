@@ -1,10 +1,11 @@
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, FlatList, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 
 type UserBookStatus = 'want_to_read' | 'reading' | 'finished' | 'dnf';
+type FilterKey = 'all' | UserBookStatus;
 
 type UserBook = {
   id: string;
@@ -45,14 +46,31 @@ const STATUS_BADGE: Record<UserBookStatus, { bg: string; text: string }> = {
   dnf:          { bg: '#fee2e2', text: '#b91c1c' },
 };
 
+const FILTER_OPTIONS: Array<{ key: FilterKey; label: string }> = [
+  { key: 'all',          label: 'All'          },
+  { key: 'want_to_read', label: 'Want to Read' },
+  { key: 'reading',      label: 'Reading'      },
+  { key: 'finished',     label: 'Finished'     },
+  { key: 'dnf',          label: 'DNF'          },
+];
+
+const FILTER_EMPTY: Record<FilterKey, string> = {
+  all:          'Your library is empty.',
+  want_to_read: 'Nothing in your want to read list yet.',
+  reading:      'Not reading anything right now.',
+  finished:     'No finished books yet.',
+  dnf:          'No DNF books.',
+};
+
 export default function LibraryScreen() {
   const router = useRouter();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [items, setItems] = useState<UserBook[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [items, setItems]                 = useState<UserBook[]>([]);
+  const [loading, setLoading]             = useState(true);
+  const [error, setError]                 = useState<string | null>(null);
   const [updatingId, setUpdatingId]       = useState<string | null>(null);
   const [pendingFeedback, setPendingFeedback] = useState<PendingFeedback | null>(null);
+  const [activeFilter, setActiveFilter]   = useState<FilterKey>('all');
 
   useFocusEffect(useCallback(() => {
     async function load() {
@@ -229,39 +247,99 @@ export default function LibraryScreen() {
     );
   }
 
+  // Client-side filter — no Supabase re-query
+  const filteredItems = activeFilter === 'all'
+    ? items
+    : items.filter(item => item.status === activeFilter);
+
+  const headerCountText = (() => {
+    if (items.length === 0) return 'My Library';
+    if (activeFilter === 'all') {
+      return `${items.length} book${items.length === 1 ? '' : 's'}`;
+    }
+    const n = filteredItems.length;
+    return `${n} ${STATUS_LABELS[activeFilter as UserBookStatus]}${n === 1 ? '' : (activeFilter === 'dnf' ? '' : '')}`;
+  })();
+
   return (
     <FlatList
-      data={items}
+      data={filteredItems}
       keyExtractor={item => item.id}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 0, paddingBottom: 32 }}
       ListHeaderComponent={
-        <View style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingTop: 20,
-          paddingBottom: 16,
-          borderBottomWidth: items.length > 0 ? 1 : 0,
-          borderBottomColor: '#f5f5f4',
-          marginBottom: items.length > 0 ? 0 : 4,
-        }}>
-          <Text style={{ fontSize: 17, fontWeight: '700', color: '#1c1917' }}>
-            {items.length > 0 ? `${items.length} book${items.length === 1 ? '' : 's'}` : 'My Library'}
-          </Text>
-          <TouchableOpacity
-            onPress={() => router.push('/add-book')}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              backgroundColor: '#1c1917',
-              borderRadius: 8,
-              paddingHorizontal: 14,
-              paddingVertical: 8,
-              gap: 5,
-            }}
-          >
-            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>+ Add Book</Text>
-          </TouchableOpacity>
+        <View>
+          {/* ── Title + Add Book ── */}
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingTop: 20,
+            paddingBottom: 14,
+          }}>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: '#1c1917' }}>
+              {headerCountText}
+            </Text>
+            <TouchableOpacity
+              onPress={() => router.push('/add-book')}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: '#1c1917',
+                borderRadius: 8,
+                paddingHorizontal: 14,
+                paddingVertical: 8,
+                gap: 5,
+              }}
+            >
+              <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>+ Add Book</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* ── Filter chip bar ── */}
+          {items.length > 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginHorizontal: -20 }}
+              contentContainerStyle={{
+                paddingHorizontal: 20,
+                paddingBottom: 14,
+                flexDirection: 'row',
+                gap: 8,
+              }}
+            >
+              {FILTER_OPTIONS.map(f => {
+                const active = activeFilter === f.key;
+                return (
+                  <TouchableOpacity
+                    key={f.key}
+                    onPress={() => setActiveFilter(f.key)}
+                    style={{
+                      paddingHorizontal: 14,
+                      paddingVertical: 7,
+                      borderRadius: 20,
+                      borderWidth: 1,
+                      backgroundColor: active ? '#1c1917' : 'transparent',
+                      borderColor: active ? '#1c1917' : '#e7e5e4',
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 13,
+                      fontWeight: active ? '600' : '400',
+                      color: active ? '#fff' : '#78716c',
+                    }}>
+                      {f.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
+
+          {/* ── Divider ── */}
+          {items.length > 0 && (
+            <View style={{ height: 1, backgroundColor: '#f5f5f4' }} />
+          )}
         </View>
       }
       renderItem={({ item }) => {
@@ -397,20 +475,30 @@ export default function LibraryScreen() {
         );
       }}
       ListEmptyComponent={
-        <View style={{ alignItems: 'center', paddingTop: 52, paddingHorizontal: 32 }}>
-          <Text style={{ fontSize: 17, fontWeight: '700', color: '#1c1917', marginBottom: 10, textAlign: 'center' }}>
-            Your library is empty
-          </Text>
-          <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 28 }}>
-            Add books you're reading, have finished, or want to read — from recommendations or on your own.
-          </Text>
-          <TouchableOpacity
-            onPress={() => router.push('/add-book')}
-            style={{ backgroundColor: '#1c1917', borderRadius: 12, paddingVertical: 13, paddingHorizontal: 26 }}
-          >
-            <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Add your first book</Text>
-          </TouchableOpacity>
-        </View>
+        items.length === 0 ? (
+          // Library is totally empty — show the full onboarding empty state
+          <View style={{ alignItems: 'center', paddingTop: 52, paddingHorizontal: 32 }}>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: '#1c1917', marginBottom: 10, textAlign: 'center' }}>
+              Your library is empty
+            </Text>
+            <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 28 }}>
+              Add books you're reading, have finished, or want to read — from recommendations or on your own.
+            </Text>
+            <TouchableOpacity
+              onPress={() => router.push('/add-book')}
+              style={{ backgroundColor: '#1c1917', borderRadius: 12, paddingVertical: 13, paddingHorizontal: 26 }}
+            >
+              <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Add your first book</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          // Library has books but the active filter has zero matches
+          <View style={{ paddingTop: 40, paddingHorizontal: 20, alignItems: 'center' }}>
+            <Text style={{ fontSize: 15, color: '#a8a29e', textAlign: 'center', lineHeight: 22 }}>
+              {FILTER_EMPTY[activeFilter]}
+            </Text>
+          </View>
+        )
       }
     />
   );

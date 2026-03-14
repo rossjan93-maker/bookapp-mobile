@@ -1,0 +1,81 @@
+Make one targeted “Library status filter UX” pass.
+
+Do not change package versions.
+Do not add packages.
+Do not refactor unrelated logic.
+Do not change schema.
+Do not break recommendation / credibility / activity / pacing flows.
+
+Goal:
+Improve the Library UX by letting users filter books by status directly in the Library screen.
+
+This should be a meaningful UX improvement, not cosmetic-only styling.
+
+Scope:
+Only inspect and edit:
+- app/(tabs)/library.tsx
+- add one tiny shared helper/component only if truly useful
+- no other files unless absolutely necessary
+
+Requirements
+
+A. Add a status filter control to Library
+1. Add a compact, polished filter bar near the top of the Library screen.
+2. Include these filter options:
+   - All
+   - Want to Read
+   - Reading
+   - Finished
+   - DNF
+3. Default selection should be:
+   - All
+4. The filter should feel premium and easy to scan.
+5. Prefer horizontally arranged chips / segmented controls that fit the current editorial app style.
+
+B. Filter the visible books
+1. Selecting a filter should immediately update the visible list.
+2. Filtering should happen client-side from the already loaded library items.
+3. Preserve the existing item ordering within each filtered result set.
+4. Do not re-query Supabase just to filter statuses.
+
+C. Preserve current behaviors
+Do not break:
+- Add Book CTA
+- Library row layout
+- book detail navigation
+- status progression buttons
+- progress bars for reading books
+- pacing-related displays
+- empty state behavior
+
+D. Empty states
+1. If a selected filter has zero books, show a clear empty state specific to that filter.
+2. Good examples:
+   - “No books currently reading.”
+   - “No finished books yet.”
+   - “No DNF books.”
+3. Keep the empty state elegant and minimal.
+
+E. Design direction
+1. Keep the styling aligned with the app’s current premium editorial reading style.
+2. The selected filter should be clearly active.
+3. The control should not feel like generic mobile tabs.
+4. Keep spacing, borders, and colors consistent with the rest of the app.
+
+Implementation guidance
+1. Use a simple local state variable like activeFilter.
+2. Map:
+   - All → all items
+   - Want to Read → status = want_to_read
+   - Reading → status = reading
+   - Finished → status = finished
+   - DNF → status = dnf
+3. Keep the code explicit and easy to extend later.
+4. Avoid overengineering.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. filter UX decisions made
