@@ -3,6 +3,7 @@ import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'rea
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { BadgeContext } from './_layout';
+import { getFirstName } from '../../lib/displayName';
 import { CoverThumb } from '../../components/CoverThumb';
 
 type InboxItem = {
@@ -10,7 +11,7 @@ type InboxItem = {
   status: string;
   book_id: string;
   note: string | null;
-  sender: { username: string } | null;
+  sender: { username: string; first_name: string | null; last_name: string | null } | null;
   book: { title: string; author: string; cover_url: string | null; external_id: string } | null;
 };
 
@@ -82,7 +83,7 @@ export default function InboxScreen() {
       const { data, error: dbError } = await supabase
         .from('recommendations')
         .select(
-          'id, status, book_id, note, sender:profiles!recommendations_from_user_id_fkey(username), book:books(title, author, cover_url, external_id)'
+          'id, status, book_id, note, sender:profiles!recommendations_from_user_id_fkey(username, first_name, last_name), book:books(title, author, cover_url, external_id)'
         )
         .eq('to_user_id', user.id)
         .order('created_at', { ascending: false });
@@ -194,7 +195,7 @@ export default function InboxScreen() {
         externalId: item.book?.external_id ?? '',
         status: item.status,
         note: item.note ?? '',
-        fromUser: item.sender?.username ?? '',
+        fromUser: getFirstName(item.sender),
       },
     });
   }
@@ -287,7 +288,7 @@ export default function InboxScreen() {
                     {item.book?.author ?? '—'}
                   </Text>
                   <Text style={{ color: '#a8a29e', fontSize: 12 }}>
-                    from {item.sender?.username ?? 'unknown'}
+                    from {getFirstName(item.sender)}
                   </Text>
                   {item.note ? (
                     <Text style={{ fontSize: 13, color: '#57534e', fontStyle: 'italic', marginTop: 6 }}>
@@ -378,7 +379,7 @@ function RecRow({ item, onPress }: { item: InboxItem; onPress: () => void }) {
           {item.book?.author ?? '—'}
         </Text>
         <Text style={{ color: '#a8a29e', fontSize: 12 }}>
-          from {item.sender?.username ?? 'unknown'}
+          from {getFirstName(item.sender)}
         </Text>
         {item.note ? (
           <Text style={{ fontSize: 12, color: '#78716c', fontStyle: 'italic', marginTop: 4 }}>

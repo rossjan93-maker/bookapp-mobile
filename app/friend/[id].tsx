@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { getDisplayName } from '../../lib/displayName';
 
 type Stats = {
   recsSentToMe: number;
@@ -87,7 +88,7 @@ function StatCell({
 }
 
 export default function FriendDetailScreen() {
-  const { id: friendId, username } = useLocalSearchParams<{ id: string; username: string }>();
+  const { id: friendId, username, firstName, lastName } = useLocalSearchParams<{ id: string; username: string; firstName: string; lastName: string }>();
   const router = useRouter();
 
   const [stats, setStats] = useState<Stats | null>(null);
@@ -163,7 +164,7 @@ export default function FriendDetailScreen() {
     load();
   }, [friendId]);
 
-  const displayName = username ?? 'Friend';
+  const displayName = getDisplayName({ username, first_name: firstName || null, last_name: lastName || null });
 
   if (loading) {
     return (

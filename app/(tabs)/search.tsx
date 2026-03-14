@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
+import { getDisplayName, getFirstName } from '../../lib/displayName';
 
 type Step = 'search' | 'friends' | 'done';
 
@@ -29,6 +30,8 @@ type SelectedBook = {
 type Friend = {
   id: string;
   username: string;
+  first_name: string | null;
+  last_name: string | null;
 };
 
 function olCoverUrl(coverId?: number, size: 'S' | 'M' = 'M'): string | null {
@@ -113,7 +116,7 @@ export default function SearchScreen() {
 
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, username')
+      .select('id, username, first_name, last_name')
       .in('id', friendIds);
 
     setFriends((profiles as Friend[]) ?? []);
@@ -189,7 +192,7 @@ export default function SearchScreen() {
       });
       setSendResult({
         ok: true,
-        message: `Sent "${selectedBook.title}" to ${friend.username}.`,
+        message: `Sent "${selectedBook.title}" to ${getFirstName(friend)}.`,
       });
     }
   }
@@ -376,7 +379,7 @@ export default function SearchScreen() {
                   borderBottomColor: '#f5f5f4',
                 }}
               >
-                <Text style={{ fontSize: 15, color: '#1c1917' }}>{item.username}</Text>
+                <Text style={{ fontSize: 15, color: '#1c1917' }}>{getDisplayName(item)}</Text>
                 <TouchableOpacity
                   onPress={() => handleSend(item)}
                   disabled={sendingTo !== null}

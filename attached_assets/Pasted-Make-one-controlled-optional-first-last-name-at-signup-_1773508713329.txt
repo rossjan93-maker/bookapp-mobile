@@ -1,0 +1,104 @@
+Make one controlled “optional first + last name at signup, with clean display-name fallback across the app” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not refactor unrelated business logic.
+Do not break auth, recommendation, friendship, activity, or profile flows.
+
+Goal:
+Allow users to optionally provide first name and last name at signup, and use that cleaner human name across the app where appropriate instead of always showing username.
+
+Important:
+- first name and last name should be optional
+- username should remain supported
+- existing users must continue working
+- if first/last name are missing, the app should gracefully fall back to username
+
+Scope:
+Inspect and edit only what is necessary, likely including:
+- signup / auth UI
+- profile creation flow
+- profiles table / migration if needed
+- app screens that currently display username in user-facing contexts:
+  - recommendations
+  - inbox
+  - profile/friends/activity where relevant
+- add one tiny shared helper for display name formatting if useful
+
+Requirements
+
+A. Data model
+1. Add optional fields for:
+   - first_name
+   - last_name
+2. Keep username as-is.
+3. Existing profiles should continue to work with null first_name / last_name.
+4. Prefer the smallest safe migration.
+
+B. Signup flow
+1. Update signup so users can optionally enter:
+   - first name
+   - last name
+2. These fields should not be required.
+3. The signup UX should remain simple and clean.
+4. If the user leaves them blank, signup should still work normally.
+
+C. Display-name logic
+1. Add a single shared display-name helper if useful.
+2. Preferred display behavior:
+   - if first_name exists, show first_name
+   - if first_name + last_name both exist and full name makes sense in a given context, allow using full name
+   - otherwise fall back to username
+3. Keep this explicit and consistent.
+4. Do not show awkward blank strings or extra spaces.
+
+D. Where names should be used
+Use cleaner human-readable names in user-facing places where that improves UX, especially:
+1. sending recommendations
+2. inbox / recommendation received surfaces
+3. profile / friend displays where appropriate
+4. activity feed actor naming where appropriate
+
+Guidance:
+- In conversational/social contexts, prefer first name if available
+- In profile/account identity contexts, username can still remain visible where helpful
+- Do not remove username from the app entirely
+
+E. Preserve compatibility
+1. Existing users with only username must render correctly everywhere.
+2. No screen should break if first_name / last_name are null.
+3. Do not require a backfill.
+
+F. Keep logic clean
+1. Avoid repeating name formatting logic across multiple files.
+2. Prefer one shared helper like:
+   - getDisplayName(profileLike)
+   or similar
+3. Keep changes minimal and explicit.
+
+G. Preserve all current flows
+Do not break:
+- signup / login
+- profile loading
+- friend search and friendships
+- sending recommendations
+- inbox lifecycle
+- activity feed
+- reader insights / patterns
+- book detail
+- library
+- profile editing / taste editing
+
+Implementation guidance
+1. If signup currently writes into profiles after auth creation, extend that write to include first_name / last_name.
+2. If the app already depends on profiles.username, continue doing so.
+3. If any selects currently only fetch username, expand them only where needed.
+4. Keep fallback behavior consistent and obvious.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. display-name fallback rules used
+6. any schema tradeoff made

@@ -10,19 +10,22 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
+import { getDisplayName, getFirstName } from '../../lib/displayName';
 
 type FeedEvent = {
   id: string;
   event_type: string;
   created_at: string;
   book_id: string | null;
-  actor: { username: string } | null;
+  actor: { username: string; first_name: string | null; last_name: string | null } | null;
   book: { title: string; author: string; cover_url: string | null; external_id: string } | null;
 };
 
 type ProfileResult = {
   id: string;
   username: string;
+  first_name: string | null;
+  last_name: string | null;
 };
 
 type FriendshipRow = {
@@ -30,8 +33,8 @@ type FriendshipRow = {
   requester_id: string;
   addressee_id: string;
   status: string;
-  requester: { id: string; username: string } | null;
-  addressee: { id: string; username: string } | null;
+  requester: { id: string; username: string; first_name: string | null; last_name: string | null } | null;
+  addressee: { id: string; username: string; first_name: string | null; last_name: string | null } | null;
 };
 
 type RelationshipState = 'none' | 'pending' | 'accepted';
@@ -151,7 +154,7 @@ export default function HomeScreen() {
       .from('activity_events')
       .select(
         'id, event_type, created_at, book_id, ' +
-        'actor:profiles!activity_events_actor_id_fkey(username), ' +
+        'actor:profiles!activity_events_actor_id_fkey(username, first_name, last_name), ' +
         'book:books!activity_events_book_id_fkey(title, author, cover_url, external_id)'
       )
       .order('created_at', { ascending: false })
@@ -170,8 +173,8 @@ export default function HomeScreen() {
       .from('friendships')
       .select(
         'id, requester_id, addressee_id, status, ' +
-        'requester:profiles!friendships_requester_id_fkey(id, username), ' +
-        'addressee:profiles!friendships_addressee_id_fkey(id, username)'
+        'requester:profiles!friendships_requester_id_fkey(id, username, first_name, last_name), ' +
+        'addressee:profiles!friendships_addressee_id_fkey(id, username, first_name, last_name)'
       )
       .or(`requester_id.eq.${uid},addressee_id.eq.${uid}`);
     setFriendships((data as FriendshipRow[]) ?? []);
@@ -199,7 +202,7 @@ export default function HomeScreen() {
     setSearchError(null);
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, username')
+      .select('id, username, first_name, last_name')
       .ilike('username', `%${query}%`)
       .neq('id', userId)
       .limit(20);
@@ -228,7 +231,7 @@ export default function HomeScreen() {
   const acceptedFriends = friendships
     .filter(f => f.status === 'accepted')
     .map(f => (f.requester_id === userId ? f.addressee : f.requester))
-    .filter(Boolean) as { id: string; username: string }[];
+    .filter(Boolean) as { id: string; username: string; first_name: string | null; last_name: string | null }[];
 
   if (feedLoading || loadingFriendships) {
     return (
@@ -286,7 +289,7 @@ export default function HomeScreen() {
           {feed.map(event => {
             const verb = eventVerb(event.event_type);
             if (!verb) return null;
-            const actor = event.actor?.username ?? 'Someone';
+            const actor = getFirstName(event.actor);
             const title = event.book?.title ?? '';
             const author = event.book?.author ?? '';
             const canTap = !!event.book_id && !!title;
@@ -425,8 +428,13 @@ export default function HomeScreen() {
                 }}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <InitialAvatar name={result.username} />
-                  <Text style={{ fontSize: 15, color: '#1c1917' }}>{result.username}</Text>
+                  <InitialAvatar name={getDisplayName(result)} />
+                  <View>
+                    <Text style={{ fontSize: 15, color: '#1c1917' }}>{getDisplayName(result)}</Text>
+                    {(result.first_name || result.last_name) && (
+                      <Text style={{ fontSize: 12, color: '#a8a29e' }}>@{result.username}</Text>
+                    )}
+                  </View>
                 </View>
                 {isAdding ? (
                   <ActivityIndicator color="#78716c" size="small" />
@@ -475,7 +483,7 @@ export default function HomeScreen() {
           {acceptedFriends.map((friend, idx) => (
             <TouchableOpacity
               key={friend.id}
-              onPress={() => router.push({ pathname: '/friend/[id]', params: { id: friend.id, username: friend.username } })}
+              onPress={() => router.push({ pathname: '/friend/[id]', params: { id: friend.id, username: friend.username, firstName: friend.first_name ?? '', lastName: friend.last_name ?? '' } })}
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -487,8 +495,13 @@ export default function HomeScreen() {
               }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <InitialAvatar name={friend.username} />
-                <Text style={{ fontSize: 15, color: '#1c1917' }}>{friend.username}</Text>
+                <InitialAvatar name={getDisplayName(friend)} />
+                <View>
+                  <Text style={{ fontSize: 15, color: '#1c1917' }}>{getDisplayName(friend)}</Text>
+                  {(friend.first_name || friend.last_name) && (
+                    <Text style={{ fontSize: 12, color: '#a8a29e' }}>@{friend.username}</Text>
+                  )}
+                </View>
               </View>
               <Text style={{ fontSize: 18, color: '#d6d3d1', marginRight: 2 }}>›</Text>
             </TouchableOpacity>

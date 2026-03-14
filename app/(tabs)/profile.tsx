@@ -10,11 +10,14 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
+import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computeDatePacing, computePagePacing, computeGoalProgress } from '../../lib/pacing';
 import { computeAvgPagesPerDay } from '../../lib/signals';
 
 type Profile = {
   username: string;
+  first_name: string | null;
+  last_name: string | null;
   yearly_reading_goal: number | null;
 };
 
@@ -35,7 +38,7 @@ type CurrentlyReading = {
 type PendingRequest = {
   id: string;
   requester_id: string;
-  requester: { username: string } | null;
+  requester: { username: string; first_name: string | null; last_name: string | null } | null;
 };
 
 type SentRecommendation = {
@@ -44,7 +47,7 @@ type SentRecommendation = {
   status: string;
   created_at: string;
   note: string | null;
-  to_user: { username: string } | null;
+  to_user: { username: string; first_name: string | null; last_name: string | null } | null;
   book: { title: string; author: string; cover_url: string | null; external_id: string } | null;
 };
 
@@ -146,10 +149,10 @@ export default function ProfileScreen() {
         selfAddedRes,
         recAddedRes,
       ] = await Promise.all([
-        supabase.from('profiles').select('username, yearly_reading_goal').eq('id', user.id).single(),
+        supabase.from('profiles').select('username, first_name, last_name, yearly_reading_goal').eq('id', user.id).single(),
         supabase
           .from('friendships')
-          .select('id, requester_id, requester:profiles!friendships_requester_id_fkey(username)')
+          .select('id, requester_id, requester:profiles!friendships_requester_id_fkey(username, first_name, last_name)')
           .eq('addressee_id', user.id)
           .eq('status', 'pending'),
         supabase
@@ -180,7 +183,7 @@ export default function ProfileScreen() {
           .from('recommendations')
           .select(
             'id, book_id, status, created_at, note, ' +
-            'to_user:profiles!recommendations_to_user_id_fkey(username), ' +
+            'to_user:profiles!recommendations_to_user_id_fkey(username, first_name, last_name), ' +
             'book:books!recommendations_book_id_fkey(title, author, cover_url, external_id)'
           )
           .eq('from_user_id', user.id)
@@ -342,6 +345,7 @@ export default function ProfileScreen() {
   }
 
   const username    = profile?.username ?? '—';
+  const displayName = getDisplayName(profile);
   const yearlyGoal  = profile?.yearly_reading_goal ?? null;
   const goalProgress = stats ? computeGoalProgress(stats.finishedThisYear, yearlyGoal) : null;
 
@@ -384,13 +388,16 @@ export default function ProfileScreen() {
             marginRight: 16,
           }}>
             <Text style={{ fontSize: 28, fontWeight: '800', color: '#fff' }}>
-              {username.charAt(0).toUpperCase()}
+              {displayName.charAt(0).toUpperCase()}
             </Text>
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 22, fontWeight: '800', color: '#1c1917', letterSpacing: -0.4 }}>
-              {username}
+              {displayName}
             </Text>
+            {displayName !== username && (
+              <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 1 }}>@{username}</Text>
+            )}
             <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 2 }}>{email ?? '—'}</Text>
           </View>
           <TouchableOpacity
@@ -954,7 +961,7 @@ export default function ProfileScreen() {
               }}
             >
               <Text style={{ fontSize: 15, color: '#1c1917' }}>
-                {req.requester?.username ?? req.requester_id}
+                {getDisplayName(req.requester) !== 'Unknown' ? getDisplayName(req.requester) : req.requester_id}
               </Text>
               <TouchableOpacity
                 onPress={() => handleAccept(req.id)}
@@ -989,7 +996,7 @@ export default function ProfileScreen() {
                     externalId: rec.book?.external_id ?? '',
                     status: rec.status,
                     note: rec.note ?? '',
-                    toUser: rec.to_user?.username ?? '',
+                    toUser: getFirstName(rec.to_user),
                   },
                 })}
                 style={{
@@ -1014,7 +1021,7 @@ export default function ProfileScreen() {
                     {rec.book?.author ?? '—'}
                   </Text>
                   <Text style={{ fontSize: 12, color: '#a8a29e' }}>
-                    to {rec.to_user?.username ?? '—'}
+                    to {getFirstName(rec.to_user)}
                   </Text>
                   {rec.note ? (
                     <Text style={{ fontSize: 12, color: '#78716c', fontStyle: 'italic', marginTop: 4 }}>
