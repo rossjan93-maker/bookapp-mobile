@@ -114,6 +114,7 @@ export default function SettingsScreen() {
 
   const [userId, setUserId]   = useState<string | null>(null);
   const [username, setUsername] = useState('');
+  const [email, setEmail]       = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [firstName, setFirstName] = useState('');
@@ -134,6 +135,7 @@ export default function SettingsScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setLoading(false); return; }
       setUserId(user.id);
+      setEmail(user.email ?? null);
 
       const { data } = await supabase
         .from('profiles')
@@ -355,6 +357,21 @@ export default function SettingsScreen() {
       {/* ── Account ── */}
       <SectionHeader>Account</SectionHeader>
       <SettingsCard>
+        <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
+          <Text style={{ fontSize: 11, color: '#a8a29e', fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 }}>
+            Account Details
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 }}>
+            <Text style={{ fontSize: 13, color: '#78716c' }}>Username</Text>
+            <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500' }}>@{username}</Text>
+          </View>
+          <View style={{ height: 1, backgroundColor: '#f5f5f4', marginVertical: 2 }} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 }}>
+            <Text style={{ fontSize: 13, color: '#78716c' }}>Email</Text>
+            <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500' }}>{email ?? '—'}</Text>
+          </View>
+        </View>
+        <View style={{ height: 1, backgroundColor: '#f5f5f4' }} />
         <TouchableOpacity
           onPress={handleSignOut}
           style={{

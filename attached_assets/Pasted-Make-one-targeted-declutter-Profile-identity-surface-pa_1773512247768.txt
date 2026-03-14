@@ -1,0 +1,83 @@
+Make one targeted “declutter Profile identity surface” pass.
+
+Do not change package versions.
+Do not add packages.
+Do not refactor unrelated logic.
+Do not change schema.
+Do not break auth, settings, recommendation, friendship, activity, pacing, or profile flows.
+
+Goal:
+Simplify the Profile identity experience so the app feels cleaner and more premium.
+
+Problem:
+The current Profile header shows:
+- full name
+- username
+- email
+This feels cluttered.
+
+Desired behavior:
+- On the main Profile screen, only show the user’s display name prominently
+- Do NOT show email or username on the main Profile surface
+- Username and email should live in Settings / Account details instead
+- Across the app, continue preferring the display name in social/product contexts
+
+Scope:
+Only inspect and edit what is necessary, likely:
+- app/(tabs)/profile.tsx
+- app/settings.tsx (or equivalent settings/preferences screen)
+- any account/details sub-section if needed
+- shared display-name helper only if needed
+- no broad unrelated redesigns
+
+Requirements
+
+A. Clean up Profile header
+1. Remove visible username and email from the main Profile header.
+2. Keep the display name as the primary identity element.
+3. The Profile screen should feel calmer and less admin-like.
+4. Do not leave awkward spacing after removing the extra lines.
+
+B. Move account details to Settings
+1. Username and email should still be accessible somewhere.
+2. Put them in Settings, ideally under an “Account” or “Profile details” section.
+3. They can be shown as secondary information there.
+4. Keep this screen clean and structured.
+
+C. Preserve display-name behavior across the app
+1. Continue using display name in app-facing/social surfaces.
+2. Do not regress to username in places where the cleaner name is already working.
+3. Username should remain an account identifier, not the dominant visible identity.
+
+D. Optional visibility philosophy
+1. Treat email and username as lower-visibility account data.
+2. Do not expose them on product-facing surfaces unless there is a good reason.
+3. No public-visibility toggle is needed in this pass unless it already fits naturally.
+
+E. Preserve all current flows
+Do not break:
+- profile loading
+- settings access
+- identity editing
+- yearly goal
+- taste preferences
+- reader insights / patterns
+- recommendations
+- inbox
+- activity feed
+- friend detail
+- library / book detail
+
+Implementation guidance
+1. Keep the change surgical.
+2. This is mostly information architecture and presentation cleanup.
+3. Prefer name-only in Profile.
+4. Keep username/email available in Settings for account clarity.
+5. Make the result feel cleaner, quieter, and more premium.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. information architecture decisions made

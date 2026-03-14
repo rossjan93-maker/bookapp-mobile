@@ -363,10 +363,6 @@ export default function ProfileScreen() {
             <Text style={{ fontSize: 22, fontWeight: '800', color: '#1c1917', letterSpacing: -0.4 }}>
               {displayName}
             </Text>
-            {displayName !== username && (
-              <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 1 }}>@{username}</Text>
-            )}
-            <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 2 }}>{email ?? '—'}</Text>
           </View>
           <TouchableOpacity
             onPress={() => router.push('/settings')}
