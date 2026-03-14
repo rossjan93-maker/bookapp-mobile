@@ -10,7 +10,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
-import { computeDatePacing, computePagePacing, computeGoalProgress } from '../../lib/pacing';
+import { computeGoalProgress } from '../../lib/pacing';
 import { computeAvgPagesPerDay, computeSourceCompletion, sourceCompletionInsight } from '../../lib/signals';
 import type { SourceCompletion } from '../../lib/signals';
 
@@ -19,20 +19,6 @@ type Profile = {
   first_name: string | null;
   last_name: string | null;
   yearly_reading_goal: number | null;
-};
-
-type CurrentlyReading = {
-  id: string;
-  book_id: string;
-  started_at: string | null;
-  current_page: number | null;
-  book: {
-    title: string;
-    author: string;
-    cover_url: string | null;
-    external_id: string;
-    page_count: number | null;
-  } | null;
 };
 
 type PendingRequest = {
@@ -99,7 +85,6 @@ export default function ProfileScreen() {
   const [email, setEmail]               = useState<string | null>(null);
   const [userId, setUserId]             = useState<string | null>(null);
   const [profile, setProfile]           = useState<Profile | null>(null);
-  const [currentlyReading, setCurrentlyReading] = useState<CurrentlyReading[]>([]);
   const [pendingRequests, setPendingRequests]    = useState<PendingRequest[]>([]);
   const [sentRecs, setSentRecs]         = useState<SentRecommendation[]>([]);
   const [prefs, setPrefs]               = useState<ReaderPrefs | null>(null);
@@ -252,30 +237,12 @@ export default function ProfileScreen() {
           .eq('status', 'dnf'),
       ]);
 
-      // Currently reading: try with progress columns, fall back if migration not yet applied.
-      let crResult = await supabase
-        .from('user_books')
-        .select('id, book_id, started_at, current_page, book:books(title, author, cover_url, external_id, page_count)')
-        .eq('user_id', user.id)
-        .eq('status', 'reading')
-        .order('started_at', { ascending: false });
-
-      if (crResult.error) {
-        crResult = await supabase
-          .from('user_books')
-          .select('id, book_id, started_at, book:books(title, author, cover_url, external_id)')
-          .eq('user_id', user.id)
-          .eq('status', 'reading')
-          .order('started_at', { ascending: false });
-      }
-
       if (profileRes.error) {
         setError('Could not load profile.');
       } else {
         setProfile(profileRes.data);
       }
 
-      setCurrentlyReading((crResult.data as unknown as CurrentlyReading[]) ?? []);
       setPendingRequests((requestsRes.data as unknown as PendingRequest[]) ?? []);
       setSentRecs((sentRecsRes.data as unknown as SentRecommendation[]) ?? []);
       setPrefs(prefsRes.data ?? null);
@@ -538,145 +505,6 @@ export default function ProfileScreen() {
           <Text style={{ fontSize: 20, color: '#d6d3d1', marginLeft: 10 }}>›</Text>
         </TouchableOpacity>
       </View>
-
-      {/* ── Currently Reading ── */}
-      {currentlyReading.length > 0 && (
-        <View style={{ marginBottom: 28 }}>
-          <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
-            <SectionLabel>Currently Reading</SectionLabel>
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}
-          >
-            {currentlyReading.map(item => {
-              const hasPageData = !!(
-                item.current_page && item.current_page > 0 &&
-                item.book?.page_count && item.book.page_count > 0
-              );
-              const pct = hasPageData
-                ? Math.min(100, Math.round((item.current_page! / item.book!.page_count!) * 100))
-                : null;
-
-              let pacingStr: string | null = null;
-              let pacingIsAhead = false;
-              let pacingState: 'ahead' | 'on_pace' | 'behind' | null = null;
-              if (hasPageData) {
-                const p = computePagePacing(
-                  item.current_page!,
-                  item.book!.page_count!,
-                  item.started_at,
-                  yearlyGoal
-                );
-                pacingStr   = p.note;
-                pacingState = p.state;
-                pacingIsAhead = p.state === 'ahead';
-              } else {
-                const dp  = computeDatePacing(item.started_at, yearlyGoal);
-                pacingStr   = dp?.note ?? null;
-                pacingState = dp?.state ?? null;
-                pacingIsAhead = false; // date-based never claims 'ahead'
-              }
-
-              return (
-                <TouchableOpacity
-                  key={item.id}
-                  activeOpacity={0.75}
-                  onPress={() => router.push({
-                    pathname: '/book/[id]',
-                    params: {
-                      id: item.book_id,
-                      title: item.book?.title ?? '',
-                      author: item.book?.author ?? '',
-                      coverUrl: item.book?.cover_url ?? '',
-                      externalId: item.book?.external_id ?? '',
-                      status: 'reading',
-                      startedAt: item.started_at ?? '',
-                      readingGoal: String(yearlyGoal ?? ''),
-                    },
-                  })}
-                  style={{
-                    backgroundColor: '#fff',
-                    borderRadius: 14,
-                    padding: 16,
-                    width: 170,
-                    borderWidth: pacingState ? 1.5 : 1,
-                    borderColor: pacingState === 'behind'
-                      ? '#fcd34d'
-                      : pacingState === 'ahead'
-                      ? '#86efac'
-                      : '#f0ede8',
-                    shadowColor: '#000',
-                    shadowOpacity: 0.06,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 2 },
-                    elevation: 2,
-                  }}
-                >
-                  <CoverThumb
-                    url={item.book?.cover_url}
-                    externalId={item.book?.external_id}
-                    width={90}
-                    height={130}
-                  />
-                  <Text
-                    numberOfLines={2}
-                    style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginTop: 11, lineHeight: 18 }}
-                  >
-                    {item.book?.title ?? '—'}
-                  </Text>
-                  <Text
-                    numberOfLines={1}
-                    style={{ fontSize: 12, color: '#a8a29e', marginTop: 3 }}
-                  >
-                    {item.book?.author ?? '—'}
-                  </Text>
-
-                  {/* Progress bar */}
-                  {pct !== null && (
-                    <View style={{ marginTop: 8 }}>
-                      <View style={{ height: 3, backgroundColor: '#e7e5e4', borderRadius: 2, overflow: 'hidden' }}>
-                        <View style={{ height: 3, width: `${pct}%`, backgroundColor: '#1c1917', borderRadius: 2 }} />
-                      </View>
-                      <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 3 }}>
-                        p.{item.current_page} of {item.book?.page_count}
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* Pacing note */}
-                  {pacingStr && (
-                    <View style={{
-                      backgroundColor: pacingIsAhead
-                        ? '#f0fdf4'
-                        : pacingState === 'behind'
-                        ? '#fef9f0'
-                        : '#faf9f7',
-                      borderRadius: 6,
-                      paddingHorizontal: 7,
-                      paddingVertical: 4,
-                      marginTop: pct !== null ? 5 : 8,
-                    }}>
-                      <Text style={{
-                        fontSize: 10,
-                        lineHeight: 14,
-                        color: pacingIsAhead
-                          ? '#15803d'
-                          : pacingState === 'behind'
-                          ? '#92400e'
-                          : '#78716c',
-                      }}>
-                        {pacingStr}
-                      </Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      )}
 
       {/* ── Reader Insights ── */}
       {signals && (() => {

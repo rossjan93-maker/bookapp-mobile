@@ -11,12 +11,14 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
+import { computePagePacing } from '../../lib/pacing';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type CurrentRead = {
   id: string;
   book_id: string;
+  started_at: string | null;
   current_page: number | null;
   title: string;
   author: string;
@@ -132,7 +134,8 @@ export default function HomeScreen() {
   const [greeting, setGreeting] = useState('');
 
   // Dashboard modules
-  const [currentRead, setCurrentRead] = useState<CurrentRead | null>(null);
+  const [currentReads, setCurrentReads] = useState<CurrentRead[]>([]);
+  const [yearlyGoal, setYearlyGoal]     = useState<number | null>(null);
   const [pendingRecCount, setPendingRecCount] = useState(0);
 
   // Activity feed
@@ -219,41 +222,48 @@ export default function HomeScreen() {
 
   async function loadCurrentRead(uid: string) {
     if (!supabase) return;
+
+    // Load yearly goal for honest pacing-state card colors
+    const profileRes = await supabase
+      .from('profiles')
+      .select('yearly_reading_goal')
+      .eq('id', uid)
+      .single();
+    setYearlyGoal(profileRes.data?.yearly_reading_goal ?? null);
+
+    // Load all reading books ordered by most recently progressed, then started.
     // Try with progress columns; fall back if migration not yet applied.
     let res = await supabase
       .from('user_books')
-      .select('id, book_id, current_page, book:books(title, author, cover_url, external_id, page_count)')
+      .select('id, book_id, started_at, current_page, book:books(title, author, cover_url, external_id, page_count)')
       .eq('user_id', uid)
       .eq('status', 'reading')
-      .order('progress_updated_at', { ascending: false, nullsFirst: false })
-      .limit(1)
-      .maybeSingle();
+      .order('progress_updated_at', { ascending: false, nullsFirst: false });
 
     if (res.error) {
       res = await supabase
         .from('user_books')
-        .select('id, book_id, book:books(title, author, cover_url, external_id)')
+        .select('id, book_id, started_at, book:books(title, author, cover_url, external_id)')
         .eq('user_id', uid)
         .eq('status', 'reading')
-        .limit(1)
-        .maybeSingle();
+        .order('created_at', { ascending: false });
     }
 
-    if (res.data) {
-      const b = res.data.book as any;
-      setCurrentRead({
-        id: res.data.id,
-        book_id: res.data.book_id,
-        current_page: res.data.current_page ?? null,
-        title: b?.title ?? '',
-        author: b?.author ?? '',
-        cover_url: b?.cover_url ?? null,
-        external_id: b?.external_id ?? null,
-        page_count: b?.page_count ?? null,
-      });
-    } else {
-      setCurrentRead(null);
-    }
+    const rows = (res.data as any[]) ?? [];
+    setCurrentReads(rows.map(r => {
+      const b = r.book as any;
+      return {
+        id:           r.id,
+        book_id:      r.book_id,
+        started_at:   r.started_at ?? null,
+        current_page: r.current_page ?? null,
+        title:        b?.title ?? '',
+        author:       b?.author ?? '',
+        cover_url:    b?.cover_url ?? null,
+        external_id:  b?.external_id ?? null,
+        page_count:   b?.page_count ?? null,
+      };
+    }));
   }
 
   async function loadPendingRecs(uid: string) {
@@ -333,7 +343,16 @@ export default function HomeScreen() {
     );
   }
 
-  // ── Progress helpers ─────────────────────────────────────────────────────────
+  // ── Progress + pacing helpers ─────────────────────────────────────────────────
+
+  function homeCardBorderColor(cr: CurrentRead, goal: number | null): string {
+    const pageCount = cr.page_count;
+    if (!goal || !pageCount || pageCount <= 0) return '#d6d3d1';
+    const { state } = computePagePacing(cr.current_page ?? 0, pageCount, cr.started_at, goal);
+    if (state === 'ahead' || state === 'on_pace') return '#86efac';
+    if (state === 'behind') return '#fcd34d';
+    return '#d6d3d1';
+  }
 
   function progressLabel(cr: CurrentRead): string {
     if (cr.current_page && cr.page_count) {
@@ -370,90 +389,164 @@ export default function HomeScreen() {
           {greeting ? `Hi, ${greeting}` : 'Home'}
         </Text>
         <Text style={{ fontSize: 14, color: '#a8a29e', marginTop: 5 }}>
-          {currentRead ? `Currently reading · ${currentRead.title}` : 'Your reading world'}
+          {currentReads.length === 1
+            ? `Currently reading · ${currentReads[0].title}`
+            : currentReads.length > 1
+            ? `${currentReads.length} books in progress`
+            : 'Your reading world'}
         </Text>
       </View>
 
       {/* ── 1. Continue Reading ── */}
-      {currentRead && (
+      {currentReads.length > 0 && (
         <View style={{ marginBottom: 32 }}>
           <SectionLabel>Continue Reading</SectionLabel>
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => router.push({
-              pathname: '/book/[id]',
-              params: {
-                id: currentRead.book_id,
-                title: currentRead.title,
-                author: currentRead.author,
-                coverUrl: currentRead.cover_url ?? '',
-                externalId: currentRead.external_id ?? '',
-              },
-            })}
-          >
-            <View style={{
-              backgroundColor: '#fff',
-              borderRadius: 16,
-              padding: 16,
-              flexDirection: 'row',
-              alignItems: 'center',
-              shadowColor: '#000',
-              shadowOpacity: 0.06,
-              shadowRadius: 8,
-              shadowOffset: { width: 0, height: 2 },
-              elevation: 2,
-              borderLeftWidth: 3,
-              borderLeftColor: '#1c1917',
-            }}>
-              <CoverThumb
-                url={currentRead.cover_url}
-                externalId={currentRead.external_id}
-                width={56}
-                height={82}
-              />
-              <View style={{ flex: 1, marginLeft: 16 }}>
-                <Text style={{
-                  fontSize: 16,
-                  fontWeight: '700',
-                  color: '#1c1917',
-                  lineHeight: 22,
-                  marginBottom: 3,
-                }} numberOfLines={2}>
-                  {currentRead.title}
-                </Text>
-                <Text style={{ fontSize: 13, color: '#78716c', marginBottom: 12 }} numberOfLines={1}>
-                  {currentRead.author}
-                </Text>
-                {/* Progress bar */}
-                {(currentRead.current_page || currentRead.page_count) ? (
-                  <>
-                    <View style={{
-                      height: 3,
-                      backgroundColor: '#e7e5e4',
-                      borderRadius: 2,
-                      marginBottom: 6,
-                      overflow: 'hidden',
-                    }}>
-                      {progressPct(currentRead) > 0 && (
+
+          {currentReads.length === 1 ? (() => {
+            const cr = currentReads[0];
+            const accentColor = homeCardBorderColor(cr, yearlyGoal);
+            return (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => router.push({
+                  pathname: '/book/[id]',
+                  params: {
+                    id: cr.book_id,
+                    title: cr.title,
+                    author: cr.author,
+                    coverUrl: cr.cover_url ?? '',
+                    externalId: cr.external_id ?? '',
+                    status: 'reading',
+                    startedAt: cr.started_at ?? '',
+                  },
+                })}
+              >
+                <View style={{
+                  backgroundColor: '#fff',
+                  borderRadius: 16,
+                  padding: 16,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  shadowColor: '#000',
+                  shadowOpacity: 0.06,
+                  shadowRadius: 8,
+                  shadowOffset: { width: 0, height: 2 },
+                  elevation: 2,
+                  borderLeftWidth: 3,
+                  borderLeftColor: accentColor,
+                }}>
+                  <CoverThumb url={cr.cover_url} externalId={cr.external_id} width={56} height={82} />
+                  <View style={{ flex: 1, marginLeft: 16 }}>
+                    <Text style={{
+                      fontSize: 16, fontWeight: '700', color: '#1c1917', lineHeight: 22, marginBottom: 3,
+                    }} numberOfLines={2}>{cr.title}</Text>
+                    <Text style={{ fontSize: 13, color: '#78716c', marginBottom: 12 }} numberOfLines={1}>
+                      {cr.author}
+                    </Text>
+                    {(cr.current_page || cr.page_count) ? (
+                      <>
                         <View style={{
-                          height: 3,
-                          width: `${progressPct(currentRead) * 100}%`,
-                          backgroundColor: '#1c1917',
-                          borderRadius: 2,
-                        }} />
+                          height: 3, backgroundColor: '#e7e5e4', borderRadius: 2, marginBottom: 6, overflow: 'hidden',
+                        }}>
+                          {progressPct(cr) > 0 && (
+                            <View style={{
+                              height: 3, width: `${progressPct(cr) * 100}%`, backgroundColor: '#1c1917', borderRadius: 2,
+                            }} />
+                          )}
+                        </View>
+                        <Text style={{ fontSize: 11, color: '#a8a29e' }}>{progressLabel(cr)}</Text>
+                      </>
+                    ) : (
+                      <Text style={{ fontSize: 11, color: '#a8a29e' }}>In progress</Text>
+                    )}
+                  </View>
+                  <Text style={{ fontSize: 20, color: '#d6d3d1', marginLeft: 8 }}>›</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })() : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginHorizontal: -20 }}
+              contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}
+            >
+              {currentReads.map(cr => {
+                const accentColor = homeCardBorderColor(cr, yearlyGoal);
+                const hasProgress = !!(cr.current_page && cr.page_count && cr.page_count > 0);
+                const pct = hasProgress
+                  ? Math.min(100, Math.round((cr.current_page! / cr.page_count!) * 100))
+                  : null;
+                const hasPacingData = !!(yearlyGoal && cr.page_count && cr.page_count > 0);
+                const pacingNote = hasPacingData
+                  ? computePagePacing(cr.current_page ?? 0, cr.page_count!, cr.started_at, yearlyGoal!).note
+                  : null;
+                return (
+                  <TouchableOpacity
+                    key={cr.id}
+                    activeOpacity={0.8}
+                    onPress={() => router.push({
+                      pathname: '/book/[id]',
+                      params: {
+                        id: cr.book_id,
+                        title: cr.title,
+                        author: cr.author,
+                        coverUrl: cr.cover_url ?? '',
+                        externalId: cr.external_id ?? '',
+                        status: 'reading',
+                        startedAt: cr.started_at ?? '',
+                      },
+                    })}
+                  >
+                    <View style={{
+                      backgroundColor: '#fff',
+                      borderRadius: 14,
+                      padding: 14,
+                      width: 220,
+                      borderLeftWidth: 3,
+                      borderLeftColor: accentColor,
+                      shadowColor: '#000',
+                      shadowOpacity: 0.06,
+                      shadowRadius: 8,
+                      shadowOffset: { width: 0, height: 2 },
+                      elevation: 2,
+                    }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 }}>
+                        <CoverThumb url={cr.cover_url} externalId={cr.external_id} width={44} height={64} />
+                        <View style={{ flex: 1, marginLeft: 10 }}>
+                          <Text numberOfLines={2} style={{
+                            fontSize: 14, fontWeight: '700', color: '#1c1917', lineHeight: 19, marginBottom: 3,
+                          }}>{cr.title}</Text>
+                          <Text numberOfLines={1} style={{ fontSize: 12, color: '#78716c' }}>{cr.author}</Text>
+                        </View>
+                      </View>
+                      {hasProgress ? (
+                        <>
+                          <View style={{
+                            height: 3, backgroundColor: '#e7e5e4', borderRadius: 2, overflow: 'hidden', marginBottom: 4,
+                          }}>
+                            <View style={{
+                              height: 3, width: `${pct}%`, backgroundColor: '#1c1917', borderRadius: 2,
+                            }} />
+                          </View>
+                          <Text style={{ fontSize: 10, color: '#a8a29e', marginBottom: pacingNote ? 5 : 0 }}>
+                            {progressLabel(cr)}
+                          </Text>
+                        </>
+                      ) : (
+                        <Text style={{ fontSize: 10, color: '#a8a29e', marginBottom: pacingNote ? 5 : 0 }}>
+                          In progress
+                        </Text>
+                      )}
+                      {pacingNote && (
+                        <Text style={{ fontSize: 10, color: '#78716c' }}>{pacingNote}</Text>
                       )}
                     </View>
-                    <Text style={{ fontSize: 11, color: '#a8a29e' }}>
-                      {progressLabel(currentRead)}
-                    </Text>
-                  </>
-                ) : (
-                  <Text style={{ fontSize: 11, color: '#a8a29e' }}>In progress</Text>
-                )}
-              </View>
-              <Text style={{ fontSize: 20, color: '#d6d3d1', marginLeft: 8 }}>›</Text>
-            </View>
-          </TouchableOpacity>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
         </View>
       )}
 

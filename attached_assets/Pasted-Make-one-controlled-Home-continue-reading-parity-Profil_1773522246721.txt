@@ -1,0 +1,136 @@
+Make one controlled “Home continue-reading parity + Profile focus cleanup” pass.
+
+Do not change package versions.
+Do not add packages.
+Do not change schema.
+Do not refactor unrelated business logic.
+Do not break activity feed, inbox, profile, library, pacing, progress, or book detail flows.
+
+Goal:
+Improve the top-level reading-surface architecture so the app feels less redundant and more intentional.
+
+This pass should do two things together:
+
+1. Fix the Home screen so Continue Reading is fully correct and parity-aligned with the rest of the app
+2. Demote or remove Currently Reading from Profile so Profile becomes more clearly the reader-identity / intelligence surface
+
+Reason for combining:
+These two changes are tightly connected. Right now “Currently Reading” is presented prominently across Home, Library, and Profile. That is too repetitive. Home should own “continue reading,” Library should own “manage reading,” and Profile should focus on identity, insights, patterns, and social reading intelligence.
+
+Scope:
+Only inspect and edit what is necessary, likely:
+- app/(tabs)/index.tsx
+- app/(tabs)/profile.tsx
+- lib/pacing.ts only if absolutely necessary for reuse/import shape
+- no other files unless absolutely necessary
+
+Primary product objectives
+
+A. Home: show all currently-reading books
+Requirements:
+1. Do not limit Continue Reading to a single book.
+2. Load all current reading books for the user.
+3. Preserve a sensible order:
+   - most relevant / most recently progressed / most recently started first
+4. If there is only 1 reading book, the section should still look good.
+5. If there are 2+ reading books, the user should be able to scroll horizontally through them.
+
+B. Home: horizontal scrolling UX
+Requirements:
+1. Continue Reading should become a horizontally scrollable row/carousel of reading cards.
+2. Keep it elegant and simple — not a flashy carousel.
+3. Each card should remain tappable to Book Detail.
+4. Cards should be sized so multiple books clearly make sense in the section.
+
+C. Home: match pacing-state border treatment to Profile / Library
+Requirements:
+1. Continue Reading cards on Home should use the same visual rules as other reading surfaces:
+   - ahead / on pace → green treatment
+   - behind pace → amber treatment
+   - no trustworthy pacing state → neutral treatment
+2. Do NOT use the old black accent treatment for active reading if pacing state is available.
+3. Keep the treatment subtle, premium, and consistent.
+
+D. Home: honesty rules for pacing color
+Requirements:
+1. Only apply green / amber when the app has enough trustworthy data.
+2. If page_count is unknown, keep the card neutral.
+3. Match the same logic already used elsewhere in the app.
+4. Do not imply ahead/on-pace/behind without enough information.
+
+E. Home: card contents
+Each Continue Reading card should still clearly show:
+1. cover
+2. title
+3. author
+4. progress bar / page progress when available
+5. pacing cue when appropriate
+6. tap affordance to open Book Detail
+
+F. Home: preserve hierarchy
+Requirements:
+1. Continue Reading should remain the top-priority module on Home.
+2. New from Friends / Activity / Find Friends / Friends should remain below it.
+3. Do not let the carousel make the screen feel cluttered.
+
+G. Profile: demote or remove Currently Reading
+Requirements:
+1. Profile should no longer prominently duplicate the same full Currently Reading card treatment seen on Home and Library.
+2. Prefer one of these two solutions:
+   - remove Currently Reading from Profile entirely
+   OR
+   - demote it to a lightweight summary (for example: “2 books in progress” with small cover stack / compact row / tap-through)
+3. Do NOT keep the current prominent multi-card treatment on Profile.
+4. The result should make Profile feel less repetitive and more focused.
+
+H. Profile: strengthen reader-identity / intelligence role
+Requirements:
+1. Profile should more clearly emphasize:
+   - identity
+   - yearly goal progress
+   - reading taste
+   - reader insights
+   - reading patterns
+   - social/recommendation intelligence
+2. Rebalance spacing and hierarchy so these sections feel like the point of the screen.
+3. If removing/demoting Currently Reading creates awkward spacing, clean that up intentionally.
+
+I. Preserve all current flows
+Do not break:
+- greeting / hero heading on Home
+- New from Friends module
+- activity feed
+- friend search
+- friend detail routing
+- book detail routing
+- progress rendering
+- Home loading states
+- Profile loading
+- yearly goal progress
+- taste card
+- Reader Insights
+- Reading Patterns
+- social trust / recommendation intelligence
+- settings access from Profile
+
+Implementation guidance
+1. Replace the single currentRead state on Home with a list of current reading items.
+2. Reuse the same pacing-state logic family already used in Profile / Library.
+3. Use a horizontal ScrollView or FlatList on Home — keep it simple.
+4. For Profile, do not add more reading-card UI. Either remove it or compress it meaningfully.
+5. Keep the code explicit and easy to reason about.
+6. This is a product-architecture cleanup, not a broad redesign.
+
+Desired product architecture after this pass
+- Home = continue reading
+- Library = manage reading
+- Profile = understand yourself as a reader
+
+After editing, print only:
+1. files changed
+2. full contents of changed files
+3. the diff for those files only
+4. exact manual test steps
+5. ordering rules used for Home Continue Reading
+6. pacing-color rules used
+7. Profile hierarchy decision made (removed vs demoted Currently Reading, and why)
