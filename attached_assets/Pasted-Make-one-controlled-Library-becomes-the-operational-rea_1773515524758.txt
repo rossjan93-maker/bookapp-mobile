@@ -1,0 +1,81 @@
+Make one controlled “Library becomes the operational reading hub” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not change schema.
+Do not break recommendation, pacing, progress, or book detail flows.
+Do not refactor unrelated business logic.
+
+Goal:
+Make Library feel like the place where active reading happens, not just a mixed list of books.
+
+Current problem:
+Library works, but it still reads like a status-sorted collection rather than a command center for ongoing reading.
+
+Scope:
+Inspect and edit only what is necessary, likely:
+- app/(tabs)/library.tsx
+- no broad unrelated screen changes
+
+Primary product objectives
+
+A. Make “Reading” books feel primary
+Requirements:
+1. Reading books should visually feel more active and operational than other statuses.
+2. Within the filtered/all library experience, active reading rows/cards should communicate:
+   - progress
+   - pacing/momentum
+   - next available action
+3. Finished and DNF should feel more archival than active.
+
+B. Improve hierarchy within Library
+Requirements:
+1. The top of Library should feel like a control surface.
+2. Add stronger structure around:
+   - filters
+   - count / scope
+   - active reading emphasis
+3. Keep the Add Book CTA visible and useful.
+
+C. Consider a lightweight sort/control improvement
+Requirements:
+1. If low-risk, add one compact sort or view refinement only if it clearly improves usability.
+2. Good candidates:
+   - recent
+   - title
+   - progress
+3. Only include if it stays clean and does not bloat the screen.
+4. Skip if it weakens clarity.
+
+D. Improve empty / sparse states per filter
+Requirements:
+1. Reading, Finished, Want to Read, DNF should each feel intentional when empty.
+2. Keep the copy concise and elegant.
+
+E. Design direction
+Requirements:
+1. Keep the premium editorial design language.
+2. Reading rows should feel slightly more alive than archival rows.
+3. Do not overdesign.
+4. Use hierarchy, spacing, and state clarity.
+
+F. Preserve all current flows
+Do not break:
+- Add Book
+- book detail navigation
+- status progression buttons
+- progress bars
+- pacing
+- recommendation-linked library behavior
+
+Implementation guidance
+1. Focus on the Reading state as the product center.
+2. You may improve the visual treatment of reading books relative to other rows/statuses.
+3. Keep the logic and filters easy to follow.
+
+After editing, print only:
+1. files changed
+2. full contents of changed files
+3. diff for those files only
+4. exact manual test steps
+5. Library UX decisions made

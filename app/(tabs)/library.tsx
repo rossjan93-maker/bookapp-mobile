@@ -4,8 +4,11 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 type UserBookStatus = 'want_to_read' | 'reading' | 'finished' | 'dnf';
-type FilterKey = 'all' | UserBookStatus;
+type FilterKey      = 'all' | UserBookStatus;
+type SortKey        = 'recent' | 'progress';
 
 type UserBook = {
   id: string;
@@ -25,11 +28,13 @@ type UserBook = {
 
 type PendingFeedback = { userBookId: string; status: 'finished' | 'dnf' };
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
 const SENTIMENT_OPTIONS: Array<{ value: 'loved' | 'liked' | 'okay' | 'not_for_me'; label: string }> = [
-  { value: 'loved',      label: 'Loved it'    },
-  { value: 'liked',      label: 'Liked it'    },
-  { value: 'okay',       label: 'Okay'        },
-  { value: 'not_for_me', label: 'Not for me'  },
+  { value: 'loved',      label: 'Loved it'   },
+  { value: 'liked',      label: 'Liked it'   },
+  { value: 'okay',       label: 'Okay'       },
+  { value: 'not_for_me', label: 'Not for me' },
 ];
 
 const STATUS_LABELS: Record<UserBookStatus, string> = {
@@ -48,19 +53,21 @@ const STATUS_BADGE: Record<UserBookStatus, { bg: string; text: string }> = {
 
 const FILTER_OPTIONS: Array<{ key: FilterKey; label: string }> = [
   { key: 'all',          label: 'All'          },
-  { key: 'want_to_read', label: 'Want to Read' },
   { key: 'reading',      label: 'Reading'      },
+  { key: 'want_to_read', label: 'Want to Read' },
   { key: 'finished',     label: 'Finished'     },
   { key: 'dnf',          label: 'DNF'          },
 ];
 
-const FILTER_EMPTY: Record<FilterKey, string> = {
-  all:          'Your library is empty.',
-  want_to_read: 'Nothing in your want to read list yet.',
-  reading:      'Not reading anything right now.',
-  finished:     'No finished books yet.',
-  dnf:          'No DNF books.',
+const FILTER_EMPTY: Record<FilterKey, { title: string; body: string }> = {
+  all:          { title: 'Your library is empty',  body: 'Add books you\'re reading, have finished, or want to read.' },
+  reading:      { title: 'Not reading anything',   body: 'Start a book from your list, or add something new.' },
+  want_to_read: { title: 'Nothing queued up',      body: 'Save books you want to read next.' },
+  finished:     { title: 'No finished books yet',  body: 'Finished books will appear here.' },
+  dnf:          { title: 'No abandoned books',     body: 'DNF is always a valid call.' },
 };
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function LibraryScreen() {
   const router = useRouter();
@@ -71,26 +78,16 @@ export default function LibraryScreen() {
   const [updatingId, setUpdatingId]       = useState<string | null>(null);
   const [pendingFeedback, setPendingFeedback] = useState<PendingFeedback | null>(null);
   const [activeFilter, setActiveFilter]   = useState<FilterKey>('all');
+  const [sort, setSort]                   = useState<SortKey>('recent');
 
   useFocusEffect(useCallback(() => {
     async function load() {
-      if (!supabase) {
-        setError('Supabase not configured.');
-        setLoading(false);
-        return;
-      }
-
+      if (!supabase) { setError('Supabase not configured.'); setLoading(false); return; }
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setError('No signed-in user.');
-        setLoading(false);
-        return;
-      }
-
+      if (!user) { setError('No signed-in user.'); setLoading(false); return; }
       setCurrentUserId(user.id);
 
-      // Try with progress columns (requires migration 20260313000001).
-      // Falls back to the original query if those columns don't exist yet.
+      // Try with progress columns; fall back gracefully if migration not yet applied.
       let result = await supabase
         .from('user_books')
         .select('id, book_id, status, started_at, finished_at, current_page, book:books(title, author, cover_url, external_id, page_count)')
@@ -112,19 +109,15 @@ export default function LibraryScreen() {
       }
       setLoading(false);
     }
-
     load();
   }, []));
+
+  // ── Business logic (unchanged) ────────────────────────────────────────────
 
   function saveSentiment(userBookId: string, sentiment: string) {
     setPendingFeedback(null);
     if (!supabase) return;
-    // Fire-and-forget; sentiment column may not exist until migration is applied
-    supabase
-      .from('user_books')
-      .update({ sentiment })
-      .eq('id', userBookId)
-      .then(() => {});
+    supabase.from('user_books').update({ sentiment }).eq('id', userBookId).then(() => {});
   }
 
   async function handleUpdateStatus(userBook: UserBook, newStatus: UserBookStatus) {
@@ -132,10 +125,9 @@ export default function LibraryScreen() {
     setUpdatingId(userBook.id);
 
     const now = new Date().toISOString();
-
     const userBookUpdate: Record<string, unknown> = { status: newStatus };
-    if (newStatus === 'reading') userBookUpdate.started_at = now;
-    if (newStatus === 'finished' || newStatus === 'dnf') userBookUpdate.finished_at = now;
+    if (newStatus === 'reading')                              userBookUpdate.started_at  = now;
+    if (newStatus === 'finished' || newStatus === 'dnf')     userBookUpdate.finished_at = now;
 
     const { error: updateError } = await supabase
       .from('user_books')
@@ -163,6 +155,7 @@ export default function LibraryScreen() {
       };
       const recUpdate: Record<string, unknown> = { status: recStatusMap[newStatus] };
       if (newStatus === 'finished' || newStatus === 'dnf') recUpdate.resolved_at = now;
+
       const { error: recUpdateError } = await supabase
         .from('recommendations')
         .update(recUpdate)
@@ -174,13 +167,12 @@ export default function LibraryScreen() {
           .select('id')
           .eq('recommendation_id', rec.id)
           .maybeSingle();
-
         if (!existingEvent) {
           await supabase.from('credibility_events').insert({
             recommendation_id: rec.id,
             from_user_id: rec.from_user_id,
-            to_user_id: rec.to_user_id,
-            book_id: rec.book_id,
+            to_user_id:   rec.to_user_id,
+            book_id:      rec.book_id,
           });
         }
       }
@@ -188,52 +180,75 @@ export default function LibraryScreen() {
       if (!recUpdateError) {
         if (newStatus === 'reading') {
           await supabase.from('activity_events').insert({
-            actor_id: currentUserId,
-            event_type: 'recommendation_started',
-            book_id: rec.book_id,
-            recommendation_id: rec.id,
+            actor_id: currentUserId, event_type: 'recommendation_started',
+            book_id: rec.book_id, recommendation_id: rec.id,
           });
         } else if (newStatus === 'finished') {
           await supabase.from('activity_events').insert({
-            actor_id: currentUserId,
-            event_type: 'recommendation_finished',
-            book_id: rec.book_id,
-            recommendation_id: rec.id,
+            actor_id: currentUserId, event_type: 'recommendation_finished',
+            book_id: rec.book_id, recommendation_id: rec.id,
           });
         }
       }
     } else if (newStatus === 'finished') {
       await supabase.from('activity_events').insert({
-        actor_id: currentUserId,
-        event_type: 'book_finished',
-        book_id: userBook.book_id,
+        actor_id: currentUserId, event_type: 'book_finished', book_id: userBook.book_id,
       });
     }
 
-    setItems(prev =>
-      prev.map(item =>
-        item.id === userBook.id
-          ? {
-              ...item,
-              status: newStatus,
-              started_at:  newStatus === 'reading' ? now : item.started_at,
-              finished_at: newStatus === 'finished' || newStatus === 'dnf' ? now : item.finished_at,
-            }
-          : item
-      )
-    );
+    setItems(prev => prev.map(item =>
+      item.id === userBook.id
+        ? {
+            ...item,
+            status:      newStatus,
+            started_at:  newStatus === 'reading'                          ? now : item.started_at,
+            finished_at: newStatus === 'finished' || newStatus === 'dnf'  ? now : item.finished_at,
+          }
+        : item
+    ));
 
-    // Prompt for optional sentiment feedback on finish or DNF
     if (newStatus === 'finished' || newStatus === 'dnf') {
       setPendingFeedback({ userBookId: userBook.id, status: newStatus });
     }
-
     setUpdatingId(null);
   }
 
+  // ── Derived state ─────────────────────────────────────────────────────────
+
+  const readingCount    = items.filter(i => i.status === 'reading').length;
+  const filteredItems   = activeFilter === 'all' ? items : items.filter(i => i.status === activeFilter);
+
+  // Sort only applies to the reading filter
+  const displayedItems = (() => {
+    if (activeFilter !== 'reading' || sort === 'recent') return filteredItems;
+    return [...filteredItems].sort((a, b) => {
+      const pA = a.current_page != null && a.book?.page_count ? a.current_page / a.book.page_count : 0;
+      const pB = b.current_page != null && b.book?.page_count ? b.current_page / b.book.page_count : 0;
+      return pB - pA;
+    });
+  })();
+
+  const statusCounts: Record<FilterKey, number> = {
+    all:          items.length,
+    reading:      readingCount,
+    want_to_read: items.filter(i => i.status === 'want_to_read').length,
+    finished:     items.filter(i => i.status === 'finished').length,
+    dnf:          items.filter(i => i.status === 'dnf').length,
+  };
+
+  const contextSubtitle = (() => {
+    if (items.length === 0) return null;
+    const parts: string[] = [];
+    if (readingCount > 0) parts.push(`${readingCount} reading`);
+    parts.push(`${items.length} book${items.length !== 1 ? 's' : ''} total`);
+    return parts.join(' · ');
+  })();
+
+  // ── Loading / error ───────────────────────────────────────────────────────
+
   if (loading) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: '#faf9f7', alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator color="#78716c" />
       </View>
     );
@@ -241,43 +256,38 @@ export default function LibraryScreen() {
 
   if (error) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <View style={{ flex: 1, backgroundColor: '#faf9f7', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <Text style={{ color: '#b91c1c', textAlign: 'center', fontSize: 14 }}>{error}</Text>
       </View>
     );
   }
 
-  // Client-side filter — no Supabase re-query
-  const filteredItems = activeFilter === 'all'
-    ? items
-    : items.filter(item => item.status === activeFilter);
-
-  const headerCountText = (() => {
-    if (items.length === 0) return 'My Library';
-    if (activeFilter === 'all') {
-      return `${items.length} book${items.length === 1 ? '' : 's'}`;
-    }
-    const n = filteredItems.length;
-    return `${n} ${STATUS_LABELS[activeFilter as UserBookStatus]}${n === 1 ? '' : (activeFilter === 'dnf' ? '' : '')}`;
-  })();
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <FlatList
-      data={filteredItems}
+      data={displayedItems}
       keyExtractor={item => item.id}
-      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 0, paddingBottom: 32 }}
+      style={{ backgroundColor: '#faf9f7' }}
+      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 0, paddingBottom: 40 }}
       ListHeaderComponent={
         <View>
-          {/* ── Title + Add Book ── */}
+          {/* ── Editorial header ── */}
           <View style={{
             flexDirection: 'row',
-            alignItems: 'center',
+            alignItems: 'flex-end',
             justifyContent: 'space-between',
-            paddingTop: 20,
-            paddingBottom: 14,
+            paddingTop: 24,
+            paddingBottom: contextSubtitle ? 4 : 16,
           }}>
-            <Text style={{ fontSize: 17, fontWeight: '700', color: '#1c1917' }}>
-              {headerCountText}
+            <Text style={{
+              fontSize: 28,
+              fontWeight: '800',
+              color: '#1c1917',
+              letterSpacing: -0.5,
+              lineHeight: 34,
+            }}>
+              Library
             </Text>
             <TouchableOpacity
               onPress={() => router.push('/add-book')}
@@ -288,12 +298,18 @@ export default function LibraryScreen() {
                 borderRadius: 8,
                 paddingHorizontal: 14,
                 paddingVertical: 8,
-                gap: 5,
+                marginBottom: 2,
               }}
             >
               <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>+ Add Book</Text>
             </TouchableOpacity>
           </View>
+
+          {contextSubtitle && (
+            <Text style={{ fontSize: 13, color: '#a8a29e', marginBottom: 18 }}>
+              {contextSubtitle}
+            </Text>
+          )}
 
           {/* ── Filter chip bar ── */}
           {items.length > 0 && (
@@ -310,6 +326,7 @@ export default function LibraryScreen() {
             >
               {FILTER_OPTIONS.map(f => {
                 const active = activeFilter === f.key;
+                const count  = f.key !== 'all' && statusCounts[f.key] > 0 ? ` (${statusCounts[f.key]})` : '';
                 return (
                   <TouchableOpacity
                     key={f.key}
@@ -320,7 +337,7 @@ export default function LibraryScreen() {
                       borderRadius: 20,
                       borderWidth: 1,
                       backgroundColor: active ? '#1c1917' : 'transparent',
-                      borderColor: active ? '#1c1917' : '#e7e5e4',
+                      borderColor:     active ? '#1c1917' : '#e7e5e4',
                     }}
                   >
                     <Text style={{
@@ -328,7 +345,7 @@ export default function LibraryScreen() {
                       fontWeight: active ? '600' : '400',
                       color: active ? '#fff' : '#78716c',
                     }}>
-                      {f.label}
+                      {f.label}{count}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -336,8 +353,39 @@ export default function LibraryScreen() {
             </ScrollView>
           )}
 
+          {/* ── Sort toggle (Reading filter only, 2+ books) ── */}
+          {activeFilter === 'reading' && filteredItems.length > 1 && (
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              paddingBottom: 10,
+            }}>
+              <Text style={{ fontSize: 11, color: '#c4b5a5', marginRight: 8 }}>Sort</Text>
+              <TouchableOpacity onPress={() => setSort('recent')}>
+                <Text style={{
+                  fontSize: 12,
+                  color: sort === 'recent' ? '#1c1917' : '#a8a29e',
+                  fontWeight: sort === 'recent' ? '600' : '400',
+                }}>
+                  Recent
+                </Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 12, color: '#d6d3d1', marginHorizontal: 8 }}>·</Text>
+              <TouchableOpacity onPress={() => setSort('progress')}>
+                <Text style={{
+                  fontSize: 12,
+                  color: sort === 'progress' ? '#1c1917' : '#a8a29e',
+                  fontWeight: sort === 'progress' ? '600' : '400',
+                }}>
+                  Progress
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* ── Divider ── */}
-          {items.length > 0 && (
+          {items.length > 0 && activeFilter !== 'reading' && (
             <View style={{ height: 1, backgroundColor: '#f5f5f4' }} />
           )}
         </View>
@@ -345,11 +393,12 @@ export default function LibraryScreen() {
       renderItem={({ item }) => {
         const isUpdating = updatingId === item.id;
         const isBlocked  = updatingId !== null;
+        const isReading  = item.status === 'reading';
         const badge      = STATUS_BADGE[item.status];
         const hasButtons = item.status === 'want_to_read' || item.status === 'reading';
 
         const hasProgress =
-          item.status === 'reading' &&
+          isReading &&
           item.current_page != null && item.current_page > 0 &&
           item.book?.page_count != null && item.book.page_count > 0;
         const progressPct = hasProgress
@@ -357,18 +406,134 @@ export default function LibraryScreen() {
           : null;
 
         const hasSentimentPrompt = pendingFeedback?.userBookId === item.id;
-        const hasExtraRow = hasButtons || isUpdating || hasSentimentPrompt;
+        const hasExtraRow        = hasButtons || isUpdating || hasSentimentPrompt;
 
+        // ── Reading row: card style ──────────────────────────────────────────
+        if (isReading) {
+          return (
+            <View style={{
+              backgroundColor: '#fff',
+              borderRadius: 14,
+              marginVertical: 6,
+              borderLeftWidth: 3,
+              borderLeftColor: '#1c1917',
+              shadowColor: '#000',
+              shadowOpacity: 0.05,
+              shadowRadius: 8,
+              shadowOffset: { width: 0, height: 2 },
+              elevation: 2,
+              paddingTop: 14,
+              paddingRight: 14,
+              paddingBottom: hasExtraRow ? 12 : 14,
+              paddingLeft: 14,
+            }}>
+              {/* Cover + title/author/progress */}
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => router.push({
+                  pathname: '/book/[id]',
+                  params: {
+                    id:         item.book_id,
+                    title:      item.book?.title ?? '',
+                    author:     item.book?.author ?? '',
+                    coverUrl:   item.book?.cover_url ?? '',
+                    externalId: item.book?.external_id ?? '',
+                    status:     item.status,
+                    startedAt:  item.started_at ?? '',
+                  },
+                })}
+                style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: hasExtraRow ? 12 : 0 }}
+              >
+                <CoverThumb
+                  url={item.book?.cover_url}
+                  externalId={item.book?.external_id}
+                  width={48}
+                  height={70}
+                />
+                <View style={{ flex: 1, marginLeft: 14 }}>
+                  <Text style={{ fontWeight: '700', fontSize: 16, color: '#1c1917', marginBottom: 3, lineHeight: 22 }}>
+                    {item.book?.title ?? '—'}
+                  </Text>
+                  <Text style={{ color: '#78716c', fontSize: 13, marginBottom: hasProgress ? 12 : 0 }}>
+                    {item.book?.author ?? '—'}
+                  </Text>
+                  {hasProgress && (
+                    <>
+                      <View style={{
+                        height: 4,
+                        backgroundColor: '#e7e5e4',
+                        borderRadius: 2,
+                        overflow: 'hidden',
+                        marginBottom: 5,
+                      }}>
+                        <View style={{
+                          height: 4,
+                          width: `${progressPct ?? 0}%`,
+                          backgroundColor: '#1c1917',
+                          borderRadius: 2,
+                        }} />
+                      </View>
+                      <Text style={{ fontSize: 11, color: '#a8a29e' }}>
+                        Page {item.current_page} of {item.book?.page_count} · {progressPct}%
+                      </Text>
+                    </>
+                  )}
+                  {!hasProgress && item.status === 'reading' && (
+                    <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 6 }}>
+                      In progress — open to log pages
+                    </Text>
+                  )}
+                </View>
+              </TouchableOpacity>
+
+              {/* Action row */}
+              {hasSentimentPrompt ? (
+                <View style={{ marginTop: 2 }}>
+                  <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 8 }}>How was it? (optional)</Text>
+                  <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {SENTIMENT_OPTIONS.map(opt => (
+                      <TouchableOpacity
+                        key={opt.value}
+                        onPress={() => saveSentiment(item.id, opt.value)}
+                        style={{
+                          paddingHorizontal: 12, paddingVertical: 6,
+                          borderRadius: 20, borderWidth: 1, borderColor: '#e7e5e4', backgroundColor: '#faf9f7',
+                        }}
+                      >
+                        <Text style={{ fontSize: 12, color: '#57534e' }}>{opt.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity onPress={() => setPendingFeedback(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Text style={{ fontSize: 12, color: '#a8a29e', paddingHorizontal: 4 }}>Skip</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : isUpdating ? (
+                <ActivityIndicator color="#78716c" style={{ alignSelf: 'flex-start' }} />
+              ) : (
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <PrimaryButton label="Mark Finished" onPress={() => handleUpdateStatus(item, 'finished')} disabled={isBlocked} />
+                  <DangerButton  label="DNF"           onPress={() => handleUpdateStatus(item, 'dnf')}      disabled={isBlocked} />
+                </View>
+              )}
+            </View>
+          );
+        }
+
+        // ── Non-reading row: flat archival style ─────────────────────────────
         return (
-          <View style={{ paddingTop: 18, paddingBottom: hasExtraRow ? 14 : 18, borderBottomWidth: 1, borderBottomColor: '#f5f5f4' }}>
-
-            {/* Tappable row: cover + title/author/badge */}
+          <View style={{
+            paddingTop: 18,
+            paddingBottom: hasExtraRow ? 14 : 18,
+            borderBottomWidth: 1,
+            borderBottomColor: '#f5f5f4',
+          }}>
             <TouchableOpacity
               activeOpacity={0.7}
               onPress={() => router.push({
                 pathname: '/book/[id]',
                 params: {
-                  id: item.book_id,
+                  id:         item.book_id,
                   title:      item.book?.title ?? '',
                   author:     item.book?.author ?? '',
                   coverUrl:   item.book?.cover_url ?? '',
@@ -395,80 +560,46 @@ export default function LibraryScreen() {
                       {item.book?.author ?? '—'}
                     </Text>
                   </View>
-                  <View style={{ backgroundColor: badge.bg, borderRadius: 6, paddingHorizontal: 9, paddingVertical: 4, alignSelf: 'flex-start' }}>
+                  <View style={{
+                    backgroundColor: badge.bg, borderRadius: 6,
+                    paddingHorizontal: 9, paddingVertical: 4, alignSelf: 'flex-start',
+                  }}>
                     <Text style={{ fontSize: 11, fontWeight: '600', color: badge.text }}>
                       {STATUS_LABELS[item.status]}
                     </Text>
                   </View>
                 </View>
-
-                {/* Reading progress indicator */}
-                {hasProgress && (
-                  <View style={{ marginTop: 8 }}>
-                    <View style={{
-                      height: 3,
-                      backgroundColor: '#e7e5e4',
-                      borderRadius: 2,
-                      overflow: 'hidden',
-                    }}>
-                      <View style={{
-                        height: 3,
-                        width: `${progressPct ?? 0}%`,
-                        backgroundColor: '#1c1917',
-                        borderRadius: 2,
-                      }} />
-                    </View>
-                    <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 3 }}>
-                      p.{item.current_page} of {item.book?.page_count} · {progressPct ?? 0}%
-                    </Text>
-                  </View>
-                )}
               </View>
             </TouchableOpacity>
 
-            {/* Action buttons / sentiment feedback */}
-            {pendingFeedback?.userBookId === item.id ? (
-              <View style={{ marginLeft: 54, marginTop: 6 }}>
-                <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 8 }}>
-                  How was it? (optional)
-                </Text>
+            {hasSentimentPrompt ? (
+              <View style={{ marginLeft: 58, marginTop: 6 }}>
+                <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 8 }}>How was it? (optional)</Text>
                 <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                   {SENTIMENT_OPTIONS.map(opt => (
                     <TouchableOpacity
                       key={opt.value}
                       onPress={() => saveSentiment(item.id, opt.value)}
                       style={{
-                        paddingHorizontal: 12,
-                        paddingVertical: 6,
-                        borderRadius: 20,
-                        borderWidth: 1,
-                        borderColor: '#e7e5e4',
-                        backgroundColor: '#fff',
+                        paddingHorizontal: 12, paddingVertical: 6,
+                        borderRadius: 20, borderWidth: 1, borderColor: '#e7e5e4', backgroundColor: '#fff',
                       }}
                     >
                       <Text style={{ fontSize: 12, color: '#57534e' }}>{opt.label}</Text>
                     </TouchableOpacity>
                   ))}
-                  <TouchableOpacity
-                    onPress={() => setPendingFeedback(null)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
+                  <TouchableOpacity onPress={() => setPendingFeedback(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                     <Text style={{ fontSize: 12, color: '#a8a29e', paddingHorizontal: 4 }}>Skip</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             ) : isUpdating ? (
-              <ActivityIndicator color="#78716c" style={{ alignSelf: 'flex-start', marginLeft: 54 }} />
+              <ActivityIndicator color="#78716c" style={{ alignSelf: 'flex-start', marginLeft: 58 }} />
             ) : item.status === 'want_to_read' ? (
-              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginLeft: 54 }}>
-                <PrimaryButton label="Start Reading"  onPress={() => handleUpdateStatus(item, 'reading')}  disabled={isBlocked} />
-                <OutlineButton label="Mark Finished"  onPress={() => handleUpdateStatus(item, 'finished')} disabled={isBlocked} />
-                <DangerButton  label="DNF"            onPress={() => handleUpdateStatus(item, 'dnf')}      disabled={isBlocked} />
-              </View>
-            ) : item.status === 'reading' ? (
-              <View style={{ flexDirection: 'row', gap: 8, marginLeft: 54 }}>
-                <PrimaryButton label="Mark Finished"  onPress={() => handleUpdateStatus(item, 'finished')} disabled={isBlocked} />
-                <DangerButton  label="DNF"            onPress={() => handleUpdateStatus(item, 'dnf')}      disabled={isBlocked} />
+              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginLeft: 58 }}>
+                <PrimaryButton label="Start Reading" onPress={() => handleUpdateStatus(item, 'reading')}  disabled={isBlocked} />
+                <OutlineButton label="Mark Finished" onPress={() => handleUpdateStatus(item, 'finished')} disabled={isBlocked} />
+                <DangerButton  label="DNF"           onPress={() => handleUpdateStatus(item, 'dnf')}      disabled={isBlocked} />
               </View>
             ) : null}
           </View>
@@ -476,13 +607,13 @@ export default function LibraryScreen() {
       }}
       ListEmptyComponent={
         items.length === 0 ? (
-          // Library is totally empty — show the full onboarding empty state
+          // Library is totally empty — full onboarding state
           <View style={{ alignItems: 'center', paddingTop: 52, paddingHorizontal: 32 }}>
             <Text style={{ fontSize: 17, fontWeight: '700', color: '#1c1917', marginBottom: 10, textAlign: 'center' }}>
-              Your library is empty
+              {FILTER_EMPTY.all.title}
             </Text>
             <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 28 }}>
-              Add books you're reading, have finished, or want to read — from recommendations or on your own.
+              {FILTER_EMPTY.all.body}
             </Text>
             <TouchableOpacity
               onPress={() => router.push('/add-book')}
@@ -493,9 +624,12 @@ export default function LibraryScreen() {
           </View>
         ) : (
           // Library has books but the active filter has zero matches
-          <View style={{ paddingTop: 40, paddingHorizontal: 20, alignItems: 'center' }}>
-            <Text style={{ fontSize: 15, color: '#a8a29e', textAlign: 'center', lineHeight: 22 }}>
-              {FILTER_EMPTY[activeFilter]}
+          <View style={{ paddingTop: 48, paddingHorizontal: 24, alignItems: 'center' }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#1c1917', marginBottom: 8, textAlign: 'center' }}>
+              {FILTER_EMPTY[activeFilter].title}
+            </Text>
+            <Text style={{ fontSize: 14, color: '#a8a29e', textAlign: 'center', lineHeight: 22 }}>
+              {FILTER_EMPTY[activeFilter].body}
             </Text>
           </View>
         )
@@ -504,12 +638,17 @@ export default function LibraryScreen() {
   );
 }
 
+// ─── Button components (unchanged logic) ─────────────────────────────────────
+
 function PrimaryButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled: boolean }) {
   return (
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled}
-      style={{ paddingHorizontal: 14, paddingVertical: 7, backgroundColor: disabled ? '#e7e5e4' : '#1c1917', borderRadius: 8 }}
+      style={{
+        paddingHorizontal: 14, paddingVertical: 7,
+        backgroundColor: disabled ? '#e7e5e4' : '#1c1917', borderRadius: 8,
+      }}
     >
       <Text style={{ fontSize: 12, fontWeight: '500', color: disabled ? '#a8a29e' : '#fff' }}>{label}</Text>
     </TouchableOpacity>
@@ -521,7 +660,10 @@ function OutlineButton({ label, onPress, disabled }: { label: string; onPress: (
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled}
-      style={{ paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: disabled ? '#e7e5e4' : '#d6d3d1', borderRadius: 8 }}
+      style={{
+        paddingHorizontal: 14, paddingVertical: 7,
+        borderWidth: 1, borderColor: disabled ? '#e7e5e4' : '#d6d3d1', borderRadius: 8,
+      }}
     >
       <Text style={{ fontSize: 12, fontWeight: '500', color: disabled ? '#a8a29e' : '#57534e' }}>{label}</Text>
     </TouchableOpacity>
@@ -533,7 +675,10 @@ function DangerButton({ label, onPress, disabled }: { label: string; onPress: ()
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled}
-      style={{ paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: disabled ? '#e7e5e4' : '#fca5a5', borderRadius: 8 }}
+      style={{
+        paddingHorizontal: 14, paddingVertical: 7,
+        borderWidth: 1, borderColor: disabled ? '#e7e5e4' : '#fca5a5', borderRadius: 8,
+      }}
     >
       <Text style={{ fontSize: 12, fontWeight: '500', color: disabled ? '#a8a29e' : '#b91c1c' }}>{label}</Text>
     </TouchableOpacity>
