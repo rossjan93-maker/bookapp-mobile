@@ -6,6 +6,8 @@ import { BadgeContext } from './_layout';
 import { getFirstName } from '../../lib/displayName';
 import { CoverThumb } from '../../components/CoverThumb';
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 type InboxItem = {
   id: string;
   status: string;
@@ -15,22 +17,7 @@ type InboxItem = {
   book: { title: string; author: string; cover_url: string | null; external_id: string } | null;
 };
 
-const BADGE: Record<string, { bg: string; text: string; label: string }> = {
-  sent:     { bg: '#f1f5f9', text: '#475569', label: 'New'           },
-  saved:    { bg: '#e0f2fe', text: '#0369a1', label: 'Want to Read'  },
-  started:  { bg: '#dbeafe', text: '#1d4ed8', label: 'Reading'       },
-  finished: { bg: '#dcfce7', text: '#15803d', label: 'Finished'      },
-  dnf:      { bg: '#fee2e2', text: '#b91c1c', label: 'Did Not Finish' },
-};
-
-function StatusPill({ status }: { status: string }) {
-  const b = BADGE[status] ?? { bg: '#f1f5f9', text: '#475569', label: status };
-  return (
-    <View style={{ backgroundColor: b.bg, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start' }}>
-      <Text style={{ fontSize: 11, fontWeight: '600', color: b.text }}>{b.label}</Text>
-    </View>
-  );
-}
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function SectionLabel({ children }: { children: string }) {
   return (
@@ -47,15 +34,21 @@ function SectionLabel({ children }: { children: string }) {
   );
 }
 
+function Divider() {
+  return <View style={{ height: 1, backgroundColor: '#f0ede8', marginBottom: 24, marginTop: 4 }} />;
+}
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
+
 export default function InboxScreen() {
   const router = useRouter();
   const { setNewRecCount } = useContext(BadgeContext);
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [items, setItems] = useState<InboxItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [savingId, setSavingId] = useState<string | null>(null);
+  const [items, setItems]                 = useState<InboxItem[]>([]);
+  const [loading, setLoading]             = useState(true);
+  const [error, setError]                 = useState<string | null>(null);
+  const [savingId, setSavingId]           = useState<string | null>(null);
 
   useEffect(() => {
     const count = items.filter(r => r.status === 'sent').length;
@@ -69,15 +62,12 @@ export default function InboxScreen() {
         setLoading(false);
         return;
       }
-
       const { data: { user } } = await supabase.auth.getUser();
-
       if (!user) {
         setError('No signed-in user.');
         setLoading(false);
         return;
       }
-
       setCurrentUserId(user.id);
 
       const { data, error: dbError } = await supabase
@@ -93,16 +83,15 @@ export default function InboxScreen() {
       } else {
         setItems((data as InboxItem[]) ?? []);
       }
-
       setLoading(false);
     }
-
     load();
   }, []));
 
+  // ── Save handler (logic unchanged) ────────────────────────────────────────
+
   async function handleSave(item: InboxItem) {
     if (!supabase || !currentUserId) return;
-
     setSavingId(item.id);
     setError(null);
 
@@ -117,20 +106,11 @@ export default function InboxScreen() {
 
     if (existing) {
       userBookId = existing.id;
-      supabase
-        .from('user_books')
-        .update({ source: 'recommendation' })
-        .eq('id', existing.id)
-        .then(() => {});
+      supabase.from('user_books').update({ source: 'recommendation' }).eq('id', existing.id).then(() => {});
     } else {
       let insertResult = await supabase
         .from('user_books')
-        .insert({
-          user_id: currentUserId,
-          book_id: item.book_id,
-          status: 'want_to_read',
-          source: 'recommendation',
-        })
+        .insert({ user_id: currentUserId, book_id: item.book_id, status: 'want_to_read', source: 'recommendation' })
         .select('id')
         .single();
 
@@ -147,16 +127,12 @@ export default function InboxScreen() {
         setSavingId(null);
         return;
       }
-
       userBookId = insertResult.data.id;
     }
 
     const { error: recUpdateError } = await supabase
       .from('recommendations')
-      .update({
-        status: 'saved',
-        user_book_id: userBookId,
-      })
+      .update({ status: 'saved', user_book_id: userBookId })
       .eq('id', item.id);
 
     if (recUpdateError) {
@@ -174,13 +150,9 @@ export default function InboxScreen() {
         recommendation_id: item.id,
       });
 
-    if (activityError) {
-      console.warn('Activity insert failed:', activityError.message);
-    }
+    if (activityError) console.warn('Activity insert failed:', activityError.message);
 
-    setItems(prev =>
-      prev.map(r => r.id === item.id ? { ...r, status: 'saved' } : r)
-    );
+    setItems(prev => prev.map(r => r.id === item.id ? { ...r, status: 'saved' } : r));
     setSavingId(null);
   }
 
@@ -200,6 +172,8 @@ export default function InboxScreen() {
     });
   }
 
+  // ── Loading / error states ────────────────────────────────────────────────
+
   if (loading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
@@ -216,57 +190,88 @@ export default function InboxScreen() {
     );
   }
 
+  // ── Grouping ──────────────────────────────────────────────────────────────
+
   const newItems     = items.filter(r => r.status === 'sent');
   const savedItems   = items.filter(r => r.status === 'saved');
   const readingItems = items.filter(r => r.status === 'started');
   const doneItems    = items.filter(r => r.status === 'finished' || r.status === 'dnf');
 
+  const hasArchive   = savedItems.length > 0 || readingItems.length > 0 || doneItems.length > 0;
+
+  // ── Empty state ───────────────────────────────────────────────────────────
+
   if (items.length === 0) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
-        <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
-          No recommendations yet.{'\n'}Ask a friend to send you a book.
-        </Text>
+      <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
+        <View style={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 0 }}>
+          <Text style={{
+            fontSize: 28,
+            fontWeight: '800',
+            color: '#1c1917',
+            letterSpacing: -0.5,
+            marginBottom: 5,
+          }}>
+            Inbox
+          </Text>
+          <Text style={{ fontSize: 14, color: '#a8a29e' }}>Your recommendations from friends</Text>
+        </View>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+          <Text style={{ fontSize: 17, fontWeight: '700', color: '#1c1917', marginBottom: 8, textAlign: 'center' }}>
+            Nothing here yet
+          </Text>
+          <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
+            When a friend recommends a book,{'\n'}it will show up here.
+          </Text>
+        </View>
       </View>
     );
   }
 
-  return (
-    <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 32 }}>
+  // ── Render ────────────────────────────────────────────────────────────────
 
-      {/* ── New summary banner ── */}
-      {newItems.length > 0 && (
-        <View style={{
-          backgroundColor: '#f0f9ff',
-          borderRadius: 10,
-          borderWidth: 1,
-          borderColor: '#e0f2fe',
-          paddingHorizontal: 16,
-          paddingVertical: 12,
-          marginBottom: 20,
+  return (
+    <ScrollView
+      style={{ flex: 1, backgroundColor: '#faf9f7' }}
+      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }}
+    >
+      {/* ── Header ── */}
+      <View style={{ marginBottom: 24 }}>
+        <Text style={{
+          fontSize: 28,
+          fontWeight: '800',
+          color: '#1c1917',
+          letterSpacing: -0.5,
+          marginBottom: 5,
         }}>
-          <Text style={{ fontSize: 14, color: '#0369a1', fontWeight: '500' }}>
-            {newItems.length === 1
-              ? 'You have 1 new recommendation.'
-              : `You have ${newItems.length} new recommendations.`}
-          </Text>
-        </View>
-      )}
+          Inbox
+        </Text>
+        <Text style={{ fontSize: 14, color: '#a8a29e' }}>
+          {newItems.length > 0
+            ? `${newItems.length} ${newItems.length === 1 ? 'book' : 'books'} waiting for you`
+            : 'All caught up'}
+        </Text>
+      </View>
 
       {/* ── New ── */}
       {newItems.length > 0 && (
         <View style={{ marginBottom: 28 }}>
-          <SectionLabel>{`New (${newItems.length})`}</SectionLabel>
+          <SectionLabel>{`New · ${newItems.length}`}</SectionLabel>
           {newItems.map(item => (
             <View
               key={item.id}
               style={{
-                backgroundColor: '#fff',
+                backgroundColor: '#fffbf5',
                 borderRadius: 14,
-                borderWidth: 1,
-                borderColor: '#e7e5e4',
+                borderLeftWidth: 3,
+                borderLeftColor: '#d4a574',
                 padding: 16,
                 marginBottom: 10,
+                shadowColor: '#000',
+                shadowOpacity: 0.04,
+                shadowRadius: 6,
+                shadowOffset: { width: 0, height: 1 },
+                elevation: 1,
               }}
             >
               <TouchableOpacity
@@ -281,17 +286,17 @@ export default function InboxScreen() {
                   height={70}
                 />
                 <View style={{ flex: 1, marginLeft: 14 }}>
-                  <Text style={{ fontWeight: '700', fontSize: 16, color: '#1c1917', marginBottom: 3 }}>
+                  <Text style={{ fontWeight: '700', fontSize: 16, color: '#1c1917', lineHeight: 22, marginBottom: 3 }}>
                     {item.book?.title ?? '—'}
                   </Text>
-                  <Text style={{ color: '#78716c', fontSize: 13, marginBottom: 2 }}>
+                  <Text style={{ color: '#78716c', fontSize: 13, marginBottom: 4 }}>
                     {item.book?.author ?? '—'}
                   </Text>
                   <Text style={{ color: '#a8a29e', fontSize: 12 }}>
                     from {getFirstName(item.sender)}
                   </Text>
                   {item.note ? (
-                    <Text style={{ fontSize: 13, color: '#57534e', fontStyle: 'italic', marginTop: 6 }}>
+                    <Text style={{ fontSize: 13, color: '#57534e', fontStyle: 'italic', marginTop: 8, lineHeight: 20 }}>
                       "{item.note}"
                     </Text>
                   ) : null}
@@ -302,16 +307,16 @@ export default function InboxScreen() {
                 disabled={savingId !== null}
                 style={{
                   alignSelf: 'flex-start',
-                  paddingHorizontal: 14,
-                  paddingVertical: 8,
-                  backgroundColor: savingId === item.id ? '#a8a29e' : '#1c1917',
+                  paddingHorizontal: 16,
+                  paddingVertical: 9,
+                  backgroundColor: savingId === item.id ? '#d6d3d1' : '#1c1917',
                   borderRadius: 8,
                 }}
               >
                 {savingId === item.id ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
-                  <Text style={{ color: '#fff', fontSize: 13, fontWeight: '500' }}>Add to Library</Text>
+                  <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>Add to Library</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -319,10 +324,13 @@ export default function InboxScreen() {
         </View>
       )}
 
+      {/* ── Divider between actionable and archival ── */}
+      {newItems.length > 0 && hasArchive && <Divider />}
+
       {/* ── Want to Read ── */}
       {savedItems.length > 0 && (
         <View style={{ marginBottom: 28 }}>
-          <SectionLabel>Want to Read</SectionLabel>
+          <SectionLabel>{`Want to Read · ${savedItems.length}`}</SectionLabel>
           {savedItems.map(item => (
             <RecRow key={item.id} item={item} onPress={() => goToDetail(item)} />
           ))}
@@ -332,7 +340,7 @@ export default function InboxScreen() {
       {/* ── Reading ── */}
       {readingItems.length > 0 && (
         <View style={{ marginBottom: 28 }}>
-          <SectionLabel>Reading</SectionLabel>
+          <SectionLabel>{`Reading · ${readingItems.length}`}</SectionLabel>
           {readingItems.map(item => (
             <RecRow key={item.id} item={item} onPress={() => goToDetail(item)} />
           ))}
@@ -342,7 +350,7 @@ export default function InboxScreen() {
       {/* ── Done ── */}
       {doneItems.length > 0 && (
         <View style={{ marginBottom: 28 }}>
-          <SectionLabel>Done</SectionLabel>
+          <SectionLabel>{`Done · ${doneItems.length}`}</SectionLabel>
           {doneItems.map(item => (
             <RecRow key={item.id} item={item} onPress={() => goToDetail(item)} />
           ))}
@@ -352,13 +360,15 @@ export default function InboxScreen() {
   );
 }
 
+// ─── RecRow — archival secondary rows ────────────────────────────────────────
+
 function RecRow({ item, onPress }: { item: InboxItem; onPress: () => void }) {
   return (
     <TouchableOpacity
       activeOpacity={0.7}
       onPress={onPress}
       style={{
-        paddingVertical: 15,
+        paddingVertical: 14,
         borderBottomWidth: 1,
         borderBottomColor: '#f5f5f4',
         flexDirection: 'row',
@@ -371,8 +381,8 @@ function RecRow({ item, onPress }: { item: InboxItem; onPress: () => void }) {
         width={40}
         height={58}
       />
-      <View style={{ flex: 1, marginLeft: 14, marginRight: 10 }}>
-        <Text style={{ fontWeight: '700', fontSize: 15, color: '#1c1917', marginBottom: 2 }}>
+      <View style={{ flex: 1, marginLeft: 14 }}>
+        <Text style={{ fontWeight: '700', fontSize: 15, color: '#1c1917', marginBottom: 2, lineHeight: 21 }}>
           {item.book?.title ?? '—'}
         </Text>
         <Text style={{ color: '#78716c', fontSize: 13, marginBottom: 3 }}>
@@ -382,12 +392,12 @@ function RecRow({ item, onPress }: { item: InboxItem; onPress: () => void }) {
           from {getFirstName(item.sender)}
         </Text>
         {item.note ? (
-          <Text style={{ fontSize: 12, color: '#78716c', fontStyle: 'italic', marginTop: 4 }}>
+          <Text style={{ fontSize: 13, color: '#78716c', fontStyle: 'italic', marginTop: 6, lineHeight: 19 }}>
             "{item.note}"
           </Text>
         ) : null}
       </View>
-      <StatusPill status={item.status} />
+      <Text style={{ fontSize: 16, color: '#d6d3d1', marginTop: 2, marginLeft: 8 }}>›</Text>
     </TouchableOpacity>
   );
 }

@@ -1,0 +1,79 @@
+Make one controlled “social trust layer refinement” pass focused on Inbox and Friend Detail.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not change schema unless absolutely necessary.
+Do not add AI features.
+Do not break recommendation, friendship, activity, pacing, or profile flows.
+Do not refactor unrelated business logic.
+
+Goal:
+Make the social reading layer feel more meaningful and trustworthy by improving:
+1. Inbox prioritization
+2. Friend Detail usefulness
+
+Current problem:
+Inbox is functionally correct but not very prioritized.
+Friend Detail is too sparse for how much navigation it asks from the user.
+
+Scope:
+Inspect and edit only what is necessary, likely:
+- app/(tabs)/notes.tsx
+- app/friend/[id].tsx
+- possibly app/(tabs)/index.tsx only if needed for entry-point consistency
+- no broad unrelated rewrites
+
+Primary product objectives
+
+A. Improve Inbox prioritization
+Requirements:
+1. New recommendations should feel more clearly actionable and important.
+2. Saved / Reading / Done items should feel appropriately secondary.
+3. Improve information hierarchy so users can quickly answer:
+   - what needs my attention?
+   - what did I already act on?
+4. Keep the current grouping structure, but make it more useful.
+
+B. Make Friend Detail more valuable
+Requirements:
+1. Strengthen the sense of why I tapped into a friend.
+2. Make the page better at communicating:
+   - how much we exchange recommendations
+   - whether their recommendations land
+   - what they are doing recently
+3. Do not just add more numbers; improve interpretability.
+
+C. Improve trust readability
+Requirements:
+1. Social surfaces should help users build intuition about whose recommendations matter.
+2. Do not add a full scoring system yet.
+3. But make the page feel like it is moving toward that future.
+
+D. Design direction
+Requirements:
+1. Keep the premium editorial style.
+2. Use hierarchy and curation, not clutter.
+3. Avoid dashboard overload.
+
+E. Preserve all current flows
+Do not break:
+- Inbox save flow
+- status grouping
+- unread/new badge
+- friend detail navigation
+- pair stats
+- recent activity
+- recommendation context
+
+Implementation guidance
+1. Treat this as a prioritization and interpretability pass.
+2. Inbox should answer “what do I do now?”
+3. Friend Detail should answer “why does this friend matter in my reading graph?”
+4. Keep changes coherent and restrained.
+
+After editing, print only:
+1. files changed
+2. full contents of changed files
+3. diff for those files only
+4. exact manual test steps
+5. social trust UX decisions made
