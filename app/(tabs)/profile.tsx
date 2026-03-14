@@ -11,7 +11,8 @@ import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computeDatePacing, computePagePacing, computeGoalProgress } from '../../lib/pacing';
-import { computeAvgPagesPerDay } from '../../lib/signals';
+import { computeAvgPagesPerDay, computeSourceCompletion, sourceCompletionInsight } from '../../lib/signals';
+import type { SourceCompletion } from '../../lib/signals';
 
 type Profile = {
   username: string;
@@ -109,8 +110,9 @@ export default function ProfileScreen() {
     recsLanded: number;
     finishedFromRecs: number;
   } | null>(null);
-  const [signals, setSignals]           = useState<ReaderSignals | null>(null);
-  const [patterns, setPatterns]         = useState<ReadingPatterns | null>(null);
+  const [signals, setSignals]             = useState<ReaderSignals | null>(null);
+  const [patterns, setPatterns]           = useState<ReadingPatterns | null>(null);
+  const [sourceCompletion, setSourceCompletion] = useState<SourceCompletion | null>(null);
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState<string | null>(null);
 
@@ -142,6 +144,10 @@ export default function ProfileScreen() {
         progressEventsRes,
         selfAddedRes,
         recAddedRes,
+        selfAddedFinishedRes,
+        selfAddedDnfRes,
+        recAddedFinishedRes,
+        recAddedDnfRes,
       ] = await Promise.all([
         supabase.from('profiles').select('username, first_name, last_name, yearly_reading_goal').eq('id', user.id).single(),
         supabase
@@ -219,6 +225,31 @@ export default function ProfileScreen() {
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id)
           .eq('source', 'recommendation'),
+        // ── Source-completion queries ──
+        supabase
+          .from('user_books')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('source', 'self_added')
+          .eq('status', 'finished'),
+        supabase
+          .from('user_books')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('source', 'self_added')
+          .eq('status', 'dnf'),
+        supabase
+          .from('user_books')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('source', 'recommendation')
+          .eq('status', 'finished'),
+        supabase
+          .from('user_books')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('source', 'recommendation')
+          .eq('status', 'dnf'),
       ]);
 
       // Currently reading: try with progress columns, fall back if migration not yet applied.
@@ -278,6 +309,13 @@ export default function ProfileScreen() {
         selfAdded: selfAddedRes.count ?? 0,
         recAdded:  recAddedRes.count  ?? 0,
       });
+
+      setSourceCompletion(computeSourceCompletion(
+        selfAddedFinishedRes.count ?? 0,
+        selfAddedDnfRes.count      ?? 0,
+        recAddedFinishedRes.count  ?? 0,
+        recAddedDnfRes.count       ?? 0,
+      ));
 
       setLoading(false);
     }
@@ -761,7 +799,14 @@ export default function ProfileScreen() {
           lines.push(`You tend to finish ${phrase}.`);
         }
 
-        // Pattern 3: Social direction — giver vs receiver
+        // Pattern 3: Completion by source — self-picked vs recommended
+        // Threshold: ≥3 resolved in each bucket, ≥10pp absolute rate difference to state direction
+        if (sourceCompletion) {
+          const srcLine = sourceCompletionInsight(sourceCompletion);
+          if (srcLine) lines.push(srcLine);
+        }
+
+        // Pattern 4: Social direction — giver vs receiver
         // Threshold: ≥3 total recommendation interactions
         const sentCount = sentRecs.length;
         const recvCount = signals?.totalRecsReceived ?? 0;
@@ -775,7 +820,7 @@ export default function ProfileScreen() {
           }
         }
 
-        // Pattern 4: Pace context
+        // Pattern 5: Pace context
         // Threshold: avgPagesPerDay ≥ 5 (filters out noise from very sparse data)
         if (signals?.avgPagesPerDay && signals.avgPagesPerDay >= 5) {
           const days = Math.round(300 / signals.avgPagesPerDay);

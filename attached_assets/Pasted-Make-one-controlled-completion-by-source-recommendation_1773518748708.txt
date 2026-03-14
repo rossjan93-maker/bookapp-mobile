@@ -1,0 +1,88 @@
+Make one controlled “completion-by-source + recommendation trust surfaces” intelligence pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not add real AI / LLM integrations yet.
+Do not refactor unrelated business logic.
+Do not break auth, profile, recommendations, library, activity, pacing, or social flows.
+
+Goal:
+Start turning the app’s captured reading and recommendation behavior into more meaningful intelligence by comparing:
+1. self-picked vs recommended books
+2. recommendation outcomes by source / recommender trust
+
+This should be a grounded analytics/product-intelligence pass, not speculative AI.
+
+Scope:
+Inspect and edit only what is necessary, likely:
+- app/(tabs)/profile.tsx
+- app/friend/[id].tsx
+- lib/signals.ts
+- maybe one tiny helper only if useful
+- no schema changes unless absolutely necessary
+
+Primary product objectives
+
+A. Completion by source
+Requirements:
+1. Analyze how the user performs on:
+   - self_added books
+   - recommendation books
+2. Surface a credible pattern only when sample size is sufficient.
+3. Good examples:
+   - “You finish self-picked books more often than recommended ones.”
+   - “Recommendations are landing almost as often as your own picks.”
+4. Keep the language honest and threshold-gated.
+
+B. Stronger recommendation trust surfaces
+Requirements:
+1. Build on the current social trust layer.
+2. Make it easier to understand not just exchange volume, but outcome quality.
+3. Good candidates:
+   - which direction lands more
+   - whether this friend’s recommendations actually convert
+   - whether the user tends to act on recommendations at all
+
+C. Threshold rules
+Requirements:
+1. Do not overstate on tiny samples.
+2. Require meaningful minimums before comparison language appears.
+3. Use factual wording for small samples, interpretive wording only when justified.
+
+D. Surface placement
+Requirements:
+1. Put the user-level source comparison in a sensible place, likely Profile.
+2. Put friend-level trust refinement in Friend Detail.
+3. Keep both compact and product-readable.
+
+E. Preserve design direction
+Requirements:
+1. Keep the premium editorial tone.
+2. Avoid turning screens into dashboards.
+3. Surface a few strong conclusions, not raw tables.
+
+F. Preserve all current flows
+Do not break:
+- Reader Insights
+- Reading Patterns
+- Friend detail exchange cards
+- Inbox
+- Library
+- Profile
+- recommendation lifecycle
+- sentiment capture
+- source attribution
+
+Implementation guidance
+1. Use existing user_books.source, statuses, recommendations, and credibility outcomes.
+2. Prefer 1–3 strong surfaced insights over many weak metrics.
+3. Keep the logic explicit in lib/signals.ts when possible.
+4. Threshold-gate everything.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. threshold rules used
+6. what intelligence was surfaced now vs deferred

@@ -14,10 +14,6 @@ export type ReadingSignals = {
 // -----------------------------------------------------------------------------
 // computeAvgPagesPerDay — pure helper, reusable outside the full signal pass
 // -----------------------------------------------------------------------------
-// Accepts raw progress event rows (sorted ascending by created_at) and returns
-// a rounded average velocity across all books that have at least two data points
-// spanning at least one calendar day.
-// -----------------------------------------------------------------------------
 export function computeAvgPagesPerDay(
   events: Array<{ user_book_id: string; page: number; created_at: string }>,
 ): number | null {
@@ -96,4 +92,93 @@ export async function computeReadingSignals(
   const recConversionRate = totalRecs > 0 ? +(convertedRecs / totalRecs).toFixed(2) : null;
 
   return { completionRate, dnfRate, avgPagesPerDay, recConversionRate };
+}
+
+// =============================================================================
+// Source Completion — compares completion rate for self-picked vs recommended
+// =============================================================================
+
+export type SourceCompletion = {
+  selfRate:     number | null;  // finished / (finished + dnf) for self_added books
+  recRate:      number | null;  // finished / (finished + dnf) for recommendation books
+  selfResolved: number;         // self_added finished + dnf total
+  recResolved:  number;         // recommendation finished + dnf total
+};
+
+// -----------------------------------------------------------------------------
+// computeSourceCompletion — pure function, accepts raw counts
+// -----------------------------------------------------------------------------
+export function computeSourceCompletion(
+  selfFinished: number,
+  selfDnf:      number,
+  recFinished:  number,
+  recDnf:       number,
+): SourceCompletion {
+  const selfResolved = selfFinished + selfDnf;
+  const recResolved  = recFinished  + recDnf;
+  return {
+    selfRate:     selfResolved > 0 ? selfFinished / selfResolved : null,
+    recRate:      recResolved  > 0 ? recFinished  / recResolved  : null,
+    selfResolved,
+    recResolved,
+  };
+}
+
+// -----------------------------------------------------------------------------
+// sourceCompletionInsight — returns one editorial sentence or null
+//
+// Threshold rules:
+//   - Both buckets must have ≥ 3 resolved books (finished + dnf) to compare
+//   - At least 10 percentage points absolute difference to state a direction
+//   - Within 10 pp: "almost as often" language (no directional claim)
+// -----------------------------------------------------------------------------
+export function sourceCompletionInsight(sc: SourceCompletion): string | null {
+  const { selfRate, recRate, selfResolved, recResolved } = sc;
+
+  if (selfRate === null || recRate === null) return null;
+  if (selfResolved < 3 || recResolved < 3) return null;
+
+  const diff = selfRate - recRate; // positive → self better, negative → rec better
+
+  if (Math.abs(diff) < 0.10) {
+    return "Recommendations are landing almost as often as your own picks.";
+  }
+  if (diff >= 0.10) {
+    return "You finish self-picked books more often than recommended ones.";
+  }
+  return "You finish recommended books more often than your own picks — your friends know your taste.";
+}
+
+// =============================================================================
+// Directional trust — compares landing rate in each direction between two users
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// directionalTrustInsight — for Friend Detail screen
+//
+// Threshold rules:
+//   - Both directions need ≥ 3 sent to compare (otherwise asymmetric data)
+//   - At least 10 percentage points absolute difference to state a direction
+//   - Within 10 pp: "similar rate" — no directional claim
+// -----------------------------------------------------------------------------
+export function directionalTrustInsight(
+  recsSentToMe:   number,
+  iFinished:      number,
+  recsSentToThem: number,
+  theyFinished:   number,
+  friendFirstName: string,
+): string | null {
+  if (recsSentToMe < 3 || recsSentToThem < 3) return null;
+
+  const inRate  = iFinished   / recsSentToMe;
+  const outRate = theyFinished / recsSentToThem;
+  const diff    = inRate - outRate;
+
+  if (Math.abs(diff) < 0.10) {
+    return "Both directions are landing at a similar rate.";
+  }
+  if (diff >= 0.10) {
+    return `${friendFirstName}'s recommendations land more often for you than yours do for them.`;
+  }
+  return `Your recommendations are landing more often for ${friendFirstName} than theirs are for you.`;
 }

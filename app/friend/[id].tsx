@@ -9,6 +9,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { getDisplayName } from '../../lib/displayName';
+import { directionalTrustInsight } from '../../lib/signals';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -342,6 +343,34 @@ export default function FriendDetailScreen() {
               </Text>
             </View>
           )}
+
+          {/* Directional trust insight — requires ≥3 sent in each direction */}
+          {(() => {
+            if (!stats) return null;
+            const insight = directionalTrustInsight(
+              stats.recsSentToMe,
+              stats.iFinished,
+              stats.recsSentToThem,
+              stats.theyFinished,
+              friendFirstName,
+            );
+            if (!insight) return null;
+            return (
+              <View style={{
+                backgroundColor: '#faf9f7',
+                borderRadius: 10,
+                paddingHorizontal: 14,
+                paddingVertical: 11,
+                borderWidth: 1,
+                borderColor: '#e7e5e4',
+                marginTop: 8,
+              }}>
+                <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
+                  {insight}
+                </Text>
+              </View>
+            );
+          })()}
         </View>
       )}
 
