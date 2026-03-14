@@ -12,6 +12,19 @@ import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type CurrentRead = {
+  id: string;
+  book_id: string;
+  current_page: number | null;
+  title: string;
+  author: string;
+  cover_url: string | null;
+  external_id: string | null;
+  page_count: number | null;
+};
+
 type FeedEvent = {
   id: string;
   event_type: string;
@@ -38,6 +51,8 @@ type FriendshipRow = {
 };
 
 type RelationshipState = 'none' | 'pending' | 'accepted';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getRelationship(
   userId: string,
@@ -74,6 +89,8 @@ function relativeTime(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
 function SectionLabel({ children }: { children: string }) {
   return (
     <Text style={{
@@ -107,22 +124,31 @@ function InitialAvatar({ name }: { name: string }) {
   );
 }
 
+// ─── Screen ───────────────────────────────────────────────────────────────────
+
 export default function HomeScreen() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
+  const [greeting, setGreeting] = useState('');
 
+  // Dashboard modules
+  const [currentRead, setCurrentRead] = useState<CurrentRead | null>(null);
+  const [pendingRecCount, setPendingRecCount] = useState(0);
+
+  // Activity feed
   const [feed, setFeed] = useState<FeedEvent[]>([]);
   const [feedLoading, setFeedLoading] = useState(true);
   const [feedError, setFeedError] = useState<string | null>(null);
 
+  // Friends
   const [friendships, setFriendships] = useState<FriendshipRow[]>([]);
   const [loadingFriendships, setLoadingFriendships] = useState(true);
 
+  // Search
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<ProfileResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-
   const [addingId, setAddingId] = useState<string | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -141,12 +167,23 @@ export default function HomeScreen() {
         return;
       }
       setUserId(user.id);
-      await Promise.all([loadFeed(), loadFriendships(user.id)]);
+
+      const meta = user.user_metadata as { first_name?: string } | undefined;
+      if (meta?.first_name) setGreeting(meta.first_name);
+
+      await Promise.all([
+        loadFeed(),
+        loadFriendships(user.id),
+        loadCurrentRead(user.id),
+        loadPendingRecs(user.id),
+      ]);
       setFeedLoading(false);
       setLoadingFriendships(false);
     }
     init();
   }, []));
+
+  // ── Data loaders ─────────────────────────────────────────────────────────────
 
   async function loadFeed() {
     if (!supabase) return;
@@ -179,6 +216,57 @@ export default function HomeScreen() {
       .or(`requester_id.eq.${uid},addressee_id.eq.${uid}`);
     setFriendships((data as FriendshipRow[]) ?? []);
   }
+
+  async function loadCurrentRead(uid: string) {
+    if (!supabase) return;
+    // Try with progress columns; fall back if migration not yet applied.
+    let res = await supabase
+      .from('user_books')
+      .select('id, book_id, current_page, book:books(title, author, cover_url, external_id, page_count)')
+      .eq('user_id', uid)
+      .eq('status', 'reading')
+      .order('progress_updated_at', { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (res.error) {
+      res = await supabase
+        .from('user_books')
+        .select('id, book_id, book:books(title, author, cover_url, external_id)')
+        .eq('user_id', uid)
+        .eq('status', 'reading')
+        .limit(1)
+        .maybeSingle();
+    }
+
+    if (res.data) {
+      const b = res.data.book as any;
+      setCurrentRead({
+        id: res.data.id,
+        book_id: res.data.book_id,
+        current_page: res.data.current_page ?? null,
+        title: b?.title ?? '',
+        author: b?.author ?? '',
+        cover_url: b?.cover_url ?? null,
+        external_id: b?.external_id ?? null,
+        page_count: b?.page_count ?? null,
+      });
+    } else {
+      setCurrentRead(null);
+    }
+  }
+
+  async function loadPendingRecs(uid: string) {
+    if (!supabase) return;
+    const { count } = await supabase
+      .from('recommendations')
+      .select('id', { count: 'exact', head: true })
+      .eq('to_user_id', uid)
+      .eq('status', 'pending');
+    setPendingRecCount(count ?? 0);
+  }
+
+  // ── Search ───────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -228,10 +316,14 @@ export default function HomeScreen() {
     setAddingId(null);
   }
 
+  // ── Derived ──────────────────────────────────────────────────────────────────
+
   const acceptedFriends = friendships
     .filter(f => f.status === 'accepted')
     .map(f => (f.requester_id === userId ? f.addressee : f.requester))
     .filter(Boolean) as { id: string; username: string; first_name: string | null; last_name: string | null }[];
+
+  // ── Loading ───────────────────────────────────────────────────────────────────
 
   if (feedLoading || loadingFriendships) {
     return (
@@ -240,6 +332,26 @@ export default function HomeScreen() {
       </View>
     );
   }
+
+  // ── Progress helpers ─────────────────────────────────────────────────────────
+
+  function progressLabel(cr: CurrentRead): string {
+    if (cr.current_page && cr.page_count) {
+      const pct = Math.round((cr.current_page / cr.page_count) * 100);
+      return `Page ${cr.current_page} of ${cr.page_count} · ${pct}%`;
+    }
+    if (cr.current_page) return `Page ${cr.current_page}`;
+    return 'In progress';
+  }
+
+  function progressPct(cr: CurrentRead): number {
+    if (cr.current_page && cr.page_count && cr.page_count > 0) {
+      return Math.min(cr.current_page / cr.page_count, 1);
+    }
+    return 0;
+  }
+
+  // ─── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <ScrollView
@@ -255,259 +367,402 @@ export default function HomeScreen() {
           letterSpacing: -0.8,
           lineHeight: 40,
         }}>
-          Friends' Activity
+          {greeting ? `Hi, ${greeting}` : 'Home'}
         </Text>
         <Text style={{ fontSize: 14, color: '#a8a29e', marginTop: 5 }}>
-          What everyone is reading
+          {currentRead ? `Currently reading · ${currentRead.title}` : 'Your reading world'}
         </Text>
       </View>
 
-      {/* ── Activity Feed ── */}
-      <SectionLabel>Activity</SectionLabel>
-
-      {feedError ? (
-        <Text style={{ color: '#b91c1c', marginBottom: 16, fontSize: 14 }}>{feedError}</Text>
-      ) : feed.length === 0 ? (
-        <View style={{
-          backgroundColor: '#fff',
-          borderRadius: 14,
-          padding: 24,
-          alignItems: 'center',
-          marginBottom: 32,
-          shadowColor: '#000',
-          shadowOpacity: 0.04,
-          shadowRadius: 6,
-          shadowOffset: { width: 0, height: 1 },
-          elevation: 1,
-        }}>
-          <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
-            Nothing yet.{'\n'}Add friends to see their activity here.
-          </Text>
-        </View>
-      ) : (
+      {/* ── 1. Continue Reading ── */}
+      {currentRead && (
         <View style={{ marginBottom: 32 }}>
-          {feed.map(event => {
-            const verb = eventVerb(event.event_type);
-            if (!verb) return null;
-            const actor = getFirstName(event.actor);
-            const title = event.book?.title ?? '';
-            const author = event.book?.author ?? '';
-            const canTap = !!event.book_id && !!title;
-
-            const card = (
-              <View
-                style={{
-                  backgroundColor: '#fff',
-                  borderRadius: 14,
-                  padding: 16,
-                  marginBottom: 10,
-                  shadowColor: '#000',
-                  shadowOpacity: 0.05,
-                  shadowRadius: 6,
-                  shadowOffset: { width: 0, height: 1 },
-                  elevation: 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                }}
-              >
-                <CoverThumb
-                  url={event.book?.cover_url}
-                  externalId={event.book?.external_id}
-                  width={40}
-                  height={58}
-                />
-                <View style={{ flex: 1, marginLeft: 14 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 2 }}>
-                    {actor}{' '}
-                    <Text style={{ fontWeight: '400', color: '#57534e' }}>{verb}</Text>
-                  </Text>
-                  {title ? (
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', lineHeight: 20, marginBottom: 2 }}>
-                      {title}
+          <SectionLabel>Continue Reading</SectionLabel>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => router.push({
+              pathname: '/book/[id]',
+              params: {
+                id: currentRead.book_id,
+                title: currentRead.title,
+                author: currentRead.author,
+                coverUrl: currentRead.cover_url ?? '',
+                externalId: currentRead.external_id ?? '',
+              },
+            })}
+          >
+            <View style={{
+              backgroundColor: '#fff',
+              borderRadius: 16,
+              padding: 16,
+              flexDirection: 'row',
+              alignItems: 'center',
+              shadowColor: '#000',
+              shadowOpacity: 0.06,
+              shadowRadius: 8,
+              shadowOffset: { width: 0, height: 2 },
+              elevation: 2,
+              borderLeftWidth: 3,
+              borderLeftColor: '#1c1917',
+            }}>
+              <CoverThumb
+                url={currentRead.cover_url}
+                externalId={currentRead.external_id}
+                width={56}
+                height={82}
+              />
+              <View style={{ flex: 1, marginLeft: 16 }}>
+                <Text style={{
+                  fontSize: 16,
+                  fontWeight: '700',
+                  color: '#1c1917',
+                  lineHeight: 22,
+                  marginBottom: 3,
+                }} numberOfLines={2}>
+                  {currentRead.title}
+                </Text>
+                <Text style={{ fontSize: 13, color: '#78716c', marginBottom: 12 }} numberOfLines={1}>
+                  {currentRead.author}
+                </Text>
+                {/* Progress bar */}
+                {(currentRead.current_page || currentRead.page_count) ? (
+                  <>
+                    <View style={{
+                      height: 3,
+                      backgroundColor: '#e7e5e4',
+                      borderRadius: 2,
+                      marginBottom: 6,
+                      overflow: 'hidden',
+                    }}>
+                      {progressPct(currentRead) > 0 && (
+                        <View style={{
+                          height: 3,
+                          width: `${progressPct(currentRead) * 100}%`,
+                          backgroundColor: '#1c1917',
+                          borderRadius: 2,
+                        }} />
+                      )}
+                    </View>
+                    <Text style={{ fontSize: 11, color: '#a8a29e' }}>
+                      {progressLabel(currentRead)}
                     </Text>
-                  ) : null}
-                  {author ? (
-                    <Text style={{ fontSize: 12, color: '#a8a29e', marginBottom: 4 }}>
-                      {author}
-                    </Text>
-                  ) : null}
-                  <Text style={{ fontSize: 11, color: '#c4b5a5' }}>
-                    {relativeTime(event.created_at)}
-                  </Text>
-                </View>
+                  </>
+                ) : (
+                  <Text style={{ fontSize: 11, color: '#a8a29e' }}>In progress</Text>
+                )}
               </View>
-            );
-
-            if (canTap) {
-              return (
-                <TouchableOpacity
-                  key={event.id}
-                  activeOpacity={0.75}
-                  onPress={() => router.push({
-                    pathname: '/book/[id]',
-                    params: {
-                      id: event.book_id!,
-                      title: event.book?.title ?? '',
-                      author: event.book?.author ?? '',
-                      coverUrl: event.book?.cover_url ?? '',
-                      externalId: event.book?.external_id ?? '',
-                    },
-                  })}
-                >
-                  {card}
-                </TouchableOpacity>
-              );
-            }
-            return <View key={event.id}>{card}</View>;
-          })}
+              <Text style={{ fontSize: 20, color: '#d6d3d1', marginLeft: 8 }}>›</Text>
+            </View>
+          </TouchableOpacity>
         </View>
       )}
 
-      {/* ── Find Friends ── */}
-      <SectionLabel>Find Friends</SectionLabel>
-
-      <TextInput
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-        placeholder="Search by username…"
-        autoCapitalize="none"
-        autoCorrect={false}
-        placeholderTextColor="#a8a29e"
-        style={{
-          backgroundColor: '#fff',
-          borderRadius: 12,
-          paddingHorizontal: 14,
-          paddingVertical: 12,
-          fontSize: 15,
-          color: '#1c1917',
-          marginBottom: 10,
-          shadowColor: '#000',
-          shadowOpacity: 0.04,
-          shadowRadius: 4,
-          shadowOffset: { width: 0, height: 1 },
-          elevation: 1,
-        }}
-      />
-
-      {searching && <ActivityIndicator color="#78716c" style={{ marginVertical: 10 }} />}
-
-      {searchError && (
-        <Text style={{ color: '#b91c1c', marginBottom: 8, fontSize: 13 }}>{searchError}</Text>
+      {/* ── 2. New from Friends (pending recommendations) ── */}
+      {pendingRecCount > 0 && (
+        <View style={{ marginBottom: 32 }}>
+          <SectionLabel>New from Friends</SectionLabel>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => router.push('/(tabs)/notes')}
+          >
+            <View style={{
+              backgroundColor: '#fff',
+              borderRadius: 14,
+              paddingHorizontal: 16,
+              paddingVertical: 16,
+              flexDirection: 'row',
+              alignItems: 'center',
+              shadowColor: '#000',
+              shadowOpacity: 0.04,
+              shadowRadius: 6,
+              shadowOffset: { width: 0, height: 1 },
+              elevation: 1,
+            }}>
+              <View style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: '#f5f5f4',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginRight: 14,
+              }}>
+                <Text style={{ fontSize: 20 }}>📬</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: '#1c1917', marginBottom: 2 }}>
+                  {pendingRecCount === 1
+                    ? '1 recommendation waiting'
+                    : `${pendingRecCount} recommendations waiting`}
+                </Text>
+                <Text style={{ fontSize: 13, color: '#a8a29e' }}>
+                  See what your friends picked for you
+                </Text>
+              </View>
+              <Text style={{ fontSize: 20, color: '#d6d3d1' }}>›</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
       )}
 
-      {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
-        <Text style={{ color: '#a8a29e', marginBottom: 16, fontSize: 14 }}>No users found.</Text>
-      )}
+      {/* ── 3. Activity Feed ── */}
+      <View style={{ marginBottom: 32 }}>
+        <SectionLabel>Activity</SectionLabel>
 
-      {searchResults.length > 0 && (
-        <View style={{
-          backgroundColor: '#fff',
-          borderRadius: 14,
-          marginBottom: 20,
-          shadowColor: '#000',
-          shadowOpacity: 0.04,
-          shadowRadius: 6,
-          shadowOffset: { width: 0, height: 1 },
-          elevation: 1,
-          overflow: 'hidden',
-        }}>
-          {searchResults.map((result, idx) => {
-            const rel = userId ? getRelationship(userId, result.id, friendships) : 'none';
-            const isAdding = addingId === result.id;
-            return (
-              <View
-                key={result.id}
+        {feedError ? (
+          <Text style={{ color: '#b91c1c', marginBottom: 16, fontSize: 14 }}>{feedError}</Text>
+        ) : feed.length === 0 ? (
+          <View style={{
+            backgroundColor: '#fff',
+            borderRadius: 14,
+            padding: 24,
+            alignItems: 'center',
+            shadowColor: '#000',
+            shadowOpacity: 0.04,
+            shadowRadius: 6,
+            shadowOffset: { width: 0, height: 1 },
+            elevation: 1,
+          }}>
+            <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
+              Nothing yet.{'\n'}Add friends to see their activity here.
+            </Text>
+          </View>
+        ) : (
+          <>
+            {feed.map(event => {
+              const verb = eventVerb(event.event_type);
+              if (!verb) return null;
+              const actor = getFirstName(event.actor);
+              const title = event.book?.title ?? '';
+              const author = event.book?.author ?? '';
+              const canTap = !!event.book_id && !!title;
+
+              const card = (
+                <View
+                  style={{
+                    backgroundColor: '#fff',
+                    borderRadius: 14,
+                    padding: 16,
+                    marginBottom: 10,
+                    shadowColor: '#000',
+                    shadowOpacity: 0.05,
+                    shadowRadius: 6,
+                    shadowOffset: { width: 0, height: 1 },
+                    elevation: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                  }}
+                >
+                  <CoverThumb
+                    url={event.book?.cover_url}
+                    externalId={event.book?.external_id}
+                    width={40}
+                    height={58}
+                  />
+                  <View style={{ flex: 1, marginLeft: 14 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 2 }}>
+                      {actor}{' '}
+                      <Text style={{ fontWeight: '400', color: '#57534e' }}>{verb}</Text>
+                    </Text>
+                    {title ? (
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', lineHeight: 20, marginBottom: 2 }}>
+                        {title}
+                      </Text>
+                    ) : null}
+                    {author ? (
+                      <Text style={{ fontSize: 12, color: '#a8a29e', marginBottom: 4 }}>
+                        {author}
+                      </Text>
+                    ) : null}
+                    <Text style={{ fontSize: 11, color: '#c4b5a5' }}>
+                      {relativeTime(event.created_at)}
+                    </Text>
+                  </View>
+                </View>
+              );
+
+              if (canTap) {
+                return (
+                  <TouchableOpacity
+                    key={event.id}
+                    activeOpacity={0.75}
+                    onPress={() => router.push({
+                      pathname: '/book/[id]',
+                      params: {
+                        id: event.book_id!,
+                        title: event.book?.title ?? '',
+                        author: event.book?.author ?? '',
+                        coverUrl: event.book?.cover_url ?? '',
+                        externalId: event.book?.external_id ?? '',
+                      },
+                    })}
+                  >
+                    {card}
+                  </TouchableOpacity>
+                );
+              }
+              return <View key={event.id}>{card}</View>;
+            })}
+          </>
+        )}
+      </View>
+
+      {/* ── 4. Find Friends ── */}
+      <View style={{ marginBottom: 32 }}>
+        <SectionLabel>Find Friends</SectionLabel>
+
+        <TextInput
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Search by username…"
+          autoCapitalize="none"
+          autoCorrect={false}
+          placeholderTextColor="#a8a29e"
+          style={{
+            backgroundColor: '#fff',
+            borderRadius: 12,
+            paddingHorizontal: 14,
+            paddingVertical: 12,
+            fontSize: 15,
+            color: '#1c1917',
+            marginBottom: 10,
+            shadowColor: '#000',
+            shadowOpacity: 0.04,
+            shadowRadius: 4,
+            shadowOffset: { width: 0, height: 1 },
+            elevation: 1,
+          }}
+        />
+
+        {searching && <ActivityIndicator color="#78716c" style={{ marginVertical: 10 }} />}
+
+        {searchError && (
+          <Text style={{ color: '#b91c1c', marginBottom: 8, fontSize: 13 }}>{searchError}</Text>
+        )}
+
+        {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
+          <Text style={{ color: '#a8a29e', marginBottom: 16, fontSize: 14 }}>No users found.</Text>
+        )}
+
+        {searchResults.length > 0 && (
+          <View style={{
+            backgroundColor: '#fff',
+            borderRadius: 14,
+            shadowColor: '#000',
+            shadowOpacity: 0.04,
+            shadowRadius: 6,
+            shadowOffset: { width: 0, height: 1 },
+            elevation: 1,
+            overflow: 'hidden',
+          }}>
+            {searchResults.map((result, idx) => {
+              const rel = userId ? getRelationship(userId, result.id, friendships) : 'none';
+              const isAdding = addingId === result.id;
+              return (
+                <View
+                  key={result.id}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                    borderBottomWidth: idx < searchResults.length - 1 ? 1 : 0,
+                    borderBottomColor: '#f5f5f4',
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <InitialAvatar name={getDisplayName(result)} />
+                    <View>
+                      <Text style={{ fontSize: 15, color: '#1c1917' }}>{getDisplayName(result)}</Text>
+                      {(result.first_name || result.last_name) && (
+                        <Text style={{ fontSize: 12, color: '#a8a29e' }}>@{result.username}</Text>
+                      )}
+                    </View>
+                  </View>
+                  {isAdding ? (
+                    <ActivityIndicator color="#78716c" size="small" />
+                  ) : rel === 'none' ? (
+                    <TouchableOpacity
+                      onPress={() => handleAddFriend(result.id)}
+                      disabled={addingId !== null}
+                      style={{
+                        paddingHorizontal: 14,
+                        paddingVertical: 7,
+                        backgroundColor: addingId !== null ? '#d6d3d1' : '#1c1917',
+                        borderRadius: 8,
+                      }}
+                    >
+                      <Text style={{ color: '#fff', fontSize: 13, fontWeight: '500' }}>Add</Text>
+                    </TouchableOpacity>
+                  ) : rel === 'pending' ? (
+                    <Text style={{ color: '#a8a29e', fontSize: 13 }}>Pending</Text>
+                  ) : (
+                    <Text style={{ color: '#78716c', fontSize: 13 }}>Friends</Text>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </View>
+
+      {/* ── 5. Friends ── */}
+      <View>
+        <SectionLabel>
+          {acceptedFriends.length > 0 ? `Friends (${acceptedFriends.length})` : 'Friends'}
+        </SectionLabel>
+
+        {acceptedFriends.length === 0 ? (
+          <Text style={{ color: '#a8a29e', fontSize: 14, marginBottom: 16 }}>No friends yet.</Text>
+        ) : (
+          <View style={{
+            backgroundColor: '#fff',
+            borderRadius: 14,
+            shadowColor: '#000',
+            shadowOpacity: 0.04,
+            shadowRadius: 6,
+            shadowOffset: { width: 0, height: 1 },
+            elevation: 1,
+            overflow: 'hidden',
+          }}>
+            {acceptedFriends.map((friend, idx) => (
+              <TouchableOpacity
+                key={friend.id}
+                onPress={() => router.push({
+                  pathname: '/friend/[id]',
+                  params: {
+                    id: friend.id,
+                    username: friend.username,
+                    firstName: friend.first_name ?? '',
+                    lastName: friend.last_name ?? '',
+                  },
+                })}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  paddingVertical: 12,
+                  paddingVertical: 13,
                   paddingHorizontal: 16,
-                  borderBottomWidth: idx < searchResults.length - 1 ? 1 : 0,
+                  borderBottomWidth: idx < acceptedFriends.length - 1 ? 1 : 0,
                   borderBottomColor: '#f5f5f4',
                 }}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <InitialAvatar name={getDisplayName(result)} />
+                  <InitialAvatar name={getDisplayName(friend)} />
                   <View>
-                    <Text style={{ fontSize: 15, color: '#1c1917' }}>{getDisplayName(result)}</Text>
-                    {(result.first_name || result.last_name) && (
-                      <Text style={{ fontSize: 12, color: '#a8a29e' }}>@{result.username}</Text>
+                    <Text style={{ fontSize: 15, color: '#1c1917' }}>{getDisplayName(friend)}</Text>
+                    {(friend.first_name || friend.last_name) && (
+                      <Text style={{ fontSize: 12, color: '#a8a29e' }}>@{friend.username}</Text>
                     )}
                   </View>
                 </View>
-                {isAdding ? (
-                  <ActivityIndicator color="#78716c" size="small" />
-                ) : rel === 'none' ? (
-                  <TouchableOpacity
-                    onPress={() => handleAddFriend(result.id)}
-                    disabled={addingId !== null}
-                    style={{
-                      paddingHorizontal: 14,
-                      paddingVertical: 7,
-                      backgroundColor: addingId !== null ? '#d6d3d1' : '#1c1917',
-                      borderRadius: 8,
-                    }}
-                  >
-                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '500' }}>Add</Text>
-                  </TouchableOpacity>
-                ) : rel === 'pending' ? (
-                  <Text style={{ color: '#a8a29e', fontSize: 13 }}>Pending</Text>
-                ) : (
-                  <Text style={{ color: '#78716c', fontSize: 13 }}>Friends</Text>
-                )}
-              </View>
-            );
-          })}
-        </View>
-      )}
-
-      {/* ── Friends ── */}
-      <SectionLabel>
-        {acceptedFriends.length > 0 ? `Friends (${acceptedFriends.length})` : 'Friends'}
-      </SectionLabel>
-
-      {acceptedFriends.length === 0 ? (
-        <Text style={{ color: '#a8a29e', fontSize: 14, marginBottom: 16 }}>No friends yet.</Text>
-      ) : (
-        <View style={{
-          backgroundColor: '#fff',
-          borderRadius: 14,
-          shadowColor: '#000',
-          shadowOpacity: 0.04,
-          shadowRadius: 6,
-          shadowOffset: { width: 0, height: 1 },
-          elevation: 1,
-          overflow: 'hidden',
-        }}>
-          {acceptedFriends.map((friend, idx) => (
-            <TouchableOpacity
-              key={friend.id}
-              onPress={() => router.push({ pathname: '/friend/[id]', params: { id: friend.id, username: friend.username, firstName: friend.first_name ?? '', lastName: friend.last_name ?? '' } })}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                paddingVertical: 13,
-                paddingHorizontal: 16,
-                borderBottomWidth: idx < acceptedFriends.length - 1 ? 1 : 0,
-                borderBottomColor: '#f5f5f4',
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <InitialAvatar name={getDisplayName(friend)} />
-                <View>
-                  <Text style={{ fontSize: 15, color: '#1c1917' }}>{getDisplayName(friend)}</Text>
-                  {(friend.first_name || friend.last_name) && (
-                    <Text style={{ fontSize: 12, color: '#a8a29e' }}>@{friend.username}</Text>
-                  )}
-                </View>
-              </View>
-              <Text style={{ fontSize: 18, color: '#d6d3d1', marginRight: 2 }}>›</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
+                <Text style={{ fontSize: 18, color: '#d6d3d1', marginRight: 2 }}>›</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
     </ScrollView>
   );
 }

@@ -1,0 +1,91 @@
+Make one controlled “Home becomes a real reading dashboard” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not change schema unless absolutely necessary.
+Do not break recommendation, activity, pacing, inbox, or profile flows.
+Do not refactor unrelated business logic.
+
+Goal:
+Transform Home from a mostly-flat activity feed into a more useful reading dashboard that answers:
+1. What should I do now?
+2. What’s new from friends?
+3. What’s happening in my reading world?
+
+Current problem:
+Home is too feed-led. It shows events, but not enough meaning or prioritization.
+
+Scope:
+Inspect and edit only what is necessary, likely:
+- app/(tabs)/index.tsx
+- one tiny shared component/helper only if truly useful
+- no unrelated file rewrites
+
+Primary product objectives
+
+A. Add a top “Continue Reading” module
+Requirements:
+1. If the user has any reading books, surface one clear “Continue Reading” card near the top.
+2. Prioritize the most recently started or most relevant current book.
+3. Show:
+   - cover
+   - title
+   - author
+   - current progress if available
+   - pacing state if available
+4. Tapping it should go to Book Detail.
+5. This should feel like the main daily-use action on Home.
+
+B. Add a “New from Friends” module
+Requirements:
+1. Surface a compact module for the most relevant unread/new social item(s).
+2. Good candidates:
+   - new recommendations waiting in Inbox
+   - very recent friend reading activity
+3. This should be more curated than the raw activity feed.
+4. Keep it compact and useful, not noisy.
+
+C. Demote the activity feed slightly
+Requirements:
+1. Keep the activity feed, but make it the third layer of the screen rather than the whole point.
+2. Activity should feel like background social texture after the dashboard modules.
+
+D. Preserve friend search and friend list
+Requirements:
+1. Do not remove Find Friends.
+2. Do not remove Friends.
+3. But improve composition so they feel secondary to reading momentum.
+
+E. Design direction
+Requirements:
+1. Keep the editorial premium style already established.
+2. Home should feel useful, calm, and intentional.
+3. Avoid turning it into a generic dashboard.
+4. Use hierarchy and spacing, not clutter.
+
+F. Preserve all current flows
+Do not break:
+- activity feed loading
+- friend search
+- friendship add flow
+- friend detail routing
+- book detail routing
+- recommendation / inbox flows
+- pacing display logic
+
+Implementation guidance
+1. Prefer one clear top card rather than multiple competing hero cards.
+2. Make the hierarchy:
+   - Continue Reading
+   - New from Friends
+   - Activity
+   - Find Friends
+   - Friends
+3. Keep the code explicit and readable.
+
+After editing, print only:
+1. files changed
+2. full contents of changed files
+3. diff for those files only
+4. exact manual test steps
+5. Home information hierarchy decisions made
