@@ -11,6 +11,8 @@ import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 type Step = 'search' | 'friends' | 'done';
 
 type BookResult = {
@@ -34,10 +36,14 @@ type Friend = {
   last_name: string | null;
 };
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function olCoverUrl(coverId?: number, size: 'S' | 'M' = 'M'): string | null {
   if (!coverId) return null;
   return `https://covers.openlibrary.org/b/id/${coverId}-${size}.jpg`;
 }
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function SearchScreen() {
   const [step, setStep] = useState<Step>('search');
@@ -67,7 +73,6 @@ export default function SearchScreen() {
       setBookResults([]);
       return;
     }
-
     const timer = setTimeout(async () => {
       setSearching(true);
       try {
@@ -81,13 +86,13 @@ export default function SearchScreen() {
       }
       setSearching(false);
     }, 400);
-
     return () => clearTimeout(timer);
   }, [query]);
 
+  // ── Handlers (logic unchanged) ────────────────────────────────────────────
+
   async function handleSelectBook(book: BookResult) {
     if (!supabase || !currentUserId) return;
-
     const selected: SelectedBook = {
       externalId: book.key,
       title: book.title,
@@ -125,7 +130,6 @@ export default function SearchScreen() {
 
   async function handleSend(friend: Friend) {
     if (!supabase || !currentUserId || !selectedBook) return;
-
     setSendingTo(friend.id);
 
     const { data: existingBook } = await supabase
@@ -162,7 +166,6 @@ export default function SearchScreen() {
         setSendResult({ ok: false, message: 'Could not save book. Try again.' });
         return;
       }
-
       bookId = newBook.id;
     }
 
@@ -182,7 +185,10 @@ export default function SearchScreen() {
     setStep('done');
 
     if (recError || !newRec) {
-      setSendResult({ ok: false, message: recError ? `Could not send: ${recError.message}` : 'Could not send. Try again.' });
+      setSendResult({
+        ok: false,
+        message: recError ? `Could not send: ${recError.message}` : 'Could not send. Try again.',
+      });
     } else {
       await supabase.from('activity_events').insert({
         actor_id: currentUserId,
@@ -192,7 +198,7 @@ export default function SearchScreen() {
       });
       setSendResult({
         ok: true,
-        message: `Sent "${selectedBook.title}" to ${getFirstName(friend)}.`,
+        message: `"${selectedBook.title}" sent to ${getFirstName(friend)}.`,
       });
     }
   }
@@ -208,46 +214,69 @@ export default function SearchScreen() {
     setSendingTo(null);
   }
 
+  // ── Step: search ─────────────────────────────────────────────────────────
+
   if (step === 'search') {
     return (
-      <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 16 }}>
-        <TextInput
-          placeholder="Search for a book…"
-          placeholderTextColor="#a8a29e"
-          value={query}
-          onChangeText={setQuery}
-          style={{
-            backgroundColor: '#fff',
-            borderRadius: 12,
-            paddingHorizontal: 14,
-            paddingVertical: 12,
-            fontSize: 16,
+      <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
+        {/* ── Header ── */}
+        <View style={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 4 }}>
+          <Text style={{
+            fontSize: 28,
+            fontWeight: '800',
             color: '#1c1917',
-            marginBottom: 12,
-            shadowColor: '#000',
-            shadowOpacity: 0.05,
-            shadowRadius: 4,
-            shadowOffset: { width: 0, height: 1 },
-            elevation: 1,
-          }}
-        />
-
-        {query.length > 0 && query.length < 2 && (
-          <Text style={{ color: '#a8a29e', marginBottom: 8, fontSize: 13 }}>
-            Type at least 2 characters to search.
+            letterSpacing: -0.5,
+            lineHeight: 34,
+            marginBottom: 5,
+          }}>
+            Recommend a Book
           </Text>
-        )}
+          <Text style={{ fontSize: 14, color: '#a8a29e', marginBottom: 18 }}>
+            Pick something worth sharing with a friend.
+          </Text>
+          <TextInput
+            placeholder="Title, author, or keyword…"
+            placeholderTextColor="#a8a29e"
+            value={query}
+            onChangeText={setQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={{
+              backgroundColor: '#fff',
+              borderRadius: 12,
+              paddingHorizontal: 14,
+              paddingVertical: 12,
+              fontSize: 16,
+              color: '#1c1917',
+              marginBottom: 4,
+              shadowColor: '#000',
+              shadowOpacity: 0.05,
+              shadowRadius: 4,
+              shadowOffset: { width: 0, height: 1 },
+              elevation: 1,
+            }}
+          />
+          {query.length > 0 && query.length < 2 && (
+            <Text style={{ color: '#a8a29e', marginTop: 6, marginBottom: 4, fontSize: 13 }}>
+              Type at least 2 characters to search.
+            </Text>
+          )}
+        </View>
 
-        {searching && <ActivityIndicator color="#78716c" style={{ marginBottom: 12 }} />}
+        {searching && (
+          <ActivityIndicator color="#78716c" style={{ marginVertical: 10 }} />
+        )}
 
         <FlatList
           data={bookResults}
           keyExtractor={item => item.key}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 32 }}
+          keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => (
             <TouchableOpacity
               onPress={() => handleSelectBook(item)}
               style={{
-                paddingVertical: 10,
+                paddingVertical: 11,
                 borderBottomWidth: 1,
                 borderBottomColor: '#f5f5f4',
                 flexDirection: 'row',
@@ -256,26 +285,39 @@ export default function SearchScreen() {
             >
               <CoverThumb url={olCoverUrl(item.cover_i, 'S')} width={34} height={50} />
               <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={{ fontWeight: '600', fontSize: 15, color: '#1c1917' }}>
+                <Text style={{ fontWeight: '600', fontSize: 15, color: '#1c1917', lineHeight: 21 }}>
                   {item.title}
                 </Text>
                 <Text style={{ color: '#a8a29e', fontSize: 13, marginTop: 2 }}>
                   {item.author_name?.[0] ?? 'Unknown author'}
                 </Text>
               </View>
+              <Text style={{ fontSize: 20, color: '#d6d3d1', marginLeft: 8 }}>›</Text>
             </TouchableOpacity>
           )}
           ListEmptyComponent={
             !searching && query.length >= 2 ? (
-              <Text style={{ color: '#a8a29e', marginTop: 12, fontSize: 14 }}>No books found.</Text>
+              <Text style={{ color: '#a8a29e', marginTop: 12, fontSize: 14 }}>
+                No books found for that search.
+              </Text>
             ) : query.length === 0 ? (
-              <View style={{
-                alignItems: 'center',
-                marginTop: 60,
-                paddingHorizontal: 24,
-              }}>
-                <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
-                  Search for a book to recommend{'\n'}to a friend.
+              <View style={{ paddingTop: 48, paddingHorizontal: 12, alignItems: 'center' }}>
+                <Text style={{
+                  fontSize: 15,
+                  fontWeight: '600',
+                  color: '#1c1917',
+                  textAlign: 'center',
+                  marginBottom: 8,
+                }}>
+                  What's a book a friend should read?
+                </Text>
+                <Text style={{
+                  fontSize: 14,
+                  color: '#a8a29e',
+                  textAlign: 'center',
+                  lineHeight: 22,
+                }}>
+                  Search by title, author, or subject.{'\n'}We'll pull results from Open Library.
                 </Text>
               </View>
             ) : null
@@ -285,44 +327,57 @@ export default function SearchScreen() {
     );
   }
 
+  // ── Step: friends ─────────────────────────────────────────────────────────
+
   if (step === 'friends') {
     return (
-      <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 16 }}>
-        <TouchableOpacity
-          onPress={() => setStep('search')}
-          style={{ marginBottom: 16 }}
-        >
+      <View style={{ flex: 1, backgroundColor: '#faf9f7', paddingHorizontal: 20, paddingTop: 24 }}>
+        <TouchableOpacity onPress={() => setStep('search')} style={{ marginBottom: 20 }}>
           <Text style={{ color: '#78716c', fontSize: 14 }}>← Back to search</Text>
         </TouchableOpacity>
 
-        <View
-          style={{
-            backgroundColor: '#faf9f7',
-            borderRadius: 14,
-            padding: 14,
-            marginBottom: 24,
-            borderWidth: 1,
-            borderColor: '#e7e5e4',
-            flexDirection: 'row',
-            alignItems: 'center',
-          }}
-        >
+        {/* Selected book */}
+        <View style={{
+          backgroundColor: '#fff',
+          borderRadius: 14,
+          padding: 14,
+          marginBottom: 22,
+          borderLeftWidth: 3,
+          borderLeftColor: '#1c1917',
+          shadowColor: '#000',
+          shadowOpacity: 0.05,
+          shadowRadius: 6,
+          shadowOffset: { width: 0, height: 1 },
+          elevation: 1,
+          flexDirection: 'row',
+          alignItems: 'center',
+        }}>
           <CoverThumb url={selectedBook?.coverUrl} width={48} height={70} />
           <View style={{ flex: 1, marginLeft: 14 }}>
-            <Text style={{ fontWeight: '600', fontSize: 15, color: '#1c1917' }}>
+            <Text style={{ fontWeight: '700', fontSize: 15, color: '#1c1917', lineHeight: 21 }}>
               {selectedBook?.title}
             </Text>
-            <Text style={{ color: '#78716c', fontSize: 13, marginTop: 4 }}>
+            <Text style={{ color: '#78716c', fontSize: 13, marginTop: 3 }}>
               {selectedBook?.author}
             </Text>
           </View>
         </View>
 
+        {/* Note input */}
+        <Text style={{
+          fontSize: 12,
+          fontWeight: '600',
+          color: '#a8a29e',
+          letterSpacing: 0.4,
+          marginBottom: 7,
+        }}>
+          Add a personal note (optional)
+        </Text>
         <TextInput
           value={note}
           onChangeText={setNote}
-          placeholder="Add a note (optional)…"
-          placeholderTextColor="#a8a29e"
+          placeholder="Why does this book matter to you?"
+          placeholderTextColor="#c4b5a5"
           maxLength={280}
           style={{
             backgroundColor: '#fff',
@@ -331,15 +386,16 @@ export default function SearchScreen() {
             paddingVertical: 11,
             fontSize: 14,
             color: '#1c1917',
-            marginBottom: 24,
+            marginBottom: 26,
             shadowColor: '#000',
-            shadowOpacity: 0.05,
+            shadowOpacity: 0.04,
             shadowRadius: 4,
             shadowOffset: { width: 0, height: 1 },
             elevation: 1,
           }}
         />
 
+        {/* Friend list */}
         <Text style={{
           fontSize: 11,
           fontWeight: '700',
@@ -348,20 +404,31 @@ export default function SearchScreen() {
           textTransform: 'uppercase',
           marginBottom: 10,
         }}>
-          Send to a friend
+          Send to
         </Text>
 
         {loadingFriends ? (
           <ActivityIndicator color="#78716c" />
         ) : friends.length === 0 ? (
           <View style={{
-            backgroundColor: '#faf9f7',
+            backgroundColor: '#fff',
             borderRadius: 12,
-            padding: 20,
+            padding: 22,
             alignItems: 'center',
+            borderWidth: 1,
+            borderColor: '#f0ede8',
           }}>
-            <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 20 }}>
-              No friends yet.{'\n'}Add friends from the Home tab first.
+            <Text style={{
+              fontSize: 15,
+              fontWeight: '600',
+              color: '#1c1917',
+              marginBottom: 6,
+              textAlign: 'center',
+            }}>
+              No friends yet
+            </Text>
+            <Text style={{ color: '#a8a29e', fontSize: 13, textAlign: 'center', lineHeight: 20 }}>
+              Add friends from the Home tab to start sending recommendations.
             </Text>
           </View>
         ) : (
@@ -369,16 +436,14 @@ export default function SearchScreen() {
             data={friends}
             keyExtractor={item => item.id}
             renderItem={({ item }) => (
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  paddingVertical: 12,
-                  borderBottomWidth: 1,
-                  borderBottomColor: '#f5f5f4',
-                }}
-              >
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingVertical: 13,
+                borderBottomWidth: 1,
+                borderBottomColor: '#f5f5f4',
+              }}>
                 <Text style={{ fontSize: 15, color: '#1c1917' }}>{getDisplayName(item)}</Text>
                 <TouchableOpacity
                   onPress={() => handleSend(item)}
@@ -386,14 +451,14 @@ export default function SearchScreen() {
                   style={{
                     paddingHorizontal: 16,
                     paddingVertical: 8,
-                    backgroundColor: sendingTo !== null ? '#a8a29e' : '#1c1917',
+                    backgroundColor: sendingTo !== null ? '#d6d3d1' : '#1c1917',
                     borderRadius: 8,
                   }}
                 >
                   {sendingTo === item.id ? (
                     <ActivityIndicator color="#fff" size="small" />
                   ) : (
-                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '500' }}>Send</Text>
+                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>Send</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -404,19 +469,40 @@ export default function SearchScreen() {
     );
   }
 
+  // ── Step: done ────────────────────────────────────────────────────────────
+
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+    <View style={{ flex: 1, backgroundColor: '#faf9f7', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
       {sendResult?.ok ? (
         <View style={{
           backgroundColor: '#f0fdf4',
-          borderRadius: 14,
-          padding: 24,
+          borderRadius: 16,
+          padding: 28,
           alignItems: 'center',
           width: '100%',
           marginBottom: 24,
         }}>
-          <Text style={{ fontSize: 15, color: '#15803d', textAlign: 'center', lineHeight: 22 }}>
+          <Text style={{
+            fontSize: 11,
+            fontWeight: '700',
+            color: '#15803d',
+            letterSpacing: 1,
+            textTransform: 'uppercase',
+            marginBottom: 10,
+          }}>
+            Sent
+          </Text>
+          <Text style={{
+            fontSize: 16,
+            color: '#1c1917',
+            textAlign: 'center',
+            lineHeight: 24,
+            fontWeight: '600',
+          }}>
             {sendResult.message}
+          </Text>
+          <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 6, textAlign: 'center' }}>
+            They'll see it in their inbox.
           </Text>
         </View>
       ) : (
@@ -437,12 +523,12 @@ export default function SearchScreen() {
         onPress={reset}
         style={{
           paddingHorizontal: 24,
-          paddingVertical: 12,
+          paddingVertical: 13,
           backgroundColor: '#1c1917',
           borderRadius: 12,
         }}
       >
-        <Text style={{ color: '#fff', fontWeight: '500', fontSize: 14 }}>
+        <Text style={{ color: '#fff', fontWeight: '600', fontSize: 14 }}>
           Send another recommendation
         </Text>
       </TouchableOpacity>

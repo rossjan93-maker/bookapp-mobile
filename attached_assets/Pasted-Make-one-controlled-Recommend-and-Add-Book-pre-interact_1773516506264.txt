@@ -1,0 +1,68 @@
+Make one controlled “Recommend and Add Book pre-interaction UX” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not change schema.
+Do not break recommendation, add-book, auth, or library flows.
+Do not refactor unrelated business logic.
+
+Goal:
+Reduce dead air and make the Recommend and Add Book experiences feel more guided before the user takes action.
+
+Current problem:
+These screens feel too blank before interaction. They work, but they do not provide enough momentum or orientation when empty.
+
+Scope:
+Inspect and edit only what is necessary, likely:
+- app/(tabs)/search.tsx
+- app/add-book.tsx
+- no unrelated screen changes
+
+Primary product objectives
+
+A. Improve Recommend empty/pre-search state
+Requirements:
+1. Make the screen feel more intentional before a search is performed.
+2. Add helpful, minimal orientation such as:
+   - a stronger prompt
+   - a more designed empty state
+   - optional recent/relevant context only if already easily available
+3. Keep it clean and not overloaded.
+
+B. Improve Add Book empty/pre-search state
+Requirements:
+1. Make Add Book feel more welcoming and actionable before search.
+2. The manual-entry path should feel like a real option, not a hidden fallback.
+3. Reduce the sense of empty waiting.
+
+C. Improve flow confidence
+Requirements:
+1. Once a book is selected, the flow should feel purposeful and assured.
+2. Users should feel they are making progress, not just stepping through sparse screens.
+
+D. Design direction
+Requirements:
+1. Keep the premium editorial app style.
+2. Avoid generic onboarding-style bloat.
+3. Use hierarchy, copy, and spacing rather than lots of new UI objects.
+
+E. Preserve all current flows
+Do not break:
+- Open Library search
+- recommendation send flow
+- optional recommendation note
+- add-book manual flow
+- add-book status selection
+- navigation back to Library / Profile / Home
+
+Implementation guidance
+1. This is a UX and empty-state pass, not a feature expansion.
+2. Prefer better framing and stronger composition over adding many new modules.
+3. Keep the screens light but intentional.
+
+After editing, print only:
+1. files changed
+2. full contents of changed files
+3. diff for those files only
+4. exact manual test steps
+5. pre-interaction UX decisions made

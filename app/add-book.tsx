@@ -12,6 +12,8 @@ import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { CoverThumb } from '../components/CoverThumb';
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 type Step = 'search' | 'confirm' | 'done';
 
 type OLBook = {
@@ -31,17 +33,21 @@ type SelectedBook = {
 
 type BookStatus = 'want_to_read' | 'reading' | 'finished' | 'dnf';
 
-const STATUS_OPTIONS: { value: BookStatus; label: string; activeBg: string; activeText: string }[] = [
-  { value: 'want_to_read', label: 'Want to Read', activeBg: '#f1f5f9', activeText: '#475569' },
-  { value: 'reading',      label: 'Reading',      activeBg: '#dbeafe', activeText: '#1d4ed8' },
-  { value: 'finished',     label: 'Finished',     activeBg: '#dcfce7', activeText: '#15803d' },
-  { value: 'dnf',          label: 'DNF',          activeBg: '#fee2e2', activeText: '#b91c1c' },
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const STATUS_OPTIONS: { value: BookStatus; label: string; desc: string; activeBg: string; activeText: string }[] = [
+  { value: 'want_to_read', label: 'Want to Read', desc: 'Saving it for later',   activeBg: '#f1f5f9', activeText: '#475569' },
+  { value: 'reading',      label: 'Reading',      desc: 'Currently in progress', activeBg: '#dbeafe', activeText: '#1d4ed8' },
+  { value: 'finished',     label: 'Finished',     desc: 'Completed it',          activeBg: '#dcfce7', activeText: '#15803d' },
+  { value: 'dnf',          label: 'DNF',          desc: 'Did not finish',        activeBg: '#fee2e2', activeText: '#b91c1c' },
 ];
 
 function olCoverUrl(coverId?: number): string | null {
   if (!coverId) return null;
   return `https://covers.openlibrary.org/b/id/${coverId}-M.jpg`;
 }
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function AddBookScreen() {
   const router = useRouter();
@@ -71,10 +77,7 @@ export default function AddBookScreen() {
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const trimmed = query.trim();
-    if (trimmed.length < 2) {
-      setOlResults([]);
-      return;
-    }
+    if (trimmed.length < 2) { setOlResults([]); return; }
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
       try {
@@ -88,10 +91,10 @@ export default function AddBookScreen() {
       }
       setSearching(false);
     }, 400);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query]);
+
+  // ── Handlers (logic unchanged) ────────────────────────────────────────────
 
   function selectOLBook(book: OLBook) {
     setSelectedBook({
@@ -132,10 +135,7 @@ export default function AddBookScreen() {
       if (existing) {
         bookId = existing.id;
         if (!existing.cover_url && selectedBook.coverUrl) {
-          await supabase
-            .from('books')
-            .update({ cover_url: selectedBook.coverUrl })
-            .eq('id', existing.id);
+          await supabase.from('books').update({ cover_url: selectedBook.coverUrl }).eq('id', existing.id);
         }
       } else {
         const { data: newBook, error } = await supabase
@@ -188,8 +188,7 @@ export default function AddBookScreen() {
       .maybeSingle();
 
     if (existingUserBook) {
-      const label = STATUS_OPTIONS.find(o => o.value === existingUserBook.status)?.label
-        ?? existingUserBook.status;
+      const label = STATUS_OPTIONS.find(o => o.value === existingUserBook.status)?.label ?? existingUserBook.status;
       setDoneMessage(`Already in your library — ${label}.`);
       setDoneIsError(false);
       setSaving(false);
@@ -198,14 +197,8 @@ export default function AddBookScreen() {
     }
 
     const now = new Date().toISOString();
-    const userBookData: Record<string, unknown> = {
-      user_id: userId,
-      book_id: bookId,
-      status: chosenStatus,
-    };
-    if (chosenStatus === 'reading') {
-      userBookData.started_at = now;
-    }
+    const userBookData: Record<string, unknown> = { user_id: userId, book_id: bookId, status: chosenStatus };
+    if (chosenStatus === 'reading') userBookData.started_at = now;
     if (chosenStatus === 'finished' || chosenStatus === 'dnf') {
       userBookData.started_at = now;
       userBookData.finished_at = now;
@@ -245,10 +238,13 @@ export default function AddBookScreen() {
     setSelectedBook(null);
   }
 
+  // ── Step: search ─────────────────────────────────────────────────────────
+
   if (step === 'search') {
     return (
       <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
-        <View style={{ paddingHorizontal: 20, paddingTop: 60, paddingBottom: 16 }}>
+        {/* ── Header ── */}
+        <View style={{ paddingHorizontal: 20, paddingTop: 60, paddingBottom: 12 }}>
           <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 20 }}>
             <Text style={{ fontSize: 14, color: '#78716c' }}>← Back</Text>
           </TouchableOpacity>
@@ -257,12 +253,12 @@ export default function AddBookScreen() {
             fontWeight: '800',
             color: '#1c1917',
             letterSpacing: -0.5,
-            marginBottom: 4,
+            marginBottom: 5,
           }}>
             Add to Library
           </Text>
-          <Text style={{ fontSize: 14, color: '#a8a29e', marginBottom: 20 }}>
-            Search for a book, or add it manually.
+          <Text style={{ fontSize: 14, color: '#a8a29e', marginBottom: 18 }}>
+            Find a book to track, or add one manually.
           </Text>
           <TextInput
             value={query}
@@ -323,8 +319,14 @@ export default function AddBookScreen() {
           ListEmptyComponent={
             !searching && query.trim().length >= 2 ? (
               <Text style={{ color: '#a8a29e', fontSize: 14, paddingVertical: 10 }}>
-                No results. Try a different title or add manually.
+                No results. Try a different title or add manually below.
               </Text>
+            ) : query.trim().length === 0 && !showManual ? (
+              <View style={{ paddingTop: 10, paddingBottom: 6 }}>
+                <Text style={{ fontSize: 12, color: '#c4b5a5', textAlign: 'center', lineHeight: 20 }}>
+                  Searches millions of titles from Open Library
+                </Text>
+              </View>
             ) : null
           }
           ListFooterComponent={
@@ -341,18 +343,21 @@ export default function AddBookScreen() {
           }
         />
 
-        {/* Manual entry CTA when no query */}
+        {/* Manual entry CTA — pre-search state */}
         {query.trim().length < 2 && !showManual && (
-          <View style={{ paddingHorizontal: 20 }}>
+          <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>
+            <Text style={{ fontSize: 12, color: '#a8a29e', marginBottom: 8 }}>
+              Not in the catalogue?
+            </Text>
             <TouchableOpacity
               onPress={() => setShowManual(true)}
               style={{
-                borderWidth: 1.5,
-                borderColor: '#e7e5e4',
+                backgroundColor: '#fff',
                 borderRadius: 12,
                 paddingVertical: 14,
                 alignItems: 'center',
-                backgroundColor: '#fff',
+                borderWidth: 1,
+                borderColor: '#e7e5e4',
               }}
             >
               <Text style={{ fontSize: 14, color: '#57534e', fontWeight: '500' }}>
@@ -439,6 +444,8 @@ export default function AddBookScreen() {
     );
   }
 
+  // ── Step: confirm ─────────────────────────────────────────────────────────
+
   if (step === 'confirm') {
     return (
       <ScrollView
@@ -446,9 +453,22 @@ export default function AddBookScreen() {
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 60, paddingBottom: 48 }}
         keyboardShouldPersistTaps="handled"
       >
-        <TouchableOpacity onPress={() => setStep('search')} style={{ marginBottom: 24 }}>
+        <TouchableOpacity onPress={() => setStep('search')} style={{ marginBottom: 22 }}>
           <Text style={{ fontSize: 14, color: '#78716c' }}>← Back to search</Text>
         </TouchableOpacity>
+
+        <Text style={{
+          fontSize: 22,
+          fontWeight: '800',
+          color: '#1c1917',
+          letterSpacing: -0.4,
+          marginBottom: 4,
+        }}>
+          Add to Library
+        </Text>
+        <Text style={{ fontSize: 14, color: '#a8a29e', marginBottom: 22 }}>
+          Choose where this book fits in your reading.
+        </Text>
 
         {/* Book preview card */}
         <View style={{
@@ -457,7 +477,9 @@ export default function AddBookScreen() {
           padding: 16,
           flexDirection: 'row',
           alignItems: 'center',
-          marginBottom: 36,
+          marginBottom: 32,
+          borderLeftWidth: 3,
+          borderLeftColor: '#1c1917',
           shadowColor: '#000',
           shadowOpacity: 0.05,
           shadowRadius: 6,
@@ -480,7 +502,7 @@ export default function AddBookScreen() {
             }}>
               {selectedBook?.title}
             </Text>
-            <Text style={{ fontSize: 14, color: '#9ca3af' }}>{selectedBook?.author}</Text>
+            <Text style={{ fontSize: 14, color: '#78716c' }}>{selectedBook?.author}</Text>
             {selectedBook?.isManual && (
               <View style={{
                 backgroundColor: '#fef3c7',
@@ -500,7 +522,7 @@ export default function AddBookScreen() {
         <Text style={{
           fontSize: 11,
           fontWeight: '700',
-          color: '#9ca3af',
+          color: '#a8a29e',
           letterSpacing: 0.9,
           textTransform: 'uppercase',
           marginBottom: 14,
@@ -527,13 +549,23 @@ export default function AddBookScreen() {
                   justifyContent: 'space-between',
                 }}
               >
-                <Text style={{
-                  fontSize: 15,
-                  fontWeight: active ? '700' : '400',
-                  color: active ? opt.activeText : '#78716c',
-                }}>
-                  {opt.label}
-                </Text>
+                <View>
+                  <Text style={{
+                    fontSize: 15,
+                    fontWeight: active ? '700' : '500',
+                    color: active ? opt.activeText : '#78716c',
+                  }}>
+                    {opt.label}
+                  </Text>
+                  <Text style={{
+                    fontSize: 12,
+                    color: active ? opt.activeText : '#a8a29e',
+                    marginTop: 1,
+                    opacity: 0.8,
+                  }}>
+                    {opt.desc}
+                  </Text>
+                </View>
                 {active && (
                   <View style={{
                     width: 18,
@@ -571,6 +603,8 @@ export default function AddBookScreen() {
     );
   }
 
+  // ── Step: done ────────────────────────────────────────────────────────────
+
   return (
     <View style={{
       flex: 1,
@@ -587,12 +621,24 @@ export default function AddBookScreen() {
         width: '100%',
         marginBottom: 24,
       }}>
+        {!doneIsError && (
+          <Text style={{
+            fontSize: 11,
+            fontWeight: '700',
+            color: '#15803d',
+            letterSpacing: 1,
+            textTransform: 'uppercase',
+            marginBottom: 10,
+          }}>
+            Added
+          </Text>
+        )}
         <Text style={{
           fontSize: 15,
-          color: doneIsError ? '#b91c1c' : '#15803d',
+          color: doneIsError ? '#b91c1c' : '#1c1917',
           textAlign: 'center',
           lineHeight: 24,
-          fontWeight: '500',
+          fontWeight: '600',
         }}>
           {doneMessage}
         </Text>
