@@ -1,0 +1,101 @@
+Make one targeted “Library active-reading priority + pacing-colored reading cards” pass.
+
+Do not change package versions.
+Do not add packages.
+Do not change schema.
+Do not refactor unrelated business logic.
+Do not break recommendation, pacing, progress, status transitions, book detail routing, or filter flows.
+
+Goal:
+Improve the Library screen so that:
+1. currently-reading books always appear at the top of the All list
+2. the special reading-card treatment uses green / amber pacing-state styling instead of the current black accent treatment
+
+Current problems:
+- In the All filter, actively reading books are mixed into the list instead of being prioritized
+- The reading card’s visual accent does not match the app’s established pacing-state language from Profile
+- Active reading should feel more alive and more aligned with momentum
+
+Scope:
+Only inspect and edit:
+- app/(tabs)/library.tsx
+- lib/pacing.ts only if absolutely necessary for reuse/import shape
+- no other files unless absolutely necessary
+
+Requirements
+
+A. Move active reading books to the top of the All filter
+1. In the All view, books with status = reading should always appear first.
+2. Preserve the relative ordering within groups:
+   - reading books should keep their existing internal ordering logic
+   - non-reading books should keep their existing internal ordering logic
+3. Do not change behavior for the Reading / Want to Read / Finished / DNF filters themselves.
+4. This should be a display-order improvement only, not a schema/data-model change.
+
+B. Use pacing-state color on reading cards
+1. The featured reading-card treatment in Library should reflect reading momentum using the same logic family as Profile:
+   - ahead / on pace → green treatment
+   - behind pace → amber treatment
+2. Do NOT use the black left accent stripe for active reading cards anymore if pacing state is available.
+3. The card should still feel premium and restrained.
+4. Reuse existing pacing logic if possible rather than duplicating it.
+
+C. Pacing-state behavior
+Requirements:
+1. If a reading book has enough data to compute page-based pacing state, use that.
+2. If only date-based pacing is available, use that state.
+3. If no pacing state is available, fall back to a neutral reading-card treatment.
+4. Keep this honest:
+   - no fake “ahead” without enough data
+   - no misleading color when no pacing signal exists
+
+D. Visual treatment
+Requirements:
+1. Green reading card:
+   - subtle green border / accent
+   - should feel encouraging, not neon
+2. Amber reading card:
+   - subtle amber border / accent
+   - should feel like attention is needed, not alarming
+3. Neutral reading card:
+   - warm neutral border if no pacing signal exists
+4. Keep the current premium editorial design language.
+
+E. Preserve current reading-row advantages
+Do not lose:
+- progress bar
+- page label
+- action buttons
+- tap to open book detail
+- reading card prominence relative to archival rows
+
+F. Preserve all current flows
+Do not break:
+- filters
+- sort within Reading filter
+- Add Book CTA
+- status updates
+- progress rendering
+- sentiment prompt
+- book detail navigation
+
+Implementation guidance
+1. For All filter ordering:
+   - split displayed items into reading + non-reading
+   - concatenate reading first, then non-reading
+   - preserve existing per-group order
+2. For pacing coloring:
+   - use the same state language already used elsewhere:
+     - ahead / on_pace = green
+     - behind = amber
+     - none = neutral
+3. Keep the code explicit and easy to reason about.
+4. This should be a tight refinement pass, not a redesign.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. ordering rules used
+6. pacing-color rules used

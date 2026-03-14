@@ -3,6 +3,7 @@ import { ActivityIndicator, FlatList, ScrollView, Text, TouchableOpacity, View }
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
+import { computeDatePacing, computePagePacing } from '../../lib/pacing';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -67,12 +68,46 @@ const FILTER_EMPTY: Record<FilterKey, { title: string; body: string }> = {
   dnf:          { title: 'No abandoned books',     body: 'DNF is always a valid call.' },
 };
 
+// ─── Pacing-state colors ─────────────────────────────────────────────────────
+// Mirrors the language from Profile's currently-reading cards.
+
+function readingCardBorderColor(
+  item: UserBook,
+  yearlyGoal: number | null,
+): string {
+  if (!yearlyGoal) return '#d6d3d1'; // no goal — neutral, honest
+
+  const hasPageData =
+    item.current_page != null && item.current_page > 0 &&
+    item.book?.page_count != null && item.book.page_count > 0;
+
+  let state: 'ahead' | 'on_pace' | 'behind' | null = null;
+
+  if (hasPageData) {
+    const p = computePagePacing(
+      item.current_page!,
+      item.book!.page_count!,
+      item.started_at,
+      yearlyGoal,
+    );
+    state = p.state;
+  } else {
+    const dp = computeDatePacing(item.started_at, yearlyGoal);
+    state = dp?.state ?? null;
+  }
+
+  if (state === 'ahead' || state === 'on_pace') return '#86efac'; // green
+  if (state === 'behind')                        return '#fcd34d'; // amber
+  return '#d6d3d1';                                                // neutral
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function LibraryScreen() {
   const router = useRouter();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [items, setItems]                 = useState<UserBook[]>([]);
+  const [yearlyGoal, setYearlyGoal]       = useState<number | null>(null);
   const [loading, setLoading]             = useState(true);
   const [error, setError]                 = useState<string | null>(null);
   const [updatingId, setUpdatingId]       = useState<string | null>(null);
@@ -86,6 +121,14 @@ export default function LibraryScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setError('No signed-in user.'); setLoading(false); return; }
       setCurrentUserId(user.id);
+
+      // Load yearly goal for pacing-state card colors
+      const profileRes = await supabase
+        .from('profiles')
+        .select('yearly_reading_goal')
+        .eq('id', user.id)
+        .single();
+      setYearlyGoal(profileRes.data?.yearly_reading_goal ?? null);
 
       // Try with progress columns; fall back gracefully if migration not yet applied.
       let result = await supabase
@@ -215,17 +258,27 @@ export default function LibraryScreen() {
 
   // ── Derived state ─────────────────────────────────────────────────────────
 
-  const readingCount    = items.filter(i => i.status === 'reading').length;
-  const filteredItems   = activeFilter === 'all' ? items : items.filter(i => i.status === activeFilter);
+  const readingCount  = items.filter(i => i.status === 'reading').length;
+  const filteredItems = activeFilter === 'all' ? items : items.filter(i => i.status === activeFilter);
 
-  // Sort only applies to the reading filter
+  // Sort + ordering:
+  //   All filter → reading books always float to top, preserving relative order within each group.
+  //   Reading filter + progress sort → sorted by page progress descending.
+  //   All other cases → preserve DB order (created_at desc).
   const displayedItems = (() => {
-    if (activeFilter !== 'reading' || sort === 'recent') return filteredItems;
-    return [...filteredItems].sort((a, b) => {
-      const pA = a.current_page != null && a.book?.page_count ? a.current_page / a.book.page_count : 0;
-      const pB = b.current_page != null && b.book?.page_count ? b.current_page / b.book.page_count : 0;
-      return pB - pA;
-    });
+    if (activeFilter === 'all') {
+      const reading    = filteredItems.filter(i => i.status === 'reading');
+      const nonReading = filteredItems.filter(i => i.status !== 'reading');
+      return [...reading, ...nonReading];
+    }
+    if (activeFilter === 'reading' && sort === 'progress') {
+      return [...filteredItems].sort((a, b) => {
+        const pA = a.current_page != null && a.book?.page_count ? a.current_page / a.book.page_count : 0;
+        const pB = b.current_page != null && b.book?.page_count ? b.current_page / b.book.page_count : 0;
+        return pB - pA;
+      });
+    }
+    return filteredItems;
   })();
 
   const statusCounts: Record<FilterKey, number> = {
@@ -408,15 +461,17 @@ export default function LibraryScreen() {
         const hasSentimentPrompt = pendingFeedback?.userBookId === item.id;
         const hasExtraRow        = hasButtons || isUpdating || hasSentimentPrompt;
 
-        // ── Reading row: card style ──────────────────────────────────────────
+        // ── Reading row: card style with pacing-state border ──────────────
         if (isReading) {
+          const accentColor = readingCardBorderColor(item, yearlyGoal);
+
           return (
             <View style={{
               backgroundColor: '#fff',
               borderRadius: 14,
               marginVertical: 6,
               borderLeftWidth: 3,
-              borderLeftColor: '#1c1917',
+              borderLeftColor: accentColor,
               shadowColor: '#000',
               shadowOpacity: 0.05,
               shadowRadius: 8,
@@ -638,7 +693,7 @@ export default function LibraryScreen() {
   );
 }
 
-// ─── Button components (unchanged logic) ─────────────────────────────────────
+// ─── Micro button components ──────────────────────────────────────────────────
 
 function PrimaryButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled: boolean }) {
   return (
@@ -646,11 +701,13 @@ function PrimaryButton({ label, onPress, disabled }: { label: string; onPress: (
       onPress={onPress}
       disabled={disabled}
       style={{
-        paddingHorizontal: 14, paddingVertical: 7,
-        backgroundColor: disabled ? '#e7e5e4' : '#1c1917', borderRadius: 8,
+        backgroundColor: disabled ? '#d6d3d1' : '#1c1917',
+        borderRadius: 8,
+        paddingHorizontal: 14,
+        paddingVertical: 7,
       }}
     >
-      <Text style={{ fontSize: 12, fontWeight: '500', color: disabled ? '#a8a29e' : '#fff' }}>{label}</Text>
+      <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -661,11 +718,14 @@ function OutlineButton({ label, onPress, disabled }: { label: string; onPress: (
       onPress={onPress}
       disabled={disabled}
       style={{
-        paddingHorizontal: 14, paddingVertical: 7,
-        borderWidth: 1, borderColor: disabled ? '#e7e5e4' : '#d6d3d1', borderRadius: 8,
+        borderWidth: 1,
+        borderColor: disabled ? '#e7e5e4' : '#d6d3d1',
+        borderRadius: 8,
+        paddingHorizontal: 14,
+        paddingVertical: 7,
       }}
     >
-      <Text style={{ fontSize: 12, fontWeight: '500', color: disabled ? '#a8a29e' : '#57534e' }}>{label}</Text>
+      <Text style={{ color: disabled ? '#a8a29e' : '#57534e', fontSize: 12, fontWeight: '500' }}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -676,11 +736,14 @@ function DangerButton({ label, onPress, disabled }: { label: string; onPress: ()
       onPress={onPress}
       disabled={disabled}
       style={{
-        paddingHorizontal: 14, paddingVertical: 7,
-        borderWidth: 1, borderColor: disabled ? '#e7e5e4' : '#fca5a5', borderRadius: 8,
+        borderWidth: 1,
+        borderColor: disabled ? '#e7e5e4' : '#fca5a5',
+        borderRadius: 8,
+        paddingHorizontal: 14,
+        paddingVertical: 7,
       }}
     >
-      <Text style={{ fontSize: 12, fontWeight: '500', color: disabled ? '#a8a29e' : '#b91c1c' }}>{label}</Text>
+      <Text style={{ color: disabled ? '#a8a29e' : '#b91c1c', fontSize: 12, fontWeight: '500' }}>{label}</Text>
     </TouchableOpacity>
   );
 }
