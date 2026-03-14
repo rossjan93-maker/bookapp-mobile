@@ -14,6 +14,8 @@ import { CoverThumb } from '../../components/CoverThumb';
 import { computePacingNote, computePagePacing } from '../../lib/pacing';
 import { fetchGoogleBooksPageCount } from '../../lib/googleBooks';
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
 const STATUS_META: Record<string, { bg: string; text: string; label: string }> = {
   want_to_read: { bg: '#f1f5f9', text: '#475569', label: 'Want to Read' },
   reading:      { bg: '#dbeafe', text: '#1d4ed8', label: 'Reading'      },
@@ -24,11 +26,15 @@ const STATUS_META: Record<string, { bg: string; text: string; label: string }> =
   started:      { bg: '#dbeafe', text: '#1d4ed8', label: 'Reading'      },
 };
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 type OLMeta = {
   description: string | null;
   subjects: string[];
   pageCount: number | null;
 };
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function extractOLID(externalId: string): string | null {
   const m = externalId.match(/\/works\/(OL\w+)/);
@@ -56,6 +62,8 @@ async function fetchOLMeta(externalId: string): Promise<OLMeta> {
   }
 }
 
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
 function SectionLabel({ children }: { children: string }) {
   return (
     <Text style={{
@@ -70,6 +78,12 @@ function SectionLabel({ children }: { children: string }) {
     </Text>
   );
 }
+
+function Divider() {
+  return <View style={{ height: 1, backgroundColor: '#f0ede8', marginBottom: 22 }} />;
+}
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function BookDetailScreen() {
   const router = useRouter();
@@ -117,7 +131,7 @@ export default function BookDetailScreen() {
   const [savingProgress, setSavingProgress] = useState(false);
   const [progressError, setProgressError]  = useState<string | null>(null);
 
-  // Inline page-count editor (missing page count recovery)
+  // Inline page-count editor
   const [editingPageCount, setEditingPageCount] = useState(false);
   const [pageCountInput, setPageCountInput] = useState('');
   const [savingPageCount, setSavingPageCount] = useState(false);
@@ -126,11 +140,12 @@ export default function BookDetailScreen() {
   const pageInputRef      = useRef<TextInput>(null);
   const pageCountInputRef = useRef<TextInput>(null);
 
-  const badge      = status ? (STATUS_META[status] ?? null) : null;
-  const hasRecCtx  = !!(fromUser || toUser || note);
-  const isReading  = status === 'reading' || status === 'started';
+  const badge     = status ? (STATUS_META[status] ?? null) : null;
+  const hasRecCtx = !!(fromUser || toUser || note);
+  const isReading = status === 'reading' || status === 'started';
 
-  // ── Fetch OL metadata + Google Books page-count fallback ──
+  // ── Fetch OL metadata + Google Books page-count fallback ─────────────────
+
   useEffect(() => {
     if (!externalId) return;
     setMetaLoading(true);
@@ -141,7 +156,6 @@ export default function BookDetailScreen() {
       setMetaLoading(false);
 
       if (meta.pageCount && bookId && supabase) {
-        // OL returned a page count — persist it (no-op if already set in DB)
         supabase
           .from('books')
           .update({ page_count: meta.pageCount })
@@ -153,7 +167,6 @@ export default function BookDetailScreen() {
         return;
       }
 
-      // OL had no page count — try Google Books silently
       if (bookId && title && author && supabase) {
         const gbCount = await fetchGoogleBooksPageCount(
           String(title ?? '').trim(),
@@ -174,7 +187,8 @@ export default function BookDetailScreen() {
     enrich();
   }, [externalId, bookId]);
 
-  // ── Fetch reading progress + yearly goal ──
+  // ── Fetch reading progress + yearly goal ─────────────────────────────────
+
   useEffect(() => {
     if (!isReading || !bookId || !supabase) return;
     setProgressLoading(true);
@@ -229,6 +243,8 @@ export default function BookDetailScreen() {
     fetchProgress();
   }, [isReading, bookId, readingGoalParam]);
 
+  // ── Progress save ─────────────────────────────────────────────────────────
+
   async function handleSaveProgress() {
     if (!supabase || !userBookId) return;
     const newPage = parseInt(pageInput.trim(), 10);
@@ -248,7 +264,6 @@ export default function BookDetailScreen() {
       .eq('id', userBookId);
     setSavingProgress(false);
     if (!error) {
-      // Log to progress history if page actually changed (fire-and-forget; table may not exist yet)
       if (newPage !== currentPage && userId && bookId) {
         supabase
           .from('reading_progress_events')
@@ -262,6 +277,8 @@ export default function BookDetailScreen() {
       setProgressError('Could not save — try again.');
     }
   }
+
+  // ── Page count save ───────────────────────────────────────────────────────
 
   async function handleSavePageCount() {
     if (!supabase || !bookId) return;
@@ -281,7 +298,6 @@ export default function BookDetailScreen() {
     if (error) {
       setPageCountError(`Could not save — ${error.message}`);
     } else if (!data || data.length === 0) {
-      // RLS blocked the update silently: no row was modified
       setPageCountError('Could not save — permission denied. Try reloading.');
     } else {
       setPageCount(newCount);
@@ -290,26 +306,21 @@ export default function BookDetailScreen() {
     }
   }
 
-  // ── Derived pacing ──
-  const hasPaging = currentPage != null && pageCount != null && pageCount > 0;
-  const pagePacing = hasPaging
-    ? computePagePacing(currentPage!, pageCount!, startedAt, yearlyGoal)
-    : null;
-  const datePacingNote = !hasPaging
-    ? computePacingNote(startedAt, yearlyGoal)
-    : null;
+  // ── Derived pacing ────────────────────────────────────────────────────────
 
-  const pacingState = pagePacing?.state ?? null;
-  const isAhead     = pacingState === 'ahead';
+  const hasPaging      = currentPage != null && pageCount != null && pageCount > 0;
+  const pagePacing     = hasPaging ? computePagePacing(currentPage!, pageCount!, startedAt, yearlyGoal) : null;
+  const datePacingNote = !hasPaging ? computePacingNote(startedAt, yearlyGoal) : null;
+  const pacingState    = pagePacing?.state ?? null;
+  const isAhead        = pacingState === 'ahead';
+  const progressPct    = hasPaging ? Math.min(100, Math.round((currentPage! / pageCount!) * 100)) : null;
 
-  const progressPct = hasPaging
-    ? Math.min(100, Math.round((currentPage! / pageCount!) * 100))
-    : null;
+  const descText       = olMeta?.description ?? null;
+  const DESC_LIMIT     = 320;
+  const descTruncated  = descText && descText.length > DESC_LIMIT && !descExpanded;
+  const displayDesc    = descTruncated ? descText!.slice(0, DESC_LIMIT).trimEnd() + '…' : descText;
 
-  const descText = olMeta?.description ?? null;
-  const DESC_LIMIT = 320;
-  const descTruncated = descText && descText.length > DESC_LIMIT && !descExpanded;
-  const displayDesc = descTruncated ? descText!.slice(0, DESC_LIMIT).trimEnd() + '…' : descText;
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <ScrollView
@@ -331,22 +342,40 @@ export default function BookDetailScreen() {
 
       <View style={{ paddingHorizontal: 24, paddingTop: 28 }}>
 
-        {/* ── Title + author ── */}
-        <Text style={{ fontSize: 26, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 34, marginBottom: 6 }}>
+        {/* ── Title block: title + [author · badge] ── */}
+        <Text style={{
+          fontSize: 26,
+          fontWeight: '800',
+          color: '#1c1917',
+          letterSpacing: -0.5,
+          lineHeight: 34,
+          marginBottom: 8,
+        }}>
           {title ?? '—'}
         </Text>
-        <Text style={{ fontSize: 16, color: '#78716c', marginBottom: 20 }}>
-          {author ?? '—'}
-        </Text>
-
-        {/* ── Status badge row ── */}
-        {badge && (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 22 }}>
-            <View style={{ backgroundColor: badge.bg, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 }}>
-              <Text style={{ fontSize: 12, fontWeight: '600', color: badge.text }}>{badge.label}</Text>
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 28,
+        }}>
+          <Text style={{ fontSize: 16, color: '#78716c', flex: 1, marginRight: 12 }} numberOfLines={2}>
+            {author ?? '—'}
+          </Text>
+          {badge && (
+            <View style={{
+              backgroundColor: badge.bg,
+              borderRadius: 8,
+              paddingHorizontal: 11,
+              paddingVertical: 5,
+              alignSelf: 'flex-start',
+            }}>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: badge.text }}>
+                {badge.label}
+              </Text>
             </View>
-          </View>
-        )}
+          )}
+        </View>
 
         {/* ── Reading Progress card ── */}
         {isReading && (
@@ -369,10 +398,16 @@ export default function BookDetailScreen() {
               <ActivityIndicator color="#a8a29e" size="small" />
             ) : (
               <>
-                {/* Progress bar + page label */}
+                {/* Progress bar */}
                 {hasPaging && (
                   <View style={{ marginBottom: 14 }}>
-                    <View style={{ height: 6, backgroundColor: '#e7e5e4', borderRadius: 3, overflow: 'hidden', marginBottom: 6 }}>
+                    <View style={{
+                      height: 6,
+                      backgroundColor: '#e7e5e4',
+                      borderRadius: 3,
+                      overflow: 'hidden',
+                      marginBottom: 7,
+                    }}>
                       <View style={{
                         height: 6,
                         width: `${progressPct ?? 0}%`,
@@ -430,7 +465,7 @@ export default function BookDetailScreen() {
                 {/* No goal nudge */}
                 {!pagePacing && !datePacingNote && !yearlyGoal && (
                   <TouchableOpacity
-                    onPress={() => router.push('/(tabs)/profile')}
+                    onPress={() => router.push('/settings')}
                     style={{
                       backgroundColor: '#faf9f7',
                       borderRadius: 8,
@@ -440,7 +475,7 @@ export default function BookDetailScreen() {
                     }}
                   >
                     <Text style={{ fontSize: 12, color: '#a8a29e' }}>
-                      Set a yearly reading goal on your profile to get pacing guidance →
+                      Set a yearly reading goal in Settings to get pacing guidance →
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -534,7 +569,7 @@ export default function BookDetailScreen() {
                   </View>
                 )}
 
-                {/* Inline progress editor */}
+                {/* Progress CTA — primary action */}
                 {!editingProgress ? (
                   <TouchableOpacity
                     onPress={() => {
@@ -544,15 +579,13 @@ export default function BookDetailScreen() {
                       setTimeout(() => pageInputRef.current?.focus(), 80);
                     }}
                     style={{
-                      borderWidth: 1.5,
-                      borderColor: '#e7e5e4',
+                      backgroundColor: '#1c1917',
                       borderRadius: 10,
-                      paddingHorizontal: 14,
-                      paddingVertical: 10,
+                      paddingVertical: 13,
                       alignItems: 'center',
                     }}
                   >
-                    <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500' }}>
+                    <Text style={{ fontSize: 14, color: '#fff', fontWeight: '600' }}>
                       {currentPage != null ? 'Update progress' : '+ Log current page'}
                     </Text>
                   </TouchableOpacity>
@@ -617,54 +650,76 @@ export default function BookDetailScreen() {
           </View>
         )}
 
-        {/* ── Recommendation context ── */}
+        {/* ── Recommendation context — warm card ── */}
         {hasRecCtx && (
           <View style={{
-            backgroundColor: '#fff',
+            backgroundColor: '#fffbf5',
             borderRadius: 14,
             padding: 18,
             marginBottom: 18,
+            borderLeftWidth: 3,
+            borderLeftColor: '#d4a574',
             shadowColor: '#000',
             shadowOpacity: 0.04,
-            shadowRadius: 8,
-            shadowOffset: { width: 0, height: 2 },
+            shadowRadius: 6,
+            shadowOffset: { width: 0, height: 1 },
             elevation: 1,
           }}>
-            {fromUser ? (
-              <View style={{ marginBottom: note || toUser ? 14 : 0 }}>
-                <SectionLabel>Recommended by</SectionLabel>
-                <Text style={{ fontSize: 15, fontWeight: '600', color: '#1c1917' }}>{fromUser}</Text>
-              </View>
-            ) : null}
-            {toUser ? (
+            {fromUser && (
               <View style={{ marginBottom: note ? 14 : 0 }}>
-                <SectionLabel>Recommended to</SectionLabel>
-                <Text style={{ fontSize: 15, fontWeight: '600', color: '#1c1917' }}>{toUser}</Text>
-              </View>
-            ) : null}
-            {note ? (
-              <View>
-                <SectionLabel>Their note</SectionLabel>
-                <Text style={{ fontSize: 14, color: '#57534e', fontStyle: 'italic', lineHeight: 22 }}>
-                  "{note}"
+                <Text style={{ fontSize: 12, color: '#a8a29e', fontWeight: '500', marginBottom: 3 }}>
+                  Recommended by
+                </Text>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#1c1917' }}>
+                  {fromUser}
                 </Text>
               </View>
-            ) : null}
+            )}
+            {toUser && !fromUser && (
+              <View style={{ marginBottom: note ? 14 : 0 }}>
+                <Text style={{ fontSize: 12, color: '#a8a29e', fontWeight: '500', marginBottom: 3 }}>
+                  You recommended this to
+                </Text>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#1c1917' }}>
+                  {toUser}
+                </Text>
+              </View>
+            )}
+            {note && (
+              <View style={{
+                borderTopWidth: (fromUser || toUser) ? 1 : 0,
+                borderTopColor: '#f0e8dc',
+                paddingTop: (fromUser || toUser) ? 14 : 0,
+              }}>
+                <Text style={{
+                  fontSize: 15,
+                  fontStyle: 'italic',
+                  color: '#57534e',
+                  lineHeight: 24,
+                }}>
+                  "{note}"
+                </Text>
+                {fromUser && (
+                  <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 6 }}>— {fromUser}</Text>
+                )}
+              </View>
+            )}
           </View>
         )}
 
-        {/* ── OL description ── */}
+        {/* ── About this book ── */}
         {metaLoading ? (
           <ActivityIndicator color="#a8a29e" size="small" style={{ marginBottom: 18, alignSelf: 'flex-start' }} />
         ) : displayDesc ? (
-          <View style={{ marginBottom: 20 }}>
+          <View style={{ marginBottom: 22 }}>
+            <Divider />
             <SectionLabel>About this book</SectionLabel>
-            <Text style={{ fontSize: 14, color: '#57534e', lineHeight: 23 }}>{displayDesc}</Text>
+            <Text style={{ fontSize: 14, color: '#57534e', lineHeight: 24 }}>{displayDesc}</Text>
             {descText && descText.length > DESC_LIMIT && (
               <TouchableOpacity
                 onPress={() => setDescExpanded(v => !v)}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                style={{ marginTop: 6 }}
+                style={{ marginTop: 8 }}
               >
                 <Text style={{ fontSize: 13, color: '#78716c', textDecorationLine: 'underline' }}>
                   {descExpanded ? 'Show less' : 'Read more'}
@@ -674,13 +729,21 @@ export default function BookDetailScreen() {
           </View>
         ) : null}
 
-        {/* ── OL subjects ── */}
+        {/* ── Subjects ── */}
         {olMeta && olMeta.subjects.length > 0 && (
-          <View style={{ marginBottom: 22 }}>
+          <View style={{ marginBottom: 24 }}>
             <SectionLabel>Subjects</SectionLabel>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
               {olMeta.subjects.map((subject, i) => (
-                <View key={i} style={{ backgroundColor: '#f5f5f4', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 }}>
+                <View
+                  key={i}
+                  style={{
+                    backgroundColor: '#f5f5f4',
+                    borderRadius: 20,
+                    paddingHorizontal: 12,
+                    paddingVertical: 5,
+                  }}
+                >
                   <Text style={{ fontSize: 12, color: '#57534e' }}>{subject}</Text>
                 </View>
               ))}
@@ -688,7 +751,7 @@ export default function BookDetailScreen() {
           </View>
         )}
 
-        {/* ── Taste Match placeholder ── */}
+        {/* ── Taste Match / Why this fits you ── */}
         {externalId ? (
           <View style={{
             backgroundColor: '#fff',
@@ -696,24 +759,36 @@ export default function BookDetailScreen() {
             padding: 18,
             borderWidth: 1,
             borderColor: '#f0ede8',
-            borderStyle: 'dashed',
           }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-              <View style={{ backgroundColor: '#fef3c7', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, marginRight: 10 }}>
-                <Text style={{ fontSize: 10, fontWeight: '700', color: '#92400e', letterSpacing: 0.5 }}>COMING SOON</Text>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: '#1c1917', marginRight: 10 }}>
+                Why this fits you
+              </Text>
+              <View style={{
+                backgroundColor: '#fef3c7',
+                borderRadius: 6,
+                paddingHorizontal: 8,
+                paddingVertical: 3,
+              }}>
+                <Text style={{ fontSize: 10, fontWeight: '700', color: '#92400e', letterSpacing: 0.5 }}>
+                  COMING SOON
+                </Text>
               </View>
-              <Text style={{ fontSize: 14, fontWeight: '700', color: '#1c1917' }}>Taste Match</Text>
             </View>
             <Text style={{ fontSize: 13, color: '#a8a29e', lineHeight: 20 }}>
-              Once we know your reading history and taste better, we'll explain why this book might — or might not — be a great fit for you.
+              Once you've built your taste profile, we'll explain how this book fits — or challenges — your reading style.
             </Text>
-            <TouchableOpacity onPress={() => router.push('/edit-preferences')} style={{ marginTop: 12 }}>
+            <TouchableOpacity
+              onPress={() => router.push('/edit-preferences')}
+              style={{ marginTop: 12 }}
+            >
               <Text style={{ fontSize: 13, color: '#78716c', textDecorationLine: 'underline' }}>
                 Build your taste profile →
               </Text>
             </TouchableOpacity>
           </View>
         ) : null}
+
       </View>
     </ScrollView>
   );

@@ -1,0 +1,81 @@
+Make one controlled “Book Detail becomes the smart object page” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not add real AI / LLM integrations yet.
+Do not change schema unless absolutely necessary.
+Do not break pacing, progress, recommendations, or library flows.
+Do not refactor unrelated business logic.
+
+Goal:
+Upgrade Book Detail into the strongest, most capable screen in the app — the place where reading progress, pacing, recommendation context, and book understanding come together cleanly.
+
+Current problem:
+Book Detail has good ingredients but still feels like a collection of sections rather than the central intelligent page of the product.
+
+Scope:
+Inspect and edit only what is necessary, likely:
+- app/book/[id].tsx
+- one tiny shared helper/component only if useful
+- no unrelated screen rewrites
+
+Primary product objectives
+
+A. Strengthen hierarchy
+Requirements:
+1. Improve the order and emphasis of:
+   - title/author
+   - reading status
+   - progress
+   - pacing
+   - recommendation context
+   - book metadata
+2. The screen should feel more unified and intentional.
+
+B. Make progress + pacing the primary active module
+Requirements:
+1. For reading books, the progress section should be the most actionable part of the page.
+2. It should clearly answer:
+   - how far along am I?
+   - what pace do I need?
+   - what should I do next?
+3. Keep manual page-count and progress entry clean and low-friction.
+
+C. Improve recommendation context
+Requirements:
+1. Recommendation context should feel warm and meaningful, not just informational.
+2. “Recommended by / to / note” should be clearer and more integrated.
+3. Do not overcomplicate it.
+
+D. Improve metadata readability
+Requirements:
+1. “About this book” and subjects should feel elegant and readable.
+2. Avoid dense walls of text.
+3. Keep the current metadata fetch behavior intact.
+
+E. Prepare the screen for future intelligence
+Requirements:
+1. Keep the existing “Taste Match” placeholder area, but make the screen feel like this is where future intelligence belongs.
+2. Do not add real AI here yet.
+3. Make the structure ready for future “Why this fits you” logic.
+
+F. Preserve all current flows
+Do not break:
+- progress updates
+- page count entry
+- pacing
+- recommendation context rendering
+- metadata enrichment
+- profile/library navigation into the page
+
+Implementation guidance
+1. This is mostly hierarchy and UX refinement, not new feature logic.
+2. Make the reading state version of this page especially strong.
+3. Use restraint and premium composition.
+
+After editing, print only:
+1. files changed
+2. full contents of changed files
+3. diff for those files only
+4. exact manual test steps
+5. Book Detail hierarchy decisions made
