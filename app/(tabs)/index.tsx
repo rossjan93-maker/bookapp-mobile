@@ -246,11 +246,11 @@ export default function HomeScreen() {
       {/* ── Hero heading ── */}
       <View style={{ marginBottom: 28 }}>
         <Text style={{
-          fontSize: 30,
+          fontSize: 34,
           fontWeight: '800',
           color: '#1c1917',
-          letterSpacing: -0.6,
-          lineHeight: 36,
+          letterSpacing: -0.8,
+          lineHeight: 40,
         }}>
           Friends' Activity
         </Text>
@@ -296,7 +296,7 @@ export default function HomeScreen() {
                 style={{
                   backgroundColor: '#fff',
                   borderRadius: 14,
-                  padding: 14,
+                  padding: 16,
                   marginBottom: 10,
                   shadowColor: '#000',
                   shadowOpacity: 0.05,
@@ -319,7 +319,7 @@ export default function HomeScreen() {
                     <Text style={{ fontWeight: '400', color: '#57534e' }}>{verb}</Text>
                   </Text>
                   {title ? (
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#111827', lineHeight: 20, marginBottom: 2 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', lineHeight: 20, marginBottom: 2 }}>
                       {title}
                     </Text>
                   ) : null}

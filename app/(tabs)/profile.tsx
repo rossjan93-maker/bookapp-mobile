@@ -362,8 +362,8 @@ export default function ProfileScreen() {
       <View style={{
         backgroundColor: '#fff',
         paddingHorizontal: 20,
-        paddingTop: 28,
-        paddingBottom: 24,
+        paddingTop: 32,
+        paddingBottom: 20,
         borderBottomWidth: 1,
         borderBottomColor: '#f5f5f4',
         shadowColor: '#000',
@@ -375,20 +375,20 @@ export default function ProfileScreen() {
         {/* Avatar + name row */}
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <View style={{
-            width: 60,
-            height: 60,
-            borderRadius: 30,
+            width: 70,
+            height: 70,
+            borderRadius: 35,
             backgroundColor: '#1c1917',
             alignItems: 'center',
             justifyContent: 'center',
             marginRight: 16,
           }}>
-            <Text style={{ fontSize: 24, fontWeight: '800', color: '#fff' }}>
+            <Text style={{ fontSize: 28, fontWeight: '800', color: '#fff' }}>
               {username.charAt(0).toUpperCase()}
             </Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 20, fontWeight: '800', color: '#1c1917', letterSpacing: -0.3 }}>
+            <Text style={{ fontSize: 22, fontWeight: '800', color: '#1c1917', letterSpacing: -0.4 }}>
               {username}
             </Text>
             <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 2 }}>{email ?? '—'}</Text>
@@ -525,17 +525,30 @@ export default function ProfileScreen() {
         )}
       </View>
 
-      {/* ── Stats rail ── */}
+      {/* ── Stats row ── */}
       {stats && (
         <View style={{
           flexDirection: 'row',
-          paddingHorizontal: 20,
-          paddingVertical: 20,
-          gap: 10,
+          backgroundColor: '#fff',
+          paddingTop: 16,
+          paddingBottom: 20,
+          borderBottomWidth: 1,
+          borderBottomColor: '#f5f5f4',
         }}>
-          <StatPill value={stats.finishedBooks} label="Finished" color="#1c1917" flex={1.4} />
-          <StatPill value={stats.friendsCount}  label="Friends"  color="#57534e" flex={1} />
-          <StatPill value={stats.recsLanded}    label="Recs Landed" color="#57534e" flex={1} />
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={{ fontSize: 30, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 36 }}>{stats.finishedBooks}</Text>
+            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 2, letterSpacing: 0.7, textTransform: 'uppercase' }}>Finished</Text>
+          </View>
+          <View style={{ width: 1, backgroundColor: '#f0ede8', alignSelf: 'stretch', marginVertical: 6 }} />
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={{ fontSize: 30, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 36 }}>{stats.friendsCount}</Text>
+            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 2, letterSpacing: 0.7, textTransform: 'uppercase' }}>Friends</Text>
+          </View>
+          <View style={{ width: 1, backgroundColor: '#f0ede8', alignSelf: 'stretch', marginVertical: 6 }} />
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={{ fontSize: 30, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 36 }}>{stats.recsLanded}</Text>
+            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 2, letterSpacing: 0.7, textTransform: 'uppercase' }}>Recs Landed</Text>
+          </View>
         </View>
       )}
 
@@ -645,10 +658,14 @@ export default function ProfileScreen() {
                   style={{
                     backgroundColor: '#fff',
                     borderRadius: 14,
-                    padding: 14,
-                    width: 150,
-                    borderWidth: pacingState ? 1.5 : 0,
-                    borderColor: pacingState === 'behind' ? '#fcd34d' : '#86efac',
+                    padding: 16,
+                    width: 170,
+                    borderWidth: pacingState ? 1.5 : 1,
+                    borderColor: pacingState === 'behind'
+                      ? '#fcd34d'
+                      : pacingState === 'ahead'
+                      ? '#86efac'
+                      : '#f0ede8',
                     shadowColor: '#000',
                     shadowOpacity: 0.06,
                     shadowRadius: 8,
@@ -659,12 +676,12 @@ export default function ProfileScreen() {
                   <CoverThumb
                     url={item.book?.cover_url}
                     externalId={item.book?.external_id}
-                    width={80}
-                    height={116}
+                    width={90}
+                    height={130}
                   />
                   <Text
                     numberOfLines={2}
-                    style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginTop: 10, lineHeight: 18 }}
+                    style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginTop: 11, lineHeight: 18 }}
                   >
                     {item.book?.title ?? '—'}
                   </Text>
@@ -785,10 +802,10 @@ export default function ProfileScreen() {
                   }}
                 >
                   <Text style={{
-                    fontSize: 22,
+                    fontSize: 26,
                     fontWeight: '800',
                     color: '#1c1917',
-                    minWidth: 62,
+                    minWidth: 66,
                   }}>
                     {insight.value}
                   </Text>
@@ -891,11 +908,11 @@ export default function ProfileScreen() {
                   }}
                 >
                   <View style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: 3,
+                    width: 2,
+                    height: 20,
+                    borderRadius: 1,
                     backgroundColor: '#d6d3d1',
-                    marginTop: 7,
+                    marginTop: 1,
                     flexShrink: 0,
                   }} />
                   <Text style={{ fontSize: 14, color: '#1c1917', lineHeight: 21, flex: 1 }}>
@@ -1038,35 +1055,3 @@ export default function ProfileScreen() {
   );
 }
 
-function StatPill({
-  value,
-  label,
-  color,
-  flex = 1,
-}: {
-  value: number;
-  label: string;
-  color: string;
-  flex?: number;
-}) {
-  return (
-    <View style={{
-      flex,
-      backgroundColor: '#fff',
-      borderRadius: 14,
-      paddingVertical: 16,
-      paddingHorizontal: 14,
-      alignItems: 'flex-start',
-      shadowColor: '#000',
-      shadowOpacity: 0.04,
-      shadowRadius: 4,
-      shadowOffset: { width: 0, height: 1 },
-      elevation: 1,
-    }}>
-      <Text style={{ fontSize: 30, fontWeight: '800', color, letterSpacing: -0.5, lineHeight: 36 }}>
-        {value}
-      </Text>
-      <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 4, lineHeight: 15 }}>{label}</Text>
-    </View>
-  );
-}

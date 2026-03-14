@@ -282,7 +282,7 @@ export default function LibraryScreen() {
         const hasExtraRow = hasButtons || isUpdating || hasSentimentPrompt;
 
         return (
-          <View style={{ paddingTop: 16, paddingBottom: hasExtraRow ? 12 : 16, borderBottomWidth: 1, borderBottomColor: '#f5f5f4' }}>
+          <View style={{ paddingTop: 18, paddingBottom: hasExtraRow ? 14 : 18, borderBottomWidth: 1, borderBottomColor: '#f5f5f4' }}>
 
             {/* Tappable row: cover + title/author/badge */}
             <TouchableOpacity
@@ -304,13 +304,13 @@ export default function LibraryScreen() {
               <CoverThumb
                 url={item.book?.cover_url}
                 externalId={item.book?.external_id}
-                width={40}
-                height={58}
+                width={44}
+                height={64}
               />
               <View style={{ flex: 1, marginLeft: 14 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <View style={{ flex: 1, marginRight: 10 }}>
-                    <Text style={{ fontWeight: '600', fontSize: 15, color: '#1c1917', marginBottom: 3 }}>
+                    <Text style={{ fontWeight: '700', fontSize: 16, color: '#1c1917', marginBottom: 3 }}>
                       {item.book?.title ?? '—'}
                     </Text>
                     <Text style={{ color: '#78716c', fontSize: 13 }}>

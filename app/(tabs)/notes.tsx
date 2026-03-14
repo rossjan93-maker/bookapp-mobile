@@ -280,7 +280,7 @@ export default function InboxScreen() {
                   height={70}
                 />
                 <View style={{ flex: 1, marginLeft: 14 }}>
-                  <Text style={{ fontWeight: '600', fontSize: 15, color: '#1c1917', marginBottom: 3 }}>
+                  <Text style={{ fontWeight: '700', fontSize: 16, color: '#1c1917', marginBottom: 3 }}>
                     {item.book?.title ?? '—'}
                   </Text>
                   <Text style={{ color: '#78716c', fontSize: 13, marginBottom: 2 }}>
@@ -357,7 +357,7 @@ function RecRow({ item, onPress }: { item: InboxItem; onPress: () => void }) {
       activeOpacity={0.7}
       onPress={onPress}
       style={{
-        paddingVertical: 12,
+        paddingVertical: 15,
         borderBottomWidth: 1,
         borderBottomColor: '#f5f5f4',
         flexDirection: 'row',
@@ -367,11 +367,11 @@ function RecRow({ item, onPress }: { item: InboxItem; onPress: () => void }) {
       <CoverThumb
         url={item.book?.cover_url}
         externalId={item.book?.external_id}
-        width={36}
-        height={52}
+        width={40}
+        height={58}
       />
-      <View style={{ flex: 1, marginLeft: 12, marginRight: 10 }}>
-        <Text style={{ fontWeight: '600', fontSize: 15, color: '#1c1917', marginBottom: 2 }}>
+      <View style={{ flex: 1, marginLeft: 14, marginRight: 10 }}>
+        <Text style={{ fontWeight: '700', fontSize: 15, color: '#1c1917', marginBottom: 2 }}>
           {item.book?.title ?? '—'}
         </Text>
         <Text style={{ color: '#78716c', fontSize: 13, marginBottom: 3 }}>

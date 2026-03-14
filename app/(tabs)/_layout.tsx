@@ -50,6 +50,7 @@ export default function TabsLayout() {
             marginTop: 2,
           },
           headerShadowVisible: false,
+          headerStyle: { backgroundColor: '#faf9f7' },
           headerTitleStyle: {
             fontSize: 17,
             fontWeight: '600',

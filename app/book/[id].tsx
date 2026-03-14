@@ -318,21 +318,21 @@ export default function BookDetailScreen() {
       keyboardShouldPersistTaps="handled"
     >
       {/* ── Hero cover ── */}
-      <View style={{ backgroundColor: '#f0ede8', alignItems: 'center', paddingTop: 60, paddingBottom: 40 }}>
+      <View style={{ backgroundColor: '#f0ede8', alignItems: 'center', paddingTop: 80, paddingBottom: 60 }}>
         <TouchableOpacity
           onPress={() => router.back()}
-          style={{ position: 'absolute', top: 56, left: 20, zIndex: 10 }}
+          style={{ position: 'absolute', top: 76, left: 20, zIndex: 10 }}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Text style={{ fontSize: 14, color: '#78716c' }}>← Back</Text>
         </TouchableOpacity>
-        <CoverThumb url={coverUrl || null} externalId={externalId || null} width={116} height={170} />
+        <CoverThumb url={coverUrl || null} externalId={externalId || null} width={122} height={180} />
       </View>
 
       <View style={{ paddingHorizontal: 24, paddingTop: 28 }}>
 
         {/* ── Title + author ── */}
-        <Text style={{ fontSize: 24, fontWeight: '800', color: '#1c1917', letterSpacing: -0.4, lineHeight: 32, marginBottom: 6 }}>
+        <Text style={{ fontSize: 26, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 34, marginBottom: 6 }}>
           {title ?? '—'}
         </Text>
         <Text style={{ fontSize: 16, color: '#78716c', marginBottom: 20 }}>
@@ -355,6 +355,8 @@ export default function BookDetailScreen() {
             borderRadius: 16,
             padding: 18,
             marginBottom: 18,
+            borderTopWidth: 3,
+            borderTopColor: '#1c1917',
             shadowColor: '#000',
             shadowOpacity: 0.05,
             shadowRadius: 8,

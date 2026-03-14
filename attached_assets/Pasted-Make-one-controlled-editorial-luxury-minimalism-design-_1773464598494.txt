@@ -1,0 +1,164 @@
+Make one controlled “editorial luxury minimalism” design-direction pass across the app.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not refactor core business logic.
+Do not change schema.
+Do not add new product features in this pass.
+Do not break recommendation / credibility / activity / pacing flows.
+
+Design reference:
+The target aesthetic is minimalist editorial abstraction with luxury-product rendering.
+Think:
+- quiet luxury
+- sculptural paper-form geometry
+- bold black contour lines
+- warm ivory / cream surfaces
+- restrained shadows
+- lots of negative space
+- premium modernist composition
+- subtle 2D/3D tension
+- gallery-grade, not playful
+- elegant, not busy
+
+The app should feel like a refined reading object, not a generic utility app.
+
+Files allowed to change:
+- app/(tabs)/_layout.tsx
+- app/(tabs)/index.tsx
+- app/(tabs)/search.tsx
+- app/(tabs)/notes.tsx
+- app/(tabs)/library.tsx
+- app/(tabs)/profile.tsx
+- app/book/[id].tsx
+- app/add-book.tsx
+- components/CoverThumb.tsx if useful
+- add one tiny shared design helper/component file if truly useful
+- no schema or logic changes unless absolutely necessary for visual consistency
+
+Primary design direction
+
+A. Overall visual language
+Apply a cohesive visual system inspired by:
+- warm ivory backgrounds instead of harsh white
+- black or near-black structural lines
+- subtle rounded geometry
+- restrained premium shadows
+- elegant spacing and negative space
+- deliberate hierarchy
+- clean, almost architectural composition
+
+The app should feel:
+- editorial
+- calm
+- premium
+- modern
+- minimal
+- art-directed
+
+Avoid:
+- bright app-store gradients
+- loud colors
+- overly soft “cute” UI
+- cluttered dashboards
+- generic SaaS styling
+
+B. Surfaces and cards
+Cards should feel like refined paper objects:
+- soft ivory / off-white surfaces
+- thin, intentional borders
+- occasional stronger contour lines where hierarchy matters
+- subtle shadow, never heavy
+- rounded corners with discipline
+- more “designed object” than “bootstrap card”
+
+Use negative space generously.
+Do not overfill every surface.
+
+C. Typography and hierarchy
+Strengthen hierarchy so the app feels editorial:
+- large, elegant hero headings where appropriate
+- restrained section labels in small uppercase
+- strong title weight for book names
+- softer secondary text for metadata
+- avoid noisy font-size randomness
+
+The hierarchy should feel intentional and magazine-like.
+
+D. Color system
+Use a tighter palette:
+- background: warm off-white / ivory
+- cards: soft cream / white-warm
+- text: near-black, warm dark gray
+- borders: black / charcoal / soft stone
+- success/on-pace/ahead: muted green, tasteful not neon
+- behind pace: muted amber, tasteful not orange
+- secondary UI: stone / taupe / soft gray
+
+All state colors should look like they belong to the same brand.
+
+E. Key screen goals
+Profile:
+- make this the strongest, most art-directed screen
+- Currently Reading should feel like a premium shelf / reading desk
+- Reader Insights and Reading Patterns should feel curated, not dashboard-like
+- stronger visual rhythm between sections
+
+Book Detail:
+- should feel like a premium object page
+- cover hero treatment should feel gallery-like
+- metadata and progress sections should feel sculpted and intentional
+- pacing callout should feel integrated, not like a generic alert box
+
+Library:
+- should feel like a curated collection, not a plain list
+- improve row rhythm, spacing, and hierarchy
+- preserve readability and speed
+
+Inbox / recommendations:
+- should feel premium and quiet, not transactional or noisy
+- recommendation cards should still feel warm and human
+
+Home:
+- activity should feel more editorial and refined
+- friend + reading/social surfaces should feel cohesive with the rest of the app
+
+F. Components to unify
+Unify:
+- section labels
+- buttons
+- chips / pills
+- pacing states
+- borders
+- card radii
+- vertical spacing
+- empty states
+- progress indicators
+- back buttons / navigation cues
+
+Everything should look like one system.
+
+G. Important creative note
+Take inspiration from abstract folded-paper / page-corner geometry:
+- subtle folded shapes
+- contour-like framing
+- sculptural edge treatment
+- clean linear accents
+But do this sparingly.
+Do not turn the app into illustration.
+This should influence composition and detail language, not become decoration.
+
+Implementation guidance
+- Prefer one or two tiny shared style primitives if that meaningfully improves consistency
+- Keep code understandable
+- Make the UI feel more premium through restraint, hierarchy, and materials
+- Do not do a giant architecture rewrite just for styling
+- Preserve current interactions and product logic
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. design system changes made
+6. what was intentionally left for later
