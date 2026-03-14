@@ -36,10 +36,10 @@ function SectionLabel({ children }: { children: string }) {
     <Text style={{
       fontSize: 11,
       fontWeight: '700',
-      color: '#9ca3af',
-      letterSpacing: 0.8,
+      color: '#a8a29e',
+      letterSpacing: 0.9,
       textTransform: 'uppercase',
-      marginBottom: 10,
+      marginBottom: 12,
     }}>
       {children}
     </Text>
@@ -116,16 +116,12 @@ export default function InboxScreen() {
 
     if (existing) {
       userBookId = existing.id;
-      // Correct source on any pre-existing row — the user is explicitly saving
-      // a recommendation, so the book is recommendation-sourced regardless of
-      // when the row was created. Fire-and-forget; defensive if column not yet present.
       supabase
         .from('user_books')
         .update({ source: 'recommendation' })
         .eq('id', existing.id)
         .then(() => {});
     } else {
-      // Try with source attribution; fall back if column doesn't exist yet
       let insertResult = await supabase
         .from('user_books')
         .insert({
@@ -206,7 +202,7 @@ export default function InboxScreen() {
   if (loading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color="#111827" />
+        <ActivityIndicator color="#a8a29e" />
       </View>
     );
   }
@@ -227,7 +223,7 @@ export default function InboxScreen() {
   if (items.length === 0) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
-        <Text style={{ color: '#9ca3af', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
+        <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
           No recommendations yet.{'\n'}Ask a friend to send you a book.
         </Text>
       </View>
@@ -265,9 +261,9 @@ export default function InboxScreen() {
               key={item.id}
               style={{
                 backgroundColor: '#fff',
-                borderRadius: 12,
+                borderRadius: 14,
                 borderWidth: 1,
-                borderColor: '#e5e7eb',
+                borderColor: '#e7e5e4',
                 padding: 16,
                 marginBottom: 10,
               }}
@@ -284,17 +280,17 @@ export default function InboxScreen() {
                   height={70}
                 />
                 <View style={{ flex: 1, marginLeft: 14 }}>
-                  <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827', marginBottom: 3 }}>
+                  <Text style={{ fontWeight: '600', fontSize: 15, color: '#1c1917', marginBottom: 3 }}>
                     {item.book?.title ?? '—'}
                   </Text>
-                  <Text style={{ color: '#6b7280', fontSize: 13, marginBottom: 2 }}>
+                  <Text style={{ color: '#78716c', fontSize: 13, marginBottom: 2 }}>
                     {item.book?.author ?? '—'}
                   </Text>
-                  <Text style={{ color: '#9ca3af', fontSize: 12 }}>
+                  <Text style={{ color: '#a8a29e', fontSize: 12 }}>
                     from {item.sender?.username ?? 'unknown'}
                   </Text>
                   {item.note ? (
-                    <Text style={{ fontSize: 13, color: '#374151', fontStyle: 'italic', marginTop: 6 }}>
+                    <Text style={{ fontSize: 13, color: '#57534e', fontStyle: 'italic', marginTop: 6 }}>
                       "{item.note}"
                     </Text>
                   ) : null}
@@ -307,7 +303,7 @@ export default function InboxScreen() {
                   alignSelf: 'flex-start',
                   paddingHorizontal: 14,
                   paddingVertical: 8,
-                  backgroundColor: savingId === item.id ? '#9ca3af' : '#111827',
+                  backgroundColor: savingId === item.id ? '#a8a29e' : '#1c1917',
                   borderRadius: 8,
                 }}
               >
@@ -363,7 +359,7 @@ function RecRow({ item, onPress }: { item: InboxItem; onPress: () => void }) {
       style={{
         paddingVertical: 12,
         borderBottomWidth: 1,
-        borderBottomColor: '#f3f4f6',
+        borderBottomColor: '#f5f5f4',
         flexDirection: 'row',
         alignItems: 'flex-start',
       }}
@@ -375,17 +371,17 @@ function RecRow({ item, onPress }: { item: InboxItem; onPress: () => void }) {
         height={52}
       />
       <View style={{ flex: 1, marginLeft: 12, marginRight: 10 }}>
-        <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827', marginBottom: 2 }}>
+        <Text style={{ fontWeight: '600', fontSize: 15, color: '#1c1917', marginBottom: 2 }}>
           {item.book?.title ?? '—'}
         </Text>
-        <Text style={{ color: '#6b7280', fontSize: 13, marginBottom: 3 }}>
+        <Text style={{ color: '#78716c', fontSize: 13, marginBottom: 3 }}>
           {item.book?.author ?? '—'}
         </Text>
-        <Text style={{ color: '#9ca3af', fontSize: 12 }}>
+        <Text style={{ color: '#a8a29e', fontSize: 12 }}>
           from {item.sender?.username ?? 'unknown'}
         </Text>
         {item.note ? (
-          <Text style={{ fontSize: 12, color: '#6b7280', fontStyle: 'italic', marginTop: 4 }}>
+          <Text style={{ fontSize: 12, color: '#78716c', fontStyle: 'italic', marginTop: 4 }}>
             "{item.note}"
           </Text>
         ) : null}

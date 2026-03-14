@@ -59,10 +59,10 @@ async function fetchOLMeta(externalId: string): Promise<OLMeta> {
 function SectionLabel({ children }: { children: string }) {
   return (
     <Text style={{
-      fontSize: 10,
+      fontSize: 11,
       fontWeight: '700',
-      color: '#9ca3af',
-      letterSpacing: 1,
+      color: '#a8a29e',
+      letterSpacing: 0.9,
       textTransform: 'uppercase',
       marginBottom: 10,
     }}>
@@ -332,7 +332,7 @@ export default function BookDetailScreen() {
       <View style={{ paddingHorizontal: 24, paddingTop: 28 }}>
 
         {/* ── Title + author ── */}
-        <Text style={{ fontSize: 24, fontWeight: '800', color: '#111827', letterSpacing: -0.4, lineHeight: 32, marginBottom: 6 }}>
+        <Text style={{ fontSize: 24, fontWeight: '800', color: '#1c1917', letterSpacing: -0.4, lineHeight: 32, marginBottom: 6 }}>
           {title ?? '—'}
         </Text>
         <Text style={{ fontSize: 16, color: '#78716c', marginBottom: 20 }}>
@@ -374,15 +374,15 @@ export default function BookDetailScreen() {
                       <View style={{
                         height: 6,
                         width: `${progressPct ?? 0}%`,
-                        backgroundColor: '#1d4ed8',
+                        backgroundColor: '#1c1917',
                         borderRadius: 3,
                       }} />
                     </View>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                      <Text style={{ fontSize: 13, color: '#374151', fontWeight: '600' }}>
+                      <Text style={{ fontSize: 13, color: '#1c1917', fontWeight: '600' }}>
                         Page {currentPage} of {pageCount}
                       </Text>
-                      <Text style={{ fontSize: 13, color: '#6b7280' }}>
+                      <Text style={{ fontSize: 13, color: '#78716c' }}>
                         {progressPct ?? 0}% · {pagePacing?.pagesLeft} left
                       </Text>
                     </View>
@@ -631,19 +631,19 @@ export default function BookDetailScreen() {
             {fromUser ? (
               <View style={{ marginBottom: note || toUser ? 14 : 0 }}>
                 <SectionLabel>Recommended by</SectionLabel>
-                <Text style={{ fontSize: 15, fontWeight: '600', color: '#111827' }}>{fromUser}</Text>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: '#1c1917' }}>{fromUser}</Text>
               </View>
             ) : null}
             {toUser ? (
               <View style={{ marginBottom: note ? 14 : 0 }}>
                 <SectionLabel>Recommended to</SectionLabel>
-                <Text style={{ fontSize: 15, fontWeight: '600', color: '#111827' }}>{toUser}</Text>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: '#1c1917' }}>{toUser}</Text>
               </View>
             ) : null}
             {note ? (
               <View>
                 <SectionLabel>Their note</SectionLabel>
-                <Text style={{ fontSize: 14, color: '#374151', fontStyle: 'italic', lineHeight: 22 }}>
+                <Text style={{ fontSize: 14, color: '#57534e', fontStyle: 'italic', lineHeight: 22 }}>
                   "{note}"
                 </Text>
               </View>
@@ -657,7 +657,7 @@ export default function BookDetailScreen() {
         ) : displayDesc ? (
           <View style={{ marginBottom: 20 }}>
             <SectionLabel>About this book</SectionLabel>
-            <Text style={{ fontSize: 14, color: '#374151', lineHeight: 23 }}>{displayDesc}</Text>
+            <Text style={{ fontSize: 14, color: '#57534e', lineHeight: 23 }}>{displayDesc}</Text>
             {descText && descText.length > DESC_LIMIT && (
               <TouchableOpacity
                 onPress={() => setDescExpanded(v => !v)}

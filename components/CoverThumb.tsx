@@ -24,10 +24,10 @@ function deriveCoverUrl(externalId: string): string | null {
 }
 
 export function CoverThumb({ url, externalId, width = 40, height = 58 }: Props) {
-  const style = { width, height, borderRadius: 4 } as const;
+  const style = { width, height, borderRadius: 5 } as const;
   const src = url || (externalId ? deriveCoverUrl(externalId) : null);
   if (src) {
     return <Image source={{ uri: src }} style={style} resizeMode="cover" />;
   }
-  return <View style={[style, { backgroundColor: '#e5e7eb' }]} />;
+  return <View style={[style, { backgroundColor: '#e7e5e4' }]} />;
 }

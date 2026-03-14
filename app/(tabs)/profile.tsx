@@ -933,7 +933,7 @@ export default function ProfileScreen() {
                 justifyContent: 'space-between',
                 paddingVertical: 12,
                 borderBottomWidth: 1,
-                borderBottomColor: '#f3f4f6',
+                borderBottomColor: '#f5f5f4',
               }}
             >
               <Text style={{ fontSize: 15, color: '#1c1917' }}>
@@ -978,7 +978,7 @@ export default function ProfileScreen() {
                 style={{
                   paddingVertical: 12,
                   borderBottomWidth: 1,
-                  borderBottomColor: '#f3f4f6',
+                  borderBottomColor: '#f5f5f4',
                   flexDirection: 'row',
                   alignItems: 'flex-start',
                 }}
@@ -990,17 +990,17 @@ export default function ProfileScreen() {
                   height={52}
                 />
                 <View style={{ flex: 1, marginLeft: 12, marginRight: 10 }}>
-                  <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827', marginBottom: 2 }}>
+                  <Text style={{ fontWeight: '600', fontSize: 15, color: '#1c1917', marginBottom: 2 }}>
                     {rec.book?.title ?? '—'}
                   </Text>
-                  <Text style={{ fontSize: 13, color: '#6b7280', marginBottom: 3 }}>
+                  <Text style={{ fontSize: 13, color: '#78716c', marginBottom: 3 }}>
                     {rec.book?.author ?? '—'}
                   </Text>
-                  <Text style={{ fontSize: 12, color: '#9ca3af' }}>
+                  <Text style={{ fontSize: 12, color: '#a8a29e' }}>
                     to {rec.to_user?.username ?? '—'}
                   </Text>
                   {rec.note ? (
-                    <Text style={{ fontSize: 12, color: '#6b7280', fontStyle: 'italic', marginTop: 4 }}>
+                    <Text style={{ fontSize: 12, color: '#78716c', fontStyle: 'italic', marginTop: 4 }}>
                       "{rec.note}"
                     </Text>
                   ) : null}
@@ -1028,11 +1028,11 @@ export default function ProfileScreen() {
           paddingHorizontal: 24,
           paddingVertical: 10,
           borderWidth: 1,
-          borderColor: '#e5e7eb',
+          borderColor: '#e7e5e4',
           borderRadius: 8,
         }}
       >
-        <Text style={{ fontSize: 14, color: '#6b7280' }}>Sign Out</Text>
+        <Text style={{ fontSize: 14, color: '#78716c' }}>Sign Out</Text>
       </TouchableOpacity>
     </ScrollView>
   );

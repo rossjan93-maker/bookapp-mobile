@@ -210,27 +210,32 @@ export default function SearchScreen() {
       <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 16 }}>
         <TextInput
           placeholder="Search for a book…"
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor="#a8a29e"
           value={query}
           onChangeText={setQuery}
           style={{
-            backgroundColor: '#f3f4f6',
-            borderRadius: 10,
+            backgroundColor: '#fff',
+            borderRadius: 12,
             paddingHorizontal: 14,
             paddingVertical: 12,
             fontSize: 16,
-            color: '#111827',
+            color: '#1c1917',
             marginBottom: 12,
+            shadowColor: '#000',
+            shadowOpacity: 0.05,
+            shadowRadius: 4,
+            shadowOffset: { width: 0, height: 1 },
+            elevation: 1,
           }}
         />
 
         {query.length > 0 && query.length < 2 && (
-          <Text style={{ color: '#9ca3af', marginBottom: 8, fontSize: 13 }}>
+          <Text style={{ color: '#a8a29e', marginBottom: 8, fontSize: 13 }}>
             Type at least 2 characters to search.
           </Text>
         )}
 
-        {searching && <ActivityIndicator color="#111827" style={{ marginBottom: 12 }} />}
+        {searching && <ActivityIndicator color="#78716c" style={{ marginBottom: 12 }} />}
 
         <FlatList
           data={bookResults}
@@ -241,17 +246,17 @@ export default function SearchScreen() {
               style={{
                 paddingVertical: 10,
                 borderBottomWidth: 1,
-                borderBottomColor: '#f3f4f6',
+                borderBottomColor: '#f5f5f4',
                 flexDirection: 'row',
                 alignItems: 'center',
               }}
             >
               <CoverThumb url={olCoverUrl(item.cover_i, 'S')} width={34} height={50} />
               <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827' }}>
+                <Text style={{ fontWeight: '600', fontSize: 15, color: '#1c1917' }}>
                   {item.title}
                 </Text>
-                <Text style={{ color: '#9ca3af', fontSize: 13, marginTop: 2 }}>
+                <Text style={{ color: '#a8a29e', fontSize: 13, marginTop: 2 }}>
                   {item.author_name?.[0] ?? 'Unknown author'}
                 </Text>
               </View>
@@ -259,14 +264,14 @@ export default function SearchScreen() {
           )}
           ListEmptyComponent={
             !searching && query.length >= 2 ? (
-              <Text style={{ color: '#9ca3af', marginTop: 12, fontSize: 14 }}>No books found.</Text>
+              <Text style={{ color: '#a8a29e', marginTop: 12, fontSize: 14 }}>No books found.</Text>
             ) : query.length === 0 ? (
               <View style={{
                 alignItems: 'center',
                 marginTop: 60,
                 paddingHorizontal: 24,
               }}>
-                <Text style={{ color: '#9ca3af', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
+                <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
                   Search for a book to recommend{'\n'}to a friend.
                 </Text>
               </View>
@@ -284,27 +289,27 @@ export default function SearchScreen() {
           onPress={() => setStep('search')}
           style={{ marginBottom: 16 }}
         >
-          <Text style={{ color: '#6b7280', fontSize: 14 }}>← Back to search</Text>
+          <Text style={{ color: '#78716c', fontSize: 14 }}>← Back to search</Text>
         </TouchableOpacity>
 
         <View
           style={{
-            backgroundColor: '#f9fafb',
-            borderRadius: 12,
+            backgroundColor: '#faf9f7',
+            borderRadius: 14,
             padding: 14,
             marginBottom: 24,
             borderWidth: 1,
-            borderColor: '#e5e7eb',
+            borderColor: '#e7e5e4',
             flexDirection: 'row',
             alignItems: 'center',
           }}
         >
           <CoverThumb url={selectedBook?.coverUrl} width={48} height={70} />
           <View style={{ flex: 1, marginLeft: 14 }}>
-            <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827' }}>
+            <Text style={{ fontWeight: '600', fontSize: 15, color: '#1c1917' }}>
               {selectedBook?.title}
             </Text>
-            <Text style={{ color: '#6b7280', fontSize: 13, marginTop: 4 }}>
+            <Text style={{ color: '#78716c', fontSize: 13, marginTop: 4 }}>
               {selectedBook?.author}
             </Text>
           </View>
@@ -314,24 +319,29 @@ export default function SearchScreen() {
           value={note}
           onChangeText={setNote}
           placeholder="Add a note (optional)…"
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor="#a8a29e"
           maxLength={280}
           style={{
-            backgroundColor: '#f3f4f6',
-            borderRadius: 10,
+            backgroundColor: '#fff',
+            borderRadius: 12,
             paddingHorizontal: 14,
             paddingVertical: 11,
             fontSize: 14,
-            color: '#111827',
+            color: '#1c1917',
             marginBottom: 24,
+            shadowColor: '#000',
+            shadowOpacity: 0.05,
+            shadowRadius: 4,
+            shadowOffset: { width: 0, height: 1 },
+            elevation: 1,
           }}
         />
 
         <Text style={{
           fontSize: 11,
           fontWeight: '700',
-          color: '#9ca3af',
-          letterSpacing: 0.8,
+          color: '#a8a29e',
+          letterSpacing: 0.9,
           textTransform: 'uppercase',
           marginBottom: 10,
         }}>
@@ -339,15 +349,15 @@ export default function SearchScreen() {
         </Text>
 
         {loadingFriends ? (
-          <ActivityIndicator color="#111827" />
+          <ActivityIndicator color="#78716c" />
         ) : friends.length === 0 ? (
           <View style={{
-            backgroundColor: '#f9fafb',
-            borderRadius: 10,
+            backgroundColor: '#faf9f7',
+            borderRadius: 12,
             padding: 20,
             alignItems: 'center',
           }}>
-            <Text style={{ color: '#9ca3af', fontSize: 14, textAlign: 'center', lineHeight: 20 }}>
+            <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 20 }}>
               No friends yet.{'\n'}Add friends from the Home tab first.
             </Text>
           </View>
@@ -363,17 +373,17 @@ export default function SearchScreen() {
                   justifyContent: 'space-between',
                   paddingVertical: 12,
                   borderBottomWidth: 1,
-                  borderBottomColor: '#f3f4f6',
+                  borderBottomColor: '#f5f5f4',
                 }}
               >
-                <Text style={{ fontSize: 15, color: '#111827' }}>{item.username}</Text>
+                <Text style={{ fontSize: 15, color: '#1c1917' }}>{item.username}</Text>
                 <TouchableOpacity
                   onPress={() => handleSend(item)}
                   disabled={sendingTo !== null}
                   style={{
                     paddingHorizontal: 16,
                     paddingVertical: 8,
-                    backgroundColor: sendingTo !== null ? '#9ca3af' : '#111827',
+                    backgroundColor: sendingTo !== null ? '#a8a29e' : '#1c1917',
                     borderRadius: 8,
                   }}
                 >
@@ -396,7 +406,7 @@ export default function SearchScreen() {
       {sendResult?.ok ? (
         <View style={{
           backgroundColor: '#f0fdf4',
-          borderRadius: 12,
+          borderRadius: 14,
           padding: 24,
           alignItems: 'center',
           width: '100%',
@@ -409,7 +419,7 @@ export default function SearchScreen() {
       ) : (
         <View style={{
           backgroundColor: '#fef2f2',
-          borderRadius: 12,
+          borderRadius: 14,
           padding: 24,
           alignItems: 'center',
           width: '100%',
@@ -425,8 +435,8 @@ export default function SearchScreen() {
         style={{
           paddingHorizontal: 24,
           paddingVertical: 12,
-          backgroundColor: '#111827',
-          borderRadius: 10,
+          backgroundColor: '#1c1917',
+          borderRadius: 12,
         }}
       >
         <Text style={{ color: '#fff', fontWeight: '500', fontSize: 14 }}>

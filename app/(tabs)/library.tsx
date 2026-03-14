@@ -216,7 +216,7 @@ export default function LibraryScreen() {
   if (loading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color="#111827" />
+        <ActivityIndicator color="#78716c" />
       </View>
     );
   }
@@ -242,7 +242,7 @@ export default function LibraryScreen() {
           paddingTop: 20,
           paddingBottom: 16,
           borderBottomWidth: items.length > 0 ? 1 : 0,
-          borderBottomColor: '#f3f4f6',
+          borderBottomColor: '#f5f5f4',
           marginBottom: items.length > 0 ? 0 : 4,
         }}>
           <Text style={{ fontSize: 17, fontWeight: '700', color: '#1c1917' }}>
@@ -282,7 +282,7 @@ export default function LibraryScreen() {
         const hasExtraRow = hasButtons || isUpdating || hasSentimentPrompt;
 
         return (
-          <View style={{ paddingTop: 16, paddingBottom: hasExtraRow ? 12 : 16, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' }}>
+          <View style={{ paddingTop: 16, paddingBottom: hasExtraRow ? 12 : 16, borderBottomWidth: 1, borderBottomColor: '#f5f5f4' }}>
 
             {/* Tappable row: cover + title/author/badge */}
             <TouchableOpacity
@@ -310,10 +310,10 @@ export default function LibraryScreen() {
               <View style={{ flex: 1, marginLeft: 14 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <View style={{ flex: 1, marginRight: 10 }}>
-                    <Text style={{ fontWeight: '600', fontSize: 15, color: '#111827', marginBottom: 3 }}>
+                    <Text style={{ fontWeight: '600', fontSize: 15, color: '#1c1917', marginBottom: 3 }}>
                       {item.book?.title ?? '—'}
                     </Text>
-                    <Text style={{ color: '#6b7280', fontSize: 13 }}>
+                    <Text style={{ color: '#78716c', fontSize: 13 }}>
                       {item.book?.author ?? '—'}
                     </Text>
                   </View>
@@ -329,18 +329,18 @@ export default function LibraryScreen() {
                   <View style={{ marginTop: 8 }}>
                     <View style={{
                       height: 3,
-                      backgroundColor: '#dbeafe',
+                      backgroundColor: '#e7e5e4',
                       borderRadius: 2,
                       overflow: 'hidden',
                     }}>
                       <View style={{
                         height: 3,
                         width: `${progressPct ?? 0}%`,
-                        backgroundColor: '#1d4ed8',
+                        backgroundColor: '#1c1917',
                         borderRadius: 2,
                       }} />
                     </View>
-                    <Text style={{ fontSize: 11, color: '#93c5fd', marginTop: 3 }}>
+                    <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 3 }}>
                       p.{item.current_page} of {item.book?.page_count} · {progressPct ?? 0}%
                     </Text>
                   </View>
@@ -351,7 +351,7 @@ export default function LibraryScreen() {
             {/* Action buttons / sentiment feedback */}
             {pendingFeedback?.userBookId === item.id ? (
               <View style={{ marginLeft: 54, marginTop: 6 }}>
-                <Text style={{ fontSize: 11, color: '#6b7280', marginBottom: 8 }}>
+                <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 8 }}>
                   How was it? (optional)
                 </Text>
                 <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -364,23 +364,23 @@ export default function LibraryScreen() {
                         paddingVertical: 6,
                         borderRadius: 20,
                         borderWidth: 1,
-                        borderColor: '#d1d5db',
+                        borderColor: '#e7e5e4',
                         backgroundColor: '#fff',
                       }}
                     >
-                      <Text style={{ fontSize: 12, color: '#374151' }}>{opt.label}</Text>
+                      <Text style={{ fontSize: 12, color: '#57534e' }}>{opt.label}</Text>
                     </TouchableOpacity>
                   ))}
                   <TouchableOpacity
                     onPress={() => setPendingFeedback(null)}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Text style={{ fontSize: 12, color: '#9ca3af', paddingHorizontal: 4 }}>Skip</Text>
+                    <Text style={{ fontSize: 12, color: '#a8a29e', paddingHorizontal: 4 }}>Skip</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             ) : isUpdating ? (
-              <ActivityIndicator color="#111827" style={{ alignSelf: 'flex-start', marginLeft: 54 }} />
+              <ActivityIndicator color="#78716c" style={{ alignSelf: 'flex-start', marginLeft: 54 }} />
             ) : item.status === 'want_to_read' ? (
               <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginLeft: 54 }}>
                 <PrimaryButton label="Start Reading"  onPress={() => handleUpdateStatus(item, 'reading')}  disabled={isBlocked} />
@@ -421,9 +421,9 @@ function PrimaryButton({ label, onPress, disabled }: { label: string; onPress: (
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled}
-      style={{ paddingHorizontal: 14, paddingVertical: 7, backgroundColor: disabled ? '#e5e7eb' : '#111827', borderRadius: 8 }}
+      style={{ paddingHorizontal: 14, paddingVertical: 7, backgroundColor: disabled ? '#e7e5e4' : '#1c1917', borderRadius: 8 }}
     >
-      <Text style={{ fontSize: 12, fontWeight: '500', color: disabled ? '#9ca3af' : '#fff' }}>{label}</Text>
+      <Text style={{ fontSize: 12, fontWeight: '500', color: disabled ? '#a8a29e' : '#fff' }}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -433,9 +433,9 @@ function OutlineButton({ label, onPress, disabled }: { label: string; onPress: (
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled}
-      style={{ paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: disabled ? '#e5e7eb' : '#d1d5db', borderRadius: 8 }}
+      style={{ paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: disabled ? '#e7e5e4' : '#d6d3d1', borderRadius: 8 }}
     >
-      <Text style={{ fontSize: 12, fontWeight: '500', color: disabled ? '#9ca3af' : '#374151' }}>{label}</Text>
+      <Text style={{ fontSize: 12, fontWeight: '500', color: disabled ? '#a8a29e' : '#57534e' }}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -445,9 +445,9 @@ function DangerButton({ label, onPress, disabled }: { label: string; onPress: ()
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled}
-      style={{ paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: disabled ? '#e5e7eb' : '#fca5a5', borderRadius: 8 }}
+      style={{ paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: disabled ? '#e7e5e4' : '#fca5a5', borderRadius: 8 }}
     >
-      <Text style={{ fontSize: 12, fontWeight: '500', color: disabled ? '#9ca3af' : '#b91c1c' }}>{label}</Text>
+      <Text style={{ fontSize: 12, fontWeight: '500', color: disabled ? '#a8a29e' : '#b91c1c' }}>{label}</Text>
     </TouchableOpacity>
   );
 }

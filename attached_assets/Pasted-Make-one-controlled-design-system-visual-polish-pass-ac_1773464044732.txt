@@ -1,0 +1,127 @@
+Make one controlled “design system + visual polish” pass across the app.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not add real AI / LLM integrations.
+Do not refactor core business logic.
+Do not change schema.
+Do not break recommendation / credibility / activity flows.
+
+Goal:
+Unify the app’s design and styling so it feels like one coherent premium reading product, not a set of individually-built screens.
+
+This pass should focus on:
+1. visual consistency
+2. spacing / hierarchy
+3. card and section polish
+4. status / pacing styling consistency
+5. stronger overall product feel
+
+Do NOT build new major features in this pass.
+This is a UI/UX polish pass, not a logic pass.
+
+Files allowed to change:
+- app/(tabs)/_layout.tsx
+- app/(tabs)/index.tsx
+- app/(tabs)/search.tsx
+- app/(tabs)/notes.tsx
+- app/(tabs)/library.tsx
+- app/(tabs)/profile.tsx
+- app/book/[id].tsx
+- app/add-book.tsx
+- components/CoverThumb.tsx if useful
+- add one tiny shared design helper/component file if truly useful
+- no schema or logic changes unless absolutely necessary for styling consistency
+
+Primary design objectives
+
+A. Establish a consistent visual system
+Requirements:
+1. Unify:
+   - typography scale
+   - section headers
+   - card radius
+   - border colors
+   - spacing rhythm
+   - chip / pill styles
+   - button styles
+2. Make the app feel editorial, warm, premium, and modern.
+3. Preserve the current warm-neutral direction rather than switching to something flashy.
+
+B. Improve hierarchy and scanability
+Requirements:
+1. Make major surfaces easier to scan quickly.
+2. Stronger hierarchy for:
+   - titles
+   - subtitles
+   - section labels
+   - supporting metadata
+   - progress / pacing indicators
+3. Remove any visually noisy or inconsistent elements where possible.
+
+C. Unify card styling
+Requirements:
+1. Cards across:
+   - Home activity
+   - Currently Reading
+   - Reader Insights
+   - Reading Patterns
+   - Inbox items
+   - Library rows / detail surfaces
+   should feel like part of the same system.
+2. Use a consistent language for:
+   - elevation/shadow
+   - border treatment
+   - background surfaces
+   - spacing inside cards
+
+D. Make status + pacing styling feel intentional
+Requirements:
+1. Status pills, pacing chips, and momentum states should feel like one family.
+2. Green / amber / neutral usage should be consistent.
+3. Borders, chips, and progress bars should visually reinforce each other without looking cluttered.
+
+E. Refine profile specifically
+Requirements:
+1. Profile should feel like the strongest and most intentional screen in the app.
+2. Tighten the composition of:
+   - hero/header
+   - yearly goal section
+   - Currently Reading
+   - Reader Insights
+   - Reading Patterns
+   - Recommendations Sent
+3. Improve overall balance, spacing, and polish.
+
+F. Refine book detail specifically
+Requirements:
+1. Book detail should feel premium and focused.
+2. Improve:
+   - cover hero treatment
+   - metadata hierarchy
+   - reading progress section
+   - pacing callout
+   - recommendation context block
+   - about/subjects sections
+3. Keep it clean and readable.
+
+G. Do not overdesign
+Requirements:
+1. Avoid adding visual clutter.
+2. Do not add gratuitous gradients, heavy shadows, or gimmicks.
+3. Favor restraint, consistency, and product-quality polish.
+
+Implementation guidance
+1. Prefer one or two small shared design primitives/helpers if that meaningfully improves consistency.
+2. Keep naming and code understandable.
+3. Do not do a giant architecture rewrite just for styling.
+4. Make best-effort improvements using the current structure.
+5. Preserve current interactions and logic.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. design system changes made
+6. what was intentionally left for later

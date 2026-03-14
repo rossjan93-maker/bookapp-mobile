@@ -250,7 +250,7 @@ export default function AddBookScreen() {
       <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
         <View style={{ paddingHorizontal: 20, paddingTop: 60, paddingBottom: 16 }}>
           <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 20 }}>
-            <Text style={{ fontSize: 14, color: '#6b7280' }}>← Back</Text>
+            <Text style={{ fontSize: 14, color: '#78716c' }}>← Back</Text>
           </TouchableOpacity>
           <Text style={{
             fontSize: 28,
@@ -322,7 +322,7 @@ export default function AddBookScreen() {
           )}
           ListEmptyComponent={
             !searching && query.trim().length >= 2 ? (
-              <Text style={{ color: '#9ca3af', fontSize: 14, paddingVertical: 10 }}>
+              <Text style={{ color: '#a8a29e', fontSize: 14, paddingVertical: 10 }}>
                 No results. Try a different title or add manually.
               </Text>
             ) : null
@@ -380,7 +380,7 @@ export default function AddBookScreen() {
             <Text style={{
               fontSize: 11,
               fontWeight: '700',
-              color: '#9ca3af',
+              color: '#a8a29e',
               letterSpacing: 0.9,
               textTransform: 'uppercase',
               marginBottom: 16,
@@ -394,7 +394,7 @@ export default function AddBookScreen() {
               placeholderTextColor="#a8a29e"
               style={{
                 borderBottomWidth: 1,
-                borderBottomColor: '#f3f4f6',
+                borderBottomColor: '#f5f5f4',
                 paddingVertical: 10,
                 fontSize: 15,
                 color: '#1c1917',
@@ -408,7 +408,7 @@ export default function AddBookScreen() {
               placeholderTextColor="#a8a29e"
               style={{
                 borderBottomWidth: 1,
-                borderBottomColor: '#f3f4f6',
+                borderBottomColor: '#f5f5f4',
                 paddingVertical: 10,
                 fontSize: 15,
                 color: '#1c1917',
@@ -419,14 +419,14 @@ export default function AddBookScreen() {
               onPress={selectManual}
               disabled={!manualTitle.trim()}
               style={{
-                backgroundColor: manualTitle.trim() ? '#1c1917' : '#e5e7eb',
+                backgroundColor: manualTitle.trim() ? '#1c1917' : '#e7e5e4',
                 borderRadius: 10,
                 paddingVertical: 13,
                 alignItems: 'center',
               }}
             >
               <Text style={{
-                color: manualTitle.trim() ? '#fff' : '#9ca3af',
+                color: manualTitle.trim() ? '#fff' : '#a8a29e',
                 fontSize: 14,
                 fontWeight: '600',
               }}>
@@ -447,7 +447,7 @@ export default function AddBookScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <TouchableOpacity onPress={() => setStep('search')} style={{ marginBottom: 24 }}>
-          <Text style={{ fontSize: 14, color: '#6b7280' }}>← Back to search</Text>
+          <Text style={{ fontSize: 14, color: '#78716c' }}>← Back to search</Text>
         </TouchableOpacity>
 
         {/* Book preview card */}
@@ -530,7 +530,7 @@ export default function AddBookScreen() {
                 <Text style={{
                   fontSize: 15,
                   fontWeight: active ? '700' : '400',
-                  color: active ? opt.activeText : '#6b7280',
+                  color: active ? opt.activeText : '#78716c',
                 }}>
                   {opt.label}
                 </Text>

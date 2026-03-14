@@ -35,10 +35,10 @@ export default function TabsLayout() {
     <BadgeContext.Provider value={{ newRecCount, setNewRecCount }}>
       <Tabs
         screenOptions={{
-          tabBarActiveTintColor: '#111827',
-          tabBarInactiveTintColor: '#9ca3af',
+          tabBarActiveTintColor: '#1c1917',
+          tabBarInactiveTintColor: '#a8a29e',
           tabBarStyle: {
-            borderTopColor: '#e5e7eb',
+            borderTopColor: '#e7e5e4',
             borderTopWidth: 1,
             paddingBottom: 8,
             paddingTop: 4,
@@ -53,7 +53,7 @@ export default function TabsLayout() {
           headerTitleStyle: {
             fontSize: 17,
             fontWeight: '600',
-            color: '#111827',
+            color: '#1c1917',
           },
         }}
       >
@@ -89,7 +89,7 @@ export default function TabsLayout() {
           options={{
             title: 'Inbox',
             tabBarBadge: newRecCount > 0 ? newRecCount : undefined,
-            tabBarBadgeStyle: { backgroundColor: '#111827', fontSize: 10 },
+            tabBarBadgeStyle: { backgroundColor: '#1c1917', fontSize: 10 },
             tabBarIcon: ({ focused, color }) => (
               <Ionicons name={focused ? 'mail' : 'mail-outline'} size={22} color={color} />
             ),
