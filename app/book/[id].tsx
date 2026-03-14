@@ -272,17 +272,21 @@ export default function BookDetailScreen() {
     }
     setPageCountError(null);
     setSavingPageCount(true);
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('books')
       .update({ page_count: newCount })
-      .eq('id', bookId!);
+      .eq('id', bookId!)
+      .select('id');
     setSavingPageCount(false);
-    if (!error) {
+    if (error) {
+      setPageCountError(`Could not save — ${error.message}`);
+    } else if (!data || data.length === 0) {
+      // RLS blocked the update silently: no row was modified
+      setPageCountError('Could not save — permission denied. Try reloading.');
+    } else {
       setPageCount(newCount);
       setEditingPageCount(false);
       Keyboard.dismiss();
-    } else {
-      setPageCountError('Could not save — try again.');
     }
   }
 

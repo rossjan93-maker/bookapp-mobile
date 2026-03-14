@@ -1,0 +1,79 @@
+Make one targeted “page_count persistence bug” debug-and-fix pass.
+
+Do not change package versions.
+Do not add packages.
+Do not refactor unrelated logic.
+Do not change schema unless absolutely necessary.
+Do not touch recommendation / credibility / activity flows.
+
+Problem:
+When I manually set total pages for a book in book detail, the metric appears immediately, but after navigating away and coming back, it disappears from Profile / Currently Reading.
+
+That strongly suggests:
+- local state is updating
+- but books.page_count is not actually persisting to Supabase
+OR
+- the reload path is not reading page_count correctly
+
+Goal:
+Find and fix the real persistence bug so page_count survives navigation and is reflected in Profile / Currently Reading after reload.
+
+Scope:
+Only inspect and edit what is necessary:
+- app/book/[id].tsx
+- app/(tabs)/profile.tsx
+- app/(tabs)/library.tsx only if needed
+- lib/supabase.ts only if needed
+- migrations / policies only if you discover a real RLS blocker
+- no other broad refactors
+
+Requirements
+
+A. Diagnose the actual failure point
+1. Inspect the manual page-count save handler in book detail.
+2. Ensure the Supabase update to books.page_count is awaited.
+3. Capture the exact Supabase error if it fails.
+4. Surface that error in the existing inline error state in book detail.
+5. Do not silently swallow the failure.
+
+B. Verify persistence path
+1. After saving page_count successfully, confirm the DB-backed value is what drives the next render.
+2. Profile’s Currently Reading query should reload page_count from books and keep it after navigation.
+3. If a fallback query path exists that omits page_count, fix it.
+
+C. Check RLS / permissions only if needed
+1. If books.page_count update fails due to policy, identify that explicitly.
+2. If necessary, add the smallest safe policy fix so authenticated users can update page_count for books tied to their own user_books rows.
+3. Do not over-open write access to books.
+
+D. Preserve UX
+1. Keep the immediate local-state update after save for snappy UI.
+2. But only after a successful DB write.
+3. If save fails, do not pretend it worked.
+
+E. Preserve all current flows
+Do not break:
+- reading progress logging
+- pacing
+- Profile Currently Reading
+- Library
+- manual add flow
+- recommendation flows
+- reader insights
+
+Important:
+I want the real runtime issue solved, not hidden.
+If the bug is:
+- an unawaited update
+- an ignored error
+- an RLS failure
+- a fallback query mismatch
+fix it directly and minimally.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. diff for those files only
+4. exact manual test steps
+5. root cause found
+6. whether the issue was persistence, query reload, or RLS
