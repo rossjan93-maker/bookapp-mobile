@@ -1,0 +1,87 @@
+Make one controlled “Settings / account editing UX cleanup” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not change schema unless absolutely necessary.
+Do not refactor unrelated business logic.
+Do not break auth, profile, yearly goal, taste preferences, recommendations, activity, library, or book detail flows.
+
+Goal:
+Refine the Settings / Account editing experience so it feels cleaner, calmer, and more intentional — less like a utility form and more like a premium reading app settings surface.
+
+This is a UX cleanup pass, not a major feature expansion.
+
+Scope:
+Inspect and edit only what is necessary, likely:
+- app/settings.tsx
+- app/(tabs)/profile.tsx only if needed for entry-point polish
+- any tiny shared helper/component only if truly useful
+- no broad unrelated screen rewrites
+
+Primary product objectives
+
+A. Make Settings feel more like a true hub
+Requirements:
+1. Strengthen information hierarchy and grouping.
+2. Make sections clearly feel like:
+   - Profile / Identity
+   - Reading
+   - Account
+3. The screen should feel intentionally composed, not like stacked forms.
+
+B. Clean up identity editing
+Requirements:
+1. Name editing should feel low-friction and elegant.
+2. Make it clear what name is shown across the app.
+3. Preserve the current display-name fallback logic.
+4. Username and email should remain visible here as account details, but secondary.
+
+C. Improve yearly goal editing UX
+Requirements:
+1. The yearly goal control should feel cleaner and more deliberate.
+2. It should be easy to understand and edit.
+3. Avoid making it feel like a generic settings input.
+
+D. Improve taste/preferences entry point
+Requirements:
+1. Make “Taste & Style” / preference editing feel like a meaningful destination.
+2. If it routes to a dedicated screen, the row should communicate that clearly.
+3. It should feel like part of the reading system, not a detached settings item.
+
+E. Improve settings composition
+Requirements:
+1. Tighten spacing, row hierarchy, labels, and dividers.
+2. Make the account section feel quieter and more premium.
+3. Sign Out should remain clear, but not visually noisy.
+
+F. Preserve all existing logic
+Do not break:
+- name saving
+- display-name behavior
+- yearly goal saving
+- settings routing
+- taste/preferences routing
+- sign out
+- profile header behavior
+- pacing / reader insights / reading patterns
+
+Design direction
+1. Keep the warm editorial premium language.
+2. Use restraint, hierarchy, and composition rather than more UI objects.
+3. Avoid generic “settings app” styling.
+4. Make the screen feel calm and deliberate.
+
+Implementation guidance
+1. Focus on composition and editing UX, not new functionality.
+2. Keep changes explicit and easy to maintain.
+3. If useful, improve the copy around “Shown as …” preview.
+4. If useful, improve row affordances and grouped-card structure.
+5. Prefer one coherent pass over scattered tweaks.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. settings UX decisions made
+6. what was intentionally left for later

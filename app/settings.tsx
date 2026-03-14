@@ -11,6 +11,8 @@ import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { getDisplayName } from '../lib/displayName';
 
+// ─── Primitives ───────────────────────────────────────────────────────────────
+
 function SectionHeader({ children }: { children: string }) {
   return (
     <Text style={{
@@ -20,8 +22,8 @@ function SectionHeader({ children }: { children: string }) {
       letterSpacing: 0.9,
       textTransform: 'uppercase',
       marginBottom: 8,
-      marginTop: 28,
-      paddingHorizontal: 4,
+      marginTop: 32,
+      paddingHorizontal: 2,
     }}>
       {children}
     </Text>
@@ -51,7 +53,7 @@ function SettingsRow({ last, children }: { last?: boolean; children: React.React
       flexDirection: 'row',
       alignItems: 'center',
       paddingHorizontal: 16,
-      paddingVertical: 13,
+      paddingVertical: 14,
       borderBottomWidth: last ? 0 : 1,
       borderBottomColor: '#f5f5f4',
       minHeight: 52,
@@ -66,12 +68,26 @@ function RowLabel({ children }: { children: string }) {
     <Text style={{
       fontSize: 14,
       color: '#57534e',
-      width: 100,
+      width: 96,
       fontWeight: '500',
       flexShrink: 0,
     }}>
       {children}
     </Text>
+  );
+}
+
+function CardFooter({ children }: { children: React.ReactNode }) {
+  return (
+    <View style={{
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      borderTopWidth: 1,
+      borderTopColor: '#f5f5f4',
+      backgroundColor: '#faf9f7',
+    }}>
+      {children}
+    </View>
   );
 }
 
@@ -109,16 +125,18 @@ function SaveButton({
   );
 }
 
+// ─── Screen ───────────────────────────────────────────────────────────────────
+
 export default function SettingsScreen() {
   const router = useRouter();
 
-  const [userId, setUserId]   = useState<string | null>(null);
+  const [userId, setUserId]     = useState<string | null>(null);
   const [username, setUsername] = useState('');
   const [email, setEmail]       = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading]   = useState(true);
 
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName]   = useState('');
+  const [firstName, setFirstName]       = useState('');
+  const [lastName, setLastName]         = useState('');
   const [profileDirty, setProfileDirty] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaved, setProfileSaved]   = useState(false);
@@ -214,6 +232,7 @@ export default function SettingsScreen() {
     await supabase?.auth.signOut();
   }
 
+  const hasName = !!(firstName.trim() || lastName.trim());
   const displayPreview = getDisplayName({
     first_name: firstName.trim() || null,
     last_name:  lastName.trim()  || null,
@@ -248,10 +267,10 @@ export default function SettingsScreen() {
         Settings
       </Text>
       <Text style={{ fontSize: 13, color: '#a8a29e', lineHeight: 20 }}>
-        Manage your profile and reading preferences.
+        Profile, reading goals, and preferences.
       </Text>
 
-      {/* ── Profile ── */}
+      {/* ── Profile / Identity ───────────────────────────────────────────────── */}
       <SectionHeader>Profile</SectionHeader>
       <SettingsCard>
         <SettingsRow>
@@ -262,10 +281,10 @@ export default function SettingsScreen() {
             placeholder="First"
             placeholderTextColor="#c4b5a5"
             autoCapitalize="words"
-            style={{ flex: 1, fontSize: 14, color: '#1c1917', paddingVertical: 2 }}
+            style={{ flex: 1, fontSize: 15, color: '#1c1917', paddingVertical: 2 }}
           />
         </SettingsRow>
-        <SettingsRow>
+        <SettingsRow last>
           <RowLabel>Last name</RowLabel>
           <TextInput
             value={lastName}
@@ -273,22 +292,23 @@ export default function SettingsScreen() {
             placeholder="Last"
             placeholderTextColor="#c4b5a5"
             autoCapitalize="words"
-            style={{ flex: 1, fontSize: 14, color: '#1c1917', paddingVertical: 2 }}
+            style={{ flex: 1, fontSize: 15, color: '#1c1917', paddingVertical: 2 }}
           />
         </SettingsRow>
-        <View style={{
-          paddingHorizontal: 16,
-          paddingVertical: 10,
-          borderTopWidth: 1,
-          borderTopColor: '#f5f5f4',
-          backgroundColor: '#faf9f7',
-        }}>
-          <Text style={{ fontSize: 12, color: '#a8a29e' }}>
-            Shown as{' '}
-            <Text style={{ fontWeight: '600', color: '#78716c' }}>{displayPreview}</Text>
-            {displayPreview !== username ? `  ·  @${username}` : ''}
-          </Text>
-        </View>
+        <CardFooter>
+          {hasName ? (
+            <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>
+              Shown as{' '}
+              <Text style={{ fontWeight: '600', color: '#57534e' }}>{displayPreview}</Text>
+              {' '}to friends across the app.
+            </Text>
+          ) : (
+            <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>
+              Add your name — shown to friends instead of{' '}
+              <Text style={{ fontWeight: '500', color: '#78716c' }}>@{username}</Text>.
+            </Text>
+          )}
+        </CardFooter>
       </SettingsCard>
 
       {(profileDirty || profileSaved) && (
@@ -300,10 +320,10 @@ export default function SettingsScreen() {
         />
       )}
 
-      {/* ── Reading ── */}
+      {/* ── Reading / Goal ──────────────────────────────────────────────────── */}
       <SectionHeader>Reading</SectionHeader>
       <SettingsCard>
-        <SettingsRow>
+        <SettingsRow last>
           <RowLabel>Yearly goal</RowLabel>
           <TextInput
             value={goalDraft}
@@ -318,29 +338,19 @@ export default function SettingsScreen() {
             keyboardType="number-pad"
             returnKeyType="done"
             onSubmitEditing={handleSaveGoal}
-            style={{ flex: 1, fontSize: 14, color: '#1c1917', paddingVertical: 2 }}
+            style={{ flex: 1, fontSize: 22, fontWeight: '700', color: '#1c1917', paddingVertical: 2 }}
           />
-          <Text style={{ fontSize: 12, color: '#a8a29e', marginLeft: 4 }}>books / yr</Text>
+          <Text style={{ fontSize: 13, color: '#a8a29e', marginLeft: 6 }}>books / yr</Text>
         </SettingsRow>
-        <TouchableOpacity
-          onPress={() => router.push('/edit-preferences')}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            paddingHorizontal: 16,
-            paddingVertical: 14,
-          }}
-        >
-          <Text style={{ fontSize: 14, color: '#57534e', fontWeight: '500', flex: 1 }}>
-            Taste & Style
+        <CardFooter>
+          <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>
+            Books you aim to finish by Dec 31. Drives pacing on your dashboard.
           </Text>
-          <Text style={{ fontSize: 11, color: '#a8a29e', marginRight: 8 }}>Genres, styles, authors</Text>
-          <Text style={{ fontSize: 18, color: '#d6d3d1' }}>›</Text>
-        </TouchableOpacity>
+        </CardFooter>
       </SettingsCard>
 
       {goalError && (
-        <Text style={{ fontSize: 12, color: '#b91c1c', marginTop: 8, paddingHorizontal: 4 }}>
+        <Text style={{ fontSize: 12, color: '#b91c1c', marginTop: 8, paddingHorizontal: 2 }}>
           {goalError}
         </Text>
       )}
@@ -354,31 +364,49 @@ export default function SettingsScreen() {
         />
       )}
 
-      {/* ── Account ── */}
+      {/* ── Reading / Taste ──────────────────────────────────────────────────── */}
+      <View style={{ marginTop: 12 }}>
+        <SettingsCard>
+          <TouchableOpacity
+            onPress={() => router.push('/edit-preferences')}
+            activeOpacity={0.75}
+            style={{ paddingHorizontal: 16, paddingVertical: 16 }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 3 }}>
+                  Taste & Style
+                </Text>
+                <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>
+                  Genres, styles, and authors you love
+                </Text>
+              </View>
+              <Text style={{ fontSize: 20, color: '#c4b5a5', marginLeft: 10 }}>›</Text>
+            </View>
+          </TouchableOpacity>
+        </SettingsCard>
+      </View>
+
+      {/* ── Account ──────────────────────────────────────────────────────────── */}
       <SectionHeader>Account</SectionHeader>
       <SettingsCard>
-        <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
-          <Text style={{ fontSize: 11, color: '#a8a29e', fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 }}>
-            Account Details
-          </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 }}>
-            <Text style={{ fontSize: 13, color: '#78716c' }}>Username</Text>
-            <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500' }}>@{username}</Text>
+        <View style={{ paddingHorizontal: 16, paddingVertical: 14 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 5 }}>
+            <Text style={{ fontSize: 13, color: '#a8a29e' }}>Username</Text>
+            <Text style={{ fontSize: 13, color: '#78716c', fontWeight: '500' }}>@{username}</Text>
           </View>
           <View style={{ height: 1, backgroundColor: '#f5f5f4', marginVertical: 2 }} />
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 }}>
-            <Text style={{ fontSize: 13, color: '#78716c' }}>Email</Text>
-            <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500' }}>{email ?? '—'}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 5 }}>
+            <Text style={{ fontSize: 13, color: '#a8a29e' }}>Email</Text>
+            <Text style={{ fontSize: 13, color: '#78716c', fontWeight: '500' }}>{email ?? '—'}</Text>
           </View>
         </View>
         <View style={{ height: 1, backgroundColor: '#f5f5f4' }} />
         <TouchableOpacity
           onPress={handleSignOut}
           style={{
-            flexDirection: 'row',
-            alignItems: 'center',
             paddingHorizontal: 16,
-            paddingVertical: 16,
+            paddingVertical: 15,
           }}
         >
           <Text style={{ fontSize: 14, color: '#b91c1c', fontWeight: '500' }}>Sign Out</Text>
