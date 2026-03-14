@@ -8,13 +8,15 @@ export type ProfileLike = {
  * Returns the best display name for a profile.
  * Priority: "First Last" → "First" → username → "Unknown"
  */
-export function getDisplayName(profile: ProfileLike | null | undefined): string {
-  if (!profile) return 'Unknown';
+export function getDisplayName(
+  profile: ProfileLike | null | undefined,
+): string {
+  if (!profile) return "Unknown";
   const first = profile.first_name?.trim() || null;
-  const last  = profile.last_name?.trim()  || null;
+  const last = profile.last_name?.trim() || null;
   if (first && last) return `${first} ${last}`;
   if (first) return first;
-  return profile.username?.trim() || 'Unknown';
+  return profile.username?.trim() || "Unknown";
 }
 
 /**
@@ -22,10 +24,10 @@ export function getDisplayName(profile: ProfileLike | null | undefined): string 
  * Use in conversational / social contexts: "Sarah recommended…"
  */
 export function getFirstName(profile: ProfileLike | null | undefined): string {
-  if (!profile) return 'Unknown';
+  if (!profile) return "Unknown";
   const first = profile.first_name?.trim() || null;
   if (first) return first;
-  return profile.username?.trim() || 'Unknown';
+  return profile.username?.trim() || "Unknown";
 }
 
 /**

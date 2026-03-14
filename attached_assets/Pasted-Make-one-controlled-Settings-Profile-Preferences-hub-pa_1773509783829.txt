@@ -1,0 +1,119 @@
+Make one controlled “Settings / Profile Preferences hub” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not refactor unrelated business logic.
+Do not change schema unless absolutely necessary.
+Do not break auth, recommendation, friendship, activity, pacing, or profile flows.
+
+Goal:
+Create a clear Settings / Preferences entry point in the app so users can manage their profile and personal reading preferences in one dedicated place.
+
+This pass should establish a real settings structure, not just one more random edit screen.
+
+Scope:
+Inspect and edit only what is necessary, likely including:
+- app/(tabs)/profile.tsx
+- add one new route/screen for settings, e.g. app/settings.tsx
+- existing preference/edit screens if needed
+- shared display-name helper only if needed
+- no unrelated broad UI rewrites
+
+Primary product objectives
+
+A. Add a Settings entry point
+Requirements:
+1. Users need a clear way to access settings from Profile.
+2. Add a visible, polished Settings entry point on the Profile screen.
+3. It should feel intentional and premium, not like a hidden text link.
+4. Tapping it should open a dedicated Settings / Preferences screen.
+
+B. Create a real Settings / Preferences screen
+Requirements:
+1. Create a dedicated settings screen.
+2. Organize it cleanly into a few sections such as:
+   - Profile
+   - Reading Preferences
+   - Goals
+   - Account
+3. Keep it simple and elegant.
+4. This should feel like a hub, not a cluttered form dump.
+
+C. Include key editable items
+The first version of settings should support access to:
+1. Name / identity
+   - first name
+   - last name
+   - maybe username display preview if useful
+2. Yearly reading goal
+3. Taste preferences
+   - route into the existing taste/preferences flow if that is cleaner than rebuilding it inline
+4. Sign out
+5. If some items are better as “manage on another screen,” a row that navigates there is acceptable
+
+D. Existing users must be able to edit identity
+Requirements:
+1. Do not limit name capture to signup only.
+2. Existing users must be able to add or update:
+   - first_name
+   - last_name
+3. Keep this editing flow low-friction.
+4. If easiest, allow editing directly in Settings.
+5. Persist changes to profiles cleanly.
+
+E. Keep Profile cleaner
+Requirements:
+1. Profile should remain a product-facing surface.
+2. Settings should absorb account-management style controls.
+3. Do not turn Profile into a generic settings page.
+
+F. UX / design direction
+Requirements:
+1. Keep the existing editorial, premium reading-app style.
+2. Settings should feel calm, structured, and intentional.
+3. Prefer grouped rows/cards rather than plain unstyled forms.
+4. Make tap targets clear and mobile-friendly.
+5. Avoid generic default settings-screen styling.
+
+G. Preserve all current flows
+Do not break:
+- signup / login
+- profile loading
+- yearly goal logic
+- taste preferences
+- recommendations
+- inbox
+- activity feed
+- reader insights / patterns
+- pacing
+- library
+- book detail routing
+
+Implementation guidance
+1. Prefer one dedicated settings screen over scattering edits everywhere.
+2. Reuse existing preference editing flows when sensible.
+3. Add the smallest safe profile update logic for first_name / last_name.
+4. Keep display-name fallback behavior intact:
+   - First Last
+   - First
+   - username
+   - Unknown
+5. Keep the code explicit and easy to extend later for notification/privacy/account settings.
+
+Suggested first settings structure
+- Profile
+  - Name
+  - Username / display preview
+- Reading
+  - Yearly reading goal
+  - Taste preferences
+- Account
+  - Sign out
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. settings information architecture decisions made
+6. any schema or persistence tradeoffs made

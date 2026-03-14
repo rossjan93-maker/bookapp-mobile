@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   ScrollView,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -115,11 +114,6 @@ export default function ProfileScreen() {
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState<string | null>(null);
 
-  // ── Inline goal editor state ──
-  const [editingGoal, setEditingGoal]   = useState(false);
-  const [goalDraft, setGoalDraft]       = useState('');
-  const [savingGoal, setSavingGoal]     = useState(false);
-  const [goalError, setGoalError]       = useState<string | null>(null);
 
   useFocusEffect(useCallback(() => {
     async function load() {
@@ -290,28 +284,6 @@ export default function ProfileScreen() {
     load();
   }, []));
 
-  async function handleSaveGoal() {
-    if (!supabase || !userId) return;
-    const newGoal = parseInt(goalDraft.trim(), 10);
-    if (isNaN(newGoal) || newGoal < 1 || newGoal > 365) {
-      setGoalError('Enter a number between 1 and 365.');
-      return;
-    }
-    setGoalError(null);
-    setSavingGoal(true);
-    const { error: updateErr } = await supabase
-      .from('profiles')
-      .update({ yearly_reading_goal: newGoal })
-      .eq('id', userId);
-    setSavingGoal(false);
-    if (!updateErr) {
-      setProfile(prev => prev ? { ...prev, yearly_reading_goal: newGoal } : prev);
-      setEditingGoal(false);
-    } else {
-      setGoalError('Could not save goal — try again.');
-    }
-  }
-
   async function handleAccept(friendshipId: string) {
     if (!supabase) return;
     const { error } = await supabase
@@ -322,10 +294,6 @@ export default function ProfileScreen() {
       setPendingRequests(prev => prev.filter(r => r.id !== friendshipId));
       setStats(prev => prev ? { ...prev, friendsCount: prev.friendsCount + 1 } : prev);
     }
-  }
-
-  async function handleSignOut() {
-    await supabase?.auth.signOut();
   }
 
   if (loading) {
@@ -401,134 +369,66 @@ export default function ProfileScreen() {
             <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 2 }}>{email ?? '—'}</Text>
           </View>
           <TouchableOpacity
-            onPress={() => router.push('/edit-preferences')}
+            onPress={() => router.push('/settings')}
             style={{
+              width: 38,
+              height: 38,
+              borderRadius: 19,
               borderWidth: 1,
               borderColor: '#e7e5e4',
-              borderRadius: 8,
-              paddingHorizontal: 11,
-              paddingVertical: 7,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: '#fff',
             }}
           >
-            <Text style={{ fontSize: 12, color: '#57534e', fontWeight: '500' }}>Edit Taste</Text>
+            <Text style={{ fontSize: 17, lineHeight: 20 }}>⚙</Text>
           </TouchableOpacity>
         </View>
 
-        {/* ── Inline goal editor ── */}
-        {!editingGoal ? (
-          <View style={{ marginTop: 18 }}>
-            {goalProgress ? (
-              <View style={{
-                backgroundColor: '#faf9f7',
-                borderRadius: 10,
-                paddingHorizontal: 14,
-                paddingVertical: 12,
-              }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500', flex: 1, marginRight: 10 }}>
-                    {goalProgress}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => { setGoalDraft(String(yearlyGoal ?? '')); setGoalError(null); setEditingGoal(true); }}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Text style={{ fontSize: 12, color: '#78716c', textDecorationLine: 'underline' }}>Edit goal</Text>
-                  </TouchableOpacity>
-                </View>
-                {yearlyGoal && stats && (
-                  <View style={{ height: 5, backgroundColor: '#e7e5e4', borderRadius: 3, overflow: 'hidden' }}>
-                    <View style={{
-                      height: 5,
-                      width: `${Math.min(100, Math.round((stats.finishedThisYear / yearlyGoal) * 100))}%`,
-                      backgroundColor: '#1c1917',
-                      borderRadius: 3,
-                    }} />
-                  </View>
-                )}
-              </View>
-            ) : (
-              <TouchableOpacity
-                onPress={() => { setGoalDraft(''); setGoalError(null); setEditingGoal(true); }}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 10,
-                  backgroundColor: '#faf9f7',
-                  borderRadius: 10,
-                  paddingHorizontal: 14,
-                  paddingVertical: 12,
-                  borderWidth: 1,
-                  borderColor: '#e7e5e4',
-                  borderStyle: 'dashed',
-                }}
-              >
-                <Text style={{ fontSize: 13, color: '#a8a29e' }}>
-                  Set a yearly reading goal →
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        ) : (
+        {/* ── Goal display (read-only — edit in Settings) ── */}
+        {goalProgress ? (
           <View style={{
             marginTop: 18,
             backgroundColor: '#faf9f7',
             borderRadius: 10,
-            padding: 14,
-            borderWidth: 1,
-            borderColor: '#e7e5e4',
+            paddingHorizontal: 14,
+            paddingVertical: 12,
           }}>
-            <Text style={{ fontSize: 12, color: '#78716c', fontWeight: '600', marginBottom: 10 }}>
-              Books per year goal
+            <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500', marginBottom: 8 }}>
+              {goalProgress}
             </Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <TextInput
-                value={goalDraft}
-                onChangeText={setGoalDraft}
-                keyboardType="number-pad"
-                placeholder="24"
-                placeholderTextColor="#a8a29e"
-                returnKeyType="done"
-                onSubmitEditing={handleSaveGoal}
-                style={{
-                  width: 72,
-                  height: 40,
-                  borderWidth: 1.5,
-                  borderColor: '#d6d3d1',
-                  borderRadius: 8,
-                  paddingHorizontal: 12,
-                  fontSize: 18,
-                  fontWeight: '700',
-                  color: '#1c1917',
-                  backgroundColor: '#fff',
-                  textAlign: 'center',
-                }}
-              />
-              <TouchableOpacity
-                onPress={handleSaveGoal}
-                disabled={savingGoal}
-                style={{
-                  backgroundColor: savingGoal ? '#d6d3d1' : '#1c1917',
-                  borderRadius: 8,
-                  paddingHorizontal: 16,
-                  paddingVertical: 10,
-                }}
-              >
-                {savingGoal
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>Save</Text>
-                }
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => { setEditingGoal(false); setGoalError(null); }}
-                style={{ paddingHorizontal: 10, paddingVertical: 10 }}
-              >
-                <Text style={{ fontSize: 13, color: '#a8a29e' }}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-            {goalError && (
-              <Text style={{ fontSize: 12, color: '#b91c1c', marginTop: 8 }}>{goalError}</Text>
+            {yearlyGoal && stats && (
+              <View style={{ height: 5, backgroundColor: '#e7e5e4', borderRadius: 3, overflow: 'hidden' }}>
+                <View style={{
+                  height: 5,
+                  width: `${Math.min(100, Math.round((stats.finishedThisYear / yearlyGoal) * 100))}%`,
+                  backgroundColor: '#1c1917',
+                  borderRadius: 3,
+                }} />
+              </View>
             )}
           </View>
+        ) : (
+          <TouchableOpacity
+            onPress={() => router.push('/settings')}
+            style={{
+              marginTop: 18,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+              backgroundColor: '#faf9f7',
+              borderRadius: 10,
+              paddingHorizontal: 14,
+              paddingVertical: 12,
+              borderWidth: 1,
+              borderColor: '#e7e5e4',
+              borderStyle: 'dashed',
+            }}
+          >
+            <Text style={{ fontSize: 13, color: '#a8a29e' }}>
+              Set a yearly reading goal in Settings →
+            </Text>
+          </TouchableOpacity>
         )}
       </View>
 
@@ -1044,9 +944,9 @@ export default function ProfileScreen() {
         )}
       </View>
 
-      {/* ── Sign Out ── */}
+      {/* ── Settings link ── */}
       <TouchableOpacity
-        onPress={handleSignOut}
+        onPress={() => router.push('/settings')}
         style={{
           alignSelf: 'center',
           paddingHorizontal: 24,
@@ -1056,7 +956,7 @@ export default function ProfileScreen() {
           borderRadius: 8,
         }}
       >
-        <Text style={{ fontSize: 14, color: '#78716c' }}>Sign Out</Text>
+        <Text style={{ fontSize: 14, color: '#78716c' }}>Settings</Text>
       </TouchableOpacity>
     </ScrollView>
   );
