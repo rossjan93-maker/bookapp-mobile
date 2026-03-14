@@ -192,12 +192,13 @@ export default function InboxScreen() {
 
   // ── Grouping ──────────────────────────────────────────────────────────────
 
-  const newItems     = items.filter(r => r.status === 'sent');
-  const savedItems   = items.filter(r => r.status === 'saved');
-  const readingItems = items.filter(r => r.status === 'started');
-  const doneItems    = items.filter(r => r.status === 'finished' || r.status === 'dnf');
+  const newItems      = items.filter(r => r.status === 'sent');
+  const savedItems    = items.filter(r => r.status === 'saved');
+  const readingItems  = items.filter(r => r.status === 'started');
+  const finishedItems = items.filter(r => r.status === 'finished');
+  const dnfItems      = items.filter(r => r.status === 'dnf');
 
-  const hasArchive   = savedItems.length > 0 || readingItems.length > 0 || doneItems.length > 0;
+  const hasArchive    = savedItems.length > 0 || readingItems.length > 0 || finishedItems.length > 0 || dnfItems.length > 0;
 
   // ── Empty state ───────────────────────────────────────────────────────────
 
@@ -347,11 +348,21 @@ export default function InboxScreen() {
         </View>
       )}
 
-      {/* ── Done ── */}
-      {doneItems.length > 0 && (
+      {/* ── Finished ── */}
+      {finishedItems.length > 0 && (
         <View style={{ marginBottom: 28 }}>
-          <SectionLabel>{`Done · ${doneItems.length}`}</SectionLabel>
-          {doneItems.map(item => (
+          <SectionLabel>{`Finished · ${finishedItems.length}`}</SectionLabel>
+          {finishedItems.map(item => (
+            <RecRow key={item.id} item={item} onPress={() => goToDetail(item)} />
+          ))}
+        </View>
+      )}
+
+      {/* ── DNF ── */}
+      {dnfItems.length > 0 && (
+        <View style={{ marginBottom: 28 }}>
+          <SectionLabel>{`Did Not Finish · ${dnfItems.length}`}</SectionLabel>
+          {dnfItems.map(item => (
             <RecRow key={item.id} item={item} onPress={() => goToDetail(item)} />
           ))}
         </View>

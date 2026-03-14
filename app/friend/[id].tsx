@@ -158,12 +158,18 @@ export default function FriendDetailScreen() {
 
   function landingInsight(): string | null {
     if (!stats || !hasInbound) return null;
-    if (stats.iFinished === 0) {
-      return `You haven't finished any of ${friendFirstName}'s picks yet.`;
+    const sent     = stats.recsSentToMe;
+    const finished = stats.iFinished;
+
+    // Small sample (1–2): factual only, no interpretation
+    if (sent <= 2) {
+      if (finished === 0) return `You haven't finished any of ${friendFirstName}'s picks yet.`;
+      return `You've finished ${finished} of ${sent} from ${friendFirstName} so far.`;
     }
-    if (inboundLandRate !== null && inboundLandRate >= 0.5) {
-      return `Most of ${friendFirstName}'s recommendations land for you.`;
-    }
+
+    // Sufficient sample (3+): interpretation is appropriate
+    if (finished === 0) return `You haven't finished any of ${friendFirstName}'s picks yet.`;
+    if (finished / sent >= 0.5) return `${friendFirstName}'s recommendations are landing well for you.`;
     return `Some of ${friendFirstName}'s recommendations have worked for you.`;
   }
 
@@ -265,13 +271,13 @@ export default function FriendDetailScreen() {
                   <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 1 }}>
                     you finished
                   </Text>
-                  {stats.recsSentToMe > 0 && (
-                    <Text style={{ fontSize: 11, color: '#78716c', marginTop: 4, fontWeight: '500' }}>
-                      {stats.iFinished === 0
-                        ? 'none read yet'
-                        : `${Math.round((stats.iFinished / stats.recsSentToMe) * 100)}% landed`}
-                    </Text>
-                  )}
+                  <Text style={{ fontSize: 11, color: '#78716c', marginTop: 4, fontWeight: '500' }}>
+                    {stats.iFinished === 0
+                      ? 'none read yet'
+                      : stats.recsSentToMe <= 2
+                      ? `${stats.iFinished} of ${stats.recsSentToMe} finished`
+                      : `${Math.round((stats.iFinished / stats.recsSentToMe) * 100)}% landed`}
+                  </Text>
                 </View>
               )}
             </View>
@@ -309,13 +315,13 @@ export default function FriendDetailScreen() {
                   <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 1 }}>
                     they finished
                   </Text>
-                  {stats.recsSentToThem > 0 && (
-                    <Text style={{ fontSize: 11, color: '#78716c', marginTop: 4, fontWeight: '500' }}>
-                      {stats.theyFinished === 0
-                        ? 'none read yet'
-                        : `${Math.round((stats.theyFinished / stats.recsSentToThem) * 100)}% landed`}
-                    </Text>
-                  )}
+                  <Text style={{ fontSize: 11, color: '#78716c', marginTop: 4, fontWeight: '500' }}>
+                    {stats.theyFinished === 0
+                      ? 'none read yet'
+                      : stats.recsSentToThem <= 2
+                      ? `${stats.theyFinished} of ${stats.recsSentToThem} finished`
+                      : `${Math.round((stats.theyFinished / stats.recsSentToThem) * 100)}% landed`}
+                  </Text>
                 </View>
               )}
             </View>

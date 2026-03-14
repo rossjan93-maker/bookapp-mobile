@@ -1,0 +1,111 @@
+Make one targeted refinement pass to improve:
+1. Inbox “Done” clarity
+2. Friend-detail landing-rate trust language on small samples
+
+Do not change package versions.
+Do not add packages.
+Do not refactor unrelated business logic.
+Do not change schema.
+Do not break recommendation, inbox, friendship, activity, pacing, or profile flows.
+
+Goal:
+Tighten the social trust UX so it stays informative without becoming ambiguous or overstated.
+
+Problems to fix
+
+A. Inbox “Done” ambiguity
+Right now archived rows no longer show a row-level status pill, which is good for Want to Read and Reading, but “Done” can contain both:
+- finished
+- dnf
+
+That makes Done rows ambiguous.
+
+B. Friend-detail trust language overstates on tiny samples
+The new “X% landed” and interpretive sentence are good, but they should be more cautious when sample sizes are very small.
+Example:
+- 1 of 1 finished should not read like a strong trust signal
+- 1 of 2 should be factual, not overconfident
+
+Scope:
+Only inspect and edit:
+- app/(tabs)/notes.tsx
+- app/friend/[id].tsx
+- no other files unless absolutely necessary
+
+Requirements
+
+A. Improve Inbox Done clarity
+Choose one of these approaches, whichever feels cleaner in the current design:
+1. Split Done back into:
+   - Finished
+   - DNF
+   with separate section labels
+OR
+2. Keep one Done section, but restore a very minimal row-level distinction for Finished vs DNF only
+
+Guidance:
+- Do NOT bring back redundant row-level pills for Want to Read or Reading
+- Only solve the ambiguity where it truly exists
+- Keep the screen elegant and uncluttered
+
+Preferred outcome:
+Use the cleanest solution that preserves fast scanning.
+
+B. Make landing-rate trust language threshold-aware
+In friend detail:
+1. Keep the directional cards:
+   - [Name] → You
+   - You → [Name]
+2. But make “X% landed” and the interpretive sentence more careful
+
+Suggested threshold behavior:
+- if sent = 0:
+  - no landing-rate sentence
+- if sent = 1 or 2:
+  - use factual language like:
+    - “1 of 2 finished”
+    - “No books finished yet”
+  - avoid strong interpretive claims like “Most recommendations land”
+- if sent >= 3:
+  - percentage language is okay
+  - interpretive summary is okay
+
+C. Improve interpretive copy
+For small samples, prefer restrained phrasing.
+Examples:
+- “You’ve finished 1 of 2 from Sarah so far.”
+- “You haven’t finished any of Sarah’s picks yet.”
+- “Sarah’s recommendations are landing well for you.”
+- “Some of Sarah’s recommendations have worked for you.”
+
+Do not overstate confidence from tiny samples.
+
+D. Preserve current design direction
+1. Keep the warm premium editorial style.
+2. Do not undo the broader inbox/friend-detail improvements.
+3. This is a precision pass, not a redesign.
+
+E. Preserve all current flows
+Do not break:
+- inbox grouping
+- add to library flow
+- book detail routing from inbox rows
+- friend detail navigation
+- activity timeline
+- exchange cards
+- recommendation counts
+- social hierarchy
+
+Implementation guidance
+1. Keep the changes surgical.
+2. Prefer explicit logic over clever abstraction.
+3. Use simple thresholds that are easy to reason about.
+4. Keep the UX honest.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. trust-language threshold rules used
+6. inbox clarity decision made
