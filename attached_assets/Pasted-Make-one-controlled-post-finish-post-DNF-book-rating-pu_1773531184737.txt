@@ -1,0 +1,128 @@
+Make one controlled “post-finish / post-DNF book rating + public feed event + personalization signal” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not add real AI / LLM integrations yet.
+Do not refactor unrelated business logic.
+Do not break library, activity feed, recommendations, profile, pacing, or book detail flows.
+
+Goal:
+When a user marks a book Finished or DNF, they should have the option to rate it. That rating should:
+1. be stored as a user-level signal
+2. optionally appear as a public activity event in the friends feed
+3. become a stronger personalization datapoint for future recommendations and taste modeling
+
+This should be a real product feature, not just a cosmetic prompt.
+
+Scope:
+Inspect and edit only what is necessary, likely:
+- supabase/migrations/ (new migration if needed)
+- app/(tabs)/library.tsx
+- app/(tabs)/index.tsx
+- app/book/[id].tsx only if needed for display consistency
+- lib/signals.ts if needed for derived signal usage
+- no unrelated broad screen rewrites
+
+Primary product objectives
+
+A. Add rating as a stored user signal
+Requirements:
+1. Add a nullable rating field for a user’s relationship to a book.
+2. Rating should support a 1–5 scale.
+3. It should live in the right per-user place (not globally on the book).
+4. Existing rows must remain valid.
+
+Preferred shape:
+- rating on user_books as nullable integer
+- constrained to 1–5 if possible
+
+B. Prompt for rating after Finished or DNF
+Requirements:
+1. When a user marks a book as Finished or DNF, offer a lightweight rating prompt.
+2. Keep it optional.
+3. Allow:
+   - choose 1–5
+   - skip for now
+4. This should feel low-friction and integrated into the existing completion flow.
+5. Do not create a separate giant modal if a clean inline prompt is easier.
+
+C. Avoid redundant sentiment + rating friction
+Requirements:
+1. If the app currently asks for sentiment (loved / liked / okay / not_for_me), do not stack a second redundant heavy prompt on top.
+2. Prefer one cleaner post-completion signal flow.
+3. You may:
+   - replace the current sentiment prompt with rating
+   OR
+   - derive sentiment from rating if that is the cleaner product architecture
+4. The end result should reduce friction while increasing signal quality.
+
+Preferred product direction:
+- rating is the primary explicit feedback signal
+- sentiment can be derived from rating if needed
+
+D. Public activity event for ratings
+Requirements:
+1. If a user submits a rating, create a feed event that friends can see.
+2. Example copy:
+   - “Ross finished The Great Gatsby and rated it 4/5”
+   - “Ross did not finish X and rated it 2/5”
+3. Do not create a rating feed event if the user skips rating.
+4. Keep this aligned with the existing activity feed system.
+
+E. Feed rendering
+Requirements:
+1. Update the Home activity feed so these new rating events render correctly.
+2. Keep the copy clean and human.
+3. Maintain existing feed behavior for all other event types.
+
+F. Personalization signal foundation
+Requirements:
+1. Make the rating accessible as a future personalization datapoint.
+2. If lib/signals.ts is the right place, add a minimal derived helper only if useful.
+3. Do not build full recommendation logic yet.
+4. But ratings should clearly become part of the user’s taste model foundation.
+
+G. Preserve current flows
+Do not break:
+- library status transitions
+- credibility events
+- recommendation lifecycle
+- activity feed
+- profile
+- reader insights / patterns
+- pacing
+- book detail
+- source attribution
+- social trust surfaces
+
+Implementation guidance
+1. Keep the post-finish / post-DNF interaction elegant and low-friction.
+2. A simple inline “Rate this book” row with 1–5 options + Skip is acceptable.
+3. If replacing sentiment, do it cleanly and consistently.
+4. Keep schema changes minimal and safe.
+5. Keep the code explicit and easy to reason about.
+
+Suggested implementation approach
+- add `rating integer null` to `user_books`
+- when status becomes finished or dnf:
+  - show inline prompt under that row/card
+  - user can tap 1–5 or Skip
+- save the rating to user_books
+- optionally derive sentiment from rating if sentiment remains part of the data model
+- insert new activity event only when a rating is actually submitted
+- render that event in Home feed
+
+Important behavioral rules
+1. Rating is optional.
+2. Skip should dismiss the prompt without creating a rating event.
+3. Rating should only be prompted after Finished or DNF transitions, not for Want to Read / Reading.
+4. The app should not overclaim public sentiment if the user did not explicitly rate.
+5. Existing users and old user_books rows must still work.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. schema/persistence decisions made
+6. how rating now fits into the future personalization/taste-model foundation

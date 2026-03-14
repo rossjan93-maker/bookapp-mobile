@@ -150,6 +150,43 @@ export function sourceCompletionInsight(sc: SourceCompletion): string | null {
 }
 
 // =============================================================================
+// Rating signals — explicit user taste model foundation
+// =============================================================================
+
+export type RatingSignals = {
+  avgRating:        number | null;   // mean rating across all rated books, 1–5
+  ratedCount:       number;          // how many books have an explicit rating
+  lovedCount:       number;          // rating = 5
+  notForMeCount:    number;          // rating <= 2
+};
+
+// -----------------------------------------------------------------------------
+// computeRatingSignals — fetch and derive the user's explicit taste signals
+// -----------------------------------------------------------------------------
+export async function computeRatingSignals(
+  client: SupabaseClient,
+  userId: string,
+): Promise<RatingSignals> {
+  const { data } = await client
+    .from('user_books')
+    .select('rating')
+    .eq('user_id', userId)
+    .not('rating', 'is', null);
+
+  const ratings = (data ?? []).map((r: { rating: number }) => r.rating);
+  if (ratings.length === 0) {
+    return { avgRating: null, ratedCount: 0, lovedCount: 0, notForMeCount: 0 };
+  }
+
+  const sum          = ratings.reduce((a: number, b: number) => a + b, 0);
+  const avgRating    = +( sum / ratings.length).toFixed(2);
+  const lovedCount   = ratings.filter((r: number) => r === 5).length;
+  const notForMeCount = ratings.filter((r: number) => r <= 2).length;
+
+  return { avgRating, ratedCount: ratings.length, lovedCount, notForMeCount };
+}
+
+// =============================================================================
 // Directional trust — compares landing rate in each direction between two users
 // =============================================================================
 

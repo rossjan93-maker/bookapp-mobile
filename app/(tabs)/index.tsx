@@ -32,6 +32,7 @@ type FeedEvent = {
   event_type: string;
   created_at: string;
   book_id: string | null;
+  rating: number | null;
   actor: { username: string; first_name: string | null; last_name: string | null } | null;
   book: { title: string; author: string; cover_url: string | null; external_id: string } | null;
 };
@@ -78,6 +79,7 @@ function eventVerb(eventType: string): string {
     case 'recommendation_started':  return 'started reading';
     case 'recommendation_finished': return 'finished';
     case 'book_finished':           return 'finished';
+    case 'book_rated':              return 'rated';
     default: return '';
   }
 }
@@ -193,7 +195,7 @@ export default function HomeScreen() {
     const { data, error } = await supabase
       .from('activity_events')
       .select(
-        'id, event_type, created_at, book_id, ' +
+        'id, event_type, created_at, book_id, rating, ' +
         'actor:profiles!activity_events_actor_id_fkey(username, first_name, last_name), ' +
         'book:books!activity_events_book_id_fkey(title, author, cover_url, external_id)'
       )
@@ -665,6 +667,11 @@ export default function HomeScreen() {
                     {author ? (
                       <Text style={{ fontSize: 12, color: '#a8a29e', marginBottom: 4 }}>
                         {author}
+                      </Text>
+                    ) : null}
+                    {event.event_type === 'book_rated' && event.rating != null ? (
+                      <Text style={{ fontSize: 12, color: '#78716c', marginBottom: 4 }}>
+                        {'★'.repeat(event.rating)}{'☆'.repeat(5 - event.rating)} · {event.rating}/5
                       </Text>
                     ) : null}
                     <Text style={{ fontSize: 11, color: '#c4b5a5' }}>

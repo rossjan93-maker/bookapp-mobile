@@ -27,16 +27,9 @@ type UserBook = {
   } | null;
 };
 
-type PendingFeedback = { userBookId: string; status: 'finished' | 'dnf' };
+type PendingFeedback = { userBookId: string; bookId: string; status: 'finished' | 'dnf' };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const SENTIMENT_OPTIONS: Array<{ value: 'loved' | 'liked' | 'okay' | 'not_for_me'; label: string }> = [
-  { value: 'loved',      label: 'Loved it'   },
-  { value: 'liked',      label: 'Liked it'   },
-  { value: 'okay',       label: 'Okay'       },
-  { value: 'not_for_me', label: 'Not for me' },
-];
 
 const STATUS_LABELS: Record<UserBookStatus, string> = {
   want_to_read: 'Want to Read',
@@ -145,10 +138,22 @@ export default function LibraryScreen() {
 
   // ── Business logic (unchanged) ────────────────────────────────────────────
 
-  function saveSentiment(userBookId: string, sentiment: string) {
+  function saveRating(userBookId: string, bookId: string, rating: number) {
     setPendingFeedback(null);
-    if (!supabase) return;
-    supabase.from('user_books').update({ sentiment }).eq('id', userBookId).then(() => {});
+    if (!supabase || !currentUserId) return;
+    // Derive sentiment from rating for backward-compat with signals/taste model
+    const sentiment =
+      rating >= 5 ? 'loved' :
+      rating >= 4 ? 'liked' :
+      rating === 3 ? 'okay' :
+      'not_for_me';
+    supabase.from('user_books').update({ rating, sentiment }).eq('id', userBookId).then(() => {});
+    supabase.from('activity_events').insert({
+      actor_id:   currentUserId,
+      event_type: 'book_rated',
+      book_id:    bookId,
+      rating,
+    }).then(() => {});
   }
 
   async function handleUpdateStatus(userBook: UserBook, newStatus: UserBookStatus) {
@@ -239,7 +244,7 @@ export default function LibraryScreen() {
     ));
 
     if (newStatus === 'finished' || newStatus === 'dnf') {
-      setPendingFeedback({ userBookId: userBook.id, status: newStatus });
+      setPendingFeedback({ userBookId: userBook.id, bookId: userBook.book_id, status: newStatus });
     }
     setUpdatingId(null);
   }
@@ -446,8 +451,8 @@ export default function LibraryScreen() {
           ? Math.min(100, Math.round((item.current_page! / item.book!.page_count!) * 100))
           : null;
 
-        const hasSentimentPrompt = pendingFeedback?.userBookId === item.id;
-        const hasExtraRow        = hasButtons || isUpdating || hasSentimentPrompt;
+        const hasPendingRating = pendingFeedback?.userBookId === item.id;
+        const hasExtraRow      = hasButtons || isUpdating || hasPendingRating;
 
         // ── Reading row: card style with pacing-state border ──────────────
         if (isReading) {
@@ -530,24 +535,25 @@ export default function LibraryScreen() {
               </TouchableOpacity>
 
               {/* Action row */}
-              {hasSentimentPrompt ? (
+              {hasPendingRating ? (
                 <View style={{ marginTop: 2 }}>
-                  <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 8 }}>How was it? (optional)</Text>
-                  <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                    {SENTIMENT_OPTIONS.map(opt => (
+                  <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 10 }}>Rate this book (optional)</Text>
+                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                    {[1, 2, 3, 4, 5].map(n => (
                       <TouchableOpacity
-                        key={opt.value}
-                        onPress={() => saveSentiment(item.id, opt.value)}
+                        key={n}
+                        onPress={() => saveRating(item.id, item.book_id, n)}
                         style={{
-                          paddingHorizontal: 12, paddingVertical: 6,
-                          borderRadius: 20, borderWidth: 1, borderColor: '#e7e5e4', backgroundColor: '#faf9f7',
+                          width: 36, height: 36, borderRadius: 18,
+                          borderWidth: 1, borderColor: '#e7e5e4', backgroundColor: '#faf9f7',
+                          alignItems: 'center', justifyContent: 'center',
                         }}
                       >
-                        <Text style={{ fontSize: 12, color: '#57534e' }}>{opt.label}</Text>
+                        <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>{n}</Text>
                       </TouchableOpacity>
                     ))}
                     <TouchableOpacity onPress={() => setPendingFeedback(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Text style={{ fontSize: 12, color: '#a8a29e', paddingHorizontal: 4 }}>Skip</Text>
+                      <Text style={{ fontSize: 12, color: '#a8a29e', marginLeft: 4 }}>Skip</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -615,24 +621,25 @@ export default function LibraryScreen() {
               </View>
             </TouchableOpacity>
 
-            {hasSentimentPrompt ? (
+            {hasPendingRating ? (
               <View style={{ marginLeft: 58, marginTop: 6 }}>
-                <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 8 }}>How was it? (optional)</Text>
-                <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                  {SENTIMENT_OPTIONS.map(opt => (
+                <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 10 }}>Rate this book (optional)</Text>
+                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  {[1, 2, 3, 4, 5].map(n => (
                     <TouchableOpacity
-                      key={opt.value}
-                      onPress={() => saveSentiment(item.id, opt.value)}
+                      key={n}
+                      onPress={() => saveRating(item.id, item.book_id, n)}
                       style={{
-                        paddingHorizontal: 12, paddingVertical: 6,
-                        borderRadius: 20, borderWidth: 1, borderColor: '#e7e5e4', backgroundColor: '#fff',
+                        width: 36, height: 36, borderRadius: 18,
+                        borderWidth: 1, borderColor: '#e7e5e4', backgroundColor: '#faf9f7',
+                        alignItems: 'center', justifyContent: 'center',
                       }}
                     >
-                      <Text style={{ fontSize: 12, color: '#57534e' }}>{opt.label}</Text>
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>{n}</Text>
                     </TouchableOpacity>
                   ))}
                   <TouchableOpacity onPress={() => setPendingFeedback(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Text style={{ fontSize: 12, color: '#a8a29e', paddingHorizontal: 4 }}>Skip</Text>
+                    <Text style={{ fontSize: 12, color: '#a8a29e', marginLeft: 4 }}>Skip</Text>
                   </TouchableOpacity>
                 </View>
               </View>

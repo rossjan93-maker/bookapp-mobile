@@ -22,7 +22,7 @@ React Native mobile app built with Expo Router + Supabase.
 | File | Purpose |
 |------|---------|
 | `app/(tabs)/index.tsx` | Activity feed |
-| `app/(tabs)/library.tsx` | Library: status management, sentiment feedback |
+| `app/(tabs)/library.tsx` | Library: status management, 1–5 rating prompt on finish/DNF |
 | `app/(tabs)/notes.tsx` | Inbox / recommendation list |
 | `app/(tabs)/profile.tsx` | Profile: goals, stats, taste, currently reading |
 | `app/book/[id].tsx` | Book detail: OL metadata, reading progress, pacing |
@@ -31,7 +31,7 @@ React Native mobile app built with Expo Router + Supabase.
 | `app/edit-preferences.tsx` | Taste profile (genres, styles, authors) |
 | `lib/displayName.ts` | Display name helper: getDisplayName, getFirstName, getInitial |
 | `lib/pacing.ts` | Pacing helpers: date-based + page-based |
-| `lib/signals.ts` | Derived signals foundation (completion rate, DNF rate, avg pages/day, rec conversion) |
+| `lib/signals.ts` | Derived signals foundation (completion rate, DNF rate, avg pages/day, rec conversion, rating signals) |
 | `components/CoverThumb.tsx` | Cover image with OL fallback |
 
 ## Database Schema Migrations (apply in order)
@@ -44,6 +44,7 @@ React Native mobile app built with Expo Router + Supabase.
 | `20260313000002_reader_signals.sql` | Adds `reading_progress_events` table; `sentiment` + `source` columns on user_books |
 | `20260313000003_source_attribution_backfill.sql` | Backfills `source = 'recommendation'` for historical rows via `recommendations.user_book_id` join |
 | `20260314000001_profiles_name_fields.sql` | Adds optional `first_name` and `last_name` to profiles |
+| `20260314000002_rating_and_feed_event.sql` | Adds `rating integer` to `user_books` and `activity_events`; adds `book_rated` enum value |
 
 ## Defensive Fallbacks
 Library, profile, and notes queries include try-with-fallback patterns — they attempt queries with new columns (page_count, current_page, source, sentiment) and silently fall back to column-safe queries if migrations haven't been applied yet. This means the app always loads.
