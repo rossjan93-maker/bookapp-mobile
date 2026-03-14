@@ -3,7 +3,7 @@ import { ActivityIndicator, FlatList, ScrollView, Text, TouchableOpacity, View }
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
-import { computeDatePacing, computePagePacing } from '../../lib/pacing';
+import { computePagePacing } from '../../lib/pacing';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,26 +75,14 @@ function readingCardBorderColor(
   item: UserBook,
   yearlyGoal: number | null,
 ): string {
-  if (!yearlyGoal) return '#d6d3d1'; // no goal — neutral, honest
+  // Pacing color requires both a yearly goal AND a known page count.
+  // Without page_count we cannot honestly measure progress, so stay neutral.
+  const pageCount = item.book?.page_count;
+  if (!yearlyGoal || !pageCount || pageCount <= 0) return '#d6d3d1';
 
-  const hasPageData =
-    item.current_page != null && item.current_page > 0 &&
-    item.book?.page_count != null && item.book.page_count > 0;
-
-  let state: 'ahead' | 'on_pace' | 'behind' | null = null;
-
-  if (hasPageData) {
-    const p = computePagePacing(
-      item.current_page!,
-      item.book!.page_count!,
-      item.started_at,
-      yearlyGoal,
-    );
-    state = p.state;
-  } else {
-    const dp = computeDatePacing(item.started_at, yearlyGoal);
-    state = dp?.state ?? null;
-  }
+  // page_count is known — derive state from page-based pacing.
+  const currentPage = item.current_page ?? 0;
+  const { state } = computePagePacing(currentPage, pageCount, item.started_at, yearlyGoal);
 
   if (state === 'ahead' || state === 'on_pace') return '#86efac'; // green
   if (state === 'behind')                        return '#fcd34d'; // amber

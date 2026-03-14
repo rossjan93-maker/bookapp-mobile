@@ -1,0 +1,82 @@
+Make one targeted “Library pacing-color honesty + page-count enrichment consistency” pass.
+
+Do not change package versions.
+Do not add packages.
+Do not change schema.
+Do not refactor unrelated business logic.
+Do not break recommendation, pacing, progress, metadata enrichment, book detail, or library flows.
+
+Goal:
+Fix the inconsistency where reading books without a known page count are getting green pacing styling in Library while remaining neutral elsewhere.
+
+Desired rule:
+- A reading book should only get green/amber pacing-state styling when page_count is known
+- If page_count is unknown, the reading card should stay neutral
+- Automatic page-count enrichment should still be supported from Book Detail
+- Manual page-count entry remains the fallback only when enrichment fails
+
+Scope:
+Inspect and edit only what is necessary, likely:
+- app/(tabs)/library.tsx
+- app/book/[id].tsx only if needed for consistency
+- lib/pacing.ts only if needed for clearer gating
+- no other files unless absolutely necessary
+
+Requirements
+
+A. Fix Library pacing-color gating
+1. In Library, do NOT color a reading card green or amber unless page_count is known.
+2. If page_count is null/unknown, use a neutral reading-card treatment.
+3. This should apply even if date-based pacing info exists.
+4. Keep the progress bar / page UI behavior intact when page_count is known.
+
+B. Match Profile behavior
+1. Library and Profile should follow the same visual rule:
+   - page_count known → pacing color allowed
+   - page_count unknown → neutral
+2. Do not allow Library to imply certainty that Profile does not.
+
+C. Preserve automatic page-count enrichment
+1. Keep or confirm the existing Book Detail behavior that tries to enrich page_count automatically when the book is opened.
+2. If metadata fetch returns a usable page count:
+   - persist it to books.page_count
+   - use it on future Library/Profile renders
+3. Do not require manual entry if enrichment succeeds.
+
+D. Manual entry remains fallback
+1. If enrichment does not find a trustworthy page count, the user should still be able to set it manually in Book Detail.
+2. Do not remove this path.
+
+E. Keep logic honest and explicit
+1. Library visual pacing state should depend on stored, trustworthy page-count-backed progress.
+2. Avoid speculative ahead/on-pace coloring from incomplete data.
+3. Keep the code easy to reason about.
+
+F. Preserve all current flows
+Do not break:
+- Library ordering
+- filters
+- reading card prominence
+- book detail navigation
+- progress updates
+- page count manual entry
+- metadata fetch behavior
+- Profile pacing chips/cards
+
+Implementation guidance
+1. In Library, gate green/amber styling behind:
+   - status === 'reading'
+   - page_count != null
+   - page_count > 0
+   - current_page != null if needed for actual pacing-state use
+2. If those conditions are not met, render the neutral reading-card style.
+3. Do not overcomplicate this with new abstractions unless truly needed.
+4. If Book Detail already enriches page_count automatically, keep it; just ensure the visual rule in Library depends on the persisted page_count.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. pacing-color gating rules used
+6. page-count enrichment behavior confirmed
