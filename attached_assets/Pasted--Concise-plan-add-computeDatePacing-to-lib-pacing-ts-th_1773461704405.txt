@@ -1,0 +1,50 @@
+
+Concise plan: add computeDatePacing() to lib/pacing.ts that returns { note, state } (state = 'on_pace' when daysLeft ≥ 0, 'behind' when negative). Make computePacingNote a thin wrapper so existing callers don't change. In profile.tsx, call computeDatePacing in the fallback branch and use its state for the border/chip — exactly the same way the page-based state is used. No changes to book/[id].tsx.
+
+Let me check the current import line in profile.tsx:
+
+Now I have everything. Two targeted edits:
+
+1. lib/pacing.ts — add computeDatePacing (richer return), make computePacingNote a thin wrapper:
+
+2. app/(tabs)/profile.tsx — import computeDatePacing, use it in the fallback branch:
+
+Now update the fallback branch to extract both note and state from computeDatePacing:
+
+The border and chip styling code from the previous pass is already parameterised on pacingState — so it automatically applies to date-based cards too now that pacingState is populated in the fallback branch. Let me restart and verify:
+
+computePacingNote reference is still lurking somewhere in profile.tsx — let me find it:
+
+No reference in profile.tsx. Let me check other files that might still import the old name:
+
+computePacingNote is still exported from lib/pacing.ts (I kept it as a wrapper), so book/[id].tsx is fine. That console error was from the state before my edits in this session (old bundle). Let me check the fresh logs now that the workflow has restarted with the new code:
+
+Clean build — Metro is running with no errors. The earlier computePacingNote is not defined error was from the stale pre-edit bundle; it's gone now.
+
+Files Changed
+lib/pacing.ts and app/(tabs)/profile.tsx
+
+How Date-Based Pacing State Now Works
+The old computePacingNote returned only a string | null. It's now a thin wrapper over a new computeDatePacing function that returns { note: string; state: PacingState } | null.
+
+State is classified honestly using only time:
+
+daysLeft	State	Example note
+< 0	'behind'	"Slightly behind — aim to finish soon"
+< -14	'behind'	"Behind pace — finish when you can"
+≥ 0	'on_pace'	"On pace — target Mar 29"
+≥ 0, ≤ 5	'on_pace'	"Finish in 4 days to stay on pace"
+'ahead' is never returned from date-based pacing — that can't be determined honestly without knowing how many pages have been read.
+
+In profile.tsx, the fallback branch now populates pacingState from computeDatePacing, which feeds directly into the existing border and chip styling:
+
+on_pace (date-based) → green border, neutral chip — positive momentum
+behind (date-based) → amber border, amber chip — flags slippage even before page count is known
+No goal / no startedAt → no border, no chip (unchanged)
+Manual Test Steps
+Book with page data (normal path): Profile card still shows green/amber border based on actual pages vs expected — unchanged
+Book without page_count, goal set, started recently: card should show a green border + "On pace — target [date]" neutral chip
+Book without page_count, started long past target finish date (e.g. goal 12 books/year, started > 30 days ago, no page count): card should show an amber border + "Behind pace — finish when you can" amber chip
+Book with page_count = null, started 3 days ago, target in 4 days: green border + "Finish in 4 days to stay on pace" neutral chip
+No yearly goal set on profile: no pacing chip, no border on any card — unchanged
+Profile tab focus → Reader Insights, goal bar, friend requests, sent recs all render normally
