@@ -63,6 +63,11 @@ type ReaderSignals = {
   totalRecsReceived: number;  // total recs received (threshold gate)
 };
 
+type ReadingPatterns = {
+  selfAdded: number;   // user_books added by user themselves
+  recAdded: number;    // user_books sourced from a recommendation
+};
+
 const REC_STATUS: Record<string, { bg: string; text: string; label: string }> = {
   sent:     { bg: '#f1f5f9', text: '#475569', label: 'Sent'          },
   saved:    { bg: '#e0f2fe', text: '#0369a1', label: 'Want to Read'  },
@@ -103,6 +108,7 @@ export default function ProfileScreen() {
     finishedFromRecs: number;
   } | null>(null);
   const [signals, setSignals]           = useState<ReaderSignals | null>(null);
+  const [patterns, setPatterns]         = useState<ReadingPatterns | null>(null);
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState<string | null>(null);
 
@@ -137,6 +143,8 @@ export default function ProfileScreen() {
         recReceivedTotalRes,
         recReceivedFinishedRes,
         progressEventsRes,
+        selfAddedRes,
+        recAddedRes,
       ] = await Promise.all([
         supabase.from('profiles').select('username, yearly_reading_goal').eq('id', user.id).single(),
         supabase
@@ -203,6 +211,17 @@ export default function ProfileScreen() {
           .select('user_book_id, page, created_at')
           .eq('user_id', user.id)
           .order('created_at', { ascending: true }),
+        // ── Pattern queries ──
+        supabase
+          .from('user_books')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('source', 'self_added'),
+        supabase
+          .from('user_books')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('source', 'recommendation'),
       ]);
 
       // Currently reading: try with progress columns, fall back if migration not yet applied.
@@ -257,6 +276,11 @@ export default function ProfileScreen() {
       const avgPagesPerDay = computeAvgPagesPerDay(progressEvents);
 
       setSignals({ completionRate, avgPagesPerDay, recConversionRate, resolved, totalRecsReceived });
+
+      setPatterns({
+        selfAdded: selfAddedRes.count ?? 0,
+        recAdded:  recAddedRes.count  ?? 0,
+      });
 
       setLoading(false);
     }
@@ -776,6 +800,112 @@ export default function ProfileScreen() {
                 <View style={{ paddingHorizontal: 18, paddingVertical: 18 }}>
                   <Text style={{ fontSize: 14, color: '#a8a29e', lineHeight: 21 }}>
                     We're still learning your reading habits. Finish a few more books to unlock insights.
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+        );
+      })()}
+
+      {/* ── Reading Patterns ── */}
+      {(() => {
+        const lines: string[] = [];
+
+        // Pattern 1: Library source mix
+        // Threshold: ≥5 books with source attribution data
+        if (patterns) {
+          const sourceTotal = patterns.selfAdded + patterns.recAdded;
+          if (sourceTotal >= 5) {
+            const recShare = patterns.recAdded / sourceTotal;
+            if (recShare >= 0.7) {
+              lines.push("Your reading list leans heavily on friends' recommendations — you trust their taste.");
+            } else if (recShare >= 0.4) {
+              lines.push("About half your library came from recommendations, half from your own picks.");
+            } else {
+              lines.push("Most of your library is self-picked — you know what you want to read.");
+            }
+          }
+        }
+
+        // Pattern 2: Completion tendency (editorial phrasing)
+        // Threshold: ≥5 resolved books (stricter than Reader Insights' ≥3)
+        if (signals && signals.resolved >= 5 && signals.completionRate !== null) {
+          const rate = signals.completionRate;
+          let phrase: string;
+          if (rate >= 0.90)      phrase = 'nearly every book you start';
+          else if (rate >= 0.75) phrase = 'about 3 in 4 books you start';
+          else if (rate >= 0.60) phrase = 'about 2 in 3 books you start';
+          else if (rate >= 0.50) phrase = 'about half the books you start';
+          else                   phrase = 'fewer than half the books you start';
+          lines.push(`You tend to finish ${phrase}.`);
+        }
+
+        // Pattern 3: Social direction — giver vs receiver
+        // Threshold: ≥3 total recommendation interactions
+        const sentCount = sentRecs.length;
+        const recvCount = signals?.totalRecsReceived ?? 0;
+        if (sentCount + recvCount >= 3) {
+          if (sentCount > recvCount * 1.5) {
+            lines.push("You recommend more than you receive — your friends are in good hands.");
+          } else if (recvCount > sentCount * 1.5) {
+            lines.push("Friends recommend to you more than you recommend back.");
+          } else {
+            lines.push("You and your friends trade recommendations in both directions.");
+          }
+        }
+
+        // Pattern 4: Pace context
+        // Threshold: avgPagesPerDay ≥ 5 (filters out noise from very sparse data)
+        if (signals?.avgPagesPerDay && signals.avgPagesPerDay >= 5) {
+          const days = Math.round(300 / signals.avgPagesPerDay);
+          lines.push(
+            `At your typical pace, a 300-page book takes you about ${days} day${days === 1 ? '' : 's'}.`
+          );
+        }
+
+        return (
+          <View style={{ paddingHorizontal: 20, marginBottom: 28 }}>
+            <SectionLabel>Reading Patterns</SectionLabel>
+            <View style={{
+              backgroundColor: '#fff',
+              borderRadius: 14,
+              overflow: 'hidden',
+              shadowColor: '#000',
+              shadowOpacity: 0.04,
+              shadowRadius: 6,
+              shadowOffset: { width: 0, height: 1 },
+              elevation: 1,
+            }}>
+              {lines.length > 0 ? lines.map((line, i) => (
+                <View
+                  key={i}
+                  style={{
+                    paddingHorizontal: 18,
+                    paddingVertical: 15,
+                    borderTopWidth: i > 0 ? 1 : 0,
+                    borderTopColor: '#f5f5f4',
+                    flexDirection: 'row',
+                    alignItems: 'flex-start',
+                    gap: 12,
+                  }}
+                >
+                  <View style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: 3,
+                    backgroundColor: '#d6d3d1',
+                    marginTop: 7,
+                    flexShrink: 0,
+                  }} />
+                  <Text style={{ fontSize: 14, color: '#1c1917', lineHeight: 21, flex: 1 }}>
+                    {line}
+                  </Text>
+                </View>
+              )) : (
+                <View style={{ paddingHorizontal: 18, paddingVertical: 18 }}>
+                  <Text style={{ fontSize: 14, color: '#a8a29e', lineHeight: 21 }}>
+                    As you finish more books, your reading patterns will take shape.
                   </Text>
                 </View>
               )}

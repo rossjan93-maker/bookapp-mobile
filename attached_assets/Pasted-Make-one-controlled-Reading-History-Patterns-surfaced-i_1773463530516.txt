@@ -1,0 +1,126 @@
+Make one controlled “Reading History / Patterns surfaced in Profile” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not add real AI / LLM integrations yet.
+Do not refactor unrelated business logic.
+Do not break recommendation / credibility / activity flows.
+
+Goal:
+Turn the reading history and signal data already captured in the app into a compact, credible “Reading Patterns” section in Profile that helps users understand how they actually read.
+
+This is not a full analytics dashboard.
+It is a thoughtful, high-signal profile enhancement.
+
+Files allowed to change:
+- app/(tabs)/profile.tsx
+- lib/signals.ts
+- add one tiny shared helper/component only if truly useful
+- no schema changes unless absolutely necessary
+
+Context:
+The app now has:
+- yearly reading goal
+- currently reading
+- reader preferences
+- reader insights
+- progress history
+- page count recovery
+- sentiment
+- source attribution
+- recommendation outcomes
+
+Use those inputs carefully.
+Only surface patterns that are truly supported by current data.
+
+Primary product objectives
+
+A. Add a Reading Patterns section to Profile
+Requirements:
+1. Add a new section in Profile called something like:
+   - Reading Patterns
+   - Your Reading Patterns
+   - Reading History
+2. This should feel editorial and compact, not like a spreadsheet.
+3. Place it in a sensible position in Profile, likely below Reader Insights and above lower-priority admin/social sections.
+
+B. Surface a small set of credible patterns
+Requirements:
+1. Use the current data foundation to derive a few high-value patterns.
+2. Good candidates include:
+   - self-added vs recommended mix
+   - completion vs DNF tendency
+   - average time-to-finish when enough data exists
+   - most common genres/subjects when enough metadata exists
+   - author repeat behavior if enough repetition exists
+3. You do NOT need to show all of these.
+4. Prefer 3–5 strong patterns over a noisy list.
+5. Only show patterns when there is enough data to support them.
+
+C. Data sufficiency rules
+Requirements:
+1. Add clear threshold gating so the app does not overstate patterns from tiny samples.
+2. If there is not enough data, show a graceful placeholder such as:
+   - “As you finish more books, your reading patterns will take shape.”
+   - “We’re still learning how you read.”
+3. Keep all pattern claims honest and grounded in actual captured data.
+
+D. Use existing signals where appropriate
+Requirements:
+1. Extend lib/signals.ts if needed.
+2. Keep the logic analyzable and explicit.
+3. Do not build AI summaries or speculative personality labels.
+4. Do not invent signals the app does not truly have.
+
+E. UI style
+Requirements:
+1. Keep the current editorial reading-app design language:
+   - warm neutrals
+   - strong hierarchy
+   - compact premium cards/tiles/rows
+2. Avoid dashboard clutter.
+3. Prefer readable human phrasing over analyst jargon.
+4. Good examples:
+   - “Most of your finished books have come from your own library.”
+   - “You finish about 3 out of every 4 books you start.”
+   - “You tend to finish recommended books less often than self-picked ones.”
+   - “You’ve been returning to literary fiction most often.”
+5. Keep copy grounded in actual data and thresholds.
+
+F. Preserve all current flows
+Do not break:
+- Profile loading
+- yearly goal editing
+- Currently Reading
+- Reader Insights
+- Friend Requests
+- Recommendations Sent
+- Sign Out
+- book detail routing
+- pacing
+- progress logging
+- sentiment capture
+- preference capture / edit taste
+
+Implementation guidance
+1. Prefer adding one coherent section rather than scattering pattern fragments.
+2. Keep the number of surfaced patterns intentionally small.
+3. If certain metadata like genres/subjects is too inconsistent, degrade gracefully.
+4. If a compact card with 3–4 pattern lines is best, do that.
+5. If mini tiles are cleaner, that is also fine.
+6. Use thresholds to avoid weak claims.
+
+Important constraints
+- This is a behavior-analysis surface, not an AI feature.
+- Do not build full charts yet.
+- Do not build year-over-year dashboards yet.
+- Do not add fake interpretive labels.
+- The output should feel insightful but restrained.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. data sufficiency / threshold rules used
+6. what was surfaced now vs intentionally deferred for later deeper analytics / adaptive intelligence
