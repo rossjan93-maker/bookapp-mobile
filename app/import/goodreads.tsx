@@ -228,8 +228,8 @@ const GOODREADS_EXPORT_URL = 'https://www.goodreads.com/review/import';
 function IdleView({ onPickFile, isWeb }: { onPickFile: () => void; isWeb: boolean }) {
   const steps = [
     {
-      label: 'Open Goodreads in your browser',
-      sub: 'Tap the black button below to complete this step — it opens the Goodreads export page directly in your browser.',
+      label: 'Open Goodreads in Safari or Chrome',
+      sub: 'Tap the black button below. If the Goodreads app opens instead of a browser, tap "..." or the share icon inside the app and choose "Open in Safari" or "Open in Browser".',
     },
     {
       label: 'Switch to Desktop Site',
@@ -240,10 +240,10 @@ function IdleView({ onPickFile, isWeb }: { onPickFile: () => void; isWeb: boolea
       sub: 'Goodreads is subtle here. It may quietly add a new line under the button, or the CSV may open directly in a preview. Both mean it worked.',
     },
     {
-      label: 'Get the file back here',
+      label: 'Save the file and come back',
       sub: isWeb
-        ? 'If a CSV preview opened: close it and go back to Safari. Tap the download icon in the Safari toolbar to find the file. Then come back here and tap "Choose CSV File" below — look for goodreads_library_export.csv.'
-        : 'If a CSV preview opened: close it and go back to Safari. Tap the download icon in the Safari toolbar to find the file. Then open readstack in a web browser and upload goodreads_library_export.csv.',
+        ? 'If a preview opened, tap the Share icon and choose "Save to Files". Then come back here and tap "Choose CSV File" below — look for goodreads_library_export.csv.'
+        : 'If a preview opened, tap the Share icon and choose "Save to Files". Then open readstack in a web browser and upload goodreads_library_export.csv.',
     },
   ];
 
@@ -253,6 +253,23 @@ function IdleView({ onPickFile, isWeb }: { onPickFile: () => void; isWeb: boolea
       <PageSubtitle>
         Bring your full reading history into readstack. You'll see a preview before anything is saved.
       </PageSubtitle>
+
+      {/* ── Browser-only warning ── */}
+      <View style={{
+        backgroundColor: '#fffbf5',
+        borderRadius: 12,
+        padding: 14,
+        borderLeftWidth: 3,
+        borderLeftColor: '#d4a574',
+        marginBottom: 20,
+      }}>
+        <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 3 }}>
+          Do this in Safari or Chrome — not the Goodreads app
+        </Text>
+        <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
+          If the Goodreads app opens when you tap the button below, use the app menu to open the page in Safari or Chrome instead.
+        </Text>
+      </View>
 
       <Card>
         <View style={{ padding: 18 }}>
@@ -298,6 +315,19 @@ function IdleView({ onPickFile, isWeb }: { onPickFile: () => void; isWeb: boolea
         </Text>
       </TouchableOpacity>
 
+      {/* Fallback: selectable URL for manual paste into Safari */}
+      <View style={{ marginTop: 12, alignItems: 'center', paddingHorizontal: 8 }}>
+        <Text style={{ fontSize: 11, color: '#a8a29e', marginBottom: 4, textAlign: 'center' }}>
+          If the app opens instead, copy this link and paste it into Safari:
+        </Text>
+        <Text
+          selectable
+          style={{ fontSize: 12, color: '#57534e', textAlign: 'center' }}
+        >
+          goodreads.com/review/import
+        </Text>
+      </View>
+
       {/* Divider */}
       <View style={{
         flexDirection: 'row',
@@ -342,7 +372,7 @@ function IdleView({ onPickFile, isWeb }: { onPickFile: () => void; isWeb: boolea
             Uploading the file
           </Text>
           <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
-            Once you've downloaded the CSV, open readstack in a web browser and come back to this screen to upload it.
+            Once the CSV is saved to Files, open readstack in a web browser and come back to this screen to upload it.
           </Text>
         </View>
       )}
