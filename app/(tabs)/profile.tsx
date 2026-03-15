@@ -21,6 +21,13 @@ type Profile = {
   yearly_reading_goal: number | null;
 };
 
+type AcceptedFriend = {
+  id: string;
+  username: string;
+  first_name: string | null;
+  last_name: string | null;
+};
+
 type PendingRequest = {
   id: string;
   requester_id: string;
@@ -101,6 +108,7 @@ export default function ProfileScreen() {
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState<string | null>(null);
   const [recsExpanded, setRecsExpanded]         = useState(false);
+  const [acceptedFriends, setAcceptedFriends]   = useState<AcceptedFriend[]>([]);
 
 
   useFocusEffect(useCallback(() => {
@@ -118,6 +126,7 @@ export default function ProfileScreen() {
         profileRes,
         requestsRes,
         friendsRes,
+        friendsListRes,
         landedRes,
         finishedFromRecRes,
         finishedAllRes,
@@ -144,6 +153,15 @@ export default function ProfileScreen() {
         supabase
           .from('friendships')
           .select('*', { count: 'exact', head: true })
+          .eq('status', 'accepted')
+          .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`),
+        supabase
+          .from('friendships')
+          .select(
+            'id, requester_id, addressee_id, ' +
+            'requester:profiles!friendships_requester_id_fkey(id, username, first_name, last_name), ' +
+            'addressee:profiles!friendships_addressee_id_fkey(id, username, first_name, last_name)'
+          )
           .eq('status', 'accepted')
           .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`),
         supabase
@@ -247,6 +265,18 @@ export default function ProfileScreen() {
       setPendingRequests((requestsRes.data as unknown as PendingRequest[]) ?? []);
       setSentRecs((sentRecsRes.data as unknown as SentRecommendation[]) ?? []);
       setPrefs(prefsRes.data ?? null);
+
+      // Derive accepted friends list from friendship rows
+      type FriendshipListRow = {
+        requester_id: string;
+        addressee_id: string;
+        requester: AcceptedFriend | null;
+        addressee: AcceptedFriend | null;
+      };
+      const friendsList = ((friendsListRes.data ?? []) as FriendshipListRow[])
+        .map(f => (f.requester_id === user.id ? f.addressee : f.requester))
+        .filter((f): f is AcceptedFriend => f !== null);
+      setAcceptedFriends(friendsList);
       setStats({
         friendsCount:      friendsRes.count ?? 0,
         recsLanded:        landedRes.count ?? 0,
@@ -686,6 +716,79 @@ export default function ProfileScreen() {
           ))}
         </View>
       )}
+
+      {/* ── Friends ── */}
+      <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
+        <SectionLabel>Friends</SectionLabel>
+        {acceptedFriends.length === 0 ? (
+          <Text style={{ color: '#a8a29e', fontSize: 14 }}>No friends yet.</Text>
+        ) : (
+          <View style={{
+            backgroundColor: '#fff',
+            borderRadius: 14,
+            overflow: 'hidden',
+            shadowColor: '#000',
+            shadowOpacity: 0.04,
+            shadowRadius: 6,
+            shadowOffset: { width: 0, height: 1 },
+            elevation: 1,
+          }}>
+            {acceptedFriends.map((friend, idx) => {
+              const name = getDisplayName(friend);
+              const initial = name.charAt(0).toUpperCase();
+              const showUsername = !!(friend.first_name || friend.last_name);
+              return (
+                <TouchableOpacity
+                  key={friend.id}
+                  activeOpacity={0.7}
+                  onPress={() => router.push({
+                    pathname: '/friend/[id]',
+                    params: {
+                      id: friend.id,
+                      username: friend.username,
+                      firstName: friend.first_name ?? '',
+                      lastName: friend.last_name ?? '',
+                    },
+                  })}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 13,
+                    paddingHorizontal: 16,
+                    borderTopWidth: idx > 0 ? 1 : 0,
+                    borderTopColor: '#f5f5f4',
+                  }}
+                >
+                  <View style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: '#e7e5e4',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginRight: 12,
+                  }}>
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: '#57534e' }}>
+                      {initial}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 15, color: '#1c1917', fontWeight: '500' }}>
+                      {name}
+                    </Text>
+                    {showUsername && (
+                      <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 1 }}>
+                        @{friend.username}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={{ fontSize: 18, color: '#d6d3d1', marginLeft: 8 }}>›</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+      </View>
 
       {/* ── Sent Recommendations ── */}
       <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
