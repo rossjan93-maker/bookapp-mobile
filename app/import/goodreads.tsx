@@ -228,22 +228,22 @@ const GOODREADS_EXPORT_URL = 'https://www.goodreads.com/review/import';
 function IdleView({ onPickFile, isWeb }: { onPickFile: () => void; isWeb: boolean }) {
   const steps = [
     {
-      label: 'Open the Goodreads export page in your phone browser',
-      sub: 'Tap the button below to open it directly.',
+      label: 'Open Goodreads in your browser',
+      sub: 'Tap the black button below to complete this step — it opens the Goodreads export page directly in your browser.',
     },
     {
       label: 'Switch to Desktop Site',
-      sub: 'iPhone: tap ᴬᴬ in the address bar → "Request Desktop Website". Android: tap ⋮ → "Desktop site".',
+      sub: 'iPhone: tap ᴬᴬ in the address bar → "Request Desktop Website". Android: tap ⋮ → "Desktop site". The export button only appears in desktop mode.',
     },
     {
-      label: 'Tap "Export Library"',
-      sub: 'A file called goodreads_library_export.csv will download to your device.',
+      label: 'Tap "Export Library" — and watch carefully',
+      sub: 'Goodreads may give little or no visible confirmation. Look for a quiet new line appearing under the button, or a file starting to open on your phone. Either means it worked.',
     },
     {
-      label: 'Come back and upload the file',
+      label: 'Get the file back here',
       sub: isWeb
-        ? 'Tap "Choose CSV File" below to upload your goodreads_library_export.csv.'
-        : 'Open readstack in a browser, go to Settings → Import from Goodreads, and upload the CSV.',
+        ? 'If a viewer opened the file on your phone: tap Share → Save to Files (or Downloads), then come back here and tap "Choose CSV File" below. Look for goodreads_library_export.csv.'
+        : 'If a viewer opened the file: tap Share → Save to Files (or Downloads). Then open readstack in a browser, go to Settings → Import from Goodreads, and select goodreads_library_export.csv.',
     },
   ];
 
