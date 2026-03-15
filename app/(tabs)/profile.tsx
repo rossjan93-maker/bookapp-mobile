@@ -100,6 +100,8 @@ export default function ProfileScreen() {
   const [sourceCompletion, setSourceCompletion] = useState<SourceCompletion | null>(null);
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState<string | null>(null);
+  const [insightsExpanded, setInsightsExpanded] = useState(false);
+  const [recsExpanded, setRecsExpanded]         = useState(false);
 
 
   useFocusEffect(useCallback(() => {
@@ -329,6 +331,83 @@ export default function ProfileScreen() {
     !!prefs.favorite_authors
   );
 
+  // ── Unified Reading Intelligence rows ─────────────────────────────────────
+  type IntelRow =
+    | { kind: 'stat'; key: string; value: string; label: string }
+    | { kind: 'text'; key: string; text: string };
+
+  const allIntelRows: IntelRow[] = [];
+
+  // Stat rows (former Reader Insights)
+  if (signals) {
+    if (signals.resolved >= 3 && signals.completionRate !== null) {
+      const pct = Math.round(signals.completionRate * 100);
+      allIntelRows.push({
+        kind: 'stat', key: 'completion', value: `${pct}%`,
+        label: pct >= 80 ? 'of books finished — you rarely put them down'
+             : pct >= 50 ? 'of books read to completion'
+             : 'of books finished — it\'s fine to DNF',
+      });
+    }
+    if (signals.avgPagesPerDay !== null) {
+      allIntelRows.push({
+        kind: 'stat', key: 'pace', value: `~${signals.avgPagesPerDay}`,
+        label: 'pages read per day on average',
+      });
+    }
+    if (signals.totalRecsReceived >= 3 && signals.recConversionRate !== null) {
+      const pct = Math.round(signals.recConversionRate * 100);
+      allIntelRows.push({
+        kind: 'stat', key: 'recs', value: `${pct}%`,
+        label: 'of recommendations you\'ve finished',
+      });
+    }
+  }
+
+  // Editorial text rows (former Reading Patterns)
+  if (patterns) {
+    const sourceTotal = patterns.selfAdded + patterns.recAdded;
+    if (sourceTotal >= 5) {
+      const recShare = patterns.recAdded / sourceTotal;
+      allIntelRows.push({
+        kind: 'text', key: 'source_mix',
+        text: recShare >= 0.7 ? "Your reading list leans heavily on friends' recommendations — you trust their taste."
+            : recShare >= 0.4 ? "About half your library came from recommendations, half from your own picks."
+            : "Most of your library is self-picked — you know what you want to read.",
+      });
+    }
+  }
+  if (signals && signals.resolved >= 5 && signals.completionRate !== null) {
+    const rate = signals.completionRate;
+    const phrase = rate >= 0.90 ? 'nearly every book you start'
+      : rate >= 0.75 ? 'about 3 in 4 books you start'
+      : rate >= 0.60 ? 'about 2 in 3 books you start'
+      : rate >= 0.50 ? 'about half the books you start'
+      : 'fewer than half the books you start';
+    allIntelRows.push({ kind: 'text', key: 'completion_tendency', text: `You tend to finish ${phrase}.` });
+  }
+  if (sourceCompletion) {
+    const srcLine = sourceCompletionInsight(sourceCompletion);
+    if (srcLine) allIntelRows.push({ kind: 'text', key: 'source_completion', text: srcLine });
+  }
+  const sentCountIntel = sentRecs.length;
+  const recvCountIntel = signals?.totalRecsReceived ?? 0;
+  if (sentCountIntel + recvCountIntel >= 3) {
+    const text = sentCountIntel > recvCountIntel * 1.5
+      ? "You recommend more than you receive — your friends are in good hands."
+      : recvCountIntel > sentCountIntel * 1.5
+      ? "Friends recommend to you more than you recommend back."
+      : "You and your friends trade recommendations in both directions.";
+    allIntelRows.push({ kind: 'text', key: 'social_direction', text });
+  }
+  if (signals?.avgPagesPerDay && signals.avgPagesPerDay >= 5) {
+    const days = Math.round(300 / signals.avgPagesPerDay);
+    allIntelRows.push({
+      kind: 'text', key: 'pace_context',
+      text: `At your typical pace, a 300-page book takes you about ${days} day${days === 1 ? '' : 's'}.`,
+    });
+  }
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: '#faf9f7' }}
@@ -449,7 +528,16 @@ export default function ProfileScreen() {
           </View>
           <View style={{ width: 1, backgroundColor: '#f0ede8', alignSelf: 'stretch', marginVertical: 6 }} />
           <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 30, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 36 }}>{stats.friendsCount}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+              <Text style={{ fontSize: 30, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 36 }}>{stats.friendsCount}</Text>
+              {pendingRequests.length > 0 && (
+                <View style={{
+                  width: 8, height: 8, borderRadius: 4,
+                  backgroundColor: '#f59e0b',
+                  marginTop: 5, marginLeft: 3,
+                }} />
+              )}
+            </View>
             <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 2, letterSpacing: 0.7, textTransform: 'uppercase' }}>Friends</Text>
           </View>
           <View style={{ width: 1, backgroundColor: '#f0ede8', alignSelf: 'stretch', marginVertical: 6 }} />
@@ -461,15 +549,13 @@ export default function ProfileScreen() {
       )}
 
       {/* ── Taste profile card ── */}
-      <View style={{ paddingHorizontal: 20, marginBottom: 24 }}>
+      <View style={{ paddingHorizontal: 20, marginTop: 24, marginBottom: 24 }}>
         <TouchableOpacity
           onPress={() => router.push('/edit-preferences')}
           style={{
             backgroundColor: '#fff',
             borderRadius: 14,
             padding: 16,
-            flexDirection: 'row',
-            alignItems: 'center',
             shadowColor: '#000',
             shadowOpacity: 0.04,
             shadowRadius: 6,
@@ -477,235 +563,141 @@ export default function ProfileScreen() {
             elevation: 1,
           }}
         >
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 14, fontWeight: '700', color: '#1c1917', marginBottom: 4 }}>
-              {hasTasteData ? 'Reading Taste' : 'Build your taste profile'}
-            </Text>
-            {hasTasteData ? (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
-                {prefs!.favorite_genres.slice(0, 4).map(g => (
-                  <View key={g} style={{ backgroundColor: '#f5f5f4', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
-                    <Text style={{ fontSize: 11, color: '#57534e' }}>{g}</Text>
-                  </View>
-                ))}
-                {(prefs!.favorite_genres.length + prefs!.reading_styles.length) > 4 && (
-                  <View style={{ backgroundColor: '#f5f5f4', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
-                    <Text style={{ fontSize: 11, color: '#a8a29e' }}>
-                      +{prefs!.favorite_genres.length + prefs!.reading_styles.length - 4} more
-                    </Text>
-                  </View>
-                )}
-              </View>
-            ) : (
-              <Text style={{ fontSize: 13, color: '#a8a29e', lineHeight: 19 }}>
-                Genres, styles, and authors — unlocks future taste insights.
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: hasTasteData ? 12 : 4 }}>
+                {hasTasteData ? 'Reading Taste' : 'Build your taste profile'}
               </Text>
-            )}
+              {hasTasteData ? (
+                <View style={{ gap: 10 }}>
+                  {(prefs!.favorite_genres?.length ?? 0) > 0 && (
+                    <View>
+                      <Text style={{
+                        fontSize: 10, fontWeight: '700', color: '#a8a29e',
+                        letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 6,
+                      }}>Genres</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+                        {prefs!.favorite_genres.slice(0, 4).map(g => (
+                          <View key={g} style={{
+                            backgroundColor: '#f5f5f4', borderRadius: 20,
+                            paddingHorizontal: 10, paddingVertical: 4,
+                          }}>
+                            <Text style={{ fontSize: 12, color: '#57534e' }}>{g}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+                  {(prefs!.reading_styles?.length ?? 0) > 0 && (
+                    <View>
+                      <Text style={{
+                        fontSize: 10, fontWeight: '700', color: '#a8a29e',
+                        letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 6,
+                      }}>Style</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+                        {prefs!.reading_styles.slice(0, 3).map(s => (
+                          <View key={s} style={{
+                            backgroundColor: '#faf9f7', borderRadius: 20,
+                            paddingHorizontal: 10, paddingVertical: 4,
+                            borderWidth: 1, borderColor: '#e7e5e4',
+                          }}>
+                            <Text style={{ fontSize: 12, color: '#78716c' }}>{s}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+                  {!!prefs!.favorite_authors && (
+                    <Text style={{ fontSize: 12, color: '#a8a29e' }}>
+                      Incl. {prefs!.favorite_authors.split(',')[0].trim()}
+                    </Text>
+                  )}
+                </View>
+              ) : (
+                <Text style={{ fontSize: 13, color: '#a8a29e', lineHeight: 19 }}>
+                  Genres, styles, and authors — unlocks future taste insights.
+                </Text>
+              )}
+            </View>
+            <Text style={{ fontSize: 20, color: '#d6d3d1', marginLeft: 12, marginTop: 2 }}>›</Text>
           </View>
-          <Text style={{ fontSize: 20, color: '#d6d3d1', marginLeft: 10 }}>›</Text>
         </TouchableOpacity>
       </View>
 
-      {/* ── Reader Insights ── */}
-      {signals && (() => {
-        type InsightItem = { key: string; value: string; label: string };
-        const items: InsightItem[] = [];
-
-        // Completion rate — gated on ≥ 3 resolved books
-        if (signals.resolved >= 3 && signals.completionRate !== null) {
-          const pct = Math.round(signals.completionRate * 100);
-          items.push({
-            key: 'completion',
-            value: `${pct}%`,
-            label: pct >= 80
-              ? 'of books finished — you rarely put them down'
-              : pct >= 50
-              ? 'of books read to completion'
-              : 'of books finished — it\'s fine to DNF',
-          });
-        }
-
-        // Avg pages/day — gated on actual data
-        if (signals.avgPagesPerDay !== null) {
-          items.push({
-            key: 'pace',
-            value: `~${signals.avgPagesPerDay}`,
-            label: 'pages read per day on average',
-          });
-        }
-
-        // Rec conversion — gated on ≥ 3 recs received
-        if (signals.totalRecsReceived >= 3 && signals.recConversionRate !== null) {
-          const pct = Math.round(signals.recConversionRate * 100);
-          items.push({
-            key: 'recs',
-            value: `${pct}%`,
-            label: 'of recommendations you\'ve finished',
-          });
-        }
-
-        return (
-          <View style={{ paddingHorizontal: 20, marginBottom: 28 }}>
-            <SectionLabel>Reader Insights</SectionLabel>
-            <View style={{
-              backgroundColor: '#fff',
-              borderRadius: 14,
-              overflow: 'hidden',
-              shadowColor: '#000',
-              shadowOpacity: 0.04,
-              shadowRadius: 6,
-              shadowOffset: { width: 0, height: 1 },
-              elevation: 1,
-            }}>
-              {items.length > 0 ? items.map((insight, i) => (
-                <View
-                  key={insight.key}
-                  style={{
-                    paddingHorizontal: 18,
-                    paddingVertical: 14,
-                    borderTopWidth: i > 0 ? 1 : 0,
-                    borderTopColor: '#f5f5f4',
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 14,
-                  }}
-                >
-                  <Text style={{
-                    fontSize: 26,
-                    fontWeight: '800',
-                    color: '#1c1917',
-                    minWidth: 66,
+      {/* ── Reading Intelligence (merged Insights + Patterns) ── */}
+      <View style={{ paddingHorizontal: 20, marginBottom: 28 }}>
+        <SectionLabel>Reading Intelligence</SectionLabel>
+        <View style={{
+          backgroundColor: '#fff',
+          borderRadius: 14,
+          overflow: 'hidden',
+          shadowColor: '#000',
+          shadowOpacity: 0.04,
+          shadowRadius: 6,
+          shadowOffset: { width: 0, height: 1 },
+          elevation: 1,
+        }}>
+          {allIntelRows.length === 0 ? (
+            <View style={{ paddingHorizontal: 18, paddingVertical: 18 }}>
+              <Text style={{ fontSize: 14, color: '#a8a29e', lineHeight: 21 }}>
+                Finish a few more books to unlock reading insights.
+              </Text>
+            </View>
+          ) : (
+            <>
+              {(insightsExpanded ? allIntelRows : allIntelRows.slice(0, 2)).map((row, i) => (
+                row.kind === 'stat' ? (
+                  <View key={row.key} style={{
+                    paddingHorizontal: 18, paddingVertical: 14,
+                    borderTopWidth: i > 0 ? 1 : 0, borderTopColor: '#f5f5f4',
+                    flexDirection: 'row', alignItems: 'center', gap: 14,
                   }}>
-                    {insight.value}
-                  </Text>
-                  <Text style={{ fontSize: 13, color: '#78716c', flex: 1, lineHeight: 19 }}>
-                    {insight.label}
-                  </Text>
-                </View>
-              )) : (
-                <View style={{ paddingHorizontal: 18, paddingVertical: 18 }}>
-                  <Text style={{ fontSize: 14, color: '#a8a29e', lineHeight: 21 }}>
-                    We're still learning your reading habits. Finish a few more books to unlock insights.
-                  </Text>
-                </View>
-              )}
-            </View>
-          </View>
-        );
-      })()}
-
-      {/* ── Reading Patterns ── */}
-      {(() => {
-        const lines: string[] = [];
-
-        // Pattern 1: Library source mix
-        // Threshold: ≥5 books with source attribution data
-        if (patterns) {
-          const sourceTotal = patterns.selfAdded + patterns.recAdded;
-          if (sourceTotal >= 5) {
-            const recShare = patterns.recAdded / sourceTotal;
-            if (recShare >= 0.7) {
-              lines.push("Your reading list leans heavily on friends' recommendations — you trust their taste.");
-            } else if (recShare >= 0.4) {
-              lines.push("About half your library came from recommendations, half from your own picks.");
-            } else {
-              lines.push("Most of your library is self-picked — you know what you want to read.");
-            }
-          }
-        }
-
-        // Pattern 2: Completion tendency (editorial phrasing)
-        // Threshold: ≥5 resolved books (stricter than Reader Insights' ≥3)
-        if (signals && signals.resolved >= 5 && signals.completionRate !== null) {
-          const rate = signals.completionRate;
-          let phrase: string;
-          if (rate >= 0.90)      phrase = 'nearly every book you start';
-          else if (rate >= 0.75) phrase = 'about 3 in 4 books you start';
-          else if (rate >= 0.60) phrase = 'about 2 in 3 books you start';
-          else if (rate >= 0.50) phrase = 'about half the books you start';
-          else                   phrase = 'fewer than half the books you start';
-          lines.push(`You tend to finish ${phrase}.`);
-        }
-
-        // Pattern 3: Completion by source — self-picked vs recommended
-        // Threshold: ≥3 resolved in each bucket, ≥10pp absolute rate difference to state direction
-        if (sourceCompletion) {
-          const srcLine = sourceCompletionInsight(sourceCompletion);
-          if (srcLine) lines.push(srcLine);
-        }
-
-        // Pattern 4: Social direction — giver vs receiver
-        // Threshold: ≥3 total recommendation interactions
-        const sentCount = sentRecs.length;
-        const recvCount = signals?.totalRecsReceived ?? 0;
-        if (sentCount + recvCount >= 3) {
-          if (sentCount > recvCount * 1.5) {
-            lines.push("You recommend more than you receive — your friends are in good hands.");
-          } else if (recvCount > sentCount * 1.5) {
-            lines.push("Friends recommend to you more than you recommend back.");
-          } else {
-            lines.push("You and your friends trade recommendations in both directions.");
-          }
-        }
-
-        // Pattern 5: Pace context
-        // Threshold: avgPagesPerDay ≥ 5 (filters out noise from very sparse data)
-        if (signals?.avgPagesPerDay && signals.avgPagesPerDay >= 5) {
-          const days = Math.round(300 / signals.avgPagesPerDay);
-          lines.push(
-            `At your typical pace, a 300-page book takes you about ${days} day${days === 1 ? '' : 's'}.`
-          );
-        }
-
-        return (
-          <View style={{ paddingHorizontal: 20, marginBottom: 28 }}>
-            <SectionLabel>Reading Patterns</SectionLabel>
-            <View style={{
-              backgroundColor: '#fff',
-              borderRadius: 14,
-              overflow: 'hidden',
-              shadowColor: '#000',
-              shadowOpacity: 0.04,
-              shadowRadius: 6,
-              shadowOffset: { width: 0, height: 1 },
-              elevation: 1,
-            }}>
-              {lines.length > 0 ? lines.map((line, i) => (
-                <View
-                  key={i}
+                    <Text style={{ fontSize: 26, fontWeight: '800', color: '#1c1917', minWidth: 66 }}>
+                      {row.value}
+                    </Text>
+                    <Text style={{ fontSize: 13, color: '#78716c', flex: 1, lineHeight: 19 }}>
+                      {row.label}
+                    </Text>
+                  </View>
+                ) : (
+                  <View key={row.key} style={{
+                    paddingHorizontal: 18, paddingVertical: 14,
+                    borderTopWidth: i > 0 ? 1 : 0, borderTopColor: '#f5f5f4',
+                    flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+                  }}>
+                    <View style={{
+                      width: 2, height: 18, borderRadius: 1,
+                      backgroundColor: '#d6d3d1', marginTop: 2, flexShrink: 0,
+                    }} />
+                    <Text style={{ fontSize: 13, color: '#57534e', lineHeight: 20, flex: 1 }}>
+                      {row.text}
+                    </Text>
+                  </View>
+                )
+              ))}
+              {allIntelRows.length > 2 && (
+                <TouchableOpacity
+                  onPress={() => setInsightsExpanded(e => !e)}
                   style={{
-                    paddingHorizontal: 18,
-                    paddingVertical: 15,
-                    borderTopWidth: i > 0 ? 1 : 0,
-                    borderTopColor: '#f5f5f4',
-                    flexDirection: 'row',
-                    alignItems: 'flex-start',
-                    gap: 12,
+                    paddingHorizontal: 18, paddingVertical: 13,
+                    borderTopWidth: 1, borderTopColor: '#f5f5f4',
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
                   }}
                 >
-                  <View style={{
-                    width: 2,
-                    height: 20,
-                    borderRadius: 1,
-                    backgroundColor: '#d6d3d1',
-                    marginTop: 1,
-                    flexShrink: 0,
-                  }} />
-                  <Text style={{ fontSize: 14, color: '#1c1917', lineHeight: 21, flex: 1 }}>
-                    {line}
+                  <Text style={{ fontSize: 12, color: '#a8a29e', fontWeight: '500' }}>
+                    {insightsExpanded
+                      ? 'Show less'
+                      : `Show ${allIntelRows.length - 2} more insight${allIntelRows.length - 2 === 1 ? '' : 's'}`}
                   </Text>
-                </View>
-              )) : (
-                <View style={{ paddingHorizontal: 18, paddingVertical: 18 }}>
-                  <Text style={{ fontSize: 14, color: '#a8a29e', lineHeight: 21 }}>
-                    As you finish more books, your reading patterns will take shape.
+                  <Text style={{ fontSize: 11, color: '#a8a29e' }}>
+                    {insightsExpanded ? '↑' : '↓'}
                   </Text>
-                </View>
+                </TouchableOpacity>
               )}
-            </View>
-          </View>
-        );
-      })()}
+            </>
+          )}
+        </View>
+      </View>
 
       {/* ── Friend Requests ── */}
       <View style={{ paddingHorizontal: 20, marginBottom: 28 }}>
@@ -749,67 +741,79 @@ export default function ProfileScreen() {
         {sentRecs.length === 0 ? (
           <Text style={{ color: '#a8a29e', fontSize: 14 }}>No recommendations sent yet.</Text>
         ) : (
-          sentRecs.map(rec => {
-            const badge = REC_STATUS[rec.status] ?? { bg: '#f1f5f9', text: '#475569', label: rec.status };
-            return (
-              <TouchableOpacity
-                key={rec.id}
-                activeOpacity={0.7}
-                onPress={() => router.push({
-                  pathname: '/book/[id]',
-                  params: {
-                    id: rec.book_id,
-                    title: rec.book?.title ?? '',
-                    author: rec.book?.author ?? '',
-                    coverUrl: rec.book?.cover_url ?? '',
-                    externalId: rec.book?.external_id ?? '',
-                    status: rec.status,
-                    note: rec.note ?? '',
-                    toUser: getFirstName(rec.to_user),
-                  },
-                })}
-                style={{
-                  paddingVertical: 12,
-                  borderBottomWidth: 1,
-                  borderBottomColor: '#f5f5f4',
-                  flexDirection: 'row',
-                  alignItems: 'flex-start',
-                }}
-              >
-                <CoverThumb
-                  url={rec.book?.cover_url}
-                  externalId={rec.book?.external_id}
-                  width={36}
-                  height={52}
-                />
-                <View style={{ flex: 1, marginLeft: 12, marginRight: 10 }}>
-                  <Text style={{ fontWeight: '600', fontSize: 15, color: '#1c1917', marginBottom: 2 }}>
-                    {rec.book?.title ?? '—'}
-                  </Text>
-                  <Text style={{ fontSize: 13, color: '#78716c', marginBottom: 3 }}>
-                    {rec.book?.author ?? '—'}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: '#a8a29e' }}>
-                    to {getFirstName(rec.to_user)}
-                  </Text>
-                  {rec.note ? (
-                    <Text style={{ fontSize: 12, color: '#78716c', fontStyle: 'italic', marginTop: 4 }}>
-                      "{rec.note}"
+          <>
+            {(recsExpanded ? sentRecs : sentRecs.slice(0, 3)).map(rec => {
+              const badge = REC_STATUS[rec.status] ?? { bg: '#f1f5f9', text: '#475569', label: rec.status };
+              return (
+                <TouchableOpacity
+                  key={rec.id}
+                  activeOpacity={0.7}
+                  onPress={() => router.push({
+                    pathname: '/book/[id]',
+                    params: {
+                      id: rec.book_id,
+                      title: rec.book?.title ?? '',
+                      author: rec.book?.author ?? '',
+                      coverUrl: rec.book?.cover_url ?? '',
+                      externalId: rec.book?.external_id ?? '',
+                      status: rec.status,
+                      note: rec.note ?? '',
+                      toUser: getFirstName(rec.to_user),
+                    },
+                  })}
+                  style={{
+                    paddingVertical: 12,
+                    borderBottomWidth: 1,
+                    borderBottomColor: '#f5f5f4',
+                    flexDirection: 'row',
+                    alignItems: 'flex-start',
+                  }}
+                >
+                  <CoverThumb
+                    url={rec.book?.cover_url}
+                    externalId={rec.book?.external_id}
+                    width={36}
+                    height={52}
+                  />
+                  <View style={{ flex: 1, marginLeft: 12, marginRight: 10 }}>
+                    <Text style={{ fontWeight: '600', fontSize: 15, color: '#1c1917', marginBottom: 2 }}>
+                      {rec.book?.title ?? '—'}
                     </Text>
-                  ) : null}
-                </View>
-                <View style={{
-                  backgroundColor: badge.bg,
-                  borderRadius: 6,
-                  paddingHorizontal: 8,
-                  paddingVertical: 3,
-                  alignSelf: 'flex-start',
-                }}>
-                  <Text style={{ fontSize: 11, fontWeight: '600', color: badge.text }}>{badge.label}</Text>
-                </View>
+                    <Text style={{ fontSize: 13, color: '#78716c', marginBottom: 3 }}>
+                      {rec.book?.author ?? '—'}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#a8a29e' }}>
+                      to {getFirstName(rec.to_user)}
+                    </Text>
+                    {rec.note ? (
+                      <Text style={{ fontSize: 12, color: '#78716c', fontStyle: 'italic', marginTop: 4 }}>
+                        "{rec.note}"
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View style={{
+                    backgroundColor: badge.bg,
+                    borderRadius: 6,
+                    paddingHorizontal: 8,
+                    paddingVertical: 3,
+                    alignSelf: 'flex-start',
+                  }}>
+                    <Text style={{ fontSize: 11, fontWeight: '600', color: badge.text }}>{badge.label}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+            {sentRecs.length > 3 && (
+              <TouchableOpacity
+                onPress={() => setRecsExpanded(e => !e)}
+                style={{ paddingVertical: 13, alignItems: 'center' }}
+              >
+                <Text style={{ fontSize: 13, color: '#78716c', fontWeight: '500' }}>
+                  {recsExpanded ? 'Show less' : `Show ${sentRecs.length - 3} more`}
+                </Text>
               </TouchableOpacity>
-            );
-          })
+            )}
+          </>
         )}
       </View>
 
