@@ -79,10 +79,6 @@ function SectionLabel({ children }: { children: string }) {
   );
 }
 
-function Divider() {
-  return <View style={{ height: 1, backgroundColor: '#f0ede8', marginBottom: 22 }} />;
-}
-
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function BookDetailScreen() {
@@ -320,6 +316,10 @@ export default function BookDetailScreen() {
   const descTruncated  = descText && descText.length > DESC_LIMIT && !descExpanded;
   const displayDesc    = descTruncated ? descText!.slice(0, DESC_LIMIT).trimEnd() + '…' : descText;
 
+  const pacingChipColor = pacingState === 'ahead' ? '#15803d' : pacingState === 'behind' ? '#b91c1c' : '#78716c';
+  const pacingChipBg    = pacingState === 'ahead' ? '#f0fdf4' : pacingState === 'behind' ? '#fef2f2' : '#f5f5f4';
+  const pacingChipBorder = pacingState === 'ahead' ? '#bbf7d0' : pacingState === 'behind' ? '#fecaca' : '#e7e5e4';
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
@@ -342,55 +342,50 @@ export default function BookDetailScreen() {
 
       <View style={{ paddingHorizontal: 24, paddingTop: 28 }}>
 
-        {/* ── Title block: title + [author · badge] ── */}
+        {/* ── Header: title (dominant) / author (secondary) / badge (own row) ── */}
         <Text style={{
-          fontSize: 26,
+          fontSize: 28,
           fontWeight: '800',
           color: '#1c1917',
-          letterSpacing: -0.5,
-          lineHeight: 34,
-          marginBottom: 8,
+          letterSpacing: -0.6,
+          lineHeight: 36,
+          marginBottom: 6,
         }}>
           {title ?? '—'}
         </Text>
-        <View style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 28,
-        }}>
-          <Text style={{ fontSize: 16, color: '#78716c', flex: 1, marginRight: 12 }} numberOfLines={2}>
-            {author ?? '—'}
-          </Text>
-          {badge && (
+        <Text style={{ fontSize: 15, color: '#78716c', lineHeight: 22, marginBottom: 12 }} numberOfLines={2}>
+          {author ?? '—'}
+        </Text>
+        {badge && (
+          <View style={{ flexDirection: 'row', marginBottom: 28 }}>
             <View style={{
               backgroundColor: badge.bg,
               borderRadius: 8,
-              paddingHorizontal: 11,
+              paddingHorizontal: 12,
               paddingVertical: 5,
-              alignSelf: 'flex-start',
             }}>
               <Text style={{ fontSize: 12, fontWeight: '600', color: badge.text }}>
                 {badge.label}
               </Text>
             </View>
-          )}
-        </View>
+          </View>
+        )}
+        {!badge && <View style={{ marginBottom: 28 }} />}
 
-        {/* ── Reading Progress card ── */}
+        {/* ── Reading Progress card (primary module) ── */}
         {isReading && (
           <View style={{
             backgroundColor: '#fff',
             borderRadius: 16,
-            padding: 18,
-            marginBottom: 18,
+            padding: 20,
+            marginBottom: 20,
             borderTopWidth: 3,
             borderTopColor: '#1c1917',
             shadowColor: '#000',
-            shadowOpacity: 0.05,
-            shadowRadius: 8,
-            shadowOffset: { width: 0, height: 2 },
-            elevation: 2,
+            shadowOpacity: 0.06,
+            shadowRadius: 10,
+            shadowOffset: { width: 0, height: 3 },
+            elevation: 3,
           }}>
             <SectionLabel>Reading Progress</SectionLabel>
 
@@ -398,71 +393,75 @@ export default function BookDetailScreen() {
               <ActivityIndicator color="#a8a29e" size="small" />
             ) : (
               <>
-                {/* Progress bar */}
                 {hasPaging && (
-                  <View style={{ marginBottom: 14 }}>
+                  <View style={{ marginBottom: 16 }}>
+                    <Text style={{
+                      fontSize: 36,
+                      fontWeight: '800',
+                      color: '#1c1917',
+                      letterSpacing: -1,
+                      marginBottom: 8,
+                    }}>
+                      {progressPct ?? 0}%
+                    </Text>
                     <View style={{
-                      height: 6,
+                      height: 10,
                       backgroundColor: '#e7e5e4',
-                      borderRadius: 3,
+                      borderRadius: 5,
                       overflow: 'hidden',
-                      marginBottom: 7,
+                      marginBottom: 8,
                     }}>
                       <View style={{
-                        height: 6,
+                        height: 10,
                         width: `${progressPct ?? 0}%`,
                         backgroundColor: '#1c1917',
-                        borderRadius: 3,
+                        borderRadius: 5,
                       }} />
                     </View>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                      <Text style={{ fontSize: 13, color: '#1c1917', fontWeight: '600' }}>
-                        Page {currentPage} of {pageCount}
-                      </Text>
-                      <Text style={{ fontSize: 13, color: '#78716c' }}>
-                        {progressPct ?? 0}% · {pagePacing?.pagesLeft} left
-                      </Text>
-                    </View>
+                    <Text style={{ fontSize: 13, color: '#78716c' }}>
+                      Page {currentPage} of {pageCount} · {pagePacing?.pagesLeft ?? 0} left
+                    </Text>
                   </View>
                 )}
 
-                {/* Pacing guidance */}
-                {(pagePacing || datePacingNote) && (
+                {pagePacing?.note && (
                   <View style={{
-                    backgroundColor: isAhead ? '#f0fdf4' : '#fef9f0',
-                    borderRadius: 8,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    alignSelf: 'flex-start',
+                    backgroundColor: pacingChipBg,
+                    borderRadius: 20,
                     paddingHorizontal: 12,
-                    paddingVertical: 10,
+                    paddingVertical: 6,
                     borderWidth: 1,
-                    borderColor: isAhead ? '#bbf7d0' : '#fde68a',
-                    marginBottom: 14,
+                    borderColor: pacingChipBorder,
+                    marginBottom: 16,
                   }}>
-                    {pagePacing ? (
-                      <>
-                        <Text style={{ fontSize: 13, fontWeight: '600', color: isAhead ? '#15803d' : '#92400e' }}>
-                          {pacingState === 'ahead'
-                            ? 'Ahead of pace'
-                            : pacingState === 'on_pace' && pagePacing.targetDate
-                            ? 'On pace'
-                            : pagePacing.pagesPerDayNeeded != null
-                            ? `${pagePacing.pagesPerDayNeeded} pages/day to stay on pace`
-                            : `${pagePacing.pagesLeft} pages left`}
-                        </Text>
-                        {pagePacing.targetDate && (
-                          <Text style={{ fontSize: 12, color: isAhead ? '#16a34a' : '#b45309', marginTop: 2 }}>
-                            Target finish: {pagePacing.targetDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </Text>
-                        )}
-                      </>
-                    ) : (
-                      <Text style={{ fontSize: 13, fontWeight: '500', color: '#92400e' }}>
-                        {datePacingNote}
-                      </Text>
-                    )}
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: pacingChipColor }}>
+                      {pagePacing.note}
+                    </Text>
                   </View>
                 )}
 
-                {/* No goal nudge */}
+                {!pagePacing && datePacingNote && (
+                  <View style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    alignSelf: 'flex-start',
+                    backgroundColor: '#fef9f0',
+                    borderRadius: 20,
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                    borderWidth: 1,
+                    borderColor: '#fde68a',
+                    marginBottom: 16,
+                  }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#92400e' }}>
+                      {datePacingNote}
+                    </Text>
+                  </View>
+                )}
+
                 {!pagePacing && !datePacingNote && !yearlyGoal && (
                   <TouchableOpacity
                     onPress={() => router.push('/settings')}
@@ -471,7 +470,7 @@ export default function BookDetailScreen() {
                       borderRadius: 8,
                       paddingHorizontal: 12,
                       paddingVertical: 9,
-                      marginBottom: 14,
+                      marginBottom: 16,
                     }}
                   >
                     <Text style={{ fontSize: 12, color: '#a8a29e' }}>
@@ -480,7 +479,6 @@ export default function BookDetailScreen() {
                   </TouchableOpacity>
                 )}
 
-                {/* Missing page count recovery */}
                 {!pageCount && !editingPageCount && (
                   <View style={{
                     flexDirection: 'row',
@@ -490,7 +488,7 @@ export default function BookDetailScreen() {
                     borderRadius: 8,
                     paddingHorizontal: 12,
                     paddingVertical: 10,
-                    marginBottom: 14,
+                    marginBottom: 16,
                     gap: 12,
                   }}>
                     <Text style={{ fontSize: 13, color: '#a8a29e', flex: 1, lineHeight: 18 }}>
@@ -513,7 +511,7 @@ export default function BookDetailScreen() {
                 )}
 
                 {!pageCount && editingPageCount && (
-                  <View style={{ marginBottom: 14 }}>
+                  <View style={{ marginBottom: 16 }}>
                     <Text style={{ fontSize: 12, color: '#78716c', fontWeight: '600', marginBottom: 8 }}>
                       Total pages in this book
                     </Text>
@@ -569,7 +567,6 @@ export default function BookDetailScreen() {
                   </View>
                 )}
 
-                {/* Progress CTA — primary action */}
                 {!editingProgress ? (
                   <TouchableOpacity
                     onPress={() => {
@@ -650,14 +647,14 @@ export default function BookDetailScreen() {
           </View>
         )}
 
-        {/* ── Recommendation context — warm card ── */}
+        {/* ── Recommendation context — warm handoff card ── */}
         {hasRecCtx && (
           <View style={{
             backgroundColor: '#fffbf5',
-            borderRadius: 14,
-            padding: 18,
-            marginBottom: 18,
-            borderLeftWidth: 3,
+            borderRadius: 16,
+            padding: 20,
+            marginBottom: 20,
+            borderLeftWidth: 4,
             borderLeftColor: '#d4a574',
             shadowColor: '#000',
             shadowOpacity: 0.04,
@@ -666,30 +663,25 @@ export default function BookDetailScreen() {
             elevation: 1,
           }}>
             {fromUser && (
-              <View style={{ marginBottom: note ? 14 : 0 }}>
-                <Text style={{ fontSize: 12, color: '#a8a29e', fontWeight: '500', marginBottom: 3 }}>
-                  Recommended by
-                </Text>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#1c1917' }}>
-                  {fromUser}
+              <View style={{ marginBottom: note ? 16 : 0 }}>
+                <Text style={{ fontSize: 18, fontWeight: '700', color: '#44403c', lineHeight: 26 }}>
+                  From {fromUser}
                 </Text>
               </View>
             )}
             {toUser && !fromUser && (
-              <View style={{ marginBottom: note ? 14 : 0 }}>
-                <Text style={{ fontSize: 12, color: '#a8a29e', fontWeight: '500', marginBottom: 3 }}>
-                  You recommended this to
-                </Text>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#1c1917' }}>
-                  {toUser}
+              <View style={{ marginBottom: note ? 16 : 0 }}>
+                <Text style={{ fontSize: 18, fontWeight: '700', color: '#44403c', lineHeight: 26 }}>
+                  You shared this with {toUser}
                 </Text>
               </View>
             )}
             {note && (
               <View style={{
-                borderTopWidth: (fromUser || toUser) ? 1 : 0,
-                borderTopColor: '#f0e8dc',
-                paddingTop: (fromUser || toUser) ? 14 : 0,
+                backgroundColor: '#fff8f0',
+                borderRadius: 10,
+                paddingHorizontal: 16,
+                paddingVertical: 14,
               }}>
                 <Text style={{
                   fontSize: 15,
@@ -700,92 +692,104 @@ export default function BookDetailScreen() {
                   "{note}"
                 </Text>
                 {fromUser && (
-                  <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 6 }}>— {fromUser}</Text>
+                  <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 8, fontWeight: '500' }}>— {fromUser}</Text>
+                )}
+                {toUser && !fromUser && (
+                  <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 8, fontWeight: '500' }}>— You</Text>
                 )}
               </View>
             )}
           </View>
         )}
 
-        {/* ── About this book ── */}
+        {/* ── About & Subjects — unified quiet section ── */}
         {metaLoading ? (
           <ActivityIndicator color="#a8a29e" size="small" style={{ marginBottom: 18, alignSelf: 'flex-start' }} />
-        ) : displayDesc ? (
-          <View style={{ marginBottom: 22 }}>
-            <Divider />
-            <SectionLabel>About this book</SectionLabel>
-            <Text style={{ fontSize: 14, color: '#57534e', lineHeight: 24 }}>{displayDesc}</Text>
-            {descText && descText.length > DESC_LIMIT && (
-              <TouchableOpacity
-                onPress={() => setDescExpanded(v => !v)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                style={{ marginTop: 8 }}
-              >
-                <Text style={{ fontSize: 13, color: '#78716c', textDecorationLine: 'underline' }}>
-                  {descExpanded ? 'Show less' : 'Read more'}
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        ) : null}
-
-        {/* ── Subjects ── */}
-        {olMeta && olMeta.subjects.length > 0 && (
-          <View style={{ marginBottom: 24 }}>
-            <SectionLabel>Subjects</SectionLabel>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              {olMeta.subjects.map((subject, i) => (
-                <View
-                  key={i}
-                  style={{
-                    backgroundColor: '#f5f5f4',
-                    borderRadius: 20,
-                    paddingHorizontal: 12,
-                    paddingVertical: 5,
-                  }}
-                >
-                  <Text style={{ fontSize: 12, color: '#57534e' }}>{subject}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* ── Taste Match / Why this fits you ── */}
-        {externalId ? (
+        ) : (displayDesc || (olMeta && olMeta.subjects.length > 0)) ? (
           <View style={{
             backgroundColor: '#fff',
             borderRadius: 14,
             padding: 18,
+            marginBottom: 20,
             borderWidth: 1,
             borderColor: '#f0ede8',
           }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-              <Text style={{ fontSize: 15, fontWeight: '700', color: '#1c1917', marginRight: 10 }}>
-                Why this fits you
-              </Text>
-              <View style={{
-                backgroundColor: '#fef3c7',
-                borderRadius: 6,
-                paddingHorizontal: 8,
-                paddingVertical: 3,
-              }}>
-                <Text style={{ fontSize: 10, fontWeight: '700', color: '#92400e', letterSpacing: 0.5 }}>
-                  COMING SOON
+            {displayDesc && (
+              <View style={{ marginBottom: olMeta && olMeta.subjects.length > 0 ? 16 : 0 }}>
+                <Text style={{
+                  fontSize: 11,
+                  fontWeight: '700',
+                  color: '#a8a29e',
+                  letterSpacing: 0.9,
+                  textTransform: 'uppercase',
+                  marginBottom: 10,
+                }}>
+                  About
                 </Text>
+                <Text style={{ fontSize: 14, color: '#57534e', lineHeight: 24 }}>{displayDesc}</Text>
+                {descText && descText.length > DESC_LIMIT && (
+                  <TouchableOpacity
+                    onPress={() => setDescExpanded(v => !v)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={{ marginTop: 8 }}
+                  >
+                    <Text style={{ fontSize: 13, color: '#78716c', fontWeight: '500' }}>
+                      {descExpanded ? 'Show less' : 'Read more'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
-            </View>
-            <Text style={{ fontSize: 13, color: '#a8a29e', lineHeight: 20 }}>
-              Once you've built your taste profile, we'll explain how this book fits — or challenges — your reading style.
+            )}
+            {olMeta && olMeta.subjects.length > 0 && (
+              <View>
+                {displayDesc && (
+                  <View style={{ height: 1, backgroundColor: '#f0ede8', marginBottom: 14 }} />
+                )}
+                <Text style={{
+                  fontSize: 11,
+                  fontWeight: '700',
+                  color: '#a8a29e',
+                  letterSpacing: 0.9,
+                  textTransform: 'uppercase',
+                  marginBottom: 10,
+                }}>
+                  Subjects
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {olMeta.subjects.map((subject, i) => (
+                    <View
+                      key={i}
+                      style={{
+                        backgroundColor: '#f5f5f4',
+                        borderRadius: 20,
+                        paddingHorizontal: 12,
+                        paddingVertical: 5,
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, color: '#57534e' }}>{subject}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+          </View>
+        ) : null}
+
+        {/* ── Taste Match — polished forward-looking card ── */}
+        {externalId ? (
+          <View style={{
+            backgroundColor: '#fafaf9',
+            borderRadius: 16,
+            padding: 20,
+            borderWidth: 1,
+            borderColor: '#e7e5e4',
+          }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#1c1917', marginBottom: 4 }}>
+              Your Taste Match
             </Text>
-            <TouchableOpacity
-              onPress={() => router.push('/edit-preferences')}
-              style={{ marginTop: 12 }}
-            >
-              <Text style={{ fontSize: 13, color: '#78716c', textDecorationLine: 'underline' }}>
-                Build your taste profile →
-              </Text>
-            </TouchableOpacity>
+            <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
+              As you read and rate books, we'll learn what resonates with you — and show you how well this one fits your taste.
+            </Text>
           </View>
         ) : null}
 
