@@ -176,9 +176,14 @@ export default function HomeScreen() {
       const meta = user.user_metadata as { first_name?: string } | undefined;
       if (meta?.first_name) setGreeting(meta.first_name);
 
+      // Friendships must resolve first so we can scope the feed to accepted friends only.
+      const rows = await loadFriendships(user.id);
+      const acceptedFriendIds = rows
+        .filter(f => f.status === 'accepted')
+        .map(f => (f.requester_id === user.id ? f.addressee_id : f.requester_id));
+
       await Promise.all([
-        loadFeed(),
-        loadFriendships(user.id),
+        loadFeed(acceptedFriendIds),
         loadCurrentRead(user.id),
         loadPendingRecs(user.id),
       ]);
@@ -190,8 +195,13 @@ export default function HomeScreen() {
 
   // ── Data loaders ─────────────────────────────────────────────────────────────
 
-  async function loadFeed() {
+  async function loadFeed(friendIds: string[]) {
     if (!supabase) return;
+    // No friends yet — feed is empty by definition.
+    if (friendIds.length === 0) {
+      setFeed([]);
+      return;
+    }
     const { data, error } = await supabase
       .from('activity_events')
       .select(
@@ -199,6 +209,7 @@ export default function HomeScreen() {
         'actor:profiles!activity_events_actor_id_fkey(username, first_name, last_name), ' +
         'book:books!activity_events_book_id_fkey(title, author, cover_url, external_id)'
       )
+      .in('actor_id', friendIds)
       .order('created_at', { ascending: false })
       .limit(50);
 
@@ -209,8 +220,8 @@ export default function HomeScreen() {
     }
   }
 
-  async function loadFriendships(uid: string) {
-    if (!supabase) return;
+  async function loadFriendships(uid: string): Promise<FriendshipRow[]> {
+    if (!supabase) return [];
     const { data } = await supabase
       .from('friendships')
       .select(
@@ -219,7 +230,9 @@ export default function HomeScreen() {
         'addressee:profiles!friendships_addressee_id_fkey(id, username, first_name, last_name)'
       )
       .or(`requester_id.eq.${uid},addressee_id.eq.${uid}`);
-    setFriendships((data as FriendshipRow[]) ?? []);
+    const rows = (data as FriendshipRow[]) ?? [];
+    setFriendships(rows);
+    return rows;
   }
 
   async function loadCurrentRead(uid: string) {
