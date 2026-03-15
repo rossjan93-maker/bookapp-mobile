@@ -1,0 +1,119 @@
+Make one controlled “Goodreads import schema + provenance foundation” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not build the file-upload UI yet.
+Do not build the CSV parser yet.
+Do not refactor unrelated app logic.
+Do not break existing books, user_books, recommendations, profile, pacing, activity, or rating flows.
+
+Goal:
+Lay the database and model foundation for a high-fidelity Goodreads import system.
+
+This pass is schema-first.
+It should prepare the app to later support:
+- Goodreads CSV upload
+- row staging
+- duplicate resolution
+- import provenance
+- preservation of reading memory
+- personalization seeding from imported data
+
+Scope:
+Inspect and edit only what is necessary, likely:
+- supabase/migrations/
+- any type/helper files only if needed for schema compatibility
+- no UI build in this pass unless absolutely necessary
+- no parser/import execution in this pass
+
+Requirements
+
+A. Strengthen book-level metadata
+Add schema support for:
+- isbn
+- isbn13
+- additional_authors
+- publisher
+- binding
+- publication_year
+- original_publication_year
+
+Use appropriate nullable types.
+ISBN fields should be text, not numeric.
+
+B. Strengthen user-memory fields on user_books
+Add schema support for:
+- date_added
+- review_body
+- private_note
+- review_contains_spoiler
+- read_count
+- owned_copies
+- raw_shelves
+- raw_shelf_positions
+- exclusive_shelf_imported
+- import_source
+- import_source_book_id
+- import_batch_id
+- imported_at
+
+Important:
+Do not corrupt the existing meaning of native recommendation/self-added source logic.
+Keep import provenance separate from the app’s current in-product acquisition logic.
+
+C. Add import provenance tables
+Create:
+1. import_batches
+2. import_rows
+
+Design them so the later importer can:
+- store uploaded batch metadata
+- store raw source rows
+- store normalized fields
+- store match confidence
+- store resolution outcome
+- store errors / review-needed state
+
+D. Add external source-link support
+Create a table for mapping internal books to external source IDs, suitable for Goodreads now and other platforms later.
+
+Example concept:
+- book_source_links
+with unique(source, source_book_id)
+
+E. Add indexes and constraints where sensible
+Include:
+- indexes on isbn / isbn13
+- uniqueness where appropriate for external source links
+- basic sanity checks where helpful
+Keep this practical, not overengineered.
+
+F. Add RLS policies
+Because this app uses Supabase:
+- import_batches must be user-scoped
+- import_rows must be accessible only to the owning user via batch ownership
+- keep access tight and explicit
+
+G. Preserve existing app behavior
+Do not break:
+- current books table usage
+- user_books status/rating/progress logic
+- recommendations
+- activity feed
+- profile signals
+- current migrations
+
+Implementation guidance
+1. This is a foundation pass only.
+2. Do not start building the importer UI or parser.
+3. Keep naming explicit and future-friendly.
+4. Assume Goodreads is the first source, but design provenance tables to support future sources too.
+5. Favor robustness over cleverness.
+
+After editing, print only:
+1. files changed
+2. full contents of changed files
+3. the diff for those files only
+4. exact migration / rollout steps
+5. schema decisions made
+6. what is now ready for the next import-parser pass
