@@ -3,7 +3,7 @@ import { ActivityIndicator, FlatList, ScrollView, Text, TouchableOpacity, View }
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
-import { computePagePacing } from '../../lib/pacing';
+import { computePagePacing, computeDatePacing } from '../../lib/pacing';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -60,27 +60,6 @@ const FILTER_EMPTY: Record<FilterKey, { title: string; body: string }> = {
   finished:     { title: 'No finished books yet',  body: 'Finished books will appear here.' },
   dnf:          { title: 'No abandoned books',     body: 'DNF is always a valid call.' },
 };
-
-// ─── Pacing-state colors ─────────────────────────────────────────────────────
-// Mirrors the language from Profile's currently-reading cards.
-
-function readingCardBorderColor(
-  item: UserBook,
-  yearlyGoal: number | null,
-): string {
-  // Pacing color requires both a yearly goal AND a known page count.
-  // Without page_count we cannot honestly measure progress, so stay neutral.
-  const pageCount = item.book?.page_count;
-  if (!yearlyGoal || !pageCount || pageCount <= 0) return '#d6d3d1';
-
-  // page_count is known — derive state from page-based pacing.
-  const currentPage = item.current_page ?? 0;
-  const { state } = computePagePacing(currentPage, pageCount, item.started_at, yearlyGoal);
-
-  if (state === 'ahead' || state === 'on_pace') return '#86efac'; // green
-  if (state === 'behind')                        return '#fcd34d'; // amber
-  return '#d6d3d1';                                                // neutral
-}
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
@@ -390,6 +369,7 @@ export default function LibraryScreen() {
               {FILTER_OPTIONS.map(f => {
                 const active = activeFilter === f.key;
                 const count  = f.key !== 'all' && statusCounts[f.key] > 0 ? ` (${statusCounts[f.key]})` : '';
+                const readingAccent = f.key === 'reading' && !active && readingCount > 0;
                 return (
                   <TouchableOpacity
                     key={f.key}
@@ -399,8 +379,8 @@ export default function LibraryScreen() {
                       paddingVertical: 7,
                       borderRadius: 20,
                       borderWidth: 1,
-                      backgroundColor: active ? '#1c1917' : 'transparent',
-                      borderColor:     active ? '#1c1917' : '#e7e5e4',
+                      backgroundColor: active ? '#1c1917' : readingAccent ? '#eff6ff' : 'transparent',
+                      borderColor:     active ? '#1c1917' : readingAccent ? '#bfdbfe' : '#e7e5e4',
                     }}
                   >
                     <Text style={{
@@ -453,7 +433,7 @@ export default function LibraryScreen() {
           )}
         </View>
       }
-      renderItem={({ item }) => {
+      renderItem={({ item, index }) => {
         const isUpdating = updatingId === item.id;
         const isBlocked  = updatingId !== null;
         const isReading  = item.status === 'reading';
@@ -471,27 +451,52 @@ export default function LibraryScreen() {
         const hasPendingRating = pendingFeedback?.userBookId === item.id;
         const hasExtraRow      = hasButtons || isUpdating || hasPendingRating;
 
+        const hasNonReading        = displayedItems.length > readingCount;
+        const showNowReadingHeader = activeFilter === 'all' && index === 0 && isReading && hasNonReading;
+        const showLibraryHeader    = activeFilter === 'all' && index === readingCount && readingCount > 0 && hasNonReading;
+
         // ── Reading row: card style with pacing-state border ──────────────
         if (isReading) {
-          const accentColor = readingCardBorderColor(item, yearlyGoal);
+          const pageCount = item.book?.page_count;
+          const borderPacing = (yearlyGoal && pageCount && pageCount > 0)
+            ? computePagePacing(item.current_page ?? 0, pageCount, item.started_at, yearlyGoal)
+            : null;
+          const datePacing = (!hasProgress && item.started_at && yearlyGoal)
+            ? computeDatePacing(item.started_at, yearlyGoal)
+            : null;
+
+          const accentColor = (() => {
+            if (!borderPacing) return '#d6d3d1';
+            const s = borderPacing.state;
+            if (s === 'ahead' || s === 'on_pace') return '#86efac';
+            if (s === 'behind') return '#fcd34d';
+            return '#d6d3d1';
+          })();
+          const pacingNote = hasProgress ? borderPacing?.note ?? null : datePacing?.note ?? null;
 
           return (
-            <View style={{
-              backgroundColor: '#fff',
-              borderRadius: 14,
-              marginVertical: 6,
-              borderLeftWidth: 3,
-              borderLeftColor: accentColor,
-              shadowColor: '#000',
-              shadowOpacity: 0.05,
-              shadowRadius: 8,
-              shadowOffset: { width: 0, height: 2 },
-              elevation: 2,
-              paddingTop: 14,
-              paddingRight: 14,
-              paddingBottom: hasExtraRow ? 12 : 14,
-              paddingLeft: 14,
-            }}>
+            <View>
+              {showNowReadingHeader && (
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 8 }}>
+                  Now Reading
+                </Text>
+              )}
+              <View style={{
+                backgroundColor: '#fff',
+                borderRadius: 14,
+                marginVertical: 6,
+                borderLeftWidth: 3,
+                borderLeftColor: accentColor,
+                shadowColor: '#000',
+                shadowOpacity: 0.05,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 2 },
+                elevation: 2,
+                paddingTop: 14,
+                paddingRight: 14,
+                paddingBottom: hasExtraRow ? 12 : 14,
+                paddingLeft: 14,
+              }}>
               {/* Cover + title/author/progress */}
               <TouchableOpacity
                 activeOpacity={0.7}
@@ -539,13 +544,13 @@ export default function LibraryScreen() {
                         }} />
                       </View>
                       <Text style={{ fontSize: 11, color: '#a8a29e' }}>
-                        Page {item.current_page} of {item.book?.page_count} · {progressPct}%
+                        {pacingNote ? pacingNote : `Page ${item.current_page} of ${item.book?.page_count} · ${progressPct}%`}
                       </Text>
                     </>
                   )}
                   {!hasProgress && item.status === 'reading' && (
                     <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 6 }}>
-                      In progress — open to log pages
+                      {pacingNote ? pacingNote : 'In progress — open to log pages'}
                     </Text>
                   )}
                 </View>
@@ -580,17 +585,24 @@ export default function LibraryScreen() {
                 </View>
               )}
             </View>
+          </View>
           );
         }
 
         // ── Non-reading row: flat archival style ─────────────────────────────
         return (
-          <View style={{
-            paddingTop: 18,
-            paddingBottom: hasExtraRow ? 14 : 18,
-            borderBottomWidth: 1,
-            borderBottomColor: '#f5f5f4',
-          }}>
+          <View>
+            {showLibraryHeader && (
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#c4b5a5', letterSpacing: 1, textTransform: 'uppercase', marginTop: 16, marginBottom: 8 }}>
+                Library
+              </Text>
+            )}
+            <View style={{
+              paddingTop: 18,
+              paddingBottom: hasExtraRow ? 14 : 18,
+              borderBottomWidth: 1,
+              borderBottomColor: '#f5f5f4',
+            }}>
             <TouchableOpacity
               activeOpacity={0.7}
               onPress={() => router.push({
@@ -664,6 +676,7 @@ export default function LibraryScreen() {
               </View>
             ) : null}
           </View>
+        </View>
         );
       }}
       ListEmptyComponent={
@@ -689,9 +702,34 @@ export default function LibraryScreen() {
             <Text style={{ fontSize: 16, fontWeight: '700', color: '#1c1917', marginBottom: 8, textAlign: 'center' }}>
               {FILTER_EMPTY[activeFilter].title}
             </Text>
-            <Text style={{ fontSize: 14, color: '#a8a29e', textAlign: 'center', lineHeight: 22 }}>
+            <Text style={{ fontSize: 14, color: '#a8a29e', textAlign: 'center', lineHeight: 22, marginBottom: activeFilter === 'reading' || activeFilter === 'want_to_read' ? 20 : 0 }}>
               {FILTER_EMPTY[activeFilter].body}
             </Text>
+            {activeFilter === 'reading' && (
+              statusCounts.want_to_read > 0 ? (
+                <TouchableOpacity
+                  onPress={() => setActiveFilter('want_to_read')}
+                  style={{ borderWidth: 1, borderColor: '#d6d3d1', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#57534e' }}>See your reading list</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => router.push('/add-book')}
+                  style={{ backgroundColor: '#1c1917', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>Add a book</Text>
+                </TouchableOpacity>
+              )
+            )}
+            {activeFilter === 'want_to_read' && (
+              <TouchableOpacity
+                onPress={() => router.push('/add-book')}
+                style={{ backgroundColor: '#1c1917', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>Add Book</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )
       }
