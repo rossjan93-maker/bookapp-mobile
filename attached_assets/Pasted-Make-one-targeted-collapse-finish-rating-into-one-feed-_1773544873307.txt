@@ -1,0 +1,92 @@
+Make one targeted “collapse finish + rating into one feed event” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not change schema unless absolutely necessary.
+Do not refactor unrelated business logic.
+Do not break library status transitions, rating persistence, derived sentiment, activity feed, or recommendation flows.
+
+Goal:
+When a user finishes or DNFs a book and then immediately rates it in the post-completion prompt, the Home feed should show one combined activity event instead of two separate ones.
+
+Desired feed examples:
+- “Ross finished Lord Jim and rated it 4/5”
+- “Ross did not finish Lord Jim and rated it 2/5”
+
+Current problem:
+The feed currently shows both:
+- finished
+- rated
+for the same user/book moment, which is noisy and redundant.
+
+Scope:
+Only inspect and edit what is necessary, likely:
+- app/(tabs)/library.tsx
+- app/(tabs)/index.tsx
+- maybe migration/schema logic only if truly necessary
+- no unrelated screen rewrites
+
+Requirements
+
+A. Collapse the immediate completion+rating flow into one event
+1. If a user marks a book Finished and then submits a rating in the inline prompt, do NOT leave two separate feed events for that same moment.
+2. Instead, create or update a single combined event representing:
+   - finish + rating
+3. Same for DNF + rating:
+   - did not finish + rating
+
+B. Preserve unrated completion behavior
+1. If the user finishes or DNFs and skips rating:
+   - keep the normal completion event
+2. Only combine when the user actually submits a rating in the immediate flow.
+
+C. Preserve rating as stored user signal
+1. Keep saving rating to user_books.
+2. Keep derived sentiment if that logic exists.
+3. The feed collapse is a feed/activity behavior change, not a rating-storage rollback.
+
+D. Preserve public feed readability
+1. Update Home feed rendering so combined events read naturally.
+2. Good examples:
+   - “Ross finished Lord Jim and rated it 4/5”
+   - “Ross did not finish Lord Jim and rated it 2/5”
+3. Do not make the wording clunky.
+
+E. Implementation preference
+Prefer the cleanest architecture:
+Option 1 (preferred if straightforward):
+- when rating is submitted immediately after finish/DNF, update the just-created completion activity event into a combined event rather than inserting a separate book_rated event
+
+Option 2:
+- delete/suppress the separate completion event and create one combined event
+
+Choose the approach that is simplest, safest, and least noisy.
+
+F. Keep later rating flexibility if possible
+1. If the architecture allows for future standalone rating events outside the immediate finish flow, keep that possibility open.
+2. But in the current immediate post-finish flow, the feed should show one merged event only.
+
+G. Preserve all current flows
+Do not break:
+- status transitions
+- credibility events
+- rating prompt UX
+- skip behavior
+- rating persistence
+- feed loading
+- existing non-rating activity events
+
+Implementation guidance
+1. Keep this pass surgical.
+2. Do not overcomplicate with a full event-linking system unless necessary.
+3. The main objective is simple:
+   immediate finish + rating = one feed story, not two.
+4. Update feed rendering explicitly for the combined event state.
+
+After editing, print only:
+1. files changed
+2. full contents of changed files
+3. the diff for those files only
+4. exact manual test steps
+5. combined-event logic used
+6. any schema/activity tradeoff made

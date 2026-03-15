@@ -27,7 +27,7 @@ type UserBook = {
   } | null;
 };
 
-type PendingFeedback = { userBookId: string; bookId: string; status: 'finished' | 'dnf' };
+type PendingFeedback = { userBookId: string; bookId: string; status: 'finished' | 'dnf'; pendingEventId: string | null };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -139,6 +139,8 @@ export default function LibraryScreen() {
   // ── Business logic (unchanged) ────────────────────────────────────────────
 
   function saveRating(userBookId: string, bookId: string, rating: number) {
+    // Capture the completion event ID before clearing state
+    const eventId = pendingFeedback?.pendingEventId ?? null;
     setPendingFeedback(null);
     if (!supabase || !currentUserId) return;
     // Derive sentiment from rating for backward-compat with signals/taste model
@@ -148,12 +150,18 @@ export default function LibraryScreen() {
       rating === 3 ? 'okay' :
       'not_for_me';
     supabase.from('user_books').update({ rating, sentiment }).eq('id', userBookId).then(() => {});
-    supabase.from('activity_events').insert({
-      actor_id:   currentUserId,
-      event_type: 'book_rated',
-      book_id:    bookId,
-      rating,
-    }).then(() => {});
+    if (eventId) {
+      // Merge rating into the existing completion event — one feed story, not two
+      supabase.from('activity_events').update({ rating }).eq('id', eventId).then(() => {});
+    } else {
+      // No prior completion event (DNF or future standalone rating) — insert book_rated
+      supabase.from('activity_events').insert({
+        actor_id:   currentUserId,
+        event_type: 'book_rated',
+        book_id:    bookId,
+        rating,
+      }).then(() => {});
+    }
   }
 
   async function handleUpdateStatus(userBook: UserBook, newStatus: UserBookStatus) {
@@ -161,6 +169,7 @@ export default function LibraryScreen() {
     setUpdatingId(userBook.id);
 
     const now = new Date().toISOString();
+    let completionEventId: string | null = null;
     const userBookUpdate: Record<string, unknown> = { status: newStatus };
     if (newStatus === 'reading')                              userBookUpdate.started_at  = now;
     if (newStatus === 'finished' || newStatus === 'dnf')     userBookUpdate.finished_at = now;
@@ -220,16 +229,24 @@ export default function LibraryScreen() {
             book_id: rec.book_id, recommendation_id: rec.id,
           });
         } else if (newStatus === 'finished') {
-          await supabase.from('activity_events').insert({
-            actor_id: currentUserId, event_type: 'recommendation_finished',
-            book_id: rec.book_id, recommendation_id: rec.id,
-          });
+          const { data: evtData } = await supabase
+            .from('activity_events')
+            .insert({
+              actor_id: currentUserId, event_type: 'recommendation_finished',
+              book_id: rec.book_id, recommendation_id: rec.id,
+            })
+            .select('id')
+            .single();
+          completionEventId = evtData?.id ?? null;
         }
       }
     } else if (newStatus === 'finished') {
-      await supabase.from('activity_events').insert({
-        actor_id: currentUserId, event_type: 'book_finished', book_id: userBook.book_id,
-      });
+      const { data: evtData } = await supabase
+        .from('activity_events')
+        .insert({ actor_id: currentUserId, event_type: 'book_finished', book_id: userBook.book_id })
+        .select('id')
+        .single();
+      completionEventId = evtData?.id ?? null;
     }
 
     setItems(prev => prev.map(item =>
@@ -244,7 +261,7 @@ export default function LibraryScreen() {
     ));
 
     if (newStatus === 'finished' || newStatus === 'dnf') {
-      setPendingFeedback({ userBookId: userBook.id, bookId: userBook.book_id, status: newStatus });
+      setPendingFeedback({ userBookId: userBook.id, bookId: userBook.book_id, status: newStatus, pendingEventId: completionEventId });
     }
     setUpdatingId(null);
   }

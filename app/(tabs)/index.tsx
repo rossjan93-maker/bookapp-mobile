@@ -669,7 +669,7 @@ export default function HomeScreen() {
                         {author}
                       </Text>
                     ) : null}
-                    {event.event_type === 'book_rated' && event.rating != null ? (
+                    {event.rating != null ? (
                       <Text style={{ fontSize: 12, color: '#78716c', marginBottom: 4 }}>
                         {'★'.repeat(event.rating)}{'☆'.repeat(5 - event.rating)} · {event.rating}/5
                       </Text>
