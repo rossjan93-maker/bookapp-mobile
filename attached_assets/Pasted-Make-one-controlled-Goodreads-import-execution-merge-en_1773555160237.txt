@@ -1,0 +1,161 @@
+Make one controlled “Goodreads import execution + merge + enrichment” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not refactor unrelated app logic.
+Do not break existing books, user_books, recommendations, profile, activity, pacing, or reading flows.
+
+Goal:
+Complete the Goodreads import pipeline by taking staged rows from import_batches/import_rows and safely importing them into the app’s real data model.
+
+This pass should:
+1. execute staged pending rows
+2. merge against matched books when confidence is already high
+3. create new books when needed
+4. create/update user_books safely
+5. populate book_source_links
+6. update import row/batch outcomes
+7. perform lightweight post-import enrichment where useful
+
+This is the final import-execution pass.
+Do not rebuild the parser or staging UI.
+
+Scope:
+Only inspect and edit what is necessary, likely:
+- app/import/goodreads.tsx
+- lib/goodreadsStager.ts only if needed
+- new helper(s) for execution/import merge logic
+- maybe metadata enrichment helpers if needed
+- no unrelated screen rewrites
+
+Primary product objectives
+
+A. Execute staged rows into real records
+Requirements:
+1. Read staged import_rows for a selected/imported batch where resolution is still pending.
+2. For rows with matched_book_id:
+   - use the matched book
+3. For rows without matched_book_id but with enough normalized data:
+   - create a new books row
+4. For rows missing critical data:
+   - leave unresolved / review_needed
+5. Do not directly import rows that are explicitly flagged as review_needed unless that is safely resolved.
+
+B. Create/update user_books safely
+Requirements:
+1. Create a user_books row when the user does not already have that book in their library.
+2. If the user already has that book in user_books:
+   - merge imported data carefully instead of blindly duplicating
+3. Preserve existing in-app data when it is clearly richer/newer, unless the imported field should fill a null gap.
+4. Keep import provenance on user_books:
+   - import_source
+   - import_source_book_id
+   - import_batch_id
+   - imported_at
+
+C. Goodreads status/rating/date mapping
+Requirements:
+1. Apply the staging-normalized Goodreads values into user_books appropriately:
+   - Exclusive Shelf → status
+   - My Rating → rating
+   - Date Added → date_added
+   - Date Read → finished_at
+   - review_body
+   - private_note
+   - read_count
+   - owned_copies
+   - raw_shelves
+   - raw_shelf_positions
+2. Keep existing derived logic compatible.
+3. Do not corrupt the app’s current native source logic.
+
+D. Populate book_source_links
+Requirements:
+1. When a Goodreads row is imported successfully and a book is identified/created, write the source link:
+   - source = 'goodreads'
+   - source_book_id = Goodreads Book Id
+2. Respect uniqueness.
+3. Do not duplicate existing links.
+
+E. Duplicate / merge rules
+Requirements:
+1. Be explicit and conservative.
+2. If a user already has the book in user_books:
+   - fill null gaps from import
+   - update rating if existing rating is null and imported rating exists
+   - update review/note only if existing field is empty and imported field exists
+   - preserve existing richer in-app fields where appropriate
+3. Do not create duplicate user_books rows for the same user/book.
+
+F. Update import outcomes
+Requirements:
+1. Mark each import_rows record with the correct final resolution:
+   - matched
+   - created
+   - merged
+   - skipped
+   - failed
+2. Record import_error when something fails.
+3. Update import_batches counters accurately:
+   - imported_rows
+   - merged_rows
+   - skipped_rows
+   - failed_rows
+   - review_needed
+4. Finalize batch status appropriately.
+
+G. Lightweight post-import enrichment
+Requirements:
+1. After books are imported/created, attempt lightweight metadata completion where sensible.
+2. Prefer:
+   - preserve imported page_count if present
+   - preserve imported publication metadata if present
+   - fill missing cover/page metadata later via existing book-detail enrichment path if needed
+3. If there is already a safe helper for Google Books / Open Library enrichment, use it only where low-risk.
+4. Do not turn this pass into a full background metadata crawler.
+
+H. User-facing completion summary
+Requirements:
+1. After execution, the import screen should show a clearer final summary:
+   - imported
+   - merged with existing books
+   - skipped
+   - needs review
+   - failed
+2. Make it understandable and confidence-building.
+3. Keep the design calm and premium.
+
+I. Preserve all existing flows
+Do not break:
+- settings
+- profile
+- library
+- Home
+- recommendations
+- activity
+- pacing
+- current reading
+- rating logic
+
+Implementation guidance
+1. Build the execution logic as a dedicated helper/service, not inline in the screen.
+2. Keep row processing explicit and auditable.
+3. Favor correctness over cleverness.
+4. It is acceptable to process rows in safe chunks.
+5. Do not auto-import review_needed rows without a clear resolution.
+
+Execution rules to use
+1. matched_book_id present → use existing book
+2. no matched_book_id but title+author present → create book
+3. existing user_book for same user/book → merge, do not duplicate
+4. preserve native richer fields when import is weaker
+5. fill missing/null fields from import when helpful
+
+After editing, print only:
+1. files changed
+2. full contents of changed files
+3. the diff for those files only
+4. exact manual test steps
+5. merge rules used
+6. import outcome rules used
+7. what remains for future review-resolution refinement

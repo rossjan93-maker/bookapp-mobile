@@ -11,9 +11,11 @@ import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { parseGoodreadsCSV } from '../../lib/goodreadsParser';
 import { stageGoodreadsImport } from '../../lib/goodreadsStager';
+import { executeGoodreadsImport } from '../../lib/goodreadsExecutor';
 import type { StageSummary } from '../../lib/goodreadsStager';
+import type { ExecutionSummary } from '../../lib/goodreadsExecutor';
 
-type Step = 'idle' | 'processing' | 'done' | 'error';
+type Step = 'idle' | 'processing' | 'staged' | 'executing' | 'complete' | 'error';
 
 // ─── Layout primitives ───────────────────────────────────────────────────────
 
@@ -103,7 +105,6 @@ function pickCSVFile(): Promise<{ name: string; text: string } | null> {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.csv,text/csv,text/plain';
-    // Resolve null if dialog is dismissed without selecting
     const onFocus = () => {
       window.removeEventListener('focus', onFocus);
       setTimeout(() => {
@@ -126,7 +127,7 @@ function pickCSVFile(): Promise<{ name: string; text: string } | null> {
   });
 }
 
-// ─── Summary stat pill ───────────────────────────────────────────────────────
+// ─── Shared stat row ─────────────────────────────────────────────────────────
 
 function StatRow({
   count,
@@ -199,14 +200,34 @@ function ReviewRow({ title, author, reason, last }: {
   );
 }
 
-// ─── Screen states ───────────────────────────────────────────────────────────
+// ─── Reset / start-over button ────────────────────────────────────────────────
+
+function ResetButton({ onPress, label }: { onPress: () => void; label: string }) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={{
+        marginTop: 28,
+        paddingVertical: 13,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#e7e5e4',
+        alignItems: 'center',
+      }}
+    >
+      <Text style={{ fontSize: 14, color: '#78716c' }}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+// ─── Step: idle ───────────────────────────────────────────────────────────────
 
 function IdleView({ onPickFile, isWeb }: { onPickFile: () => void; isWeb: boolean }) {
   return (
     <>
       <PageTitle>Import from Goodreads</PageTitle>
       <PageSubtitle>
-        Bring your reading history into readstack. You'll see a preview before anything changes.
+        Bring your reading history into readstack. You'll see a preview before anything is added.
       </PageSubtitle>
 
       <Card>
@@ -266,7 +287,9 @@ function IdleView({ onPickFile, isWeb }: { onPickFile: () => void; isWeb: boolea
   );
 }
 
-function ProcessingView({ message }: { message: string }) {
+// ─── Step: processing / executing ────────────────────────────────────────────
+
+function SpinnerView({ message }: { message: string }) {
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 }}>
       <ActivityIndicator color="#78716c" size="large" />
@@ -277,17 +300,28 @@ function ProcessingView({ message }: { message: string }) {
   );
 }
 
-function DoneView({ summary, onReset }: { summary: StageSummary; onReset: () => void }) {
+// ─── Step: staged — preview before import ────────────────────────────────────
+
+function StagedView({
+  summary,
+  onImport,
+  onReset,
+}: {
+  summary: StageSummary;
+  onImport: () => void;
+  onReset: () => void;
+}) {
+  const importableCount = summary.alreadyInApp + summary.readyToImport;
   const showQueue = summary.reviewRows.length > 0;
 
   return (
     <>
-      <PageTitle>Library staged</PageTitle>
+      <PageTitle>Ready to import</PageTitle>
       <PageSubtitle>
-        Here's what we found. Import execution is coming in the next step — nothing has changed in your library yet.
+        Here's a preview of what we found. Nothing has been added to your library yet.
       </PageSubtitle>
 
-      <SectionLabel>Summary</SectionLabel>
+      <SectionLabel>Preview</SectionLabel>
       <Card>
         <StatRow
           count={summary.totalRows}
@@ -297,18 +331,18 @@ function DoneView({ summary, onReset }: { summary: StageSummary; onReset: () => 
         <StatRow
           count={summary.alreadyInApp}
           label="Already in readstack"
-          sublabel="Exact match found — will be linked instantly"
+          sublabel="Exact match found — will be linked to your record"
           accent="#15803d"
         />
         <StatRow
           count={summary.readyToImport}
-          label="Ready to add"
-          sublabel="Valid rows — will be looked up and added"
+          label="New books to add"
+          sublabel="Will be created and added to your library"
         />
         <StatRow
           count={summary.needsReview}
-          label="Need attention"
-          sublabel="Missing title or author — need manual review"
+          label="Cannot import"
+          sublabel="Missing title or author — skipped automatically"
           accent={summary.needsReview > 0 ? '#d97706' : undefined}
           last
         />
@@ -316,21 +350,21 @@ function DoneView({ summary, onReset }: { summary: StageSummary; onReset: () => 
 
       {showQueue && (
         <>
-          <SectionLabel>Needs attention</SectionLabel>
+          <SectionLabel>Cannot import</SectionLabel>
           <Card>
-            {summary.reviewRows.slice(0, 25).map((row, i) => (
+            {summary.reviewRows.slice(0, 20).map((row, i) => (
               <ReviewRow
                 key={i}
                 title={row.title}
                 author={row.author}
                 reason={row.reviewReason}
-                last={i === Math.min(summary.reviewRows.length, 25) - 1}
+                last={i === Math.min(summary.reviewRows.length, 20) - 1}
               />
             ))}
-            {summary.reviewRows.length > 25 && (
+            {summary.reviewRows.length > 20 && (
               <View style={{ paddingHorizontal: 18, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#f5f5f4' }}>
                 <Text style={{ fontSize: 12, color: '#a8a29e' }}>
-                  +{summary.reviewRows.length - 25} more rows need attention
+                  +{summary.reviewRows.length - 20} more rows cannot be imported
                 </Text>
               </View>
             )}
@@ -338,22 +372,113 @@ function DoneView({ summary, onReset }: { summary: StageSummary; onReset: () => 
         </>
       )}
 
-      <TouchableOpacity
-        onPress={onReset}
-        style={{
-          marginTop: 28,
-          paddingVertical: 13,
-          borderRadius: 12,
-          borderWidth: 1,
-          borderColor: '#e7e5e4',
-          alignItems: 'center',
-        }}
-      >
-        <Text style={{ fontSize: 14, color: '#78716c' }}>Import a different file</Text>
-      </TouchableOpacity>
+      {importableCount > 0 && (
+        <TouchableOpacity
+          onPress={onImport}
+          style={{
+            marginTop: 28,
+            backgroundColor: '#1c1917',
+            borderRadius: 12,
+            paddingVertical: 15,
+            alignItems: 'center',
+          }}
+        >
+          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>
+            Import {importableCount} {importableCount === 1 ? 'Book' : 'Books'}
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      <ResetButton onPress={onReset} label="Upload a different file" />
     </>
   );
 }
+
+// ─── Step: complete — execution result ───────────────────────────────────────
+
+function CompleteView({
+  result,
+  onReset,
+}: {
+  result: ExecutionSummary;
+  onReset: () => void;
+}) {
+  const totalImported = result.added + result.merged;
+  const showQueue = result.reviewRows.length > 0;
+
+  return (
+    <>
+      <PageTitle>Import complete</PageTitle>
+      <PageSubtitle>
+        {totalImported > 0
+          ? `${totalImported} ${totalImported === 1 ? 'book has' : 'books have'} been added to your library.`
+          : 'Your library is already up to date.'
+        }
+      </PageSubtitle>
+
+      <SectionLabel>Results</SectionLabel>
+      <Card>
+        <StatRow
+          count={result.added}
+          label="Added to library"
+          sublabel="New books added to your readstack"
+          accent={result.added > 0 ? '#15803d' : undefined}
+        />
+        <StatRow
+          count={result.merged}
+          label="Merged with existing"
+          sublabel="You already had these — import data filled in gaps"
+        />
+        <StatRow
+          count={result.skipped}
+          label="Already up to date"
+          sublabel="Your existing data was already richer — no changes made"
+        />
+        <StatRow
+          count={result.reviewNeeded}
+          label="Could not import"
+          sublabel="Missing required data — skipped"
+          accent={result.reviewNeeded > 0 ? '#d97706' : undefined}
+        />
+        <StatRow
+          count={result.failed}
+          label="Failed"
+          sublabel={result.failed > 0 ? 'Something went wrong for these rows' : 'None'}
+          accent={result.failed > 0 ? '#b91c1c' : undefined}
+          last
+        />
+      </Card>
+
+      {showQueue && (
+        <>
+          <SectionLabel>Could not import</SectionLabel>
+          <Card>
+            {result.reviewRows.slice(0, 20).map((row, i) => (
+              <ReviewRow
+                key={i}
+                title={row.title}
+                author={row.author}
+                reason={row.reason}
+                last={i === Math.min(result.reviewRows.length, 20) - 1}
+              />
+            ))}
+            {result.reviewRows.length > 20 && (
+              <View style={{ paddingHorizontal: 18, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#f5f5f4' }}>
+                <Text style={{ fontSize: 12, color: '#a8a29e' }}>
+                  +{result.reviewRows.length - 20} more rows were skipped
+                </Text>
+              </View>
+            )}
+          </Card>
+        </>
+      )}
+
+      <ResetButton onPress={onReset} label="Import another file" />
+    </>
+  );
+}
+
+// ─── Step: error ─────────────────────────────────────────────────────────────
 
 function ErrorView({ message, onReset }: { message: string; onReset: () => void }) {
   return (
@@ -388,27 +513,30 @@ function ErrorView({ message, onReset }: { message: string; onReset: () => void 
 
 export default function GoodreadsImportScreen() {
   const router = useRouter();
-  const [step, setStep]         = useState<Step>('idle');
-  const [progress, setProgress] = useState('');
-  const [summary, setSummary]   = useState<StageSummary | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [step, setStep]             = useState<Step>('idle');
+  const [progress, setProgress]     = useState('');
+  const [stageSummary, setStageSummary]       = useState<StageSummary | null>(null);
+  const [executionResult, setExecutionResult] = useState<ExecutionSummary | null>(null);
+  const [currentUserId, setCurrentUserId]     = useState<string | null>(null);
+  const [currentBatchId, setCurrentBatchId]   = useState<string | null>(null);
+  const [errorMsg, setErrorMsg]     = useState<string | null>(null);
 
   const isWeb = Platform.OS === 'web';
 
+  // ── Parse + stage ──────────────────────────────────────────────────────────
+
   async function handlePickFile() {
     const file = await pickCSVFile();
-    if (!file) return; // user cancelled
+    if (!file) return;
 
     setStep('processing');
     setProgress('Parsing your library…');
 
     try {
-      // ── Parse CSV ──
       const parseResult = parseGoodreadsCSV(file.text);
 
       if (!parseResult.isGoodreadsExport) {
-        const errMsg = parseResult.parseErrors[0]?.message
-          ?? 'This does not look like a Goodreads export CSV.';
+        const errMsg = parseResult.parseErrors[0]?.message ?? 'This does not look like a Goodreads export CSV.';
         setErrorMsg(
           `We couldn't read this file as a Goodreads export.\n\n${errMsg}\n\nMake sure you're uploading the file exported from Goodreads → My Books → Import and Export.`
         );
@@ -422,46 +550,78 @@ export default function GoodreadsImportScreen() {
         return;
       }
 
-      // ── Get current user ──
       setProgress('Matching books…');
       if (!supabase) throw new Error('Supabase not configured.');
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('You must be signed in to import your library.');
 
-      // ── Stage rows ──
       setProgress(`Staging ${parseResult.rows.length} books…`);
-      const stageSummary = await stageGoodreadsImport(user.id, parseResult.rows, file.name);
+      const staged = await stageGoodreadsImport(user.id, parseResult.rows, file.name);
 
-      setSummary(stageSummary);
-      setStep('done');
+      setCurrentUserId(user.id);
+      setCurrentBatchId(staged.batchId);
+      setStageSummary(staged);
+      setStep('staged');
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'An unexpected error occurred.';
-      setErrorMsg(message);
+      setErrorMsg(err instanceof Error ? err.message : 'An unexpected error occurred.');
       setStep('error');
     }
   }
 
+  // ── Execute import ─────────────────────────────────────────────────────────
+
+  async function handleExecute() {
+    if (!currentUserId || !currentBatchId) return;
+
+    setStep('executing');
+    setProgress('Importing your books…');
+
+    try {
+      const result = await executeGoodreadsImport(currentUserId, currentBatchId);
+      setExecutionResult(result);
+      setStep('complete');
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Import failed. Please try again.');
+      setStep('error');
+    }
+  }
+
+  // ── Reset ──────────────────────────────────────────────────────────────────
+
   function handleReset() {
     setStep('idle');
-    setSummary(null);
+    setStageSummary(null);
+    setExecutionResult(null);
+    setCurrentUserId(null);
+    setCurrentBatchId(null);
     setErrorMsg(null);
     setProgress('');
   }
 
+  const isLocked = step === 'processing' || step === 'executing';
+
   return (
     <ScreenContainer>
-      <BackButton onPress={() => router.back()} disabled={step === 'processing'} />
+      <BackButton onPress={() => router.back()} disabled={isLocked} />
 
       {step === 'idle' && (
         <IdleView onPickFile={handlePickFile} isWeb={isWeb} />
       )}
 
-      {step === 'processing' && (
-        <ProcessingView message={progress} />
+      {(step === 'processing' || step === 'executing') && (
+        <SpinnerView message={progress} />
       )}
 
-      {step === 'done' && summary && (
-        <DoneView summary={summary} onReset={handleReset} />
+      {step === 'staged' && stageSummary && (
+        <StagedView
+          summary={stageSummary}
+          onImport={handleExecute}
+          onReset={handleReset}
+        />
+      )}
+
+      {step === 'complete' && executionResult && (
+        <CompleteView result={executionResult} onReset={handleReset} />
       )}
 
       {step === 'error' && (
