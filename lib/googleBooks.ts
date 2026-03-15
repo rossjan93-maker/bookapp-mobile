@@ -15,7 +15,7 @@ const API_KEY =
     : null;
 
 // Minimum ratio of significant title words that must appear in the result title.
-const TITLE_MATCH_THRESHOLD = 0.5;
+const TITLE_MATCH_THRESHOLD = 0.6;
 
 // A page count below this is almost certainly wrong (pamphlet/excerpt edition).
 const MIN_CREDIBLE_PAGES = 30;
@@ -42,9 +42,11 @@ export async function fetchGoogleBooksPageCount(
   if (!title.trim()) return null;
 
   try {
-    const q = encodeURIComponent(
-      `intitle:${title.slice(0, 50).trim()} inauthor:${author.slice(0, 40).trim()}`,
-    );
+    const authorTrimmed = author.slice(0, 40).trim();
+    const skipAuthor = !authorTrimmed || /^unknown\s+author$/i.test(authorTrimmed);
+    const qParts = [`intitle:${title.slice(0, 50).trim()}`];
+    if (!skipAuthor) qParts.push(`inauthor:${authorTrimmed}`);
+    const q = encodeURIComponent(qParts.join(' '));
     const keyParam = API_KEY ? `&key=${API_KEY}` : '';
     const url =
       `https://www.googleapis.com/books/v1/volumes` +

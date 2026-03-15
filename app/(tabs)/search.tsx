@@ -20,6 +20,8 @@ type BookResult = {
   title: string;
   author_name?: string[];
   cover_i?: number;
+  cover_edition_key?: string;
+  number_of_pages_median?: number;
 };
 
 type SelectedBook = {
@@ -27,6 +29,8 @@ type SelectedBook = {
   title: string;
   author: string;
   coverUrl: string | null;
+  pageCount: number | null;
+  editionKey: string | null;
 };
 
 type Friend = {
@@ -77,7 +81,7 @@ export default function SearchScreen() {
       setSearching(true);
       try {
         const res = await fetch(
-          `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&fields=key,title,author_name,cover_i&limit=10`
+          `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&fields=key,title,author_name,cover_i,cover_edition_key,number_of_pages_median&limit=10`
         );
         const json = await res.json();
         setBookResults(json.docs ?? []);
@@ -93,11 +97,19 @@ export default function SearchScreen() {
 
   async function handleSelectBook(book: BookResult) {
     if (!supabase || !currentUserId) return;
+    const editionKey = book.cover_edition_key ?? null;
+    const coverUrl = editionKey
+      ? `https://covers.openlibrary.org/b/olid/${editionKey}-M.jpg`
+      : olCoverUrl(book.cover_i, 'M');
+    const rawPages = book.number_of_pages_median;
+    const pageCount = typeof rawPages === 'number' && rawPages >= 30 ? rawPages : null;
     const selected: SelectedBook = {
       externalId: book.key,
       title: book.title,
       author: book.author_name?.[0] ?? 'Unknown author',
-      coverUrl: olCoverUrl(book.cover_i, 'M'),
+      coverUrl,
+      pageCount,
+      editionKey,
     };
     setSelectedBook(selected);
     setStep('friends');
@@ -134,7 +146,7 @@ export default function SearchScreen() {
 
     const { data: existingBook } = await supabase
       .from('books')
-      .select('id, cover_url')
+      .select('id, cover_url, page_count')
       .eq('external_id', selectedBook.externalId)
       .maybeSingle();
 
@@ -142,21 +154,23 @@ export default function SearchScreen() {
 
     if (existingBook) {
       bookId = existingBook.id;
-      if (!existingBook.cover_url && selectedBook.coverUrl) {
-        await supabase
-          .from('books')
-          .update({ cover_url: selectedBook.coverUrl })
-          .eq('id', existingBook.id);
+      const updates: Record<string, unknown> = {};
+      if (!existingBook.cover_url && selectedBook.coverUrl) updates.cover_url = selectedBook.coverUrl;
+      if (!existingBook.page_count && selectedBook.pageCount) updates.page_count = selectedBook.pageCount;
+      if (Object.keys(updates).length > 0) {
+        await supabase.from('books').update(updates).eq('id', existingBook.id);
       }
     } else {
+      const insertData: Record<string, unknown> = {
+        title: selectedBook.title,
+        author: selectedBook.author,
+        external_id: selectedBook.externalId,
+        cover_url: selectedBook.coverUrl ?? null,
+      };
+      if (selectedBook.pageCount) insertData.page_count = selectedBook.pageCount;
       const { data: newBook, error: bookInsertError } = await supabase
         .from('books')
-        .insert({
-          title: selectedBook.title,
-          author: selectedBook.author,
-          external_id: selectedBook.externalId,
-          cover_url: selectedBook.coverUrl ?? null,
-        })
+        .insert(insertData)
         .select('id')
         .single();
 
@@ -283,7 +297,7 @@ export default function SearchScreen() {
                 alignItems: 'center',
               }}
             >
-              <CoverThumb url={olCoverUrl(item.cover_i, 'S')} width={34} height={50} />
+              <CoverThumb url={olCoverUrl(item.cover_i, 'S')} title={item.title} width={34} height={50} />
               <View style={{ flex: 1, marginLeft: 12 }}>
                 <Text style={{ fontWeight: '600', fontSize: 15, color: '#1c1917', lineHeight: 21 }}>
                   {item.title}
@@ -362,7 +376,7 @@ export default function SearchScreen() {
           flexDirection: 'row',
           alignItems: 'center',
         }}>
-          <CoverThumb url={selectedBook?.coverUrl} width={48} height={70} />
+          <CoverThumb url={selectedBook?.coverUrl} editionKey={selectedBook?.editionKey} title={selectedBook?.title} width={48} height={70} />
           <View style={{ flex: 1, marginLeft: 14 }}>
             <Text style={{ fontWeight: '700', fontSize: 15, color: '#1c1917', lineHeight: 21 }}>
               {selectedBook?.title}

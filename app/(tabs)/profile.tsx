@@ -739,6 +739,7 @@ export default function ProfileScreen() {
                   <CoverThumb
                     url={rec.book?.cover_url}
                     externalId={rec.book?.external_id}
+                    title={rec.book?.title}
                     width={32}
                     height={46}
                   />

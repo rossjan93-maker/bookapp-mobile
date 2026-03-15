@@ -306,6 +306,7 @@ export default function InboxScreen() {
                   <CoverThumb
                     url={item.book?.cover_url}
                     externalId={item.book?.external_id}
+                    title={item.book?.title}
                     width={48}
                     height={70}
                   />
@@ -422,6 +423,7 @@ function RecRow({ item, onPress }: { item: InboxItem; onPress: () => void }) {
       <CoverThumb
         url={item.book?.cover_url}
         externalId={item.book?.external_id}
+        title={item.book?.title}
         width={40}
         height={58}
       />

@@ -517,6 +517,7 @@ export default function LibraryScreen() {
                 <CoverThumb
                   url={item.book?.cover_url}
                   externalId={item.book?.external_id}
+                  title={item.book?.title}
                   width={48}
                   height={70}
                 />
@@ -622,6 +623,7 @@ export default function LibraryScreen() {
               <CoverThumb
                 url={item.book?.cover_url}
                 externalId={item.book?.external_id}
+                title={item.book?.title}
                 width={44}
                 height={64}
               />

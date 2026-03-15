@@ -54,9 +54,30 @@ async function fetchOLMeta(externalId: string): Promise<OLMeta> {
     else if (data.description?.value) description = data.description.value;
 
     const subjects: string[] = Array.isArray(data.subjects) ? data.subjects.slice(0, 8) : [];
-    const pageCount: number | null = typeof data.number_of_pages === 'number' ? data.number_of_pages : null;
+    let pageCount: number | null = typeof data.number_of_pages === 'number' ? data.number_of_pages : null;
 
-    return { description, subjects, pageCount };
+    if (!pageCount || pageCount < 30) {
+      try {
+        const edRes = await fetch(`https://openlibrary.org/works/${olid}/editions.json?limit=50`);
+        if (edRes.ok) {
+          const edData = await edRes.json();
+          const pages: number[] = [];
+          if (Array.isArray(edData.entries)) {
+            for (const ed of edData.entries) {
+              const np = ed.number_of_pages;
+              if (typeof np === 'number' && np >= 30) pages.push(np);
+            }
+          }
+          if (pages.length > 0) {
+            pages.sort((a, b) => a - b);
+            pageCount = pages[Math.floor(pages.length / 2)];
+          }
+        }
+      } catch {}
+    }
+
+    const crediblePageCount = (pageCount != null && pageCount >= 30) ? pageCount : null;
+    return { description, subjects, pageCount: crediblePageCount };
   } catch {
     return { description: null, subjects: [], pageCount: null };
   }
@@ -337,7 +358,7 @@ export default function BookDetailScreen() {
         >
           <Text style={{ fontSize: 14, color: '#78716c' }}>← Back</Text>
         </TouchableOpacity>
-        <CoverThumb url={coverUrl || null} externalId={externalId || null} width={122} height={180} />
+        <CoverThumb url={coverUrl || null} externalId={externalId || null} title={title || null} width={122} height={180} />
       </View>
 
       <View style={{ paddingHorizontal: 24, paddingTop: 28 }}>

@@ -21,6 +21,8 @@ type OLBook = {
   title: string;
   author_name?: string[];
   cover_i?: number;
+  cover_edition_key?: string;
+  number_of_pages_median?: number;
 };
 
 type SelectedBook = {
@@ -29,6 +31,8 @@ type SelectedBook = {
   author: string;
   coverUrl: string | null;
   isManual: boolean;
+  pageCount: number | null;
+  editionKey: string | null;
 };
 
 type BookStatus = 'want_to_read' | 'reading' | 'finished' | 'dnf';
@@ -82,7 +86,7 @@ export default function AddBookScreen() {
       setSearching(true);
       try {
         const res = await fetch(
-          `https://openlibrary.org/search.json?q=${encodeURIComponent(trimmed)}&fields=key,title,author_name,cover_i&limit=15`
+          `https://openlibrary.org/search.json?q=${encodeURIComponent(trimmed)}&fields=key,title,author_name,cover_i,cover_edition_key,number_of_pages_median&limit=15`
         );
         const json = await res.json();
         setOlResults(json.docs ?? []);
@@ -97,12 +101,20 @@ export default function AddBookScreen() {
   // ── Handlers (logic unchanged) ────────────────────────────────────────────
 
   function selectOLBook(book: OLBook) {
+    const editionKey = book.cover_edition_key ?? null;
+    let coverUrl = editionKey
+      ? `https://covers.openlibrary.org/b/olid/${editionKey}-M.jpg`
+      : olCoverUrl(book.cover_i);
+    const rawPages = book.number_of_pages_median;
+    const pageCount = typeof rawPages === 'number' && rawPages >= 30 ? rawPages : null;
     setSelectedBook({
       externalId: book.key,
       title: book.title,
       author: book.author_name?.[0] ?? 'Unknown author',
-      coverUrl: olCoverUrl(book.cover_i),
+      coverUrl,
       isManual: false,
+      pageCount,
+      editionKey,
     });
     setStep('confirm');
   }
@@ -115,6 +127,8 @@ export default function AddBookScreen() {
       author: manualAuthor.trim() || 'Unknown author',
       coverUrl: null,
       isManual: true,
+      pageCount: null,
+      editionKey: null,
     });
     setStep('confirm');
   }
@@ -128,24 +142,29 @@ export default function AddBookScreen() {
     if (selectedBook.externalId) {
       const { data: existing } = await supabase
         .from('books')
-        .select('id, cover_url')
+        .select('id, cover_url, page_count')
         .eq('external_id', selectedBook.externalId)
         .maybeSingle();
 
       if (existing) {
         bookId = existing.id;
-        if (!existing.cover_url && selectedBook.coverUrl) {
-          await supabase.from('books').update({ cover_url: selectedBook.coverUrl }).eq('id', existing.id);
+        const updates: Record<string, unknown> = {};
+        if (!existing.cover_url && selectedBook.coverUrl) updates.cover_url = selectedBook.coverUrl;
+        if (!existing.page_count && selectedBook.pageCount) updates.page_count = selectedBook.pageCount;
+        if (Object.keys(updates).length > 0) {
+          await supabase.from('books').update(updates).eq('id', existing.id);
         }
       } else {
+        const insertData: Record<string, unknown> = {
+          title: selectedBook.title,
+          author: selectedBook.author,
+          external_id: selectedBook.externalId,
+          cover_url: selectedBook.coverUrl,
+        };
+        if (selectedBook.pageCount) insertData.page_count = selectedBook.pageCount;
         const { data: newBook, error } = await supabase
           .from('books')
-          .insert({
-            title: selectedBook.title,
-            author: selectedBook.author,
-            external_id: selectedBook.externalId,
-            cover_url: selectedBook.coverUrl,
-          })
+          .insert(insertData)
           .select('id')
           .single();
 
@@ -304,7 +323,7 @@ export default function AddBookScreen() {
                 borderBottomColor: '#f5f5f4',
               }}
             >
-              <CoverThumb url={olCoverUrl(item.cover_i)} width={34} height={50} />
+              <CoverThumb url={olCoverUrl(item.cover_i)} title={item.title} width={34} height={50} />
               <View style={{ flex: 1, marginLeft: 12 }}>
                 <Text style={{ fontSize: 15, fontWeight: '600', color: '#1c1917', lineHeight: 21 }}>
                   {item.title}
@@ -524,6 +543,8 @@ export default function AddBookScreen() {
           <CoverThumb
             url={selectedBook?.coverUrl}
             externalId={selectedBook?.externalId}
+            editionKey={selectedBook?.editionKey}
+            title={selectedBook?.title}
             width={52}
             height={76}
           />

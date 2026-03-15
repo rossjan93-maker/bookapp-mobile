@@ -445,7 +445,7 @@ export default function HomeScreen() {
                   borderLeftWidth: 3,
                   borderLeftColor: accentColor,
                 }}>
-                  <CoverThumb url={cr.cover_url} externalId={cr.external_id} width={56} height={82} />
+                  <CoverThumb url={cr.cover_url} externalId={cr.external_id} title={cr.title} width={56} height={82} />
                   <View style={{ flex: 1, marginLeft: 16 }}>
                     <Text style={{
                       fontSize: 16, fontWeight: '700', color: '#1c1917', lineHeight: 22, marginBottom: 3,
@@ -522,7 +522,7 @@ export default function HomeScreen() {
                       elevation: 2,
                     }}>
                       <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 }}>
-                        <CoverThumb url={cr.cover_url} externalId={cr.external_id} width={44} height={64} />
+                        <CoverThumb url={cr.cover_url} externalId={cr.external_id} title={cr.title} width={44} height={64} />
                         <View style={{ flex: 1, marginLeft: 10 }}>
                           <Text numberOfLines={2} style={{
                             fontSize: 14, fontWeight: '700', color: '#1c1917', lineHeight: 19, marginBottom: 3,
@@ -704,6 +704,7 @@ export default function HomeScreen() {
                   <CoverThumb
                     url={event.book?.cover_url}
                     externalId={event.book?.external_id}
+                    title={event.book?.title}
                     width={40}
                     height={58}
                   />
