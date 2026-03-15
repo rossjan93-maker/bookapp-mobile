@@ -1,0 +1,212 @@
+Make one controlled “Goodreads CSV parser + normalization + staging + review queue foundation” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not build the final merge/import-into-library execution yet.
+Do not refactor unrelated app logic.
+Do not break auth, profile, settings, books, user_books, recommendations, activity, pacing, or current reading flows.
+
+Goal:
+Build the first real user-facing Goodreads import flow:
+1. user can upload a Goodreads CSV export
+2. the app parses and normalizes it
+3. rows are staged into import_batches and import_rows
+4. the user gets a reviewable summary of what matched vs what needs attention
+5. do NOT execute the final import into books/user_books in this pass
+
+This pass is about:
+- upload
+- parse
+- normalize
+- stage
+- summarize
+- review queue foundation
+
+It is NOT yet about final import execution.
+
+Scope:
+Inspect and edit only what is necessary, likely:
+- app/settings.tsx or a new import entry route
+- a new route like app/import/goodreads.tsx
+- lib/ helpers for CSV parsing / normalization
+- Supabase calls into import_batches / import_rows
+- maybe a tiny shared component if useful
+- no unrelated broad screen rewrites
+
+Primary product objectives
+
+A. Add Goodreads import entry point
+Requirements:
+1. Add a clear entry point from Settings.
+2. Good label examples:
+   - Import from Goodreads
+   - Bring your Goodreads library
+3. The row should route to a dedicated import screen.
+4. Keep it consistent with the rest of Settings.
+
+B. Build a dedicated Goodreads import screen
+Requirements:
+1. Create a dedicated screen for Goodreads import.
+2. The screen should explain, briefly and clearly:
+   - what file the user needs
+   - that this uses their Goodreads export CSV
+   - that they will get a review step before anything is imported
+3. Keep the UI calm and premium, not technical or scary.
+
+C. CSV upload
+Requirements:
+1. Let the user pick/upload a Goodreads CSV file.
+2. Validate file type/shape as reasonably as possible.
+3. Handle obvious failure cases cleanly:
+   - no file
+   - unreadable file
+   - wrong columns / not a Goodreads export
+4. Do not make the experience brittle.
+
+D. Parse and normalize the CSV
+Requirements:
+1. Parse the Goodreads CSV into structured rows.
+2. Normalize the key fields into staging-friendly values:
+   - source_book_id
+   - title
+   - author
+   - isbn
+   - isbn13
+   - exclusive shelf
+   - bookshelves
+   - rating
+   - date added
+   - date read
+   - review
+   - page count
+   - publication metadata if present
+3. Preserve the raw row payload exactly in import_rows.raw_data.
+4. Be tolerant of missing optional columns.
+5. Do not silently fail if some fields are missing.
+
+E. Create import batch + stage rows
+Requirements:
+1. Create an import_batches row for the upload.
+2. Create import_rows rows for each parsed CSV row.
+3. Populate:
+   - raw_data
+   - normalized fields
+   - initial resolution state
+   - import batch linkage
+4. Update batch counters appropriately.
+5. Keep the process user-scoped.
+
+F. Add basic matching / confidence foundation
+Requirements:
+1. In this pass, do lightweight matching only.
+2. At minimum, attempt:
+   - source_book_id match via book_source_links if present
+   - isbn13 match
+   - isbn match
+   - normalized title + author heuristic if straightforward
+3. Store:
+   - matched_book_id if found
+   - match_confidence
+   - match_method
+4. Do not fully merge/import into books or user_books yet.
+5. The purpose is to classify rows into:
+   - clearly matched
+   - likely matched
+   - needs review
+
+G. Show a reviewable summary
+Requirements:
+1. After staging, show a summary screen/state that tells the user:
+   - total rows found
+   - high-confidence matches
+   - needs review
+   - failed/unreadable rows if any
+2. Keep this elegant and readable.
+3. The goal is confidence and transparency, not technical detail overload.
+
+H. Add a first review queue foundation
+Requirements:
+1. If rows need review, show a compact list/queue of them.
+2. This pass does NOT need full manual reconciliation tools yet.
+3. But the user should be able to see which rows are unresolved / ambiguous.
+4. Good enough for this pass:
+   - row title / author
+   - maybe why it needs review
+   - clear counts
+5. Full conflict resolution can come in the next pass.
+
+I. Goodreads-specific validation
+Requirements:
+1. Detect whether the uploaded CSV looks like a Goodreads export.
+2. Use known Goodreads columns as the heuristic.
+3. Do not require every optional column.
+4. But do fail gracefully if the file clearly is not the expected export shape.
+
+J. Preserve all existing flows
+Do not break:
+- settings
+- profile
+- navigation
+- library
+- recommendations
+- book detail
+- pacing
+- current reading
+- activity feed
+
+Implementation guidance
+1. Build this as a real staged importer, not a direct write into user_books.
+2. Favor robustness and clarity over speed.
+3. Keep parser logic in helper files, not inside the screen.
+4. Keep Goodreads-specific mapping explicit and readable.
+5. Do not build final merge/import execution yet — stop after staging + summary + review queue foundation.
+
+Expected architecture
+Prefer something like:
+- settings entry row
+- dedicated Goodreads import screen
+- helper(s) for:
+  - CSV parsing
+  - column normalization
+  - basic match scoring
+- staging writes to:
+  - import_batches
+  - import_rows
+
+Goodreads columns to support if present
+At minimum, account for:
+- Book Id
+- Title
+- Author
+- Additional Authors
+- ISBN
+- ISBN13
+- My Rating
+- Publisher
+- Binding
+- Number of Pages
+- Year Published
+- Original Publication Year
+- Date Read
+- Date Added
+- Bookshelves
+- Bookshelves with positions
+- Exclusive Shelf
+- My Review
+- Spoiler
+- Private Notes
+- Read Count
+- Owned Copies
+
+You do NOT need to require all of them.
+But normalize what is present.
+
+After editing, print only:
+1. files changed
+2. full contents of all changed files
+3. the diff for those files only
+4. exact manual test steps
+5. Goodreads column assumptions used
+6. normalization rules used
+7. match-confidence rules used
+8. what is now ready for the final import-execution pass

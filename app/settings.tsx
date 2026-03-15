@@ -387,6 +387,28 @@ export default function SettingsScreen() {
         </SettingsCard>
       </View>
 
+      {/* ── Library ──────────────────────────────────────────────────────────── */}
+      <SectionHeader>Library</SectionHeader>
+      <SettingsCard>
+        <TouchableOpacity
+          onPress={() => router.push('/import/goodreads')}
+          activeOpacity={0.75}
+          style={{ paddingHorizontal: 16, paddingVertical: 16 }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 3 }}>
+                Import from Goodreads
+              </Text>
+              <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>
+                Bring your reading history into readstack
+              </Text>
+            </View>
+            <Text style={{ fontSize: 20, color: '#c4b5a5', marginLeft: 10 }}>›</Text>
+          </View>
+        </TouchableOpacity>
+      </SettingsCard>
+
       {/* ── Account ──────────────────────────────────────────────────────────── */}
       <SectionHeader>Account</SectionHeader>
       <SettingsCard>
