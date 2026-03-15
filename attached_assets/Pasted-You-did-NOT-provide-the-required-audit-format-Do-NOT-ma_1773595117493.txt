@@ -1,0 +1,131 @@
+You did NOT provide the required audit format.
+Do NOT make code changes.
+Do NOT refactor.
+Do NOT apply migrations.
+Do NOT improve anything.
+
+Your last response was too high-level and not sufficient for external validation.
+
+Now produce the audit again in the exact structure requested below, with concrete evidence.
+
+I need a structured implementation audit of the current app state so an external reviewer can judge:
+1. what was actually implemented
+2. how it works now
+3. whether it matches the intended prompt
+4. what still appears missing, weak, or only partially implemented
+
+Return ONLY the following structure:
+
+# 1. Executive summary
+- concise summary of current app state
+- what is strongest right now
+- what is weakest right now
+- what appears fully implemented vs partially implemented
+
+# 2. Feature-by-feature implementation audit
+For EACH of these 11 areas, provide all required subsections:
+
+1. Home as reading dashboard
+2. Library as operational hub
+3. Book Detail as smart object page
+4. Recommend / Add Book pre-interaction UX
+5. Social trust layer (Inbox + Friend Detail)
+6. Metadata reliability / page count handling
+7. Stats / Reader Insights / Reading Patterns
+8. Settings / profile preferences / identity handling
+9. Name display system (first/last name fallback vs username)
+10. Progress, pacing, and page-based vs date-based logic
+11. Design system / visual consistency state
+
+For EACH area use this exact subsection structure:
+
+## [Feature Name]
+
+### Status
+One of:
+- Fully implemented
+- Mostly implemented
+- Partially implemented
+- Not implemented
+
+### What exists now
+- describe the current user experience in plain English
+- be specific
+
+### Files involved
+- exact files touched by this feature
+- include helpers and migrations if relevant
+
+### Key logic / UI details
+- actual behavior
+- important conditions, fallbacks, and edge cases
+- mention data dependencies
+
+### What still seems missing or weak
+- be candid
+- call out gaps or overclaims
+
+### Manual validation path
+- exact click/test path a human should take
+
+# 3. Exact file-level change map
+List all materially relevant files and for each:
+- what role it plays
+- what major UX/product behaviors it controls
+
+At minimum include:
+- app/(tabs)/index.tsx
+- app/(tabs)/library.tsx
+- app/(tabs)/notes.tsx
+- app/(tabs)/search.tsx
+- app/(tabs)/profile.tsx
+- app/book/[id].tsx
+- app/add-book.tsx
+- app/settings.tsx
+- app/friend/[id].tsx
+- app/_layout.tsx
+- app/(tabs)/_layout.tsx
+- lib/pacing.ts
+- lib/signals.ts
+- lib/displayName.ts if present
+- metadata helpers if present
+- relevant supabase migrations
+
+# 4. Current data / schema dependencies
+Summarize:
+- which migrations must be applied
+- what breaks or degrades if missing
+- what fallbacks exist today
+
+# 5. Prompt-to-implementation accuracy check
+For each of these, rate:
+- Strong match
+- Moderate match
+- Weak match
+
+Then explain briefly:
+- premium editorial reading app feel
+- trusted social recommendation loop
+- reading momentum / pacing motivation
+- metadata reliability
+- useful home/dashboard behavior
+- cleaner identity system
+- settings / preferences hub
+- meaningful reader insights / patterns
+
+# 6. Biggest UX gaps still visible
+Give the top 10 remaining UX/product gaps in rank order.
+
+# 7. Recommended next 5 prompts
+For each:
+- title
+- one-sentence objective
+- why it should happen next
+
+# 8. Important note
+Do not give generic praise.
+Do not just say “implemented.”
+Be concrete.
+If something is only visually changed but not materially improved, say so.
+If something only works under certain data conditions, say so.
+If something depends on a migration, say so.
