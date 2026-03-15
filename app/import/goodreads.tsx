@@ -236,14 +236,14 @@ function IdleView({ onPickFile, isWeb }: { onPickFile: () => void; isWeb: boolea
       sub: 'iPhone: tap ᴬᴬ in the address bar → "Request Desktop Website". Android: tap ⋮ → "Desktop site". The export button only appears in desktop mode.',
     },
     {
-      label: 'Tap "Export Library" — and watch carefully',
-      sub: 'Goodreads may give little or no visible confirmation. Look for a quiet new line appearing under the button, or a file starting to open on your phone. Either means it worked.',
+      label: 'Tap "Export Library" — watch what happens next',
+      sub: 'Goodreads is subtle here. It may quietly add a new line under the button, or the CSV may open directly in a preview. Both mean it worked.',
     },
     {
       label: 'Get the file back here',
       sub: isWeb
-        ? 'If a viewer opened the file on your phone: tap Share → Save to Files (or Downloads), then come back here and tap "Choose CSV File" below. Look for goodreads_library_export.csv.'
-        : 'If a viewer opened the file: tap Share → Save to Files (or Downloads). Then open readstack in a browser, go to Settings → Import from Goodreads, and select goodreads_library_export.csv.',
+        ? 'If a CSV preview opened: close it and go back to Safari. Tap the download icon in the Safari toolbar to find the file. Then come back here and tap "Choose CSV File" below — look for goodreads_library_export.csv.'
+        : 'If a CSV preview opened: close it and go back to Safari. Tap the download icon in the Safari toolbar to find the file. Then open readstack in a web browser and upload goodreads_library_export.csv.',
     },
   ];
 
