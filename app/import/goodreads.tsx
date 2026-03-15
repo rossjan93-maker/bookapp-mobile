@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
   Platform,
   ScrollView,
   Text,
@@ -220,66 +221,128 @@ function ResetButton({ onPress, label }: { onPress: () => void; label: string })
   );
 }
 
+const GOODREADS_EXPORT_URL = 'https://www.goodreads.com/review/import';
+
 // ─── Step: idle ───────────────────────────────────────────────────────────────
 
 function IdleView({ onPickFile, isWeb }: { onPickFile: () => void; isWeb: boolean }) {
+  const steps = [
+    {
+      label: 'Open the Goodreads export page in your phone browser',
+      sub: 'Tap the button below to open it directly.',
+    },
+    {
+      label: 'Switch to Desktop Site',
+      sub: 'iPhone: tap ᴬᴬ in the address bar → "Request Desktop Website". Android: tap ⋮ → "Desktop site".',
+    },
+    {
+      label: 'Tap "Export Library"',
+      sub: 'A file called goodreads_library_export.csv will download to your device.',
+    },
+    {
+      label: 'Come back and upload the file',
+      sub: isWeb
+        ? 'Tap "Choose CSV File" below to upload your goodreads_library_export.csv.'
+        : 'Open readstack in a browser, go to Settings → Import from Goodreads, and upload the CSV.',
+    },
+  ];
+
   return (
     <>
       <PageTitle>Import from Goodreads</PageTitle>
       <PageSubtitle>
-        Bring your reading history into readstack. You'll see a preview before anything is added.
+        Bring your full reading history into readstack. You'll see a preview before anything is saved.
       </PageSubtitle>
 
       <Card>
         <View style={{ padding: 18 }}>
           <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 14 }}>
-            How to get your export file
+            How to export your library
           </Text>
-          {[
-            'Go to goodreads.com → My Books',
-            'Click Import and Export in the left panel',
-            'Choose Export Library and download the CSV',
-            'Come back here and upload it below',
-          ].map((step, i) => (
-            <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 }}>
+          {steps.map((step, i) => (
+            <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: i < steps.length - 1 ? 14 : 0 }}>
               <View style={{
-                width: 20, height: 20, borderRadius: 10,
+                width: 22, height: 22, borderRadius: 11,
                 backgroundColor: '#f5f5f4',
                 alignItems: 'center', justifyContent: 'center',
-                marginRight: 10, marginTop: 1, flexShrink: 0,
+                marginRight: 12, marginTop: 1, flexShrink: 0,
               }}>
                 <Text style={{ fontSize: 11, fontWeight: '700', color: '#78716c' }}>{i + 1}</Text>
               </View>
-              <Text style={{ fontSize: 13, color: '#57534e', lineHeight: 20, flex: 1 }}>{step}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', lineHeight: 20 }}>
+                  {step.label}
+                </Text>
+                <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18, marginTop: 2 }}>
+                  {step.sub}
+                </Text>
+              </View>
             </View>
           ))}
         </View>
       </Card>
 
+      {/* Open Goodreads export page in browser */}
+      <TouchableOpacity
+        onPress={() => Linking.openURL(GOODREADS_EXPORT_URL)}
+        style={{
+          marginTop: 20,
+          backgroundColor: '#1c1917',
+          borderRadius: 12,
+          paddingVertical: 15,
+          alignItems: 'center',
+        }}
+      >
+        <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>
+          Open Goodreads Export Page
+        </Text>
+      </TouchableOpacity>
+
+      {/* Divider */}
+      <View style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginVertical: 20,
+      }}>
+        <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
+        <Text style={{ fontSize: 12, color: '#a8a29e', marginHorizontal: 12 }}>then</Text>
+        <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
+      </View>
+
       {isWeb ? (
+        /* Web: full file-picker CTA */
         <TouchableOpacity
           onPress={onPickFile}
           style={{
-            marginTop: 24,
-            backgroundColor: '#1c1917',
+            backgroundColor: '#fff',
             borderRadius: 12,
             paddingVertical: 15,
             alignItems: 'center',
+            borderWidth: 1,
+            borderColor: '#e7e5e4',
           }}
         >
-          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>
+          <Text style={{ color: '#1c1917', fontSize: 15, fontWeight: '600' }}>
             Choose CSV File
+          </Text>
+          <Text style={{ color: '#a8a29e', fontSize: 12, marginTop: 3 }}>
+            goodreads_library_export.csv
           </Text>
         </TouchableOpacity>
       ) : (
+        /* Mobile: helpful note instead of a dead end */
         <View style={{
-          marginTop: 24,
-          backgroundColor: '#f5f5f4',
+          backgroundColor: '#fff',
           borderRadius: 12,
           padding: 18,
+          borderWidth: 1,
+          borderColor: '#e7e5e4',
         }}>
-          <Text style={{ fontSize: 14, color: '#78716c', textAlign: 'center', lineHeight: 21 }}>
-            Goodreads import is available on web. Open readstack in your browser to upload your library.
+          <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', marginBottom: 6 }}>
+            Uploading the file
+          </Text>
+          <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
+            Once you've downloaded the CSV, open readstack in a web browser and come back to this screen to upload it.
           </Text>
         </View>
       )}
