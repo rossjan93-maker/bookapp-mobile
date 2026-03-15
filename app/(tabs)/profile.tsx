@@ -100,7 +100,6 @@ export default function ProfileScreen() {
   const [sourceCompletion, setSourceCompletion] = useState<SourceCompletion | null>(null);
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState<string | null>(null);
-  const [insightsExpanded, setInsightsExpanded] = useState(false);
   const [recsExpanded, setRecsExpanded]         = useState(false);
 
 
@@ -331,81 +330,59 @@ export default function ProfileScreen() {
     !!prefs.favorite_authors
   );
 
-  // ── Unified Reading Intelligence rows ─────────────────────────────────────
-  type IntelRow =
-    | { kind: 'stat'; key: string; value: string; label: string }
-    | { kind: 'text'; key: string; text: string };
+  // ── Reading Intelligence: Signals (quantitative) & Patterns (editorial) ──
+  type SignalRow = { key: string; value: string; label: string };
+  type PatternRow = { key: string; text: string };
 
-  const allIntelRows: IntelRow[] = [];
+  const signalRows: SignalRow[] = [];
+  const patternRows: PatternRow[] = [];
 
-  // Stat rows (former Reader Insights)
   if (signals) {
+    if (signals.avgPagesPerDay !== null && signals.avgPagesPerDay > 0) {
+      const days = Math.round(300 / signals.avgPagesPerDay);
+      const paceLabel = `pages/day \u00B7 a 300-page book in about ${days} day${days === 1 ? '' : 's'}`;
+      signalRows.push({ key: 'pace', value: `~${signals.avgPagesPerDay}`, label: paceLabel });
+    }
     if (signals.resolved >= 3 && signals.completionRate !== null) {
       const pct = Math.round(signals.completionRate * 100);
-      allIntelRows.push({
-        kind: 'stat', key: 'completion', value: `${pct}%`,
-        label: pct >= 80 ? 'of books finished — you rarely put them down'
+      signalRows.push({
+        key: 'completion', value: `${pct}%`,
+        label: pct >= 80 ? 'of books finished \u2014 you rarely put them down'
              : pct >= 50 ? 'of books read to completion'
-             : 'of books finished — it\'s fine to DNF',
-      });
-    }
-    if (signals.avgPagesPerDay !== null) {
-      allIntelRows.push({
-        kind: 'stat', key: 'pace', value: `~${signals.avgPagesPerDay}`,
-        label: 'pages read per day on average',
+             : 'of books finished \u2014 it\u2019s fine to DNF',
       });
     }
     if (signals.totalRecsReceived >= 3 && signals.recConversionRate !== null) {
       const pct = Math.round(signals.recConversionRate * 100);
-      allIntelRows.push({
-        kind: 'stat', key: 'recs', value: `${pct}%`,
-        label: 'of recommendations you\'ve finished',
-      });
+      signalRows.push({ key: 'recs', value: `${pct}%`, label: 'of recommendations you\u2019ve finished' });
     }
   }
 
-  // Editorial text rows (former Reading Patterns)
+  if (sourceCompletion) {
+    const srcLine = sourceCompletionInsight(sourceCompletion);
+    if (srcLine) patternRows.push({ key: 'source_completion', text: srcLine });
+  }
   if (patterns) {
     const sourceTotal = patterns.selfAdded + patterns.recAdded;
     if (sourceTotal >= 5) {
       const recShare = patterns.recAdded / sourceTotal;
-      allIntelRows.push({
-        kind: 'text', key: 'source_mix',
-        text: recShare >= 0.7 ? "Your reading list leans heavily on friends' recommendations — you trust their taste."
+      patternRows.push({
+        key: 'source_mix',
+        text: recShare >= 0.7 ? "Your reading list leans heavily on friends\u2019 recommendations \u2014 you trust their taste."
             : recShare >= 0.4 ? "About half your library came from recommendations, half from your own picks."
-            : "Most of your library is self-picked — you know what you want to read.",
+            : "Most of your library is self-picked \u2014 you know what you want to read.",
       });
     }
-  }
-  if (signals && signals.resolved >= 5 && signals.completionRate !== null) {
-    const rate = signals.completionRate;
-    const phrase = rate >= 0.90 ? 'nearly every book you start'
-      : rate >= 0.75 ? 'about 3 in 4 books you start'
-      : rate >= 0.60 ? 'about 2 in 3 books you start'
-      : rate >= 0.50 ? 'about half the books you start'
-      : 'fewer than half the books you start';
-    allIntelRows.push({ kind: 'text', key: 'completion_tendency', text: `You tend to finish ${phrase}.` });
-  }
-  if (sourceCompletion) {
-    const srcLine = sourceCompletionInsight(sourceCompletion);
-    if (srcLine) allIntelRows.push({ kind: 'text', key: 'source_completion', text: srcLine });
   }
   const sentCountIntel = sentRecs.length;
   const recvCountIntel = signals?.totalRecsReceived ?? 0;
   if (sentCountIntel + recvCountIntel >= 3) {
     const text = sentCountIntel > recvCountIntel * 1.5
-      ? "You recommend more than you receive — your friends are in good hands."
+      ? "You recommend more than you receive \u2014 your friends are in good hands."
       : recvCountIntel > sentCountIntel * 1.5
       ? "Friends recommend to you more than you recommend back."
       : "You and your friends trade recommendations in both directions.";
-    allIntelRows.push({ kind: 'text', key: 'social_direction', text });
-  }
-  if (signals?.avgPagesPerDay && signals.avgPagesPerDay >= 5) {
-    const days = Math.round(300 / signals.avgPagesPerDay);
-    allIntelRows.push({
-      kind: 'text', key: 'pace_context',
-      text: `At your typical pace, a 300-page book takes you about ${days} day${days === 1 ? '' : 's'}.`,
-    });
+    patternRows.push({ key: 'social_direction', text });
   }
 
   return (
@@ -597,9 +574,50 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* ── Reading Intelligence (merged Insights + Patterns) ── */}
+      {/* ── Reading Intelligence ── */}
       <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
         <SectionLabel>Reading Intelligence</SectionLabel>
+
+        {/* Signals card */}
+        <View style={{
+          backgroundColor: '#fff',
+          borderRadius: 14,
+          overflow: 'hidden',
+          shadowColor: '#000',
+          shadowOpacity: 0.04,
+          shadowRadius: 6,
+          shadowOffset: { width: 0, height: 1 },
+          elevation: 1,
+          marginBottom: 14,
+        }}>
+          <View style={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: signalRows.length > 0 ? 0 : 14 }}>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: signalRows.length > 0 ? 10 : 0 }}>Signals</Text>
+          </View>
+          {signalRows.length === 0 ? (
+            <View style={{ paddingHorizontal: 18, paddingBottom: 18 }}>
+              <Text style={{ fontSize: 14, color: '#a8a29e', lineHeight: 21 }}>
+                Finish a few more books to unlock reading signals.
+              </Text>
+            </View>
+          ) : (
+            signalRows.map((row, i) => (
+              <View key={row.key} style={{
+                paddingHorizontal: 18, paddingVertical: 14,
+                borderTopWidth: i > 0 ? 1 : 0, borderTopColor: '#f5f5f4',
+                flexDirection: 'row', alignItems: 'center', gap: 14,
+              }}>
+                <Text style={{ fontSize: 26, fontWeight: '800', color: '#1c1917', minWidth: 66 }}>
+                  {row.value}
+                </Text>
+                <Text style={{ fontSize: 13, color: '#78716c', flex: 1, lineHeight: 19 }}>
+                  {row.label}
+                </Text>
+              </View>
+            ))
+          )}
+        </View>
+
+        {/* Patterns card */}
         <View style={{
           backgroundColor: '#fff',
           borderRadius: 14,
@@ -610,64 +628,31 @@ export default function ProfileScreen() {
           shadowOffset: { width: 0, height: 1 },
           elevation: 1,
         }}>
-          {allIntelRows.length === 0 ? (
-            <View style={{ paddingHorizontal: 18, paddingVertical: 18 }}>
+          <View style={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: patternRows.length > 0 ? 0 : 14 }}>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: patternRows.length > 0 ? 10 : 0 }}>Patterns</Text>
+          </View>
+          {patternRows.length === 0 ? (
+            <View style={{ paddingHorizontal: 18, paddingBottom: 18 }}>
               <Text style={{ fontSize: 14, color: '#a8a29e', lineHeight: 21 }}>
-                Finish a few more books to unlock reading insights.
+                Keep reading to reveal your patterns.
               </Text>
             </View>
           ) : (
-            <>
-              {(insightsExpanded ? allIntelRows : allIntelRows.slice(0, 2)).map((row, i) => (
-                row.kind === 'stat' ? (
-                  <View key={row.key} style={{
-                    paddingHorizontal: 18, paddingVertical: 14,
-                    borderTopWidth: i > 0 ? 1 : 0, borderTopColor: '#f5f5f4',
-                    flexDirection: 'row', alignItems: 'center', gap: 14,
-                  }}>
-                    <Text style={{ fontSize: 26, fontWeight: '800', color: '#1c1917', minWidth: 66 }}>
-                      {row.value}
-                    </Text>
-                    <Text style={{ fontSize: 13, color: '#78716c', flex: 1, lineHeight: 19 }}>
-                      {row.label}
-                    </Text>
-                  </View>
-                ) : (
-                  <View key={row.key} style={{
-                    paddingHorizontal: 18, paddingVertical: 14,
-                    borderTopWidth: i > 0 ? 1 : 0, borderTopColor: '#f5f5f4',
-                    flexDirection: 'row', alignItems: 'flex-start', gap: 12,
-                  }}>
-                    <View style={{
-                      width: 2, height: 18, borderRadius: 1,
-                      backgroundColor: '#d6d3d1', marginTop: 2, flexShrink: 0,
-                    }} />
-                    <Text style={{ fontSize: 13, color: '#57534e', lineHeight: 20, flex: 1 }}>
-                      {row.text}
-                    </Text>
-                  </View>
-                )
-              ))}
-              {allIntelRows.length > 2 && (
-                <TouchableOpacity
-                  onPress={() => setInsightsExpanded(e => !e)}
-                  style={{
-                    paddingHorizontal: 18, paddingVertical: 13,
-                    borderTopWidth: 1, borderTopColor: '#f5f5f4',
-                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-                  }}
-                >
-                  <Text style={{ fontSize: 12, color: '#a8a29e', fontWeight: '500' }}>
-                    {insightsExpanded
-                      ? 'Show less'
-                      : `Show ${allIntelRows.length - 2} more insight${allIntelRows.length - 2 === 1 ? '' : 's'}`}
-                  </Text>
-                  <Text style={{ fontSize: 11, color: '#a8a29e' }}>
-                    {insightsExpanded ? '↑' : '↓'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </>
+            patternRows.map((row, i) => (
+              <View key={row.key} style={{
+                paddingHorizontal: 18, paddingVertical: 14,
+                borderTopWidth: i > 0 ? 1 : 0, borderTopColor: '#f5f5f4',
+                flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+              }}>
+                <View style={{
+                  width: 2, height: 18, borderRadius: 1,
+                  backgroundColor: '#d6d3d1', marginTop: 2, flexShrink: 0,
+                }} />
+                <Text style={{ fontSize: 13, color: '#57534e', lineHeight: 20, flex: 1 }}>
+                  {row.text}
+                </Text>
+              </View>
+            ))
           )}
         </View>
       </View>
