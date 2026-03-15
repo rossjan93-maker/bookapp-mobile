@@ -301,23 +301,33 @@ export default function SearchScreen() {
                 No books found for that search.
               </Text>
             ) : query.length === 0 ? (
-              <View style={{ paddingTop: 48, paddingHorizontal: 12, alignItems: 'center' }}>
+              <View style={{ paddingTop: 40, paddingHorizontal: 16, alignItems: 'center' }}>
+                <Text style={{ fontSize: 32, marginBottom: 16 }}>📖</Text>
                 <Text style={{
-                  fontSize: 15,
-                  fontWeight: '600',
+                  fontSize: 18,
+                  fontWeight: '700',
                   color: '#1c1917',
                   textAlign: 'center',
-                  marginBottom: 8,
+                  letterSpacing: -0.3,
+                  marginBottom: 6,
                 }}>
-                  What's a book a friend should read?
+                  Share something worth reading
                 </Text>
+                <View style={{
+                  width: 32,
+                  height: 2,
+                  backgroundColor: '#e7e5e4',
+                  borderRadius: 1,
+                  marginBottom: 12,
+                }} />
                 <Text style={{
                   fontSize: 14,
                   color: '#a8a29e',
                   textAlign: 'center',
                   lineHeight: 22,
+                  maxWidth: 260,
                 }}>
-                  Search by title, author, or subject.{'\n'}We'll pull results from Open Library.
+                  Search by title, author, or keyword — we'll find it across millions of books on Open Library.
                 </Text>
               </View>
             ) : null

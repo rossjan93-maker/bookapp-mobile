@@ -321,11 +321,70 @@ export default function AddBookScreen() {
               <Text style={{ color: '#a8a29e', fontSize: 14, paddingVertical: 10 }}>
                 No results. Try a different title or add manually below.
               </Text>
-            ) : query.trim().length === 0 && !showManual ? (
-              <View style={{ paddingTop: 10, paddingBottom: 6 }}>
-                <Text style={{ fontSize: 12, color: '#c4b5a5', textAlign: 'center', lineHeight: 20 }}>
-                  Searches millions of titles from Open Library
-                </Text>
+            ) : query.trim().length < 2 && !showManual ? (
+              <View style={{ paddingTop: 16 }}>
+                <View style={{ alignItems: 'center', marginBottom: 20 }}>
+                  <Text style={{
+                    fontSize: 13,
+                    color: '#a8a29e',
+                    lineHeight: 20,
+                    textAlign: 'center',
+                  }}>
+                    Search millions of titles from Open Library
+                  </Text>
+                </View>
+
+                <View style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  marginBottom: 20,
+                }}>
+                  <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
+                  <Text style={{
+                    fontSize: 12,
+                    color: '#c4b5a5',
+                    fontWeight: '500',
+                    paddingHorizontal: 14,
+                  }}>
+                    or
+                  </Text>
+                  <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
+                </View>
+
+                <TouchableOpacity
+                  onPress={() => setShowManual(true)}
+                  style={{
+                    backgroundColor: '#fff',
+                    borderRadius: 14,
+                    paddingVertical: 18,
+                    paddingHorizontal: 18,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    borderWidth: 1,
+                    borderColor: '#e7e5e4',
+                    shadowColor: '#000',
+                    shadowOpacity: 0.03,
+                    shadowRadius: 4,
+                    shadowOffset: { width: 0, height: 1 },
+                    elevation: 1,
+                  }}
+                >
+                  <Text style={{ fontSize: 22, marginRight: 14 }}>✏️</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{
+                      fontSize: 15,
+                      fontWeight: '600',
+                      color: '#1c1917',
+                      marginBottom: 2,
+                    }}>
+                      Add manually
+                    </Text>
+                    <Text style={{ fontSize: 13, color: '#a8a29e', lineHeight: 18 }}>
+                      Enter the title and author yourself
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 20, color: '#d6d3d1' }}>›</Text>
+                </TouchableOpacity>
               </View>
             ) : null
           }
@@ -342,30 +401,6 @@ export default function AddBookScreen() {
             ) : null
           }
         />
-
-        {/* Manual entry CTA — pre-search state */}
-        {query.trim().length < 2 && !showManual && (
-          <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>
-            <Text style={{ fontSize: 12, color: '#a8a29e', marginBottom: 8 }}>
-              Not in the catalogue?
-            </Text>
-            <TouchableOpacity
-              onPress={() => setShowManual(true)}
-              style={{
-                backgroundColor: '#fff',
-                borderRadius: 12,
-                paddingVertical: 14,
-                alignItems: 'center',
-                borderWidth: 1,
-                borderColor: '#e7e5e4',
-              }}
-            >
-              <Text style={{ fontSize: 14, color: '#57534e', fontWeight: '500' }}>
-                Add a book manually
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
 
         {/* Manual entry form */}
         {showManual && (
