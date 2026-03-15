@@ -17,6 +17,18 @@ type InboxItem = {
   book: { title: string; author: string; cover_url: string | null; external_id: string } | null;
 };
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function statusLabel(status: string): string | null {
+  switch (status) {
+    case 'saved':    return 'Want to Read';
+    case 'started':  return 'Reading';
+    case 'finished': return 'Finished';
+    case 'dnf':      return 'Did Not Finish';
+    default:         return null;
+  }
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function SectionLabel({ children }: { children: string }) {
@@ -278,30 +290,50 @@ export default function InboxScreen() {
               <TouchableOpacity
                 activeOpacity={0.7}
                 onPress={() => goToDetail(item)}
-                style={{ flexDirection: 'row', marginBottom: 14 }}
+                style={{ marginBottom: 14 }}
               >
-                <CoverThumb
-                  url={item.book?.cover_url}
-                  externalId={item.book?.external_id}
-                  width={48}
-                  height={70}
-                />
-                <View style={{ flex: 1, marginLeft: 14 }}>
-                  <Text style={{ fontWeight: '700', fontSize: 16, color: '#1c1917', lineHeight: 22, marginBottom: 3 }}>
-                    {item.book?.title ?? '—'}
-                  </Text>
-                  <Text style={{ color: '#78716c', fontSize: 13, marginBottom: 4 }}>
-                    {item.book?.author ?? '—'}
-                  </Text>
-                  <Text style={{ color: '#a8a29e', fontSize: 12 }}>
-                    from {getFirstName(item.sender)}
-                  </Text>
-                  {item.note ? (
-                    <Text style={{ fontSize: 13, color: '#57534e', fontStyle: 'italic', marginTop: 8, lineHeight: 20 }}>
+                <Text style={{
+                  fontSize: 10,
+                  fontWeight: '700',
+                  color: '#b8860b',
+                  letterSpacing: 1,
+                  textTransform: 'uppercase',
+                  marginBottom: 10,
+                }}>
+                  From {getFirstName(item.sender)}
+                </Text>
+                <View style={{ flexDirection: 'row' }}>
+                  <CoverThumb
+                    url={item.book?.cover_url}
+                    externalId={item.book?.external_id}
+                    width={48}
+                    height={70}
+                  />
+                  <View style={{ flex: 1, marginLeft: 14 }}>
+                    <Text style={{ fontWeight: '700', fontSize: 16, color: '#1c1917', lineHeight: 22, marginBottom: 3 }}>
+                      {item.book?.title ?? '—'}
+                    </Text>
+                    <Text style={{ color: '#78716c', fontSize: 13 }}>
+                      {item.book?.author ?? '—'}
+                    </Text>
+                  </View>
+                </View>
+                {item.note ? (
+                  <View style={{
+                    backgroundColor: '#fffbf2',
+                    borderTopWidth: 1,
+                    borderTopColor: '#f0ede8',
+                    marginTop: 12,
+                    paddingTop: 10,
+                    paddingHorizontal: 10,
+                    paddingBottom: 8,
+                    borderRadius: 6,
+                  }}>
+                    <Text style={{ fontSize: 13, color: '#57534e', fontStyle: 'italic', lineHeight: 20 }}>
                       "{item.note}"
                     </Text>
-                  ) : null}
-                </View>
+                  </View>
+                ) : null}
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => handleSave(item)}
@@ -374,6 +406,7 @@ export default function InboxScreen() {
 // ─── RecRow — archival secondary rows ────────────────────────────────────────
 
 function RecRow({ item, onPress }: { item: InboxItem; onPress: () => void }) {
+  const chip = statusLabel(item.status);
   return (
     <TouchableOpacity
       activeOpacity={0.7}
@@ -399,9 +432,21 @@ function RecRow({ item, onPress }: { item: InboxItem; onPress: () => void }) {
         <Text style={{ color: '#78716c', fontSize: 13, marginBottom: 3 }}>
           {item.book?.author ?? '—'}
         </Text>
-        <Text style={{ color: '#a8a29e', fontSize: 12 }}>
-          from {getFirstName(item.sender)}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={{ color: '#a8a29e', fontSize: 12 }}>
+            from {getFirstName(item.sender)}
+          </Text>
+          {chip && (
+            <View style={{
+              backgroundColor: '#f5f5f4',
+              borderRadius: 8,
+              paddingHorizontal: 7,
+              paddingVertical: 2,
+            }}>
+              <Text style={{ fontSize: 11, color: '#78716c' }}>{chip}</Text>
+            </View>
+          )}
+        </View>
         {item.note ? (
           <Text style={{ fontSize: 13, color: '#78716c', fontStyle: 'italic', marginTop: 6, lineHeight: 19 }}>
             "{item.note}"

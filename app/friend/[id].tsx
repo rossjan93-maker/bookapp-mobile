@@ -20,11 +20,20 @@ type Stats = {
   theyFinished: number;
 };
 
+type ActivityEventRaw = {
+  id: string;
+  event_type: string;
+  created_at: string;
+  book: { title: string; author: string }[] | null;
+  recommendation: { from_user_id: string; to_user_id: string }[] | null;
+};
+
 type ActivityEvent = {
   id: string;
   event_type: string;
   created_at: string;
   book: { title: string; author: string } | null;
+  recommendation: { from_user_id: string; to_user_id: string } | null;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -48,6 +57,13 @@ function activityText(eventType: string, title: string): string {
     default: return '';
   }
 }
+
+const EXCHANGE_EVENT_TYPES = new Set([
+  'recommendation_sent',
+  'recommendation_saved',
+  'recommendation_started',
+  'recommendation_finished',
+]);
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -81,6 +97,7 @@ export default function FriendDetailScreen() {
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
+  const [meId, setMeId]         = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -94,6 +111,7 @@ export default function FriendDetailScreen() {
       }
 
       const me = user.id;
+      setMeId(me);
 
       const [
         recsSentToMeResult,
@@ -124,7 +142,7 @@ export default function FriendDetailScreen() {
           .eq('to_user_id', friendId),
         supabase
           .from('activity_events')
-          .select('id, event_type, created_at, book:books!activity_events_book_id_fkey(title, author)')
+          .select('id, event_type, created_at, book:books!activity_events_book_id_fkey(title, author), recommendation:recommendations!activity_events_recommendation_id_fkey(from_user_id, to_user_id)')
           .eq('actor_id', friendId)
           .order('created_at', { ascending: false })
           .limit(10),
@@ -138,7 +156,12 @@ export default function FriendDetailScreen() {
       });
 
       if (!activityResult.error) {
-        setActivity((activityResult.data as ActivityEvent[]) ?? []);
+        const raw = (activityResult.data as ActivityEventRaw[]) ?? [];
+        setActivity(raw.map(e => ({
+          ...e,
+          book: Array.isArray(e.book) ? e.book[0] ?? null : e.book,
+          recommendation: Array.isArray(e.recommendation) ? e.recommendation[0] ?? null : e.recommendation,
+        })));
       }
 
       setLoading(false);
@@ -162,17 +185,27 @@ export default function FriendDetailScreen() {
     const sent     = stats.recsSentToMe;
     const finished = stats.iFinished;
 
-    // Small sample (1–2): factual only, no interpretation
     if (sent <= 2) {
       if (finished === 0) return `You haven't finished any of ${friendFirstName}'s picks yet.`;
       return `You've finished ${finished} of ${sent} from ${friendFirstName} so far.`;
     }
 
-    // Sufficient sample (3+): interpretation is appropriate
     if (finished === 0) return `You haven't finished any of ${friendFirstName}'s picks yet.`;
     if (finished / sent >= 0.5) return `${friendFirstName}'s recommendations are landing well for you.`;
     return `Some of ${friendFirstName}'s recommendations have worked for you.`;
   }
+
+  // ─── Activity feed split ───────────────────────────────────────────────
+
+  const exchangeEvents = activity.filter(e => {
+    if (!EXCHANGE_EVENT_TYPES.has(e.event_type)) return false;
+    if (!e.recommendation || !meId) return false;
+    const { from_user_id, to_user_id } = e.recommendation;
+    const participants = new Set([from_user_id, to_user_id]);
+    return participants.has(friendId!) && participants.has(meId);
+  });
+  const exchangeIds = new Set(exchangeEvents.map(e => e.id));
+  const generalEvents = activity.filter(e => !exchangeIds.has(e.id));
 
   // ─── Loading / error ────────────────────────────────────────────────────
 
@@ -188,6 +221,42 @@ export default function FriendDetailScreen() {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#faf9f7' }}>
         <Text style={{ color: '#b91c1c', fontSize: 14, textAlign: 'center' }}>{error}</Text>
+      </View>
+    );
+  }
+
+  // ─── Activity row renderer ─────────────────────────────────────────────
+
+  function renderActivityRow(event: ActivityEvent) {
+    const title = event.book?.title ?? 'a book';
+    const text = activityText(event.event_type, title);
+    if (!text) return null;
+    return (
+      <View
+        key={event.id}
+        style={{
+          paddingVertical: 13,
+          borderBottomWidth: 1,
+          borderBottomColor: '#f5f5f4',
+          flexDirection: 'row',
+          alignItems: 'flex-start',
+        }}
+      >
+        <View style={{
+          width: 6,
+          height: 6,
+          borderRadius: 3,
+          backgroundColor: '#d6d3d1',
+          marginTop: 8,
+          marginRight: 12,
+          flexShrink: 0,
+        }} />
+        <Text style={{ fontSize: 14, color: '#1c1917', lineHeight: 21, flex: 1, marginRight: 12 }}>
+          {text}
+        </Text>
+        <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 4, flexShrink: 0 }}>
+          {relativeTime(event.created_at)}
+        </Text>
       </View>
     );
   }
@@ -228,7 +297,14 @@ export default function FriendDetailScreen() {
           </Text>
         )}
         {totalExchanged === 0 && (
-          <Text style={{ fontSize: 13, color: '#a8a29e' }}>No recommendations yet</Text>
+          <>
+            <Text style={{ fontSize: 13, color: '#a8a29e', marginBottom: 6 }}>No recommendations yet</Text>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/search')}>
+              <Text style={{ fontSize: 13, color: '#a8a29e' }}>
+                Recommend a book to {friendFirstName} →
+              </Text>
+            </TouchableOpacity>
+          </>
         )}
       </View>
 
@@ -270,14 +346,14 @@ export default function FriendDetailScreen() {
                     {stats.iFinished}
                   </Text>
                   <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 1 }}>
-                    you finished
+                    you read
                   </Text>
                   <Text style={{ fontSize: 11, color: '#78716c', marginTop: 4, fontWeight: '500' }}>
                     {stats.iFinished === 0
                       ? 'none read yet'
                       : stats.recsSentToMe <= 2
-                      ? `${stats.iFinished} of ${stats.recsSentToMe} finished`
-                      : `${Math.round((stats.iFinished / stats.recsSentToMe) * 100)}% landed`}
+                      ? `${stats.iFinished} of ${stats.recsSentToMe} read`
+                      : `${Math.round((stats.iFinished / stats.recsSentToMe) * 100)}% read through`}
                   </Text>
                 </View>
               )}
@@ -314,14 +390,14 @@ export default function FriendDetailScreen() {
                     {stats.theyFinished}
                   </Text>
                   <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 1 }}>
-                    they finished
+                    they read
                   </Text>
                   <Text style={{ fontSize: 11, color: '#78716c', marginTop: 4, fontWeight: '500' }}>
                     {stats.theyFinished === 0
                       ? 'none read yet'
                       : stats.recsSentToThem <= 2
-                      ? `${stats.theyFinished} of ${stats.recsSentToThem} finished`
-                      : `${Math.round((stats.theyFinished / stats.recsSentToThem) * 100)}% landed`}
+                      ? `${stats.theyFinished} of ${stats.recsSentToThem} read`
+                      : `${Math.round((stats.theyFinished / stats.recsSentToThem) * 100)}% read through`}
                   </Text>
                 </View>
               )}
@@ -337,6 +413,8 @@ export default function FriendDetailScreen() {
               paddingVertical: 11,
               borderWidth: 1,
               borderColor: '#f0ede8',
+              borderLeftWidth: 3,
+              borderLeftColor: '#d4a574',
             }}>
               <Text style={{ fontSize: 13, color: '#57534e', lineHeight: 20 }}>
                 {landingInsight()}
@@ -363,6 +441,8 @@ export default function FriendDetailScreen() {
                 paddingVertical: 11,
                 borderWidth: 1,
                 borderColor: '#e7e5e4',
+                borderLeftWidth: 3,
+                borderLeftColor: '#d6d3d1',
                 marginTop: 8,
               }}>
                 <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
@@ -380,40 +460,38 @@ export default function FriendDetailScreen() {
         {activity.length === 0 ? (
           <Text style={{ color: '#a8a29e', fontSize: 14 }}>No recent activity.</Text>
         ) : (
-          activity.map(event => {
-            const title = event.book?.title ?? 'a book';
-            const text = activityText(event.event_type, title);
-            if (!text) return null;
-            return (
-              <View
-                key={event.id}
-                style={{
-                  paddingVertical: 13,
-                  borderBottomWidth: 1,
-                  borderBottomColor: '#f5f5f4',
-                  flexDirection: 'row',
-                  alignItems: 'flex-start',
-                }}
-              >
-                {/* Timeline dot */}
-                <View style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: 3,
-                  backgroundColor: '#d6d3d1',
-                  marginTop: 8,
-                  marginRight: 12,
-                  flexShrink: 0,
-                }} />
-                <Text style={{ fontSize: 14, color: '#1c1917', lineHeight: 21, flex: 1, marginRight: 12 }}>
-                  {text}
+          <>
+            {exchangeEvents.length > 0 && (
+              <View style={{ marginBottom: generalEvents.length > 0 ? 16 : 0 }}>
+                <Text style={{
+                  fontSize: 11,
+                  fontWeight: '600',
+                  color: '#a8a29e',
+                  letterSpacing: 0.5,
+                  textTransform: 'uppercase',
+                  marginBottom: 6,
+                }}>
+                  Between You Two
                 </Text>
-                <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 4, flexShrink: 0 }}>
-                  {relativeTime(event.created_at)}
-                </Text>
+                {exchangeEvents.map(renderActivityRow)}
               </View>
-            );
-          })
+            )}
+            {generalEvents.length > 0 && (
+              <View>
+                <Text style={{
+                  fontSize: 11,
+                  fontWeight: '600',
+                  color: '#a8a29e',
+                  letterSpacing: 0.5,
+                  textTransform: 'uppercase',
+                  marginBottom: 6,
+                }}>
+                  Their Reading
+                </Text>
+                {generalEvents.map(renderActivityRow)}
+              </View>
+            )}
+          </>
         )}
       </View>
     </ScrollView>
