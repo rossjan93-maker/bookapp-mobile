@@ -537,23 +537,20 @@ export default function LibraryScreen() {
               {/* Action row */}
               {hasPendingRating ? (
                 <View style={{ marginTop: 2 }}>
-                  <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 10 }}>Rate this book (optional)</Text>
-                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 8 }}>How would you rate it?</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     {[1, 2, 3, 4, 5].map(n => (
                       <TouchableOpacity
                         key={n}
                         onPress={() => saveRating(item.id, item.book_id, n)}
-                        style={{
-                          width: 36, height: 36, borderRadius: 18,
-                          borderWidth: 1, borderColor: '#e7e5e4', backgroundColor: '#faf9f7',
-                          alignItems: 'center', justifyContent: 'center',
-                        }}
+                        hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                        style={{ paddingHorizontal: 3, paddingVertical: 2 }}
                       >
-                        <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>{n}</Text>
+                        <Text style={{ fontSize: 30, color: '#f59e0b' }}>★</Text>
                       </TouchableOpacity>
                     ))}
                     <TouchableOpacity onPress={() => setPendingFeedback(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Text style={{ fontSize: 12, color: '#a8a29e', marginLeft: 4 }}>Skip</Text>
+                      <Text style={{ fontSize: 12, color: '#a8a29e', marginLeft: 12 }}>Skip</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -623,23 +620,20 @@ export default function LibraryScreen() {
 
             {hasPendingRating ? (
               <View style={{ marginLeft: 58, marginTop: 6 }}>
-                <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 10 }}>Rate this book (optional)</Text>
-                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 8 }}>How would you rate it?</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                   {[1, 2, 3, 4, 5].map(n => (
                     <TouchableOpacity
                       key={n}
                       onPress={() => saveRating(item.id, item.book_id, n)}
-                      style={{
-                        width: 36, height: 36, borderRadius: 18,
-                        borderWidth: 1, borderColor: '#e7e5e4', backgroundColor: '#faf9f7',
-                        alignItems: 'center', justifyContent: 'center',
-                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                      style={{ paddingHorizontal: 3, paddingVertical: 2 }}
                     >
-                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>{n}</Text>
+                      <Text style={{ fontSize: 30, color: '#f59e0b' }}>★</Text>
                     </TouchableOpacity>
                   ))}
                   <TouchableOpacity onPress={() => setPendingFeedback(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Text style={{ fontSize: 12, color: '#a8a29e', marginLeft: 4 }}>Skip</Text>
+                    <Text style={{ fontSize: 12, color: '#a8a29e', marginLeft: 12 }}>Skip</Text>
                   </TouchableOpacity>
                 </View>
               </View>
