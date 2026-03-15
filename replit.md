@@ -45,6 +45,7 @@ React Native mobile app built with Expo Router + Supabase.
 | `20260313000003_source_attribution_backfill.sql` | Backfills `source = 'recommendation'` for historical rows via `recommendations.user_book_id` join |
 | `20260314000001_profiles_name_fields.sql` | Adds optional `first_name` and `last_name` to profiles |
 | `20260314000002_rating_and_feed_event.sql` | Adds `rating integer` to `user_books` and `activity_events`; adds `book_rated` enum value |
+| `20260315000000_activity_events_update_policy.sql` | Adds RLS UPDATE policy on `activity_events` so actors can update their own rows (required for finish+rating merge) |
 
 ## Defensive Fallbacks
 Library, profile, and notes queries include try-with-fallback patterns — they attempt queries with new columns (page_count, current_page, source, sentiment) and silently fall back to column-safe queries if migrations haven't been applied yet. This means the app always loads.
