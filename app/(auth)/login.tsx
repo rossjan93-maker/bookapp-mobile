@@ -92,9 +92,14 @@ export default function LoginScreen() {
       }}>
         readstack
       </Text>
-      <Text style={{ fontSize: 14, color: '#a8a29e', marginBottom: 36 }}>
+      <Text style={{ fontSize: 14, color: '#a8a29e', marginBottom: mode === 'signup' ? 10 : 36 }}>
         Your reading, together.
       </Text>
+      {mode === 'signup' && (
+        <Text style={{ fontSize: 12, color: '#c4b5a5', marginBottom: 28, textAlign: 'center', lineHeight: 18 }}>
+          Already on Goodreads? You can import your library right after signing up.
+        </Text>
+      )}
 
       {/* ── Mode toggle ── */}
       <View style={{

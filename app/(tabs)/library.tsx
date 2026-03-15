@@ -682,8 +682,44 @@ export default function LibraryScreen() {
         );
       }}
       ListEmptyComponent={
-        items.length === 0 ? (
-          // Library is totally empty — full onboarding state
+        items.length === 0 && activeFilter === 'all' ? (
+          <View style={{ alignItems: 'center', paddingTop: 44, paddingHorizontal: 28 }}>
+            <Text style={{ fontSize: 20, fontWeight: '800', color: '#1c1917', marginBottom: 8, textAlign: 'center', letterSpacing: -0.3 }}>
+              Start your library
+            </Text>
+            <Text style={{ color: '#78716c', fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 32 }}>
+              Build your reading history by importing from Goodreads, or add books one at a time.
+            </Text>
+
+            <TouchableOpacity
+              onPress={() => router.push('/import/goodreads')}
+              style={{
+                width: '100%',
+                backgroundColor: '#1c1917',
+                borderRadius: 12,
+                paddingVertical: 15,
+                alignItems: 'center',
+                marginBottom: 12,
+              }}
+            >
+              <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Import from Goodreads</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => router.push('/add-book')}
+              style={{
+                width: '100%',
+                borderWidth: 1,
+                borderColor: '#e7e5e4',
+                borderRadius: 12,
+                paddingVertical: 14,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: '#57534e', fontSize: 14, fontWeight: '500' }}>Add your first book</Text>
+            </TouchableOpacity>
+          </View>
+        ) : items.length === 0 ? (
           <View style={{ alignItems: 'center', paddingTop: 52, paddingHorizontal: 32 }}>
             <Text style={{ fontSize: 17, fontWeight: '700', color: '#1c1917', marginBottom: 10, textAlign: 'center' }}>
               {FILTER_EMPTY.all.title}

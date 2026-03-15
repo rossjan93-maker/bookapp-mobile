@@ -1,9 +1,13 @@
-import { Text, View } from 'react-native';
+import { useEffect } from 'react';
+import { View } from 'react-native';
+import { useRouter } from 'expo-router';
 
 export default function ImportSettingsScreen() {
-  return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-      <Text>Import settings placeholder</Text>
-    </View>
-  );
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace('/import/goodreads');
+  }, []);
+
+  return <View style={{ flex: 1, backgroundColor: '#faf9f7' }} />;
 }

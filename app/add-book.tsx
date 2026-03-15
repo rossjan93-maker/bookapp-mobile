@@ -276,9 +276,21 @@ export default function AddBookScreen() {
           }}>
             Add to Library
           </Text>
-          <Text style={{ fontSize: 14, color: '#a8a29e', marginBottom: 18 }}>
+          <Text style={{ fontSize: 14, color: '#a8a29e', marginBottom: 14 }}>
             Find a book to track, or add one manually.
           </Text>
+          <TouchableOpacity
+            onPress={() => router.push('/import/goodreads')}
+            style={{ marginBottom: 16 }}
+            activeOpacity={0.7}
+          >
+            <Text style={{ fontSize: 13, color: '#a8a29e' }}>
+              Already on Goodreads?{' '}
+              <Text style={{ color: '#78716c', textDecorationLine: 'underline' }}>
+                Import your whole library →
+              </Text>
+            </Text>
+          </TouchableOpacity>
           <TextInput
             value={query}
             onChangeText={text => { setQuery(text); setShowManual(false); }}
