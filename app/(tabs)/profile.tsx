@@ -416,74 +416,60 @@ export default function ProfileScreen() {
     >
       {/* ── Hero header ── */}
       <View style={{
-        backgroundColor: '#fff',
-        paddingHorizontal: 20,
-        paddingTop: 32,
-        paddingBottom: 20,
-        borderBottomWidth: 1,
-        borderBottomColor: '#f5f5f4',
-        shadowColor: '#000',
-        shadowOpacity: 0.03,
-        shadowRadius: 4,
-        shadowOffset: { width: 0, height: 1 },
-        elevation: 1,
+        paddingHorizontal: 24,
+        paddingTop: 44,
+        paddingBottom: 24,
       }}>
         {/* Avatar + name row */}
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <View style={{
-            width: 70,
-            height: 70,
-            borderRadius: 35,
+            width: 64,
+            height: 64,
+            borderRadius: 32,
             backgroundColor: '#1c1917',
             alignItems: 'center',
             justifyContent: 'center',
-            marginRight: 16,
+            marginRight: 14,
           }}>
-            <Text style={{ fontSize: 28, fontWeight: '800', color: '#fff' }}>
+            <Text style={{ fontSize: 25, fontWeight: '800', color: '#fff' }}>
               {displayName.charAt(0).toUpperCase()}
             </Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 22, fontWeight: '800', color: '#1c1917', letterSpacing: -0.4 }}>
+            <Text style={{ fontSize: 22, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5 }}>
               {displayName}
             </Text>
+            <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 1 }}>@{username}</Text>
           </View>
           <TouchableOpacity
             onPress={() => router.push('/settings')}
             style={{
-              width: 38,
-              height: 38,
-              borderRadius: 19,
+              width: 36,
+              height: 36,
+              borderRadius: 18,
               borderWidth: 1,
               borderColor: '#e7e5e4',
               alignItems: 'center',
               justifyContent: 'center',
-              backgroundColor: '#fff',
             }}
           >
-            <Text style={{ fontSize: 17, lineHeight: 20 }}>⚙</Text>
+            <Text style={{ fontSize: 16, lineHeight: 20 }}>⚙</Text>
           </TouchableOpacity>
         </View>
 
-        {/* ── Goal display (read-only — edit in Settings) ── */}
+        {/* ── Goal display ── */}
         {goalProgress ? (
-          <View style={{
-            marginTop: 18,
-            backgroundColor: '#faf9f7',
-            borderRadius: 10,
-            paddingHorizontal: 14,
-            paddingVertical: 12,
-          }}>
+          <View style={{ marginTop: 20 }}>
             <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500', marginBottom: 8 }}>
               {goalProgress}
             </Text>
             {yearlyGoal && stats && (
-              <View style={{ height: 5, backgroundColor: '#e7e5e4', borderRadius: 3, overflow: 'hidden' }}>
+              <View style={{ height: 3, backgroundColor: '#e7e5e4', borderRadius: 2, overflow: 'hidden' }}>
                 <View style={{
-                  height: 5,
+                  height: 3,
                   width: `${Math.min(100, Math.round((stats.finishedThisYear / yearlyGoal) * 100))}%`,
                   backgroundColor: '#1c1917',
-                  borderRadius: 3,
+                  borderRadius: 2,
                 }} />
               </View>
             )}
@@ -491,22 +477,10 @@ export default function ProfileScreen() {
         ) : (
           <TouchableOpacity
             onPress={() => router.push('/settings')}
-            style={{
-              marginTop: 18,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 10,
-              backgroundColor: '#faf9f7',
-              borderRadius: 10,
-              paddingHorizontal: 14,
-              paddingVertical: 12,
-              borderWidth: 1,
-              borderColor: '#e7e5e4',
-              borderStyle: 'dashed',
-            }}
+            style={{ marginTop: 16 }}
           >
             <Text style={{ fontSize: 13, color: '#a8a29e' }}>
-              Set a yearly reading goal in Settings →
+              Set a yearly reading goal →
             </Text>
           </TouchableOpacity>
         )}
@@ -516,40 +490,39 @@ export default function ProfileScreen() {
       {stats && (
         <View style={{
           flexDirection: 'row',
-          backgroundColor: '#fff',
-          paddingTop: 16,
-          paddingBottom: 20,
+          paddingHorizontal: 24,
+          paddingBottom: 24,
           borderBottomWidth: 1,
-          borderBottomColor: '#f5f5f4',
+          borderBottomColor: '#e7e5e4',
         }}>
           <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 30, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 36 }}>{stats.finishedBooks}</Text>
-            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 2, letterSpacing: 0.7, textTransform: 'uppercase' }}>Finished</Text>
+            <Text style={{ fontSize: 28, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 34 }}>{stats.finishedBooks}</Text>
+            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 3, letterSpacing: 0.7, textTransform: 'uppercase' }}>Finished</Text>
           </View>
-          <View style={{ width: 1, backgroundColor: '#f0ede8', alignSelf: 'stretch', marginVertical: 6 }} />
+          <View style={{ width: 1, backgroundColor: '#e7e5e4', alignSelf: 'stretch', marginVertical: 4 }} />
           <View style={{ flex: 1, alignItems: 'center' }}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-              <Text style={{ fontSize: 30, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 36 }}>{stats.friendsCount}</Text>
+              <Text style={{ fontSize: 28, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 34 }}>{stats.friendsCount}</Text>
               {pendingRequests.length > 0 && (
                 <View style={{
-                  width: 8, height: 8, borderRadius: 4,
+                  width: 7, height: 7, borderRadius: 4,
                   backgroundColor: '#f59e0b',
                   marginTop: 5, marginLeft: 3,
                 }} />
               )}
             </View>
-            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 2, letterSpacing: 0.7, textTransform: 'uppercase' }}>Friends</Text>
+            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 3, letterSpacing: 0.7, textTransform: 'uppercase' }}>Friends</Text>
           </View>
-          <View style={{ width: 1, backgroundColor: '#f0ede8', alignSelf: 'stretch', marginVertical: 6 }} />
+          <View style={{ width: 1, backgroundColor: '#e7e5e4', alignSelf: 'stretch', marginVertical: 4 }} />
           <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 30, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 36 }}>{stats.recsLanded}</Text>
-            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 2, letterSpacing: 0.7, textTransform: 'uppercase' }}>Recs Landed</Text>
+            <Text style={{ fontSize: 28, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 34 }}>{stats.recsLanded}</Text>
+            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 3, letterSpacing: 0.7, textTransform: 'uppercase' }}>Recs Landed</Text>
           </View>
         </View>
       )}
 
       {/* ── Taste profile card ── */}
-      <View style={{ paddingHorizontal: 20, marginTop: 24, marginBottom: 24 }}>
+      <View style={{ paddingHorizontal: 24, marginTop: 28, marginBottom: 24 }}>
         <TouchableOpacity
           onPress={() => router.push('/edit-preferences')}
           style={{
@@ -625,7 +598,7 @@ export default function ProfileScreen() {
       </View>
 
       {/* ── Reading Intelligence (merged Insights + Patterns) ── */}
-      <View style={{ paddingHorizontal: 20, marginBottom: 28 }}>
+      <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
         <SectionLabel>Reading Intelligence</SectionLabel>
         <View style={{
           backgroundColor: '#fff',
@@ -699,17 +672,11 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      {/* ── Friend Requests ── */}
-      <View style={{ paddingHorizontal: 20, marginBottom: 28 }}>
-        <SectionLabel>
-          {pendingRequests.length > 0
-            ? `Friend Requests (${pendingRequests.length})`
-            : 'Friend Requests'}
-        </SectionLabel>
-        {pendingRequests.length === 0 ? (
-          <Text style={{ color: '#a8a29e', fontSize: 14 }}>No pending requests.</Text>
-        ) : (
-          pendingRequests.map(req => (
+      {/* ── Friend Requests (only rendered when pending) ── */}
+      {pendingRequests.length > 0 && (
+        <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
+          <SectionLabel>Friend Requests ({pendingRequests.length})</SectionLabel>
+          {pendingRequests.map(req => (
             <View
               key={req.id}
               style={{
@@ -731,12 +698,12 @@ export default function ProfileScreen() {
                 <Text style={{ color: '#fff', fontSize: 13, fontWeight: '500' }}>Accept</Text>
               </TouchableOpacity>
             </View>
-          ))
-        )}
-      </View>
+          ))}
+        </View>
+      )}
 
       {/* ── Sent Recommendations ── */}
-      <View style={{ paddingHorizontal: 20, marginBottom: 28 }}>
+      <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
         <SectionLabel>Recommendations Sent</SectionLabel>
         {sentRecs.length === 0 ? (
           <Text style={{ color: '#a8a29e', fontSize: 14 }}>No recommendations sent yet.</Text>
@@ -762,31 +729,28 @@ export default function ProfileScreen() {
                     },
                   })}
                   style={{
-                    paddingVertical: 12,
+                    paddingVertical: 14,
                     borderBottomWidth: 1,
                     borderBottomColor: '#f5f5f4',
                     flexDirection: 'row',
-                    alignItems: 'flex-start',
+                    alignItems: 'center',
                   }}
                 >
                   <CoverThumb
                     url={rec.book?.cover_url}
                     externalId={rec.book?.external_id}
-                    width={36}
-                    height={52}
+                    width={32}
+                    height={46}
                   />
                   <View style={{ flex: 1, marginLeft: 12, marginRight: 10 }}>
-                    <Text style={{ fontWeight: '600', fontSize: 15, color: '#1c1917', marginBottom: 2 }}>
+                    <Text style={{ fontWeight: '600', fontSize: 14, color: '#1c1917', marginBottom: 3 }}>
                       {rec.book?.title ?? '—'}
                     </Text>
-                    <Text style={{ fontSize: 13, color: '#78716c', marginBottom: 3 }}>
-                      {rec.book?.author ?? '—'}
-                    </Text>
                     <Text style={{ fontSize: 12, color: '#a8a29e' }}>
-                      to {getFirstName(rec.to_user)}
+                      → {getFirstName(rec.to_user)}
                     </Text>
                     {rec.note ? (
-                      <Text style={{ fontSize: 12, color: '#78716c', fontStyle: 'italic', marginTop: 4 }}>
+                      <Text style={{ fontSize: 12, color: '#78716c', fontStyle: 'italic', marginTop: 4 }} numberOfLines={1}>
                         "{rec.note}"
                       </Text>
                     ) : null}
@@ -796,7 +760,7 @@ export default function ProfileScreen() {
                     borderRadius: 6,
                     paddingHorizontal: 8,
                     paddingVertical: 3,
-                    alignSelf: 'flex-start',
+                    alignSelf: 'center',
                   }}>
                     <Text style={{ fontSize: 11, fontWeight: '600', color: badge.text }}>{badge.label}</Text>
                   </View>
@@ -808,8 +772,8 @@ export default function ProfileScreen() {
                 onPress={() => setRecsExpanded(e => !e)}
                 style={{ paddingVertical: 13, alignItems: 'center' }}
               >
-                <Text style={{ fontSize: 13, color: '#78716c', fontWeight: '500' }}>
-                  {recsExpanded ? 'Show less' : `Show ${sentRecs.length - 3} more`}
+                <Text style={{ fontSize: 13, color: '#a8a29e' }}>
+                  {recsExpanded ? 'Show less' : `${sentRecs.length - 3} more`}
                 </Text>
               </TouchableOpacity>
             )}
