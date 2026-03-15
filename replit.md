@@ -25,7 +25,7 @@ React Native mobile app built with Expo Router + Supabase.
 | `app/(tabs)/library.tsx` | Library: status management, 1–5 rating prompt on finish/DNF |
 | `app/(tabs)/notes.tsx` | Inbox / recommendation list |
 | `app/(tabs)/profile.tsx` | Profile: goals, stats, taste, currently reading |
-| `app/book/[id].tsx` | Book detail: OL metadata, reading progress, pacing |
+| `app/book/[id].tsx` | Book detail: OL metadata, reading progress, pacing, sentiment capture, taste-fit gating |
 | `app/add-book.tsx` | Manual book-add flow |
 | `app/settings.tsx` | Settings hub: name, yearly goal, taste, sign out |
 | `app/edit-preferences.tsx` | Taste profile (genres, styles, authors) |
@@ -46,6 +46,8 @@ React Native mobile app built with Expo Router + Supabase.
 | `20260314000001_profiles_name_fields.sql` | Adds optional `first_name` and `last_name` to profiles |
 | `20260314000002_rating_and_feed_event.sql` | Adds `rating integer` to `user_books` and `activity_events`; adds `book_rated` enum value |
 | `20260315000000_activity_events_update_policy.sql` | Adds RLS UPDATE policy on `activity_events` so actors can update their own rows (required for finish+rating merge) |
+| `20260315000001_goodreads_import_foundation.sql` | Goodreads import schema: import_batches, import_rows, book_source_links, book metadata columns |
+| `20260315000002_books_subjects_column.sql` | Adds `subjects text[]` to books for OL subject persistence |
 
 ## Defensive Fallbacks
 Library, profile, and notes queries include try-with-fallback patterns — they attempt queries with new columns (page_count, current_page, source, sentiment) and silently fall back to column-safe queries if migrations haven't been applied yet. This means the app always loads.

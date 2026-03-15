@@ -154,6 +154,13 @@ export default function BookDetailScreen() {
   const [savingPageCount, setSavingPageCount] = useState(false);
   const [pageCountError, setPageCountError] = useState<string | null>(null);
 
+  // Sentiment capture state
+  const [sentiment, setSentiment] = useState<string | null>(null);
+  const [savingSentiment, setSavingSentiment] = useState(false);
+
+  // Taste preferences state
+  const [hasTastePrefs, setHasTastePrefs] = useState<boolean | null>(null);
+
   const pageInputRef      = useRef<TextInput>(null);
   const pageCountInputRef = useRef<TextInput>(null);
 
@@ -171,6 +178,15 @@ export default function BookDetailScreen() {
       const meta = await fetchOLMeta(externalId!);
       setOlMeta(meta);
       setMetaLoading(false);
+
+      if (meta.subjects.length > 0 && bookId && supabase) {
+        supabase
+          .from('books')
+          .update({ subjects: meta.subjects })
+          .eq('id', bookId)
+          .is('subjects', null)
+          .then(() => {});
+      }
 
       if (meta.pageCount && bookId && supabase) {
         supabase
@@ -259,6 +275,86 @@ export default function BookDetailScreen() {
 
     fetchProgress();
   }, [isReading, bookId, readingGoalParam]);
+
+  // ── Fetch sentiment for finished/dnf books ─────────────────────────────────
+
+  const isFinishedOrDnf = status === 'finished' || status === 'dnf';
+
+  useEffect(() => {
+    if (!isFinishedOrDnf || !bookId || !supabase) return;
+
+    async function fetchSentiment() {
+      if (!supabase) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      if (!userId) setUserId(user.id);
+
+      const { data } = await supabase
+        .from('user_books')
+        .select('id, sentiment')
+        .eq('user_id', user.id)
+        .eq('book_id', bookId!)
+        .maybeSingle();
+
+      if (data) {
+        if (!userBookId) setUserBookId(data.id);
+        setSentiment(data.sentiment ?? null);
+      }
+    }
+
+    fetchSentiment();
+  }, [isFinishedOrDnf, bookId]);
+
+  // ── Fetch taste preferences existence ─────────────────────────────────────
+
+  useEffect(() => {
+    if (!supabase) return;
+
+    async function fetchPrefsExistence() {
+      if (!supabase) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data } = await supabase
+        .from('reader_preferences')
+        .select('favorite_genres, reading_styles')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      const hasPrefs = !!(data && (
+        (data.favorite_genres && data.favorite_genres.length > 0) ||
+        (data.reading_styles && data.reading_styles.length > 0)
+      ));
+      setHasTastePrefs(hasPrefs);
+    }
+
+    fetchPrefsExistence();
+  }, []);
+
+  // ── Sentiment save ─────────────────────────────────────────────────────────
+
+  async function handleSaveSentiment(value: string) {
+    if (!supabase || !bookId || savingSentiment) return;
+    setSavingSentiment(true);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setSavingSentiment(false); return; }
+
+    const newValue = value === sentiment ? null : value;
+
+    const { data, error } = await supabase
+      .from('user_books')
+      .upsert(
+        { user_id: user.id, book_id: bookId!, sentiment: newValue },
+        { onConflict: 'user_id,book_id' }
+      )
+      .select('id');
+
+    if (!error && data && data.length > 0) {
+      setSentiment(newValue);
+    }
+    setSavingSentiment(false);
+  }
 
   // ── Progress save ─────────────────────────────────────────────────────────
 
@@ -392,6 +488,47 @@ export default function BookDetailScreen() {
           </View>
         )}
         {!badge && <View style={{ marginBottom: 28 }} />}
+
+        {/* ── Sentiment capture chips for finished/dnf ── */}
+        {isFinishedOrDnf && (
+          <View style={{
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            gap: 8,
+            marginBottom: 20,
+          }}>
+            {([
+              { value: 'loved', label: 'Loved' },
+              { value: 'liked', label: 'Liked' },
+              { value: 'okay', label: 'Okay' },
+              { value: 'not_for_me', label: 'Not for me' },
+            ] as const).map((chip) => {
+              const isSelected = sentiment === chip.value;
+              return (
+                <TouchableOpacity
+                  key={chip.value}
+                  onPress={() => handleSaveSentiment(chip.value)}
+                  disabled={savingSentiment}
+                  style={{
+                    backgroundColor: isSelected ? '#1c1917' : '#f5f5f4',
+                    borderRadius: 20,
+                    paddingHorizontal: 14,
+                    paddingVertical: 7,
+                    opacity: savingSentiment ? 0.6 : 1,
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 13,
+                    fontWeight: '500',
+                    color: isSelected ? '#fff' : '#57534e',
+                  }}>
+                    {chip.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
 
         {/* ── Reading Progress card (primary module) ── */}
         {isReading && (
@@ -796,8 +933,8 @@ export default function BookDetailScreen() {
           </View>
         ) : null}
 
-        {/* ── Taste Match — polished forward-looking card ── */}
-        {externalId ? (
+        {/* ── Taste Match — status-gated, preference-aware ── */}
+        {externalId && (!status || status === 'want_to_read' || status === 'sent' || status === 'saved') ? (
           <View style={{
             backgroundColor: '#fafaf9',
             borderRadius: 16,
@@ -808,9 +945,25 @@ export default function BookDetailScreen() {
             <Text style={{ fontSize: 16, fontWeight: '700', color: '#1c1917', marginBottom: 4 }}>
               Your Taste Match
             </Text>
-            <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
-              As you read and rate books, we'll learn what resonates with you — and show you how well this one fits your taste.
-            </Text>
+            {hasTastePrefs === null ? null : hasTastePrefs ? (
+              <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
+                Once you've built your taste profile, we'll explain how this book fits — or challenges — your reading style.
+              </Text>
+            ) : (
+              <>
+                <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
+                  Set your reading preferences so we can show you why this book is a good fit.
+                </Text>
+                <TouchableOpacity
+                  onPress={() => router.push('/edit-preferences')}
+                  style={{ marginTop: 12 }}
+                >
+                  <Text style={{ fontSize: 13, color: '#78716c', textDecorationLine: 'underline' }}>
+                    Set your preferences →
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         ) : null}
 
