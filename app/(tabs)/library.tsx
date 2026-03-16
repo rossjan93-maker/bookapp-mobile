@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { fetchGoogleBooksCoverUrl } from '../../lib/googleBooks';
 import { ActivityIndicator, FlatList, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
@@ -29,17 +30,26 @@ type UserBook = {
 
 type PendingFeedback = { userBookId: string; bookId: string; status: 'finished' | 'dnf'; pendingEventId: string | null };
 
-type YearSeparator = { __type: 'year_separator'; year: string; key: string };
+type YearSeparator = { __type: 'year_separator'; year: string; key: string; count: number };
 type ListItem      = UserBook | YearSeparator;
 
 function isYearSeparator(item: ListItem): item is YearSeparator {
   return (item as YearSeparator).__type === 'year_separator';
 }
 
-// Inject year-header separator objects into a sorted-by-finished_at array.
-// "No finish date" group appears last (nulls already sorted to the bottom by
-// the caller).
-function buildGroupedFinished(sorted: UserBook[]): ListItem[] {
+// Build an accordion-aware list: only books whose year is in expandedYears are
+// included. Every year always gets a header row (with count) so the user can
+// tap to expand/collapse even when the group is hidden.
+// "No finish date" group appears last (nulls already sorted to the bottom).
+function buildGroupedFinished(sorted: UserBook[], expandedYears: Set<string>): ListItem[] {
+  // Count books per year in one pass.
+  const yearCounts = new Map<string, number>();
+  for (const book of sorted) {
+    const year = book.finished_at
+      ? String(new Date(book.finished_at).getFullYear())
+      : 'No finish date';
+    yearCounts.set(year, (yearCounts.get(year) ?? 0) + 1);
+  }
   const result: ListItem[] = [];
   let currentYear: string | null = null;
   for (const book of sorted) {
@@ -47,10 +57,12 @@ function buildGroupedFinished(sorted: UserBook[]): ListItem[] {
       ? String(new Date(book.finished_at).getFullYear())
       : 'No finish date';
     if (year !== currentYear) {
-      result.push({ __type: 'year_separator', year, key: `sep_${year}` });
+      result.push({ __type: 'year_separator', year, key: `sep_${year}`, count: yearCounts.get(year) ?? 0 });
       currentYear = year;
     }
-    result.push(book);
+    if (expandedYears.has(year)) {
+      result.push(book);
+    }
   }
   return result;
 }
@@ -100,8 +112,44 @@ export default function LibraryScreen() {
   const [pendingFeedback, setPendingFeedback] = useState<PendingFeedback | null>(null);
   const [activeFilter, setActiveFilter]   = useState<FilterKey>('all');
   const [sort, setSort]                   = useState<SortKey>('recent');
+  // Accordion state for Finished+chronological mode.
+  // Starts empty (all years collapsed). User taps a year row to expand/collapse it.
+  const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
 
   useFocusEffect(useCallback(() => {
+    // Background cover enrichment for any book in this library load with no
+    // cover_url. Covers matched books that were pre-existing at import time and
+    // thus skipped by the post-import enrichMissingCovers pass (which only runs
+    // on newBookIds). Fails quietly; updates local state as each cover resolves.
+    async function backfillCovers(bookIds: string[]) {
+      if (!supabase || bookIds.length === 0) return;
+      const { data: books } = await supabase
+        .from('books')
+        .select('id, isbn13, isbn, title, author')
+        .in('id', bookIds.slice(0, 30))
+        .is('cover_url', null);
+      for (const book of (books ?? [])) {
+        try {
+          const url = await fetchGoogleBooksCoverUrl({
+            isbn13: (book as { isbn13?: string | null }).isbn13,
+            isbn:   (book as { isbn?:   string | null }).isbn,
+            title:  book.title  ?? '',
+            author: book.author ?? '',
+          });
+          if (url) {
+            await supabase.from('books').update({ cover_url: url }).eq('id', book.id);
+            setItems(prev => prev.map(it =>
+              it.book_id === book.id && it.book
+                ? { ...it, book: { ...it.book, cover_url: url } }
+                : it,
+            ));
+          }
+        } catch {
+          // fail quietly — a missing cover is never a blocker
+        }
+      }
+    }
+
     async function load() {
       if (!supabase) { setError('Supabase not configured.'); setLoading(false); return; }
       const { data: { user } } = await supabase.auth.getUser();
@@ -134,7 +182,13 @@ export default function LibraryScreen() {
       if (result.error) {
         setError('Could not load library.');
       } else {
-        setItems((result.data as unknown as UserBook[]) ?? []);
+        const loadedItems = (result.data as unknown as UserBook[]) ?? [];
+        setItems(loadedItems);
+        // Fire-and-forget: backfill missing covers for any book in this load.
+        const missingCoverIds = [...new Set(
+          loadedItems.filter(it => it.book && !it.book.cover_url).map(it => it.book_id),
+        )];
+        backfillCovers(missingCoverIds).catch(() => {});
       }
       setLoading(false);
     }
@@ -313,7 +367,7 @@ export default function LibraryScreen() {
         if (b.finished_at) return 1;
         return 0;
       });
-      return buildGroupedFinished(sorted);
+      return buildGroupedFinished(sorted, expandedYears);
     }
     return filteredItems;
   })();
@@ -504,19 +558,42 @@ export default function LibraryScreen() {
         </View>
       }
       renderItem={({ item, index }) => {
-        // ── Year-group separator ─────────────────────────────────────────────
+        // ── Year-group accordion header ──────────────────────────────────────
         if (isYearSeparator(item)) {
+          const isExpanded = expandedYears.has(item.year);
           return (
-            <Text style={{
-              fontSize: 11,
-              fontWeight: '700',
-              color: '#a8a29e',
-              letterSpacing: 0.9,
-              marginTop: index === 0 ? 8 : 28,
-              marginBottom: 6,
-            }}>
-              {item.year}
-            </Text>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() =>
+                setExpandedYears(prev => {
+                  const next = new Set(prev);
+                  if (next.has(item.year)) next.delete(item.year);
+                  else next.add(item.year);
+                  return next;
+                })
+              }
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingVertical: 14,
+                marginTop: index === 0 ? 4 : 6,
+                borderBottomWidth: 1,
+                borderBottomColor: '#f5f5f4',
+              }}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '700', color: '#1c1917', letterSpacing: -0.2 }}>
+                {item.year}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ fontSize: 12, color: '#a8a29e' }}>
+                  {item.count} {item.count === 1 ? 'book' : 'books'}
+                </Text>
+                <Text style={{ fontSize: 14, color: '#a8a29e' }}>
+                  {isExpanded ? '▾' : '›'}
+                </Text>
+              </View>
+            </TouchableOpacity>
           );
         }
 
