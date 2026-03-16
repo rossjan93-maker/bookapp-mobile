@@ -1,0 +1,67 @@
+
+Let me read both screens in parallel to understand the current state before touching anything.
+
+Let me read the remaining sections of both files — particularly the profile render and the rest of index.tsx.
+
+Now I have the full picture. Here's the plan:
+
+Home (index.tsx): Add a YearBook type, loadBooksThisYear query, a compact "Reading Goal" card between Continue Reading and New from Friends, with an inline expand/collapse list of covered books.
+
+Profile (profile.tsx): Add the same YearBook type, a 21st query in the existing Promise.all for the actual book rows (currently just a count), and make the goal area tappable to expand/collapse an inline list of books finished this year.
+
+No new screens, no new packages. Let me work through both files precisely.
+
+Now add the two module-level helpers (isOnPace, shortFinishDate) to the helpers section:
+
+Now I need to find the state declarations in HomeScreen and the init function to add the new state and function. Let me read those sections:
+
+Now I'll add the two new state variables, the loadBooksThisYear function, and update the Promise.all:
+
+Now update the Promise.all in init() to include loadBooksThisYear:
+
+Now add the loadBooksThisYear function — I'll place it after loadPendingRecs:
+
+Now add the goal card in the render. Let me find the precise insertion point:
+
+Now I'll insert the goal card between the "Continue Reading" section and "New from Friends":
+
+Home is done. Now let me work on profile.tsx. First, read the type definitions and relevant state section:
+
+Let me read the destructure and the goal section render in profile.tsx:
+
+Now I'll make all the profile.tsx changes. Starting with the type and state:
+
+Now add the new state variables:
+
+Now add finishedYearBooksRes to the destructure and the corresponding query to the Promise.all:
+
+Now add the actual query at the end of the Promise.all:
+
+Now add the data processing step. Let me find where the other state setters run after the Promise.all:
+
+I'll add the setBooksThisYear call right after setAcceptedFriends:
+
+Now update the goal section render in profile.tsx. Let me also quickly check if CoverThumb is already imported there:
+
+CoverThumb is already imported. Now update the goal section render to make it tappable with an expandable book list:
+
+Both files are updated. Let me restart the app to confirm it compiles cleanly:
+
+The Metro disconnection is just from the restart. Let me wait a moment then take a screenshot to verify the app is up:
+
+That DevTools error is a pre-existing system library issue unrelated to my changes. Let me take a screenshot to verify the app renders correctly:
+
+The app compiles cleanly. Here's a summary of what was built:
+
+Home (index.tsx)
+
+A new "Reading Goal" card appears between Continue Reading and New from Friends — but only if the user has a yearly goal set. It shows:
+
+Large count ("7 of 24") + "books read in 2026" label
+A thin black progress bar
+A pace label ("On pace ✓" in muted gray, or "Behind pace" in amber)
+A ↑/↓ tap to expand/collapse an inline list of every book finished this year (cover + title + author + finish date), each tappable to the book detail screen
+If no books yet: an encouraging empty state inside the expanded area
+Profile (profile.tsx)
+
+The existing goal text + progress bar in the hero header are now tappable. A ↓/↑ indicator sits to the right of the pace line. Tapping it expands a compact list of books finished this year directly below the bar — same cover/title/author/date format — each navigating to the book detail screen. The expanded list comes from a new query added to the existing Promise.all (21 total now), so it loads in parallel with everything else and adds no extra round-trip.
