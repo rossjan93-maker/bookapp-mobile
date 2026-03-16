@@ -16,8 +16,19 @@ import { executeGoodreadsImport } from '../../lib/goodreadsExecutor';
 import { fetchGoogleBooksCoverUrl } from '../../lib/googleBooks';
 import type { StageSummary } from '../../lib/goodreadsStager';
 import type { ExecutionSummary } from '../../lib/goodreadsExecutor';
+import { resetGoodreadsImport } from '../../lib/goodreadsReset';
+import type { GoodreadsResetResult } from '../../lib/goodreadsReset';
 
-type Step = 'idle' | 'processing' | 'staged' | 'executing' | 'complete' | 'error';
+type Step =
+  | 'idle'
+  | 'processing'
+  | 'staged'
+  | 'executing'
+  | 'complete'
+  | 'error'
+  | 'confirm-reset'
+  | 'resetting'
+  | 'reset-done';
 
 // ─── Layout primitives ───────────────────────────────────────────────────────
 
@@ -226,7 +237,15 @@ const GOODREADS_EXPORT_URL = 'https://www.goodreads.com/review/import';
 
 // ─── Step: idle ───────────────────────────────────────────────────────────────
 
-function IdleView({ onPickFile, isWeb }: { onPickFile: () => void; isWeb: boolean }) {
+function IdleView({
+  onPickFile,
+  isWeb,
+  onResetRequest,
+}: {
+  onPickFile: () => void;
+  isWeb: boolean;
+  onResetRequest: () => void;
+}) {
   const steps = [
     {
       label: 'Open Goodreads in Safari or Chrome',
@@ -377,6 +396,16 @@ function IdleView({ onPickFile, isWeb }: { onPickFile: () => void; isWeb: boolea
           </Text>
         </View>
       )}
+
+      {/* ── Goodreads reset entry point ── */}
+      <View style={{ marginTop: 36, alignItems: 'center' }}>
+        <View style={{ height: 1, backgroundColor: '#e7e5e4', width: '100%', marginBottom: 20 }} />
+        <TouchableOpacity onPress={onResetRequest} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Text style={{ fontSize: 13, color: '#a8a29e' }}>
+            Reset Goodreads import
+          </Text>
+        </TouchableOpacity>
+      </View>
     </>
   );
 }
@@ -675,6 +704,152 @@ function CompleteView({
   );
 }
 
+// ─── Step: confirm-reset ─────────────────────────────────────────────────────
+
+function ConfirmResetView({
+  onConfirm,
+  onCancel,
+}: {
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <>
+      <PageTitle>Reset Goodreads import</PageTitle>
+      <PageSubtitle>
+        This will start your Goodreads import over from scratch.
+      </PageSubtitle>
+
+      <Card>
+        <View style={{ padding: 18 }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 10 }}>
+            What gets reset
+          </Text>
+          {[
+            'Books imported from Goodreads with no in-app activity will be removed.',
+            'Import history and staging data will be cleared.',
+            'You can upload a fresh Goodreads CSV immediately after.',
+          ].map((item, i) => (
+            <View key={i} style={{ flexDirection: 'row', marginBottom: 8 }}>
+              <Text style={{ color: '#a8a29e', marginRight: 8, marginTop: 1 }}>·</Text>
+              <Text style={{ flex: 1, fontSize: 13, color: '#57534e', lineHeight: 20 }}>
+                {item}
+              </Text>
+            </View>
+          ))}
+
+          <View style={{ height: 1, backgroundColor: '#e7e5e4', marginVertical: 14 }} />
+
+          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 10 }}>
+            What is preserved
+          </Text>
+          {[
+            'Books where you logged reading progress in-app.',
+            'Books linked to a recommendation from a friend.',
+            'Any book with activity in your reading feed.',
+            'Your ratings, notes, friendships, and yearly goal.',
+          ].map((item, i) => (
+            <View key={i} style={{ flexDirection: 'row', marginBottom: 8 }}>
+              <Text style={{ color: '#a8a29e', marginRight: 8, marginTop: 1 }}>·</Text>
+              <Text style={{ flex: 1, fontSize: 13, color: '#57534e', lineHeight: 20 }}>
+                {item}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </Card>
+
+      <TouchableOpacity
+        onPress={onConfirm}
+        style={{
+          marginTop: 24,
+          backgroundColor: '#1c1917',
+          borderRadius: 12,
+          paddingVertical: 15,
+          alignItems: 'center',
+        }}
+      >
+        <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>
+          Reset import
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        onPress={onCancel}
+        style={{
+          marginTop: 12,
+          paddingVertical: 13,
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: '#e7e5e4',
+          alignItems: 'center',
+        }}
+      >
+        <Text style={{ fontSize: 14, color: '#78716c' }}>Cancel</Text>
+      </TouchableOpacity>
+    </>
+  );
+}
+
+// ─── Step: reset-done ─────────────────────────────────────────────────────────
+
+function ResetDoneView({
+  result,
+  onImportNow,
+}: {
+  result: GoodreadsResetResult;
+  onImportNow: () => void;
+}) {
+  return (
+    <>
+      <PageTitle>Import reset</PageTitle>
+      <PageSubtitle>
+        Your Goodreads import has been cleared. You can upload a fresh CSV now.
+      </PageSubtitle>
+
+      <Card>
+        <View style={{ padding: 18 }}>
+          {result.removed > 0 && (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+              <Text style={{ fontSize: 14, color: '#57534e' }}>Books removed</Text>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>{result.removed}</Text>
+            </View>
+          )}
+          {result.preserved > 0 && (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+              <Text style={{ fontSize: 14, color: '#57534e' }}>Native books kept</Text>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>{result.preserved}</Text>
+            </View>
+          )}
+          {result.removed === 0 && result.preserved === 0 && (
+            <Text style={{ fontSize: 14, color: '#78716c', lineHeight: 20 }}>
+              No Goodreads-imported books were found. Everything looks clean.
+            </Text>
+          )}
+          <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18, marginTop: 4 }}>
+            Import history and staging data cleared.
+          </Text>
+        </View>
+      </Card>
+
+      <TouchableOpacity
+        onPress={onImportNow}
+        style={{
+          marginTop: 24,
+          backgroundColor: '#1c1917',
+          borderRadius: 12,
+          paddingVertical: 15,
+          alignItems: 'center',
+        }}
+      >
+        <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>
+          Import from Goodreads
+        </Text>
+      </TouchableOpacity>
+    </>
+  );
+}
+
 // ─── Step: error ─────────────────────────────────────────────────────────────
 
 function ErrorView({ message, onReset }: { message: string; onReset: () => void }) {
@@ -718,6 +893,7 @@ export default function GoodreadsImportScreen() {
   const [currentUserId, setCurrentUserId]     = useState<string | null>(null);
   const [currentBatchId, setCurrentBatchId]   = useState<string | null>(null);
   const [errorMsg, setErrorMsg]     = useState<string | null>(null);
+  const [resetResult, setResetResult] = useState<GoodreadsResetResult | null>(null);
 
   const isWeb = Platform.OS === 'web';
 
@@ -802,7 +978,32 @@ export default function GoodreadsImportScreen() {
     }
   }
 
-  // ── Reset ──────────────────────────────────────────────────────────────────
+  // ── Goodreads data reset ───────────────────────────────────────────────────
+
+  function handleResetRequest() {
+    setStep('confirm-reset');
+  }
+
+  async function handleConfirmReset() {
+    setStep('resetting');
+    setProgressStages(stageList(['Checking your library', 'Clearing imported data', 'Cleaning up import history'], 0));
+    try {
+      const { data: { user } } = await supabase!.auth.getUser();
+      if (!user) throw new Error('Not signed in');
+
+      setProgressStages(stageList(['Checking your library', 'Clearing imported data', 'Cleaning up import history'], 1));
+      const result = await resetGoodreadsImport(user.id);
+
+      setProgressStages(stageList(['Checking your library', 'Clearing imported data', 'Cleaning up import history'], 3));
+      setResetResult(result);
+      setStep('reset-done');
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Reset failed. Please try again.');
+      setStep('error');
+    }
+  }
+
+  // ── UI reset (start the import flow over from idle) ────────────────────────
 
   function handleReset() {
     setStep('idle');
@@ -815,18 +1016,26 @@ export default function GoodreadsImportScreen() {
     setCoversEnriched(0);
   }
 
-  const isLocked = step === 'processing' || step === 'executing';
+  const isLocked = step === 'processing' || step === 'executing' || step === 'resetting';
 
   return (
     <ScreenContainer>
       <BackButton onPress={() => router.back()} disabled={isLocked} />
 
       {step === 'idle' && (
-        <IdleView onPickFile={handlePickFile} isWeb={isWeb} />
+        <IdleView onPickFile={handlePickFile} isWeb={isWeb} onResetRequest={handleResetRequest} />
       )}
 
-      {(step === 'processing' || step === 'executing') && (
+      {(step === 'processing' || step === 'executing' || step === 'resetting') && (
         <ProgressView stages={progressStages} />
+      )}
+
+      {step === 'confirm-reset' && (
+        <ConfirmResetView onConfirm={handleConfirmReset} onCancel={handleReset} />
+      )}
+
+      {step === 'reset-done' && resetResult && (
+        <ResetDoneView result={resetResult} onImportNow={handleReset} />
       )}
 
       {step === 'staged' && stageSummary && (
