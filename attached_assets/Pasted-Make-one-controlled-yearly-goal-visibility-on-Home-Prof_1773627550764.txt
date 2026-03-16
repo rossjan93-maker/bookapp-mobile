@@ -1,0 +1,101 @@
+Make one controlled “yearly-goal visibility on Home + Profile” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not refactor unrelated import, recommendation, or library logic.
+Do not break profile, home, pacing, book detail, or Goodreads import flows.
+
+Goal:
+Make the yearly reading goal much more visible and understandable by:
+1. surfacing it on Home, not just Profile
+2. letting the user inspect which books are contributing to this year’s progress
+3. making the progress metric feel motivating and auditable rather than abstract
+
+This pass should not tackle library organization yet.
+Keep scope focused on yearly-goal visibility and drill-down.
+
+Scope:
+Only inspect and edit what is necessary, likely:
+- app/(tabs)/index.tsx
+- app/(tabs)/profile.tsx
+- maybe a tiny shared helper/component if useful
+- no unrelated broad screen rewrites
+
+Primary product objectives
+
+A. Add yearly-goal visibility to Home
+Requirements:
+1. Add a yearly reading goal progress module to the Home screen.
+2. It should feel consistent with the app’s current premium editorial style.
+3. It should not overpower Continue Reading, but it should be clearly visible.
+4. Good content:
+   - X of Y books this year
+   - pace state / progress bar
+5. Keep it compact and motivating.
+
+B. Make yearly-goal progress inspectable
+Requirements:
+1. Users should be able to see which books are counting toward the current year’s goal.
+2. This should work from at least one obvious surface, ideally both Home and Profile.
+3. Good approaches:
+   - tappable goal card opens an expanded list
+   - inline expand/collapse section
+   - lightweight dedicated view if truly needed
+4. Keep the interaction elegant and low-friction.
+
+C. Define what counts toward the goal
+Requirements:
+1. The books shown should be the books finished in the current calendar year.
+2. Match the same logic already used for the yearly goal count.
+3. Keep it honest and consistent.
+
+D. Present the “books read this year” list clearly
+Requirements:
+1. Show the books contributing to the current-year count in a clean, compact way.
+2. Good row content:
+   - cover
+   - title
+   - author
+   - finished date if helpful
+3. Keep it visually consistent with the app.
+
+E. Profile should remain the stronger goal surface
+Requirements:
+1. Profile can still be the richer yearly-goal surface.
+2. Home should be a compact motivating mirror of that progress.
+3. Do not make the Home version too bulky.
+
+F. Preserve current Profile role
+Requirements:
+1. Keep Profile focused on reader identity + intelligence.
+2. The goal surface should integrate into that, not feel like a random insert.
+3. Do not bring back redundant currently-reading UI.
+
+G. Preserve all existing flows
+Do not break:
+- Home hierarchy
+- Continue Reading
+- New from Friends
+- Profile loading
+- Settings access
+- Reader Intelligence
+- Reading Taste
+- Recommendations Sent
+- pacing
+- book detail routing
+
+Implementation guidance
+1. Reuse the existing yearly goal logic/data where possible.
+2. Keep the drill-down elegant and compact.
+3. If useful, make one reusable “books finished this year” section/card/list.
+4. Keep code explicit and easy to reason about.
+5. This is a visibility and auditability pass, not a feature explosion.
+
+After editing, print only:
+1. files changed
+2. full contents of changed files
+3. the diff for those files only
+4. exact manual test steps
+5. yearly-goal visibility decisions made
+6. how the “books counted this year” drill-down works
+7. what remains for the later library-organization pass

@@ -64,6 +64,16 @@ type ReadingPatterns = {
   recAdded: number;    // user_books sourced from a recommendation
 };
 
+type YearBook = {
+  id: string;
+  book_id: string;
+  finished_at: string | null;
+  title: string;
+  author: string;
+  cover_url: string | null;
+  external_id: string | null;
+};
+
 const REC_STATUS: Record<string, { bg: string; text: string; label: string }> = {
   sent:     { bg: '#f1f5f9', text: '#475569', label: 'Sent'          },
   saved:    { bg: '#e0f2fe', text: '#0369a1', label: 'Want to Read'  },
@@ -109,6 +119,8 @@ export default function ProfileScreen() {
   const [error, setError]               = useState<string | null>(null);
   const [recsExpanded, setRecsExpanded]         = useState(false);
   const [acceptedFriends, setAcceptedFriends]   = useState<AcceptedFriend[]>([]);
+  const [booksThisYear, setBooksThisYear]       = useState<YearBook[]>([]);
+  const [goalExpanded, setGoalExpanded]         = useState(false);
 
 
   useFocusEffect(useCallback(() => {
@@ -143,6 +155,7 @@ export default function ProfileScreen() {
         selfAddedDnfRes,
         recAddedFinishedRes,
         recAddedDnfRes,
+        finishedYearBooksRes,
       ] = await Promise.all([
         supabase.from('profiles').select('username, first_name, last_name, yearly_reading_goal').eq('id', user.id).single(),
         supabase
@@ -254,6 +267,14 @@ export default function ProfileScreen() {
           .eq('user_id', user.id)
           .eq('source', 'recommendation')
           .eq('status', 'dnf'),
+        supabase
+          .from('user_books')
+          .select('id, book_id, finished_at, book:books(title, author, cover_url, external_id)')
+          .eq('user_id', user.id)
+          .eq('status', 'finished')
+          .gte('finished_at', yearStart)
+          .order('finished_at', { ascending: false })
+          .limit(50),
       ]);
 
       if (profileRes.error) {
@@ -277,6 +298,20 @@ export default function ProfileScreen() {
         .map(f => (f.requester_id === user.id ? f.addressee : f.requester))
         .filter((f): f is AcceptedFriend => f !== null);
       setAcceptedFriends(friendsList);
+
+      setBooksThisYear(((finishedYearBooksRes.data ?? []) as any[]).map(r => {
+        const b = r.book as any;
+        return {
+          id:          r.id,
+          book_id:     r.book_id,
+          finished_at: r.finished_at ?? null,
+          title:       b?.title ?? '',
+          author:      b?.author ?? '',
+          cover_url:   b?.cover_url ?? null,
+          external_id: b?.external_id ?? null,
+        };
+      }));
+
       setStats({
         friendsCount:      friendsRes.count ?? 0,
         recsLanded:        landedRes.count ?? 0,
@@ -467,9 +502,18 @@ export default function ProfileScreen() {
         {/* ── Goal display ── */}
         {goalProgress ? (
           <View style={{ marginTop: 20 }}>
-            <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500', marginBottom: 8 }}>
-              {goalProgress}
-            </Text>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => setGoalExpanded(e => !e)}
+              style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}
+            >
+              <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500', flex: 1 }}>
+                {goalProgress}
+              </Text>
+              <Text style={{ fontSize: 15, color: '#d6d3d1', marginLeft: 8 }}>
+                {goalExpanded ? '↑' : '↓'}
+              </Text>
+            </TouchableOpacity>
             {yearlyGoal && stats && (
               <View style={{ height: 3, backgroundColor: '#e7e5e4', borderRadius: 2, overflow: 'hidden' }}>
                 <View style={{
@@ -478,6 +522,63 @@ export default function ProfileScreen() {
                   backgroundColor: '#1c1917',
                   borderRadius: 2,
                 }} />
+              </View>
+            )}
+            {goalExpanded && (
+              <View style={{ marginTop: 14 }}>
+                {booksThisYear.length === 0 ? (
+                  <Text style={{ fontSize: 13, color: '#a8a29e', lineHeight: 20 }}>
+                    No books finished yet this year.
+                  </Text>
+                ) : (
+                  <View style={{ borderRadius: 12, overflow: 'hidden' }}>
+                    {booksThisYear.map((book, idx) => (
+                      <TouchableOpacity
+                        key={book.id}
+                        activeOpacity={0.7}
+                        onPress={() => router.push({
+                          pathname: '/book/[id]',
+                          params: {
+                            id: book.book_id,
+                            title: book.title,
+                            author: book.author,
+                            coverUrl: book.cover_url ?? '',
+                            externalId: book.external_id ?? '',
+                            status: 'finished',
+                          },
+                        })}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          paddingVertical: 9,
+                          borderTopWidth: idx > 0 ? 1 : 0,
+                          borderTopColor: 'rgba(231,229,228,0.5)',
+                        }}
+                      >
+                        <CoverThumb
+                          url={book.cover_url}
+                          externalId={book.external_id}
+                          title={book.title}
+                          width={28}
+                          height={40}
+                        />
+                        <View style={{ flex: 1, marginLeft: 10 }}>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917' }} numberOfLines={1}>
+                            {book.title}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 1 }} numberOfLines={1}>
+                            {book.author}
+                          </Text>
+                        </View>
+                        {book.finished_at && (
+                          <Text style={{ fontSize: 11, color: '#c4b5a5', marginLeft: 8 }}>
+                            {new Date(book.finished_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
               </View>
             )}
           </View>

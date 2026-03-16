@@ -53,6 +53,16 @@ type FriendshipRow = {
   addressee: { id: string; username: string; first_name: string | null; last_name: string | null } | null;
 };
 
+type YearBook = {
+  id: string;
+  book_id: string;
+  finished_at: string | null;
+  title: string;
+  author: string;
+  cover_url: string | null;
+  external_id: string | null;
+};
+
 type RelationshipState = 'none' | 'pending' | 'accepted';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -91,6 +101,20 @@ function relativeTime(iso: string): string {
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function isOnPace(finishedCount: number, goal: number | null): boolean {
+  if (!goal || goal <= 0) return false;
+  const today = new Date();
+  const dayOfYear = Math.floor(
+    (today.getTime() - new Date(today.getFullYear(), 0, 0).getTime()) / (24 * 60 * 60 * 1000)
+  );
+  const expectedByNow = Math.floor((dayOfYear / 365) * goal);
+  return finishedCount >= expectedByNow;
+}
+
+function shortFinishDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -139,6 +163,8 @@ export default function HomeScreen() {
   const [currentReads, setCurrentReads] = useState<CurrentRead[]>([]);
   const [yearlyGoal, setYearlyGoal]     = useState<number | null>(null);
   const [pendingRecCount, setPendingRecCount] = useState(0);
+  const [booksThisYear, setBooksThisYear] = useState<YearBook[]>([]);
+  const [goalExpanded, setGoalExpanded]   = useState(false);
 
   // Activity feed
   const [feed, setFeed] = useState<FeedEvent[]>([]);
@@ -186,6 +212,7 @@ export default function HomeScreen() {
         loadFeed(acceptedFriendIds),
         loadCurrentRead(user.id),
         loadPendingRecs(user.id),
+        loadBooksThisYear(user.id),
       ]);
       setFeedLoading(false);
       setLoadingFriendships(false);
@@ -289,6 +316,31 @@ export default function HomeScreen() {
       .eq('to_user_id', uid)
       .eq('status', 'pending');
     setPendingRecCount(count ?? 0);
+  }
+
+  async function loadBooksThisYear(uid: string) {
+    if (!supabase) return;
+    const yearStart = `${new Date().getFullYear()}-01-01T00:00:00Z`;
+    const { data } = await supabase
+      .from('user_books')
+      .select('id, book_id, finished_at, book:books(title, author, cover_url, external_id)')
+      .eq('user_id', uid)
+      .eq('status', 'finished')
+      .gte('finished_at', yearStart)
+      .order('finished_at', { ascending: false });
+    const rows = (data as any[]) ?? [];
+    setBooksThisYear(rows.map(r => {
+      const b = r.book as any;
+      return {
+        id:          r.id,
+        book_id:     r.book_id,
+        finished_at: r.finished_at ?? null,
+        title:       b?.title ?? '',
+        author:      b?.author ?? '',
+        cover_url:   b?.cover_url ?? null,
+        external_id: b?.external_id ?? null,
+      };
+    }));
   }
 
   // ── Search ───────────────────────────────────────────────────────────────────
@@ -569,6 +621,120 @@ export default function HomeScreen() {
                 );
               })}
             </ScrollView>
+          )}
+        </View>
+      )}
+
+      {/* ── Yearly Reading Goal ── */}
+      {yearlyGoal && yearlyGoal > 0 && (
+        <View style={{ marginBottom: 32 }}>
+          <SectionLabel>Reading Goal</SectionLabel>
+          <TouchableOpacity activeOpacity={0.8} onPress={() => setGoalExpanded(e => !e)}>
+            <View style={{
+              backgroundColor: '#fff',
+              borderRadius: 16,
+              padding: 16,
+              shadowColor: '#000',
+              shadowOpacity: 0.06,
+              shadowRadius: 8,
+              shadowOffset: { width: 0, height: 2 },
+              elevation: 2,
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 22, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5 }}>
+                    {booksThisYear.length}
+                    <Text style={{ fontSize: 15, fontWeight: '400', color: '#a8a29e' }}> of {yearlyGoal}</Text>
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#78716c', marginTop: 3 }}>
+                    books read in {new Date().getFullYear()}
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 18, color: '#d6d3d1', marginLeft: 8, marginTop: 4 }}>
+                  {goalExpanded ? '↑' : '↓'}
+                </Text>
+              </View>
+              <View style={{ height: 3, backgroundColor: '#e7e5e4', borderRadius: 2, overflow: 'hidden', marginBottom: 6 }}>
+                <View style={{
+                  height: 3,
+                  width: `${Math.min(100, Math.round((booksThisYear.length / yearlyGoal) * 100))}%`,
+                  backgroundColor: '#1c1917',
+                  borderRadius: 2,
+                }} />
+              </View>
+              <Text style={{ fontSize: 11, color: isOnPace(booksThisYear.length, yearlyGoal) ? '#78716c' : '#d97706' }}>
+                {isOnPace(booksThisYear.length, yearlyGoal) ? 'On pace ✓' : 'Behind pace'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {goalExpanded && (
+            <View style={{
+              backgroundColor: '#fff',
+              borderRadius: 14,
+              marginTop: 8,
+              overflow: 'hidden',
+              shadowColor: '#000',
+              shadowOpacity: 0.04,
+              shadowRadius: 6,
+              shadowOffset: { width: 0, height: 1 },
+              elevation: 1,
+            }}>
+              {booksThisYear.length === 0 ? (
+                <View style={{ padding: 18 }}>
+                  <Text style={{ fontSize: 13, color: '#a8a29e', lineHeight: 20 }}>
+                    No books finished yet this year.{'\n'}Keep reading — you've got this.
+                  </Text>
+                </View>
+              ) : (
+                booksThisYear.map((book, idx) => (
+                  <TouchableOpacity
+                    key={book.id}
+                    activeOpacity={0.7}
+                    onPress={() => router.push({
+                      pathname: '/book/[id]',
+                      params: {
+                        id: book.book_id,
+                        title: book.title,
+                        author: book.author,
+                        coverUrl: book.cover_url ?? '',
+                        externalId: book.external_id ?? '',
+                        status: 'finished',
+                      },
+                    })}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: 10,
+                      paddingHorizontal: 14,
+                      borderTopWidth: idx > 0 ? 1 : 0,
+                      borderTopColor: '#f5f5f4',
+                    }}
+                  >
+                    <CoverThumb
+                      url={book.cover_url}
+                      externalId={book.external_id}
+                      title={book.title}
+                      width={32}
+                      height={46}
+                    />
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917' }} numberOfLines={1}>
+                        {book.title}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 1 }} numberOfLines={1}>
+                        {book.author}
+                      </Text>
+                    </View>
+                    {book.finished_at && (
+                      <Text style={{ fontSize: 11, color: '#c4b5a5', marginLeft: 8 }}>
+                        {shortFinishDate(book.finished_at)}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                ))
+              )}
+            </View>
           )}
         </View>
       )}
