@@ -224,6 +224,7 @@ create index if not exists idx_user_books_import_source
 -- ── import_batches ──────────────────────────────────────────────────────────
 -- Users can only see and manage their own batches.
 
+drop policy if exists "Users manage own import batches" on import_batches;
 create policy "Users manage own import batches"
   on import_batches for all
   using  (auth.uid() = user_id)
@@ -234,6 +235,7 @@ create policy "Users manage own import batches"
 -- The join back to import_batches keeps access airtight even if batch_id is
 -- passed directly.
 
+drop policy if exists "Users access own import rows" on import_rows;
 create policy "Users access own import rows"
   on import_rows for all
   using (
@@ -251,10 +253,12 @@ create policy "Users access own import rows"
 -- Updates and deletes are locked to service-role only (no client policy),
 -- which prevents accidental overwrites of shared book mappings.
 
+drop policy if exists "Authenticated users can read book source links" on book_source_links;
 create policy "Authenticated users can read book source links"
   on book_source_links for select
   using (auth.role() = 'authenticated');
 
+drop policy if exists "Authenticated users can insert book source links" on book_source_links;
 create policy "Authenticated users can insert book source links"
   on book_source_links for insert
   with check (auth.role() = 'authenticated');
@@ -265,8 +269,46 @@ create policy "Authenticated users can insert book source links"
 -- Added after import_batches is created (ordering requirement).
 -- =============================================================================
 
-alter table user_books
-  add constraint fk_user_books_import_batch
-  foreign key (import_batch_id)
-  references import_batches(id)
-  on delete set null;
+do $$ begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'fk_user_books_import_batch'
+      and conrelid = 'user_books'::regclass
+  ) then
+    alter table user_books
+      add constraint fk_user_books_import_batch
+      foreign key (import_batch_id)
+      references import_batches(id)
+      on delete set null;
+  end if;
+end $$;
+
+-- =============================================================================
+-- Verification queries (run manually in Supabase SQL editor to confirm)
+-- =============================================================================
+-- -- Tables
+-- select table_name from information_schema.tables
+--   where table_schema = 'public'
+--     and table_name in ('import_batches','import_rows','book_source_links');
+--
+-- -- Columns added to books
+-- select column_name from information_schema.columns
+--   where table_name = 'books'
+--     and column_name in ('isbn','isbn13','additional_authors','publisher',
+--                         'binding','publication_year','original_publication_year');
+--
+-- -- Columns added to user_books
+-- select column_name from information_schema.columns
+--   where table_name = 'user_books'
+--     and column_name in ('import_source','import_batch_id','imported_at','date_added',
+--                         'review_body','raw_shelves','exclusive_shelf_imported');
+--
+-- -- RLS policies
+-- select policyname, tablename from pg_policies
+--   where tablename in ('import_batches','import_rows','book_source_links')
+--   order by tablename, policyname;
+--
+-- -- FK constraint
+-- select conname from pg_constraint
+--   where conname = 'fk_user_books_import_batch'
+--     and conrelid = 'user_books'::regclass;
