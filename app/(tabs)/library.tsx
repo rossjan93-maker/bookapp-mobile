@@ -29,6 +29,32 @@ type UserBook = {
 
 type PendingFeedback = { userBookId: string; bookId: string; status: 'finished' | 'dnf'; pendingEventId: string | null };
 
+type YearSeparator = { __type: 'year_separator'; year: string; key: string };
+type ListItem      = UserBook | YearSeparator;
+
+function isYearSeparator(item: ListItem): item is YearSeparator {
+  return (item as YearSeparator).__type === 'year_separator';
+}
+
+// Inject year-header separator objects into a sorted-by-finished_at array.
+// "No finish date" group appears last (nulls already sorted to the bottom by
+// the caller).
+function buildGroupedFinished(sorted: UserBook[]): ListItem[] {
+  const result: ListItem[] = [];
+  let currentYear: string | null = null;
+  for (const book of sorted) {
+    const year = book.finished_at
+      ? String(new Date(book.finished_at).getFullYear())
+      : 'No finish date';
+    if (year !== currentYear) {
+      result.push({ __type: 'year_separator', year, key: `sep_${year}` });
+      currentYear = year;
+    }
+    result.push(book);
+  }
+  return result;
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const STATUS_LABELS: Record<UserBookStatus, string> = {
@@ -256,7 +282,7 @@ export default function LibraryScreen() {
   //   Finished filter + finished_date (default) → sorted by finished_at descending (uses imported dates).
   //   Finished filter + recent → DB insertion order (created_at desc).
   //   All other cases → preserve DB order (created_at desc).
-  const displayedItems = (() => {
+  const displayedItems: ListItem[] = (() => {
     if (activeFilter === 'all') {
       // Reading first (operational priority), then finished sorted by most recently
       // finished (uses imported finish dates), then want-to-read, then DNF.
@@ -280,12 +306,14 @@ export default function LibraryScreen() {
       });
     }
     if (activeFilter === 'finished' && sort === 'finished_date') {
-      return [...filteredItems].sort((a, b) => {
+      // Sort by finished_at desc (nulls last), then inject year-header separators.
+      const sorted = [...filteredItems].sort((a, b) => {
         if (a.finished_at && b.finished_at) return b.finished_at.localeCompare(a.finished_at);
         if (a.finished_at) return -1;
         if (b.finished_at) return 1;
         return 0;
       });
+      return buildGroupedFinished(sorted);
     }
     return filteredItems;
   })();
@@ -329,7 +357,7 @@ export default function LibraryScreen() {
   return (
     <FlatList
       data={displayedItems}
-      keyExtractor={item => item.id}
+      keyExtractor={item => isYearSeparator(item) ? item.key : item.id}
       style={{ backgroundColor: '#faf9f7' }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 0, paddingBottom: 40 }}
       ListHeaderComponent={
@@ -476,6 +504,22 @@ export default function LibraryScreen() {
         </View>
       }
       renderItem={({ item, index }) => {
+        // ── Year-group separator ─────────────────────────────────────────────
+        if (isYearSeparator(item)) {
+          return (
+            <Text style={{
+              fontSize: 11,
+              fontWeight: '700',
+              color: '#a8a29e',
+              letterSpacing: 0.9,
+              marginTop: index === 0 ? 8 : 28,
+              marginBottom: 6,
+            }}>
+              {item.year}
+            </Text>
+          );
+        }
+
         const isUpdating = updatingId === item.id;
         const isBlocked  = updatingId !== null;
         const isReading  = item.status === 'reading';
