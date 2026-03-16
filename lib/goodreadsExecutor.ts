@@ -21,7 +21,8 @@ export type ExecutionSummary = {
   reviewNeeded: number; // rows left unresolved
   failed: number;
   reviewRows: Array<{ title: string; author: string; reason: string | null }>;
-  newBookIds: string[]; // IDs of books newly created in this pass (cover_url=null; eligible for enrichment)
+  newBookIds: string[];           // IDs of books freshly created in this pass
+  allAffectedBookIds: string[];   // IDs of ALL books touched (created + matched + reimported)
 };
 
 // ─── Internal row shape from import_rows ─────────────────────────────────────
@@ -112,7 +113,7 @@ export async function executeGoodreadsImport(
 
   if (fetchError) throw new Error(`Failed to load staged rows: ${fetchError.message}`);
   if (!pendingRows || pendingRows.length === 0) {
-    return { batchId, added: 0, merged: 0, skipped: 0, reviewNeeded: 0, failed: 0, reviewRows: [], newBookIds: [] };
+    return { batchId, added: 0, merged: 0, skipped: 0, reviewNeeded: 0, failed: 0, reviewRows: [], newBookIds: [], allAffectedBookIds: [] };
   }
 
   const rows = pendingRows as ImportRow[];
@@ -448,8 +449,9 @@ export async function executeGoodreadsImport(
     })
     .eq('id', batchId);
 
-  // newBookIds: only books that were freshly created in this pass (cover_url=null).
+  // newBookIds: books freshly created in this pass.
+  // allAffectedBookIds: every book touched (created + matched existing + reimported).
   const newBookIds = createWithBookId.map(c => c.bookId);
 
-  return { batchId, ...counters, reviewRows, newBookIds };
+  return { batchId, ...counters, reviewRows, newBookIds, allAffectedBookIds: allBookIds };
 }

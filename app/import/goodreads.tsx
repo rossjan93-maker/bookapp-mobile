@@ -18,6 +18,7 @@ import type { StageSummary } from '../../lib/goodreadsStager';
 import type { ExecutionSummary } from '../../lib/goodreadsExecutor';
 import { resetGoodreadsImport } from '../../lib/goodreadsReset';
 import type { GoodreadsResetResult } from '../../lib/goodreadsReset';
+import { repairBooksMetadata } from '../../lib/metadataRepair';
 
 type Step =
   | 'idle'
@@ -634,7 +635,7 @@ function CompleteView({
   const showQueue = result.reviewRows.length > 0;
 
   const subtitle = totalImported > 0
-    ? `${totalImported} ${totalImported === 1 ? 'book has' : 'books have'} been added to your library.${coversEnriched > 0 ? ` Cover artwork added for ${coversEnriched}.` : ''}`
+    ? `${totalImported} ${totalImported === 1 ? 'book has' : 'books have'} been added to your library.${coversEnriched > 0 ? ` Covers and metadata updated for ${coversEnriched}.` : ''}`
     : 'Your library is already up to date.';
 
   return (
@@ -963,8 +964,8 @@ export default function GoodreadsImportScreen() {
 
       // Cover enrichment — only for freshly created books
       setProgressStages(eStages(2));
-      const n = await enrichMissingCovers(result.newBookIds);
-      setCoversEnriched(n);
+      const repaired = await repairBooksMetadata(result.allAffectedBookIds);
+      setCoversEnriched(repaired.total);
 
       // Brief finalizing pause so the last stage is visible
       setProgressStages(eStages(3));

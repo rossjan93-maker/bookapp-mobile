@@ -137,6 +137,15 @@ export default function BookDetailScreen() {
   // navigation time (e.g. imported books that had no cover in the DB yet).
   const [enrichedCoverUrl, setEnrichedCoverUrl] = useState<string | null>(null);
 
+  // User reading history: rating, finished date, review, private note.
+  // Fetched directly from user_books on open so it's always current.
+  const [userHistory, setUserHistory] = useState<{
+    rating:      number | null;
+    finishedAt:  string | null;
+    reviewBody:  string | null;
+    privateNote: string | null;
+  } | null>(null);
+
   // Reading progress state
   const [userBookId, setUserBookId]     = useState<string | null>(null);
   const [userId, setUserId]             = useState<string | null>(null);
@@ -166,6 +175,41 @@ export default function BookDetailScreen() {
 
   const pageInputRef      = useRef<TextInput>(null);
   const pageCountInputRef = useRef<TextInput>(null);
+
+  // ── Fetch user reading history (rating, finished date, review, note) ────────
+  // Runs for every book regardless of status so the "Your History" section
+  // populates for finished, dnf, or want-to-read books too.
+
+  useEffect(() => {
+    if (!bookId || !supabase) return;
+
+    async function fetchHistory() {
+      if (!supabase) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data } = await supabase
+        .from('user_books')
+        .select('rating, finished_at, review_body, private_note')
+        .eq('user_id', user.id)
+        .eq('book_id', bookId!)
+        .maybeSingle();
+
+      if (data) {
+        const h = {
+          rating:      (data.rating      as number | null) ?? null,
+          finishedAt:  (data.finished_at as string | null) ?? null,
+          reviewBody:  (data.review_body as string | null) ?? null,
+          privateNote: (data.private_note as string | null) ?? null,
+        };
+        if (h.rating || h.finishedAt || h.reviewBody || h.privateNote) {
+          setUserHistory(h);
+        }
+      }
+    }
+
+    fetchHistory();
+  }, [bookId]);
 
   const badge     = status ? (STATUS_META[status] ?? null) : null;
   const hasRecCtx = !!(fromUser || toUser || note);
@@ -924,6 +968,69 @@ export default function BookDetailScreen() {
                 )}
               </View>
             )}
+          </View>
+        )}
+
+        {/* ── Your History ── */}
+        {userHistory && (
+          <View style={{
+            backgroundColor: '#fff',
+            borderRadius: 14,
+            padding: 18,
+            marginBottom: 20,
+            borderWidth: 1,
+            borderColor: '#e7e5e4',
+          }}>
+            <Text style={{
+              fontSize: 11,
+              fontWeight: '700',
+              color: '#a8a29e',
+              letterSpacing: 0.9,
+              textTransform: 'uppercase',
+              marginBottom: 14,
+            }}>
+              Your History
+            </Text>
+
+            {userHistory.rating != null && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                <Text style={{ fontSize: 13, color: '#78716c', width: 90 }}>Rating</Text>
+                <Text style={{ fontSize: 14, color: '#1c1917', fontWeight: '600' }}>
+                  {'★'.repeat(userHistory.rating)}{'☆'.repeat(5 - userHistory.rating)} · {userHistory.rating}/5
+                </Text>
+              </View>
+            )}
+
+            {userHistory.finishedAt && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                <Text style={{ fontSize: 13, color: '#78716c', width: 90 }}>Finished</Text>
+                <Text style={{ fontSize: 14, color: '#1c1917' }}>
+                  {new Date(userHistory.finishedAt).toLocaleDateString('en-US', {
+                    year: 'numeric', month: 'long', day: 'numeric',
+                  })}
+                </Text>
+              </View>
+            )}
+
+            {userHistory.reviewBody ? (
+              <View style={{ marginTop: userHistory.rating || userHistory.finishedAt ? 6 : 0 }}>
+                <Text style={{ fontSize: 13, color: '#78716c', marginBottom: 4 }}>Review</Text>
+                <Text style={{ fontSize: 14, color: '#44403c', lineHeight: 22 }}>
+                  {userHistory.reviewBody}
+                </Text>
+              </View>
+            ) : null}
+
+            {userHistory.privateNote ? (
+              <View style={{ marginTop: 12, backgroundColor: '#faf9f7', borderRadius: 8, padding: 12 }}>
+                <Text style={{ fontSize: 11, color: '#a8a29e', marginBottom: 4, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                  Private note
+                </Text>
+                <Text style={{ fontSize: 13, color: '#57534e', lineHeight: 20 }}>
+                  {userHistory.privateNote}
+                </Text>
+              </View>
+            ) : null}
           </View>
         )}
 
