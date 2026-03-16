@@ -1,0 +1,104 @@
+Make one targeted “non-destructive Goodreads import foundation repair migration” pass.
+
+Do not change package versions.
+Do not add packages.
+Do not change unrelated app logic.
+Do not touch parser/import UI/execution logic unless absolutely necessary.
+Do not drop or reset any existing Goodreads import data.
+
+Context:
+The existing Goodreads import foundation SQL is being flagged by Supabase as having destructive qualities.
+The likely triggers are:
+- DROP POLICY IF EXISTS ...
+- higher-impact ALTER TABLE patterns
+We want a cleaner, safer path.
+
+Goal:
+Create a non-destructive follow-up repair migration for the Goodreads import foundation that is safe to run in Supabase and avoids destructive-looking patterns.
+
+Important:
+Do NOT rely on dropping policies.
+Do NOT reset tables.
+Do NOT remove existing imported data.
+Do NOT rewrite the entire schema from scratch.
+
+Scope:
+Inspect and edit only what is necessary, likely:
+- add a new migration under supabase/migrations/
+- do not modify unrelated app files unless absolutely necessary
+
+Primary objectives
+
+A. Create a follow-up repair migration
+Requirements:
+1. Create a new migration file rather than relying on rerunning the original Goodreads foundation migration.
+2. The repair migration should safely ensure the expected Goodreads import foundation objects exist and are usable.
+3. Keep it additive / conditional / non-destructive.
+
+B. Avoid destructive-looking patterns
+Requirements:
+1. Do NOT use:
+   - DROP POLICY IF EXISTS ...
+2. Prefer conditional creation patterns instead.
+3. For policies, use DO $$ ... $$ blocks checking pg_policies before creating.
+4. For constraints, use DO $$ ... $$ blocks checking pg_constraint before creating.
+5. For indexes, use CREATE INDEX IF NOT EXISTS.
+6. For columns, use ADD COLUMN IF NOT EXISTS.
+
+C. Keep schema intent exactly the same
+Requirements:
+1. Preserve the Goodreads import foundation design:
+   - import_batches
+   - import_rows
+   - book_source_links
+   - books metadata additions
+   - user_books import-memory/provenance additions
+   - RLS policies
+   - FK from user_books.import_batch_id to import_batches.id
+2. Do not redesign object names or semantics.
+
+D. Keep it safe for already-populated environments
+Requirements:
+1. The migration must be safe if:
+   - some tables already exist
+   - some columns already exist
+   - some policies already exist
+   - some Goodreads imports have already happened
+2. Do not wipe or invalidate current data.
+
+E. Be explicit about what the repair migration is doing
+Requirements:
+1. The migration file should read as a “repair / ensure foundation exists” migration.
+2. Add comments explaining why it avoids destructive-looking patterns.
+3. Keep it understandable for future maintenance.
+
+F. Provide verification queries
+Requirements:
+1. At the bottom of the output (not necessarily inside the migration file unless you think it is useful), include exact SQL verification queries to confirm:
+   - import_batches exists
+   - import_rows exists
+   - book_source_links exists
+   - expected columns exist
+   - expected policies exist
+   - FK exists
+
+Implementation guidance
+1. Assume the original migration may already be partially or fully applied.
+2. The repair migration should only add/ensure missing pieces.
+3. Prefer the safest possible Supabase/Postgres patterns.
+4. No object drops.
+5. No data resets.
+
+Preferred outcome
+- new repair migration file created
+- safe conditional creates only
+- no destructive-looking policy-drop patterns
+- clear exact SQL steps for me to run now
+
+After editing, print only:
+1. files changed
+2. full contents of changed files
+3. the diff for those files only
+4. exact SQL steps I should run in Supabase now
+5. non-destructive/idempotent rules used
+6. what this repair migration now guarantees
