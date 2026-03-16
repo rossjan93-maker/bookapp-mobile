@@ -1,9 +1,9 @@
 // =============================================================================
-// Google Books — lightweight page-count enrichment helper
+// Google Books — lightweight metadata enrichment helpers
 // =============================================================================
-// Searches Google Books by title + author when a book has no page_count.
-// Returns a page count only when a result matches the expected title closely
-// enough to be trustworthy. Falls back gracefully on any error.
+// fetchGoogleBooksPageCount — returns page count for a title+author query.
+// fetchGoogleBooksCoverUrl  — returns cover image URL; prefers ISBN identifiers,
+//                            falls back to title+author. Upgrades http → https.
 //
 // Optional: set EXPO_PUBLIC_GOOGLE_BOOKS_API_KEY for a higher rate limit.
 // Without a key the free anonymous tier is used (adequate for this use case).
@@ -75,4 +75,66 @@ export async function fetchGoogleBooksPageCount(
   } catch {
     return null;
   }
+}
+
+// ─── Cover URL enrichment ─────────────────────────────────────────────────────
+// Prefers ISBN identifiers (authoritative); falls back to title+author search.
+// Returns null and fails quietly on any network or parse error.
+
+export async function fetchGoogleBooksCoverUrl(opts: {
+  isbn13?: string | null;
+  isbn?: string | null;
+  title: string;
+  author: string;
+}): Promise<string | null> {
+  const { isbn13, isbn, title, author } = opts;
+  if (!title.trim()) return null;
+
+  const keyParam = API_KEY ? `&key=${API_KEY}` : '';
+
+  // Strategy 1: ISBN13 (most authoritative)
+  // Strategy 2: ISBN10 fallback
+  // Strategy 3: title+author text search
+  const strategies: Array<{ q: string; skipTitleCheck: boolean }> = [];
+
+  if (isbn13?.trim()) {
+    strategies.push({ q: `isbn:${isbn13.trim()}`, skipTitleCheck: true });
+  } else if (isbn?.trim()) {
+    strategies.push({ q: `isbn:${isbn.trim()}`, skipTitleCheck: true });
+  }
+
+  const authorTrimmed = author.slice(0, 40).trim();
+  const skipAuthor = !authorTrimmed || /^unknown\s+author$/i.test(authorTrimmed);
+  const titleParts = [`intitle:${title.slice(0, 50).trim()}`];
+  if (!skipAuthor) titleParts.push(`inauthor:${authorTrimmed}`);
+  strategies.push({ q: titleParts.join(' '), skipTitleCheck: false });
+
+  for (const { q, skipTitleCheck } of strategies) {
+    try {
+      const url =
+        `https://www.googleapis.com/books/v1/volumes` +
+        `?q=${encodeURIComponent(q)}&maxResults=3&langRestrict=en&printType=books${keyParam}`;
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (!Array.isArray(data.items) || data.items.length === 0) continue;
+
+      for (const item of data.items) {
+        const vi = item?.volumeInfo;
+        if (!vi) continue;
+        if (!skipTitleCheck && !titleMatches(title, vi.title ?? '')) continue;
+
+        const thumbnail: unknown =
+          vi.imageLinks?.thumbnail ?? vi.imageLinks?.smallThumbnail;
+        if (typeof thumbnail === 'string' && thumbnail.length > 0) {
+          // Google Books returns http:// — upgrade to https
+          return thumbnail.replace(/^http:\/\//, 'https://');
+        }
+      }
+    } catch {
+      // try next strategy
+    }
+  }
+
+  return null;
 }

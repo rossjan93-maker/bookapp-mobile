@@ -13,6 +13,7 @@ import { supabase } from '../../lib/supabase';
 import { parseGoodreadsCSV } from '../../lib/goodreadsParser';
 import { stageGoodreadsImport } from '../../lib/goodreadsStager';
 import { executeGoodreadsImport } from '../../lib/goodreadsExecutor';
+import { fetchGoogleBooksCoverUrl } from '../../lib/googleBooks';
 import type { StageSummary } from '../../lib/goodreadsStager';
 import type { ExecutionSummary } from '../../lib/goodreadsExecutor';
 
@@ -380,15 +381,117 @@ function IdleView({ onPickFile, isWeb }: { onPickFile: () => void; isWeb: boolea
   );
 }
 
+// ─── Progress stage types + helpers ──────────────────────────────────────────
+
+type ProgressStage = {
+  label: string;
+  status: 'waiting' | 'active' | 'done';
+};
+
+const PROCESSING_STAGES = ['Parsing your library', 'Matching books', 'Preparing preview'];
+const EXECUTING_STAGES  = ['Adding books to your library', 'Linking your reading history', 'Fetching missing covers', 'Finalizing'];
+
+function stageList(labels: string[], activeIdx: number): ProgressStage[] {
+  return labels.map((label, i) => ({
+    label,
+    status: (i < activeIdx ? 'done' : i === activeIdx ? 'active' : 'waiting') as ProgressStage['status'],
+  }));
+}
+
+// ─── Cover enrichment ─────────────────────────────────────────────────────────
+// Only called for books freshly created in the current pass. Fails quietly.
+
+async function enrichMissingCovers(bookIds: string[]): Promise<number> {
+  if (!supabase || bookIds.length === 0) return 0;
+
+  const { data: books } = await supabase
+    .from('books')
+    .select('id, isbn13, isbn, title, author')
+    .in('id', bookIds)
+    .is('cover_url', null);
+
+  let enriched = 0;
+  for (const book of (books ?? [])) {
+    try {
+      const url = await fetchGoogleBooksCoverUrl({
+        isbn13: book.isbn13,
+        isbn:   book.isbn,
+        title:  book.title ?? '',
+        author: book.author ?? '',
+      });
+      if (url) {
+        await supabase.from('books').update({ cover_url: url }).eq('id', book.id);
+        enriched++;
+      }
+    } catch {
+      // fail quietly — a missing cover is never a blocker
+    }
+  }
+  return enriched;
+}
+
 // ─── Step: processing / executing ────────────────────────────────────────────
 
-function SpinnerView({ message }: { message: string }) {
+function ProgressView({ stages }: { stages: ProgressStage[] }) {
+  const total = stages.length;
+  const doneCount = stages.filter(s => s.status === 'done').length;
+  const hasActive = stages.some(s => s.status === 'active');
+  const pct = total === 0 ? 0 : Math.min(1, (doneCount + (hasActive ? 0.6 : 0)) / total);
+  const pctStr = `${Math.round(pct * 100)}%`;
+
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 }}>
-      <ActivityIndicator color="#78716c" size="large" />
-      <Text style={{ fontSize: 14, color: '#78716c', marginTop: 20, textAlign: 'center' }}>
-        {message}
-      </Text>
+    <View style={{ paddingTop: 52 }}>
+      {/* Progress track */}
+      <View style={{
+        height: 3,
+        backgroundColor: '#e7e5e4',
+        borderRadius: 2,
+        marginBottom: 40,
+        overflow: 'hidden',
+      }}>
+        <View style={{
+          height: 3,
+          width: pctStr as unknown as number,
+          backgroundColor: '#1c1917',
+          borderRadius: 2,
+        }} />
+      </View>
+
+      {/* Stage rows */}
+      {stages.map((stage, i) => {
+        const isActive  = stage.status === 'active';
+        const isDone    = stage.status === 'done';
+        const isWaiting = stage.status === 'waiting';
+        return (
+          <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
+            {/* Indicator dot */}
+            <View style={{
+              width: 8, height: 8, borderRadius: 4,
+              backgroundColor: isWaiting ? 'transparent' : (isDone ? '#a8a29e' : '#1c1917'),
+              borderWidth: isWaiting ? 1.5 : 0,
+              borderColor: '#d6d3d1',
+              marginRight: 14,
+              flexShrink: 0,
+            }} />
+            {/* Label */}
+            <Text style={{
+              flex: 1,
+              fontSize: 13,
+              fontWeight: isActive ? '600' : '400',
+              color: isWaiting ? '#a8a29e' : (isDone ? '#78716c' : '#1c1917'),
+            }}>
+              {stage.label}
+            </Text>
+            {/* Right indicator */}
+            {isDone && (
+              <Text style={{ fontSize: 12, color: '#a8a29e', marginLeft: 8 }}>✓</Text>
+            )}
+            {isActive && (
+              <ActivityIndicator size="small" color="#a8a29e" style={{ marginLeft: 8 }} />
+            )}
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -491,23 +594,24 @@ function StagedView({
 
 function CompleteView({
   result,
+  coversEnriched,
   onReset,
 }: {
   result: ExecutionSummary;
+  coversEnriched: number;
   onReset: () => void;
 }) {
   const totalImported = result.added + result.merged;
   const showQueue = result.reviewRows.length > 0;
 
+  const subtitle = totalImported > 0
+    ? `${totalImported} ${totalImported === 1 ? 'book has' : 'books have'} been added to your library.${coversEnriched > 0 ? ` Cover artwork added for ${coversEnriched}.` : ''}`
+    : 'Your library is already up to date.';
+
   return (
     <>
       <PageTitle>Import complete</PageTitle>
-      <PageSubtitle>
-        {totalImported > 0
-          ? `${totalImported} ${totalImported === 1 ? 'book has' : 'books have'} been added to your library.`
-          : 'Your library is already up to date.'
-        }
-      </PageSubtitle>
+      <PageSubtitle>{subtitle}</PageSubtitle>
 
       <SectionLabel>Results</SectionLabel>
       <Card>
@@ -607,7 +711,8 @@ function ErrorView({ message, onReset }: { message: string; onReset: () => void 
 export default function GoodreadsImportScreen() {
   const router = useRouter();
   const [step, setStep]             = useState<Step>('idle');
-  const [progress, setProgress]     = useState('');
+  const [progressStages, setProgressStages]   = useState<ProgressStage[]>([]);
+  const [coversEnriched, setCoversEnriched]   = useState(0);
   const [stageSummary, setStageSummary]       = useState<StageSummary | null>(null);
   const [executionResult, setExecutionResult] = useState<ExecutionSummary | null>(null);
   const [currentUserId, setCurrentUserId]     = useState<string | null>(null);
@@ -622,8 +727,8 @@ export default function GoodreadsImportScreen() {
     const file = await pickCSVFile();
     if (!file) return;
 
+    setProgressStages(stageList(PROCESSING_STAGES, 0));
     setStep('processing');
-    setProgress('Parsing your library…');
 
     try {
       const parseResult = parseGoodreadsCSV(file.text);
@@ -643,12 +748,12 @@ export default function GoodreadsImportScreen() {
         return;
       }
 
-      setProgress('Matching books…');
+      setProgressStages(stageList(PROCESSING_STAGES, 1));
       if (!supabase) throw new Error('Supabase not configured.');
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('You must be signed in to import your library.');
 
-      setProgress(`Staging ${parseResult.rows.length} books…`);
+      setProgressStages(stageList(PROCESSING_STAGES, 2));
       const staged = await stageGoodreadsImport(user.id, parseResult.rows, file.name);
 
       setCurrentUserId(user.id);
@@ -666,11 +771,29 @@ export default function GoodreadsImportScreen() {
   async function handleExecute() {
     if (!currentUserId || !currentBatchId) return;
 
+    const eStages = (idx: number) => stageList(EXECUTING_STAGES, idx);
+    setProgressStages(eStages(0));
     setStep('executing');
-    setProgress('Importing your books…');
 
     try {
-      const result = await executeGoodreadsImport(currentUserId, currentBatchId);
+      const result = await executeGoodreadsImport(
+        currentUserId,
+        currentBatchId,
+        (phase) => {
+          if (phase === 'linking')   setProgressStages(eStages(1));
+          if (phase === 'finalizing') setProgressStages(eStages(3));
+        },
+      );
+
+      // Cover enrichment — only for freshly created books
+      setProgressStages(eStages(2));
+      const n = await enrichMissingCovers(result.newBookIds);
+      setCoversEnriched(n);
+
+      // Brief finalizing pause so the last stage is visible
+      setProgressStages(eStages(3));
+      await new Promise(r => setTimeout(r, 350));
+
       setExecutionResult(result);
       setStep('complete');
     } catch (err: unknown) {
@@ -688,7 +811,8 @@ export default function GoodreadsImportScreen() {
     setCurrentUserId(null);
     setCurrentBatchId(null);
     setErrorMsg(null);
-    setProgress('');
+    setProgressStages([]);
+    setCoversEnriched(0);
   }
 
   const isLocked = step === 'processing' || step === 'executing';
@@ -702,7 +826,7 @@ export default function GoodreadsImportScreen() {
       )}
 
       {(step === 'processing' || step === 'executing') && (
-        <SpinnerView message={progress} />
+        <ProgressView stages={progressStages} />
       )}
 
       {step === 'staged' && stageSummary && (
@@ -714,7 +838,7 @@ export default function GoodreadsImportScreen() {
       )}
 
       {step === 'complete' && executionResult && (
-        <CompleteView result={executionResult} onReset={handleReset} />
+        <CompleteView result={executionResult} coversEnriched={coversEnriched} onReset={handleReset} />
       )}
 
       {step === 'error' && (

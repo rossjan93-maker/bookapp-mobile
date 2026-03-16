@@ -21,6 +21,7 @@ export type ExecutionSummary = {
   reviewNeeded: number; // rows left unresolved
   failed: number;
   reviewRows: Array<{ title: string; author: string; reason: string | null }>;
+  newBookIds: string[]; // IDs of books newly created in this pass (cover_url=null; eligible for enrichment)
 };
 
 // ─── Internal row shape from import_rows ─────────────────────────────────────
@@ -94,6 +95,7 @@ function sourceBookId(row: ImportRow): string | null {
 export async function executeGoodreadsImport(
   userId: string,
   batchId: string,
+  onProgress?: (phase: 'linking' | 'finalizing') => void,
 ): Promise<ExecutionSummary> {
   if (!supabase) throw new Error('Supabase not configured.');
 
@@ -110,7 +112,7 @@ export async function executeGoodreadsImport(
 
   if (fetchError) throw new Error(`Failed to load staged rows: ${fetchError.message}`);
   if (!pendingRows || pendingRows.length === 0) {
-    return { batchId, added: 0, merged: 0, skipped: 0, reviewNeeded: 0, failed: 0, reviewRows: [] };
+    return { batchId, added: 0, merged: 0, skipped: 0, reviewNeeded: 0, failed: 0, reviewRows: [], newBookIds: [] };
   }
 
   const rows = pendingRows as ImportRow[];
@@ -222,6 +224,9 @@ export async function executeGoodreadsImport(
       .from('book_source_links')
       .upsert(chunk, { onConflict: 'source,source_book_id', ignoreDuplicates: true });
   }
+
+  // Signal that book creation is done; now linking reading history.
+  onProgress?.('linking');
 
   // ── 6. Resolve all rows that now have a book_id ───────────────────────────
   // allResolved = groupMatched + createWithBookId (successfully got a book_id)
@@ -427,6 +432,9 @@ export async function executeGoodreadsImport(
     }
   }
 
+  // Signal that row processing is done; about to finalize counters.
+  onProgress?.('finalizing');
+
   // ── 10. Finalize import_batches counters ──────────────────────────────────
   await supabase
     .from('import_batches')
@@ -440,5 +448,8 @@ export async function executeGoodreadsImport(
     })
     .eq('id', batchId);
 
-  return { batchId, ...counters, reviewRows };
+  // newBookIds: only books that were freshly created in this pass (cover_url=null).
+  const newBookIds = createWithBookId.map(c => c.bookId);
+
+  return { batchId, ...counters, reviewRows, newBookIds };
 }

@@ -1,0 +1,108 @@
+Make one controlled “post-import trust pass: progress UI + cover enrichment” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not refactor unrelated import, library, profile, or recommendation logic.
+Do not break Goodreads parsing, staging, execution, profile, pacing, or reading flows.
+
+Goal:
+Improve the post-import experience so it feels trustworthy and complete.
+
+This pass should do two things:
+1. make the import process visibly informative while it is running
+2. automatically enrich/import missing cover artwork for Goodreads-imported books after import
+
+Do NOT tackle yearly-goal detail or library organization in this pass.
+Keep scope tight.
+
+Scope:
+Only inspect and edit what is necessary, likely:
+- app/import/goodreads.tsx
+- lib/goodreadsExecutor.ts
+- existing metadata/cover helper(s) if available
+- maybe one small new helper for cover enrichment if needed
+- no unrelated screen rewrites
+
+Primary product objectives
+
+A. Improve import progress UX
+Requirements:
+1. Replace the current sparse loading state with a more informative progress experience.
+2. The user should understand that the app is doing real work in stages.
+3. Good stages:
+   - Parsing export
+   - Matching books
+   - Importing books
+   - Enriching covers
+   - Finalizing
+4. Show a progress bar or staged progress indicator.
+5. If exact row-level progress is practical, show counts.
+6. If exact counts are not practical, show truthful staged progress with clear messages.
+7. The loading state should feel calm, premium, and confidence-building.
+
+B. Keep import status honest
+Requirements:
+1. Do not fake precision if the backend does not actually know exact counts at every step.
+2. Prefer a truthful staged progress model over a misleading percentage.
+3. If percentage is shown, it must be grounded in real known phases or counts.
+
+C. Add post-import cover enrichment
+Requirements:
+1. After Goodreads books are imported, attempt to populate missing cover artwork automatically.
+2. Do this only for books that do not already have a cover.
+3. Prefer trustworthy identifiers in this order:
+   - isbn13
+   - isbn
+   - title + author fallback
+4. Reuse any existing metadata/cover lookup helpers if possible.
+5. If no cover is found, fail quietly — do not break the import.
+6. The goal is that imported books feel native and visually complete once they land in the library.
+
+D. Keep enrichment bounded and safe
+Requirements:
+1. Do not turn this into an aggressive crawler.
+2. Only enrich books created/imported in the current Goodreads execution pass, or otherwise very tightly scoped relevant books.
+3. Avoid repeated unnecessary enrichment work if a cover already exists.
+
+E. Reflect enrichment in progress UI if possible
+Requirements:
+1. If cover enrichment happens during the import pipeline, the progress UI should acknowledge it.
+2. Good example:
+   - “Adding books to your library…”
+   - “Fetching missing cover artwork…”
+3. This gives users a reason for the final part of the wait.
+
+F. Preserve all current flows
+Do not break:
+- Goodreads import entry flow
+- staged summary
+- import execution
+- profile
+- library
+- home
+- recommendations
+- book detail
+- pacing
+- ratings
+
+Implementation guidance
+1. Keep the import progress UI more informative, but still elegant.
+2. Prefer a staged progress system if precise percentages are awkward.
+3. Put cover enrichment in the execution path or a tightly coupled helper right after execution.
+4. Keep the code explicit and easy to reason about.
+5. Do not broaden scope into goal/history/library organization yet.
+
+Suggested execution shape
+- During execution, surface clear phases to the UI
+- After rows are imported/merged, gather newly created/imported books missing covers
+- Attempt cover enrichment for those books only
+- Finish with a stronger completion summary
+
+After editing, print only:
+1. files changed
+2. full contents of changed files
+3. the diff for those files only
+4. exact manual test steps
+5. progress-stage rules used
+6. cover-enrichment rules used
+7. what remains for the next yearly-goal visibility pass
