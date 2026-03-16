@@ -418,8 +418,8 @@ type ProgressStage = {
   status: 'waiting' | 'active' | 'done';
 };
 
-const PROCESSING_STAGES = ['Parsing your library', 'Matching books', 'Preparing preview'];
-const EXECUTING_STAGES  = ['Adding books to your library', 'Linking your reading history', 'Fetching missing covers', 'Finalizing'];
+const PROCESSING_STAGES = ['Reading your Goodreads file', 'Matching books', 'Preparing preview'];
+const EXECUTING_STAGES  = ['Adding to your library', 'Linking reading history', 'Finding covers & details', 'Finishing up'];
 
 function stageList(labels: string[], activeIdx: number): ProgressStage[] {
   return labels.map((label, i) => ({
@@ -463,65 +463,107 @@ async function enrichMissingCovers(bookIds: string[]): Promise<number> {
 // ─── Step: processing / executing ────────────────────────────────────────────
 
 function ProgressView({ stages }: { stages: ProgressStage[] }) {
-  const total = stages.length;
-  const doneCount = stages.filter(s => s.status === 'done').length;
-  const hasActive = stages.some(s => s.status === 'active');
-  const pct = total === 0 ? 0 : Math.min(1, (doneCount + (hasActive ? 0.6 : 0)) / total);
-  const pctStr = `${Math.round(pct * 100)}%`;
+  const total      = stages.length;
+  const doneCount  = stages.filter(s => s.status === 'done').length;
+  const activeStage = stages.find(s => s.status === 'active');
+  const pct = total === 0 ? 0 : Math.min(1, (doneCount + (activeStage ? 0.5 : 0)) / total);
+  const pctInt = Math.round(pct * 100);
 
   return (
-    <View style={{ paddingTop: 52 }}>
-      {/* Progress track */}
+    <View style={{
+      flex: 1,
+      minHeight: 480,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 28,
+      paddingVertical: 40,
+    }}>
+      {/* Spinner */}
+      <ActivityIndicator size="large" color="#1c1917" style={{ marginBottom: 36 }} />
+
+      {/* Current stage headline */}
+      <Text style={{
+        fontSize: 22,
+        fontWeight: '700',
+        color: '#1c1917',
+        textAlign: 'center',
+        marginBottom: 6,
+        letterSpacing: -0.3,
+      }}>
+        {activeStage?.label ?? 'Working…'}
+      </Text>
+      <Text style={{
+        fontSize: 13,
+        color: '#a8a29e',
+        textAlign: 'center',
+        marginBottom: 44,
+      }}>
+        {pctInt}% complete
+      </Text>
+
+      {/* Stage list */}
+      <View style={{ width: '100%', maxWidth: 300 }}>
+        {stages.map((stage, i) => {
+          const isActive  = stage.status === 'active';
+          const isDone    = stage.status === 'done';
+          return (
+            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+              {/* Circle indicator */}
+              {isDone ? (
+                <View style={{
+                  width: 22, height: 22, borderRadius: 11,
+                  backgroundColor: '#e7e5e4',
+                  alignItems: 'center', justifyContent: 'center',
+                  marginRight: 12, flexShrink: 0,
+                }}>
+                  <Text style={{ fontSize: 11, color: '#78716c', lineHeight: 14 }}>✓</Text>
+                </View>
+              ) : isActive ? (
+                <View style={{
+                  width: 22, height: 22, borderRadius: 11,
+                  backgroundColor: '#1c1917',
+                  alignItems: 'center', justifyContent: 'center',
+                  marginRight: 12, flexShrink: 0,
+                }}>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#faf9f7' }} />
+                </View>
+              ) : (
+                <View style={{
+                  width: 22, height: 22, borderRadius: 11,
+                  borderWidth: 1.5, borderColor: '#e7e5e4',
+                  marginRight: 12, flexShrink: 0,
+                }} />
+              )}
+              <Text style={{
+                flex: 1,
+                fontSize: 14,
+                fontWeight: isActive ? '600' : '400',
+                color: isDone ? '#a8a29e' : isActive ? '#1c1917' : '#d6d3d1',
+              }}>
+                {stage.label}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+
+      {/* Progress bar */}
       <View style={{
-        height: 3,
+        width: '100%',
+        maxWidth: 300,
+        height: 2,
         backgroundColor: '#e7e5e4',
-        borderRadius: 2,
-        marginBottom: 40,
+        borderRadius: 1,
+        marginTop: 24,
         overflow: 'hidden',
       }}>
         <View style={{
-          height: 3,
-          width: pctStr as unknown as number,
+          height: 2,
+          width: `${pctInt}%` as unknown as number,
           backgroundColor: '#1c1917',
-          borderRadius: 2,
+          borderRadius: 1,
         }} />
       </View>
-
-      {/* Stage rows */}
-      {stages.map((stage, i) => {
-        const isActive  = stage.status === 'active';
-        const isDone    = stage.status === 'done';
-        const isWaiting = stage.status === 'waiting';
-        return (
-          <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-            {/* Indicator dot */}
-            <View style={{
-              width: 8, height: 8, borderRadius: 4,
-              backgroundColor: isWaiting ? 'transparent' : (isDone ? '#a8a29e' : '#1c1917'),
-              borderWidth: isWaiting ? 1.5 : 0,
-              borderColor: '#d6d3d1',
-              marginRight: 14,
-              flexShrink: 0,
-            }} />
-            {/* Label */}
-            <Text style={{
-              flex: 1,
-              fontSize: 13,
-              fontWeight: isActive ? '600' : '400',
-              color: isWaiting ? '#a8a29e' : (isDone ? '#78716c' : '#1c1917'),
-            }}>
-              {stage.label}
-            </Text>
-            {/* Right indicator */}
-            {isDone && (
-              <Text style={{ fontSize: 12, color: '#a8a29e', marginLeft: 8 }}>✓</Text>
-            )}
-            {isActive && (
-              <ActivityIndicator size="small" color="#a8a29e" style={{ marginLeft: 8 }} />
-            )}
-          </View>
-        );
-      })}
     </View>
   );
 }
@@ -626,10 +668,12 @@ function CompleteView({
   result,
   coversEnriched,
   onReset,
+  onGoToLibrary,
 }: {
   result: ExecutionSummary;
   coversEnriched: number;
   onReset: () => void;
+  onGoToLibrary: () => void;
 }) {
   const totalImported = result.added + result.merged;
   const showQueue = result.reviewRows.length > 0;
@@ -699,6 +743,22 @@ function CompleteView({
           </Card>
         </>
       )}
+
+      {/* Primary CTA */}
+      <TouchableOpacity
+        onPress={onGoToLibrary}
+        style={{
+          marginTop: 28,
+          backgroundColor: '#1c1917',
+          borderRadius: 12,
+          paddingVertical: 15,
+          alignItems: 'center',
+        }}
+      >
+        <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>
+          Go to Library
+        </Text>
+      </TouchableOpacity>
 
       <ResetButton onPress={onReset} label="Import another file" />
     </>
@@ -1048,7 +1108,12 @@ export default function GoodreadsImportScreen() {
       )}
 
       {step === 'complete' && executionResult && (
-        <CompleteView result={executionResult} coversEnriched={coversEnriched} onReset={handleReset} />
+        <CompleteView
+          result={executionResult}
+          coversEnriched={coversEnriched}
+          onReset={handleReset}
+          onGoToLibrary={() => router.push('/(tabs)/library')}
+        />
       )}
 
       {step === 'error' && (

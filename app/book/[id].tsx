@@ -178,16 +178,52 @@ export default function BookDetailScreen() {
       if (!supabase) return;
 
       // ── 1. Current DB state ──────────────────────────────────────────────
-      const { data: row } = await supabase
+      // `description` (migration 20260315000004) and `subjects` (20260315000002)
+      // may not exist yet.  Degrade gracefully: full → no description → minimal.
+      type BookRow = {
+        cover_url?: string | null;
+        description?: string | null;
+        subjects?: string[] | null;
+        page_count?: number | null;
+        isbn13?: string | null;
+        isbn?: string | null;
+      };
+      let row: BookRow | null = null;
+      let descColExists = true;
+      let subjColExists = true;
+
+      const { data: r1, error: e1 } = await supabase
         .from('books')
         .select('cover_url, description, subjects, page_count, isbn13, isbn')
         .eq('id', bookId!)
         .maybeSingle();
 
-      const dbIsbn13  = (row as { isbn13?: string | null } | null)?.isbn13 ?? null;
-      const dbIsbn    = (row as { isbn?:   string | null } | null)?.isbn   ?? null;
-      const dbDesc    = (row as { description?: string | null } | null)?.description ?? null;
-      const dbSubjects: string[] = (row as { subjects?: string[] | null } | null)?.subjects ?? [];
+      if (!e1) {
+        row = r1 as BookRow | null;
+      } else {
+        descColExists = false;
+        const { data: r2, error: e2 } = await supabase
+          .from('books')
+          .select('cover_url, subjects, page_count, isbn13, isbn')
+          .eq('id', bookId!)
+          .maybeSingle();
+        if (!e2) {
+          row = r2 as BookRow | null;
+        } else {
+          subjColExists = false;
+          const { data: r3 } = await supabase
+            .from('books')
+            .select('cover_url, page_count, isbn13, isbn')
+            .eq('id', bookId!)
+            .maybeSingle();
+          row = r3 as BookRow | null;
+        }
+      }
+
+      const dbIsbn13  = row?.isbn13   ?? null;
+      const dbIsbn    = row?.isbn     ?? null;
+      const dbDesc    = row?.description ?? null;
+      const dbSubjects: string[] = row?.subjects ?? [];
       const dbPages   = row?.page_count ?? null;
       const dbCover   = row?.cover_url  ?? null;
 
@@ -261,10 +297,10 @@ export default function BookDetailScreen() {
       if (foundPages) setPageCount(prev => prev ?? foundPages!);
 
       const patch: Record<string, unknown> = {};
-      if (foundCover    && !hasCover)    patch.cover_url   = foundCover;
-      if (foundDesc     && !hasDesc)     patch.description = foundDesc;
-      if (foundSubjects.length > 0 && !hasSubjects) patch.subjects = foundSubjects;
-      if (foundPages    && !hasPages)    patch.page_count  = foundPages;
+      if (foundCover    && !hasCover)                           patch.cover_url   = foundCover;
+      if (foundDesc     && !hasDesc     && descColExists)       patch.description = foundDesc;
+      if (foundSubjects.length > 0      && subjColExists)       patch.subjects    = foundSubjects;
+      if (foundPages    && !hasPages)                           patch.page_count  = foundPages;
 
       if (Object.keys(patch).length > 0 && supabase) {
         supabase.from('books').update(patch).eq('id', bookId!).then(() => {});
