@@ -1,0 +1,95 @@
+Make one controlled “library organization refinement using imported completion history” pass.
+
+Do not change package versions.
+Do not add packages unless absolutely necessary.
+Do not refactor unrelated import, recommendation, profile, or pacing logic.
+Do not break Goodreads import, Home, Profile, book detail, or current library flows.
+
+Goal:
+Make the Library more useful after large Goodreads imports by using imported completion history and status data to organize books more intelligently.
+
+This pass should improve how users navigate and understand a larger imported library.
+
+Scope:
+Only inspect and edit what is necessary, likely:
+- app/(tabs)/library.tsx
+- maybe one tiny helper/component if useful
+- no unrelated broad screen rewrites
+
+Primary product objectives
+
+A. Improve library organization for imported history
+Requirements:
+1. Use imported completion/status/date data to make the library easier to navigate.
+2. The library should feel more useful for a user who has just imported many books.
+3. Do not treat imported books like an undifferentiated flat list.
+
+B. Strengthen sorting options
+Requirements:
+1. Add clearer sorting options where they are most useful.
+2. At minimum, consider supporting:
+   - recently finished
+   - recently added
+   - reading progress (where relevant)
+3. Keep the sort UX compact and readable.
+4. Do not overload the screen with too many controls.
+
+C. Make completion history more legible
+Requirements:
+1. Finished books should be easier to scan chronologically when imported finish dates exist.
+2. If helpful, the Finished filter should support or default to a more meaningful order using finished_at.
+3. Use imported finish dates when available.
+
+D. Respect current status structure
+Requirements:
+1. Preserve current status filters:
+   - All
+   - Reading
+   - Want to Read
+   - Finished
+   - DNF
+2. Improve ordering within these views rather than replacing them.
+
+E. Keep Reading behavior strong
+Requirements:
+1. Reading books should still remain operationally clear and prominent.
+2. Do not weaken the current reading-card treatment.
+3. Preserve current progress and pacing affordances.
+
+F. Keep the UI premium and calm
+Requirements:
+1. The library should feel more structured, not more cluttered.
+2. Sorting/filtering controls should be light and intentional.
+3. Avoid turning this into a dense control panel.
+
+G. Preserve all existing flows
+Do not break:
+- Add Book
+- status changes
+- rating flow
+- book detail navigation
+- progress bars
+- reading card styling
+- Goodreads imported data visibility
+
+Implementation guidance
+1. Use existing imported dates/status fields where available.
+2. Prefer a small number of high-value organizational improvements.
+3. Keep the code explicit and easy to reason about.
+4. This is a post-import usability pass, not a redesign.
+
+Strong candidate behaviors
+Good options include:
+- Finished filter sorted by finished_at desc
+- All filter still prioritizes Reading, then uses meaningful ordering for the rest
+- a compact sort toggle when a filter has enough items to justify it
+- better use of imported finish dates in row ordering and/or row metadata
+
+After editing, print only:
+1. files changed
+2. full contents of changed files
+3. the diff for those files only
+4. exact manual test steps
+5. library-organization rules used
+6. sorting rules used
+7. what remains after this pass

@@ -9,7 +9,7 @@ import { computePagePacing, computeDatePacing } from '../../lib/pacing';
 
 type UserBookStatus = 'want_to_read' | 'reading' | 'finished' | 'dnf';
 type FilterKey      = 'all' | UserBookStatus;
-type SortKey        = 'recent' | 'progress';
+type SortKey        = 'recent' | 'progress' | 'finished_date';
 
 type UserBook = {
   id: string;
@@ -251,20 +251,40 @@ export default function LibraryScreen() {
   const filteredItems = activeFilter === 'all' ? items : items.filter(i => i.status === activeFilter);
 
   // Sort + ordering:
-  //   All filter → reading books always float to top, preserving relative order within each group.
+  //   All filter    → reading first, then finished (finished_at desc), then want-to-read, then dnf.
   //   Reading filter + progress sort → sorted by page progress descending.
+  //   Finished filter + finished_date (default) → sorted by finished_at descending (uses imported dates).
+  //   Finished filter + recent → DB insertion order (created_at desc).
   //   All other cases → preserve DB order (created_at desc).
   const displayedItems = (() => {
     if (activeFilter === 'all') {
+      // Reading first (operational priority), then finished sorted by most recently
+      // finished (uses imported finish dates), then want-to-read, then DNF.
       const reading    = filteredItems.filter(i => i.status === 'reading');
-      const nonReading = filteredItems.filter(i => i.status !== 'reading');
-      return [...reading, ...nonReading];
+      const finished   = [...filteredItems.filter(i => i.status === 'finished')]
+        .sort((a, b) => {
+          if (a.finished_at && b.finished_at) return b.finished_at.localeCompare(a.finished_at);
+          if (a.finished_at) return -1;
+          if (b.finished_at) return 1;
+          return 0;
+        });
+      const wantToRead = filteredItems.filter(i => i.status === 'want_to_read');
+      const dnf        = filteredItems.filter(i => i.status === 'dnf');
+      return [...reading, ...finished, ...wantToRead, ...dnf];
     }
     if (activeFilter === 'reading' && sort === 'progress') {
       return [...filteredItems].sort((a, b) => {
         const pA = a.current_page != null && a.book?.page_count ? a.current_page / a.book.page_count : 0;
         const pB = b.current_page != null && b.book?.page_count ? b.current_page / b.book.page_count : 0;
         return pB - pA;
+      });
+    }
+    if (activeFilter === 'finished' && sort === 'finished_date') {
+      return [...filteredItems].sort((a, b) => {
+        if (a.finished_at && b.finished_at) return b.finished_at.localeCompare(a.finished_at);
+        if (a.finished_at) return -1;
+        if (b.finished_at) return 1;
+        return 0;
       });
     }
     return filteredItems;
@@ -373,7 +393,11 @@ export default function LibraryScreen() {
                 return (
                   <TouchableOpacity
                     key={f.key}
-                    onPress={() => setActiveFilter(f.key)}
+                    onPress={() => {
+                      setActiveFilter(f.key);
+                      if (f.key === 'finished') setSort('finished_date');
+                      else setSort('recent');
+                    }}
                     style={{
                       paddingHorizontal: 14,
                       paddingVertical: 7,
@@ -396,8 +420,8 @@ export default function LibraryScreen() {
             </ScrollView>
           )}
 
-          {/* ── Sort toggle (Reading filter only, 2+ books) ── */}
-          {activeFilter === 'reading' && filteredItems.length > 1 && (
+          {/* ── Sort toggle (Reading: 2+ books; Finished: 2+ books) ── */}
+          {filteredItems.length > 1 && (activeFilter === 'reading' || activeFilter === 'finished') && (
             <View style={{
               flexDirection: 'row',
               alignItems: 'center',
@@ -405,25 +429,43 @@ export default function LibraryScreen() {
               paddingBottom: 10,
             }}>
               <Text style={{ fontSize: 11, color: '#c4b5a5', marginRight: 8 }}>Sort</Text>
-              <TouchableOpacity onPress={() => setSort('recent')}>
-                <Text style={{
-                  fontSize: 12,
-                  color: sort === 'recent' ? '#1c1917' : '#a8a29e',
-                  fontWeight: sort === 'recent' ? '600' : '400',
-                }}>
-                  Recent
-                </Text>
-              </TouchableOpacity>
-              <Text style={{ fontSize: 12, color: '#d6d3d1', marginHorizontal: 8 }}>·</Text>
-              <TouchableOpacity onPress={() => setSort('progress')}>
-                <Text style={{
-                  fontSize: 12,
-                  color: sort === 'progress' ? '#1c1917' : '#a8a29e',
-                  fontWeight: sort === 'progress' ? '600' : '400',
-                }}>
-                  Progress
-                </Text>
-              </TouchableOpacity>
+              {activeFilter === 'reading' ? (
+                <>
+                  <TouchableOpacity onPress={() => setSort('recent')}>
+                    <Text style={{
+                      fontSize: 12,
+                      color: sort === 'recent' ? '#1c1917' : '#a8a29e',
+                      fontWeight: sort === 'recent' ? '600' : '400',
+                    }}>Recent</Text>
+                  </TouchableOpacity>
+                  <Text style={{ fontSize: 12, color: '#d6d3d1', marginHorizontal: 8 }}>·</Text>
+                  <TouchableOpacity onPress={() => setSort('progress')}>
+                    <Text style={{
+                      fontSize: 12,
+                      color: sort === 'progress' ? '#1c1917' : '#a8a29e',
+                      fontWeight: sort === 'progress' ? '600' : '400',
+                    }}>Progress</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <TouchableOpacity onPress={() => setSort('finished_date')}>
+                    <Text style={{
+                      fontSize: 12,
+                      color: sort === 'finished_date' ? '#1c1917' : '#a8a29e',
+                      fontWeight: sort === 'finished_date' ? '600' : '400',
+                    }}>Finished</Text>
+                  </TouchableOpacity>
+                  <Text style={{ fontSize: 12, color: '#d6d3d1', marginHorizontal: 8 }}>·</Text>
+                  <TouchableOpacity onPress={() => setSort('recent')}>
+                    <Text style={{
+                      fontSize: 12,
+                      color: sort === 'recent' ? '#1c1917' : '#a8a29e',
+                      fontWeight: sort === 'recent' ? '600' : '400',
+                    }}>Added</Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
           )}
 
@@ -636,6 +678,11 @@ export default function LibraryScreen() {
                     <Text style={{ color: '#78716c', fontSize: 13 }}>
                       {item.book?.author ?? '—'}
                     </Text>
+                    {item.finished_at && (item.status === 'finished' || item.status === 'dnf') && (
+                      <Text style={{ fontSize: 11, color: '#c4b5a5', marginTop: 3 }}>
+                        {new Date(item.finished_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </Text>
+                    )}
                   </View>
                   <View style={{
                     backgroundColor: badge.bg, borderRadius: 6,
