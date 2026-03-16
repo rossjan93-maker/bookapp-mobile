@@ -12,7 +12,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { computePacingNote, computePagePacing } from '../../lib/pacing';
-import { fetchGoogleBooksPageCount } from '../../lib/googleBooks';
+import { fetchGoogleBooksPageCount, fetchGoogleBooksMetadata } from '../../lib/googleBooks';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -133,6 +133,9 @@ export default function BookDetailScreen() {
   const [olMeta, setOlMeta]             = useState<OLMeta | null>(null);
   const [metaLoading, setMetaLoading]   = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
+  // Enriched cover: set when Book Detail hydration finds a cover not present at
+  // navigation time (e.g. imported books that had no cover in the DB yet).
+  const [enrichedCoverUrl, setEnrichedCoverUrl] = useState<string | null>(null);
 
   // Reading progress state
   const [userBookId, setUserBookId]     = useState<string | null>(null);
@@ -168,57 +171,121 @@ export default function BookDetailScreen() {
   const hasRecCtx = !!(fromUser || toUser || note);
   const isReading = status === 'reading' || status === 'started';
 
-  // ── Fetch OL metadata + Google Books page-count fallback ─────────────────
+  // ── Self-healing metadata enrichment ─────────────────────────────────────
+  // Runs for every book (not just those with an OL externalId).
+  // Phase 1: fetch current DB row to get ISBNs and check which fields are
+  //          already populated — skip work for complete books.
+  // Phase 2: Open Library (if externalId available) for description/subjects/pages.
+  // Phase 3: Google Books (isbn13 → isbn → title+author) for any still-missing
+  //          cover, description, or page count.
+  // Phase 4: persist every newly found field to the books table (null-guarded)
+  //          and patch local state so the UI updates immediately.
 
   useEffect(() => {
-    if (!externalId) return;
+    if (!bookId || !supabase) return;
     setMetaLoading(true);
 
     async function enrich() {
-      const meta = await fetchOLMeta(externalId!);
-      setOlMeta(meta);
-      setMetaLoading(false);
+      if (!supabase) return;
 
-      if (meta.subjects.length > 0 && bookId && supabase) {
-        supabase
-          .from('books')
-          .update({ subjects: meta.subjects })
-          .eq('id', bookId)
-          .is('subjects', null)
-          .then(() => {});
-      }
+      // ── 1. Current DB state ──────────────────────────────────────────────
+      const { data: row } = await supabase
+        .from('books')
+        .select('cover_url, description, subjects, page_count, isbn13, isbn')
+        .eq('id', bookId!)
+        .maybeSingle();
 
-      if (meta.pageCount && bookId && supabase) {
-        supabase
-          .from('books')
-          .update({ page_count: meta.pageCount })
-          .eq('id', bookId)
-          .is('page_count', null)
-          .then(({ error }) => {
-            if (!error) setPageCount(prev => prev ?? meta.pageCount!);
-          });
+      const dbIsbn13  = (row as { isbn13?: string | null } | null)?.isbn13 ?? null;
+      const dbIsbn    = (row as { isbn?:   string | null } | null)?.isbn   ?? null;
+      const dbDesc    = (row as { description?: string | null } | null)?.description ?? null;
+      const dbSubjects: string[] = (row as { subjects?: string[] | null } | null)?.subjects ?? [];
+      const dbPages   = row?.page_count ?? null;
+      const dbCover   = row?.cover_url  ?? null;
+
+      // Navigation-time cover takes precedence over DB (might be a CDN url passed
+      // through route params that hasn't been persisted yet).
+      const hasCover    = !!(coverUrl || dbCover);
+      const hasDesc     = !!dbDesc;
+      const hasSubjects = dbSubjects.length > 0;
+      const hasPages    = !!dbPages;
+
+      // Short-circuit if everything is already rich.
+      if (hasCover && hasDesc && hasSubjects && hasPages) {
+        if (dbDesc || dbSubjects.length > 0) {
+          setOlMeta({ description: dbDesc, subjects: dbSubjects, pageCount: dbPages });
+        }
+        setMetaLoading(false);
         return;
       }
 
-      if (bookId && title && author && supabase) {
-        const gbCount = await fetchGoogleBooksPageCount(
-          String(title ?? '').trim(),
-          String(author ?? '').trim(),
-        );
-        if (gbCount) {
-          setPageCount(prev => prev ?? gbCount);
-          supabase
-            .from('books')
-            .update({ page_count: gbCount })
-            .eq('id', bookId)
-            .is('page_count', null)
-            .then(() => {});
+      let foundDesc:     string | null = null;
+      let foundSubjects: string[]      = [];
+      let foundPages:    number | null = null;
+      let foundCover:    string | null = null;
+
+      // ── 2. Open Library (description + subjects + page_count) ────────────
+      if (externalId && (!hasDesc || !hasSubjects || !hasPages)) {
+        const ol = await fetchOLMeta(externalId!);
+        if (!hasDesc     && ol.description)        foundDesc     = ol.description;
+        if (!hasSubjects && ol.subjects.length > 0) foundSubjects = ol.subjects;
+        if (!hasPages    && ol.pageCount)           foundPages    = ol.pageCount;
+        // Update UI immediately with whatever OL returned.
+        setOlMeta({
+          description: foundDesc ?? dbDesc,
+          subjects:    foundSubjects.length > 0 ? foundSubjects : dbSubjects,
+          pageCount:   foundPages ?? dbPages,
+        });
+      } else if (dbDesc || dbSubjects.length > 0) {
+        // Pre-populate UI from DB so existing data shows while Google Books runs.
+        setOlMeta({ description: dbDesc, subjects: dbSubjects, pageCount: dbPages });
+      }
+
+      // ── 3. Google Books (cover + any still-missing desc/pages) ───────────
+      const needGb = !hasCover || (!hasDesc && !foundDesc) || (!hasPages && !foundPages);
+      if (needGb) {
+        const t = String(title  ?? '').trim();
+        const a = String(author ?? '').trim();
+        if (t) {
+          const gb = await fetchGoogleBooksMetadata({
+            isbn13: dbIsbn13,
+            isbn:   dbIsbn,
+            title:  t,
+            author: a,
+          });
+          if (!hasCover               && gb.cover_url)   foundCover = gb.cover_url;
+          if (!hasDesc  && !foundDesc && gb.description) foundDesc  = gb.description;
+          if (!hasPages && !foundPages && gb.page_count)  foundPages = gb.page_count;
+
+          // Patch olMeta with Google Books values for any still-missing fields.
+          if (gb.description || gb.page_count) {
+            setOlMeta(prev => ({
+              description: prev?.description ?? gb.description ?? null,
+              subjects:    prev?.subjects    ?? [],
+              pageCount:   prev?.pageCount   ?? gb.page_count  ?? null,
+            }));
+          }
         }
       }
+
+      // ── 4. Local state + DB persistence ──────────────────────────────────
+      if (foundCover) setEnrichedCoverUrl(foundCover);
+      if (foundPages) setPageCount(prev => prev ?? foundPages!);
+
+      const patch: Record<string, unknown> = {};
+      if (foundCover    && !hasCover)    patch.cover_url   = foundCover;
+      if (foundDesc     && !hasDesc)     patch.description = foundDesc;
+      if (foundSubjects.length > 0 && !hasSubjects) patch.subjects = foundSubjects;
+      if (foundPages    && !hasPages)    patch.page_count  = foundPages;
+
+      if (Object.keys(patch).length > 0 && supabase) {
+        supabase.from('books').update(patch).eq('id', bookId!).then(() => {});
+      }
+
+      setMetaLoading(false);
     }
 
     enrich();
-  }, [externalId, bookId]);
+  }, [bookId]);
 
   // ── Fetch reading progress + yearly goal ─────────────────────────────────
 
@@ -454,7 +521,7 @@ export default function BookDetailScreen() {
         >
           <Text style={{ fontSize: 14, color: '#78716c' }}>← Back</Text>
         </TouchableOpacity>
-        <CoverThumb url={coverUrl || null} externalId={externalId || null} title={title || null} width={122} height={180} />
+        <CoverThumb url={enrichedCoverUrl || coverUrl || null} externalId={externalId || null} title={title || null} width={122} height={180} />
       </View>
 
       <View style={{ paddingHorizontal: 24, paddingTop: 28 }}>
