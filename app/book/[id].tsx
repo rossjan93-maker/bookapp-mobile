@@ -12,7 +12,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { computePacingNote, computePagePacing } from '../../lib/pacing';
-import { fetchGoogleBooksPageCount, fetchGoogleBooksMetadata } from '../../lib/googleBooks';
+import { fetchGoogleBooksMetadata } from '../../lib/googleBooks';
+import { fetchOLMeta } from '../../lib/openLibrary';
+import type { OLMeta } from '../../lib/openLibrary';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -25,63 +27,6 @@ const STATUS_META: Record<string, { bg: string; text: string; label: string }> =
   saved:        { bg: '#e0f2fe', text: '#0369a1', label: 'Want to Read' },
   started:      { bg: '#dbeafe', text: '#1d4ed8', label: 'Reading'      },
 };
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type OLMeta = {
-  description: string | null;
-  subjects: string[];
-  pageCount: number | null;
-};
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function extractOLID(externalId: string): string | null {
-  const m = externalId.match(/\/works\/(OL\w+)/);
-  return m ? m[1] : null;
-}
-
-async function fetchOLMeta(externalId: string): Promise<OLMeta> {
-  const olid = extractOLID(externalId);
-  if (!olid) return { description: null, subjects: [], pageCount: null };
-  try {
-    const res = await fetch(`https://openlibrary.org/works/${olid}.json`);
-    if (!res.ok) return { description: null, subjects: [], pageCount: null };
-    const data = await res.json();
-
-    let description: string | null = null;
-    if (typeof data.description === 'string') description = data.description;
-    else if (data.description?.value) description = data.description.value;
-
-    const subjects: string[] = Array.isArray(data.subjects) ? data.subjects.slice(0, 8) : [];
-    let pageCount: number | null = typeof data.number_of_pages === 'number' ? data.number_of_pages : null;
-
-    if (!pageCount || pageCount < 30) {
-      try {
-        const edRes = await fetch(`https://openlibrary.org/works/${olid}/editions.json?limit=50`);
-        if (edRes.ok) {
-          const edData = await edRes.json();
-          const pages: number[] = [];
-          if (Array.isArray(edData.entries)) {
-            for (const ed of edData.entries) {
-              const np = ed.number_of_pages;
-              if (typeof np === 'number' && np >= 30) pages.push(np);
-            }
-          }
-          if (pages.length > 0) {
-            pages.sort((a, b) => a - b);
-            pageCount = pages[Math.floor(pages.length / 2)];
-          }
-        }
-      } catch {}
-    }
-
-    const crediblePageCount = (pageCount != null && pageCount >= 30) ? pageCount : null;
-    return { description, subjects, pageCount: crediblePageCount };
-  } catch {
-    return { description: null, subjects: [], pageCount: null };
-  }
-}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 

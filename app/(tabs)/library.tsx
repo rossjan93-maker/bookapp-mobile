@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { fetchGoogleBooksCoverUrl } from '../../lib/googleBooks';
+import { repairBooksMetadata } from '../../lib/metadataRepair';
 import { ActivityIndicator, FlatList, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
@@ -185,10 +186,20 @@ export default function LibraryScreen() {
         const loadedItems = (result.data as unknown as UserBook[]) ?? [];
         setItems(loadedItems);
         // Fire-and-forget: backfill missing covers for any book in this load.
+        // Updates local state immediately so covers appear without a reload.
         const missingCoverIds = [...new Set(
           loadedItems.filter(it => it.book && !it.book.cover_url).map(it => it.book_id),
         )];
         backfillCovers(missingCoverIds).catch(() => {});
+
+        // Fire-and-forget: full metadata repair (description, subjects, page_count,
+        // plus cover as a secondary path) for any book missing any field.
+        // Persists to the books table; visible on next Book Detail open.
+        // Subjects (via Open Library) are now included in the repair model.
+        const allLibraryBookIds = [...new Set(
+          loadedItems.filter(it => it.book_id).map(it => it.book_id),
+        )];
+        repairBooksMetadata(allLibraryBookIds, { cap: 30 }).catch(() => {});
       }
       setLoading(false);
     }
