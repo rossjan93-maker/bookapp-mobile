@@ -10,7 +10,6 @@ import {
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { getDisplayName } from '../lib/displayName';
-import { debugRepairBook } from '../lib/debugRepairBook';
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
@@ -147,9 +146,6 @@ export default function SettingsScreen() {
   const [savingGoal, setSavingGoal] = useState(false);
   const [goalSaved, setGoalSaved]   = useState(false);
   const [goalError, setGoalError]   = useState<string | null>(null);
-
-  const [debugRunning, setDebugRunning] = useState(false);
-  const [debugLog, setDebugLog]         = useState<string[] | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -437,69 +433,6 @@ export default function SettingsScreen() {
         >
           <Text style={{ fontSize: 14, color: '#b91c1c', fontWeight: '500' }}>Sign Out</Text>
         </TouchableOpacity>
-      </SettingsCard>
-
-      {/* ── DEV: single-book forced repair — remove once Glow is confirmed fixed ── */}
-      <SectionHeader>Dev Tools</SectionHeader>
-      <SettingsCard>
-        <TouchableOpacity
-          onPress={async () => {
-            if (debugRunning) return;
-            setDebugRunning(true);
-            setDebugLog(null);
-            try {
-              const result = await debugRepairBook('Glow', 'Kennedy');
-              setDebugLog(result.log);
-            } catch (e) {
-              setDebugLog([`EXCEPTION: ${e instanceof Error ? e.message : String(e)}`]);
-            } finally {
-              setDebugRunning(false);
-            }
-          }}
-          activeOpacity={0.75}
-          style={{ paddingHorizontal: 16, paddingVertical: 16 }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 3 }}>
-                {debugRunning ? 'Running repair…' : 'Repair: Glow (Plated Prisoner #4)'}
-              </Text>
-              <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>
-                Forced metadata repair with full logging — tap and check console
-              </Text>
-            </View>
-            {debugRunning
-              ? <ActivityIndicator size="small" color="#78716c" style={{ marginLeft: 10 }} />
-              : <Text style={{ fontSize: 20, color: '#c4b5a5', marginLeft: 10 }}>›</Text>
-            }
-          </View>
-        </TouchableOpacity>
-
-        {debugLog && (
-          <View style={{ borderTopWidth: 1, borderTopColor: '#f5f5f4', paddingHorizontal: 14, paddingVertical: 12 }}>
-            <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', marginBottom: 8, letterSpacing: 0.5 }}>
-              REPAIR LOG
-            </Text>
-            {debugLog.map((line, i) => (
-              <Text
-                key={i}
-                style={{
-                  fontSize: 11,
-                  color: line.startsWith('  →') ? '#15803d'
-                       : line.includes('ERROR') || line.includes('ABORT') ? '#b91c1c'
-                       : line.includes('WARNING') ? '#d97706'
-                       : line.startsWith('Final') || line.includes('===') ? '#1c1917'
-                       : '#57534e',
-                  fontFamily: 'monospace',
-                  lineHeight: 18,
-                  marginBottom: 1,
-                }}
-              >
-                {line}
-              </Text>
-            ))}
-          </View>
-        )}
       </SettingsCard>
     </ScrollView>
   );
