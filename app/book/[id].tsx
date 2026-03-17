@@ -187,14 +187,17 @@ export default function BookDetailScreen() {
         page_count?: number | null;
         isbn13?: string | null;
         isbn?: string | null;
+        external_id?: string | null;
       };
       let row: BookRow | null = null;
       let descColExists = true;
       let subjColExists = true;
 
+      // Phase 1 fetch — includes external_id so the OL lookup never depends
+      // solely on the route param (which may be absent for non-Library navigation).
       const { data: r1, error: e1 } = await supabase
         .from('books')
-        .select('cover_url, description, subjects, page_count, isbn13, isbn')
+        .select('cover_url, description, subjects, page_count, isbn13, isbn, external_id')
         .eq('id', bookId!)
         .maybeSingle();
 
@@ -204,7 +207,7 @@ export default function BookDetailScreen() {
         descColExists = false;
         const { data: r2, error: e2 } = await supabase
           .from('books')
-          .select('cover_url, subjects, page_count, isbn13, isbn')
+          .select('cover_url, subjects, page_count, isbn13, isbn, external_id')
           .eq('id', bookId!)
           .maybeSingle();
         if (!e2) {
@@ -213,7 +216,7 @@ export default function BookDetailScreen() {
           subjColExists = false;
           const { data: r3 } = await supabase
             .from('books')
-            .select('cover_url, page_count, isbn13, isbn')
+            .select('cover_url, page_count, isbn13, isbn, external_id')
             .eq('id', bookId!)
             .maybeSingle();
           row = r3 as BookRow | null;
@@ -226,6 +229,9 @@ export default function BookDetailScreen() {
       const dbSubjects: string[] = row?.subjects ?? [];
       const dbPages   = row?.page_count ?? null;
       const dbCover   = row?.cover_url  ?? null;
+      // Prefer DB external_id (authoritative) over route param.
+      // Route param may be absent when navigating from non-Library screens.
+      const olId = row?.external_id ?? externalId ?? null;
 
       // Navigation-time cover takes precedence over DB (might be a CDN url passed
       // through route params that hasn't been persisted yet).
@@ -249,8 +255,8 @@ export default function BookDetailScreen() {
       let foundCover:    string | null = null;
 
       // ── 2. Open Library (description + subjects + page_count) ────────────
-      if (externalId && (!hasDesc || !hasSubjects || !hasPages)) {
-        const ol = await fetchOLMeta(externalId!);
+      if (olId && (!hasDesc || !hasSubjects || !hasPages)) {
+        const ol = await fetchOLMeta(olId);
         if (!hasDesc     && ol.description)        foundDesc     = ol.description;
         if (!hasSubjects && ol.subjects.length > 0) foundSubjects = ol.subjects;
         if (!hasPages    && ol.pageCount)           foundPages    = ol.pageCount;
