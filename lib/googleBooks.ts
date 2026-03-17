@@ -24,16 +24,29 @@ const MIN_CREDIBLE_PAGES = 30;
 function significantWords(text: string): string[] {
   return text
     .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')   // strip punctuation so "(the" → "the", "prisoner," → "prisoner"
     .split(/\s+/)
     .filter(w => w.length > 3);
 }
 
 function titleMatches(expected: string, result: string): boolean {
-  const words = significantWords(expected);
-  if (words.length === 0) return true; // very short title — trust the API result
-  const lower = result.toLowerCase();
-  const hits = words.filter(w => lower.includes(w)).length;
-  return hits / words.length >= TITLE_MATCH_THRESHOLD;
+  const expWords = significantWords(expected);
+  if (expWords.length === 0) return true; // very short title — trust the API result
+
+  const resultClean   = result.toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
+  const expectedClean = expected.toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
+
+  // Forward: expected words found in result (standard check).
+  const fwdHits = expWords.filter(w => resultClean.includes(w)).length;
+  if (fwdHits / expWords.length >= TITLE_MATCH_THRESHOLD) return true;
+
+  // Reverse: result words found in expected.
+  // Handles cases like expected="Glow (The Plated Prisoner, #4)" and
+  // result="Glow" — the short result title IS a valid match for the series entry.
+  const resWords = significantWords(result);
+  if (resWords.length === 0) return false;
+  const revHits = resWords.filter(w => expectedClean.includes(w)).length;
+  return revHits / resWords.length >= TITLE_MATCH_THRESHOLD;
 }
 
 export async function fetchGoogleBooksPageCount(

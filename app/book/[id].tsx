@@ -13,7 +13,7 @@ import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { computePacingNote, computePagePacing } from '../../lib/pacing';
 import { fetchGoogleBooksMetadata } from '../../lib/googleBooks';
-import { fetchOLMeta } from '../../lib/openLibrary';
+import { fetchOLMeta, searchOLWork } from '../../lib/openLibrary';
 import type { OLMeta } from '../../lib/openLibrary';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -231,7 +231,8 @@ export default function BookDetailScreen() {
       const dbCover   = row?.cover_url  ?? null;
       // Prefer DB external_id (authoritative) over route param.
       // Route param may be absent when navigating from non-Library screens.
-      const olId = row?.external_id ?? externalId ?? null;
+      let olId: string | null = row?.external_id ?? externalId ?? null;
+      let discoveredExtId: string | null = null;
 
       // Navigation-time cover takes precedence over DB (might be a CDN url passed
       // through route params that hasn't been persisted yet).
@@ -239,6 +240,21 @@ export default function BookDetailScreen() {
       const hasDesc     = !!dbDesc;
       const hasSubjects = dbSubjects.length > 0;
       const hasPages    = !!dbPages;
+
+      // When external_id is absent (common for Goodreads imports), search OL by
+      // title+author to discover the works key so description can be fetched.
+      // The discovered key is persisted to the DB in the patch below.
+      if (!olId && (!hasDesc || !hasSubjects)) {
+        const t = String(title  ?? '').trim();
+        const a = String(author ?? '').trim();
+        if (t) {
+          const found = await searchOLWork(t, a);
+          if (found) {
+            olId              = found;
+            discoveredExtId   = found;
+          }
+        }
+      }
 
       // Short-circuit if everything is already rich.
       if (hasCover && hasDesc && hasSubjects && hasPages) {
@@ -303,6 +319,7 @@ export default function BookDetailScreen() {
       if (foundPages) setPageCount(prev => prev ?? foundPages!);
 
       const patch: Record<string, unknown> = {};
+      if (discoveredExtId)                                      patch.external_id = discoveredExtId;
       if (foundCover    && !hasCover)                           patch.cover_url   = foundCover;
       if (foundDesc     && !hasDesc     && descColExists)       patch.description = foundDesc;
       if (foundSubjects.length > 0      && subjColExists)       patch.subjects    = foundSubjects;

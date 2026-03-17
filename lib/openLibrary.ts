@@ -16,6 +16,34 @@ export type OLMeta = {
   pageCount:   number | null;
 };
 
+// Searches Open Library by title + author and returns the best matching works key
+// (e.g. "/works/OL37620917W").  Used when a books row has no external_id — common
+// for Goodreads-imported books where the OL identifier was never populated.
+// Returns null on any network/parse failure or when no result is found.
+export async function searchOLWork(
+  title:  string,
+  author: string,
+): Promise<string | null> {
+  if (!title.trim()) return null;
+  try {
+    const t = encodeURIComponent(title.trim().slice(0, 80));
+    const a = encodeURIComponent(author.trim().slice(0, 60));
+    const url =
+      `https://openlibrary.org/search.json` +
+      `?title=${t}&author=${a}&limit=3&fields=key,title`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!Array.isArray(data.docs) || data.docs.length === 0) return null;
+    const first = data.docs[0];
+    return typeof first.key === 'string' && first.key.startsWith('/works/')
+      ? first.key
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export function extractOLID(externalId: string): string | null {
   const m = externalId.match(/\/works\/(OL\w+)/);
   return m ? m[1] : null;

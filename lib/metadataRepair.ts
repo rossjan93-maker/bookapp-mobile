@@ -28,7 +28,7 @@
 // =============================================================================
 
 import { supabase }                from './supabase';
-import { fetchOLMeta }             from './openLibrary';
+import { fetchOLMeta, searchOLWork } from './openLibrary';
 import { fetchGoogleBooksMetadata } from './googleBooks';
 
 export type RepairResult = {
@@ -115,8 +115,25 @@ export async function repairBooksMetadata(
 
       // ── Phase 1: Open Library ────────────────────────────────────────────
       const extId = (book.external_id as string | null) ?? null;
-      if (extId && (!hasDesc || !hasSubjects || !hasPages)) {
-        const ol = await fetchOLMeta(extId);
+      let resolvedExtId = extId;
+
+      // When external_id is absent (common for Goodreads imports), search OL by
+      // title+author to discover the works key, then persist it so future calls
+      // skip this search entirely.
+      if (!resolvedExtId && (!hasDesc || !hasSubjects)) {
+        const t = String(book.title  ?? '').trim();
+        const a = String(book.author ?? '').trim();
+        if (t) {
+          const found = await searchOLWork(t, a);
+          if (found) {
+            resolvedExtId      = found;
+            patch.external_id  = found;
+          }
+        }
+      }
+
+      if (resolvedExtId && (!hasDesc || !hasSubjects || !hasPages)) {
+        const ol = await fetchOLMeta(resolvedExtId);
         if (!hasDesc     && ol.description)        foundDesc     = ol.description;
         if (!hasSubjects && ol.subjects.length > 0) foundSubjects = ol.subjects;
         if (!hasPages    && ol.pageCount)           foundPages    = ol.pageCount;
