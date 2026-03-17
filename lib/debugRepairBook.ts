@@ -11,6 +11,7 @@
 import { supabase }                          from './supabase';
 import { isOLId, searchOLWork, fetchOLMeta } from './openLibrary';
 import { titleSearchVariants }               from './titleNormalize';
+import { gbApiKeyPresent }                   from './googleBooks';
 
 export type DebugRepairResult = {
   log:      string[];
@@ -20,6 +21,9 @@ export type DebugRepairResult = {
 
 // Minimum page count considered credible (mirrors googleBooks.ts)
 const MIN_CREDIBLE_PAGES = 30;
+
+// Brief sleep for the 429 bounded retry (mirrors googleBooks.ts)
+const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms));
 
 // Title-match helper — mirrors the logic in lib/googleBooks.ts exactly.
 function cleanTitle(s: string): string {
@@ -42,6 +46,34 @@ function titleMatches(expected: string, result: string): boolean {
   return revHits / resWords.length >= TITLE_MATCH_THRESHOLD;
 }
 
+// 429-aware fetch: one retry after 1.5 s, then gives up.
+// Returns rateLimited=true when both the initial call and retry were 429.
+type DbgFetchResult =
+  | { ok: true;  rateLimited: false; status: number; data: unknown }
+  | { ok: false; rateLimited: true;  status: 429 }
+  | { ok: false; rateLimited: false; status: number };
+
+async function dbgFetch(url: string): Promise<DbgFetchResult> {
+  try {
+    const res = await fetch(url);
+    if (res.status === 429) {
+      await sleep(1500);
+      try {
+        const retry = await fetch(url);
+        if (retry.status === 429) return { ok: false, rateLimited: true,  status: 429 };
+        if (!retry.ok)            return { ok: false, rateLimited: false, status: retry.status };
+        return { ok: true, rateLimited: false, status: retry.status, data: await retry.json() };
+      } catch {
+        return { ok: false, rateLimited: true, status: 429 };
+      }
+    }
+    if (!res.ok) return { ok: false, rateLimited: false, status: res.status };
+    return { ok: true, rateLimited: false, status: res.status, data: await res.json() };
+  } catch (e: unknown) {
+    return { ok: false, rateLimited: false, status: 0 };
+  }
+}
+
 // Google Books response shape (only the fields we care about)
 type GBVolumeInfo = {
   title?:       string;
@@ -50,11 +82,7 @@ type GBVolumeInfo = {
   description?: string;
   pageCount?:   number;
 };
-type GBResponse = {
-  totalItems?: number;
-  items?: Array<{ volumeInfo?: GBVolumeInfo }>;
-  error?: { code: number; message: string };
-};
+type GBItems = Array<{ volumeInfo?: GBVolumeInfo }>;
 
 export async function debugRepairBook(
   titleFragment: string,
@@ -162,19 +190,19 @@ export async function debugRepairBook(
     if (!hasSubjects && ol.subjects.length > 0)  { foundSubjects = ol.subjects;   step('  → will use OL subjects'); }
     if (!hasPages    && ol.pageCount)            { foundPages    = ol.pageCount;  step('  → will use OL pageCount'); }
 
-    if (!ol.description) step('  OL description absent for this work — source data gap');
+    if (!ol.description)          step('  OL description absent for this work — source data gap');
     if (ol.subjects.length === 0) step('  OL subjects absent for this work — source data gap');
-    if (!ol.pageCount)   step('  OL pageCount absent for this work');
+    if (!ol.pageCount)            step('  OL pageCount absent for this work');
   }
 
   // ── 4. Google Books — verbose inline trace ───────────────────────────────
   // Replicate the fetchGoogleBooksMetadata strategy loop with full per-step
   // logging so we can see exactly where the GB phase succeeds or fails.
   const needGb = !hasCover || (!hasDesc && !foundDesc) || (!hasPages && !foundPages);
-
   step(`needGb=${needGb} (hasCover=${hasCover} hasDesc=${hasDesc} foundDesc=${!!foundDesc} hasPages=${hasPages} foundPages=${!!foundPages})`);
 
   let foundCover: string | null = null;
+  let gbHitQuota = false;
 
   if (needGb) {
     const t      = String(book.title  ?? '').trim();
@@ -183,8 +211,12 @@ export async function debugRepairBook(
     const isbn   = (book.isbn   as string | null) ?? null;
 
     step('=== Google Books verbose trace ===');
+    step(`API key present: ${gbApiKeyPresent ? 'YES — requests will include key' : 'NO — anonymous quota in use (shared per-IP, easily exhausted)'}`);
+    if (!gbApiKeyPresent) {
+      step('NOTE: to fix quota issues, set EXPO_PUBLIC_GOOGLE_BOOKS_API_KEY as a Replit secret');
+    }
 
-    // Build strategies (mirrors fetchGoogleBooksMetadata exactly)
+    // Build strategies (exact mirror of fetchGoogleBooksMetadata)
     const strategies: Array<{ q: string; skipTitleCheck: boolean; label: string }> = [];
     if (isbn13?.trim()) {
       strategies.push({ q: `isbn:${isbn13.trim()}`, skipTitleCheck: true, label: 'isbn13' });
@@ -193,7 +225,7 @@ export async function debugRepairBook(
     }
     const authorTrimmed = a.slice(0, 40).trim();
     const skipAuthor    = !authorTrimmed || /^unknown\s+author$/i.test(authorTrimmed);
-    const variants = titleSearchVariants(t);
+    const variants      = titleSearchVariants(t);
     step(`Title variants: ${JSON.stringify(variants)}`);
     step(`Author: "${authorTrimmed}" | skipAuthor=${skipAuthor}`);
     for (const variant of variants) {
@@ -201,101 +233,107 @@ export async function debugRepairBook(
       if (!skipAuthor) parts.push(`inauthor:${authorTrimmed}`);
       strategies.push({ q: parts.join(' '), skipTitleCheck: false, label: `title:"${variant}"` });
     }
-
     step(`Total GB strategies: ${strategies.length}`);
 
-    // Execute each strategy until something passes
+    // Execute each strategy — stop on success OR rate-limit
     let gbDone = false;
     for (const { q, skipTitleCheck, label } of strategies) {
-      if (gbDone) break;
+      if (gbDone || gbHitQuota) break;
+
       step(`--- Strategy [${label}] ---`);
       step(`  query: "${q}"`);
 
-      try {
-        const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=5&langRestrict=en&printType=books`;
-        const res = await fetch(url);
-        step(`  HTTP ${res.status} ${res.ok ? 'OK' : 'ERROR'}`);
-        if (!res.ok) {
-          step('  SKIP — non-OK HTTP response');
+      const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=5&langRestrict=en&printType=books`;
+      const res = await dbgFetch(url);
+
+      if (res.rateLimited) {
+        step(`  HTTP 429 RATE LIMIT / QUOTA EXCEEDED (tried once + 1.5 s retry, still 429)`);
+        step('  → stopping GB strategy loop: quota exhausted');
+        gbHitQuota = true;
+        break;
+      }
+
+      step(`  HTTP ${res.status} ${res.ok ? 'OK' : 'ERROR'}`);
+
+      if (!res.ok) {
+        step('  SKIP — non-OK HTTP response');
+        continue;
+      }
+
+      const data = res.data as { totalItems?: number; items?: GBItems; error?: { code: number; message: string } };
+      if (data.error) {
+        step(`  API-level error ${data.error.code}: ${data.error.message}`);
+        continue;
+      }
+
+      const items: GBItems = data.items ?? [];
+      step(`  totalItems=${data.totalItems ?? 0} | returned=${items.length}`);
+      if (items.length === 0) {
+        step('  SKIP — no items returned');
+        continue;
+      }
+
+      for (let i = 0; i < Math.min(items.length, 5); i++) {
+        const vi = items[i]?.volumeInfo;
+        if (!vi) { step(`  [${i}] no volumeInfo — skip`); continue; }
+
+        const candidateTitle  = vi.title ?? '(no title)';
+        const candidateAuthor = (vi.authors ?? []).join(', ') || '(no author)';
+        const hasThumbnail    = !!(vi.imageLinks?.thumbnail ?? vi.imageLinks?.smallThumbnail);
+        const hasGbDesc       = typeof vi.description === 'string' && vi.description.length > 30;
+        const hasGbPages      = typeof vi.pageCount === 'number' && vi.pageCount >= MIN_CREDIBLE_PAGES;
+
+        let matchVerdict = 'SKIP_TITLE_CHECK';
+        if (!skipTitleCheck) {
+          matchVerdict = titleMatches(t, candidateTitle) ? 'PASS' : 'FAIL';
+        }
+
+        step(`  [${i}] title="${candidateTitle}" | author="${candidateAuthor}" | match=${matchVerdict} | thumb=${hasThumbnail} | desc=${hasGbDesc} | pages=${hasGbPages}`);
+
+        if (!skipTitleCheck && matchVerdict === 'FAIL') {
+          step('        → rejected by title match');
           continue;
         }
 
-        const data = await res.json() as GBResponse;
-        if (data.error) {
-          step(`  API error ${data.error.code}: ${data.error.message}`);
-          continue;
+        const thumbnail = vi.imageLinks?.thumbnail ?? vi.imageLinks?.smallThumbnail;
+
+        if (!hasCover && !foundCover && thumbnail) {
+          foundCover = thumbnail.replace(/^http:\/\//, 'https://');
+          step(`        → ACCEPTED cover_url: "${foundCover}"`);
+        }
+        if (!hasDesc && !foundDesc && hasGbDesc) {
+          foundDesc = vi.description!;
+          step(`        → ACCEPTED description: "${foundDesc.slice(0, 100)}…"`);
+        }
+        if (!hasPages && !foundPages && hasGbPages) {
+          foundPages = vi.pageCount!;
+          step(`        → ACCEPTED page_count: ${foundPages}`);
         }
 
-        const items = data.items ?? [];
-        step(`  totalItems=${data.totalItems ?? 0} | returned=${items.length}`);
-        if (items.length === 0) {
-          step('  SKIP — no items returned');
-          continue;
+        if (foundCover || foundDesc || foundPages) {
+          step('        → committing to this item and stopping GB loop');
+          gbDone = true;
+          break;
         }
 
-        // Examine each candidate
-        for (let i = 0; i < Math.min(items.length, 5); i++) {
-          const vi = items[i]?.volumeInfo;
-          if (!vi) { step(`  [${i}] no volumeInfo — skip`); continue; }
+        step('        → item has no usable new fields — trying next item');
+      }
 
-          const candidateTitle  = vi.title ?? '(no title)';
-          const candidateAuthor = (vi.authors ?? []).join(', ') || '(no author)';
-          const hasThumbnail    = !!(vi.imageLinks?.thumbnail ?? vi.imageLinks?.smallThumbnail);
-          const hasGbDesc       = typeof vi.description === 'string' && vi.description.length > 30;
-          const hasGbPages      = typeof vi.pageCount === 'number' && vi.pageCount >= MIN_CREDIBLE_PAGES;
-
-          let matchVerdict = 'SKIP_TITLE_CHECK';
-          if (!skipTitleCheck) {
-            matchVerdict = titleMatches(t, candidateTitle) ? 'PASS' : 'FAIL';
-          }
-
-          step(`  [${i}] title="${candidateTitle}" | author="${candidateAuthor}" | match=${matchVerdict} | thumb=${hasThumbnail} | desc=${hasGbDesc} | pages=${hasGbPages}`);
-
-          if (!skipTitleCheck && matchVerdict === 'FAIL') {
-            step(`        → rejected by title match`);
-            continue;
-          }
-
-          // Extract fields from this candidate
-          const thumbnail: string | undefined =
-            vi.imageLinks?.thumbnail ?? vi.imageLinks?.smallThumbnail;
-
-          if (!hasCover && !foundCover && thumbnail) {
-            foundCover = thumbnail.replace(/^http:\/\//, 'https://');
-            step(`        → ACCEPTED cover_url: "${foundCover}"`);
-          }
-          if (!hasDesc && !foundDesc && hasGbDesc) {
-            foundDesc = vi.description!;
-            step(`        → ACCEPTED description: "${foundDesc.slice(0, 100)}…"`);
-          }
-          if (!hasPages && !foundPages && hasGbPages) {
-            foundPages = vi.pageCount!;
-            step(`        → ACCEPTED page_count: ${foundPages}`);
-          }
-
-          if (foundCover || foundDesc || foundPages) {
-            step(`        → committing to this item and stopping GB loop`);
-            gbDone = true;
-            break;
-          }
-
-          step(`        → item has no usable new fields — trying next item`);
-        }
-
-        if (!gbDone) {
-          step('  No usable item in this strategy — trying next strategy');
-        }
-      } catch (e: unknown) {
-        step(`  EXCEPTION: ${String(e)}`);
+      if (!gbDone) {
+        step('  No usable item found in this strategy — trying next strategy');
       }
     }
 
     step('=== end Google Books verbose trace ===');
 
-    if (!foundCover)   step('GB result: NO cover found from any strategy');
-    if (!foundDesc)    step('GB result: NO description found from any strategy');
-    if (!foundPages)   step('GB result: NO page_count found from any strategy');
-
+    if (gbHitQuota) {
+      step('GB VERDICT: QUOTA/RATE LIMIT — all strategies blocked by HTTP 429');
+      step('  Fix: set EXPO_PUBLIC_GOOGLE_BOOKS_API_KEY as a Replit secret and restart the app');
+    } else {
+      if (!foundCover)  step('GB result: NO cover found from any strategy');
+      if (!foundDesc)   step('GB result: NO description found from any strategy');
+      if (!foundPages)  step('GB result: NO page_count found from any strategy');
+    }
   } else {
     step('Google Books skipped — all needed fields already present');
   }
@@ -311,7 +349,11 @@ export async function debugRepairBook(
   step(`Final patch: ${JSON.stringify(patch, null, 2)}`);
 
   if (Object.keys(patch).length === 0) {
-    step('Patch is empty — nothing new found; no DB write performed');
+    if (gbHitQuota) {
+      step('Patch is empty — Google Books quota was the blocker; no fields could be fetched');
+    } else {
+      step('Patch is empty — nothing new found; no DB write performed');
+    }
     return { log, patch, finalRow: book };
   }
 
@@ -323,12 +365,12 @@ export async function debugRepairBook(
     .eq('id', bookId);
 
   if (updateErr) {
-    step(`DB UPDATE ERROR (status ${updateStatus}): code=${updateErr.code} message="${updateErr.message}" details="${updateErr.details ?? ''}"`);
+    step(`DB UPDATE ERROR (HTTP ${updateStatus}): code=${updateErr.code} message="${updateErr.message}" details="${updateErr.details ?? ''}"`);
   } else {
     step(`DB update succeeded (HTTP ${updateStatus})`);
   }
 
-  // ── 7. Re-fetch final row to confirm persistence ──────────────────────────
+  // ── 7. Re-fetch final row to confirm persistence ─────────────────────────
   const { data: finalRows, error: refetchErr } = await supabase
     .from('books')
     .select('id, external_id, isbn13, isbn, cover_url, description, subjects, page_count')
@@ -349,14 +391,16 @@ export async function debugRepairBook(
     step(`  subjects     : ${Array.isArray(finalRow.subjects) ? JSON.stringify(finalRow.subjects) : 'null'}`);
     step(`  page_count   : ${finalRow.page_count  ?? 'null'}`);
 
-    // Verdict
     const gotCover = !!finalRow.cover_url;
     const gotDesc  = !!finalRow.description;
     if (gotCover && gotDesc) {
       step('VERDICT: cover_url and description now populated ✓');
+    } else if (gbHitQuota) {
+      step('VERDICT: Google Books quota/rate limit blocked cover/description retrieval');
+      step('  → Set EXPO_PUBLIC_GOOGLE_BOOKS_API_KEY secret and restart the app to resolve');
     } else {
-      if (!gotCover) step('VERDICT: cover_url still null after update — see trace above');
-      if (!gotDesc)  step('VERDICT: description still null after update — see trace above');
+      if (!gotCover) step('VERDICT: cover_url still null — see GB trace above for root cause');
+      if (!gotDesc)  step('VERDICT: description still null — see GB trace above for root cause');
     }
   } else {
     step('WARNING: could not re-fetch row after update');
