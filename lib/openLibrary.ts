@@ -10,6 +10,8 @@
 //   - app/book/[id].tsx      (single-book self-healing on Book Detail open)
 // =============================================================================
 
+import { titleSearchVariants } from './titleNormalize';
+
 export type OLMeta = {
   description: string | null;
   subjects:    string[];
@@ -26,29 +28,38 @@ export function isOLId(id: string | null | undefined): id is string {
 // Searches Open Library by title + author and returns the best matching works key
 // (e.g. "/works/OL37620917W").  Used when a books row has no external_id — common
 // for Goodreads-imported books where the OL identifier was never populated.
-// Returns null on any network/parse failure or when no result is found.
+//
+// Tries multiple title variants in order (original → series-stripped → colon-stripped)
+// so that Goodreads titles like "Glow (The Plated Prisoner, #4)" still resolve even
+// though OL indexes the work as just "Glow".  Stops at the first variant that returns
+// a result.  Returns null on any network/parse failure or when no variant matches.
 export async function searchOLWork(
   title:  string,
   author: string,
 ): Promise<string | null> {
   if (!title.trim()) return null;
-  try {
-    const t = encodeURIComponent(title.trim().slice(0, 80));
-    const a = encodeURIComponent(author.trim().slice(0, 60));
-    const url =
-      `https://openlibrary.org/search.json` +
-      `?title=${t}&author=${a}&limit=3&fields=key,title`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!Array.isArray(data.docs) || data.docs.length === 0) return null;
-    const first = data.docs[0];
-    return typeof first.key === 'string' && first.key.startsWith('/works/')
-      ? first.key
-      : null;
-  } catch {
-    return null;
+
+  const variants = titleSearchVariants(title);
+  const a = encodeURIComponent(author.trim().slice(0, 60));
+
+  for (const variant of variants) {
+    try {
+      const t   = encodeURIComponent(variant.trim().slice(0, 80));
+      const url = `https://openlibrary.org/search.json?title=${t}&author=${a}&limit=3&fields=key,title`;
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (!Array.isArray(data.docs) || data.docs.length === 0) continue;
+      const first = data.docs[0];
+      if (typeof first.key === 'string' && first.key.startsWith('/works/')) {
+        return first.key;
+      }
+    } catch {
+      // network error for this variant — try next
+    }
   }
+
+  return null;
 }
 
 export function extractOLID(externalId: string): string | null {

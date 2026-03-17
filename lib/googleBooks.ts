@@ -10,6 +10,8 @@
 // Without a key the free anonymous tier is used (adequate for this use case).
 // =============================================================================
 
+import { titleSearchVariants } from './titleNormalize';
+
 const API_KEY =
   typeof process !== 'undefined'
     ? (process.env.EXPO_PUBLIC_GOOGLE_BOOKS_API_KEY ?? null)
@@ -57,32 +59,33 @@ export async function fetchGoogleBooksPageCount(
 
   try {
     const authorTrimmed = author.slice(0, 40).trim();
-    const skipAuthor = !authorTrimmed || /^unknown\s+author$/i.test(authorTrimmed);
-    const qParts = [`intitle:${title.slice(0, 50).trim()}`];
-    if (!skipAuthor) qParts.push(`inauthor:${authorTrimmed}`);
-    const q = encodeURIComponent(qParts.join(' '));
-    const keyParam = API_KEY ? `&key=${API_KEY}` : '';
-    const url =
-      `https://www.googleapis.com/books/v1/volumes` +
-      `?q=${q}&maxResults=5&langRestrict=en&printType=books${keyParam}`;
+    const skipAuthor    = !authorTrimmed || /^unknown\s+author$/i.test(authorTrimmed);
+    const keyParam      = API_KEY ? `&key=${API_KEY}` : '';
 
-    const res = await fetch(url);
-    if (!res.ok) return null;
+    for (const variant of titleSearchVariants(title)) {
+      const qParts = [`intitle:${variant.slice(0, 50).trim()}`];
+      if (!skipAuthor) qParts.push(`inauthor:${authorTrimmed}`);
+      const url =
+        `https://www.googleapis.com/books/v1/volumes` +
+        `?q=${encodeURIComponent(qParts.join(' '))}&maxResults=5&langRestrict=en&printType=books${keyParam}`;
 
-    const data = await res.json();
-    if (!Array.isArray(data.items) || data.items.length === 0) return null;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (!Array.isArray(data.items) || data.items.length === 0) continue;
 
-    for (const item of data.items) {
-      const vi = item?.volumeInfo;
-      if (!vi) continue;
-
-      const pc: unknown = vi.pageCount;
-      if (typeof pc !== 'number' || pc < MIN_CREDIBLE_PAGES) continue;
-
-      // Only accept results where the title is a reasonable match.
-      if (!titleMatches(title, vi.title ?? '')) continue;
-
-      return pc;
+        for (const item of data.items) {
+          const vi = item?.volumeInfo;
+          if (!vi) continue;
+          const pc: unknown = vi.pageCount;
+          if (typeof pc !== 'number' || pc < MIN_CREDIBLE_PAGES) continue;
+          if (!titleMatches(title, vi.title ?? '')) continue;
+          return pc;
+        }
+      } catch {
+        // try next variant
+      }
     }
 
     return null;
@@ -118,10 +121,13 @@ export async function fetchGoogleBooksCoverUrl(opts: {
   }
 
   const authorTrimmed = author.slice(0, 40).trim();
-  const skipAuthor = !authorTrimmed || /^unknown\s+author$/i.test(authorTrimmed);
-  const titleParts = [`intitle:${title.slice(0, 50).trim()}`];
-  if (!skipAuthor) titleParts.push(`inauthor:${authorTrimmed}`);
-  strategies.push({ q: titleParts.join(' '), skipTitleCheck: false });
+  const skipAuthor    = !authorTrimmed || /^unknown\s+author$/i.test(authorTrimmed);
+  // One strategy per title variant — try original first, then normalized forms.
+  for (const variant of titleSearchVariants(title)) {
+    const parts = [`intitle:${variant.slice(0, 50).trim()}`];
+    if (!skipAuthor) parts.push(`inauthor:${authorTrimmed}`);
+    strategies.push({ q: parts.join(' '), skipTitleCheck: false });
+  }
 
   for (const { q, skipTitleCheck } of strategies) {
     try {
@@ -185,10 +191,13 @@ export async function fetchGoogleBooksMetadata(opts: {
     strategies.push({ q: `isbn:${isbn.trim()}`, skipTitleCheck: true });
   }
   const authorTrimmed = author.slice(0, 40).trim();
-  const skipAuthor = !authorTrimmed || /^unknown\s+author$/i.test(authorTrimmed);
-  const titleParts = [`intitle:${title.slice(0, 50).trim()}`];
-  if (!skipAuthor) titleParts.push(`inauthor:${authorTrimmed}`);
-  strategies.push({ q: titleParts.join(' '), skipTitleCheck: false });
+  const skipAuthor    = !authorTrimmed || /^unknown\s+author$/i.test(authorTrimmed);
+  // One strategy per title variant — try original first, then normalized forms.
+  for (const variant of titleSearchVariants(title)) {
+    const parts = [`intitle:${variant.slice(0, 50).trim()}`];
+    if (!skipAuthor) parts.push(`inauthor:${authorTrimmed}`);
+    strategies.push({ q: parts.join(' '), skipTitleCheck: false });
+  }
 
   for (const { q, skipTitleCheck } of strategies) {
     try {

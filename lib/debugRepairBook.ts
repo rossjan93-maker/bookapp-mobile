@@ -11,6 +11,7 @@
 import { supabase }                from './supabase';
 import { isOLId, searchOLWork, fetchOLMeta } from './openLibrary';
 import { fetchGoogleBooksMetadata }           from './googleBooks';
+import { titleSearchVariants }                from './titleNormalize';
 
 export type DebugRepairResult = {
   log:    string[];
@@ -95,7 +96,8 @@ export async function debugRepairBook(
   if (!olId && (!hasDesc || !hasSubjects)) {
     const t = String(book.title  ?? '').trim();
     const a = String(book.author ?? '').trim();
-    step(`OL search: searchOLWork("${t}", "${a}")`);
+    const variants = titleSearchVariants(t);
+    step(`OL search: title variants to try: ${JSON.stringify(variants)}`);
     const found = await searchOLWork(t, a);
     if (found) {
       step(`OL search result: FOUND ${found}`);
