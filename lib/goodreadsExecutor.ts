@@ -141,63 +141,78 @@ export async function executeGoodreadsImport(
   }
 
   // ── 4. Create books for group B ───────────────────────────────────────────
-  // external_id = 'goodreads:{goodreads_book_id}' — stable and unique per edition.
-  const externalIdToRow = new Map<string, ImportRow>();
+  // Deduplicate within the CSV by Goodreads Book ID (in-memory).
+  // books.external_id is reserved for Open Library work identifiers — we do NOT
+  // write "goodreads:{id}" there.  Provenance lives in book_source_links instead.
+  const sidToRow = new Map<string, ImportRow>();
   for (const row of groupCreate) {
     const sid = sourceBookId(row);
-    if (sid) externalIdToRow.set(`goodreads:${sid}`, row);
+    if (sid) sidToRow.set(sid, row);
   }
 
-  const bookInsertPayloads = Array.from(externalIdToRow.entries()).map(([extId, row]) => ({
-    external_id: extId,
-    title: row.title!,
-    author: row.author!,
-    isbn: row.isbn ?? null,
-    isbn13: row.isbn13 ?? null,
-    publisher: row.publisher ?? null,
-    binding: row.binding ?? null,
-    page_count: null as number | null,       // page_count not in import_rows schema
-    publication_year: row.publication_year ?? null,
-    original_publication_year: row.original_publication_year ?? null,
-    cover_url: null as string | null,        // Goodreads CSV has no cover URLs
-  }));
+  const allSids = [...sidToRow.keys()];
 
-  // Build bookId lookup map: external_id → book uuid
-  const bookIdByExternalId = new Map<string, string>();
-
-  for (const chunk of chunkArray(bookInsertPayloads, 100)) {
-    // INSERT ... ON CONFLICT (external_id) DO NOTHING preserves existing richer records.
-    const { error: insertError } = await supabase
-      .from('books')
-      .upsert(chunk, { onConflict: 'external_id', ignoreDuplicates: true });
-    if (insertError) {
-      // Non-fatal: some books may still be retrieved on the next select.
-      console.warn('Book upsert partial error:', insertError.message);
+  // Look up which Goodreads Book IDs already have a book row (from a previous import).
+  // book_source_links is the authoritative provenance table for this mapping.
+  const bookIdBySid = new Map<string, string>(); // Goodreads Book Id → books.id
+  if (allSids.length > 0) {
+    for (const chunk of chunkArray(allSids, 300)) {
+      const { data: existingLinks } = await supabase
+        .from('book_source_links')
+        .select('source_book_id, book_id')
+        .eq('source', 'goodreads')
+        .in('source_book_id', chunk);
+      (existingLinks ?? []).forEach((l: { source_book_id: string; book_id: string }) => {
+        bookIdBySid.set(l.source_book_id, l.book_id);
+      });
     }
   }
 
-  // Fetch book IDs for all external_ids we just upserted.
-  const allExternalIds = bookInsertPayloads.map(b => b.external_id);
-  for (const chunk of chunkArray(allExternalIds, 300)) {
-    const { data: bookRows } = await supabase
-      .from('books')
-      .select('id, external_id')
-      .in('external_id', chunk);
-    (bookRows ?? []).forEach((b: { id: string; external_id: string }) => {
-      bookIdByExternalId.set(b.external_id, b.id);
+  // Insert books only for Goodreads IDs not yet in book_source_links.
+  // Returns inserted rows in the same order as the input — we zip by index.
+  const newSids = allSids.filter(sid => !bookIdBySid.has(sid));
+
+  for (const chunk of chunkArray(newSids, 100)) {
+    const inserts = chunk.map(sid => {
+      const row = sidToRow.get(sid)!;
+      return {
+        title:                     row.title!,
+        author:                    row.author!,
+        isbn:                      row.isbn   ?? null,
+        isbn13:                    row.isbn13  ?? null,
+        publisher:                 row.publisher ?? null,
+        binding:                   row.binding ?? null,
+        page_count:                null as number | null,
+        publication_year:          row.publication_year ?? null,
+        original_publication_year: row.original_publication_year ?? null,
+        cover_url:                 null as string | null,
+        // external_id intentionally left absent — will be set to an OL work id
+        // once metadata repair runs.  Goodreads source id lives in book_source_links.
+      };
     });
+
+    const { data: inserted, error: insertError } = await supabase
+      .from('books')
+      .insert(inserts)
+      .select('id');
+
+    if (insertError) {
+      console.warn('Book insert partial error:', insertError.message);
+    } else {
+      (inserted ?? []).forEach((b: { id: string }, i: number) => {
+        if (chunk[i]) bookIdBySid.set(chunk[i], b.id);
+      });
+    }
   }
 
-  // Attach resolved book_id to groupCreate rows
+  // Attach resolved book_id to groupCreate rows.
   const createWithBookId: Array<{ row: ImportRow; bookId: string }> = [];
   for (const row of groupCreate) {
     const sid = sourceBookId(row);
-    const extId = sid ? `goodreads:${sid}` : null;
-    const bookId = extId ? bookIdByExternalId.get(extId) : null;
+    const bookId = sid ? bookIdBySid.get(sid) : undefined;
     if (bookId) {
       createWithBookId.push({ row, bookId });
     } else {
-      // Could not get a book ID — mark failed
       counters.failed++;
       await supabase
         .from('import_rows')

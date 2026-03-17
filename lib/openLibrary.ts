@@ -16,6 +16,13 @@ export type OLMeta = {
   pageCount:   number | null;
 };
 
+// Returns true when id is a valid Open Library works identifier (/works/OL...).
+// Use this to distinguish OL ids from Goodreads-prefixed values written by the
+// old import path (goodreads:{id}) or any other non-OL external_id format.
+export function isOLId(id: string | null | undefined): id is string {
+  return typeof id === 'string' && id.startsWith('/works/OL');
+}
+
 // Searches Open Library by title + author and returns the best matching works key
 // (e.g. "/works/OL37620917W").  Used when a books row has no external_id — common
 // for Goodreads-imported books where the OL identifier was never populated.

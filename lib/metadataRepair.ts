@@ -28,7 +28,7 @@
 // =============================================================================
 
 import { supabase }                from './supabase';
-import { fetchOLMeta, searchOLWork } from './openLibrary';
+import { fetchOLMeta, searchOLWork, isOLId } from './openLibrary';
 import { fetchGoogleBooksMetadata } from './googleBooks';
 
 export type RepairResult = {
@@ -114,12 +114,14 @@ export async function repairBooksMetadata(
       let foundPages:    number | null = null;
 
       // ── Phase 1: Open Library ────────────────────────────────────────────
-      const extId = (book.external_id as string | null) ?? null;
-      let resolvedExtId = extId;
+      const rawExtId = (book.external_id as string | null) ?? null;
+      // Normalize: only treat the value as an OL id when it starts with /works/OL.
+      // Goodreads-prefixed values ("goodreads:{id}") from the old import path must
+      // not gate the OL lookup — they must fall through to searchOLWork instead.
+      let resolvedExtId: string | null = isOLId(rawExtId) ? rawExtId : null;
 
-      // When external_id is absent (common for Goodreads imports), search OL by
-      // title+author to discover the works key, then persist it so future calls
-      // skip this search entirely.
+      // When no valid OL external_id exists, search OL by title+author to discover
+      // the works key, then persist it so future calls skip this search entirely.
       if (!resolvedExtId && (!hasDesc || !hasSubjects)) {
         const t = String(book.title  ?? '').trim();
         const a = String(book.author ?? '').trim();

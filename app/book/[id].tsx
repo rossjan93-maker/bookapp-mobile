@@ -13,7 +13,7 @@ import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { computePacingNote, computePagePacing } from '../../lib/pacing';
 import { fetchGoogleBooksMetadata } from '../../lib/googleBooks';
-import { fetchOLMeta, searchOLWork } from '../../lib/openLibrary';
+import { fetchOLMeta, searchOLWork, isOLId } from '../../lib/openLibrary';
 import type { OLMeta } from '../../lib/openLibrary';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -230,8 +230,11 @@ export default function BookDetailScreen() {
       const dbPages   = row?.page_count ?? null;
       const dbCover   = row?.cover_url  ?? null;
       // Prefer DB external_id (authoritative) over route param.
-      // Route param may be absent when navigating from non-Library screens.
-      let olId: string | null = row?.external_id ?? externalId ?? null;
+      // Only treat the value as a usable OL identifier when it starts with /works/OL.
+      // Goodreads-prefixed values ("goodreads:{id}") from the old import path are
+      // truthy but not valid OL ids; normalize them to null so searchOLWork fires.
+      const rawExtId = row?.external_id ?? externalId ?? null;
+      let olId: string | null = isOLId(rawExtId) ? rawExtId : null;
       let discoveredExtId: string | null = null;
 
       // Navigation-time cover takes precedence over DB (might be a CDN url passed
