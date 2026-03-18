@@ -1,0 +1,77 @@
+Refactor the inline recommendation-enrichment flow to be smarter and more premium.
+
+Goal
+1. After star rating, the next inline step should be written notes, not taste tags
+2. Taste tags should become optional and more book-aware, not a fixed static list as the main experience
+3. The Recommendations tab interactions should feel smoother, more polished, and more premium with better transitions
+
+Part 1: Change post-rating flow
+Current flow:
+- tap star
+- inline taste-tag state
+
+New flow:
+- tap star
+- save rating immediately
+- expand the same pill into an inline notes state
+
+Notes state requirements:
+- title/label like: “What worked or didn’t?”
+- multiline text input
+- optional, lightweight
+- Save note button
+- “Not now” action
+- save note to `review_body` on the exact `user_books.id`
+- after saving note or choosing “Not now”, optionally offer quick reactions/tags inline
+
+Part 2: Make tags book-aware
+Do not use the exact same static tag set as the primary tagging UX for every book.
+
+New approach:
+- maintain a controlled trait library
+- choose the most relevant 6–8 tags for a book based on its metadata/category/type
+- example directional groupings:
+  - fiction: pacing, characters, prose, atmosphere, worldbuilding, tension, ending, originality
+  - nonfiction: insight, clarity, structure, evidence, practicality, depth, originality, writing
+- still support two groups:
+  - Loved about it
+  - Didn’t land
+- mutual exclusion remains required
+- tags should be optional and happen inline within the same pill
+
+Implementation note:
+- do not build a totally freeform AI-generated tag system yet
+- use a deterministic or rules-based first pass based on available book metadata
+- include a safe fallback if metadata is sparse
+
+Part 3: Premium transitions and motion
+Improve the feel of interactions in the Recommendations tab:
+- smoother expand/collapse of pills
+- softer content swaps between rating → note → tags
+- animated removal of completed pills
+- better feedback on star tap
+- less sudden/jumpy state changes
+
+Motion guidance:
+- keep it restrained and premium
+- avoid dramatic animations
+- preserve layout continuity
+- ideally only one pill expanded at a time
+
+If using React Native animation tooling already available in the project, use the best lightweight option already compatible with the stack.
+Focus especially on:
+- pill expand/collapse
+- inline state transitions
+- success removal from list
+- progress updates
+
+Part 4: Keep everything in-pill
+Do not send the user to Book Detail for rating, notes, or tags from these recommendation tasks.
+Book Detail should remain a secondary destination only.
+
+Output
+1. Explain the new flow and state model
+2. Show what files you changed
+3. Show the exact save behavior for rating, note, and tags
+4. Explain how book-aware tags are chosen
+5. Explain what motion/transitions were added
