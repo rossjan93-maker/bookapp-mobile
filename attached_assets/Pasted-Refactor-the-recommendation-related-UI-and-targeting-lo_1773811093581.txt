@@ -1,0 +1,69 @@
+Refactor the recommendation-related UI and targeting logic for the book app.
+
+Goal
+1. Keep taste-learning status visible on Home
+2. Move all recommendation-acceleration actions to the Recommendations tab
+3. Make “Rate a finished book” and “Add taste tags” only surface relevant books
+4. Turn the current sparse recommendations tab into a real recommendations hub
+
+Product decisions
+
+A) Home tab
+- Keep only a compact taste-learning status/progress card on Home
+- Remove the acceleration CTAs from Home
+- The Home card should show:
+  - current learning/confidence label
+  - progress to next tier
+  - simple supporting text
+- Do not place action buttons here anymore
+
+B) Recommendations tab
+Rename/reframe this tab as the main recommendation hub with 3 clear sections:
+1. For You
+   - system-generated recommendations
+   - learning/acceleration actions
+2. From Friends
+   - books friends recommended to the user
+3. Sent
+   - books the user recommended to friends
+   - the search/recommend-to-friend flow should live here, not as the primary whole-tab experience
+
+C) Acceleration actions in Recommendations
+Only surface actions when they are relevant.
+
+1. “Rate a finished book”
+Show only books where:
+- status = 'finished'
+- rating is null
+
+If no such books exist, do not show this CTA or show a completed state.
+
+2. “Add taste tags”
+Show only books where:
+- status = 'finished'
+- rating is not null
+- taste_tags is null OR empty
+
+Do not show books that already have taste_tags.
+
+3. “Analyse imported history”
+Show only if imported history exists and this action is still relevant.
+
+4. If there are no acceleration tasks left, show a clean completed state:
+- “You’re caught up”
+- “We’ll keep learning as you finish and rate more books.”
+
+Implementation requirements
+- Reuse existing data where possible
+- Do not change database schema
+- Keep the UI clean and sectioned
+- Avoid duplicate surfacing of the same book across actions
+- Ensure empty states are intentional and not broken-looking
+
+Output
+1. Explain which files you changed
+2. Explain the exact filtering/query logic for:
+   - rate finished books
+   - add taste tags
+3. Show the updated tab structure
+4. Note any assumptions or places where the current recommendation tab architecture limited the implementation
