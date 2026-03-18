@@ -1,0 +1,100 @@
+The current inline recommendation flow is working, but it still does not feel intelligent or premium enough.
+
+We need to upgrade three things:
+1. make quick-reaction tags genuinely book-specific
+2. make transitions smoother and more premium
+3. make loading states best-in-class
+
+Focus primarily on the Recommendations tab flow.
+
+Part 1: Real book-aware quick reactions
+Problem:
+The current reaction/tag options are still effectively static. Every book shows the same options.
+
+Goal:
+Make the optional quick reactions reflect the specific book.
+
+Requirements:
+- Build a deterministic `getBookAwareTraits(book)` resolver
+- Use actual available book metadata if present:
+  - genre / categories
+  - description / synopsis
+  - subtitle
+  - subjects
+  - page count
+  - author
+  - imported metadata if available
+- Return the most relevant 6–8 reaction traits for the book from a controlled master trait library
+- Do NOT generate arbitrary freeform traits with AI yet
+- Keep the two-group structure:
+  - Loved about it
+  - Didn’t land
+- Preserve mutual exclusion between the two groups
+- Keep a sensible fallback trait set when metadata is sparse
+
+Example directional mappings:
+- fantasy/sci-fi: worldbuilding, scope, pacing, characters, tension, ending, originality
+- thriller/mystery: suspense, pacing, twists, ending, tension, characters
+- romance: chemistry, emotional payoff, pacing, writing, characters, ending
+- memoir/biography: honesty, insight, perspective, writing, depth, structure
+- nonfiction/business/psychology: insight, clarity, structure, evidence, practicality, originality, depth
+
+Part 2: Inline flow change
+After star rating:
+- save the rating immediately
+- expand the same pill into a notes state first
+- notes prompt: “What worked or didn’t?”
+- multiline but lightweight
+- optional
+- save to `review_body` on the exact `user_books.id`
+
+After note save or “Not now”:
+- optionally show the book-aware quick reactions inline
+- these should feel like optional enrichment, not a required step
+
+Everything should stay inside the same pill.
+
+Part 3: Premium motion / transitions
+Current feel:
+Too jagged, poppy, abrupt.
+
+Goal:
+Make interactions feel smooth, sleek, premium, and cohesive.
+
+Requirements:
+- Introduce a consistent motion system for:
+  - pill expand/collapse
+  - rating → notes transition
+  - notes → quick reactions transition
+  - successful save/removal of a pill
+  - section state changes
+- Use restrained, premium motion:
+  - smooth spring for expand/collapse
+  - fade + slight translate for content swaps
+  - animated removal rather than instant disappearance
+  - subtle press feedback on stars/buttons
+- Avoid sudden layout jumps
+- Ideally keep only one pill expanded at a time
+
+If the project already supports a stronger animation library compatible with the stack, use the best option already available. Otherwise improve the current approach substantially.
+
+Part 4: Best-in-class loading experience
+Goal:
+The Recommendations tab should load and update like a premium app.
+
+Requirements:
+- Add skeleton loading states for recommendation pills/cards
+- Reserve image space to avoid layout shifts
+- Fade in cover images when loaded
+- Use inline pending/saving states instead of jarring full-screen loading
+- Preserve layout continuity while data is loading
+- Prefetch or hydrate data where possible when navigating into Recommendations
+- Avoid flash-of-empty-content or pop-in rendering
+
+Part 5: Output
+1. Explain the root cause of why the current tags still feel static
+2. Explain the new state flow: rating → notes → reactions
+3. Show how book-aware reactions are chosen
+4. Explain the motion system added
+5. Explain the loading improvements added
+6. List all changed files
