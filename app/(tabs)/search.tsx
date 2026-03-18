@@ -736,12 +736,13 @@ export default function RecommendationsScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // ── Hub state ──────────────────────────────────────────────────────────────
-  const [hubLoading, setHubLoading]       = useState(true);
-  const [booksToRate, setBooksToRate]     = useState<BookToRate[]>([]);
-  const [booksToTag, setBooksToTag]       = useState<BookToTag[]>([]);
-  const [incomingRecs, setIncomingRecs]   = useState<IncomingRec[]>([]);
-  const [sentRecs, setSentRecs]           = useState<SentRec[]>([]);
-  const [tasteProfile, setTasteProfile]   = useState<TasteProfile | null>(null);
+  const [hubLoading, setHubLoading]           = useState(true);
+  const [recsLoading, setRecsLoading]         = useState(false);
+  const [booksToRate, setBooksToRate]         = useState<BookToRate[]>([]);
+  const [booksToTag, setBooksToTag]           = useState<BookToTag[]>([]);
+  const [incomingRecs, setIncomingRecs]       = useState<IncomingRec[]>([]);
+  const [sentRecs, setSentRecs]               = useState<SentRec[]>([]);
+  const [tasteProfile, setTasteProfile]       = useState<TasteProfile | null>(null);
   const [recommendations, setRecommendations] = useState<ScoredBook[]>([]);
 
   // ── Search/send flow state ────────────────────────────────────────────────
@@ -783,14 +784,19 @@ export default function RecommendationsScreen() {
   // ── Hub data loader ───────────────────────────────────────────────────────
 
   async function loadHub() {
-    if (!supabase) { setHubLoading(false); return; }
+    if (!supabase) { setHubLoading(false); setRecsLoading(false); return; }
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setHubLoading(false); return; }
+    if (!user) { setHubLoading(false); setRecsLoading(false); return; }
     setCurrentUserId(user.id);
     setHubLoading(true);
+    setRecsLoading(false);
+    setRecommendations([]);
 
-    const [rateRes, tagRes, incomingRes, sentRes, tp, candidates] = await Promise.all([
-      // Finished books with no rating (rate these)
+    // ── Phase 1: core hub data (all DB queries run concurrently) ─────────────
+    // Hub becomes visible as soon as this resolves, without waiting for OL API.
+
+    const [rateRes, tagRes, incomingRes, sentRes, tp] = await Promise.all([
+      // Finished books with no rating
       supabase
         .from('user_books')
         .select('id, book_id, book:books(title, author, cover_url, external_id, subjects)')
@@ -830,21 +836,15 @@ export default function RecommendationsScreen() {
         .order('created_at', { ascending: false })
         .limit(3),
 
-      // Taste profile for confidence tier
+      // Taste profile — needed to know tier + genre affinities for Phase 2
       computeTasteProfile(supabase!, user.id).catch(() => null),
-
-      // Candidate books for personalised recommendations (scored client-side)
-      getCandidateBooks(supabase!, user.id).catch(() => [] as import('../../lib/recommender').CandidateBook[]),
     ]);
 
-    // ── Type for Supabase row with a many-to-one book join ───────────────────
-    // Supabase returns FK many-to-one joins as a SINGLE OBJECT, not an array.
-    // Accessing r.book?.[0] would always be undefined. Use r.book?.field instead.
+    // ── Supabase many-to-one join note: returns single object, not array ─────
     type BookJoin = { title: string; author: string; cover_url: string | null; external_id: string | null; subjects: string[] | null };
-    type RateRow = { id: string; book_id: string; book: BookJoin | null };
-    type TagRow  = { id: string; book_id: string; taste_tags: { liked?: string[]; didnt_work?: string[] } | null; book: BookJoin | null };
+    type RateRow  = { id: string; book_id: string; book: BookJoin | null };
+    type TagRow   = { id: string; book_id: string; taste_tags: { liked?: string[]; didnt_work?: string[] } | null; book: BookJoin | null };
 
-    // Books to rate: finished, no rating (server-side filter: rating IS NULL)
     const toRate: BookToRate[] = ((rateRes.data ?? []) as unknown as RateRow[]).map(r => ({
       id:          r.id,
       book_id:     r.book_id,
@@ -855,9 +855,6 @@ export default function RecommendationsScreen() {
       subjects:    r.book?.subjects    ?? null,
     }));
 
-    // Books to tag: finished + rated (server-side). Client-filter: only where
-    // taste_tags is null, undefined, or both liked[] and didnt_work[] are empty.
-    // A book cannot appear in both lists — server filters are mutually exclusive.
     const toTag: BookToTag[] = ((tagRes.data ?? []) as unknown as TagRow[])
       .filter(r => {
         const tt       = r.taste_tags;
@@ -875,19 +872,29 @@ export default function RecommendationsScreen() {
         subjects:    r.book?.subjects    ?? null,
       }));
 
-    // Compute personalised recommendations synchronously from scored candidates
-    let recs: ScoredBook[] = [];
-    if (tp && tp.tier >= 1 && candidates.length > 0) {
-      recs = getRankedRecs(candidates, tp, 5);
-    }
-
+    // Commit Phase 1 state — hub is now visible
     setBooksToRate(toRate);
     setBooksToTag(toTag);
     setIncomingRecs((incomingRes.data as unknown as IncomingRec[]) ?? []);
     setSentRecs((sentRes.data as unknown as SentRec[]) ?? []);
     setTasteProfile(tp);
-    setRecommendations(recs);
     setHubLoading(false);
+
+    // ── Phase 2: recommendation retrieval (profile-guided, includes OL calls) ─
+    // Runs after Phase 1 state is committed so the hub is already visible.
+    // Only fires when the user has enough signal for tier-1+ recommendations.
+    if (!tp || tp.tier < 1) return;
+
+    setRecsLoading(true);
+    try {
+      const candidates = await getCandidateBooks(supabase!, user.id, tp);
+      const recs       = getRankedRecs(candidates, tp, 5);
+      setRecommendations(recs);
+    } catch {
+      // Recommendations fail silently — hub content is already visible
+    } finally {
+      setRecsLoading(false);
+    }
   }
 
   // ── Hub completion handlers ───────────────────────────────────────────────
@@ -1080,8 +1087,23 @@ export default function RecommendationsScreen() {
             <View style={{ marginBottom: 36 }}>
               <SectionLabel>For You</SectionLabel>
 
+              {/* ── Personalised picks loading skeleton ── */}
+              {recsLoading && (
+                <View style={{ marginBottom: 20 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', flex: 1 }}>
+                      Picked for you
+                    </Text>
+                    <ActivityIndicator size="small" color="#a8a29e" />
+                  </View>
+                  <SkeletonCard />
+                  <SkeletonCard />
+                  <SkeletonCard />
+                </View>
+              )}
+
               {/* ── Personalised picks (tier ≥ 1) ── */}
-              {hasRecs && (
+              {hasRecs && !recsLoading && (
                 <View style={{ marginBottom: 20 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
                     <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', flex: 1 }}>
@@ -1098,7 +1120,7 @@ export default function RecommendationsScreen() {
               )}
 
               {/* ── No recs + no tasks → caught up ── */}
-              {!hasRecs && !hasAnyTask && (
+              {!hasRecs && !recsLoading && !hasAnyTask && (
                 <View style={{
                   backgroundColor: '#fff',
                   borderRadius: 14,

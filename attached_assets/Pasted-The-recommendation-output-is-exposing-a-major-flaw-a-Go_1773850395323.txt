@@ -1,0 +1,62 @@
+The recommendation output is exposing a major flaw: a Goodreads-imported user with 300+ books is being recommended the same random books that were manually added to a different net-new user’s library.
+
+Treat this as a candidate retrieval / catalog eligibility problem, not a UI problem.
+
+Goal
+Fix recommendation candidate sourcing so recommendations come from a valid, high-quality, recommendation-eligible catalog rather than arbitrary books that happen to exist in the shared books table.
+
+What to investigate first
+1. Determine how recommendation candidates are currently sourced.
+2. Confirm whether manually added books from one user are entering the shared candidate pool for all users.
+3. Confirm how many candidate books are actually available for the Goodreads-imported user after excluding their own library.
+4. Explain whether this is:
+   - catalog scarcity
+   - catalog contamination
+   - or both
+
+What to fix
+
+Part 1: Recommendation eligibility
+Add a concept of recommendation-eligible books.
+Do not treat every row in `books` as a valid recommendation candidate.
+
+A recommendation-eligible book should have strong enough metadata and should not simply be a random user-added/library artifact.
+
+Implement a deterministic filter for candidate books such as:
+- sufficient metadata present (title, author, subjects/categories and/or description)
+- not already in the current user’s library
+- not marked as low-quality / incomplete
+- exclude books that are effectively user-private or one-off additions if applicable in the current architecture
+
+If schema support is needed, propose the smallest clean change.
+
+Part 2: Retrieval before ranking
+Refactor recommendation generation into:
+1. candidate retrieval
+2. candidate ranking
+
+Candidate retrieval should use signals from the user’s taste profile and reading history to pull a sensible pool, such as:
+- overlapping genres/subjects
+- adjacent authors
+- similar traits to highly rated completed books
+- high-quality/popular books in liked categories
+
+Ranking should then score within that candidate set.
+
+Part 3: Prevent cross-user noise
+Ensure that books added by one user for their own library do not automatically become strong recommendation candidates for other users unless they are clearly part of the shared canonical catalog.
+
+Part 4: Add recommendation debugging
+For each recommendation, make it possible to inspect:
+- retrieval reason
+- ranking reason
+- source/candidate type
+- total candidate pool size
+- whether the book came from canonical/shared catalog or user-added data
+
+Part 5: Output
+1. Explain the root cause clearly
+2. List the files changed
+3. Show the new retrieval + ranking architecture
+4. Explain how recommendation-eligible books are determined
+5. Call out any schema limitations that still need to be addressed
