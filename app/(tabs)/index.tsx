@@ -648,7 +648,7 @@ export default function HomeScreen() {
                             height: 3, backgroundColor: '#e7e5e4', borderRadius: 2, overflow: 'hidden', marginBottom: 4,
                           }}>
                             <View style={{
-                              height: 3, width: `${pct}%`, backgroundColor: '#1c1917', borderRadius: 2,
+                              height: 3, width: `${pct ?? 0}%`, backgroundColor: '#1c1917', borderRadius: 2,
                             }} />
                           </View>
                           <Text style={{ fontSize: 10, color: '#a8a29e', marginBottom: pacingNote ? 5 : 0 }}>
