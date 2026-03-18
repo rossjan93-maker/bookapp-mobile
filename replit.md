@@ -32,10 +32,11 @@ React Native mobile app built with Expo Router + Supabase.
 | `lib/displayName.ts` | Display name helper: getDisplayName, getFirstName, getInitial |
 | `lib/pacing.ts` | Pacing helpers: date-based + page-based |
 | `lib/signals.ts` | Derived signals foundation (completion rate, DNF rate, avg pages/day, rec conversion, rating signals) |
-| `lib/tasteProfile.ts` | Recommendation confidence model: tier 0–3, trait/genre affinity scoring, diagnosis answer boosts, hypothesis generation |
+| `lib/tasteProfile.ts` | Recommendation confidence model: tier 0–3, trait/genre affinity scoring, diagnosis answer boosts, hypothesis generation; now also computes `liked_subjects` (top 8 subjects from 4+ rated books) and `liked_authors` (up to 5 authors) for OL retrieval anchoring |
 | `lib/bookTraits.ts` | Deterministic book trait extraction: 8 genres, base trait scores per genre, page count adjustments, `detectGenre()` |
-| `lib/recommender.ts` | Scoring engine: three-source retrieval (`catalog`, `cached_external`, `open_library`), `scoreBookForUser()` (pure, accepts `FeedbackContext` for boost step 4), `getRankedRecs()` (returns `RankedRecsResult` with quality gate + source meta), `getCandidateBooks()` (checks cache → OL fallback → persists, excludes dismissed books) |
-| `lib/recFeedback.ts` | Recommendation feedback helpers: `persistFeedback()`, `loadFeedbackContext()`, `FeedbackContext` type — drives dismissed book exclusion + `genreBoosts` in scoring |
+| `lib/recommender.ts` | Full recommendation engine — multi-anchor OL retrieval (genre affinities + liked_subjects + author anchor), `applyHygiene()` (children's, PD authors, non-English, weak metadata), `scoreBookForUser()` (5 steps incl. enrichment signals + richer explanation text), `getRankedRecs()` (`RankedRecsResult` with quality gate, hygiene count, `RetrievalTrace`), `getCandidateBooks()` returns `CandidateResult` `{ candidates, enrichmentMap, retrieval_trace }` |
+| `lib/recFeedback.ts` | Recommendation feedback helpers: `persistFeedback()`, `loadFeedbackContext()`, `FeedbackContext` — dismissed exclusion + `genreBoosts` in scoring step 4 |
+| `lib/bookEnrichment.ts` | Book enrichment layer: `BookEnrichmentProfile` type (consensus_traits, popularity_signals, audience_signals), `inferConsensusTraits()` (keyword mapping from subjects + GB categories + description), `fetchGBEnrichmentData()` (Google Books — language, categories, rating), `loadEnrichmentBatch()` / `persistEnrichmentBatch()` DB cache ops, `getEnrichmentForCandidates()` (cache-first batch fetch) |
 | `app/import/diagnosis.tsx` | Imported-user diagnosis flow: auto-generated taste hypotheses + 5 adaptive tradeoff questions |
 | `components/CoverThumb.tsx` | Cover image with OL fallback |
 
@@ -59,6 +60,7 @@ React Native mobile app built with Expo Router + Supabase.
 | `20260318000001_reader_preferences_diagnosis.sql` | Adds `diagnosis_answers jsonb` to reader_preferences for taste-calibration question persistence |
 | `20260318000002_rec_candidate_cache.sql` | `rec_candidate_cache` table — per-user cache of externally-retrieved OL recommendation candidates with RLS; 24h TTL; upsert on `(user_id, external_id)` |
 | `20260318000003_rec_feedback.sql` | `rec_feedback` table — records Save/Dismiss/MoreLikeThis feedback per `(user_id, book_id)` with RLS; drives dismissed exclusion and genre boost signals in scoring |
+| `20260318000004_book_enrichment_cache.sql` | `book_enrichment_cache` table — per-book enrichment profiles (consensus_traits, popularity_signals, language, audience_signals) shared across users; 7-day TTL; upsert on `external_id`; RLS read/write for authenticated users |
 
 ## Defensive Fallbacks
 Library, profile, and notes queries include try-with-fallback patterns — they attempt queries with new columns (page_count, current_page, source, sentiment) and silently fall back to column-safe queries if migrations haven't been applied yet. This means the app always loads.

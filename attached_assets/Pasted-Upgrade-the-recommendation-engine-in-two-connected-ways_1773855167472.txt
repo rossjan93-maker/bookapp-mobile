@@ -1,0 +1,208 @@
+Upgrade the recommendation engine in two connected ways:
+
+1. improve retrieval precision before ranking
+2. add a secondary public book-enrichment / consensus layer
+
+Important product constraint
+Do NOT let public reviews/discourse become the primary recommendation signal.
+The primary model must remain:
+- completed books
+- ratings
+- notes
+- quick reactions / taste tags
+- imported history
+- diagnosis answers
+- recommendation feedback
+
+Public sources should be used only as a supporting layer to:
+- better understand each book
+- improve candidate retrieval
+- improve recommendation explanations
+- surface better risk/mismatch notes
+
+Current problem
+The recommendation cache is working, but retrieval is still too blunt.
+
+Evidence:
+Cached candidates are all coming from broad buckets like `ol:genre:fantasy_scifi`, producing generic/public-domain/classic fantasy titles (for example Oz/Narnia/Grimm-style results, non-English titles, etc.). This means contamination is fixed, but retrieval is still too coarse and not intelligently tied to the user’s reading history.
+
+Goal
+Build a more precise recommendation pipeline:
+- stronger candidate retrieval
+- cleaner candidate filtering
+- public book-enrichment as a secondary intelligence layer
+- better explanations and risks
+- maintain deterministic, explainable behavior
+
+Part 1: Improve retrieval precision before ranking
+Do not retrieve only from the user’s top genre.
+
+Build retrieval from:
+- top 2–3 genre affinities
+- strongest preferred traits
+- recurring subjects/themes from the user’s 4–5 star books
+- specific highly rated source books as anchors
+- author adjacency when appropriate
+
+Refactor retrieval so it is clearly:
+1. candidate retrieval
+2. candidate filtering / hygiene
+3. ranking
+
+Part 2: Better Open Library query strategy
+Tighten OL retrieval so it does not return generic/noisy pools.
+
+Add filters or heuristics for:
+- prefer English-language results when the user history suggests English reading
+- de-prioritize or exclude obvious children/public-domain/classic drift unless the profile supports it
+- prefer books with richer metadata
+- avoid relying on one subject bucket only
+- diversify retrieval across multiple subject/genre anchors
+
+If OL fields are limited, implement deterministic post-filtering/reranking after retrieval.
+
+Part 3: Candidate hygiene
+Add exclusion or de-prioritization rules for:
+- non-English titles unless user history supports multilingual reading
+- children’s books when the user profile does not indicate that
+- public-domain/classic-heavy drift when not aligned
+- weak-metadata books
+- low-quality/noisy candidates
+
+Part 4: Retrieval debugging
+For each recommendation generation run, log or expose:
+- top genre affinities used
+- top preferred traits used
+- top liked books used as anchors
+- actual OL retrieval reasons / query terms
+- exclusion reasons for filtered-out candidates
+- final candidate pool size by source
+
+Part 5: Add a public book-enrichment / consensus profile layer
+Create a structured enrichment profile for a book from available public metadata and lightweight consensus/discourse signals.
+
+Target structure:
+{
+  book_id?: string,
+  external_id?: string,
+  consensus_traits: {
+    pacing?: number,
+    originality?: number,
+    insight?: number,
+    clarity?: number,
+    emotionality?: number,
+    suspense?: number,
+    worldbuilding?: number,
+    literary_prose?: number,
+    practicality?: number,
+    romance_intensity?: number
+  },
+  repeated_praise: string[],
+  repeated_risks: string[],
+  comparable_titles: string[],
+  audience_signals: string[],
+  popularity_signals: {
+    ratings_count?: number,
+    average_rating?: number,
+    review_signal_strength?: number
+  },
+  source_summary: {
+    google_books?: boolean,
+    open_library?: boolean,
+    other_sources_used?: string[]
+  }
+}
+
+Keep this deterministic and explainable.
+Do not invent arbitrary traits with an LLM.
+Use structured mapping and extraction from source metadata first.
+
+Part 6: Start with structured/publicly available metadata before freeform discourse
+Implement in phases.
+
+Phase A:
+Use structured metadata from sources like:
+- Open Library
+- Google Books or any structured source already easiest to integrate
+
+Use these to enrich:
+- subjects/categories
+- descriptions
+- ratings count / average rating if available
+- related metadata
+- comparable-title signals where available
+
+Phase B:
+If lightweight review/discourse extraction is feasible, use it only to derive:
+- repeated praise themes
+- repeated complaint themes
+- audience fit / mismatch patterns
+- comparable-title mentions
+
+Do NOT store or display large amounts of third-party review text.
+Store only summarized/extracted signals.
+
+Part 7: Use enrichment correctly
+Use public enrichment only as a secondary layer.
+
+Priority order must be:
+1. user’s own behavior / taste profile
+2. deterministic book metadata + consensus enrichment
+3. public discourse/review-derived language
+
+Public enrichment should:
+- help retrieval
+- modestly influence ranking
+- strongly improve explanations
+
+It should NOT overpower:
+- explicit ratings
+- notes
+- taste tags
+- diagnosis answers
+- recommendation feedback
+
+Part 8: Improve recommendation explanations
+Update recommendation cards / “Why this recommendation?” so explanations can use enrichment signals.
+
+Examples of acceptable explanation improvements:
+- “Aligns with your preference for originality and insight.”
+- “Readers consistently praise this for conceptual depth and structure, which fits your profile.”
+- “This tends to work for readers who like practical, insight-dense nonfiction.”
+
+Examples of acceptable risk/mismatch lines:
+- “May lean more romance-forward than your usual favorites.”
+- “This appears slower-paced than the books you rate highest.”
+- “We have weaker signal on whether you enjoy literary prose-heavy fiction.”
+
+Do NOT use popularity as the main explanation.
+
+Part 9: Persistence / caching
+If needed, create a lightweight cache/persistence layer for book enrichment so it does not need to be recomputed repeatedly.
+
+Potential concept:
+book_enrichment_cache
+with fields like:
+- id
+- external_id and/or book_id
+- source
+- consensus_traits (jsonb)
+- repeated_praise (jsonb/text[])
+- repeated_risks (jsonb/text[])
+- comparable_titles (jsonb/text[])
+- popularity_signals (jsonb)
+- cached_at
+
+Propose the smallest clean migration if needed.
+
+Part 10: Output
+1. Explain the current root cause of blunt retrieval
+2. List changed files
+3. Show the improved retrieval architecture
+4. Show how source books / subjects / traits are used for retrieval
+5. Explain how noisy candidates are filtered out
+6. Show the new book-enrichment profile structure
+7. Explain which public sources were used and why
+8. Explain how enrichment affects retrieval, ranking, and explanation separately
+9. Show any schema migrations needed
+10. Call out remaining metadata limitations and where the system may still be weak

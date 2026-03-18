@@ -41,6 +41,8 @@ export type TasteProfile = {
   preferred_traits:  Record<string, number>;
   avoided_traits:    Record<string, number>;
   genre_affinities:  Record<string, number>;   // e.g. { thriller_mystery: 0.7, nonfiction: -0.2 }
+  liked_subjects:    string[];  // top subjects from 4+ rated finished books (for OL anchoring)
+  liked_authors:     string[];  // authors of 4+ rated finished books (for author-adjacent retrieval)
   open_questions:    string[];
   evidence:          TasteProfileEvidence;
   strongSignalCount: number;
@@ -162,12 +164,59 @@ function applyDiagnosisBoosts(
   return { preferred: round(p), avoided: round(a) };
 }
 
-// ── Genre affinities from rated finished books ─────────────────────────────────
+// ── Liked subjects + authors from 4+ star finished books ──────────────────────
+// Used by the recommender as anchor terms for OL subject / author searches.
 
 type FinishedBookRow = {
   rating: number | null;
   book: { subjects?: string[] | null; title?: string | null; author?: string | null } | null;
 };
+
+// Noise subjects that appear in many OL search results — useless as anchors.
+const GENERIC_OL_SUBJECTS = new Set([
+  'fiction', 'non-fiction', 'nonfiction', 'english', 'american', 'british',
+  'literature', 'books', 'accessible book', 'protected daisy',
+  'open library nl', 'internet archive wishlist', 'large type books',
+  'juvenile fiction', 'juvenile literature',  // these go through hygiene
+]);
+
+function buildLikedAnchors(rows: FinishedBookRow[]): {
+  liked_subjects: string[];
+  liked_authors:  string[];
+} {
+  const subjectFreq: Record<string, number> = {};
+  const seenAuthors  = new Set<string>();
+  const liked_authors: string[] = [];
+
+  for (const row of rows) {
+    if ((row.rating ?? 0) < 4 || !row.book) continue;
+
+    // Authors
+    const authorRaw = row.book.author?.trim() ?? '';
+    const authorKey = authorRaw.toLowerCase();
+    if (authorRaw && !seenAuthors.has(authorKey) && !/^unknown/i.test(authorRaw)) {
+      seenAuthors.add(authorKey);
+      liked_authors.push(authorRaw);
+    }
+
+    // Subjects — normalise and count frequency
+    for (const s of (row.book.subjects ?? [])) {
+      const norm = s.toLowerCase().trim();
+      if (norm.length < 4) continue;
+      if (GENERIC_OL_SUBJECTS.has(norm)) continue;
+      subjectFreq[norm] = (subjectFreq[norm] ?? 0) + 1;
+    }
+  }
+
+  const liked_subjects = Object.entries(subjectFreq)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([s]) => s);
+
+  return { liked_subjects, liked_authors: liked_authors.slice(0, 5) };
+}
+
+// ── Genre affinities from rated finished books ─────────────────────────────────
 
 function buildGenreAffinities(rows: FinishedBookRow[]): Record<string, number> {
   const counts: Record<string, { pos: number; neg: number; total: number }> = {};
@@ -282,10 +331,13 @@ export async function computeTasteProfile(
   const { preferred: preferred_traits, avoided: avoided_traits } =
     applyDiagnosisBoosts(rawPref, rawAvoid, diagnosisAnswers);
 
+  const finishedRatedRows = (finishedRatedRes.data ?? []) as FinishedBookRow[];
+
   // Genre affinities from rated finished books
-  const genre_affinities = buildGenreAffinities(
-    (finishedRatedRes.data ?? []) as FinishedBookRow[]
-  );
+  const genre_affinities = buildGenreAffinities(finishedRatedRows);
+
+  // Liked subject + author anchors for retrieval
+  const { liked_subjects, liked_authors } = buildLikedAnchors(finishedRatedRows);
 
   const open_questions = deriveOpenQuestions(evidence, preferred_traits);
 
@@ -296,6 +348,8 @@ export async function computeTasteProfile(
     preferred_traits,
     avoided_traits,
     genre_affinities,
+    liked_subjects,
+    liked_authors,
     open_questions,
     evidence,
     strongSignalCount,

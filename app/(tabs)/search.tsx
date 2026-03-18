@@ -1092,9 +1092,13 @@ export default function RecommendationsScreen() {
       const fbCtx = await loadFeedbackContext(supabase!, user.id);
       setFeedbackCtx(fbCtx);
 
-      // Retrieve candidates (OL calls guided by profile + genre affinities)
-      const candidates     = await getCandidateBooks(supabase!, user.id, tp, fbCtx);
-      const { recs, meta } = getRankedRecs(candidates, tp, 5, fbCtx);
+      // Retrieve candidates (multi-anchor OL + catalog + cache) and enrichment
+      const {
+        candidates,
+        enrichmentMap,
+        retrieval_trace,
+      } = await getCandidateBooks(supabase!, user.id, tp, fbCtx);
+      const { recs, meta } = getRankedRecs(candidates, tp, 5, fbCtx, enrichmentMap, retrieval_trace);
       setRecommendations(recs);
       setRecsQualityGate(meta.quality_gate !== 'passed' ? meta.quality_gate : null);
     } catch {
