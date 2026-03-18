@@ -32,6 +32,8 @@ React Native mobile app built with Expo Router + Supabase.
 | `lib/displayName.ts` | Display name helper: getDisplayName, getFirstName, getInitial |
 | `lib/pacing.ts` | Pacing helpers: date-based + page-based |
 | `lib/signals.ts` | Derived signals foundation (completion rate, DNF rate, avg pages/day, rec conversion, rating signals) |
+| `lib/tasteProfile.ts` | Recommendation confidence model: tier 0–3, trait scoring from taste_tags, hypothesis generation, diagnosis questions |
+| `app/import/diagnosis.tsx` | Imported-user diagnosis flow: auto-generated taste hypotheses + 5 adaptive tradeoff questions |
 | `components/CoverThumb.tsx` | Cover image with OL fallback |
 
 ## Database Schema Migrations (apply in order)
@@ -70,7 +72,23 @@ Library, profile, and notes queries include try-with-fallback patterns — they 
 - `avgPagesPerDay` — derived from `reading_progress_events` timeline
 - `recConversionRate` — recs received that became finished
 
-Not yet surfaced in UI — data foundation only.
+## Recommendation Confidence System (`lib/tasteProfile.ts`)
+`computeTasteProfile(client, userId)` returns a `TasteProfile`:
+- **Tier 0** (<5 strong signals): "We're learning your taste"
+- **Tier 1** (5–9): "Early read on your taste"
+- **Tier 2** (10+): "Personalized for you"
+- **Tier 3** (10+ with import + enrichment): "High-confidence recommendations"
+- **Strong signal** = finished book with any of: rating, taste_tags, review_body, or source='goodreads'
+- `preferred_traits` / `avoided_traits` — scored 0–1 from aggregated taste_tags
+- `open_questions` — unresolved questions about the user's taste
+- `generateHypotheses(profile)` — generates 3–5 taste hypotheses for diagnosis flow
+- `DIAGNOSIS_QUESTIONS` — 5 fixed tradeoff-based adaptive questions
+
+**Learning mode card** appears on Home tab (tier ≤ 1) with signal progress bar and 3 CTAs:
+rate a book / add taste tags / import history (or "analyse imports" if already imported).
+
+**Diagnosis flow** (`/import/diagnosis`): hypotheses screen → 5 questions → done screen.
+Accessible from learning mode card "Analyse my imports" action. No DB writes (scaffold stage — answers are in-memory).
 
 ## Home Palette
 `#faf9f7` bg · `#1c1917` headings · `#a8a29e` muted · `#57534e` secondary

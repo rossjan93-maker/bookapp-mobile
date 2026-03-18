@@ -80,7 +80,7 @@ export default function DiagnosisScreen() {
     async function load() {
       if (!supabase) { setStep('hypotheses'); return; }
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.replace('/(auth)/sign-in'); return; }
+      if (!user) { router.replace('/(auth)/login'); return; }
 
       const tp = await computeTasteProfile(supabase, user.id);
       setProfile(tp);
