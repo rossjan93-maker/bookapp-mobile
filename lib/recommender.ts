@@ -51,7 +51,8 @@
 
 import type { SupabaseClient }       from '@supabase/supabase-js';
 import type { TasteProfile }         from './tasteProfile';
-import { getBookTraits, assessMetadataQuality } from './bookTraits';
+import { getBookTraits, assessMetadataQuality, detectBookLane, detectBookMysterySubtype, isPhilosophyOrSpiritual } from './bookTraits';
+import type { DeterministicLane }    from './bookTraits';
 import type { FeedbackContext }      from './recFeedback';
 import type { BookEnrichmentProfile } from './bookEnrichment';
 import { getEnrichmentForCandidates } from './bookEnrichment';
@@ -128,6 +129,10 @@ export type RetrievalTrace = {
   ol_queries:           string[];
   hygiene_excluded:     number;
   enriched_count:       number;
+  // Dense-import mode debug (present when det_lanes.is_dense_import = true)
+  dense_import_mode?:    boolean;
+  detected_lanes?:       string[];  // dominant lanes detected from reading history
+  repeated_authors_used?: string[]; // repeated-author anchors used in retrieval
 };
 
 export type RankedRecsResult = {
@@ -190,6 +195,39 @@ const GENRE_OL_SUBJECTS: Record<string, [string, string]> = {
   literary:         ['literary fiction',        'contemporary literary fiction'],
   general:          ['contemporary fiction',    'popular fiction'],
 };
+
+// ── Dense-import lane → OL subject mapping ─────────────────────────────────────
+// Used exclusively in dense-import mode where dominant reading lanes are known.
+// More specific than GENRE_OL_SUBJECTS — avoids literary / canon drift entirely
+// unless 'literary' is actually a dominant lane for this user.
+
+const DENSE_LANE_OL_SUBJECTS: Record<DeterministicLane, [string, string]> = {
+  romantasy:            ['romantasy',                     'fantasy romance'],
+  contemporary_fiction: ["women's fiction",               'book club fiction'],
+  modern_suspense:      ['psychological thriller',         'domestic thriller'],
+  memoir_nonfiction:    ['personal memoirs',               'narrative nonfiction'],
+  literary:             ['literary fiction',               'contemporary literary fiction'],
+  scifi_fantasy:        ['epic fantasy',                   'dystopian fiction'],
+  romance:              ['contemporary romance',           'romance fiction'],
+  horror:               ['horror fiction',                 'supernatural fiction'],
+};
+
+// Lane-aware reason templates — shown instead of generic trait-match lines
+const LANE_REASON: Record<DeterministicLane, string> = {
+  romantasy:            'Feels adjacent to the fantasy series you repeatedly complete',
+  contemporary_fiction: 'Fits your pattern of emotionally driven contemporary fiction',
+  modern_suspense:      'Matches the twisty, readable suspense you rate highly',
+  memoir_nonfiction:    'Sits close to the narrative nonfiction you consistently enjoy',
+  literary:             'Aligns with the literary fiction that appears in your reading history',
+  scifi_fantasy:        'Fits the speculative fiction you return to most often',
+  romance:              'Similar to the emotionally driven romance you rate highly',
+  horror:               'Fits the horror fiction you have consistently enjoyed',
+};
+
+// Commercial lanes — used for the modern-commercial-prior boost in Step 7
+const COMMERCIAL_LANES = new Set<DeterministicLane>([
+  'romantasy', 'contemporary_fiction', 'modern_suspense', 'romance',
+]);
 
 // ── Subjects that are too noisy to use as retrieval anchors ───────────────────
 const GENERIC_RETRIEVAL_SUBJECTS = new Set([
@@ -522,34 +560,8 @@ async function getOLCandidates(
   excludeExternalIds: Set<string>,
 ): Promise<OLResult> {
   const affinities = profile.genre_affinities ?? {};
-
-  // ── 1. Top 3 genre affinities ─────────────────────────────────────────────
-  let topGenres = Object.entries(affinities)
-    .filter(([, score]) => score > 0)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([g]) => g);
-
-  // Fallback: infer from trait preferences if no rated genres yet
-  if (topGenres.length === 0) {
-    const pref = profile.preferred_traits;
-    if ((pref['Insight'] ?? 0) + (pref['Evidence'] ?? 0) > 0.4)
-      topGenres = ['nonfiction', 'memoir_bio'];
-    else if ((pref['Suspense'] ?? 0) + (pref['Pacing'] ?? 0) > 0.5)
-      topGenres = ['thriller_mystery'];
-    else if ((pref['Worldbuilding'] ?? 0) > 0.4)
-      topGenres = ['fantasy_scifi'];
-    else
-      topGenres = ['literary'];
-  }
-
-  // ── 2. Top 3 liked subjects (filter out noise) ────────────────────────────
-  const likedSubjectAnchors = (profile.liked_subjects ?? [])
-    .filter(s => !GENERIC_RETRIEVAL_SUBJECTS.has(s.toLowerCase()))
-    .slice(0, 3);
-
-  // ── 3. Top 1 liked author ─────────────────────────────────────────────────
-  const likedAuthorAnchor = (profile.liked_authors ?? []).slice(0, 1);
+  const det        = profile.det_lanes;
+  const isDense    = !!(det?.is_dense_import && (det.dominant_lanes.length > 0 || det.repeated_liked_authors.length > 0));
 
   // ── Build fetch plan ──────────────────────────────────────────────────────
   type FetchItem =
@@ -559,23 +571,84 @@ async function getOLCandidates(
   const plan: FetchItem[] = [];
   const ol_queries: string[] = [];
 
-  // Genre anchors — 2 specific subjects per genre
-  for (const genre of topGenres) {
-    const [s1, s2] = GENRE_OL_SUBJECTS[genre] ?? ['contemporary fiction', 'literary fiction'];
-    plan.push({ kind: 'subject', value: s1, reason: `genre:${genre}` });
-    if (plan.length < 8) plan.push({ kind: 'subject', value: s2, reason: `genre:${genre}` });
-  }
+  if (isDense && det) {
+    // ── Dense-import mode ─────────────────────────────────────────────────
+    // Primary: up to 3 repeated-liked authors (strongest signal — user reads
+    //   the same author repeatedly, which OL author search handles well).
+    // Secondary: OL subjects derived ONLY from dominant lanes (no literary
+    //   fallback unless 'literary' is genuinely a dominant lane for this user).
+    // This prevents the "canon tolerance → canon retrieval" failure mode.
 
-  // Subject anchors from liked books
-  for (const s of likedSubjectAnchors) {
-    if (plan.length >= 10) break;
-    plan.push({ kind: 'subject', value: s, reason: `liked_subject:${s}` });
-  }
+    for (const author of det.repeated_liked_authors.slice(0, 3)) {
+      plan.push({ kind: 'author', value: author, reason: `repeated_author:${author}` });
+    }
 
-  // Author anchor
-  for (const a of likedAuthorAnchor) {
-    if (plan.length >= 11) break;
-    plan.push({ kind: 'author', value: a, reason: `author_anchor:${a}` });
+    for (const lane of det.dominant_lanes.slice(0, 3)) {
+      const [s1, s2] = DENSE_LANE_OL_SUBJECTS[lane] ?? [];
+      if (s1) plan.push({ kind: 'subject', value: s1, reason: `lane:${lane}` });
+      if (s2 && plan.length < 10) plan.push({ kind: 'subject', value: s2, reason: `lane:${lane}` });
+    }
+
+    // Fallback if completely empty (should rarely happen)
+    if (plan.length === 0) {
+      const likedSubjectAnchors = (profile.liked_subjects ?? [])
+        .filter(s => !GENERIC_RETRIEVAL_SUBJECTS.has(s.toLowerCase()))
+        .slice(0, 3);
+      for (const s of likedSubjectAnchors) {
+        plan.push({ kind: 'subject', value: s, reason: `liked_subject:${s}` });
+      }
+    }
+
+  } else {
+    // ── Standard multi-anchor retrieval ───────────────────────────────────
+    // ── 1. Top 3 genre affinities ─────────────────────────────────────────
+    let topGenres = Object.entries(affinities)
+      .filter(([, score]) => score > 0)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([g]) => g);
+
+    // Fallback: infer from trait preferences if no rated genres yet.
+    // NOTE: fallback is 'general' (contemporary/popular fiction) — NOT 'literary',
+    // which was causing Hemingway/Rand/Chandler drift for blank-affinity users.
+    if (topGenres.length === 0) {
+      const pref = profile.preferred_traits;
+      if ((pref['Insight'] ?? 0) + (pref['Evidence'] ?? 0) > 0.4)
+        topGenres = ['nonfiction', 'memoir_bio'];
+      else if ((pref['Suspense'] ?? 0) + (pref['Pacing'] ?? 0) > 0.5)
+        topGenres = ['thriller_mystery'];
+      else if ((pref['Worldbuilding'] ?? 0) > 0.4)
+        topGenres = ['fantasy_scifi'];
+      else
+        topGenres = ['general'];  // was 'literary' — now defaults to contemporary/popular fiction
+    }
+
+    // ── 2. Top 3 liked subjects (filter out noise) ────────────────────────
+    const likedSubjectAnchors = (profile.liked_subjects ?? [])
+      .filter(s => !GENERIC_RETRIEVAL_SUBJECTS.has(s.toLowerCase()))
+      .slice(0, 3);
+
+    // ── 3. Top 1 liked author ─────────────────────────────────────────────
+    const likedAuthorAnchor = (profile.liked_authors ?? []).slice(0, 1);
+
+    // Genre anchors — 2 specific subjects per genre
+    for (const genre of topGenres) {
+      const [s1, s2] = GENRE_OL_SUBJECTS[genre] ?? ['contemporary fiction', 'popular fiction'];
+      plan.push({ kind: 'subject', value: s1, reason: `genre:${genre}` });
+      if (plan.length < 8) plan.push({ kind: 'subject', value: s2, reason: `genre:${genre}` });
+    }
+
+    // Subject anchors from liked books
+    for (const s of likedSubjectAnchors) {
+      if (plan.length >= 10) break;
+      plan.push({ kind: 'subject', value: s, reason: `liked_subject:${s}` });
+    }
+
+    // Author anchor
+    for (const a of likedAuthorAnchor) {
+      if (plan.length >= 11) break;
+      plan.push({ kind: 'author', value: a, reason: `author_anchor:${a}` });
+    }
   }
 
   // ── Execute fetch plan (parallel) ─────────────────────────────────────────
@@ -603,12 +676,21 @@ async function getOLCandidates(
     }
   }
 
+  // Extract trace metadata from the plan items
+  const top_genres_used     = isDense
+    ? []
+    : plan.filter(i => i.reason.startsWith('genre:')).map(i => i.reason.slice(6)).filter((v, i, a) => a.indexOf(v) === i);
+  const liked_subjects_used = plan.filter(i => i.reason.startsWith('liked_subject:')).map(i => i.value);
+  const liked_authors_used  = isDense
+    ? plan.filter(i => i.reason.startsWith('repeated_author:')).map(i => i.value)
+    : plan.filter(i => i.reason.startsWith('author_anchor:')).map(i => i.value);
+
   return {
     candidates:          merged,
     ol_queries,
-    top_genres_used:     topGenres,
-    liked_subjects_used: likedSubjectAnchors,
-    liked_authors_used:  likedAuthorAnchor,
+    top_genres_used,
+    liked_subjects_used,
+    liked_authors_used,
   };
 }
 
@@ -927,6 +1009,67 @@ export function scoreBookForUser(
     s6_meta_pen -= 0.06;
   }
 
+  // ── Step 7: Dense-import lane calibration ─────────────────────────────────
+  // For users with a well-established repeated reading pattern, penalise books
+  // that sit outside their dominant lanes and replace generic trait-match
+  // reasons with lane-aware language.
+  //
+  // Key rules:
+  //   • Literary / canon drift   → hard penalty when literary is NOT a dominant lane
+  //   • Hard-boiled noir drift   → hard penalty when user's mystery subtype is contemporary_thriller
+  //   • Philosophy / spiritual   → penalty when user's dominant lanes are commercial
+  //   • Modern commercial prior  → small boost when book matches commercial dominant lane
+  const det = profile.det_lanes;
+  if (det?.dominant_lanes && det.dominant_lanes.length > 0) {
+    const bookLane = detectBookLane(book);
+
+    // Lane-aware explanation (replaces generic trait-match text when available)
+    if (bookLane && det.dominant_lanes.includes(bookLane)) {
+      const laneReason = LANE_REASON[bookLane];
+      if (laneReason) {
+        reasons.unshift(laneReason);
+      }
+    }
+
+    // ── Literary / classic drift penalty ────────────────────────────────────
+    // If the book is literary and the user's dominant lanes are commercial, penalise.
+    const bookIsLiterary = bookLane === 'literary'
+      || bt.primaryGenre === 'literary'
+      || subjLower.includes('literary fiction');
+    const userHasLiteraryLane = det.dominant_lanes.includes('literary');
+    if (bookIsLiterary && !userHasLiteraryLane && det.commercial_prior > 0.5) {
+      s6_meta_pen -= 0.18;
+      audit_flags.push('literary_drift');
+      if (risks.length < 1) risks.push('Leans more literary than your strongest recurring reads');
+    }
+
+    // ── Hard-boiled noir penalty for contemporary-thriller users ────────────
+    if (det.mystery_subtype === 'contemporary_thriller') {
+      const bookSubtype = detectBookMysterySubtype(book);
+      if (bookSubtype === 'hard_boiled_noir') {
+        s6_meta_pen -= 0.20;
+        audit_flags.push('noir_drift');
+        if (risks.length < 1) risks.push('Hard-boiled noir — different feel from the modern suspense you rate highest');
+      }
+    }
+
+    // ── Philosophy / spiritual drift penalty ────────────────────────────────
+    // Spiritual memoir (e.g. Autobiography of a Yogi) contaminates memoir lanes;
+    // philosophy contaminates literary lanes — penalise unless user explicitly has
+    // those as dominant lanes.
+    const isPhi = isPhilosophyOrSpiritual(book);
+    if (isPhi && !det.dominant_lanes.includes('memoir_nonfiction') && !det.dominant_lanes.includes('literary')) {
+      s6_meta_pen -= 0.15;
+      audit_flags.push('philosophy_drift');
+      if (risks.length < 1) risks.push('Philosophical or spiritual focus — different territory from your usual reads');
+    }
+
+    // ── Modern commercial prior — small boost ────────────────────────────────
+    if (bookLane && COMMERCIAL_LANES.has(bookLane as DeterministicLane) && det.commercial_prior > 0.6) {
+      s6_meta_pen = Math.min(0, s6_meta_pen) + 0.05;
+    }
+  }
+
   // ── Final score ───────────────────────────────────────────────────────────
   const rawScore   = s1_trait + s2_avoid + s3_genre + s4_feed + s5_enr + s6_meta_pen;
   const finalScore = Math.max(0, Math.min(1, rawScore));
@@ -1122,14 +1265,23 @@ export async function getCandidateBooks(
     });
   }
 
+  const det = profile.det_lanes;
+  const isDense = !!(det?.is_dense_import && det.dominant_lanes.length > 0);
+
   const retrieval_trace: RetrievalTrace = {
-    top_genres_used:     olResult.top_genres_used,
+    top_genres_used:      olResult.top_genres_used,
     top_traits_used,
-    liked_subjects_used: olResult.liked_subjects_used,
-    liked_authors_used:  olResult.liked_authors_used,
-    ol_queries:          olResult.ol_queries,
-    hygiene_excluded:    hygiene.excluded,
-    enriched_count:      enrichmentMap.size,
+    liked_subjects_used:  olResult.liked_subjects_used,
+    liked_authors_used:   olResult.liked_authors_used,
+    ol_queries:           olResult.ol_queries,
+    hygiene_excluded:     hygiene.excluded,
+    enriched_count:       enrichmentMap.size,
+    // Dense-import mode debug
+    ...(isDense && det ? {
+      dense_import_mode:    true,
+      detected_lanes:       det.dominant_lanes,
+      repeated_authors_used: det.repeated_liked_authors.slice(0, 3),
+    } : {}),
   };
 
   return { candidates: filtered, enrichmentMap, retrieval_trace };

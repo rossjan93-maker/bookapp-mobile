@@ -259,6 +259,134 @@ export function assessMetadataQuality(book: {
   return 'weak';
 }
 
+// ── Deterministic reading lane types ──────────────────────────────────────────
+// Used by the dense-import engine to build and compare user reading patterns.
+// A "lane" is a meaningful cluster of repeated reading behaviour, coarser than
+// genre (romantasy bundles fantasy + romance elements; modern_suspense bundles
+// domestic thrillers, psychological thrillers, and contemporary mysteries).
+
+export type DeterministicLane =
+  | 'romantasy'            // fantasy × romance / emotional fantasy series
+  | 'contemporary_fiction' // book-club women's fiction / contemporary emotional
+  | 'modern_suspense'      // psychological thriller / domestic thriller / puzzle mystery
+  | 'memoir_nonfiction'    // memoir / autobiography / narrative nonfiction
+  | 'literary'             // literary fiction with craft/prose focus
+  | 'scifi_fantasy'        // epic/spec fantasy, science fiction (no romance element)
+  | 'romance'              // contemporary or historical romance (no fantasy element)
+  | 'horror';              // horror / dark supernatural
+
+export type MysterySubtype =
+  | 'contemporary_thriller' // psychological thriller, domestic thriller, modern suspense
+  | 'puzzle_detective'      // cozy, whodunit, amateur detective, classic puzzle
+  | 'hard_boiled_noir';     // noir, hard-boiled, private detective (Chandler style)
+
+// ── Lane detection for a single book ─────────────────────────────────────────
+// Priority order: romantasy → scifi_fantasy → modern_suspense → romance →
+//   memoir_nonfiction → literary → contemporary_fiction → horror
+// Returns null when there is insufficient subject signal to classify.
+
+export function detectBookLane(book: {
+  subjects?: string[] | null;
+  title?:    string | null;
+  author?:   string | null;
+}): DeterministicLane | null {
+  const corpus = [
+    ...(book.subjects ?? []),
+    book.title  ?? '',
+    book.author ?? '',
+  ].join(' ').toLowerCase();
+
+  const has = (...terms: string[]) => terms.some(t => corpus.includes(t));
+
+  const hasFantasy  = has('fantasy', 'magic', 'fae', 'fey', 'romantasy', 'dragons', 'witch', 'sorcerer', 'spellbinding');
+  const hasRomance  = has('romance', 'romantic', 'love story', 'chick lit', "women's fiction", 'contemporary romance', 'historical romance', 'love interest');
+  const hasSeries   = has('series', 'trilogy', 'book 1', 'book 2');
+
+  // Romantasy: fantasy + romance elements co-present
+  if (hasFantasy && hasRomance) return 'romantasy';
+  // Strong series fantasy (like Maas, Hobb) without romance subjects
+  if (hasFantasy && has('epic fantasy', 'high fantasy', 'sword', 'realm', 'kingdom', 'elves', 'orcs')) return 'scifi_fantasy';
+  if (hasFantasy) return 'scifi_fantasy';
+
+  // Science fiction / speculative
+  if (has('science fiction', 'sci-fi', 'sci fi', 'dystopian', 'speculative fiction', 'space opera', 'cyberpunk', 'alternate history')) return 'scifi_fantasy';
+
+  // Hard-boiled noir — check before generic modern_suspense
+  if (has('hard-boiled', 'hard boiled', 'noir', 'private detective', 'private investigator', 'pulp fiction')) return 'modern_suspense';
+
+  // Thriller / suspense family
+  if (has('psychological thriller', 'domestic thriller', 'psychological suspense', 'suspense fiction', 'legal thriller', 'medical thriller')) return 'modern_suspense';
+  if (has('mystery fiction', 'mystery thriller', 'crime thriller', 'whodunit', 'cozy mystery', 'amateur detective')) return 'modern_suspense';
+  if (has('thriller') && !has('historical thriller', 'literary thriller')) return 'modern_suspense';
+
+  // Romance (no fantasy)
+  if (hasRomance) return 'romance';
+
+  // Memoir / narrative nonfiction
+  if (has('memoir', 'autobiography', 'personal memoir', 'narrative nonfiction', 'creative nonfiction', 'personal narrative', 'autobiographical')) return 'memoir_nonfiction';
+  if (has('biography') && !has('political biography', 'scientific biography')) return 'memoir_nonfiction';
+
+  // Literary (strong signal required — not just "fiction" or "contemporary fiction")
+  if (has('literary fiction', 'literary novel', 'literary thriller', 'man booker', 'booker prize', 'national book award')) return 'literary';
+
+  // Contemporary fiction / book club
+  if (has('book club', 'book-club', 'contemporary fiction', 'domestic fiction', 'general fiction', 'popular fiction')) return 'contemporary_fiction';
+  if (hasSeries && has('fiction')) return 'contemporary_fiction';
+
+  // Horror
+  if (has('horror', 'supernatural horror', 'gothic horror', 'occult', 'paranormal')) return 'horror';
+
+  return null;
+}
+
+// ── Mystery subtype detection for a book ─────────────────────────────────────
+// Used in scoring to penalise hard-boiled/noir books for contemporary-thriller
+// oriented users (Horowitz/Foley reader ≠ Chandler reader).
+
+export function detectBookMysterySubtype(book: {
+  subjects?: string[] | null;
+  title?:    string | null;
+}): MysterySubtype | null {
+  const corpus = [
+    ...(book.subjects ?? []),
+    book.title ?? '',
+  ].join(' ').toLowerCase();
+
+  const has = (...terms: string[]) => terms.some(t => corpus.includes(t));
+
+  if (has('hard-boiled', 'hard boiled', 'noir', 'private detective', 'private investigator', 'pulp fiction')) return 'hard_boiled_noir';
+  if (has('cozy mystery', 'cozy', 'amateur detective', 'whodunit', 'puzzle mystery', 'classic detective', 'village mystery')) return 'puzzle_detective';
+  if (has('psychological thriller', 'domestic thriller', 'psychological suspense')) return 'contemporary_thriller';
+  if (has('thriller') && !has('historical', 'literary', 'espionage', 'spy')) return 'contemporary_thriller';
+  if (has('mystery') && has('contemporary', 'modern', 'current')) return 'contemporary_thriller';
+  return null;
+}
+
+// ── Philosophy / spiritual detection ──────────────────────────────────────────
+// Used to penalise philosophy / spiritual drift for readers whose primary lane
+// is memoir or commercial fiction (biography ≠ philosophy; autobiography ≠ yoga).
+
+export function isPhilosophyOrSpiritual(book: {
+  subjects?: string[] | null;
+  title?:    string | null;
+}): boolean {
+  const corpus = [
+    ...(book.subjects ?? []),
+    book.title ?? '',
+  ].join(' ').toLowerCase();
+
+  const has = (...terms: string[]) => terms.some(t => corpus.includes(t));
+
+  return has(
+    'philosophy', 'philosophical', 'phenomenology', 'metaphysics',
+    'existentialism', 'ethics', 'epistemology',
+    'spiritual', 'spirituality', 'meditation', 'yoga', 'mindfulness',
+    'hinduism', 'buddhism', 'zen', 'taoism', 'sufism', 'theosophy',
+    'eastern philosophy', 'western philosophy', 'self-realization',
+    'autobiography of a yogi',
+  );
+}
+
 // ── Main extractor ─────────────────────────────────────────────────────────────
 
 export function getBookTraits(book: {

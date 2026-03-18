@@ -1,0 +1,130 @@
+The free deterministic recommendation engine is still not truthful enough for dense Goodreads-imported users.
+
+Evidence
+For a Goodreads-heavy user with strong repeated modern commercial reading patterns, the free layer is still surfacing books like:
+- Casino Royale
+- The Big Sleep
+- Anthem
+- The Sun Also Rises
+- Autobiography of a Yogi
+
+These are not good deterministic fits for this user’s actual reading center of gravity.
+
+This user’s real profile
+From the Goodreads import, this user shows strong repeated signals around:
+- Sarah J. Maas
+- Caroline Peckham
+- Elin Hilderbrand
+- Robin Hobb
+- Anthony Horowitz
+- Colleen Hoover
+- Lucy Foley
+- Rebecca Yarros
+- Holly Black
+
+The real lanes are:
+1. romantasy / emotional fantasy
+2. contemporary women’s fiction / book-club crossover
+3. modern suspense / domestic thriller / clever contemporary mystery
+4. smaller memoir / narrative nonfiction lane
+
+Important rule
+The free engine must understand:
+“canon tolerance is not canon preference.”
+
+A few well-rated classics or literary books must NOT unlock broad literary/canon/noir/philosophy/spiritual recs.
+
+Goal
+Make the deterministic free recommendation engine credible and truthy for dense imported users even before premium expert reasoning.
+
+What to change
+
+Part 1: Add a dense-import deterministic mode
+For users with large imported history, switch the free engine to a stricter deterministic mode that prioritizes:
+- repeated authors
+- repeated high-rated authors
+- repeated series completion
+- repeated high-rated subgenre clusters
+- modern commercial reading patterns
+
+This mode should not behave like the current broad trait/genre blend.
+
+Part 2: Lane-first deterministic retrieval
+Build deterministic lanes from repeated reading behavior.
+
+For this kind of user, likely lanes are:
+- romantasy / emotional fantasy
+- contemporary emotional/book-club fiction
+- modern suspense / thriller / puzzle mystery
+- memoir / narrative nonfiction
+
+Retrieve candidates within those lanes first, then rank across them.
+
+Do NOT let broad literary/canon spillover dominate retrieval.
+
+Part 3: Strong exception handling
+Implement explicit logic:
+- isolated highly rated classics are exceptions, not dominant preferences
+- a few literary/canon titles do not justify Hemingway/Ayn Rand style recommendations
+- memoir tolerance does not justify spiritual memoir/philosophy leakage
+- Horowitz-style mystery does not justify hard-boiled noir by default
+
+Part 4: Add a modern commercial prior in free mode
+If the user repeatedly reads modern commercially successful fiction with:
+- relationship/emotional stakes
+- readable prose
+- series depth
+- suspense/book-club crossover patterns
+
+Then free mode should bias toward books with similar market position and reading feel.
+
+This should down-rank:
+- classic/public-domain/canon spillover
+- older male literary drift
+- philosophical/spiritual drift
+- hard-boiled noir unless explicitly supported
+
+Part 5: Rework mystery handling
+Do not treat all mystery as equivalent.
+Separate:
+- contemporary suspense/domestic thriller
+- puzzle/meta-detective mystery
+- hard-boiled noir
+
+A user liking Anthony Horowitz and Lucy Foley should not automatically get Raymond Chandler.
+
+Part 6: Better deterministic explanations
+Free-mode explanations should stop using overly generic lines like:
+- “Aligns with your preference for characters and ending”
+- “Matches your appreciation for originality”
+
+Instead use lane-aware deterministic language like:
+- “Feels adjacent to the fantasy series you repeatedly complete”
+- “Fits your pattern of emotionally driven contemporary fiction”
+- “Matches the twisty, readable suspense you rate highly”
+- “Sits closer to your strongest recurring authors than to your one-off exceptions”
+
+Part 7: Hard penalties
+In free mode, add stronger penalties for:
+- canon/classic drift when classics are not a repeated lane
+- public-domain spillover
+- philosophy/spiritual drift
+- hard-boiled noir when user mystery preference is modern/commercial
+- recommendations driven mainly by isolated exception books
+
+Part 8: Debug output
+For dense imported users, show in debug mode:
+- detected deterministic lanes
+- repeated authors used
+- repeated series used
+- whether a classic/canon penalty was applied
+- whether a recommendation came from dominant-lane evidence or exception leakage
+
+Part 9: Output
+1. Explain the root cause of the current free-engine failures
+2. List changed files
+3. Show the dense-import deterministic mode logic
+4. Show how lanes are built
+5. Show the exception-handling rules
+6. Show how explanations changed
+7. Call out any remaining metadata limits

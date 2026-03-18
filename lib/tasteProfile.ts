@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { detectGenre }          from './bookTraits';
+import { detectGenre, detectBookLane, detectBookMysterySubtype } from './bookTraits';
+import type { DeterministicLane, MysterySubtype } from './bookTraits';
 
 // =============================================================================
 // Taste Profile — recommendation confidence model
@@ -47,6 +48,7 @@ export type TasteProfile = {
   evidence:          TasteProfileEvidence;
   strongSignalCount: number;
   nextTierAt:        number;
+  det_lanes?:        DeterministicLanes;  // populated for dense-import users
 };
 
 export type RecommendationExplanation = {
@@ -55,6 +57,20 @@ export type RecommendationExplanation = {
   why_it_fits:         string[];
   aligned_preferences: string[];
   risk_or_mismatch:    string | null;
+};
+
+// ── Deterministic lanes (built from dense import history) ─────────────────────
+// Exported so the recommender can use them for retrieval and scoring.
+
+export type { DeterministicLane, MysterySubtype } from './bookTraits';
+
+export type DeterministicLanes = {
+  is_dense_import:        boolean;      // ≥20 imported books
+  dominant_lanes:         DeterministicLane[]; // lanes with ≥3 loved reads (dense) or ≥2 (light)
+  repeated_liked_authors: string[];     // authors with ≥2 loved (4+★) books, lowercase
+  exception_authors:      string[];     // authors with exactly 1 loved book — tolerance, not preference
+  mystery_subtype:        MysterySubtype | null;
+  commercial_prior:       number;       // 0–1 fraction of dominant lanes that are modern-commercial
 };
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
@@ -251,6 +267,98 @@ function buildLikedAnchors(
   return { liked_subjects, liked_authors: liked_authors.slice(0, 5) };
 }
 
+// ── Deterministic lanes from repeated reading patterns ─────────────────────────
+//
+// Builds the DeterministicLanes struct from the user's loved (4+★) finished
+// books. Only meaningful for dense-import users (≥20 imported books).
+//
+// Key principle — "canon tolerance is not canon preference":
+//   A single loved classic / literary book is an *exception*, not a lane.
+//   We require ≥2 loved books in a lane (≥3 for dense imports) before we
+//   treat it as a dominant lane that should drive retrieval and scoring.
+//
+// Mystery subtype:
+//   We tally hard_boiled_noir vs contemporary_thriller vs puzzle_detective
+//   from loved mystery books to distinguish Chandler-style readers from
+//   Foley/Horowitz-style readers.
+
+const COMMERCIAL_LANES = new Set<DeterministicLane>([
+  'romantasy', 'contemporary_fiction', 'modern_suspense', 'romance',
+]);
+
+function buildDeterministicLanes(
+  rows:     FinishedBookRow[],
+  evidence: TasteProfileEvidence,
+): DeterministicLanes {
+  const isDenseImport = evidence.imported_books_count >= 20;
+
+  const authorFreq: Record<string, number> = {};
+  const laneFreq:   Partial<Record<DeterministicLane, number>> = {};
+  const mysterySubtypeCounts: Partial<Record<MysterySubtype, number>> = {};
+
+  for (const row of rows) {
+    if ((row.rating ?? 0) < 4 || !row.book) continue;
+
+    const authorRaw = (row.book.author ?? '').trim();
+    const authorKey = authorRaw.toLowerCase();
+    if (!authorRaw || /^unknown/i.test(authorRaw)) continue;
+
+    authorFreq[authorKey] = (authorFreq[authorKey] ?? 0) + 1;
+
+    const lane = detectBookLane({ subjects: row.book.subjects, title: row.book.title, author: authorRaw });
+    if (lane) {
+      laneFreq[lane] = (laneFreq[lane] ?? 0) + 1;
+    }
+
+    // Mystery subtype tracking — only for books in the suspense family
+    if (lane === 'modern_suspense' || (row.book.subjects ?? []).join(' ').toLowerCase().includes('mystery')) {
+      const subtype = detectBookMysterySubtype({ subjects: row.book.subjects, title: row.book.title });
+      if (subtype) {
+        mysterySubtypeCounts[subtype] = (mysterySubtypeCounts[subtype] ?? 0) + 1;
+      }
+    }
+  }
+
+  // Repeated liked authors: appeared ≥2 times in loved (4+★) books
+  const repeated_liked_authors = Object.entries(authorFreq)
+    .filter(([, c]) => c >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([a]) => a);
+
+  // Exception authors: appeared exactly once (loved as one-off, not a pattern)
+  const exception_authors = Object.entries(authorFreq)
+    .filter(([, c]) => c === 1)
+    .map(([a]) => a);
+
+  // Dominant lanes — stricter threshold for dense imports
+  const laneThreshold = isDenseImport ? 3 : 2;
+  const dominant_lanes = (Object.entries(laneFreq) as [DeterministicLane, number][])
+    .filter(([, c]) => c >= laneThreshold)
+    .sort((a, b) => b[1] - a[1])
+    .map(([l]) => l);
+
+  // Mystery subtype — dominant one wins
+  const mystery_subtype = Object.keys(mysterySubtypeCounts).length > 0
+    ? (Object.entries(mysterySubtypeCounts)
+        .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))[0][0] as MysterySubtype)
+    : null;
+
+  // Commercial prior — fraction of dominant lanes that are modern-commercial
+  const commercial_prior = dominant_lanes.length > 0
+    ? dominant_lanes.filter(l => COMMERCIAL_LANES.has(l)).length / dominant_lanes.length
+    : 0;
+
+  return {
+    is_dense_import: isDenseImport,
+    dominant_lanes,
+    repeated_liked_authors,
+    exception_authors,
+    mystery_subtype,
+    commercial_prior,
+  };
+}
+
 // ── Genre affinities from rated finished books ─────────────────────────────────
 
 function buildGenreAffinities(rows: FinishedBookRow[]): Record<string, number> {
@@ -376,6 +484,9 @@ export async function computeTasteProfile(
   const isDenseGoodreadsUser = evidence.imported_books_count >= 20;
   const { liked_subjects, liked_authors } = buildLikedAnchors(finishedRatedRows, isDenseGoodreadsUser);
 
+  // Deterministic lanes — built for all users; only has teeth for dense-import users
+  const det_lanes = buildDeterministicLanes(finishedRatedRows, evidence);
+
   const open_questions = deriveOpenQuestions(evidence, preferred_traits);
 
   return {
@@ -391,6 +502,7 @@ export async function computeTasteProfile(
     evidence,
     strongSignalCount,
     nextTierAt: nextAt,
+    det_lanes,
   };
 }
 

@@ -1742,6 +1742,21 @@ export default function RecommendationsScreen() {
                           </View>
 
                           {/* Anchors used */}
+                          {recsMeta.retrieval_trace.dense_import_mode && (
+                            <View style={{ marginBottom: 8, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#e7e5e4' }}>
+                              <Text style={{ fontSize: 9, fontWeight: '600', color: '#2563eb', marginBottom: 3 }}>DENSE-IMPORT MODE</Text>
+                              {(recsMeta.retrieval_trace.detected_lanes ?? []).length > 0 && (
+                                <Text style={{ fontSize: 9, color: '#57534e', lineHeight: 14, marginBottom: 2 }}>
+                                  lanes: {(recsMeta.retrieval_trace.detected_lanes ?? []).join('  ·  ')}
+                                </Text>
+                              )}
+                              {(recsMeta.retrieval_trace.repeated_authors_used ?? []).length > 0 && (
+                                <Text style={{ fontSize: 9, color: '#57534e', lineHeight: 14 }}>
+                                  repeated authors: {(recsMeta.retrieval_trace.repeated_authors_used ?? []).join('  ·  ')}
+                                </Text>
+                              )}
+                            </View>
+                          )}
                           {recsMeta.retrieval_trace.top_genres_used.length > 0 && (
                             <View style={{ marginBottom: 6 }}>
                               <Text style={{ fontSize: 9, fontWeight: '600', color: '#a8a29e', marginBottom: 2 }}>GENRE ANCHORS</Text>
