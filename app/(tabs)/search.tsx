@@ -119,6 +119,279 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+// ─── Tag constants ────────────────────────────────────────────────────────────
+
+const TASTE_TAGS = [
+  'Pacing', 'Characters', 'Plot', 'Worldbuilding', 'Writing',
+  'Emotional', 'Romance', 'Suspense', 'Ending', 'Originality',
+] as const;
+
+// ─── TagPanel — shared chip renderer for both groups ─────────────────────────
+
+function TagPanel({
+  likedTags,
+  dislikedTags,
+  onLikedChange,
+  onDislikedChange,
+}: {
+  likedTags: string[];
+  dislikedTags: string[];
+  onLikedChange: (tags: string[]) => void;
+  onDislikedChange: (tags: string[]) => void;
+}) {
+  function toggle(tag: string, group: 'liked' | 'disliked') {
+    if (group === 'liked') {
+      const sel = likedTags.includes(tag);
+      onLikedChange(sel ? likedTags.filter(t => t !== tag) : [...likedTags, tag]);
+      onDislikedChange(dislikedTags.filter(t => t !== tag));
+    } else {
+      const sel = dislikedTags.includes(tag);
+      onDislikedChange(sel ? dislikedTags.filter(t => t !== tag) : [...dislikedTags, tag]);
+      onLikedChange(likedTags.filter(t => t !== tag));
+    }
+  }
+
+  return (
+    <>
+      {(['Loved about it', "Didn't land"] as const).map(groupLabel => {
+        const isLiked  = groupLabel === 'Loved about it';
+        const selected = isLiked ? likedTags : dislikedTags;
+        return (
+          <View key={groupLabel} style={{ marginBottom: 14 }}>
+            <Text style={{
+              fontSize: 11, fontWeight: '700', color: '#a8a29e',
+              letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 8,
+            }}>
+              {groupLabel}
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {TASTE_TAGS.map(tag => {
+                const isSel = selected.includes(tag);
+                return (
+                  <TouchableOpacity
+                    key={tag}
+                    onPress={() => toggle(tag, isLiked ? 'liked' : 'disliked')}
+                    style={{
+                      paddingHorizontal: 11,
+                      paddingVertical: 6,
+                      borderRadius: 20,
+                      backgroundColor: isSel ? '#1c1917' : '#f5f5f4',
+                      borderWidth: 1,
+                      borderColor: isSel ? '#1c1917' : '#e7e5e4',
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, color: isSel ? '#fff' : '#57534e', fontWeight: isSel ? '600' : '400' }}>
+                      {tag}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        );
+      })}
+    </>
+  );
+}
+
+// ─── RateCard — inline star rating + tag transition ───────────────────────────
+
+type RateCardProps = { book: BookToRate; onComplete: (id: string) => void };
+
+function RateCard({ book, onComplete }: RateCardProps) {
+  const [mode, setMode]                   = useState<'rate' | 'tagging'>('rate');
+  const [pendingRating, setPendingRating] = useState(0);
+  const [saving, setSaving]               = useState(false);
+  const [likedTags, setLikedTags]         = useState<string[]>([]);
+  const [dislikedTags, setDislikedTags]   = useState<string[]>([]);
+  const [savingTags, setSavingTags]       = useState(false);
+
+  async function handleRate(star: number) {
+    if (!supabase || saving) return;
+    setSaving(true);
+    setPendingRating(star);
+    const { error } = await supabase
+      .from('user_books')
+      .update({ rating: star })
+      .eq('id', book.id);
+    setSaving(false);
+    if (!error) setMode('tagging');
+  }
+
+  async function handleSaveTags() {
+    if (!supabase || savingTags) return;
+    setSavingTags(true);
+    if (likedTags.length > 0 || dislikedTags.length > 0) {
+      await supabase
+        .from('user_books')
+        .update({ taste_tags: { liked: likedTags, didnt_work: dislikedTags } })
+        .eq('id', book.id);
+    }
+    setSavingTags(false);
+    onComplete(book.id);
+  }
+
+  const card = {
+    backgroundColor: '#fff', borderRadius: 12, overflow: 'hidden' as const,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 }, elevation: 1,
+  };
+
+  if (mode === 'rate') {
+    return (
+      <View style={card}>
+        <View style={{ padding: 12, flexDirection: 'row', alignItems: 'center' }}>
+          <CoverThumb url={book.cover_url} externalId={book.external_id} title={book.title} width={36} height={52} />
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 2 }} numberOfLines={1}>
+              {book.title}
+            </Text>
+            <Text style={{ fontSize: 12, color: '#a8a29e', marginBottom: 8 }} numberOfLines={1}>
+              {book.author}
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 4 }}>
+              {[1, 2, 3, 4, 5].map(star => (
+                <TouchableOpacity
+                  key={star}
+                  onPress={() => handleRate(star)}
+                  disabled={saving}
+                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                >
+                  <Text style={{ fontSize: 24, color: star <= pendingRating ? '#f59e0b' : '#d6d3d1' }}>★</Text>
+                </TouchableOpacity>
+              ))}
+              {saving && <ActivityIndicator size="small" color="#78716c" style={{ marginLeft: 6, alignSelf: 'center' }} />}
+            </View>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={card}>
+      <View style={{ padding: 12, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#f5f5f4' }}>
+        <CoverThumb url={book.cover_url} externalId={book.external_id} title={book.title} width={36} height={52} />
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }} numberOfLines={1}>{book.title}</Text>
+          <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 2 }} numberOfLines={1}>{book.author}</Text>
+        </View>
+        <View style={{ flexDirection: 'row', gap: 1 }}>
+          {[1, 2, 3, 4, 5].map(star => (
+            <Text key={star} style={{ fontSize: 14, color: star <= pendingRating ? '#f59e0b' : '#e7e5e4' }}>★</Text>
+          ))}
+        </View>
+      </View>
+      <View style={{ padding: 14 }}>
+        <Text style={{ fontSize: 12, color: '#78716c', marginBottom: 12 }}>
+          Any tags for this one? (optional)
+        </Text>
+        <TagPanel
+          likedTags={likedTags}
+          dislikedTags={dislikedTags}
+          onLikedChange={setLikedTags}
+          onDislikedChange={setDislikedTags}
+        />
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+          <TouchableOpacity
+            onPress={() => onComplete(book.id)}
+            style={{ flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: '#e7e5e4', alignItems: 'center' }}
+          >
+            <Text style={{ fontSize: 13, color: '#78716c' }}>Skip</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleSaveTags}
+            disabled={savingTags}
+            style={{ flex: 2, paddingVertical: 10, borderRadius: 8, backgroundColor: '#1c1917', alignItems: 'center' }}
+          >
+            {savingTags
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>Save tags</Text>
+            }
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ─── TagCard — expandable inline tag editor ───────────────────────────────────
+
+type TagCardProps = { book: BookToTag; onComplete: (id: string) => void };
+
+function TagCard({ book, onComplete }: TagCardProps) {
+  const [expanded, setExpanded]         = useState(false);
+  const [likedTags, setLikedTags]       = useState<string[]>([]);
+  const [dislikedTags, setDislikedTags] = useState<string[]>([]);
+  const [saving, setSaving]             = useState(false);
+
+  async function handleDone() {
+    if (!supabase || saving) return;
+    setSaving(true);
+    await supabase
+      .from('user_books')
+      .update({ taste_tags: { liked: likedTags, didnt_work: dislikedTags } })
+      .eq('id', book.id);
+    setSaving(false);
+    onComplete(book.id);
+  }
+
+  const card = {
+    backgroundColor: '#fff', borderRadius: 12, overflow: 'hidden' as const,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 }, elevation: 1,
+  };
+
+  return (
+    <View style={card}>
+      <TouchableOpacity
+        onPress={() => setExpanded(e => !e)}
+        activeOpacity={0.75}
+        style={{ padding: 12, flexDirection: 'row', alignItems: 'center' }}
+      >
+        <CoverThumb url={book.cover_url} externalId={book.external_id} title={book.title} width={36} height={52} />
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }} numberOfLines={1}>{book.title}</Text>
+          <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 2 }} numberOfLines={1}>{book.author}</Text>
+        </View>
+        <Text style={{ fontSize: 13, color: '#a8a29e', marginLeft: 8 }}>
+          {expanded ? '▲' : '◎ Tag'}
+        </Text>
+      </TouchableOpacity>
+
+      {expanded && (
+        <View style={{ paddingHorizontal: 14, paddingBottom: 14, borderTopWidth: 1, borderTopColor: '#f5f5f4' }}>
+          <View style={{ height: 12 }} />
+          <TagPanel
+            likedTags={likedTags}
+            dislikedTags={dislikedTags}
+            onLikedChange={setLikedTags}
+            onDislikedChange={setDislikedTags}
+          />
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+            <TouchableOpacity
+              onPress={() => setExpanded(false)}
+              style={{ flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: '#e7e5e4', alignItems: 'center' }}
+            >
+              <Text style={{ fontSize: 13, color: '#78716c' }}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleDone}
+              disabled={saving}
+              style={{ flex: 2, paddingVertical: 10, borderRadius: 8, backgroundColor: '#1c1917', alignItems: 'center' }}
+            >
+              {saving
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>Save tags</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function RecommendationsScreen() {
@@ -285,6 +558,16 @@ export default function RecommendationsScreen() {
     setSentRecs((sentRes.data as unknown as SentRec[]) ?? []);
     setTasteProfile(tp);
     setHubLoading(false);
+  }
+
+  // ── Hub completion handlers ───────────────────────────────────────────────
+
+  function handleRateComplete(id: string) {
+    setBooksToRate(prev => prev.filter(b => b.id !== id));
+  }
+
+  function handleTagComplete(id: string) {
+    setBooksToTag(prev => prev.filter(b => b.id !== id));
   }
 
   // ── Send flow handlers (logic unchanged) ─────────────────────────────────
@@ -496,33 +779,7 @@ export default function RecommendationsScreen() {
                       </Text>
                       <View style={{ gap: 8 }}>
                         {booksToRate.slice(0, 3).map(b => (
-                          <TouchableOpacity
-                            key={b.id}
-                            onPress={() => router.push(`/book/${b.book_id}` as any)}
-                            style={{
-                              backgroundColor: '#fff',
-                              borderRadius: 12,
-                              padding: 12,
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              shadowColor: '#000',
-                              shadowOpacity: 0.04,
-                              shadowRadius: 4,
-                              shadowOffset: { width: 0, height: 1 },
-                              elevation: 1,
-                            }}
-                          >
-                            <CoverThumb url={b.cover_url} externalId={b.external_id} title={b.title} width={36} height={52} />
-                            <View style={{ flex: 1, marginLeft: 12 }}>
-                              <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }} numberOfLines={1}>
-                                {b.title}
-                              </Text>
-                              <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 2 }} numberOfLines={1}>
-                                {b.author}
-                              </Text>
-                            </View>
-                            <Text style={{ fontSize: 13, color: '#a8a29e', marginLeft: 8 }}>★ Rate</Text>
-                          </TouchableOpacity>
+                          <RateCard key={b.id} book={b} onComplete={handleRateComplete} />
                         ))}
                         {booksToRate.length > 3 && (
                           <TouchableOpacity onPress={() => router.push('/(tabs)/library')}>
@@ -551,33 +808,7 @@ export default function RecommendationsScreen() {
                       </Text>
                       <View style={{ gap: 8 }}>
                         {booksToTag.slice(0, 3).map(b => (
-                          <TouchableOpacity
-                            key={b.id}
-                            onPress={() => router.push(`/book/${b.book_id}` as any)}
-                            style={{
-                              backgroundColor: '#fff',
-                              borderRadius: 12,
-                              padding: 12,
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              shadowColor: '#000',
-                              shadowOpacity: 0.04,
-                              shadowRadius: 4,
-                              shadowOffset: { width: 0, height: 1 },
-                              elevation: 1,
-                            }}
-                          >
-                            <CoverThumb url={b.cover_url} externalId={b.external_id} title={b.title} width={36} height={52} />
-                            <View style={{ flex: 1, marginLeft: 12 }}>
-                              <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }} numberOfLines={1}>
-                                {b.title}
-                              </Text>
-                              <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 2 }} numberOfLines={1}>
-                                {b.author}
-                              </Text>
-                            </View>
-                            <Text style={{ fontSize: 13, color: '#a8a29e', marginLeft: 8 }}>◎ Tag</Text>
-                          </TouchableOpacity>
+                          <TagCard key={b.id} book={b} onComplete={handleTagComplete} />
                         ))}
                         {booksToTag.length > 3 && (
                           <TouchableOpacity onPress={() => router.push('/(tabs)/library')}>

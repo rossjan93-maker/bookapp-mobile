@@ -1,0 +1,61 @@
+Refactor the Recommendations hub so rating and taste-tag actions happen inline inside each book pill instead of sending the user to Book Detail.
+
+Goal
+Make “Rate a finished book” and “Add taste tags” frictionless task-completion flows inside the Recommendations tab.
+
+Do not rely on navigating to Book Detail for these actions.
+
+Requirements
+
+1) Rate a finished book — inline star rating
+In the “Rate a finished book” section:
+- each book pill should show:
+  - cover image
+  - title
+  - author
+  - 5 tappable stars directly in the pill
+- tapping a star should immediately save the rating to the correct `user_books` row
+- after successful save:
+  - if the book still needs taste tags, transition the same pill into the inline taste-tag state
+  - otherwise remove the pill from the list immediately
+
+2) Add taste tags — inline expandable tagging
+In the “Add taste tags” section:
+- each pill should show:
+  - cover image
+  - title
+  - author
+  - a clear “Add taste tags” affordance
+- tapping the pill should expand an inline panel beneath it
+- expanded state should include:
+  - section: “Loved about it”
+  - section: “Didn’t land”
+  - same tag options already used elsewhere
+  - Done button
+  - optional Cancel / collapse behavior
+- selecting a tag in one group must remove it from the other group
+- tapping Done should save `taste_tags` to the correct `user_books` row and remove the pill from the list
+
+3) Interaction rules
+- Do NOT navigate to Book Detail when the user is trying to rate or tag from these sections
+- If needed, add a small secondary “View details” link/button, but make inline action the primary behavior
+- The pill itself should have dynamic/expandable behavior
+- Keep the UI responsive and simple
+
+4) Data behavior
+- Save rating using the exact `user_books.id`
+- Save taste_tags using the exact `user_books.id`
+- Refresh local state immediately after successful save so the completed task disappears without requiring the user to leave/re-enter the tab
+- Reuse existing save logic where possible
+
+5) Cover images
+- Ensure the same working cover image mapping already used in the Recommendations hub pills is preserved in these inline action cards
+
+6) Files
+Likely primary file: `app/(tabs)/search.tsx`
+Only touch other files if a small shared component extraction is clearly worthwhile
+
+Output
+1. Explain the new interaction design
+2. Show exactly what changed
+3. Note any assumptions about the current save logic for rating and taste tags
