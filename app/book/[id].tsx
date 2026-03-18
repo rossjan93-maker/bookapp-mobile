@@ -439,12 +439,15 @@ export default function BookDetailScreen() {
     if (editNote.trim() !== '') patch.review_body = editNote.trim();
 
     if (Object.keys(patch).length > 0) {
-      patch.user_id = user.id;
-      patch.book_id = bookId!;
-      await supabase
-        .from('user_books')
-        .upsert(patch, { onConflict: 'user_id,book_id' });
-
+      if (userBookId) {
+        // Preferred: update exact row — no duplicate risk
+        await supabase.from('user_books').update(patch).eq('id', userBookId);
+      } else {
+        // Fallback: upsert by unique (user_id, book_id) constraint
+        patch.user_id = user.id;
+        patch.book_id = bookId!;
+        await supabase.from('user_books').upsert(patch, { onConflict: 'user_id,book_id' });
+      }
       setUserHistory(prev => prev ? {
         ...prev,
         rating:     editRating !== null ? editRating : prev.rating,

@@ -213,7 +213,8 @@ export default function LibraryScreen() {
   // ── Business logic (unchanged) ────────────────────────────────────────────
 
   function saveRating(userBookId: string, bookId: string, rating: number) {
-    const eventId = pendingFeedback?.pendingEventId ?? null;
+    const eventId    = pendingFeedback?.pendingEventId ?? null;
+    const wasFinish  = pendingFeedback?.status === 'finished'; // capture before clearing
     setPendingFeedback(null);
     if (!supabase || !currentUserId) return;
     const sentiment =
@@ -232,22 +233,31 @@ export default function LibraryScreen() {
         rating,
       }).then(() => {});
     }
-    setLikedTags([]);
-    setDislikedTags([]);
-    setShowTasteCapture({ userBookId, bookId });
+    // Only offer taste capture for the finish flow — not DNF, want-to-read, or reading
+    if (wasFinish) {
+      setLikedTags([]);
+      setDislikedTags([]);
+      setShowTasteCapture({ userBookId, bookId });
+    }
   }
 
   async function saveTasteTags() {
-    const target = showTasteCapture;
+    const target  = showTasteCapture;
+    const liked   = likedTags;
+    const disliked = dislikedTags;
     setShowTasteCapture(null);
-    if (!supabase || !target || (likedTags.length === 0 && dislikedTags.length === 0)) return;
+    setLikedTags([]);
+    setDislikedTags([]);
+    if (!supabase || !target || (liked.length === 0 && disliked.length === 0)) return;
     setSavingTaste(true);
-    const tags = { liked: likedTags, didnt_work: dislikedTags };
-    await supabase
+    const tags = { liked, didnt_work: disliked };
+    const { error } = await supabase
       .from('user_books')
       .update({ taste_tags: tags })
-      .eq('id', target.userBookId)
-      .then(() => {});
+      .eq('id', target.userBookId);
+    if (error && __DEV__) {
+      console.warn('[taste_tags] Failed to save:', error.message);
+    }
     setSavingTaste(false);
   }
 
@@ -1000,42 +1010,46 @@ export default function LibraryScreen() {
             Optional — helps us find books you'll love.
           </Text>
 
-          {([
-            { label: 'Loved about it', tags: likedTags, setTags: setLikedTags },
-            { label: "Didn't land", tags: dislikedTags, setTags: setDislikedTags },
-          ] as const).map(section => (
-            <View key={section.label} style={{ marginBottom: 20 }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 10 }}>
-                {section.label}
-              </Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-                {(['Pacing', 'Characters', 'Plot', 'Worldbuilding', 'Writing', 'Emotional', 'Romance', 'Suspense', 'Ending', 'Originality'] as const).map(tag => {
-                  const id = tag.toLowerCase();
-                  const selected = section.tags.includes(id);
-                  return (
-                    <TouchableOpacity
-                      key={id}
-                      onPress={() => {
-                        section.setTags((prev: string[]) =>
-                          prev.includes(id) ? prev.filter((t: string) => t !== id) : [...prev, id]
-                        );
-                      }}
-                      style={{
-                        backgroundColor: selected ? '#1c1917' : '#f5f5f4',
-                        borderRadius: 20,
-                        paddingHorizontal: 12,
-                        paddingVertical: 6,
-                      }}
-                    >
-                      <Text style={{ fontSize: 13, color: selected ? '#fff' : '#57534e', fontWeight: selected ? '600' : '400' }}>
-                        {tag}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+          {(['Loved about it', "Didn't land"] as const).map(groupLabel => {
+            const isLiked  = groupLabel === 'Loved about it';
+            const selected = isLiked ? likedTags : dislikedTags;
+            return (
+              <View key={groupLabel} style={{ marginBottom: 20 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 10 }}>
+                  {groupLabel}
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                  {(['Pacing', 'Characters', 'Plot', 'Worldbuilding', 'Writing', 'Emotional', 'Romance', 'Suspense', 'Ending', 'Originality'] as const).map(tag => {
+                    const isSelected = selected.includes(tag);
+                    return (
+                      <TouchableOpacity
+                        key={tag}
+                        onPress={() => {
+                          if (isLiked) {
+                            setLikedTags(prev => isSelected ? prev.filter(t => t !== tag) : [...prev, tag]);
+                            setDislikedTags(prev => prev.filter(t => t !== tag));
+                          } else {
+                            setDislikedTags(prev => isSelected ? prev.filter(t => t !== tag) : [...prev, tag]);
+                            setLikedTags(prev => prev.filter(t => t !== tag));
+                          }
+                        }}
+                        style={{
+                          backgroundColor: isSelected ? '#1c1917' : '#f5f5f4',
+                          borderRadius: 20,
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                        }}
+                      >
+                        <Text style={{ fontSize: 13, color: isSelected ? '#fff' : '#57534e', fontWeight: isSelected ? '600' : '400' }}>
+                          {tag}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
 
           <TouchableOpacity
             onPress={saveTasteTags}

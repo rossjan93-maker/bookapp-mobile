@@ -1,0 +1,109 @@
+Step 1 is already complete:
+- The Supabase migration has already been applied
+- `user_books.taste_tags` already exists as a `jsonb` column
+
+Do not redo the migration.
+Do not modify any database schema.
+Only implement the app-layer changes below.
+
+Goal
+Complete step 2 onward for the book app.
+
+What to implement
+
+1) Standardize the `taste_tags` shape
+Store `user_books.taste_tags` in this exact format:
+{
+  "liked": ["Pacing", "Characters"],
+  "didnt_work": ["Ending", "Writing"]
+}
+
+2) Update the Library finish flow in `app/(tabs)/library.tsx`
+After a user rates a book as part of the FINISH flow, open an optional modal to capture taste signals.
+
+Important trigger rules:
+- Open the taste modal only after the user selects a star rating in a finish flow
+- Do NOT open it for:
+  - moving a book to “want to read”
+  - moving a book to “currently reading”
+  - editing an existing rating later
+  - any non-finish status change
+
+3) Add modal state and helpers in `library.tsx`
+Add state for:
+- whether the taste modal is open
+- the pending `user_books.id`
+- draft `taste_tags`
+
+Use this tag list for both groups:
+- Pacing
+- Characters
+- Plot
+- Worldbuilding
+- Writing
+- Emotional
+- Romance
+- Suspense
+- Ending
+- Originality
+
+There should be two multi-select groups:
+- Loved about it
+- Didn’t land
+
+A tag cannot exist in both groups at once.
+If selected in one group, remove it from the other.
+
+4) Taste modal UI in `library.tsx`
+Modal content:
+- Title: “What stood out?”
+- Subtext: “Optional — helps us find books you'll love.”
+- A Skip action
+- Group 1: Loved about it
+- Group 2: Didn’t land
+- Done button
+
+Behavior:
+- Skip closes the modal without blocking the saved rating
+- Done saves `taste_tags` to the same `user_books` row using the exact `user_books.id`
+- After save or skip, reset modal state cleanly
+
+5) Saving behavior
+When a user picks a rating during the finish flow:
+- save the rating first
+- then open the taste modal
+- later save `taste_tags` to that same row
+
+Use the exact row id if available (`user_books.id`).
+Do not create duplicate rows.
+Do not use a broad upsert unless the table truly guarantees one row per user/book.
+
+6) Graceful failure
+If saving `taste_tags` fails:
+- do not crash the app
+- keep the rating flow intact
+- in development only, log a console warning
+
+7) Book Detail edit flow
+Check `app/book/[id].tsx` and ensure the new Edit flow updates the existing row correctly.
+Do not add the taste modal here.
+Do not reopen the finish modal from Book Detail edit.
+Only verify that the existing edit modal saves the correct row and refreshes history.
+
+Acceptance criteria
+- Finish a book from Library → pick a rating → taste modal appears
+- Tap Done → `taste_tags` saves in this shape:
+  {
+    "liked": [...],
+    "didnt_work": [...]
+  }
+- Tap Skip → modal closes and rating remains saved
+- Change non-finish statuses → no taste modal
+- Edit rating/review from Book Detail → updates existing row, no taste modal
+- No duplicate `user_books` rows created
+
+Output format
+1. First explain exactly which files you changed
+2. Then provide the exact code changes
+3. If you cannot patch cleanly, provide full drop-in replacement code for the relevant sections
+4. Call out any assumptions about the existing finish/rating flow
