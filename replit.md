@@ -34,7 +34,8 @@ React Native mobile app built with Expo Router + Supabase.
 | `lib/signals.ts` | Derived signals foundation (completion rate, DNF rate, avg pages/day, rec conversion, rating signals) |
 | `lib/tasteProfile.ts` | Recommendation confidence model: tier 0–3, trait/genre affinity scoring, diagnosis answer boosts, hypothesis generation |
 | `lib/bookTraits.ts` | Deterministic book trait extraction: 8 genres, base trait scores per genre, page count adjustments, `detectGenre()` |
-| `lib/recommender.ts` | Scoring engine: three-source retrieval (`catalog`, `cached_external`, `open_library`), `scoreBookForUser()` (pure), `getRankedRecs()` (returns `RankedRecsResult` with quality gate + source meta), `getCandidateBooks()` (checks cache → OL fallback → persists) |
+| `lib/recommender.ts` | Scoring engine: three-source retrieval (`catalog`, `cached_external`, `open_library`), `scoreBookForUser()` (pure, accepts `FeedbackContext` for boost step 4), `getRankedRecs()` (returns `RankedRecsResult` with quality gate + source meta), `getCandidateBooks()` (checks cache → OL fallback → persists, excludes dismissed books) |
+| `lib/recFeedback.ts` | Recommendation feedback helpers: `persistFeedback()`, `loadFeedbackContext()`, `FeedbackContext` type — drives dismissed book exclusion + `genreBoosts` in scoring |
 | `app/import/diagnosis.tsx` | Imported-user diagnosis flow: auto-generated taste hypotheses + 5 adaptive tradeoff questions |
 | `components/CoverThumb.tsx` | Cover image with OL fallback |
 
@@ -57,6 +58,7 @@ React Native mobile app built with Expo Router + Supabase.
 | `20260318000000_user_books_taste_tags.sql` | Adds `taste_tags jsonb` to user_books for structured post-finish taste signals |
 | `20260318000001_reader_preferences_diagnosis.sql` | Adds `diagnosis_answers jsonb` to reader_preferences for taste-calibration question persistence |
 | `20260318000002_rec_candidate_cache.sql` | `rec_candidate_cache` table — per-user cache of externally-retrieved OL recommendation candidates with RLS; 24h TTL; upsert on `(user_id, external_id)` |
+| `20260318000003_rec_feedback.sql` | `rec_feedback` table — records Save/Dismiss/MoreLikeThis feedback per `(user_id, book_id)` with RLS; drives dismissed exclusion and genre boost signals in scoring |
 
 ## Defensive Fallbacks
 Library, profile, and notes queries include try-with-fallback patterns — they attempt queries with new columns (page_count, current_page, source, sentiment) and silently fall back to column-safe queries if migrations haven't been applied yet. This means the app always loads.

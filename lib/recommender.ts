@@ -50,6 +50,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { TasteProfile }  from './tasteProfile';
 import { getBookTraits }       from './bookTraits';
+import type { FeedbackContext } from './recFeedback';
 
 // ── Quality gate constants ─────────────────────────────────────────────────────
 
@@ -406,9 +407,10 @@ async function persistOLCandidates(
 // Returns merged candidates from all three sources.
 
 export async function getCandidateBooks(
-  client: SupabaseClient,
-  userId: string,
-  profile: TasteProfile,
+  client:    SupabaseClient,
+  userId:    string,
+  profile:   TasteProfile,
+  feedback?: FeedbackContext,
 ): Promise<CandidateBook[]> {
   // Source A: catalog (always run — single fast DB query)
   const local = await getLocalCandidates(client, userId);
@@ -452,14 +454,23 @@ export async function getCandidateBooks(
 
   // External first — genre-matched books score better against subjects;
   // catalog books supplement with richer description/isbn metadata.
-  return [...externalCandidates, ...local.candidates];
+  const all = [...externalCandidates, ...local.candidates];
+
+  // Filter out books the user has explicitly dismissed
+  if (!feedback?.dismissedIds.size) return all;
+  return all.filter(b => {
+    if (b.external_id && feedback.dismissedIds.has(b.external_id)) return false;
+    if (b._source === 'catalog'  && feedback.dismissedIds.has(b.id))          return false;
+    return true;
+  });
 }
 
 // ── Scoring (pure) ────────────────────────────────────────────────────────────
 
 export function scoreBookForUser(
-  book: CandidateBook,
-  profile: TasteProfile,
+  book:     CandidateBook,
+  profile:  TasteProfile,
+  feedback?: FeedbackContext,
 ): Pick<ScoredBook, 'score' | 'confidence' | 'reasons' | 'risks'> {
   const bt         = getBookTraits(book);
   const pref       = profile.preferred_traits;
@@ -516,6 +527,19 @@ export function scoreBookForUser(
     }
   }
 
+  // 4. Feedback boosts from "More like this" signals
+  // Each genre that was upvoted adds a deterministic bonus derived from signal count.
+  // boost = 0.12 for first signal, +0.06 per additional, capped at 0.20.
+  if (feedback && bt.primaryGenre) {
+    const boost = feedback.genreBoosts[bt.primaryGenre] ?? 0;
+    if (boost > 0) {
+      score += boost;
+      if (reasons.length < 2) {
+        reasons.push(`Similar to books you asked for more of`);
+      }
+    }
+  }
+
   const finalScore = Math.max(0, Math.min(1, score));
 
   let confidence: 'low' | 'medium' | 'high';
@@ -536,8 +560,9 @@ export function scoreBookForUser(
 
 export function getRankedRecs(
   candidates: CandidateBook[],
-  profile: TasteProfile,
-  limit = 5,
+  profile:    TasteProfile,
+  limit       = 5,
+  feedback?:  FeedbackContext,
 ): RankedRecsResult {
   const poolSize = candidates.length;
 
@@ -551,7 +576,7 @@ export function getRankedRecs(
 
   const scored = candidates.map(book => ({
     ...book,
-    ...scoreBookForUser(book, profile),
+    ...scoreBookForUser(book, profile, feedback),
     _debug: { pool_size: poolSize, rank: 0 },
   }));
 
@@ -607,11 +632,12 @@ function buildMeta(
 // ── Convenience async wrapper ─────────────────────────────────────────────────
 
 export async function getPersonalizedRecs(
-  client: SupabaseClient,
-  userId: string,
-  profile: TasteProfile,
-  limit = 5,
+  client:    SupabaseClient,
+  userId:    string,
+  profile:   TasteProfile,
+  limit      = 5,
+  feedback?: FeedbackContext,
 ): Promise<RankedRecsResult> {
-  const candidates = await getCandidateBooks(client, userId, profile);
-  return getRankedRecs(candidates, profile, limit);
+  const candidates = await getCandidateBooks(client, userId, profile, feedback);
+  return getRankedRecs(candidates, profile, limit, feedback);
 }

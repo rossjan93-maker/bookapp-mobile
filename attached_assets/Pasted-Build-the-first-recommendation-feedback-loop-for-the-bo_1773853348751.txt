@@ -1,0 +1,67 @@
+Build the first recommendation feedback loop for the book app.
+
+Current state
+We now have:
+- stable candidate retrieval with source tracing
+- quality gates
+- cached external candidates
+- deterministic scoring
+- recommendation cards with reasons/risks/source badges
+
+Goal
+Turn recommendations into a learning system by capturing user feedback and using it to improve future ranking.
+
+Part 1: Recommendation card actions
+Add these actions to recommendation cards:
+- Save for later
+- Not for me
+- More like this
+- Why this recommendation? (expandable detail, not just the short subtitle)
+
+Requirements:
+- Save for later should add the book to the user’s library in the correct state
+- Not for me should dismiss the recommendation and store a negative signal
+- More like this should store a positive directional signal for similar books/traits
+- Why this recommendation? should expand inline with a clearer breakdown of matched traits, source, and uncertainty
+
+Part 2: Persist recommendation feedback
+Create a durable place to store recommendation feedback per user/book.
+
+At minimum persist:
+- user_id
+- book_id
+- feedback_type ('saved', 'dismissed', 'more_like_this')
+- created_at
+- optional recommendation_source / score snapshot if easy to include
+
+If a new table is needed, add the migration.
+
+Part 3: Use feedback in scoring
+Update the taste profile and/or recommender so:
+- “Not for me” creates a negative signal against similar books/traits
+- “More like this” boosts similar books/traits
+- “Save for later” is a softer positive signal
+
+Keep this deterministic and explainable.
+
+Part 4: UI behavior
+- recommendation cards should update immediately after feedback
+- dismissed books should disappear from the current list
+- saved books should leave recommendation candidates
+- the interaction should feel smooth and premium
+
+Part 5: Analytics / debugging
+Track enough structured data so we can inspect:
+- recommendation impressions
+- saves
+- dismissals
+- more-like-this actions
+- explanation opens
+
+Part 6: Output
+1. Explain the architecture
+2. List changed files
+3. Show any migration needed
+4. Show how feedback changes scoring
+5. Explain the card interaction model
+6. Call out any assumptions or current metadata limits

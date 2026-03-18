@@ -25,6 +25,9 @@ import { computeTasteProfile } from '../../lib/tasteProfile';
 import type { TasteProfile } from '../../lib/tasteProfile';
 import { getCandidateBooks, getRankedRecs, fitLabel, fitColor } from '../../lib/recommender';
 import type { ScoredBook, QualityGate } from '../../lib/recommender';
+import { loadFeedbackContext, persistFeedback, emptyContext } from '../../lib/recFeedback';
+import type { FeedbackContext } from '../../lib/recFeedback';
+import { getBookTraits } from '../../lib/bookTraits';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -665,12 +668,91 @@ function TagCard({ book, onComplete }: TagCardProps) {
 // ─── RecCard ──────────────────────────────────────────────────────────────────
 // Shows a single personalised book recommendation with fit label, reasons, risk.
 
-function RecCard({ book }: { book: ScoredBook }) {
-  const label = fitLabel(book.score);
-  const color = fitColor(book.score);
+function RecCard({
+  book,
+  onSave           = () => {},
+  onDismiss        = () => {},
+  onMoreLikeThis   = () => {},
+  onImpression     = () => {},
+  onExplanationOpen= () => {},
+}: {
+  book:              ScoredBook;
+  onSave?:           () => void;
+  onDismiss?:        () => void;
+  onMoreLikeThis?:   () => void;
+  onImpression?:     () => void;
+  onExplanationOpen?:() => void;
+}) {
+  const label   = fitLabel(book.score);
+  const color   = fitColor(book.score);
+
+  // Animation refs
+  const opacity   = useRef(new Animated.Value(1)).current;
+  const whyHeight = useRef(new Animated.Value(0)).current;
+
+  // Local state
+  const [expanded, setExpanded]         = useState(false);
+  const [moreDone, setMoreDone]         = useState(false);
+  const [pendingAction, setPendingAction] = useState(false);
+  const impressionFired = useRef(false);
+
+  // Fire impression once on mount
+  useEffect(() => {
+    if (!impressionFired.current) {
+      impressionFired.current = true;
+      onImpression();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function animateOut(cb: () => void) {
+    Animated.timing(opacity, {
+      toValue:  0,
+      duration: 180,
+      useNativeDriver: false,
+    }).start(cb);
+  }
+
+  function handleSavePress() {
+    if (pendingAction) return;
+    setPendingAction(true);
+    animateOut(onSave);
+  }
+
+  function handleDismissPress() {
+    if (pendingAction) return;
+    setPendingAction(true);
+    animateOut(onDismiss);
+  }
+
+  function handleMoreLikeThisPress() {
+    if (pendingAction || moreDone) return;
+    setMoreDone(true);
+    onMoreLikeThis();
+    setTimeout(() => setMoreDone(false), 2200);
+  }
+
+  function toggleWhy() {
+    if (expanded) {
+      Animated.timing(whyHeight, { toValue: 0, duration: 200, useNativeDriver: false }).start();
+      setExpanded(false);
+    } else {
+      Animated.timing(whyHeight, { toValue: 190, duration: 220, useNativeDriver: false }).start();
+      setExpanded(true);
+      onExplanationOpen();
+    }
+  }
+
+  const sourceLabel = book._source === 'catalog' ? 'Catalog' : 'Open Library';
+  const uncertainty = book.score < 0.20
+    ? 'Early signal — confidence will grow as your profile develops.'
+    : book.score < 0.32
+    ? 'Moderate fit — a few more ratings will sharpen this pick.'
+    : null;
 
   return (
-    <View style={{
+    <Animated.View style={{
+      opacity,
       backgroundColor: '#fff',
       borderRadius: 14,
       marginBottom: 8,
@@ -681,6 +763,7 @@ function RecCard({ book }: { book: ScoredBook }) {
       elevation: 1,
       overflow: 'hidden',
     }}>
+      {/* ── Main content row ── */}
       <View style={{ padding: 12, flexDirection: 'row', alignItems: 'flex-start' }}>
         <CoverThumb
           url={book.cover_url}
@@ -716,34 +799,129 @@ function RecCard({ book }: { book: ScoredBook }) {
               {book.reasons[0]}
             </Text>
           )}
-
           {book.risks.length > 0 && (
-            <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 5, lineHeight: 16 }} numberOfLines={1}>
-              Note: {book.risks[0]}
+            <Text style={{ fontSize: 11, color: '#b45309', marginTop: 5, lineHeight: 16 }} numberOfLines={1}>
+              ⚠ {book.risks[0]}
             </Text>
           )}
+
+          {/* Why this? toggle */}
+          <TouchableOpacity onPress={toggleWhy} style={{ marginTop: 8 }}>
+            <Text style={{ fontSize: 11, color: '#a8a29e' }}>
+              {expanded ? '▲ Hide explanation' : '▼ Why this recommendation?'}
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
 
-      {/* Source attribution — subtle bottom strip */}
+      {/* ── Expandable "Why" panel ── */}
+      <Animated.View style={{ maxHeight: whyHeight, overflow: 'hidden' }}>
+        <View style={{
+          marginHorizontal: 12,
+          marginBottom: 10,
+          backgroundColor: '#faf9f7',
+          borderRadius: 10,
+          padding: 12,
+        }}>
+          {book.reasons.length > 0 && (
+            <View style={{ marginBottom: 8 }}>
+              <Text style={{ fontSize: 11, fontWeight: '600', color: '#78716c', marginBottom: 4 }}>
+                WHY IT FITS
+              </Text>
+              {book.reasons.map((r, i) => (
+                <Text key={i} style={{ fontSize: 12, color: '#57534e', lineHeight: 18 }}>• {r}</Text>
+              ))}
+            </View>
+          )}
+          {book.risks.length > 0 && (
+            <View style={{ marginBottom: 8 }}>
+              <Text style={{ fontSize: 11, fontWeight: '600', color: '#78716c', marginBottom: 4 }}>
+                POTENTIAL MISMATCH
+              </Text>
+              {book.risks.map((r, i) => (
+                <Text key={i} style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>• {r}</Text>
+              ))}
+            </View>
+          )}
+          <View style={{ flexDirection: 'row', gap: 16 }}>
+            <View>
+              <Text style={{ fontSize: 10, fontWeight: '600', color: '#a8a29e' }}>SOURCE</Text>
+              <Text style={{ fontSize: 11, color: '#57534e' }}>{sourceLabel}</Text>
+            </View>
+            <View>
+              <Text style={{ fontSize: 10, fontWeight: '600', color: '#a8a29e' }}>SCORE</Text>
+              <Text style={{ fontSize: 11, color: '#57534e' }}>{book.score.toFixed(2)} / 1.00</Text>
+            </View>
+            <View>
+              <Text style={{ fontSize: 10, fontWeight: '600', color: '#a8a29e' }}>POOL</Text>
+              <Text style={{ fontSize: 11, color: '#57534e' }}>#{book._debug.rank} of {book._debug.pool_size}</Text>
+            </View>
+          </View>
+          {uncertainty && (
+            <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 8, lineHeight: 16, fontStyle: 'italic' }}>
+              {uncertainty}
+            </Text>
+          )}
+        </View>
+      </Animated.View>
+
+      {/* ── Action bar ── */}
       <View style={{
         borderTopWidth: 1,
         borderTopColor: '#f5f5f4',
-        paddingHorizontal: 12,
-        paddingVertical: 5,
         flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
       }}>
+        <TouchableOpacity
+          onPress={handleSavePress}
+          disabled={pendingAction}
+          style={{
+            flex: 1,
+            paddingVertical: 10,
+            alignItems: 'center',
+            borderRightWidth: 1,
+            borderRightColor: '#f5f5f4',
+          }}
+        >
+          <Text style={{ fontSize: 12, color: '#57534e', fontWeight: '500' }}>
+            🔖 Save
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={handleDismissPress}
+          disabled={pendingAction}
+          style={{
+            flex: 1,
+            paddingVertical: 10,
+            alignItems: 'center',
+            borderRightWidth: 1,
+            borderRightColor: '#f5f5f4',
+          }}
+        >
+          <Text style={{ fontSize: 12, color: '#a8a29e' }}>✕ Not for me</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={handleMoreLikeThisPress}
+          disabled={pendingAction}
+          style={{ flex: 1, paddingVertical: 10, alignItems: 'center' }}
+        >
+          <Text style={{ fontSize: 12, color: moreDone ? '#16a34a' : '#a8a29e' }}>
+            {moreDone ? '✓ Got it' : '↑ More like this'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Source/debug strip ── */}
+      <View style={{ backgroundColor: '#fafaf9', paddingHorizontal: 12, paddingVertical: 4 }}>
         <Text style={{ fontSize: 10, color: '#d6d3d1' }}>
-          {book._source === 'catalog' ? '📚 From catalog' : '🌐 From Open Library'}
-          {'  ·  '}
-          {book._debug.rank}/{book._debug.pool_size} candidates
-          {'  ·  '}
-          score {book.score.toFixed(2)}
+          {book._source === 'catalog' ? '📚' : '🌐'} {sourceLabel}
+          {'  ·  '}rank {book._debug.rank}/{book._debug.pool_size}
+          {'  ·  '}score {book.score.toFixed(2)}
+          {'  ·  '}{book._retrieval_reason}
         </Text>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -758,6 +936,8 @@ export default function RecommendationsScreen() {
   const [hubLoading, setHubLoading]           = useState(true);
   const [recsLoading, setRecsLoading]         = useState(false);
   const [recsQualityGate, setRecsQualityGate] = useState<QualityGate | null>(null);
+  const [feedbackCtx, setFeedbackCtx]         = useState<FeedbackContext>(emptyContext());
+  const [saveToast, setSaveToast]             = useState<string | null>(null);
   const [booksToRate, setBooksToRate]         = useState<BookToRate[]>([]);
   const [booksToTag, setBooksToTag]           = useState<BookToTag[]>([]);
   const [incomingRecs, setIncomingRecs]       = useState<IncomingRec[]>([]);
@@ -908,8 +1088,13 @@ export default function RecommendationsScreen() {
     setRecsLoading(true);
     setRecsQualityGate(null);
     try {
-      const candidates    = await getCandidateBooks(supabase!, user.id, tp);
-      const { recs, meta } = getRankedRecs(candidates, tp, 5);
+      // Load feedback context first (fast DB query) — drives candidate exclusion + boosts
+      const fbCtx = await loadFeedbackContext(supabase!, user.id);
+      setFeedbackCtx(fbCtx);
+
+      // Retrieve candidates (OL calls guided by profile + genre affinities)
+      const candidates     = await getCandidateBooks(supabase!, user.id, tp, fbCtx);
+      const { recs, meta } = getRankedRecs(candidates, tp, 5, fbCtx);
       setRecommendations(recs);
       setRecsQualityGate(meta.quality_gate !== 'passed' ? meta.quality_gate : null);
     } catch {
@@ -927,6 +1112,103 @@ export default function RecommendationsScreen() {
 
   function handleTagComplete(id: string) {
     setBooksToTag(prev => prev.filter(b => b.id !== id));
+  }
+
+  // ── Recommendation feedback handlers ─────────────────────────────────────
+
+  async function handleRecSave(book: ScoredBook) {
+    if (!supabase || !currentUserId) return;
+
+    // For OL-sourced books: find or create the book record in the DB first
+    // so we have a stable book_db_id for the user_books insert.
+    let bookDbId: string | null = null;
+    if (book._source === 'catalog') {
+      bookDbId = book.id;
+    } else if (book.external_id) {
+      const { data: existing } = await supabase
+        .from('books')
+        .select('id')
+        .eq('external_id', book.external_id)
+        .maybeSingle();
+
+      if (existing) {
+        bookDbId = existing.id;
+      } else {
+        const { data: created } = await supabase
+          .from('books')
+          .insert({
+            title:       book.title,
+            author:      book.author,
+            external_id: book.external_id,
+            cover_url:   book.cover_url,
+            subjects:    book.subjects,
+            page_count:  book.page_count,
+          })
+          .select('id')
+          .single();
+        bookDbId = created?.id ?? null;
+      }
+    }
+
+    if (bookDbId) {
+      // Add to library if not already there
+      await supabase
+        .from('user_books')
+        .upsert(
+          { user_id: currentUserId, book_id: bookDbId, status: 'want_to_read' },
+          { onConflict: 'user_id,book_id', ignoreDuplicates: true },
+        );
+    }
+
+    // Persist feedback (best-effort)
+    persistFeedback(supabase, currentUserId, book, 'saved', {
+      book_db_id: bookDbId ?? undefined,
+    }).catch(() => {});
+
+    // Optimistic UI: remove from recommendations list
+    setRecommendations(prev => prev.filter(b => b.id !== book.id));
+
+    // Toast
+    setSaveToast(`"${book.title}" added to your library`);
+    setTimeout(() => setSaveToast(null), 2800);
+  }
+
+  async function handleRecDismiss(book: ScoredBook) {
+    if (!supabase || !currentUserId) return;
+    persistFeedback(supabase, currentUserId, book, 'dismissed').catch(() => {});
+    // Optimistic UI: already animated out by RecCard, now remove from list
+    setRecommendations(prev => prev.filter(b => b.id !== book.id));
+    // Update local feedback context so dismissed book is excluded if the list reloads
+    setFeedbackCtx(prev => {
+      const next = new Set(prev.dismissedIds);
+      if (book.external_id) next.add(book.external_id);
+      if (book._source === 'catalog') next.add(book.id);
+      return { ...prev, dismissedIds: next };
+    });
+  }
+
+  async function handleRecMoreLikeThis(book: ScoredBook) {
+    if (!supabase || !currentUserId) return;
+    persistFeedback(supabase, currentUserId, book, 'more_like_this').catch(() => {});
+    // Update local feedback context so subsequent scoring applies boost immediately
+    const genre = getBookTraits(book).primaryGenre;
+    if (!genre) return;
+    setFeedbackCtx(prev => {
+      const current = prev.genreBoosts[genre] ?? 0;
+      const next    = Math.min(0.20, current === 0 ? 0.12 : current + 0.06);
+      return { ...prev, genreBoosts: { ...prev.genreBoosts, [genre]: +next.toFixed(2) } };
+    });
+  }
+
+  function handleRecImpression(book: ScoredBook) {
+    if (!supabase || !currentUserId) return;
+    // Fire-and-forget impression tracking
+    persistFeedback(supabase, currentUserId, book, 'impression').catch(() => {});
+  }
+
+  function handleRecExplanationOpen(book: ScoredBook) {
+    if (!supabase || !currentUserId) return;
+    persistFeedback(supabase, currentUserId, book, 'explanation_opened').catch(() => {});
   }
 
   // ── Send flow handlers (logic unchanged) ─────────────────────────────────
@@ -1135,8 +1417,35 @@ export default function RecommendationsScreen() {
                       {tasteProfile?.label ?? ''}
                     </Text>
                   </View>
+
+                  {/* Save toast */}
+                  {saveToast && (
+                    <View style={{
+                      backgroundColor: '#f0fdf4',
+                      borderRadius: 8,
+                      paddingHorizontal: 12,
+                      paddingVertical: 9,
+                      marginBottom: 8,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}>
+                      <Text style={{ color: '#16a34a', fontSize: 12, flex: 1 }}>
+                        ✓ {saveToast}
+                      </Text>
+                    </View>
+                  )}
+
                   {recommendations.map(rec => (
-                    <RecCard key={rec.id} book={rec} />
+                    <RecCard
+                      key={rec.id}
+                      book={rec}
+                      onSave={() => handleRecSave(rec)}
+                      onDismiss={() => handleRecDismiss(rec)}
+                      onMoreLikeThis={() => handleRecMoreLikeThis(rec)}
+                      onImpression={() => handleRecImpression(rec)}
+                      onExplanationOpen={() => handleRecExplanationOpen(rec)}
+                    />
                   ))}
                 </View>
               )}
