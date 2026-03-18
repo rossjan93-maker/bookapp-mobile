@@ -51,7 +51,7 @@
 
 import type { SupabaseClient }       from '@supabase/supabase-js';
 import type { TasteProfile }         from './tasteProfile';
-import { getBookTraits }             from './bookTraits';
+import { getBookTraits, assessMetadataQuality } from './bookTraits';
 import type { FeedbackContext }      from './recFeedback';
 import type { BookEnrichmentProfile } from './bookEnrichment';
 import { getEnrichmentForCandidates } from './bookEnrichment';
@@ -85,12 +85,16 @@ export type CandidateBook = {
 };
 
 export type ScoreBreakdown = {
-  trait_alignment:  number;   // step 1 — preferred trait match contribution
+  trait_alignment:  number;   // step 1 — preferred trait match (capped)
   avoided_penalty:  number;   // step 2 — avoided trait penalties (negative)
   genre_bonus:      number;   // step 3 — genre affinity bonus/penalty
   feedback_boost:   number;   // step 4 — More-Like-This genre boost
   enrichment_bonus: number;   // step 5 — consensus trait + popularity signal
+  metadata_penalty: number;   // step 6 — weak metadata down-weight
+  raw_score:        number;   // sum before clamping
   final_score:      number;   // clamped 0–1 total
+  book_form:        string | null;   // detected form (poetry/play/etc.)
+  audit_flags:      string[];        // any audit flags applied
 };
 
 export type ScoredBook = CandidateBook & {
@@ -144,15 +148,18 @@ export type CandidateResult = {
 
 // ── Fit label helpers (used by the UI) ────────────────────────────────────────
 
+// Thresholds deliberately high — "Strong fit" must be genuinely earned.
+// With calibrated scoring (step 1 capped at 0.38, max total ~0.85),
+// a score above 0.60 requires strong genre + multiple trait signals.
 export function fitLabel(score: number): string {
-  if (score > 0.50) return 'Strong fit';
-  if (score > 0.28) return 'Good match';
+  if (score > 0.60) return 'Strong fit';
+  if (score > 0.35) return 'Good match';
   return 'Worth exploring';
 }
 
 export function fitColor(score: number): string {
-  if (score > 0.50) return '#16a34a';
-  if (score > 0.28) return '#2563eb';
+  if (score > 0.60) return '#16a34a';
+  if (score > 0.35) return '#2563eb';
   return '#78716c';
 }
 
@@ -180,13 +187,63 @@ const GENERIC_RETRIEVAL_SUBJECTS = new Set([
 ]);
 
 // ── Known public-domain / classic-drift authors ────────────────────────────────
-// These appear frequently in OL broad searches and contaminate modern recs.
+// These appear frequently in OL broad-subject searches and contaminate modern
+// recommendations. Exception: author-anchor candidates from liked_authors are
+// exempt (user explicitly loved that author's work).
+//
+// Coverage policy: any author whose primary works entered the US public domain
+// (died before 1928) and who regularly appears in OL subject-search drift.
 const PD_AUTHORS = new Set([
+  // Classical / ancient
+  'homer', 'virgil', 'ovid', 'dante alighieri', 'geoffrey chaucer',
+  'giovanni boccaccio', 'francois rabelais',
+  // Renaissance / Early Modern
+  'william shakespeare', 'john milton', 'john donne', 'john bunyan',
+  'ben jonson', 'christopher marlowe', 'thomas more', 'edmund spenser',
+  'michel de montaigne', 'miguel de cervantes',
+  // 18th Century
+  'jonathan swift', 'daniel defoe', 'henry fielding', 'samuel richardson',
+  'laurence sterne', 'tobias smollett', 'samuel johnson', 'alexander pope',
+  'voltaire', 'jean-jacques rousseau', 'immanuel kant',
+  // Romantic era
+  'jane austen', 'william wordsworth', 'samuel taylor coleridge',
+  'lord byron', 'george gordon byron', 'percy bysshe shelley', 'mary shelley',
+  'john keats', 'walter scott', 'sir walter scott', 'washington irving',
+  'james fenimore cooper', 'elizabeth barrett browning', 'alfred lord tennyson',
+  'alfred, lord tennyson', 'robert browning', 'matthew arnold',
+  // Victorian
+  'charles dickens', 'george eliot', 'charlotte brontë', 'emily brontë',
+  'anne brontë', 'william makepeace thackeray', 'thomas hardy',
+  'anthony trollope', 'george meredith', 'wilkie collins', 'george gissing',
+  // American 19th century
+  'nathaniel hawthorne', 'herman melville', 'edgar allan poe', 'walt whitman',
+  'emily dickinson', 'mark twain', 'henry david thoreau', 'ralph waldo emerson',
+  'henry james', 'louisa may alcott', 'ambrose bierce', 'jack london',
+  'stephen crane', 'frank norris', 'upton sinclair',
+  // Adventure / genre classics
   'l. frank baum', 'brothers grimm', 'hans christian andersen', 'lewis carroll',
-  'edgar rice burroughs', 'h.g. wells', 'jules verne', 'edgar allan poe',
-  'h.p. lovecraft', 'arthur conan doyle', 'bram stoker', 'jack london',
-  'rudyard kipling', 'oscar wilde', 'ambrose bierce', 'algernon blackwood',
-  'george macdonald', 'homer', 'virgil', 'dante alighieri', 'geoffrey chaucer',
+  'edgar rice burroughs', 'h.g. wells', 'jules verne', 'h.p. lovecraft',
+  'arthur conan doyle', 'bram stoker', 'rudyard kipling', 'oscar wilde',
+  'algernon blackwood', 'george macdonald', 'arthur machen',
+  // European literary canon
+  'leo tolstoy', 'fyodor dostoevsky', 'ivan turgenev', 'nikolai gogol',
+  'anton chekhov', 'gustave flaubert', 'emile zola', 'victor hugo',
+  'alexandre dumas', 'stendhal', 'balzac', 'honoré de balzac',
+  'henrik ibsen', 'august strindberg', 'luigi pirandello',
+  'theodore fontane', 'gottfried keller',
+  // Philosophy / classical thought
+  'friedrich nietzsche', 'arthur schopenhauer', 'immanuel kant',
+  'georg wilhelm friedrich hegel', 'søren kierkegaard', 'john stuart mill',
+  'david hume', 'john locke', 'thomas hobbes', 'francis bacon',
+  'rene descartes', 'baruch spinoza', 'epicurus', 'marcus aurelius',
+  'saint augustine', 'augustine of hippo', 'boethius', 'thomas aquinas',
+  'plato', 'aristotle', 'socrates',
+  // Early 20th century (died ≤ 1928, US PD threshold)
+  'charlotte perkins gilman', 'kate chopin', 'edith wharton', 'o. henry',
+  'o henry', 'ambrose gwinnett bierce', 'booth tarkington', 'ring lardner',
+  'sax rohmer', 'arthur morrison', 'israel zangwill',
+  // Early genre / pulp drift
+  'robert w. chambers', 'robert w chambers', 'a. merritt', 'a merritt',
 ]);
 
 // ── Children's / juvenile subject signals ─────────────────────────────────────
@@ -195,6 +252,17 @@ const JUVENILE_SUBJECT_SIGNALS = [
   'juvenile literature', "children's fiction", "children's literature",
   'board book', 'easy reader',
 ];
+
+// ── Classic / historical-drift subject signals ─────────────────────────────────
+// Books with these subjects are likely pre-20th-century classics that will
+// confuse genre-based trait scoring. Applied as a hygiene down-weight, not
+// hard exclusion (in case the user genuinely likes classics).
+const CLASSIC_DRIFT_SUBJECTS = new Set([
+  '19th century', '18th century', '17th century', '16th century',
+  'early modern period', 'victorian', 'elizabethan', 'jacobean',
+  'renaissance', 'medieval', 'ancient', 'classical antiquity',
+  'restoration period', 'georgian period',
+]);
 
 // ── OL doc type ────────────────────────────────────────────────────────────────
 
@@ -564,8 +632,15 @@ async function persistOLCandidates(
 }
 
 // ── Hygiene filter ────────────────────────────────────────────────────────────
-// Removes or de-prioritises candidates that don't belong in modern adult recs.
-// Returns { passed, excluded, reasons } for the retrieval trace.
+// Hard-excludes candidates that cannot produce truthful recommendations.
+// Soft-flags (logged but not excluded) appear in debug output only.
+//
+// Profile-aware exceptions:
+//   - PD author exclusion is skipped for author-anchor candidates (user
+//     explicitly loved that author — their later-in-career books might still
+//     be worth surfacing, and it avoids filtering a known-loved author).
+//   - Poetry / play exclusion is skipped if the user has 2+ liked_subjects
+//     that are poetry-related.
 
 type HygieneResult = {
   passed:   CandidateBook[];
@@ -576,50 +651,78 @@ type HygieneResult = {
 function applyHygiene(
   candidates:    CandidateBook[],
   enrichmentMap: Map<string, BookEnrichmentProfile>,
+  likedAuthors:  string[],
 ): HygieneResult {
   const reasons: string[] = [];
   let excluded = 0;
+
+  // Author-anchor candidates get PD exemption
+  const likedAuthorKeys = new Set(likedAuthors.map(a => a.toLowerCase()));
 
   const passed = candidates.filter(book => {
     const subjects  = book.subjects ?? [];
     const subjLower = subjects.map(s => s.toLowerCase());
 
-    // ── Exclude children's / juvenile books ──────────────────────────────
+    // ── 1. Children's / juvenile ──────────────────────────────────────────
     const isJuvenile = JUVENILE_SUBJECT_SIGNALS.some(sig =>
       subjLower.some(s => s.includes(sig))
     );
     if (isJuvenile) {
       excluded++;
-      if (reasons.length < 5) reasons.push(`juvenile: ${book.title}`);
+      if (reasons.length < 8) reasons.push(`juvenile: ${book.title}`);
       return false;
     }
 
-    // ── Exclude known PD / classic-drift authors ─────────────────────────
-    const authorLower = book.author.toLowerCase();
-    if (PD_AUTHORS.has(authorLower)) {
+    // ── 2. Poetry / drama form exclusion ─────────────────────────────────
+    // Poetry and plays generate nonsensical trait explanations (Characters,
+    // Ending, Pacing don't apply). Exclude unless the retrieval_reason
+    // explicitly came from a poetry/drama anchor.
+    const { bookForm } = getBookTraits(book);
+    const isPoetryOrPlay = bookForm === 'poetry' || bookForm === 'play';
+    const isPoetryAnchor = book._retrieval_reason.includes('poetry')
+      || book._retrieval_reason.includes('poem')
+      || book._retrieval_reason.includes('drama')
+      || book._retrieval_reason.includes('theater');
+    if (isPoetryOrPlay && !isPoetryAnchor) {
       excluded++;
-      if (reasons.length < 5) reasons.push(`pd_author: ${book.author}`);
+      if (reasons.length < 8) reasons.push(`form(${bookForm}): ${book.title}`);
       return false;
     }
 
-    // ── Language check via enrichment ─────────────────────────────────────
+    // ── 3. PD / classic-drift authors ────────────────────────────────────
+    const authorLower = book.author.toLowerCase();
+    const isLikedAuthor = likedAuthorKeys.has(authorLower);
+    if (PD_AUTHORS.has(authorLower) && !isLikedAuthor) {
+      excluded++;
+      if (reasons.length < 8) reasons.push(`pd_author: ${book.author}`);
+      return false;
+    }
+
+    // ── 4. Non-English via enrichment ─────────────────────────────────────
     const enrichment = book.external_id ? enrichmentMap.get(book.external_id) : undefined;
     if (enrichment?.language && enrichment.language !== 'en') {
       excluded++;
-      if (reasons.length < 5) reasons.push(`non_english(${enrichment.language}): ${book.title}`);
+      if (reasons.length < 8) reasons.push(`non_english(${enrichment.language}): ${book.title}`);
       return false;
     }
 
-    // ── Exclude catalog books with truly no metadata (edge-case) ──────────
+    // ── 5. Zero-metadata catalog books ────────────────────────────────────
     if (book._source === 'catalog') {
       const hasAnyMeta =
         (book.subjects && book.subjects.length > 0) ||
         (book.description && book.description.trim().length > 30);
       if (!hasAnyMeta) {
         excluded++;
-        if (reasons.length < 5) reasons.push(`no_meta: ${book.title}`);
+        if (reasons.length < 8) reasons.push(`no_meta: ${book.title}`);
         return false;
       }
+    }
+
+    // ── 6. OL books with no subjects at all (cannot be scored reliably) ───
+    if (book._source === 'open_library' && (!book.subjects || book.subjects.length === 0)) {
+      excluded++;
+      if (reasons.length < 8) reasons.push(`ol_no_subjects: ${book.title}`);
+      return false;
     }
 
     return true;
@@ -627,6 +730,20 @@ function applyHygiene(
 
   return { passed, excluded, reasons };
 }
+
+// ── Scoring constants ─────────────────────────────────────────────────────────
+//
+// These caps prevent any single step from saturating the 0–1 scale.
+// Maximum theoretical score (no penalties):
+//   0.38 (trait) + 0.22 (genre) + 0.10 (feedback) + 0.08 (enrichment) = 0.78
+// Real "Strong fit" (>0.60) therefore requires genre + multiple trait signals.
+
+const TRAIT_CONTRIB_CAP = 0.14;  // per-trait ceiling in step 1
+const STEP1_CAP         = 0.38;  // total step 1 ceiling
+const STEP3_BONUS_HIGH  = 0.22;  // genre affinity >0.5
+const STEP3_BONUS_MED   = 0.10;  // genre affinity 0.2–0.5
+const STEP3_PENALTY     = 0.18;  // genre affinity <-0.35
+const TRAIT_THRESHOLD   = 0.28;  // min contribution to count for step 1
 
 // ── Scoring (pure) ────────────────────────────────────────────────────────────
 
@@ -642,23 +759,32 @@ export function scoreBookForUser(
   const affinities = profile.genre_affinities ?? {};
   const reasons: string[] = [];
   const risks:   string[] = [];
+  const audit_flags: string[] = [];
 
-  // Step-level accumulators for the debug breakdown
-  let s1_trait = 0;
-  let s2_avoid = 0;
-  let s3_genre = 0;
-  let s4_feed  = 0;
-  let s5_enr   = 0;
+  // Step-level accumulators
+  let s1_trait    = 0;
+  let s2_avoid    = 0;
+  let s3_genre    = 0;
+  let s4_feed     = 0;
+  let s5_enr      = 0;
+  let s6_meta_pen = 0;
 
-  // ── Step 1: Preferred trait alignment ─────────────────────────────────────
+  // ── Step 1: Preferred trait alignment (capped) ────────────────────────────
+  // Rules:
+  //   a) The book must have a meaningful signal for this trait (bookWeight ≥ 0.55).
+  //      This prevents vague genre-level priors from inflating the score.
+  //   b) Each matching trait adds at most TRAIT_CONTRIB_CAP to the total.
+  //   c) Total step 1 is capped at STEP1_CAP regardless of how many traits match.
+  //   d) Traits that are not valid for this book's form are already absent from
+  //      bt.traits (zeroed by getBookTraits), so they contribute nothing.
   const prefMatches: string[] = [];
   for (const [trait, userWeight] of Object.entries(pref)) {
-    const bookWeight   = bt.traits[trait] ?? 0;
-    const contribution = userWeight * bookWeight;
-    if (contribution > 0.22) {
-      prefMatches.push(trait.toLowerCase());
-      s1_trait += contribution;
-    }
+    if (userWeight < 0.12) continue;                // negligible user preference
+    const bookWeight = bt.traits[trait] ?? 0;
+    if (bookWeight < 0.55) continue;                // book doesn't genuinely have this trait
+    const contribution = Math.min(TRAIT_CONTRIB_CAP, userWeight * bookWeight);
+    prefMatches.push(trait.toLowerCase());
+    s1_trait = Math.min(STEP1_CAP, s1_trait + contribution);
   }
   if (prefMatches.length >= 2) {
     reasons.push(`Aligns with your preference for ${prefMatches.slice(0, 2).join(' and ')}`);
@@ -669,11 +795,12 @@ export function scoreBookForUser(
   // ── Step 2: Avoided trait penalties ───────────────────────────────────────
   const avoidHits: string[] = [];
   for (const [trait, penalty] of Object.entries(avoid)) {
-    const bookWeight   = bt.traits[trait] ?? 0;
-    const contribution = penalty * bookWeight;
-    if (contribution < -0.18) {
+    const bookWeight = bt.traits[trait] ?? 0;
+    if (bookWeight === 0) continue;
+    const contribution = penalty * bookWeight;  // penalty is already negative
+    if (contribution < -0.15 && bookWeight >= 0.50) {
       avoidHits.push(trait.toLowerCase());
-      s2_avoid += contribution;
+      s2_avoid = Math.max(-0.30, s2_avoid + contribution);
     }
   }
   if (avoidHits.length > 0) {
@@ -681,37 +808,43 @@ export function scoreBookForUser(
   }
 
   // ── Step 3: Genre affinity bonus / penalty ────────────────────────────────
-  if (bt.primaryGenre) {
+  if (bt.primaryGenre && bt.primaryGenre !== 'general') {
     const affinity = affinities[bt.primaryGenre] ?? 0;
     if (affinity > 0.5) {
-      s3_genre += 0.28;
+      s3_genre = STEP3_BONUS_HIGH;
       if (reasons.length < 2) reasons.push(`Fits a genre you consistently enjoy`);
     } else if (affinity > 0.2) {
-      s3_genre += 0.12;
+      s3_genre = STEP3_BONUS_MED;
     } else if (affinity < -0.35) {
-      s3_genre -= 0.22;
+      s3_genre = -STEP3_PENALTY;
       if (risks.length < 1) {
-        const label = bt.primaryGenre.replace('_', '/');
+        const label = bt.primaryGenre.replace(/_/g, '/');
         risks.push(`You've had mixed results with ${label} before`);
       }
     }
+    // No genre affinity data at all — no bonus or penalty; avoid inflating
+  } else {
+    // Unknown genre: flag as audit signal, mild penalty
+    audit_flags.push('unknown_genre');
+    s3_genre = -0.05;
   }
 
   // ── Step 4: Feedback boosts from "More Like This" signals ────────────────
   if (feedback && bt.primaryGenre) {
-    const boost = feedback.genreBoosts[bt.primaryGenre] ?? 0;
+    const boost = Math.min(0.10, feedback.genreBoosts[bt.primaryGenre] ?? 0);
     if (boost > 0) {
-      s4_feed += boost;
+      s4_feed = boost;
       if (reasons.length < 2) reasons.push(`Similar to books you asked for more of`);
     }
   }
 
   // ── Step 5: Enrichment signals (secondary layer) ──────────────────────────
+  // Small boosts only — enrichment cannot override steps 1–3.
   if (enrichment) {
     const ct = enrichment.consensus_traits;
     const ps = enrichment.popularity_signals;
 
-    const enrichedPrefMatches: string[] = [];
+    // Only check enrichment traits that are valid for this book's form
     const traitMap: Record<string, string> = {
       pacing:            'Pacing',
       originality:       'Originality',
@@ -723,30 +856,33 @@ export function scoreBookForUser(
       practicality:      'Practicality',
       romance_intensity: 'Romance',
     };
+    const enrichedMatches: string[] = [];
     for (const [enrichKey, prefKey] of Object.entries(traitMap)) {
+      // Skip if this trait was blacklisted for the book's form
+      if (!(prefKey in bt.traits)) continue;
       const enrichVal = ct[enrichKey as keyof typeof ct] ?? 0;
       const userPref  = pref[prefKey] ?? 0;
-      if (enrichVal > 0.5 && userPref > 0.3) {
-        enrichedPrefMatches.push(prefKey.toLowerCase());
-        s5_enr += 0.06;
+      if (enrichVal > 0.6 && userPref > 0.35) {
+        enrichedMatches.push(prefKey.toLowerCase());
+        s5_enr = Math.min(0.08, s5_enr + 0.04);
       }
       if (enrichKey === 'romance_intensity' && enrichVal > 0.6) {
         const avoidRomance = Math.abs(avoid['Romance'] ?? 0);
         if (avoidRomance > 0.25 && risks.length < 1) {
           risks.push(`May lean more romance-forward than your usual favorites`);
-          s5_enr -= 0.08;
+          s5_enr -= 0.06;
         }
       }
     }
-    if (enrichedPrefMatches.length > 0 && reasons.length < 2) {
-      const key = enrichedPrefMatches[0];
-      reasons.push(`Readers consistently note strong ${key} — which fits your profile`);
+    if (enrichedMatches.length > 0 && reasons.length < 2) {
+      reasons.push(`Readers note strong ${enrichedMatches[0]} — which fits your profile`);
     }
 
+    // Small quality signal (well-reviewed books only)
     const ratingsCount = ps.ratings_count ?? 0;
     const avgRating    = ps.average_rating ?? 0;
-    if (ratingsCount >= 500 && avgRating >= 4.0) {
-      s5_enr += 0.04;
+    if (ratingsCount >= 1000 && avgRating >= 4.2) {
+      s5_enr = Math.min(0.08, s5_enr + 0.03);
     }
 
     if ((ct.pacing ?? 0) < 0.2 && (pref['Pacing'] ?? 0) > 0.5 && risks.length < 1) {
@@ -754,16 +890,39 @@ export function scoreBookForUser(
     }
   }
 
+  // Fallback reason from audience signals (last resort)
   if (enrichment && enrichment.audience_signals.length > 0 && reasons.length === 0) {
     reasons.push(enrichment.audience_signals[0]);
   }
 
-  const rawScore   = s1_trait + s2_avoid + s3_genre + s4_feed + s5_enr;
+  // ── Step 6: Metadata confidence penalty ───────────────────────────────────
+  // Books with thin metadata cannot be accurately scored — down-weight them
+  // so they don't crowd out well-described candidates.
+  const metaQuality = assessMetadataQuality(book);
+  if (metaQuality === 'weak') {
+    s6_meta_pen = -0.12;
+    audit_flags.push('weak_metadata');
+  } else if (metaQuality === 'moderate') {
+    s6_meta_pen = -0.04;
+  }
+
+  // ── Classic-drift audit flag ───────────────────────────────────────────────
+  const subjLower = (book.subjects ?? []).join(' ').toLowerCase();
+  const isClassicDrift = [...CLASSIC_DRIFT_SUBJECTS].some(sig => subjLower.includes(sig));
+  if (isClassicDrift) {
+    audit_flags.push('classic_signal');
+    s6_meta_pen -= 0.06;
+  }
+
+  // ── Final score ───────────────────────────────────────────────────────────
+  const rawScore   = s1_trait + s2_avoid + s3_genre + s4_feed + s5_enr + s6_meta_pen;
   const finalScore = Math.max(0, Math.min(1, rawScore));
 
+  // Confidence follows profile tier + score magnitude (thresholds adjusted for
+  // the recalibrated scale where max ~0.78)
   let confidence: 'low' | 'medium' | 'high';
-  if (profile.tier >= 3 && finalScore > 0.42)      confidence = 'high';
-  else if (profile.tier >= 2 && finalScore > 0.22) confidence = 'medium';
+  if (profile.tier >= 3 && finalScore > 0.55)      confidence = 'high';
+  else if (profile.tier >= 2 && finalScore > 0.35) confidence = 'medium';
   else                                              confidence = 'low';
 
   const fmt = (n: number) => +n.toFixed(3);
@@ -779,7 +938,11 @@ export function scoreBookForUser(
       genre_bonus:      fmt(s3_genre),
       feedback_boost:   fmt(s4_feed),
       enrichment_bonus: fmt(s5_enr),
+      metadata_penalty: fmt(s6_meta_pen),
+      raw_score:        fmt(rawScore),
       final_score:      fmt(finalScore),
+      book_form:        bt.bookForm,
+      audit_flags,
     },
   };
 }
@@ -934,7 +1097,7 @@ export async function getCandidateBooks(
   const enrichmentMap = await getEnrichmentForCandidates(client, all);
 
   // ── Hygiene filter ─────────────────────────────────────────────────────────
-  const hygiene = applyHygiene(all, enrichmentMap);
+  const hygiene = applyHygiene(all, enrichmentMap, profile.liked_authors ?? []);
 
   // ── Apply dismissals from feedback ────────────────────────────────────────
   let filtered = hygiene.passed;

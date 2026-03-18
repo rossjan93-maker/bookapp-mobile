@@ -173,14 +173,40 @@ type FinishedBookRow = {
 };
 
 // Noise subjects that appear in many OL search results — useless as anchors.
+// Extended to cover common Goodreads import noise.
 const GENERIC_OL_SUBJECTS = new Set([
-  'fiction', 'non-fiction', 'nonfiction', 'english', 'american', 'british',
-  'literature', 'books', 'accessible book', 'protected daisy',
-  'open library nl', 'internet archive wishlist', 'large type books',
-  'juvenile fiction', 'juvenile literature',  // these go through hygiene
+  // Format / cataloguing noise
+  'fiction', 'non-fiction', 'nonfiction', 'books', 'reading',
+  'accessible book', 'protected daisy', 'open library nl',
+  'internet archive wishlist', 'large type books',
+  'juvenile fiction', 'juvenile literature',
+  // Language / nationality noise (too broad to anchor)
+  'english', 'american', 'british', 'american fiction', 'english fiction',
+  'literature', 'literary', 'american literature', 'english literature',
+  'british literature', 'world literature',
+  // Format descriptors
+  'novel', 'novels', 'short stories', 'collections',
+  // Era / period noise (very broad — will retrieve anything from that era)
+  '19th century', '18th century', '20th century', '21st century',
+  // Over-broad thematic noise from Goodreads imports
+  'love', 'friendship', 'adventure', 'survival', 'family', 'death',
+  'war', 'history', 'coming of age', 'good and evil',
+  'adventure and adventurers', 'man-woman relationships',
+  'social problems', 'social classes', 'interpersonal relations',
 ]);
 
-function buildLikedAnchors(rows: FinishedBookRow[]): {
+// Subjects that indicate classic/PD content — not useful anchors for
+// modern recommendations even if a user enjoyed a classic.
+const CLASSIC_ANCHOR_NOISE = new Set([
+  'classical literature', 'classic literature', 'classics',
+  'ancient literature', 'medieval literature', 'victorian literature',
+  'elizabethan', 'renaissance literature',
+]);
+
+function buildLikedAnchors(
+  rows: FinishedBookRow[],
+  isDenseGoodreadsUser: boolean = false,
+): {
   liked_subjects: string[];
   liked_authors:  string[];
 } {
@@ -191,7 +217,7 @@ function buildLikedAnchors(rows: FinishedBookRow[]): {
   for (const row of rows) {
     if ((row.rating ?? 0) < 4 || !row.book) continue;
 
-    // Authors
+    // Authors — only non-generic names from loved books
     const authorRaw = row.book.author?.trim() ?? '';
     const authorKey = authorRaw.toLowerCase();
     if (authorRaw && !seenAuthors.has(authorKey) && !/^unknown/i.test(authorRaw)) {
@@ -199,16 +225,25 @@ function buildLikedAnchors(rows: FinishedBookRow[]): {
       liked_authors.push(authorRaw);
     }
 
-    // Subjects — normalise and count frequency
+    // Subjects — normalise, noise-filter, and count frequency
     for (const s of (row.book.subjects ?? [])) {
       const norm = s.toLowerCase().trim();
-      if (norm.length < 4) continue;
+      if (norm.length < 5) continue;
       if (GENERIC_OL_SUBJECTS.has(norm)) continue;
+      if (CLASSIC_ANCHOR_NOISE.has(norm)) continue;
+      // Skip subjects that are more than 4 words (usually long descriptors, not useful anchors)
+      if (norm.split(' ').length > 4) continue;
       subjectFreq[norm] = (subjectFreq[norm] ?? 0) + 1;
     }
   }
 
+  // For dense Goodreads users (many imported books), raise the minimum frequency
+  // threshold so we only anchor on subjects that appear in 2+ loved books.
+  // This prevents a single imported niche book from contaminating retrieval.
+  const minFreq = isDenseGoodreadsUser ? 2 : 1;
+
   const liked_subjects = Object.entries(subjectFreq)
+    .filter(([, freq]) => freq >= minFreq)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8)
     .map(([s]) => s);
@@ -337,7 +372,9 @@ export async function computeTasteProfile(
   const genre_affinities = buildGenreAffinities(finishedRatedRows);
 
   // Liked subject + author anchors for retrieval
-  const { liked_subjects, liked_authors } = buildLikedAnchors(finishedRatedRows);
+  // Dense Goodreads users (≥20 imported books) get stricter subject noise filtering
+  const isDenseGoodreadsUser = evidence.imported_books_count >= 20;
+  const { liked_subjects, liked_authors } = buildLikedAnchors(finishedRatedRows, isDenseGoodreadsUser);
 
   const open_questions = deriveOpenQuestions(evidence, preferred_traits);
 

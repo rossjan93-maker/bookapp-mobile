@@ -860,37 +860,55 @@ function RecCard({
 
           {/* ── Score breakdown ── */}
           <View style={{ marginTop: 10, borderTopWidth: 1, borderTopColor: '#e7e5e4', paddingTop: 8 }}>
-            <Text style={{ fontSize: 10, fontWeight: '600', color: '#a8a29e', marginBottom: 5 }}>
-              SCORE BREAKDOWN
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 5 }}>
+              <Text style={{ fontSize: 10, fontWeight: '600', color: '#a8a29e', flex: 1 }}>
+                SCORE BREAKDOWN
+              </Text>
+              {book._score_breakdown.book_form && (
+                <Text style={{ fontSize: 9, color: '#78716c', backgroundColor: '#f5f5f4', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 }}>
+                  {book._score_breakdown.book_form}
+                </Text>
+              )}
+            </View>
             {[
-              { label: 'Trait alignment', value: book._score_breakdown.trait_alignment,  sign: true },
-              { label: 'Avoided traits',  value: book._score_breakdown.avoided_penalty,  sign: true },
-              { label: 'Genre affinity',  value: book._score_breakdown.genre_bonus,      sign: true },
-              { label: 'Feedback boost',  value: book._score_breakdown.feedback_boost,   sign: true },
-              { label: 'Enrichment',      value: book._score_breakdown.enrichment_bonus, sign: true },
+              { label: 'Trait align', value: book._score_breakdown.trait_alignment  },
+              { label: 'Avoided',     value: book._score_breakdown.avoided_penalty  },
+              { label: 'Genre',       value: book._score_breakdown.genre_bonus      },
+              { label: 'Feedback',    value: book._score_breakdown.feedback_boost   },
+              { label: 'Enrichment',  value: book._score_breakdown.enrichment_bonus },
+              { label: 'Metadata',    value: book._score_breakdown.metadata_penalty },
             ].map(({ label, value }) => {
               const isNeg  = value < 0;
               const isZero = value === 0;
               const color  = isZero ? '#d6d3d1' : isNeg ? '#ef4444' : '#16a34a';
               const prefix = value > 0 ? '+' : '';
-              const barW   = Math.round(Math.min(Math.abs(value) * 200, 72));
+              const barW   = Math.round(Math.min(Math.abs(value) * 280, 80));
               return (
                 <View key={label} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 3 }}>
-                  <Text style={{ fontSize: 10, color: '#78716c', width: 100 }}>{label}</Text>
+                  <Text style={{ fontSize: 10, color: '#78716c', width: 72 }}>{label}</Text>
                   <View style={{
-                    width: barW, height: 4, borderRadius: 2, marginRight: 6,
+                    width: Math.max(2, barW), height: 4, borderRadius: 2, marginRight: 6,
                     backgroundColor: isZero ? '#e7e5e4' : color,
-                    opacity: isZero ? 0.4 : 0.75,
+                    opacity: isZero ? 0.3 : 0.72,
                   }} />
                   <Text style={{ fontSize: 10, color, fontVariant: ['tabular-nums'] }}>
-                    {prefix}{value.toFixed(2)}
+                    {prefix}{value.toFixed(3)}
                   </Text>
                 </View>
               );
             })}
-            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 3 }}>
-              Retrieval: {book._retrieval_reason}
+            <View style={{ flexDirection: 'row', marginTop: 4, gap: 8 }}>
+              <Text style={{ fontSize: 9, color: '#a8a29e' }}>
+                raw {book._score_breakdown.raw_score.toFixed(3)} → {book._score_breakdown.final_score.toFixed(3)}
+              </Text>
+              {book._score_breakdown.audit_flags.length > 0 && (
+                <Text style={{ fontSize: 9, color: '#ef4444' }}>
+                  ⚑ {book._score_breakdown.audit_flags.join(', ')}
+                </Text>
+              )}
+            </View>
+            <Text style={{ fontSize: 9, color: '#a8a29e', marginTop: 2 }} numberOfLines={1}>
+              ↵ {book._retrieval_reason}
             </Text>
           </View>
 

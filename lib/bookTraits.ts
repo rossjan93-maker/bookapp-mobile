@@ -2,19 +2,140 @@
 // Book Traits — deterministic extraction of measurable attributes
 //
 // Given available book metadata, returns:
-//   - primaryGenre: best-guess genre key, or null
-//   - genres: list of genre keys (currently max 1)
-//   - traits: Record<TraitName, 0.0–1.0 signal strength>
+//   - primaryGenre : best-guess genre key, or null
+//   - bookForm     : detected prose form (poetry / short_stories / play / etc.)
+//   - genres       : list of genre keys
+//   - traits       : Record<TraitName, 0.0–1.0 signal strength>
 //
-// Trait names deliberately match the chip labels in the recommendation UI
-// (Pacing, Characters, Originality, etc.) so user preferences and book
-// signals can be compared on the same scale without normalisation.
+// Design rules:
+//   1. Book FORM is detected first and restricts which traits are valid.
+//      Poetry cannot receive Characters/Ending/Pacing — those traits are
+//      prose-specific and produce nonsensical explanations.
+//   2. Genre base traits are only applied for prose books (bookForm == null).
+//      If a form is detected, form-specific trait bases take precedence.
+//   3. Each base trait is a "ceiling", not a guarantee — page-count and
+//      metadata adjustments can push values up or down within [0, 1].
 // =============================================================================
+
+// ── Book form ─────────────────────────────────────────────────────────────────
+
+export type BookForm =
+  | 'poetry'
+  | 'short_stories'
+  | 'play'
+  | 'graphic'
+  | 'anthology';
 
 export type BookTraits = {
   primaryGenre: string | null;
-  genres: string[];
-  traits: Record<string, number>;
+  bookForm:     BookForm | null;
+  genres:       string[];
+  traits:       Record<string, number>;
+};
+
+// ── Form detection signals ────────────────────────────────────────────────────
+
+const POETRY_SIGNALS = [
+  'poetry', 'poems', 'poem', 'poet', 'verse', 'verses', 'sonnet', 'sonnets',
+  'haiku', 'ode', 'odes', 'ballad', 'ballads', 'lyric poetry', 'epic poem',
+  'collected poems', 'selected poems', 'complete poems',
+];
+
+const SHORT_STORY_SIGNALS = [
+  'short stories', 'short story', 'short fiction', 'novellas', 'novella',
+  'stories', 'tale collection', 'tales collection',
+];
+
+const PLAY_SIGNALS = [
+  'drama', 'plays', 'theater', 'theatre', 'screenplay', 'script', 'stage play',
+  'dramatic works',
+];
+
+const GRAPHIC_SIGNALS = [
+  'comic', 'comics', 'graphic novel', 'manga', 'illustrated novel',
+  'sequential art', 'comic book',
+];
+
+const ANTHOLOGY_SIGNALS = [
+  'anthology', 'collected works', 'selected works', 'complete works',
+  'complete collection',
+];
+
+export function detectBookForm(book: {
+  subjects?:    string[] | null;
+  title?:       string | null;
+  description?: string | null;
+}): BookForm | null {
+  const corpus = [
+    ...(book.subjects ?? []),
+    book.title ?? '',
+  ].join(' ').toLowerCase();
+
+  if (POETRY_SIGNALS.some(s => corpus.includes(s)))      return 'poetry';
+  if (PLAY_SIGNALS.some(s => corpus.includes(s)))         return 'play';
+  if (GRAPHIC_SIGNALS.some(s => corpus.includes(s)))      return 'graphic';
+  if (ANTHOLOGY_SIGNALS.some(s => corpus.includes(s)))    return 'anthology';
+  if (SHORT_STORY_SIGNALS.some(s => corpus.includes(s)))  return 'short_stories';
+  return null;
+}
+
+// ── Traits that are NOT applicable for a given form ───────────────────────────
+// Any trait in this set is zeroed-out / removed from inference for that form,
+// preventing nonsensical explanations like "characters" for a poetry collection.
+
+const FORM_TRAIT_BLACKLIST: Record<BookForm, Set<string>> = {
+  poetry: new Set([
+    'Characters', 'Ending', 'Twists', 'Plot', 'Pacing', 'Tension',
+    'Suspense', 'Worldbuilding', 'Scope', 'Chemistry', 'Emotional payoff',
+    'Evidence', 'Clarity', 'Practicality', 'Structure',
+  ]),
+  play: new Set([
+    'Pacing', 'Worldbuilding', 'Scope', 'Twists', 'Evidence',
+    'Clarity', 'Practicality', 'Chemistry', 'Emotional payoff',
+  ]),
+  short_stories: new Set(['Scope', 'Worldbuilding']),
+  graphic: new Set([
+    'Prose', 'Insight', 'Evidence', 'Clarity', 'Practicality',
+    'Structure', 'Depth', 'Scope',
+  ]),
+  anthology: new Set(['Pacing', 'Twists', 'Tension', 'Suspense', 'Chemistry', 'Emotional payoff']),
+};
+
+// ── Form-specific trait base (replaces genre base entirely for that form) ─────
+const FORM_TRAIT_BASE: Partial<Record<BookForm, Record<string, number>>> = {
+  poetry: {
+    Prose:        0.90,
+    Originality:  0.82,
+    Writing:      0.88,
+    Depth:        0.72,
+    Atmosphere:   0.68,
+    Emotional:    0.72,
+  },
+  play: {
+    Characters:   0.85,
+    Atmosphere:   0.80,
+    Tension:      0.72,
+    Depth:        0.68,
+    Writing:      0.72,
+    Originality:  0.65,
+    Ending:       0.62,
+  },
+  graphic: {
+    Atmosphere:   0.82,
+    Pacing:       0.72,
+    Characters:   0.75,
+    Originality:  0.68,
+    Tension:      0.65,
+    Ending:       0.58,
+  },
+  anthology: {
+    Writing:      0.80,
+    Originality:  0.72,
+    Depth:        0.65,
+    Prose:        0.70,
+    Atmosphere:   0.60,
+    Characters:   0.60,
+  },
 };
 
 // ── Genre detection signals (ordered by specificity — first match wins) ────────
@@ -37,8 +158,10 @@ export const GENRE_SIGNALS: Array<[string, string[]]> = [
 
 // ── Base trait scores per genre ───────────────────────────────────────────────
 //
-// Scores express how prominently a given trait features in the genre on average.
-// 0.9 = defining feature,  0.5 = moderate presence,  0 = absent / not applicable.
+// These are genre-level priors — how strongly a given trait typically features
+// in that genre. Individual books will vary; these are starting estimates only.
+//
+// 0.9 = defining feature,  0.5 = moderate presence,  0 = absent / inapplicable.
 
 const GENRE_TRAIT_BASE: Record<string, Record<string, number>> = {
   fantasy_scifi: {
@@ -70,8 +193,8 @@ const GENRE_TRAIT_BASE: Record<string, Record<string, number>> = {
     Atmosphere: 0.78, Originality: 0.78, Pacing: 0.48, Ending: 0.68,
   },
   general: {
-    Pacing: 0.70, Characters: 0.70, Writing: 0.65,
-    Atmosphere: 0.60, Ending: 0.60, Originality: 0.60,
+    Pacing: 0.60, Characters: 0.60, Writing: 0.55,
+    Atmosphere: 0.52, Ending: 0.52, Originality: 0.50,
   },
 };
 
@@ -97,23 +220,43 @@ export function detectGenre(book: {
 // ── Page-count adjustments ─────────────────────────────────────────────────────
 
 function applyPageCount(
-  traits: Record<string, number>,
+  traits:    Record<string, number>,
   pageCount: number | null | undefined,
 ): Record<string, number> {
   if (!pageCount || pageCount <= 0) return traits;
   const t = { ...traits };
 
   if (pageCount > 600) {
-    if (t.Scope        !== undefined) t.Scope        = Math.min(1, t.Scope        + 0.10);
+    if (t.Scope         !== undefined) t.Scope         = Math.min(1, t.Scope         + 0.10);
     if (t.Worldbuilding !== undefined) t.Worldbuilding = Math.min(1, t.Worldbuilding + 0.08);
-    if (t.Pacing       !== undefined) t.Pacing       = Math.max(0, t.Pacing       - 0.12);
-    if (t.Depth        !== undefined) t.Depth        = Math.min(1, t.Depth        + 0.08);
+    if (t.Pacing        !== undefined) t.Pacing        = Math.max(0, t.Pacing        - 0.12);
+    if (t.Depth         !== undefined) t.Depth         = Math.min(1, t.Depth         + 0.08);
   } else if (pageCount < 250) {
     if (t.Pacing !== undefined) t.Pacing = Math.min(1, t.Pacing + 0.12);
     if (t.Scope  !== undefined) t.Scope  = Math.max(0, t.Scope  - 0.10);
   }
 
   return Object.fromEntries(Object.entries(t).map(([k, v]) => [k, +v.toFixed(2)]));
+}
+
+// ── Metadata quality assessment ────────────────────────────────────────────────
+
+export function assessMetadataQuality(book: {
+  subjects?:    string[] | null;
+  description?: string | null;
+  page_count?:  number | null;
+}): 'strong' | 'moderate' | 'weak' {
+  const subjectCount  = (book.subjects ?? []).length;
+  const hasDescription = (book.description ?? '').trim().length > 80;
+  const hasPageCount   = (book.page_count ?? 0) > 0;
+
+  const signals = (subjectCount >= 5 ? 2 : subjectCount >= 2 ? 1 : 0)
+    + (hasDescription ? 2 : 0)
+    + (hasPageCount   ? 1 : 0);
+
+  if (signals >= 4) return 'strong';
+  if (signals >= 2) return 'moderate';
+  return 'weak';
 }
 
 // ── Main extractor ─────────────────────────────────────────────────────────────
@@ -126,11 +269,31 @@ export function getBookTraits(book: {
   description?: string | null;
 }): BookTraits {
   const primaryGenre = detectGenre(book);
-  const base         = GENRE_TRAIT_BASE[primaryGenre ?? 'general'] ?? GENRE_TRAIT_BASE.general;
-  const traits       = applyPageCount(base, book.page_count);
+  const bookForm     = detectBookForm(book);
+
+  let traits: Record<string, number>;
+
+  if (bookForm && FORM_TRAIT_BASE[bookForm]) {
+    // Form-specific base takes full precedence — do not mix in genre base
+    traits = { ...FORM_TRAIT_BASE[bookForm]! };
+  } else {
+    // Genre-driven base for standard prose books
+    const base = GENRE_TRAIT_BASE[primaryGenre ?? 'general'] ?? GENRE_TRAIT_BASE.general;
+    traits = { ...base };
+
+    // Remove any traits that are blacklisted for this form
+    if (bookForm && FORM_TRAIT_BLACKLIST[bookForm]) {
+      for (const banned of FORM_TRAIT_BLACKLIST[bookForm]) {
+        delete traits[banned];
+      }
+    }
+
+    traits = applyPageCount(traits, book.page_count);
+  }
 
   return {
     primaryGenre,
+    bookForm,
     genres: primaryGenre ? [primaryGenre] : ['general'],
     traits,
   };

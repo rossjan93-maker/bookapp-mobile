@@ -1,0 +1,96 @@
+The current recommendations are still not truthful enough for a dense Goodreads-imported user.
+
+Evidence:
+We are getting recommendations like “John Donne Poetry” as a “Strong fit” with explanations like “aligns with your preference for characters and ending.” This indicates the recommendation engine is still producing implausible matches with overconfident scoring.
+
+Goal
+Fix recommendation truthfulness, score calibration, and candidate sanity so the app stops recommending books that are obviously poor fits with high confidence.
+
+Problems to solve
+1. Public-domain/classic drift is still leaking through
+2. Book-trait inference is too coarse and sometimes nonsensical
+3. Explanation generation is not sufficiently grounded in actual book type
+4. Score calibration is broken — too many books can hit 1.00 / 1.00
+5. The Goodreads-heavy user profile is likely over-compressed into noisy subject/trait signals
+
+Part 1: Add stronger candidate sanity / truthfulness filters
+Before ranking, add stricter exclusion or heavy down-ranking rules for:
+- public-domain/classic drift unless the user profile clearly supports classics
+- poetry unless the user profile clearly supports poetry
+- children’s / juvenile books unless the profile supports them
+- weak-metadata books
+- books whose inferred traits are too sparse or too generic
+
+Add a “recommendation-eligible confidence” concept so a candidate with weak metadata cannot become a “Strong fit.”
+
+Part 2: Fix book-type-aware trait inference
+Make trait inference sensitive to book form/type.
+
+Examples:
+- poetry should not receive narrative-heavy traits like “characters” or “ending” unless there is explicit evidence
+- memoir/biography should not inherit fiction/worldbuilding traits without support
+- practical nonfiction should lean toward insight/clarity/structure/practicality
+- literary fiction can still get prose/emotional/depth, but not automatically “worldbuilding”
+
+Add sanity constraints so explanation traits are valid for the actual book type.
+
+Part 3: Fix explanation grounding
+Recommendation reasons must be generated only from traits that are genuinely supported by:
+- the book’s metadata/enrichment
+- the user’s profile
+- the score breakdown
+
+Do not produce reasons that sound good but are weakly grounded.
+If the system does not have enough evidence, the explanation should be more cautious.
+
+Part 4: Recalibrate scoring
+The current final score is saturating too easily.
+
+Fix this by:
+- reducing the chance that weak candidates can reach 1.00
+- normalizing score spread across the candidate pool
+- making “Strong fit” rare and earned
+- ensuring trait alignment alone cannot max out a book unless the match is truly exceptional
+- considering relative percentile/rank within pool rather than just clamped absolute score
+
+We should see meaningful separation between:
+- Strong fit
+- Good match
+- Worth exploring
+
+Part 5: Improve retrieval anchors for dense Goodreads users
+Do not rely too heavily on broad aggregate subjects.
+
+Retrieve more from:
+- actual 4–5 star source books
+- repeated loved authors
+- strongest quick reactions / notes
+- recurring high-signal subjects only
+- specific anchor books rather than vague imported subject strings
+
+Also add stronger subject-noise filtering so low-signal subjects do not dominate retrieval.
+
+Part 6: Add recommendation audit heuristics
+Implement a final audit pass before showing recommendations:
+- if explanation is implausible for the book type, down-rank or exclude
+- if metadata support is too weak, lower confidence
+- if candidate is classic/public-domain drift without matching profile evidence, exclude
+- if the system is only recommending based on genre stereotype, lower rank
+
+Part 7: Debugging output
+For each top recommendation, expose in debug mode:
+- book type / detected form
+- why it passed truthfulness filters
+- which traits were allowed for explanation
+- raw score before calibration
+- calibrated score after normalization
+- any audit penalties or flags applied
+
+Part 8: Output
+1. Explain the root cause of the current bad recommendations
+2. List changed files
+3. Show the truthfulness filter architecture
+4. Show how book-type-aware trait inference now works
+5. Explain the score recalibration changes
+6. Explain the final audit/sanity pass
+7. Call out any remaining metadata gaps that can still cause weak recs
