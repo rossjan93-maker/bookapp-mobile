@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { fetchGoogleBooksCoverUrl } from '../../lib/googleBooks';
 import { repairBooksMetadata } from '../../lib/metadataRepair';
-import { ActivityIndicator, FlatList, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, Modal, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
@@ -111,6 +111,10 @@ export default function LibraryScreen() {
   const [error, setError]                 = useState<string | null>(null);
   const [updatingId, setUpdatingId]       = useState<string | null>(null);
   const [pendingFeedback, setPendingFeedback] = useState<PendingFeedback | null>(null);
+  const [showTasteCapture, setShowTasteCapture] = useState<{ userBookId: string; bookId: string } | null>(null);
+  const [likedTags, setLikedTags]             = useState<string[]>([]);
+  const [dislikedTags, setDislikedTags]       = useState<string[]>([]);
+  const [savingTaste, setSavingTaste]         = useState(false);
   const [activeFilter, setActiveFilter]   = useState<FilterKey>('all');
   const [sort, setSort]                   = useState<SortKey>('recent');
   // Accordion state for Finished+chronological mode.
@@ -209,11 +213,9 @@ export default function LibraryScreen() {
   // ── Business logic (unchanged) ────────────────────────────────────────────
 
   function saveRating(userBookId: string, bookId: string, rating: number) {
-    // Capture the completion event ID before clearing state
     const eventId = pendingFeedback?.pendingEventId ?? null;
     setPendingFeedback(null);
     if (!supabase || !currentUserId) return;
-    // Derive sentiment from rating for backward-compat with signals/taste model
     const sentiment =
       rating >= 5 ? 'loved' :
       rating >= 4 ? 'liked' :
@@ -221,10 +223,8 @@ export default function LibraryScreen() {
       'not_for_me';
     supabase.from('user_books').update({ rating, sentiment }).eq('id', userBookId).then(() => {});
     if (eventId) {
-      // Merge rating into the existing completion event — one feed story, not two
       supabase.from('activity_events').update({ rating }).eq('id', eventId).then(() => {});
     } else {
-      // No prior completion event (DNF or future standalone rating) — insert book_rated
       supabase.from('activity_events').insert({
         actor_id:   currentUserId,
         event_type: 'book_rated',
@@ -232,6 +232,23 @@ export default function LibraryScreen() {
         rating,
       }).then(() => {});
     }
+    setLikedTags([]);
+    setDislikedTags([]);
+    setShowTasteCapture({ userBookId, bookId });
+  }
+
+  async function saveTasteTags() {
+    const target = showTasteCapture;
+    setShowTasteCapture(null);
+    if (!supabase || !target || (likedTags.length === 0 && dislikedTags.length === 0)) return;
+    setSavingTaste(true);
+    const tags = { liked: likedTags, didnt_work: dislikedTags };
+    await supabase
+      .from('user_books')
+      .update({ taste_tags: tags })
+      .eq('id', target.userBookId)
+      .then(() => {});
+    setSavingTaste(false);
   }
 
   async function handleUpdateStatus(userBook: UserBook, newStatus: UserBookStatus) {
@@ -420,10 +437,11 @@ export default function LibraryScreen() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
+    <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
     <FlatList
       data={displayedItems}
       keyExtractor={item => isYearSeparator(item) ? item.key : item.id}
-      style={{ backgroundColor: '#faf9f7' }}
+      style={{ flex: 1 }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 0, paddingBottom: 40 }}
       ListHeaderComponent={
         <View>
@@ -951,6 +969,95 @@ export default function LibraryScreen() {
         )
       }
     />
+
+    {/* ── Post-finish taste capture modal ── */}
+    <Modal
+      visible={!!showTasteCapture}
+      transparent
+      animationType="slide"
+      onRequestClose={() => setShowTasteCapture(null)}
+    >
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
+        <View style={{
+          backgroundColor: '#fff',
+          borderTopLeftRadius: 22,
+          borderTopRightRadius: 22,
+          padding: 28,
+          paddingBottom: 44,
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+            <Text style={{ flex: 1, fontSize: 17, fontWeight: '700', color: '#1c1917' }}>
+              What stood out?
+            </Text>
+            <TouchableOpacity
+              onPress={() => setShowTasteCapture(null)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={{ fontSize: 13, color: '#a8a29e' }}>Skip</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={{ fontSize: 13, color: '#a8a29e', marginBottom: 22 }}>
+            Optional — helps us find books you'll love.
+          </Text>
+
+          {([
+            { label: 'Loved about it', tags: likedTags, setTags: setLikedTags },
+            { label: "Didn't land", tags: dislikedTags, setTags: setDislikedTags },
+          ] as const).map(section => (
+            <View key={section.label} style={{ marginBottom: 20 }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 10 }}>
+                {section.label}
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                {(['Pacing', 'Characters', 'Plot', 'Worldbuilding', 'Writing', 'Emotional', 'Romance', 'Suspense', 'Ending', 'Originality'] as const).map(tag => {
+                  const id = tag.toLowerCase();
+                  const selected = section.tags.includes(id);
+                  return (
+                    <TouchableOpacity
+                      key={id}
+                      onPress={() => {
+                        section.setTags((prev: string[]) =>
+                          prev.includes(id) ? prev.filter((t: string) => t !== id) : [...prev, id]
+                        );
+                      }}
+                      style={{
+                        backgroundColor: selected ? '#1c1917' : '#f5f5f4',
+                        borderRadius: 20,
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                      }}
+                    >
+                      <Text style={{ fontSize: 13, color: selected ? '#fff' : '#57534e', fontWeight: selected ? '600' : '400' }}>
+                        {tag}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
+
+          <TouchableOpacity
+            onPress={saveTasteTags}
+            disabled={savingTaste}
+            style={{
+              backgroundColor: '#1c1917',
+              borderRadius: 12,
+              paddingVertical: 14,
+              alignItems: 'center',
+              marginTop: 4,
+              opacity: savingTaste ? 0.6 : 1,
+            }}
+          >
+            {savingTaste
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Text style={{ fontSize: 15, fontWeight: '600', color: '#fff' }}>Done</Text>
+            }
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+    </View>
   );
 }
 

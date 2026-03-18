@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
+  Modal,
   ScrollView,
   Text,
   TextInput,
@@ -111,11 +112,13 @@ export default function BookDetailScreen() {
   const [savingPageCount, setSavingPageCount] = useState(false);
   const [pageCountError, setPageCountError] = useState<string | null>(null);
 
-  // Sentiment capture state
-  const [sentiment, setSentiment] = useState<string | null>(null);
-  const [savingSentiment, setSavingSentiment] = useState(false);
+  // Edit-history modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editRating, setEditRating]       = useState<number | null>(null);
+  const [editNote, setEditNote]           = useState('');
+  const [savingEdit, setSavingEdit]       = useState(false);
 
-  // Taste preferences state
+  // Taste preferences state (used by Taste Match section)
   const [hasTastePrefs, setHasTastePrefs] = useState<boolean | null>(null);
 
   const pageInputRef      = useRef<TextInput>(null);
@@ -132,15 +135,17 @@ export default function BookDetailScreen() {
       if (!supabase) return;
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      if (!userId) setUserId(user.id);
 
       const { data } = await supabase
         .from('user_books')
-        .select('rating, finished_at, review_body, private_note')
+        .select('id, rating, finished_at, review_body, private_note')
         .eq('user_id', user.id)
         .eq('book_id', bookId!)
         .maybeSingle();
 
       if (data) {
+        if (data.id && !userBookId) setUserBookId(data.id as string);
         const h = {
           rating:      (data.rating      as number | null) ?? null,
           finishedAt:  (data.finished_at as string | null) ?? null,
@@ -394,35 +399,6 @@ export default function BookDetailScreen() {
     fetchProgress();
   }, [isReading, bookId, readingGoalParam]);
 
-  // ── Fetch sentiment for finished/dnf books ─────────────────────────────────
-
-  const isFinishedOrDnf = status === 'finished' || status === 'dnf';
-
-  useEffect(() => {
-    if (!isFinishedOrDnf || !bookId || !supabase) return;
-
-    async function fetchSentiment() {
-      if (!supabase) return;
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      if (!userId) setUserId(user.id);
-
-      const { data } = await supabase
-        .from('user_books')
-        .select('id, sentiment')
-        .eq('user_id', user.id)
-        .eq('book_id', bookId!)
-        .maybeSingle();
-
-      if (data) {
-        if (!userBookId) setUserBookId(data.id);
-        setSentiment(data.sentiment ?? null);
-      }
-    }
-
-    fetchSentiment();
-  }, [isFinishedOrDnf, bookId]);
-
   // ── Fetch taste preferences existence ─────────────────────────────────────
 
   useEffect(() => {
@@ -449,29 +425,35 @@ export default function BookDetailScreen() {
     fetchPrefsExistence();
   }, []);
 
-  // ── Sentiment save ─────────────────────────────────────────────────────────
+  // ── Edit-history save ─────────────────────────────────────────────────────
 
-  async function handleSaveSentiment(value: string) {
-    if (!supabase || !bookId || savingSentiment) return;
-    setSavingSentiment(true);
+  async function handleSaveEdit() {
+    if (!supabase || !bookId || savingEdit) return;
+    setSavingEdit(true);
 
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setSavingSentiment(false); return; }
+    if (!user) { setSavingEdit(false); return; }
 
-    const newValue = value === sentiment ? null : value;
+    const patch: Record<string, unknown> = {};
+    if (editRating !== null) patch.rating = editRating;
+    if (editNote.trim() !== '') patch.review_body = editNote.trim();
 
-    const { data, error } = await supabase
-      .from('user_books')
-      .upsert(
-        { user_id: user.id, book_id: bookId!, sentiment: newValue },
-        { onConflict: 'user_id,book_id' }
-      )
-      .select('id');
+    if (Object.keys(patch).length > 0) {
+      patch.user_id = user.id;
+      patch.book_id = bookId!;
+      await supabase
+        .from('user_books')
+        .upsert(patch, { onConflict: 'user_id,book_id' });
 
-    if (!error && data && data.length > 0) {
-      setSentiment(newValue);
+      setUserHistory(prev => prev ? {
+        ...prev,
+        rating:     editRating !== null ? editRating : prev.rating,
+        reviewBody: editNote.trim() !== '' ? editNote.trim() : prev.reviewBody,
+      } : prev);
     }
-    setSavingSentiment(false);
+
+    setSavingEdit(false);
+    setShowEditModal(false);
   }
 
   // ── Progress save ─────────────────────────────────────────────────────────
@@ -558,8 +540,9 @@ export default function BookDetailScreen() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
+    <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
     <ScrollView
-      style={{ flex: 1, backgroundColor: '#faf9f7' }}
+      style={{ flex: 1 }}
       contentContainerStyle={{ paddingBottom: 64 }}
       keyboardShouldPersistTaps="handled"
     >
@@ -606,47 +589,6 @@ export default function BookDetailScreen() {
           </View>
         )}
         {!badge && <View style={{ marginBottom: 28 }} />}
-
-        {/* ── Sentiment capture chips for finished/dnf ── */}
-        {isFinishedOrDnf && (
-          <View style={{
-            flexDirection: 'row',
-            flexWrap: 'wrap',
-            gap: 8,
-            marginBottom: 20,
-          }}>
-            {([
-              { value: 'loved', label: 'Loved' },
-              { value: 'liked', label: 'Liked' },
-              { value: 'okay', label: 'Okay' },
-              { value: 'not_for_me', label: 'Not for me' },
-            ] as const).map((chip) => {
-              const isSelected = sentiment === chip.value;
-              return (
-                <TouchableOpacity
-                  key={chip.value}
-                  onPress={() => handleSaveSentiment(chip.value)}
-                  disabled={savingSentiment}
-                  style={{
-                    backgroundColor: isSelected ? '#1c1917' : '#f5f5f4',
-                    borderRadius: 20,
-                    paddingHorizontal: 14,
-                    paddingVertical: 7,
-                    opacity: savingSentiment ? 0.6 : 1,
-                  }}
-                >
-                  <Text style={{
-                    fontSize: 13,
-                    fontWeight: '500',
-                    color: isSelected ? '#fff' : '#57534e',
-                  }}>
-                    {chip.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
 
         {/* ── Reading Progress card (primary module) ── */}
         {isReading && (
@@ -988,16 +930,28 @@ export default function BookDetailScreen() {
             borderWidth: 1,
             borderColor: '#e7e5e4',
           }}>
-            <Text style={{
-              fontSize: 11,
-              fontWeight: '700',
-              color: '#a8a29e',
-              letterSpacing: 0.9,
-              textTransform: 'uppercase',
-              marginBottom: 14,
-            }}>
-              Your History
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
+              <Text style={{
+                flex: 1,
+                fontSize: 11,
+                fontWeight: '700',
+                color: '#a8a29e',
+                letterSpacing: 0.9,
+                textTransform: 'uppercase',
+              }}>
+                Your History
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setEditRating(userHistory?.rating ?? null);
+                  setEditNote(userHistory?.reviewBody ?? '');
+                  setShowEditModal(true);
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 12, right: 0 }}
+              >
+                <Text style={{ fontSize: 12, color: '#a8a29e' }}>Edit</Text>
+              </TouchableOpacity>
+            </View>
 
             {userHistory.rating != null && (
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
@@ -1150,5 +1104,115 @@ export default function BookDetailScreen() {
 
       </View>
     </ScrollView>
+
+    {/* ── Edit History Modal ── */}
+    <Modal
+      visible={showEditModal}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setShowEditModal(false)}
+    >
+      <View style={{
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        justifyContent: 'flex-end',
+      }}>
+        <View style={{
+          backgroundColor: '#fff',
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
+          padding: 28,
+          paddingBottom: 40,
+        }}>
+          <Text style={{
+            fontSize: 16,
+            fontWeight: '700',
+            color: '#1c1917',
+            marginBottom: 22,
+          }}>
+            Edit your history
+          </Text>
+
+          <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 12 }}>
+            Rating
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 6, marginBottom: 24 }}>
+            {[1, 2, 3, 4, 5].map(n => (
+              <TouchableOpacity
+                key={n}
+                onPress={() => setEditRating(editRating === n ? null : n)}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+              >
+                <Text style={{
+                  fontSize: 34,
+                  color: editRating !== null && n <= editRating ? '#f59e0b' : '#d6d3d1',
+                }}>
+                  ★
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 8 }}>
+            Review / note
+            <Text style={{ fontWeight: '400', color: '#c4b5a5' }}> (optional)</Text>
+          </Text>
+          <TextInput
+            value={editNote}
+            onChangeText={setEditNote}
+            placeholder="What did you think?"
+            placeholderTextColor="#c4b5a5"
+            multiline
+            numberOfLines={3}
+            style={{
+              borderWidth: 1,
+              borderColor: '#e7e5e4',
+              borderRadius: 10,
+              padding: 12,
+              fontSize: 14,
+              color: '#1c1917',
+              lineHeight: 22,
+              minHeight: 80,
+              textAlignVertical: 'top',
+              marginBottom: 24,
+            }}
+          />
+
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity
+              onPress={() => setShowEditModal(false)}
+              style={{
+                flex: 1,
+                borderWidth: 1,
+                borderColor: '#e7e5e4',
+                borderRadius: 10,
+                paddingVertical: 13,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 14, color: '#78716c' }}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleSaveEdit}
+              disabled={savingEdit}
+              style={{
+                flex: 2,
+                backgroundColor: '#1c1917',
+                borderRadius: 10,
+                paddingVertical: 13,
+                alignItems: 'center',
+                opacity: savingEdit ? 0.6 : 1,
+              }}
+            >
+              {savingEdit
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={{ fontSize: 14, fontWeight: '600', color: '#fff' }}>Save</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+    </View>
   );
 }
