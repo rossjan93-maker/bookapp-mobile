@@ -84,11 +84,21 @@ export type CandidateBook = {
   _retrieval_reason:  string;
 };
 
+export type ScoreBreakdown = {
+  trait_alignment:  number;   // step 1 — preferred trait match contribution
+  avoided_penalty:  number;   // step 2 — avoided trait penalties (negative)
+  genre_bonus:      number;   // step 3 — genre affinity bonus/penalty
+  feedback_boost:   number;   // step 4 — More-Like-This genre boost
+  enrichment_bonus: number;   // step 5 — consensus trait + popularity signal
+  final_score:      number;   // clamped 0–1 total
+};
+
 export type ScoredBook = CandidateBook & {
   score:      number;
   confidence: 'low' | 'medium' | 'high';
   reasons:    string[];
   risks:      string[];
+  _score_breakdown: ScoreBreakdown;
   _debug: {
     pool_size: number;
     rank:      number;
@@ -625,14 +635,20 @@ export function scoreBookForUser(
   profile:     TasteProfile,
   feedback?:   FeedbackContext,
   enrichment?: BookEnrichmentProfile,
-): Pick<ScoredBook, 'score' | 'confidence' | 'reasons' | 'risks'> {
+): Pick<ScoredBook, 'score' | 'confidence' | 'reasons' | 'risks' | '_score_breakdown'> {
   const bt         = getBookTraits(book);
   const pref       = profile.preferred_traits;
   const avoid      = profile.avoided_traits;
   const affinities = profile.genre_affinities ?? {};
   const reasons: string[] = [];
   const risks:   string[] = [];
-  let score = 0;
+
+  // Step-level accumulators for the debug breakdown
+  let s1_trait = 0;
+  let s2_avoid = 0;
+  let s3_genre = 0;
+  let s4_feed  = 0;
+  let s5_enr   = 0;
 
   // ── Step 1: Preferred trait alignment ─────────────────────────────────────
   const prefMatches: string[] = [];
@@ -641,7 +657,7 @@ export function scoreBookForUser(
     const contribution = userWeight * bookWeight;
     if (contribution > 0.22) {
       prefMatches.push(trait.toLowerCase());
-      score += contribution;
+      s1_trait += contribution;
     }
   }
   if (prefMatches.length >= 2) {
@@ -657,7 +673,7 @@ export function scoreBookForUser(
     const contribution = penalty * bookWeight;
     if (contribution < -0.18) {
       avoidHits.push(trait.toLowerCase());
-      score += contribution;
+      s2_avoid += contribution;
     }
   }
   if (avoidHits.length > 0) {
@@ -668,12 +684,12 @@ export function scoreBookForUser(
   if (bt.primaryGenre) {
     const affinity = affinities[bt.primaryGenre] ?? 0;
     if (affinity > 0.5) {
-      score += 0.28;
+      s3_genre += 0.28;
       if (reasons.length < 2) reasons.push(`Fits a genre you consistently enjoy`);
     } else if (affinity > 0.2) {
-      score += 0.12;
+      s3_genre += 0.12;
     } else if (affinity < -0.35) {
-      score -= 0.22;
+      s3_genre -= 0.22;
       if (risks.length < 1) {
         const label = bt.primaryGenre.replace('_', '/');
         risks.push(`You've had mixed results with ${label} before`);
@@ -685,20 +701,16 @@ export function scoreBookForUser(
   if (feedback && bt.primaryGenre) {
     const boost = feedback.genreBoosts[bt.primaryGenre] ?? 0;
     if (boost > 0) {
-      score += boost;
+      s4_feed += boost;
       if (reasons.length < 2) reasons.push(`Similar to books you asked for more of`);
     }
   }
 
   // ── Step 5: Enrichment signals (secondary layer) ──────────────────────────
-  // These boost score modestly and improve explanation language.
-  // They do NOT override steps 1–4.
-
   if (enrichment) {
     const ct = enrichment.consensus_traits;
     const ps = enrichment.popularity_signals;
 
-    // 5a. Consensus trait match — compare enrichment traits to user preferences
     const enrichedPrefMatches: string[] = [];
     const traitMap: Record<string, string> = {
       pacing:            'Pacing',
@@ -716,14 +728,13 @@ export function scoreBookForUser(
       const userPref  = pref[prefKey] ?? 0;
       if (enrichVal > 0.5 && userPref > 0.3) {
         enrichedPrefMatches.push(prefKey.toLowerCase());
-        score += 0.06;  // small secondary boost
+        s5_enr += 0.06;
       }
-      // Risk: enrichment shows strong romance but user avoids it
       if (enrichKey === 'romance_intensity' && enrichVal > 0.6) {
         const avoidRomance = Math.abs(avoid['Romance'] ?? 0);
         if (avoidRomance > 0.25 && risks.length < 1) {
           risks.push(`May lean more romance-forward than your usual favorites`);
-          score -= 0.08;
+          s5_enr -= 0.08;
         }
       }
     }
@@ -732,36 +743,44 @@ export function scoreBookForUser(
       reasons.push(`Readers consistently note strong ${key} — which fits your profile`);
     }
 
-    // 5b. Popularity signal — mild quality boost for well-reviewed books
     const ratingsCount = ps.ratings_count ?? 0;
     const avgRating    = ps.average_rating ?? 0;
     if (ratingsCount >= 500 && avgRating >= 4.0) {
-      score += 0.04;  // very small quality signal
+      s5_enr += 0.04;
     }
 
-    // 5c. Pacing enrichment vs user's pacing preference mismatch
     if ((ct.pacing ?? 0) < 0.2 && (pref['Pacing'] ?? 0) > 0.5 && risks.length < 1) {
       risks.push(`This appears slower-paced than the books you rate highest`);
     }
   }
 
-  // ── Audience signal reason (if enrichment available and no reason yet) ─────
   if (enrichment && enrichment.audience_signals.length > 0 && reasons.length === 0) {
     reasons.push(enrichment.audience_signals[0]);
   }
 
-  const finalScore = Math.max(0, Math.min(1, score));
+  const rawScore   = s1_trait + s2_avoid + s3_genre + s4_feed + s5_enr;
+  const finalScore = Math.max(0, Math.min(1, rawScore));
 
   let confidence: 'low' | 'medium' | 'high';
   if (profile.tier >= 3 && finalScore > 0.42)      confidence = 'high';
   else if (profile.tier >= 2 && finalScore > 0.22) confidence = 'medium';
   else                                              confidence = 'low';
 
+  const fmt = (n: number) => +n.toFixed(3);
+
   return {
-    score:   +finalScore.toFixed(3),
+    score:   fmt(finalScore),
     confidence,
     reasons: [...new Set(reasons)].slice(0, 2),
     risks:   [...new Set(risks)].slice(0, 1),
+    _score_breakdown: {
+      trait_alignment:  fmt(s1_trait),
+      avoided_penalty:  fmt(s2_avoid),
+      genre_bonus:      fmt(s3_genre),
+      feedback_boost:   fmt(s4_feed),
+      enrichment_bonus: fmt(s5_enr),
+      final_score:      fmt(finalScore),
+    },
   };
 }
 

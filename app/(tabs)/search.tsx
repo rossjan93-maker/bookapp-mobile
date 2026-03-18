@@ -24,7 +24,7 @@ import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computeTasteProfile } from '../../lib/tasteProfile';
 import type { TasteProfile } from '../../lib/tasteProfile';
 import { getCandidateBooks, getRankedRecs, fitLabel, fitColor } from '../../lib/recommender';
-import type { ScoredBook, QualityGate } from '../../lib/recommender';
+import type { ScoredBook, QualityGate, RankedRecsResult } from '../../lib/recommender';
 import { loadFeedbackContext, persistFeedback, emptyContext } from '../../lib/recFeedback';
 import type { FeedbackContext } from '../../lib/recFeedback';
 import { getBookTraits } from '../../lib/bookTraits';
@@ -737,7 +737,7 @@ function RecCard({
       Animated.timing(whyHeight, { toValue: 0, duration: 200, useNativeDriver: false }).start();
       setExpanded(false);
     } else {
-      Animated.timing(whyHeight, { toValue: 190, duration: 220, useNativeDriver: false }).start();
+      Animated.timing(whyHeight, { toValue: 330, duration: 220, useNativeDriver: false }).start();
       setExpanded(true);
       onExplanationOpen();
     }
@@ -857,6 +857,43 @@ function RecCard({
               <Text style={{ fontSize: 11, color: '#57534e' }}>#{book._debug.rank} of {book._debug.pool_size}</Text>
             </View>
           </View>
+
+          {/* ── Score breakdown ── */}
+          <View style={{ marginTop: 10, borderTopWidth: 1, borderTopColor: '#e7e5e4', paddingTop: 8 }}>
+            <Text style={{ fontSize: 10, fontWeight: '600', color: '#a8a29e', marginBottom: 5 }}>
+              SCORE BREAKDOWN
+            </Text>
+            {[
+              { label: 'Trait alignment', value: book._score_breakdown.trait_alignment,  sign: true },
+              { label: 'Avoided traits',  value: book._score_breakdown.avoided_penalty,  sign: true },
+              { label: 'Genre affinity',  value: book._score_breakdown.genre_bonus,      sign: true },
+              { label: 'Feedback boost',  value: book._score_breakdown.feedback_boost,   sign: true },
+              { label: 'Enrichment',      value: book._score_breakdown.enrichment_bonus, sign: true },
+            ].map(({ label, value }) => {
+              const isNeg  = value < 0;
+              const isZero = value === 0;
+              const color  = isZero ? '#d6d3d1' : isNeg ? '#ef4444' : '#16a34a';
+              const prefix = value > 0 ? '+' : '';
+              const barW   = Math.round(Math.min(Math.abs(value) * 200, 72));
+              return (
+                <View key={label} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 3 }}>
+                  <Text style={{ fontSize: 10, color: '#78716c', width: 100 }}>{label}</Text>
+                  <View style={{
+                    width: barW, height: 4, borderRadius: 2, marginRight: 6,
+                    backgroundColor: isZero ? '#e7e5e4' : color,
+                    opacity: isZero ? 0.4 : 0.75,
+                  }} />
+                  <Text style={{ fontSize: 10, color, fontVariant: ['tabular-nums'] }}>
+                    {prefix}{value.toFixed(2)}
+                  </Text>
+                </View>
+              );
+            })}
+            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 3 }}>
+              Retrieval: {book._retrieval_reason}
+            </Text>
+          </View>
+
           {uncertainty && (
             <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 8, lineHeight: 16, fontStyle: 'italic' }}>
               {uncertainty}
@@ -936,6 +973,9 @@ export default function RecommendationsScreen() {
   const [hubLoading, setHubLoading]           = useState(true);
   const [recsLoading, setRecsLoading]         = useState(false);
   const [recsQualityGate, setRecsQualityGate] = useState<QualityGate | null>(null);
+  const [recsMeta, setRecsMeta]               = useState<RankedRecsResult['meta'] | null>(null);
+  const [traceOpen, setTraceOpen]             = useState(false);
+  const traceHeight                           = useRef(new Animated.Value(0)).current;
   const [feedbackCtx, setFeedbackCtx]         = useState<FeedbackContext>(emptyContext());
   const [saveToast, setSaveToast]             = useState<string | null>(null);
   const [booksToRate, setBooksToRate]         = useState<BookToRate[]>([]);
@@ -1100,7 +1140,35 @@ export default function RecommendationsScreen() {
       } = await getCandidateBooks(supabase!, user.id, tp, fbCtx);
       const { recs, meta } = getRankedRecs(candidates, tp, 5, fbCtx, enrichmentMap, retrieval_trace);
       setRecommendations(recs);
+      setRecsMeta(meta);
       setRecsQualityGate(meta.quality_gate !== 'passed' ? meta.quality_gate : null);
+
+      if (__DEV__) {
+        console.log('[REC TRACE] retrieval:', {
+          pool: meta.pool_size,
+          catalog: meta.catalog_count,
+          cached_ext: meta.cached_external_count,
+          live_ol: meta.live_ol_count,
+          hygiene_excluded: meta.hygiene_excluded,
+          enriched: meta.enriched_count,
+          quality_gate: meta.quality_gate,
+          genres_used: meta.retrieval_trace.top_genres_used,
+          traits_used: meta.retrieval_trace.top_traits_used,
+          subjects_used: meta.retrieval_trace.liked_subjects_used,
+          authors_used: meta.retrieval_trace.liked_authors_used,
+          ol_queries: meta.retrieval_trace.ol_queries,
+        });
+        console.log('[REC TRACE] top-10 scored:', recs.slice(0, 10).map(r => ({
+          title:    r.title,
+          author:   r.author,
+          score:    r.score,
+          source:   r._source,
+          reason:   r._retrieval_reason,
+          breakdown: r._score_breakdown,
+          fit:      r.reasons,
+          risks:    r.risks,
+        })));
+      }
     } catch {
       // Recommendations fail silently — hub content is already visible
     } finally {
@@ -1451,6 +1519,106 @@ export default function RecommendationsScreen() {
                       onExplanationOpen={() => handleRecExplanationOpen(rec)}
                     />
                   ))}
+
+                  {/* ── Retrieval trace debug panel ── */}
+                  {recsMeta && (
+                    <View style={{ marginTop: 4 }}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          const open = !traceOpen;
+                          setTraceOpen(open);
+                          Animated.timing(traceHeight, {
+                            toValue: open ? 1 : 0,
+                            duration: 200,
+                            useNativeDriver: false,
+                          }).start();
+                        }}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          paddingVertical: 6,
+                        }}
+                      >
+                        <Text style={{ fontSize: 10, color: '#a8a29e', flex: 1 }}>
+                          {traceOpen ? '▲' : '▼'}  Debug — retrieval trace
+                        </Text>
+                        <Text style={{ fontSize: 10, color: '#d6d3d1' }}>
+                          pool {recsMeta.pool_size} · excl {recsMeta.hygiene_excluded} · enr {recsMeta.enriched_count}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <Animated.View style={{
+                        maxHeight: traceHeight.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, 400],
+                        }),
+                        overflow: 'hidden',
+                      }}>
+                        <View style={{
+                          backgroundColor: '#fafaf9',
+                          borderRadius: 10,
+                          padding: 10,
+                          borderWidth: 1,
+                          borderColor: '#e7e5e4',
+                          marginBottom: 8,
+                        }}>
+                          {/* Sources row */}
+                          <View style={{ flexDirection: 'row', gap: 16, marginBottom: 8 }}>
+                            {[
+                              { label: 'Catalog',    value: recsMeta.catalog_count },
+                              { label: 'OL live',    value: recsMeta.live_ol_count },
+                              { label: 'OL cached',  value: recsMeta.cached_external_count },
+                              { label: 'Excluded',   value: recsMeta.hygiene_excluded },
+                              { label: 'Enriched',   value: recsMeta.enriched_count },
+                            ].map(({ label, value }) => (
+                              <View key={label}>
+                                <Text style={{ fontSize: 9, fontWeight: '600', color: '#a8a29e' }}>{label.toUpperCase()}</Text>
+                                <Text style={{ fontSize: 11, color: '#57534e' }}>{value}</Text>
+                              </View>
+                            ))}
+                          </View>
+
+                          {/* Anchors used */}
+                          {recsMeta.retrieval_trace.top_genres_used.length > 0 && (
+                            <View style={{ marginBottom: 6 }}>
+                              <Text style={{ fontSize: 9, fontWeight: '600', color: '#a8a29e', marginBottom: 2 }}>GENRE ANCHORS</Text>
+                              <Text style={{ fontSize: 10, color: '#57534e', lineHeight: 16 }}>
+                                {recsMeta.retrieval_trace.top_genres_used.join('  ·  ')}
+                              </Text>
+                            </View>
+                          )}
+                          {recsMeta.retrieval_trace.liked_subjects_used.length > 0 && (
+                            <View style={{ marginBottom: 6 }}>
+                              <Text style={{ fontSize: 9, fontWeight: '600', color: '#a8a29e', marginBottom: 2 }}>SUBJECT ANCHORS</Text>
+                              <Text style={{ fontSize: 10, color: '#57534e', lineHeight: 16 }}>
+                                {recsMeta.retrieval_trace.liked_subjects_used.join('  ·  ')}
+                              </Text>
+                            </View>
+                          )}
+                          {recsMeta.retrieval_trace.liked_authors_used.length > 0 && (
+                            <View style={{ marginBottom: 6 }}>
+                              <Text style={{ fontSize: 9, fontWeight: '600', color: '#a8a29e', marginBottom: 2 }}>AUTHOR ANCHORS</Text>
+                              <Text style={{ fontSize: 10, color: '#57534e', lineHeight: 16 }}>
+                                {recsMeta.retrieval_trace.liked_authors_used.join('  ·  ')}
+                              </Text>
+                            </View>
+                          )}
+                          {recsMeta.retrieval_trace.ol_queries.length > 0 && (
+                            <View>
+                              <Text style={{ fontSize: 9, fontWeight: '600', color: '#a8a29e', marginBottom: 2 }}>
+                                OL QUERIES ({recsMeta.retrieval_trace.ol_queries.length})
+                              </Text>
+                              {recsMeta.retrieval_trace.ol_queries.slice(0, 8).map((q, i) => (
+                                <Text key={i} style={{ fontSize: 9, color: '#a8a29e', lineHeight: 15 }}>
+                                  {i + 1}. {q}
+                                </Text>
+                              ))}
+                            </View>
+                          )}
+                        </View>
+                      </Animated.View>
+                    </View>
+                  )}
                 </View>
               )}
 
