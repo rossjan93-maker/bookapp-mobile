@@ -1,0 +1,103 @@
+Build the first version of a recommendation learning system for the book app.
+
+Goal
+Do not give high-confidence personalized recommendations until enough signal exists.
+Create a “learning mode” for net-new users and an “import diagnosis” flow for users who import reading history.
+
+Part 1: Recommendation confidence gating
+Add a recommendation-confidence concept based on user history.
+
+Use these tiers:
+- Tier 0: fewer than 5 completed/rated books → no strong personalized recommendations
+- Tier 1: 5–9 strong signals → provisional recommendations
+- Tier 2: 10+ strong signals → personalized recommendations
+- Tier 3: imported history + ratings/taste tags/reviews → high-confidence recommendations
+
+A “strong signal” can include:
+- completed + rated book
+- completed + taste tags
+- completed + review
+- imported completed/rated history
+
+Expose a simple confidence label in the UI:
+- “We’re learning your taste”
+- “Early read on your taste”
+- “Personalized for you”
+- “High-confidence recommendations”
+
+Part 2: Net-new user learning mode
+For users with low confidence:
+- do not show normal recommendation modules as if they are confident
+- instead show a learning-state card with:
+  - progress indicator
+  - optional actions to accelerate learning:
+    - rate finished books
+    - add taste tags
+    - answer preference questions
+    - import reading history
+
+Part 3: Imported-user diagnosis flow
+When a user imports reading history from Goodreads or another source:
+- analyze imported books and ratings
+- generate 3–5 taste hypotheses with confidence
+- examples:
+  - “You seem to reward originality more than familiarity”
+  - “You appear to value pacing and momentum”
+  - “Romance-heavy books may underperform for you”
+  - “You may prefer idea-driven books over character-driven books”
+- present these as hypotheses, not facts
+
+Then ask 5 adaptive questions that test those hypotheses.
+Question style should be tradeoff-based, not generic genre preference questions.
+
+Examples:
+- “When a book works for you, is it more often because it teaches you something new or because it affects you emotionally?”
+- “Are you more forgiving of slow pacing if the ideas are strong?”
+- “Do you prefer originality or polish?”
+- “Do you want books that challenge you or books that flow effortlessly?”
+
+Part 4: Taste profile object
+Create a first-pass internal taste profile derived from:
+- completed books
+- ratings
+- taste_tags
+- review_body
+- imported history
+- onboarding question answers
+
+Use a structure like:
+{
+  confidence: 'low' | 'medium' | 'high',
+  preferred_traits: { originality: 0.8, pacing: 0.6 },
+  avoided_traits: { romance: -0.7 },
+  open_questions: ['How much do they tolerate dense prose?'],
+  evidence: {
+    completed_books_count: number,
+    imported_books_count: number,
+    rated_books_count: number,
+    taste_tag_count: number,
+    review_count: number
+  }
+}
+
+Part 5: Recommendation explanation requirements
+Recommendations should not just be ranked.
+Each recommendation should include:
+- why it fits
+- which known preferences it aligns with
+- confidence label
+- one possible risk/mismatch if confidence is not high
+
+Part 6: MVP constraints
+Do not build a complex ML system yet.
+Use heuristics and explicit weighting first.
+Start with:
+- ratings = top-line signal
+- taste tags = strongest explicit preference feature
+- review text = optional later enrichment
+- imported history = hypothesis generator
+
+Output
+1. Explain what files/components you would create or modify
+2. Build the first-pass data model and UI states
+3. If recommendation generation itself is not yet implemented, at least build the learning-mode and diagnosis-flow scaffolding cleanly

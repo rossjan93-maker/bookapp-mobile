@@ -12,6 +12,8 @@ import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computePagePacing } from '../../lib/pacing';
+import { computeTasteProfile } from '../../lib/tasteProfile';
+import type { TasteProfile } from '../../lib/tasteProfile';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -166,6 +168,9 @@ export default function HomeScreen() {
   const [booksThisYear, setBooksThisYear] = useState<YearBook[]>([]);
   const [goalExpanded, setGoalExpanded]   = useState(false);
 
+  // Taste profile / learning mode
+  const [tasteProfile, setTasteProfile] = useState<TasteProfile | null>(null);
+
   // Activity feed
   const [feed, setFeed] = useState<FeedEvent[]>([]);
   const [feedLoading, setFeedLoading] = useState(true);
@@ -213,6 +218,7 @@ export default function HomeScreen() {
         loadCurrentRead(user.id),
         loadPendingRecs(user.id),
         loadBooksThisYear(user.id),
+        computeTasteProfile(supabase!, user.id).then(setTasteProfile).catch(() => {}),
       ]);
       setFeedLoading(false);
       setLoadingFriendships(false);
@@ -471,6 +477,125 @@ export default function HomeScreen() {
             : 'Your reading world'}
         </Text>
       </View>
+
+      {/* ── Learning Mode Card (shown when confidence tier ≤ 1) ── */}
+      {tasteProfile !== null && tasteProfile.tier <= 1 && (
+        <View style={{ marginBottom: 28 }}>
+          <View style={{
+            backgroundColor: '#fff',
+            borderRadius: 16,
+            padding: 18,
+            shadowColor: '#000',
+            shadowOpacity: 0.05,
+            shadowRadius: 8,
+            shadowOffset: { width: 0, height: 2 },
+            elevation: 2,
+          }}>
+            {/* Header row */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 2 }}>
+                  {tasteProfile.label}
+                </Text>
+                <Text style={{ fontSize: 12, color: '#78716c' }}>
+                  {tasteProfile.strongSignalCount} signal{tasteProfile.strongSignalCount !== 1 ? 's' : ''} collected
+                  {' · '}{tasteProfile.nextTierAt - tasteProfile.strongSignalCount} to next tier
+                </Text>
+              </View>
+            </View>
+
+            {/* Progress bar */}
+            <View style={{ height: 4, backgroundColor: '#e7e5e4', borderRadius: 2, overflow: 'hidden', marginBottom: 16 }}>
+              <View style={{
+                height: 4,
+                width: `${Math.min(100, Math.round((tasteProfile.strongSignalCount / tasteProfile.nextTierAt) * 100))}%`,
+                backgroundColor: '#1c1917',
+                borderRadius: 2,
+              }} />
+            </View>
+
+            {/* Actions */}
+            <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 10 }}>
+              Accelerate learning
+            </Text>
+            <View style={{ gap: 8 }}>
+              <TouchableOpacity
+                onPress={() => router.push('/(tabs)/library')}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: '#faf9f7',
+                  borderRadius: 10,
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
+                  borderWidth: 1,
+                  borderColor: '#e7e5e4',
+                }}
+              >
+                <Text style={{ fontSize: 18, marginRight: 10 }}>★</Text>
+                <Text style={{ fontSize: 13, color: '#1c1917', flex: 1 }}>Rate a finished book</Text>
+                <Text style={{ fontSize: 16, color: '#d6d3d1' }}>›</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => router.push('/(tabs)/library')}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: '#faf9f7',
+                  borderRadius: 10,
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
+                  borderWidth: 1,
+                  borderColor: '#e7e5e4',
+                }}
+              >
+                <Text style={{ fontSize: 18, marginRight: 10 }}>◎</Text>
+                <Text style={{ fontSize: 13, color: '#1c1917', flex: 1 }}>Add taste tags to a book</Text>
+                <Text style={{ fontSize: 16, color: '#d6d3d1' }}>›</Text>
+              </TouchableOpacity>
+
+              {tasteProfile.evidence.imported_books_count === 0 ? (
+                <TouchableOpacity
+                  onPress={() => router.push('/import/goodreads')}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: '#faf9f7',
+                    borderRadius: 10,
+                    paddingHorizontal: 14,
+                    paddingVertical: 10,
+                    borderWidth: 1,
+                    borderColor: '#e7e5e4',
+                  }}
+                >
+                  <Text style={{ fontSize: 18, marginRight: 10 }}>⤵</Text>
+                  <Text style={{ fontSize: 13, color: '#1c1917', flex: 1 }}>Import reading history</Text>
+                  <Text style={{ fontSize: 16, color: '#d6d3d1' }}>›</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => router.push('/import/diagnosis')}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: '#faf9f7',
+                    borderRadius: 10,
+                    paddingHorizontal: 14,
+                    paddingVertical: 10,
+                    borderWidth: 1,
+                    borderColor: '#e7e5e4',
+                  }}
+                >
+                  <Text style={{ fontSize: 18, marginRight: 10 }}>⟲</Text>
+                  <Text style={{ fontSize: 13, color: '#1c1917', flex: 1 }}>Analyse my imported history</Text>
+                  <Text style={{ fontSize: 16, color: '#d6d3d1' }}>›</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </View>
+      )}
 
       {/* ── 1. Continue Reading ── */}
       {currentReads.length > 0 && (
