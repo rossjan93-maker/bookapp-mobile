@@ -23,11 +23,14 @@ import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computeTasteProfile } from '../../lib/tasteProfile';
 import type { TasteProfile } from '../../lib/tasteProfile';
-import { getCandidateBooks, getRankedRecs, fitLabel, fitColor } from '../../lib/recommender';
+import { getCandidateBooks, getRankedRecs, fitLabel, fitColor, getPersonalizedRecsWithExpert } from '../../lib/recommender';
 import type { ScoredBook, QualityGate, RankedRecsResult } from '../../lib/recommender';
 import { loadFeedbackContext, persistFeedback, emptyContext } from '../../lib/recFeedback';
 import type { FeedbackContext } from '../../lib/recFeedback';
 import { getBookTraits } from '../../lib/bookTraits';
+import { getEntitlement } from '../../lib/recEntitlement';
+import type { RecEntitlement } from '../../lib/recEntitlement';
+import type { ReaderThesis } from '../../lib/expertRec';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1003,6 +1006,14 @@ export default function RecommendationsScreen() {
   const [tasteProfile, setTasteProfile]       = useState<TasteProfile | null>(null);
   const [recommendations, setRecommendations] = useState<ScoredBook[]>([]);
 
+  // ── Entitlement + expert mode state ───────────────────────────────────────
+  const [entitlement, setEntitlement]         = useState<RecEntitlement | null>(null);
+  const [recMode, setRecMode]                 = useState<'deterministic' | 'expert' | null>(null);
+  const [readerThesis, setReaderThesis]       = useState<ReaderThesis | null>(null);
+  const [isFreePreview, setIsFreePreview]     = useState(false);
+  const [thesisOpen, setThesisOpen]           = useState(false);
+  const thesisHeight                          = useRef(new Animated.Value(0)).current;
+
   // ── Search/send flow state ────────────────────────────────────────────────
   const [query, setQuery]               = useState('');
   const [bookResults, setBookResults]   = useState<BookResult[]>([]);
@@ -1053,7 +1064,7 @@ export default function RecommendationsScreen() {
     // ── Phase 1: core hub data (all DB queries run concurrently) ─────────────
     // Hub becomes visible as soon as this resolves, without waiting for OL API.
 
-    const [rateRes, tagRes, incomingRes, sentRes, tp] = await Promise.all([
+    const [rateRes, tagRes, incomingRes, sentRes, tp, ent] = await Promise.all([
       // Finished books with no rating
       supabase
         .from('user_books')
@@ -1096,6 +1107,9 @@ export default function RecommendationsScreen() {
 
       // Taste profile — needed to know tier + genre affinities for Phase 2
       computeTasteProfile(supabase!, user.id).catch(() => null),
+
+      // Entitlement — determines whether expert rec mode is available
+      getEntitlement(supabase!, user.id).catch(() => null),
     ]);
 
     // ── Supabase many-to-one join note: returns single object, not array ─────
@@ -1136,6 +1150,7 @@ export default function RecommendationsScreen() {
     setIncomingRecs((incomingRes.data as unknown as IncomingRec[]) ?? []);
     setSentRecs((sentRes.data as unknown as SentRec[]) ?? []);
     setTasteProfile(tp);
+    setEntitlement(ent);
     setHubLoading(false);
 
     // ── Phase 2: recommendation retrieval (profile-guided, includes OL calls) ─
@@ -1145,23 +1160,30 @@ export default function RecommendationsScreen() {
 
     setRecsLoading(true);
     setRecsQualityGate(null);
+    setRecMode(null);
+    setIsFreePreview(false);
     try {
       // Load feedback context first (fast DB query) — drives candidate exclusion + boosts
       const fbCtx = await loadFeedbackContext(supabase!, user.id);
       setFeedbackCtx(fbCtx);
 
-      // Retrieve candidates (multi-anchor OL + catalog + cache) and enrichment
-      const {
-        candidates,
-        enrichmentMap,
-        retrieval_trace,
-      } = await getCandidateBooks(supabase!, user.id, tp, fbCtx);
-      const { recs, meta } = getRankedRecs(candidates, tp, 5, fbCtx, enrichmentMap, retrieval_trace);
+      // Run the unified pipeline (deterministic + optional expert layer)
+      // Uses expert layer if entitlement allows + signal is sufficient
+      const activeEntitlement = ent ?? { plan: 'free' as const, expert_recs_enabled: false, expert_refreshes_remaining_this_period: 0, has_used_free_import_analysis: false, next_refresh_available_at: null, _raw: { free_expert_used: false, expert_refreshes_this_period: 0, period_start_at: new Date().toISOString(), last_expert_refresh_at: null } };
+
+      const { recs, meta } = await getPersonalizedRecsWithExpert(
+        supabase!, user.id, tp, activeEntitlement, 5, fbCtx,
+      );
+
       setRecommendations(recs);
       setRecsMeta(meta);
       setRecsQualityGate(meta.quality_gate !== 'passed' ? meta.quality_gate : null);
+      setRecMode(meta.mode ?? 'deterministic');
+      setReaderThesis(meta.reader_thesis ?? null);
+      setIsFreePreview(meta.expert_decision?.is_free_preview ?? false);
 
       if (__DEV__) {
+        console.log('[REC TRACE] mode:', meta.mode ?? 'deterministic', '| decision:', meta.expert_decision?.reason);
         console.log('[REC TRACE] retrieval:', {
           pool: meta.pool_size,
           catalog: meta.catalog_count,
@@ -1175,7 +1197,15 @@ export default function RecommendationsScreen() {
           subjects_used: meta.retrieval_trace.liked_subjects_used,
           authors_used: meta.retrieval_trace.liked_authors_used,
           ol_queries: meta.retrieval_trace.ol_queries,
+          from_cache: meta.is_from_cache,
         });
+        if (meta.mode === 'expert' && meta.reader_thesis) {
+          console.log('[EXPERT THESIS]', {
+            dominant_lanes:   meta.reader_thesis.dominant_lanes.map(l => `${l.label} (${l.strength.toFixed(2)})`),
+            center_of_gravity: meta.reader_thesis.center_of_gravity,
+            guardrails:       meta.reader_thesis.recommendation_guardrails.length,
+          });
+        }
         console.log('[REC TRACE] top-10 scored:', recs.slice(0, 10).map(r => ({
           title:    r.title,
           author:   r.author,
@@ -1503,10 +1533,125 @@ export default function RecommendationsScreen() {
                     <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', flex: 1 }}>
                       Picked for you
                     </Text>
-                    <Text style={{ fontSize: 11, color: '#a8a29e' }}>
-                      {tasteProfile?.label ?? ''}
-                    </Text>
+                    {recMode === 'expert' ? (
+                      <View style={{
+                        backgroundColor: '#1c1917', borderRadius: 6,
+                        paddingHorizontal: 7, paddingVertical: 3,
+                      }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#faf9f7', letterSpacing: 0.5 }}>
+                          EXPERT
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={{ fontSize: 11, color: '#a8a29e' }}>
+                        {tasteProfile?.label ?? ''}
+                      </Text>
+                    )}
                   </View>
+
+                  {/* ── Free preview moment ── */}
+                  {isFreePreview && (
+                    <View style={{
+                      backgroundColor: '#f0fdf4', borderRadius: 10,
+                      padding: 14, marginBottom: 12,
+                      borderWidth: 1, borderColor: '#bbf7d0',
+                    }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#15803d', marginBottom: 4 }}>
+                        Your deep taste analysis is ready
+                      </Text>
+                      <Text style={{ fontSize: 12, color: '#166534', lineHeight: 18 }}>
+                        We've analysed your reading history and built a personalised reader profile. These picks are selected against your specific taste lanes, not just broad genre preferences.
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* ── Expert reader thesis panel (collapsible) ── */}
+                  {recMode === 'expert' && readerThesis && (
+                    <View style={{ marginBottom: 10 }}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          const open = !thesisOpen;
+                          setThesisOpen(open);
+                          Animated.timing(thesisHeight, {
+                            toValue: open ? 1 : 0,
+                            duration: 220,
+                            useNativeDriver: false,
+                          }).start();
+                        }}
+                        style={{
+                          flexDirection: 'row', alignItems: 'center',
+                          paddingVertical: 8, paddingHorizontal: 12,
+                          backgroundColor: '#f5f5f4', borderRadius: 8,
+                        }}
+                      >
+                        <Text style={{ fontSize: 11, color: '#57534e', flex: 1 }}>
+                          {thesisOpen ? '▲' : '▼'}  Your reader profile
+                        </Text>
+                        <Text style={{ fontSize: 10, color: '#a8a29e' }}>
+                          {readerThesis.dominant_lanes.length} lane{readerThesis.dominant_lanes.length !== 1 ? 's' : ''}
+                        </Text>
+                      </TouchableOpacity>
+                      <Animated.View style={{
+                        maxHeight: thesisHeight.interpolate({ inputRange: [0, 1], outputRange: [0, 320] }),
+                        overflow: 'hidden',
+                      }}>
+                        <View style={{
+                          backgroundColor: '#faf9f7', borderRadius: 10,
+                          padding: 12, marginTop: 4,
+                          borderWidth: 1, borderColor: '#e7e5e4',
+                        }}>
+                          <Text style={{ fontSize: 12, color: '#1c1917', lineHeight: 18, marginBottom: 8, fontStyle: 'italic' }}>
+                            {readerThesis.center_of_gravity}
+                          </Text>
+                          {readerThesis.dominant_lanes.slice(0, 3).map(lane => (
+                            <View key={lane.genre_key} style={{ marginBottom: 6 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                <View style={{ width: Math.round(lane.strength * 48), height: 3, backgroundColor: '#1c1917', borderRadius: 2, opacity: 0.6 }} />
+                                <Text style={{ fontSize: 11, fontWeight: '600', color: '#1c1917' }}>
+                                  {lane.label.charAt(0).toUpperCase() + lane.label.slice(1)}
+                                </Text>
+                              </View>
+                              {lane.evidence.books.length > 0 && (
+                                <Text style={{ fontSize: 10, color: '#78716c', marginTop: 2, paddingLeft: 54 }} numberOfLines={1}>
+                                  e.g. {lane.evidence.books.slice(0, 2).join(', ')}
+                                </Text>
+                              )}
+                            </View>
+                          ))}
+                          {readerThesis.anti_preferences.length > 0 && (
+                            <View style={{ marginTop: 4, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#e7e5e4' }}>
+                              <Text style={{ fontSize: 10, fontWeight: '600', color: '#a8a29e', marginBottom: 4 }}>TENDS TO AVOID</Text>
+                              {readerThesis.anti_preferences.slice(0, 2).map((ap, i) => (
+                                <Text key={i} style={{ fontSize: 10, color: '#78716c', lineHeight: 16 }}>· {ap}</Text>
+                              ))}
+                            </View>
+                          )}
+                        </View>
+                      </Animated.View>
+                    </View>
+                  )}
+
+                  {/* ── Upgrade CTA (shown when quota exhausted) ── */}
+                  {recMode === 'deterministic' && entitlement?.has_used_free_import_analysis && (
+                    entitlement.expert_refreshes_remaining_this_period === 0 ||
+                    entitlement.expert_refreshes_remaining_this_period === null
+                  ) && entitlement.plan === 'free' && (
+                    <View style={{
+                      backgroundColor: '#fafaf9', borderRadius: 10,
+                      padding: 14, marginBottom: 12,
+                      borderWidth: 1, borderColor: '#e7e5e4',
+                    }}>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', marginBottom: 4 }}>
+                        Unlock ongoing expert picks
+                      </Text>
+                      <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
+                        Get deeper, more personal recommendations as your reading evolves — with stronger false-positive screening.
+                        {entitlement.next_refresh_available_at
+                          ? ` Your next free refresh is available ${new Date(entitlement.next_refresh_available_at).toLocaleDateString()}.`
+                          : ''}
+                      </Text>
+                    </View>
+                  )}
 
                   {/* Save toast */}
                   {saveToast && (
@@ -1558,7 +1703,7 @@ export default function RecommendationsScreen() {
                         }}
                       >
                         <Text style={{ fontSize: 10, color: '#a8a29e', flex: 1 }}>
-                          {traceOpen ? '▲' : '▼'}  Debug — retrieval trace
+                          {traceOpen ? '▲' : '▼'}  Debug — {recMode ?? 'det'} · {recsMeta.is_from_cache ? 'cached' : 'fresh'}
                         </Text>
                         <Text style={{ fontSize: 10, color: '#d6d3d1' }}>
                           pool {recsMeta.pool_size} · excl {recsMeta.hygiene_excluded} · enr {recsMeta.enriched_count}
@@ -1631,6 +1776,23 @@ export default function RecommendationsScreen() {
                                   {i + 1}. {q}
                                 </Text>
                               ))}
+                            </View>
+                          )}
+                          {/* Entitlement debug */}
+                          {entitlement && (
+                            <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#e7e5e4' }}>
+                              <Text style={{ fontSize: 9, fontWeight: '600', color: '#a8a29e', marginBottom: 2 }}>ENTITLEMENT</Text>
+                              <Text style={{ fontSize: 9, color: '#78716c', lineHeight: 14 }}>
+                                plan: {entitlement.plan}  ·  mode: {recMode ?? '?'}  ·  decision: {recsMeta.expert_decision?.reason ?? 'n/a'}
+                              </Text>
+                              <Text style={{ fontSize: 9, color: '#78716c', lineHeight: 14 }}>
+                                free_used: {entitlement.has_used_free_import_analysis ? 'yes' : 'no'}  ·  refreshes_left: {entitlement.expert_refreshes_remaining_this_period ?? '∞'}
+                              </Text>
+                              {recsMeta.cache_built_at && (
+                                <Text style={{ fontSize: 9, color: '#a8a29e', lineHeight: 14 }}>
+                                  cache built: {new Date(recsMeta.cache_built_at).toLocaleString()}
+                                </Text>
+                              )}
                             </View>
                           )}
                         </View>

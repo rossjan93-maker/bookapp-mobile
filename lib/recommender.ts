@@ -55,6 +55,12 @@ import { getBookTraits, assessMetadataQuality } from './bookTraits';
 import type { FeedbackContext }      from './recFeedback';
 import type { BookEnrichmentProfile } from './bookEnrichment';
 import { getEnrichmentForCandidates } from './bookEnrichment';
+import type { RecEntitlement, ExpertAccessDecision }         from './recEntitlement';
+import { canRunExpertRecs, consumeExpertRefresh }             from './recEntitlement';
+import type { ReaderThesis, ExpertRecResult, CandidateJudgment } from './expertRec';
+import { buildReaderThesis, judgeCandidateFit, composeRecommendationSet } from './expertRec';
+import { buildEvidencePack }                                  from './evidencePack';
+import { loadCachedRecs, persistRecCache, shouldRebuild, buildSignalSnapshot } from './recCache';
 
 // ── Quality gate constants ─────────────────────────────────────────────────────
 
@@ -136,6 +142,13 @@ export type RankedRecsResult = {
     hygiene_excluded:       number;
     enriched_count:         number;
     retrieval_trace:        RetrievalTrace;
+    // Expert layer fields (undefined when mode is deterministic)
+    mode?:                  'deterministic' | 'expert';
+    reader_thesis?:         ReaderThesis | null;
+    expert_result?:         ExpertRecResult | null;
+    expert_decision?:       ExpertAccessDecision | null;
+    is_from_cache?:         boolean;
+    cache_built_at?:        string | null;
   };
 };
 
@@ -1134,4 +1147,219 @@ export async function getPersonalizedRecs(
   const { candidates, enrichmentMap, retrieval_trace } =
     await getCandidateBooks(client, userId, profile, feedback);
   return getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace);
+}
+
+// ── Expert-layer orchestration ────────────────────────────────────────────────
+//
+// Runs the deterministic pipeline then optionally overlays the expert reasoning
+// layer based on the user's entitlement and the canRunExpertRecs decision.
+// Results from both layers are returned in a unified RankedRecsResult so callers
+// can render either deterministic or expert UI without branching on the pipeline.
+//
+// Expert layer maximum candidates sent to judging: capped at EXPERT_JUDGE_CAP to
+// keep the heuristic complexity linear and safe for a future LLM-backed version.
+
+const EXPERT_JUDGE_CAP = 20;
+
+export async function getPersonalizedRecsWithExpert(
+  client:      SupabaseClient,
+  userId:      string,
+  profile:     TasteProfile,
+  entitlement: RecEntitlement,
+  limit        = 5,
+  feedback?:   FeedbackContext,
+): Promise<RankedRecsResult> {
+  // ── Step 1: Deterministic pipeline (always runs) ──────────────────────────
+  const { candidates, enrichmentMap, retrieval_trace } =
+    await getCandidateBooks(client, userId, profile, feedback);
+  const baseResult = getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace);
+
+  // ── Step 2: Expert access decision ───────────────────────────────────────
+  const decision = canRunExpertRecs(entitlement, profile);
+
+  if (!decision.allowed) {
+    // Return deterministic result with decision context for UI messaging
+    return {
+      ...baseResult,
+      meta: {
+        ...baseResult.meta,
+        mode:            'deterministic',
+        expert_decision: decision,
+        is_from_cache:   false,
+        cache_built_at:  null,
+      },
+    };
+  }
+
+  // ── Step 3: Cache check (skip rebuild if results are still fresh) ─────────
+  const cacheCheck = await loadCachedRecs(client, userId);
+
+  if (cacheCheck.hit && cacheCheck.entry?.mode === 'expert') {
+    const { count: feedbackCount } = await client
+      .from('rec_feedback')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+
+    const currentSignals = buildSignalSnapshot(
+      profile.strongSignalCount ?? 0,
+      feedbackCount ?? 0,
+      (profile.evidence.imported_books_count ?? 0) > 0,
+    );
+
+    const rebuildDecision = shouldRebuild(cacheCheck.entry, currentSignals);
+
+    if (!rebuildDecision.should_rebuild) {
+      // Return cached expert result
+      const cachedRecs = cacheCheck.entry.rec_set;
+      return {
+        recs:  cachedRecs,
+        meta: {
+          ...baseResult.meta,
+          mode:            'expert',
+          reader_thesis:   cacheCheck.entry.reader_thesis,
+          expert_decision: decision,
+          is_from_cache:   true,
+          cache_built_at:  cacheCheck.entry.built_at,
+        },
+      };
+    }
+
+    if (__DEV__) {
+      console.log('[EXPERT] Cache rebuild triggered:', rebuildDecision.reason);
+    }
+  }
+
+  // ── Step 4: Build evidence pack ───────────────────────────────────────────
+  // Build a score map from deterministic results for the evidence pack
+  const detScores = new Map<string, number>();
+  for (const r of baseResult.recs) {
+    const key = r.external_id ?? r.id;
+    detScores.set(key, r.score);
+    detScores.set(r.id, r.score);
+  }
+  // Also score the broader candidate pool (not just top-5) for better coverage
+  const allScored = getRankedRecs(candidates, profile, EXPERT_JUDGE_CAP, feedback, enrichmentMap, retrieval_trace);
+  for (const r of allScored.recs) {
+    const key = r.external_id ?? r.id;
+    if (!detScores.has(key)) detScores.set(key, r.score);
+    if (!detScores.has(r.id)) detScores.set(r.id, r.score);
+  }
+
+  const pack = await buildEvidencePack(
+    client, userId, profile,
+    candidates.slice(0, EXPERT_JUDGE_CAP),
+    enrichmentMap,
+    detScores,
+  );
+
+  // ── Step 5: Build reader thesis ───────────────────────────────────────────
+  const thesis = buildReaderThesis(pack);
+
+  // ── Step 6: Judge candidates ──────────────────────────────────────────────
+  const judged = new Map<string, CandidateJudgment>();
+  for (const candidate of pack.candidates.slice(0, EXPERT_JUDGE_CAP)) {
+    judged.set(candidate.id, judgeCandidateFit(thesis, candidate, pack));
+  }
+
+  // ── Step 7: Compose expert recommendation set ─────────────────────────────
+  const expertResult = composeRecommendationSet(thesis, judged, pack.candidates, allScored.recs, limit);
+
+  // ── Step 8: Convert ExpertPick → ScoredBook for unified rendering ─────────
+  const expertRecs: ScoredBook[] = expertResult.picks.map((pick, i) => {
+    // Find the base rec or candidate for metadata
+    const base = allScored.recs.find(r => r.id === pick.candidate_id || r.external_id === pack.candidates.find(c => c.id === pick.candidate_id)?.external_id);
+    const cand = pack.candidates.find(c => c.id === pick.candidate_id);
+
+    if (base) {
+      return {
+        ...base,
+        score:    pick.expert_score > 0 ? pick.expert_score : base.score,
+        reasons:  pick.why,
+        risks:    pick.risks,
+        confidence: pick.expert_score >= 0.5 ? 'high' : pick.expert_score >= 0.3 ? 'medium' : 'low',
+        _debug:   { pool_size: allScored.meta.pool_size, rank: i + 1 },
+        _score_breakdown: {
+          ...base._score_breakdown,
+          final_score: pick.expert_score > 0 ? pick.expert_score : base.score,
+        },
+      } as ScoredBook;
+    }
+
+    // Fallback: construct minimal ScoredBook from candidate data
+    return {
+      id:           pick.candidate_id,
+      title:        pick.title,
+      author:       pick.author,
+      cover_url:    cand ? null : null,
+      external_id:  cand?.external_id ?? null,
+      subjects:     cand?.subjects ?? [],
+      page_count:   cand?.page_count ?? null,
+      description:  null,
+      _source:      (cand?.source as import('./recommender').CandidateSource) ?? 'catalog',
+      _retrieval_reason: cand?.retrieval_reason ?? '',
+      score:        pick.expert_score,
+      confidence:   'medium' as const,
+      reasons:      pick.why,
+      risks:        pick.risks,
+      _score_breakdown: {
+        trait_alignment:  0,
+        avoided_penalty:  0,
+        genre_bonus:      0,
+        feedback_boost:   0,
+        enrichment_bonus: 0,
+        metadata_penalty: 0,
+        raw_score:        pick.expert_score,
+        final_score:      pick.expert_score,
+        book_form:        null,
+        audit_flags:      [],
+      },
+      _debug: { pool_size: allScored.meta.pool_size, rank: i + 1 },
+    } as ScoredBook;
+  });
+
+  // ── Step 9: Consume entitlement & persist cache ───────────────────────────
+  await consumeExpertRefresh(client, userId, decision, entitlement);
+
+  const { count: feedbackCount } = await client
+    .from('rec_feedback')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId);
+
+  const signals = buildSignalSnapshot(
+    profile.strongSignalCount ?? 0,
+    feedbackCount ?? 0,
+    (profile.evidence.imported_books_count ?? 0) > 0,
+  );
+
+  await persistRecCache(
+    client, userId, expertRecs, 'expert', signals, thesis,
+    { rebuild_reason: 'fresh_build', judged_count: judged.size, omitted_count: expertResult.omitted.length },
+  );
+
+  if (__DEV__) {
+    console.log('[EXPERT] Thesis:', {
+      dominant_lanes:   thesis.dominant_lanes.map(l => `${l.label} (${l.strength.toFixed(2)})`),
+      center_of_gravity: thesis.center_of_gravity,
+      guardrails:       thesis.recommendation_guardrails.length,
+      confidence:       thesis.confidence,
+    });
+    console.log('[EXPERT] Result:', {
+      picks:         expertResult.picks.map(p => ({ title: p.title, label: p.fit_label, score: p.expert_score.toFixed(2), lane: p.lane })),
+      omitted_count: expertResult.omitted.length,
+      decision:      decision.reason,
+    });
+  }
+
+  return {
+    recs:  expertRecs,
+    meta: {
+      ...baseResult.meta,
+      mode:            'expert',
+      reader_thesis:   thesis,
+      expert_result:   expertResult,
+      expert_decision: decision,
+      is_from_cache:   false,
+      cache_built_at:  null,
+    },
+  };
 }

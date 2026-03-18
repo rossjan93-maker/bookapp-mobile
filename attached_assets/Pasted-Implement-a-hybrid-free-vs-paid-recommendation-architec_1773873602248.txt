@@ -1,0 +1,401 @@
+Implement a hybrid free vs paid recommendation architecture for the book app.
+
+This is a core product system, not just a UI gate.
+Treat this as one of the most important builds in the app.
+
+Product strategy
+
+We are implementing a two-layer recommendation system:
+
+Layer 1 — Deterministic engine (free for everyone)
+- retrieval
+- filtering / hygiene
+- scoring
+- book enrichment
+- candidate ranking
+- basic explanations
+This should remain available to all users.
+
+Layer 2 — Expert reasoning layer (paid, with limited free preview)
+- reader thesis generation
+- dominant lane detection
+- exception vs core-preference handling
+- candidate critique / truthfulness audit
+- final recommendation-set composition
+- richer, higher-fidelity explanations
+This is the premium layer.
+
+Core business rule
+
+Free users should get:
+- deterministic recommendations
+- basic recommendation feedback actions
+- one complimentary “deep taste analysis” after Goodreads/import or after enough reading signal exists
+- at most a very limited number of expert refreshes after that (see entitlement rules below)
+
+Paid users should get:
+- ongoing expert recommendation refreshes
+- richer “why this fits you” explanations
+- stronger false-positive rejection
+- deeper reader insights
+- better recommendation truthfulness for dense readers
+
+Do NOT create a fake paywall where free recommendations are crippled.
+The free product must still be useful.
+The paid product must feel significantly smarter and more personal.
+
+Part 1: Entitlement model / subscription layer
+
+Build a recommendation entitlement system that can distinguish:
+- free user
+- paid user
+- optional founding / beta override if helpful for testing
+
+If billing/subscription infrastructure already exists, integrate with it.
+If it does not yet exist, build the feature-flag / entitlement scaffolding cleanly so the recommendation product logic is ready.
+
+Create a user-level entitlement concept like:
+{
+  plan: 'free' | 'paid',
+  expert_recs_enabled: boolean,
+  expert_refreshes_remaining_this_period: number | null,
+  has_used_free_import_analysis: boolean,
+  next_refresh_available_at?: string | null
+}
+
+Use whichever persistence layer fits the app architecture best.
+If new schema is needed, propose the smallest clean migration.
+
+Part 2: Exact free vs paid recommendation rules
+
+Implement this split:
+
+Free users
+- always get deterministic recommendations
+- get one free expert recommendation build when:
+  - they complete Goodreads/import onboarding
+  OR
+  - they cross a meaningful signal threshold (for example enough finished+rated books)
+- after that, they do NOT get expert reasoning on every visit
+- allow either:
+  Option A (preferred):
+    1 expert refresh per 30 days
+  OR
+  Option B:
+    only deterministic refreshes unless they upgrade
+- keep this configurable via constants/feature flags
+
+Paid users
+- get expert recommendation builds as the default recommendation mode once signal is sufficient
+- use caching so we do not recompute on every tab open
+- only rebuild when:
+  - enough new signal arrives
+  - feedback materially changes taste profile
+  - import is completed
+  - user explicitly requests a refresh
+  - cache is stale based on TTL
+
+Important:
+Do NOT run the expert reasoning layer on every app open, even for paid users.
+Use caching and refresh triggers.
+
+Part 3: Recommendation architecture
+
+Keep deterministic retrieval/filtering as the foundation.
+
+Pipeline should be:
+
+1. deterministic evidence gathering
+2. deterministic candidate retrieval
+3. deterministic hygiene / filtering
+4. deterministic enrichment
+5. deterministic baseline scoring
+6. if entitlement allows and signal is sufficient:
+   run expert reasoning layer
+7. cache final recommendation result
+8. render recommendations appropriate to user tier
+
+Deterministic layer responsibilities
+- retrieve candidate books
+- apply recommendation eligibility rules
+- apply hygiene filters
+- rank initial candidate pool
+- provide evidence pack for the expert layer
+
+Expert layer responsibilities
+- build reader thesis
+- identify dominant lanes
+- identify exception lanes
+- distinguish center-of-gravity vs one-off outliers
+- critique candidate truthfulness
+- reject embarrassing false positives
+- compose final recommendation set
+- produce richer explanations
+
+Part 4: Signal thresholds for when expert mode is allowed
+
+Do not run expert reasoning for users with extremely weak signal.
+
+Create a deterministic eligibility check like:
+- enough imported history
+OR
+- enough completed/rated books
+OR
+- enough notes/reactions/feedback
+
+For example:
+- low-signal users: deterministic only
+- medium/high-signal users: deterministic + expert if entitled
+
+Make this explicit and configurable.
+
+Part 5: Evidence pack for expert reasoning
+
+Build a structured evidence pack for expert recommendation generation.
+
+The evidence pack should include:
+- completed books
+- ratings
+- review_body notes
+- taste_tags / quick reactions
+- Goodreads/import history
+- diagnosis answers
+- recommendation feedback
+- repeated authors
+- repeated series
+- liked subjects
+- dominant metadata clusters
+- most-loved books
+- most-disliked books
+- candidate books with:
+  - metadata
+  - enrichment
+  - retrieval reasons
+  - deterministic score
+  - source
+  - hygiene flags
+- books already read or owned
+- current confidence/tier
+
+This should be structured JSON, not raw prose.
+
+Part 6: Expert recommendation functions
+
+Implement or scaffold these functions:
+
+1. buildReaderThesis(userEvidence)
+Returns:
+{
+  dominant_lanes: [
+    {
+      label: string,
+      strength: number,
+      explanation: string,
+      evidence: {
+        authors: string[],
+        series: string[],
+        books: string[],
+        themes: string[]
+      }
+    }
+  ],
+  exception_lanes: [
+    {
+      label: string,
+      explanation: string,
+      why_not_core: string
+    }
+  ],
+  center_of_gravity: string,
+  anti_preferences: string[],
+  recommendation_guardrails: string[],
+  explanation_language: string[],
+  confidence: 'low' | 'medium' | 'high'
+}
+
+2. judgeCandidateFit(readerThesis, candidateEvidence)
+Returns:
+{
+  verdict: 'strong_fit' | 'good_match' | 'worth_exploring' | 'reject',
+  fit_score: number,
+  confidence: 'low' | 'medium' | 'high',
+  primary_lane: string | null,
+  why_it_fits: string[],
+  risks: string[],
+  truthfulness_flags: string[],
+  rejected_if_not_fit: string | null
+}
+
+3. composeRecommendationSet(readerThesis, judgedCandidates)
+Returns:
+{
+  summary: string,
+  confidence: 'low' | 'medium' | 'high',
+  picks: [
+    {
+      candidate_id: string,
+      title: string,
+      author: string,
+      fit_label: string,
+      why: string[],
+      risks: string[],
+      source: string,
+      lane: string | null
+    }
+  ],
+  omitted_candidates: [
+    {
+      candidate_id: string,
+      reason: string
+    }
+  ]
+}
+
+Important:
+The model should not invent facts.
+Its reasoning must be grounded in the evidence pack only.
+
+Part 7: Caching and refresh strategy
+
+This is critical for cost and UX.
+
+Cache these outputs:
+- reader thesis
+- judged candidate results
+- final recommendation set
+
+Use cache TTLs and rebuild triggers.
+
+Recommended logic:
+- rebuild thesis only when new meaningful signal arrives
+- rebuild final recs when:
+  - new feedback is added
+  - import completes
+  - enough new reading activity occurs
+  - user explicitly refreshes
+  - cache expires
+
+Do NOT recompute the expensive layer on every tab visit.
+
+Create a clear cache invalidation strategy.
+
+Part 8: Free preview experience
+
+Design the free preview intentionally.
+
+For a free user who qualifies for one complimentary deep analysis:
+- show a clear but premium “Deep taste analysis ready” moment
+- run expert recommendations once
+- surface noticeably better and more personal recommendations
+- after preview use, show deterministic recommendations plus upgrade messaging
+
+The upgrade messaging should be tasteful and honest:
+- “Unlock ongoing expert picks”
+- “Get deeper, more personal recommendations”
+- “Refresh your reader profile as your taste evolves”
+
+Do NOT use spammy or low-trust copy.
+
+Part 9: Paid experience
+
+For paid users:
+- expert recommendations should feel like the default premium mode
+- recommendation cards should carry richer explanations
+- “Why this fits you” should be noticeably better than in free
+- false positives should be screened more aggressively
+- refresh cadence should feel alive but not constantly recomputed
+
+Part 10: Recommendation UI behavior
+
+Update the Recommendations tab so it can support both modes clearly.
+
+Free / deterministic mode:
+- basic “For You” rec cards
+- simpler explanations
+- no fake premium styling differences beyond what is warranted
+- if eligible, show a premium preview CTA / unlock moment
+
+Paid / expert mode:
+- richer rec cards
+- better explanation depth
+- stronger lane-aware language
+- optional “expert pick” badge or subtle premium marker
+- clearer “why this recommendation?” detail
+
+Do not make the UI feel cluttered or over-explained.
+Keep it premium and restrained.
+
+Part 11: Cost controls and safety rails
+
+This is mandatory.
+
+Add explicit controls for:
+- max number of candidates sent into expert judging
+- max frequency of expert refreshes
+- cache TTLs
+- plan-based refresh quotas
+- fallback to deterministic recs if expert layer fails
+- graceful degradation if model/API call times out
+
+The app must always remain functional if the expert layer fails.
+
+Part 12: Observability / debugging
+
+Add debug visibility for development:
+- which recommendation mode was used (deterministic vs expert)
+- why expert mode was or was not invoked
+- entitlement state
+- cache hit vs miss
+- reader thesis summary
+- why each recommendation passed
+- why rejected candidates were rejected
+- refresh trigger reason
+- expert refresh usage count / quota status
+
+Do not expose all of this in production UI.
+Make it developer/debug-only where appropriate.
+
+Part 13: Data model / schema
+
+If needed, propose the smallest clean migrations for:
+- recommendation entitlements / usage tracking
+- cached reader thesis
+- cached judged candidates
+- cached expert recommendation set
+
+Be explicit about:
+- tables
+- fields
+- indexes
+- what is optional vs required for v1
+
+Part 14: Recommendation truthfulness rules
+
+These must remain enforced even in paid/expert mode:
+- canon tolerance is not canon preference
+- repeated authors/series outweigh isolated exceptions
+- public popularity cannot be the main reason for a recommendation
+- if the system itself thinks a book is weakly justified, do not show it
+- the expert layer should improve truthfulness, not just make language sound smarter
+
+Part 15: Rollout strategy
+
+Build this in a way that supports staged rollout:
+- feature flag for expert mode
+- ability to test on specific users only
+- ability to compare deterministic vs expert outputs side by side in debug mode
+- safe fallback if caching or model calls fail
+
+Part 16: Output
+
+When done, provide:
+1. a clear architecture explanation
+2. all changed files
+3. any migrations required
+4. the exact entitlement rules implemented
+5. the cache strategy
+6. when expert reasoning is triggered
+7. how free preview works
+8. how paid ongoing access works
+9. how the recommendation UI differs between free and paid
+10. what remains deferred or approximate
