@@ -23,6 +23,8 @@ import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computeTasteProfile } from '../../lib/tasteProfile';
 import type { TasteProfile } from '../../lib/tasteProfile';
+import { getCandidateBooks, getRankedRecs, fitLabel, fitColor } from '../../lib/recommender';
+import type { ScoredBook } from '../../lib/recommender';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -660,6 +662,72 @@ function TagCard({ book, onComplete }: TagCardProps) {
   );
 }
 
+// ─── RecCard ──────────────────────────────────────────────────────────────────
+// Shows a single personalised book recommendation with fit label, reasons, risk.
+
+function RecCard({ book }: { book: ScoredBook }) {
+  const label = fitLabel(book.score);
+  const color = fitColor(book.score);
+
+  return (
+    <View style={{
+      backgroundColor: '#fff',
+      borderRadius: 14,
+      marginBottom: 8,
+      shadowColor: '#000',
+      shadowOpacity: 0.04,
+      shadowRadius: 6,
+      shadowOffset: { width: 0, height: 1 },
+      elevation: 1,
+      overflow: 'hidden',
+    }}>
+      <View style={{ padding: 12, flexDirection: 'row', alignItems: 'flex-start' }}>
+        <CoverThumb
+          url={book.cover_url}
+          externalId={book.external_id}
+          title={book.title}
+          width={44}
+          height={64}
+        />
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 3 }}>
+            <Text
+              style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', flex: 1, lineHeight: 20 }}
+              numberOfLines={2}
+            >
+              {book.title}
+            </Text>
+            <View style={{
+              marginLeft: 8, marginTop: 2,
+              paddingHorizontal: 8, paddingVertical: 3,
+              borderRadius: 10,
+              backgroundColor: color + '18',
+            }}>
+              <Text style={{ fontSize: 11, fontWeight: '600', color }}>{label}</Text>
+            </View>
+          </View>
+
+          <Text style={{ fontSize: 12, color: '#a8a29e', marginBottom: 7 }} numberOfLines={1}>
+            {book.author}
+          </Text>
+
+          {book.reasons.length > 0 && (
+            <Text style={{ fontSize: 12, color: '#57534e', lineHeight: 17 }} numberOfLines={2}>
+              {book.reasons[0]}
+            </Text>
+          )}
+
+          {book.risks.length > 0 && (
+            <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 5, lineHeight: 16 }} numberOfLines={1}>
+              Note: {book.risks[0]}
+            </Text>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function RecommendationsScreen() {
@@ -674,6 +742,7 @@ export default function RecommendationsScreen() {
   const [incomingRecs, setIncomingRecs]   = useState<IncomingRec[]>([]);
   const [sentRecs, setSentRecs]           = useState<SentRec[]>([]);
   const [tasteProfile, setTasteProfile]   = useState<TasteProfile | null>(null);
+  const [recommendations, setRecommendations] = useState<ScoredBook[]>([]);
 
   // ── Search/send flow state ────────────────────────────────────────────────
   const [query, setQuery]               = useState('');
@@ -720,7 +789,7 @@ export default function RecommendationsScreen() {
     setCurrentUserId(user.id);
     setHubLoading(true);
 
-    const [rateRes, tagRes, incomingRes, sentRes, tp] = await Promise.all([
+    const [rateRes, tagRes, incomingRes, sentRes, tp, candidates] = await Promise.all([
       // Finished books with no rating (rate these)
       supabase
         .from('user_books')
@@ -763,6 +832,9 @@ export default function RecommendationsScreen() {
 
       // Taste profile for confidence tier
       computeTasteProfile(supabase!, user.id).catch(() => null),
+
+      // Candidate books for personalised recommendations (scored client-side)
+      getCandidateBooks(supabase!, user.id).catch(() => [] as import('../../lib/recommender').CandidateBook[]),
     ]);
 
     // ── Type for Supabase row with a many-to-one book join ───────────────────
@@ -803,11 +875,18 @@ export default function RecommendationsScreen() {
         subjects:    r.book?.subjects    ?? null,
       }));
 
+    // Compute personalised recommendations synchronously from scored candidates
+    let recs: ScoredBook[] = [];
+    if (tp && tp.tier >= 1 && candidates.length > 0) {
+      recs = getRankedRecs(candidates, tp, 5);
+    }
+
     setBooksToRate(toRate);
     setBooksToTag(toTag);
     setIncomingRecs((incomingRes.data as unknown as IncomingRec[]) ?? []);
     setSentRecs((sentRes.data as unknown as SentRec[]) ?? []);
     setTasteProfile(tp);
+    setRecommendations(recs);
     setHubLoading(false);
   }
 
@@ -963,6 +1042,7 @@ export default function RecommendationsScreen() {
     const hasTagTasks     = booksToTag.length > 0;
     const hasImport       = (tasteProfile?.evidence.imported_books_count ?? 0) === 0;
     const hasAnyTask      = hasRateTasks || hasTagTasks || hasImport;
+    const hasRecs         = recommendations.length > 0;
 
     return (
       <ScrollView
@@ -1000,8 +1080,25 @@ export default function RecommendationsScreen() {
             <View style={{ marginBottom: 36 }}>
               <SectionLabel>For You</SectionLabel>
 
-              {/* If we have no tasks, show clean "caught up" state */}
-              {!hasAnyTask ? (
+              {/* ── Personalised picks (tier ≥ 1) ── */}
+              {hasRecs && (
+                <View style={{ marginBottom: 20 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', flex: 1 }}>
+                      Picked for you
+                    </Text>
+                    <Text style={{ fontSize: 11, color: '#a8a29e' }}>
+                      {tasteProfile?.label ?? ''}
+                    </Text>
+                  </View>
+                  {recommendations.map(rec => (
+                    <RecCard key={rec.id} book={rec} />
+                  ))}
+                </View>
+              )}
+
+              {/* ── No recs + no tasks → caught up ── */}
+              {!hasRecs && !hasAnyTask && (
                 <View style={{
                   backgroundColor: '#fff',
                   borderRadius: 14,
@@ -1021,7 +1118,10 @@ export default function RecommendationsScreen() {
                     We'll keep learning as you finish and rate more books.
                   </Text>
                 </View>
-              ) : (
+              )}
+
+              {/* ── Tasks (always shown when available, regardless of recs) ── */}
+              {hasAnyTask && (
                 <>
                   {/* ── Rate a finished book ── */}
                   {hasRateTasks && (

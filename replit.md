@@ -32,7 +32,9 @@ React Native mobile app built with Expo Router + Supabase.
 | `lib/displayName.ts` | Display name helper: getDisplayName, getFirstName, getInitial |
 | `lib/pacing.ts` | Pacing helpers: date-based + page-based |
 | `lib/signals.ts` | Derived signals foundation (completion rate, DNF rate, avg pages/day, rec conversion, rating signals) |
-| `lib/tasteProfile.ts` | Recommendation confidence model: tier 0–3, trait scoring from taste_tags, hypothesis generation, diagnosis questions |
+| `lib/tasteProfile.ts` | Recommendation confidence model: tier 0–3, trait/genre affinity scoring, diagnosis answer boosts, hypothesis generation |
+| `lib/bookTraits.ts` | Deterministic book trait extraction: 8 genres, base trait scores per genre, page count adjustments, `detectGenre()` |
+| `lib/recommender.ts` | Scoring engine: `scoreBookForUser()` (pure), `getRankedRecs()` (pure, with diversity filter), `getCandidateBooks()` (async DB query) |
 | `app/import/diagnosis.tsx` | Imported-user diagnosis flow: auto-generated taste hypotheses + 5 adaptive tradeoff questions |
 | `components/CoverThumb.tsx` | Cover image with OL fallback |
 
@@ -53,6 +55,7 @@ React Native mobile app built with Expo Router + Supabase.
 | `20260315000003_goodreads_import_foundation_repair.sql` | Repairs import schema; adds `review_body`, `private_note`, `rating` on import_rows |
 | `20260315000004_books_description.sql` | Adds `description text` to books |
 | `20260318000000_user_books_taste_tags.sql` | Adds `taste_tags jsonb` to user_books for structured post-finish taste signals |
+| `20260318000001_reader_preferences_diagnosis.sql` | Adds `diagnosis_answers jsonb` to reader_preferences for taste-calibration question persistence |
 
 ## Defensive Fallbacks
 Library, profile, and notes queries include try-with-fallback patterns — they attempt queries with new columns (page_count, current_page, source, sentiment) and silently fall back to column-safe queries if migrations haven't been applied yet. This means the app always loads.

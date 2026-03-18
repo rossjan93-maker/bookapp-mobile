@@ -1,0 +1,131 @@
+Build the first real recommendation engine for the book app using the preference signals we already collect.
+
+Current state
+The app already has:
+- completed books with ratings
+- inline notes saved to `review_body`
+- optional book-aware quick reactions saved to `taste_tags`
+- learning/confidence tiers
+- imported-history diagnosis scaffolding
+- a Recommendations hub with a “For You” area
+
+Goal
+Turn the existing signals into actual personalized book recommendations with explanations.
+
+Do not build a complex ML system.
+Use a deterministic, explainable first-pass matching system.
+
+Part 1: Persist and use diagnosis answers
+If not already persisted, store diagnosis question answers in a durable place tied to the user.
+Use these answers as additional taste-profile inputs.
+
+Requirements:
+- answers should survive app restarts
+- answers should influence taste profile generation
+- answers should be readable by the recommendation scorer
+
+Part 2: Build a normalized taste profile
+Create or upgrade a central taste profile builder that uses:
+- completed books
+- star ratings
+- `taste_tags`
+- `review_body`
+- diagnosis answers
+- imported history signals
+
+Output a profile object like:
+{
+  confidence: 'low' | 'medium' | 'high',
+  tier: 0 | 1 | 2 | 3,
+  preferred_traits: { originality: 0.8, pacing: 0.5, insight: 0.7 },
+  avoided_traits: { romance: -0.6, slow_pacing: -0.4 },
+  genre_affinities: { memoir: 0.4, thriller: 0.2, business: 0.7 },
+  open_questions: [...],
+  evidence: {
+    completed_books_count: number,
+    rated_books_count: number,
+    notes_count: number,
+    taste_tag_count: number,
+    imported_books_count: number,
+    diagnosis_answer_count: number
+  }
+}
+
+Part 3: Build book-side trait extraction
+We need a comparable trait object for candidate books.
+
+Create a deterministic `getBookTraits(book)` function using available metadata:
+- categories / genres / subjects
+- subtitle
+- description / synopsis
+- title
+- author
+- page count if available
+
+Return something like:
+{
+  genres: ['thriller', 'mystery'],
+  traits: {
+    suspense: 0.8,
+    pacing: 0.7,
+    twists: 0.9,
+    originality: 0.4
+  }
+}
+
+Keep this deterministic and rules-based for now.
+
+Part 4: Build first-pass recommendation scoring
+Create a recommendation scorer:
+`scoreBookForUser(book, tasteProfile)`
+
+Scoring should consider:
+- alignment between book traits and preferred_traits
+- penalties for avoided_traits
+- genre affinity
+- confidence adjustment based on profile quality
+- diversity control so results are not all near-identical
+
+Return:
+{
+  score: number,
+  confidence: 'low' | 'medium' | 'high',
+  reasons: string[],
+  risks: string[]
+}
+
+Reasons should be human-readable, for example:
+- “Aligns with your preference for originality and insight”
+- “Matches your strong response to fast-paced nonfiction”
+Risks should be honest, for example:
+- “May lean more romance-forward than your usual favorites”
+- “We have limited signal on how much you enjoy slower literary fiction”
+
+Part 5: Populate the “For You” section
+Replace placeholder/learning-only behavior in the Recommendations hub with actual recommendation cards when enough signal exists.
+
+Requirements:
+- if confidence is too low, keep the learning mode state
+- if confidence is sufficient, show a list of recommended books
+- each card should show:
+  - cover
+  - title
+  - author
+  - fit score or confidence label
+  - 1–2 explanation lines
+  - optional watchout/risk line
+- keep the UI clean and premium
+
+Part 6: Candidate book sourcing
+Use the current books dataset already available in the app.
+Do not recommend books the user has already completed/read.
+Filter out books already in the user’s library where appropriate.
+
+Part 7: Output
+1. Explain the architecture clearly
+2. List all changed files
+3. Show the taste profile builder
+4. Show the book trait extractor
+5. Show the recommendation scoring logic
+6. Show how “For You” decides between learning mode vs real recommendations
+7. Call out any assumptions or metadata gaps limiting recommendation quality

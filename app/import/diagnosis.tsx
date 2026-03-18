@@ -75,6 +75,7 @@ export default function DiagnosisScreen() {
   const [hypotheses, setHypotheses]   = useState<TasteHypothesis[]>([]);
   const [questionIdx, setQuestionIdx] = useState(0);
   const [answers, setAnswers]         = useState<Record<string, string>>({});
+  const [userId, setUserId]           = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -82,6 +83,7 @@ export default function DiagnosisScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.replace('/(auth)/login'); return; }
 
+      setUserId(user.id);
       const tp = await computeTasteProfile(supabase, user.id);
       setProfile(tp);
       setHypotheses(generateHypotheses(tp));
@@ -90,12 +92,24 @@ export default function DiagnosisScreen() {
     load();
   }, []);
 
-  function handleAnswer(question: DiagnosisQuestion, keyIdx: 0 | 1) {
+  async function handleAnswer(question: DiagnosisQuestion, keyIdx: 0 | 1) {
     const key = question.keys[keyIdx];
-    setAnswers(prev => ({ ...prev, [question.id]: key }));
+    const next = { ...answers, [question.id]: key };
+    setAnswers(next);
+
     if (questionIdx < DIAGNOSIS_QUESTIONS.length - 1) {
       setQuestionIdx(i => i + 1);
     } else {
+      // Persist all answers before showing the done screen
+      if (supabase && userId) {
+        await supabase
+          .from('reader_preferences')
+          .upsert(
+            { user_id: userId, diagnosis_answers: next },
+            { onConflict: 'user_id' }
+          )
+          .catch(() => null); // non-blocking — profile still shows even if save fails
+      }
       setStep('done');
     }
   }

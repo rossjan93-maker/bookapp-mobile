@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { detectGenre }          from './bookTraits';
 
 // =============================================================================
 // Taste Profile — recommendation confidence model
@@ -7,9 +8,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 //   0  = 0–4 strong signals → "We're learning your taste"
 //   1  = 5–9 strong signals → "Early read on your taste"
 //   2  = 10+ strong signals → "Personalized for you"
-//   3  = 10+ strong signals + imported history with enrichment → "High-confidence recommendations"
+//   3  = 10+ strong signals + imported history with enrichment → "High-confidence"
 //
-// A "strong signal" = one finished book with at least one of: rating, taste_tags, review_body, or imported.
+// A "strong signal" = one finished book with at least one of:
+//   rating, taste_tags, review_body, or imported.
 // =============================================================================
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -24,31 +26,33 @@ export const CONFIDENCE_LABELS: Record<ConfidenceTier, string> = {
 };
 
 export type TasteProfileEvidence = {
-  completed_books_count: number;
-  imported_books_count:  number;
-  rated_books_count:     number;
-  taste_tag_count:       number;
-  review_count:          number;
+  completed_books_count:   number;
+  imported_books_count:    number;
+  rated_books_count:       number;
+  taste_tag_count:         number;
+  review_count:            number;
+  diagnosis_answer_count:  number;
 };
 
 export type TasteProfile = {
-  tier:             ConfidenceTier;
-  label:            string;
-  confidence:       'low' | 'medium' | 'high';
-  preferred_traits: Record<string, number>;   // e.g. { Pacing: 0.6 }
-  avoided_traits:   Record<string, number>;   // e.g. { Romance: -0.7 }
-  open_questions:   string[];
-  evidence:         TasteProfileEvidence;
+  tier:              ConfidenceTier;
+  label:             string;
+  confidence:        'low' | 'medium' | 'high';
+  preferred_traits:  Record<string, number>;
+  avoided_traits:    Record<string, number>;
+  genre_affinities:  Record<string, number>;   // e.g. { thriller_mystery: 0.7, nonfiction: -0.2 }
+  open_questions:    string[];
+  evidence:          TasteProfileEvidence;
   strongSignalCount: number;
-  nextTierAt:       number;  // signals needed to reach next tier
+  nextTierAt:        number;
 };
 
 export type RecommendationExplanation = {
-  book_id:            string;
-  confidence_label:   string;
-  why_it_fits:        string[];
+  book_id:             string;
+  confidence_label:    string;
+  why_it_fits:         string[];
   aligned_preferences: string[];
-  risk_or_mismatch:   string | null;
+  risk_or_mismatch:    string | null;
 };
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
@@ -57,8 +61,8 @@ export function computeConfidenceTier(
   evidence: TasteProfileEvidence,
   strongSignalCount: number,
 ): ConfidenceTier {
-  const hasImport = evidence.imported_books_count > 0;
-  const hasEnrich = evidence.rated_books_count > 0
+  const hasImport  = evidence.imported_books_count > 0;
+  const hasEnrich  = evidence.rated_books_count > 0
     || evidence.taste_tag_count > 0
     || evidence.review_count > 0;
   if (strongSignalCount >= 10 && hasImport && hasEnrich) return 3;
@@ -70,7 +74,7 @@ export function computeConfidenceTier(
 export function tierNextThreshold(tier: ConfidenceTier): number {
   if (tier === 0) return 5;
   if (tier === 1) return 10;
-  return 10; // tier 2 → 3 requires import, not just count
+  return 10;
 }
 
 export function confidenceLevel(tier: ConfidenceTier): 'low' | 'medium' | 'high' {
@@ -79,7 +83,7 @@ export function confidenceLevel(tier: ConfidenceTier): 'low' | 'medium' | 'high'
   return 'high';
 }
 
-// ── Trait scoring ─────────────────────────────────────────────────────────────
+// ── Trait scoring from taste_tags ─────────────────────────────────────────────
 
 type TasteTagPayload = { liked?: string[]; didnt_work?: string[] };
 
@@ -113,15 +117,77 @@ function buildTraitScores(rows: RawUserBook[]): {
 
   const preferred_traits: Record<string, number> = {};
   const avoided_traits:   Record<string, number> = {};
-
   for (const [tag, count] of Object.entries(likedCounts)) {
     preferred_traits[tag] = +(count / tagged).toFixed(2);
   }
   for (const [tag, count] of Object.entries(avoidCounts)) {
     avoided_traits[tag] = +(-count / tagged).toFixed(2);
   }
-
   return { preferred_traits, avoided_traits };
+}
+
+// ── Diagnosis answer boosts ────────────────────────────────────────────────────
+//
+// Diagnosis answers act as lightweight priors: they nudge preferred/avoided
+// trait scores in a principled direction when explicit tag data is sparse.
+// The effect is intentionally small (~0.15–0.25) so tag data dominates once
+// the user has rated several books.
+
+const ANSWER_BOOSTS: Record<string, (p: Record<string, number>, a: Record<string, number>) => void> = {
+  idea_driven:           (p)    => { p.Insight  = Math.min(1, (p.Insight  ?? 0) + 0.20); p.Evidence  = Math.min(1, (p.Evidence  ?? 0) + 0.10); },
+  emotion_driven:        (p)    => { p.Emotional = Math.min(1, (p.Emotional ?? 0) + 0.20); p.Characters = Math.min(1, (p.Characters ?? 0) + 0.10); },
+  pacing_non_negotiable: (p)    => { p.Pacing    = Math.min(1, (p.Pacing    ?? 0) + 0.25); },
+  ideas_over_pacing:     (p)    => { p.Pacing    = Math.max(0, (p.Pacing    ?? 0.30) - 0.15); },
+  originality_first:     (p)    => { p.Originality = Math.min(1, (p.Originality ?? 0) + 0.25); },
+  craft_first:           (p)    => { p.Writing   = Math.min(1, (p.Writing   ?? 0) + 0.20); p.Prose = Math.min(1, (p.Prose ?? 0) + 0.15); },
+  challenging:           (p)    => { p.Depth     = Math.min(1, (p.Depth     ?? 0) + 0.15); },
+  effortless:            (p)    => { p.Pacing    = Math.min(1, (p.Pacing    ?? 0) + 0.15); },
+  dnf_characters:        (p)    => { p.Characters = Math.min(1, (p.Characters ?? 0) + 0.25); },
+  dnf_pacing:            (p)    => { p.Pacing    = Math.min(1, (p.Pacing    ?? 0) + 0.20); },
+};
+
+function applyDiagnosisBoosts(
+  preferred: Record<string, number>,
+  avoided:   Record<string, number>,
+  answers:   Record<string, string>,
+): { preferred: Record<string, number>; avoided: Record<string, number> } {
+  const p = { ...preferred };
+  const a = { ...avoided };
+  for (const answer of Object.values(answers)) {
+    ANSWER_BOOSTS[answer]?.(p, a);
+  }
+  // Round to 2dp
+  const round = (r: Record<string, number>) =>
+    Object.fromEntries(Object.entries(r).map(([k, v]) => [k, +v.toFixed(2)]));
+  return { preferred: round(p), avoided: round(a) };
+}
+
+// ── Genre affinities from rated finished books ─────────────────────────────────
+
+type FinishedBookRow = {
+  rating: number | null;
+  book: { subjects?: string[] | null; title?: string | null; author?: string | null } | null;
+};
+
+function buildGenreAffinities(rows: FinishedBookRow[]): Record<string, number> {
+  const counts: Record<string, { pos: number; neg: number; total: number }> = {};
+
+  for (const row of rows) {
+    if (!row.rating || !row.book) continue;
+    const genre = detectGenre(row.book);
+    if (!genre) continue;
+    if (!counts[genre]) counts[genre] = { pos: 0, neg: 0, total: 0 };
+    counts[genre].total++;
+    if (row.rating >= 4) counts[genre].pos++;
+    else if (row.rating <= 2) counts[genre].neg++;
+  }
+
+  const affinities: Record<string, number> = {};
+  for (const [genre, { pos, neg, total }] of Object.entries(counts)) {
+    if (total < 1) continue;
+    affinities[genre] = +((pos - neg) / total).toFixed(2);
+  }
+  return affinities;
 }
 
 // ── Open question generation ──────────────────────────────────────────────────
@@ -130,7 +196,7 @@ function deriveOpenQuestions(
   evidence: TasteProfileEvidence,
   preferred: Record<string, number>,
 ): string[] {
-  const qs: string[] = [];
+  const qs:    string[] = [];
   const known = new Set(Object.keys(preferred));
 
   if (!known.has('Pacing') && !known.has('Plot')) {
@@ -157,23 +223,45 @@ export async function computeTasteProfile(
   client: SupabaseClient,
   userId: string,
 ): Promise<TasteProfile> {
-  const { data } = await client
-    .from('user_books')
-    .select('status, rating, taste_tags, review_body, source')
-    .eq('user_id', userId);
+  // Run all three queries concurrently
+  const [booksRes, finishedRatedRes, prefsRes] = await Promise.all([
+    client
+      .from('user_books')
+      .select('status, rating, taste_tags, review_body, source')
+      .eq('user_id', userId),
 
-  const rows: RawUserBook[] = (data ?? []) as RawUserBook[];
+    // For genre affinity: finished books with rating + book subjects
+    client
+      .from('user_books')
+      .select('rating, book:books(subjects, title, author)')
+      .eq('user_id', userId)
+      .eq('status', 'finished')
+      .not('rating', 'is', null),
+
+    // Diagnosis answers from reader_preferences
+    client
+      .from('reader_preferences')
+      .select('diagnosis_answers')
+      .eq('user_id', userId)
+      .maybeSingle(),
+  ]);
+
+  const rows: RawUserBook[] = (booksRes.data ?? []) as RawUserBook[];
   const finished = rows.filter(r => r.status === 'finished');
 
+  const diagnosisAnswers = ((prefsRes.data as { diagnosis_answers?: Record<string, string> } | null)
+    ?.diagnosis_answers ?? {}) as Record<string, string>;
+
   const evidence: TasteProfileEvidence = {
-    completed_books_count: finished.length,
-    imported_books_count:  rows.filter(r => r.source === 'goodreads').length,
-    rated_books_count:     rows.filter(r => r.rating !== null).length,
-    taste_tag_count:       rows.filter(r => {
+    completed_books_count:  finished.length,
+    imported_books_count:   rows.filter(r => r.source === 'goodreads').length,
+    rated_books_count:      rows.filter(r => r.rating !== null).length,
+    taste_tag_count:        rows.filter(r => {
       const t = r.taste_tags;
       return t && ((t.liked?.length ?? 0) + (t.didnt_work?.length ?? 0)) > 0;
     }).length,
-    review_count: rows.filter(r => r.review_body && r.review_body.trim() !== '').length,
+    review_count:           rows.filter(r => r.review_body && r.review_body.trim() !== '').length,
+    diagnosis_answer_count: Object.keys(diagnosisAnswers).length,
   };
 
   const strongSignalCount = finished.filter(r =>
@@ -188,7 +276,17 @@ export async function computeTasteProfile(
   const confidence = confidenceLevel(tier);
   const nextAt     = tierNextThreshold(tier);
 
-  const { preferred_traits, avoided_traits } = buildTraitScores(rows);
+  const { preferred_traits: rawPref, avoided_traits: rawAvoid } = buildTraitScores(rows);
+
+  // Apply diagnosis answer boosts on top of tag-derived scores
+  const { preferred: preferred_traits, avoided: avoided_traits } =
+    applyDiagnosisBoosts(rawPref, rawAvoid, diagnosisAnswers);
+
+  // Genre affinities from rated finished books
+  const genre_affinities = buildGenreAffinities(
+    (finishedRatedRes.data ?? []) as FinishedBookRow[]
+  );
+
   const open_questions = deriveOpenQuestions(evidence, preferred_traits);
 
   return {
@@ -197,6 +295,7 @@ export async function computeTasteProfile(
     confidence,
     preferred_traits,
     avoided_traits,
+    genre_affinities,
     open_questions,
     evidence,
     strongSignalCount,
@@ -214,64 +313,51 @@ export type TasteHypothesis = {
 
 export function generateHypotheses(profile: TasteProfile): TasteHypothesis[] {
   const hyps: TasteHypothesis[] = [];
-  const pref = profile.preferred_traits;
+  const pref  = profile.preferred_traits;
   const avoid = profile.avoided_traits;
   const { rated_books_count, imported_books_count, taste_tag_count } = profile.evidence;
 
-  // Trait-driven hypotheses
   if ((pref['Pacing'] ?? 0) >= 0.4) {
     hyps.push({ slug: 'pacing_valued', statement: 'You appear to value pacing and momentum.', confidence: 'strong' });
   } else if ((pref['Pacing'] ?? 0) >= 0.2) {
     hyps.push({ slug: 'pacing_valued', statement: 'Pacing may be more important to you than average.', confidence: 'tentative' });
   }
-
   if ((pref['Originality'] ?? 0) >= 0.35) {
     hyps.push({ slug: 'originality_valued', statement: 'You seem to reward originality more than familiarity.', confidence: 'strong' });
   }
-
   if ((pref['Characters'] ?? 0) >= 0.4) {
     hyps.push({ slug: 'character_driven', statement: 'Character-driven stories seem to resonate with you.', confidence: 'strong' });
   }
-
   if ((avoid['Romance'] ?? 0) <= -0.3) {
     hyps.push({ slug: 'romance_low', statement: 'Romance-heavy books may underperform for you.', confidence: 'strong' });
   }
-
   if ((pref['Emotional'] ?? 0) >= 0.3) {
     hyps.push({ slug: 'emotional_resonance', statement: 'Emotional resonance is a strong factor in what lands for you.', confidence: 'tentative' });
   }
-
-  // Rating pattern hypothesis
   if (rated_books_count >= 5) {
-    const totalPref = Object.values(pref).reduce((a, b) => a + b, 0);
     const totalAvoid = Object.values(avoid).reduce((a, b) => a + b, 0);
-    if (totalPref > 0 && Math.abs(totalAvoid) < 0.2) {
+    if (Math.abs(totalAvoid) < 0.2) {
       hyps.push({ slug: 'generous_rater', statement: 'You may prefer books that lean into strengths rather than being well-rounded.', confidence: 'tentative' });
     }
   }
-
-  // Import-based hypothesis
   if (imported_books_count >= 20) {
-    hyps.push({ slug: 'established_reader', statement: 'Your reading history suggests you have well-defined taste — recommendations can be quite targeted.', confidence: 'strong' });
+    hyps.push({ slug: 'established_reader', statement: 'Your reading history suggests well-defined taste — recommendations can be quite targeted.', confidence: 'strong' });
   } else if (imported_books_count >= 5) {
     hyps.push({ slug: 'active_reader', statement: 'Your imported history gives us a starting point, though more signals will sharpen the picture.', confidence: 'tentative' });
   }
-
-  // Fallback hypothesis if no signals
   if (hyps.length === 0) {
-    hyps.push({ slug: 'early_stage', statement: 'Your reading profile is just getting started — rate a few finished books to help us understand your taste.', confidence: 'tentative' });
+    hyps.push({ slug: 'early_stage', statement: 'Your reading profile is just getting started — rate a few finished books to help us learn.', confidence: 'tentative' });
   }
-
   return hyps.slice(0, 5);
 }
 
-// ── Adaptive questions (fixed set, tradeoff-based) ────────────────────────────
+// ── Diagnosis questions ───────────────────────────────────────────────────────
 
 export type DiagnosisQuestion = {
   id:      string;
   text:    string;
-  options: [string, string];  // [A, B]
-  keys:    [string, string];  // slug for each answer
+  options: [string, string];
+  keys:    [string, string];
 };
 
 export const DIAGNOSIS_QUESTIONS: DiagnosisQuestion[] = [
@@ -301,8 +387,8 @@ export const DIAGNOSIS_QUESTIONS: DiagnosisQuestion[] = [
   },
   {
     id: 'q5',
-    text: 'When you abandon a book, is it more often because the characters didn\'t connect or because the story stalled?',
-    options: ['Characters didn\'t connect', 'Story stalled / lost momentum'],
+    text: "When you abandon a book, is it more often because the characters didn't connect or because the story stalled?",
+    options: ["Characters didn't connect", 'Story stalled / lost momentum'],
     keys:    ['dnf_characters', 'dnf_pacing'],
   },
 ];
