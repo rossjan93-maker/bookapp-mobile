@@ -34,7 +34,7 @@ React Native mobile app built with Expo Router + Supabase.
 | `lib/signals.ts` | Derived signals foundation (completion rate, DNF rate, avg pages/day, rec conversion, rating signals) |
 | `lib/tasteProfile.ts` | Recommendation confidence model: tier 0–3, trait/genre affinity scoring, diagnosis answer boosts, hypothesis generation |
 | `lib/bookTraits.ts` | Deterministic book trait extraction: 8 genres, base trait scores per genre, page count adjustments, `detectGenre()` |
-| `lib/recommender.ts` | Scoring engine: `scoreBookForUser()` (pure), `getRankedRecs()` (pure, with diversity filter), `getCandidateBooks()` (async DB query) |
+| `lib/recommender.ts` | Scoring engine: three-source retrieval (`catalog`, `cached_external`, `open_library`), `scoreBookForUser()` (pure), `getRankedRecs()` (returns `RankedRecsResult` with quality gate + source meta), `getCandidateBooks()` (checks cache → OL fallback → persists) |
 | `app/import/diagnosis.tsx` | Imported-user diagnosis flow: auto-generated taste hypotheses + 5 adaptive tradeoff questions |
 | `components/CoverThumb.tsx` | Cover image with OL fallback |
 
@@ -56,6 +56,7 @@ React Native mobile app built with Expo Router + Supabase.
 | `20260315000004_books_description.sql` | Adds `description text` to books |
 | `20260318000000_user_books_taste_tags.sql` | Adds `taste_tags jsonb` to user_books for structured post-finish taste signals |
 | `20260318000001_reader_preferences_diagnosis.sql` | Adds `diagnosis_answers jsonb` to reader_preferences for taste-calibration question persistence |
+| `20260318000002_rec_candidate_cache.sql` | `rec_candidate_cache` table — per-user cache of externally-retrieved OL recommendation candidates with RLS; 24h TTL; upsert on `(user_id, external_id)` |
 
 ## Defensive Fallbacks
 Library, profile, and notes queries include try-with-fallback patterns — they attempt queries with new columns (page_count, current_page, source, sentiment) and silently fall back to column-safe queries if migrations haven't been applied yet. This means the app always loads.

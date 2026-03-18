@@ -1,44 +1,73 @@
 // =============================================================================
-// Recommender — candidate retrieval + ranking
+// Recommender — candidate retrieval + scoring + ranking
 //
-// Architecture (two-phase):
+// ── Architecture ─────────────────────────────────────────────────────────────
 //
-//   Phase 1 — Retrieval (async, two sources in parallel):
-//     getLocalCandidates(client, userId)
-//       → DB books passing eligibility filter (subjects/description/isbn present)
-//       → also returns readIds and readExternalIds for subsequent OL filtering
+//  Candidate retrieval (getCandidateBooks):
 //
-//     getOLCandidates(profile, readExternalIds, localExternalIds)
-//       → Live OL subject-search for the user's top liked genres
-//       → Excludes books already in user's library or already in local candidates
+//    Source A — Catalog (local DB, 'catalog')
+//      Books in the shared `books` table that pass the eligibility filter:
+//        subjects present  → OL-classified book
+//        description > 30c → enriched via book detail page
+//        isbn present      → Goodreads-imported published book
+//      Bare recommendation-send entries (title+author+cover only) are
+//      automatically excluded — they have none of the three signals.
 //
-//     Both are merged by getCandidateBooks(client, userId, profile)
+//    Source B — Cached external ('cached_external')
+//      Rows in `rec_candidate_cache` for this user, written from previous
+//      OL fetches. Used when cache is fresh (< CACHE_TTL_MS).
+//      Avoids hitting the OL API on every hub load.
 //
-//   Phase 2 — Ranking (pure sync):
-//     scoreBookForUser(book, profile)   → trait alignment + genre affinity
-//     getRankedRecs(candidates, profile) → score → sort → diversity cap
+//    Source C — Live Open Library ('open_library')
+//      Live OL subject-search guided by the user's top genre affinities.
+//      Only fires when cache is empty or stale. Results are immediately
+//      persisted to `rec_candidate_cache` for next time.
 //
-// What makes a book recommendation-eligible (local DB):
-//   • subjects is not null and has at least 1 entry   → OL-classified book
-//   • OR description is not null and non-trivial      → enriched book detail page
-//   • OR isbn is not null                              → came from Goodreads import
-//                                                        (known published book)
-//   Books that entered only via recommendation-send (title+author+cover_url only)
-//   are excluded because they have none of these three signals.
+//  Ranking (getRankedRecs):
+//    1. Score every candidate against the user's taste profile
+//    2. Quality gate: return { recs: [], quality_gate: '...' } if pool is
+//       too small or no book scores above the minimum threshold
+//    3. Sort by score, apply genre diversity cap (max 2 per primary genre)
+//    4. Return up to `limit` books with full debug metadata
 //
-// No schema change is required — eligibility is deterministic from existing columns.
+// ── Source tracing ────────────────────────────────────────────────────────────
+//
+//  Every CandidateBook carries:
+//    _source            — 'catalog' | 'cached_external' | 'open_library'
+//    _retrieval_reason  — e.g. 'local:eligible', 'ol:genre:thriller_mystery'
+//
+//  Every ScoredBook additionally carries:
+//    score / confidence / reasons / risks — scoring explanation
+//    _debug.pool_size  — total candidates before ranking
+//    _debug.rank       — 1-based rank within the scored pool
+//
+//  RankedRecsResult.meta exposes aggregate pipeline stats:
+//    sources_used, catalog_count, cached_external_count, live_ol_count,
+//    pool_size, quality_gate
+//
 // =============================================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { TasteProfile }  from './tasteProfile';
 import { getBookTraits }       from './bookTraits';
 
+// ── Quality gate constants ─────────────────────────────────────────────────────
+
+const MIN_CANDIDATES    = 5;    // Below this the pool is considered insufficient
+const MIN_PASS_SCORE    = 0.12; // A book must score at least this to count as passing
+const MIN_PASSING_BOOKS = 2;    // At least this many books must pass MIN_PASS_SCORE
+
+// ── Cache constants ────────────────────────────────────────────────────────────
+
+const CACHE_TTL_MS      = 24 * 60 * 60 * 1000; // 24 hours
+const CACHE_MIN_ROWS    = 5;    // If we have at least this many fresh rows, skip OL
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type CandidateSource = 'local_db' | 'open_library';
+export type CandidateSource = 'catalog' | 'cached_external' | 'open_library';
 
 export type CandidateBook = {
-  id:                 string;   // DB UUID for local_db, 'ol:<key>' for open_library
+  id:                 string;   // DB UUID for catalog, 'ol:<key>' for OL sources
   title:              string;
   author:             string;
   cover_url:          string | null;
@@ -46,9 +75,9 @@ export type CandidateBook = {
   subjects:           string[] | null;
   page_count:         number | null;
   description:        string | null;
-  // ── Retrieval debug fields ─────────────────────────────────────────────────
+  // ── Retrieval provenance ───────────────────────────────────────────────────
   _source:            CandidateSource;
-  _retrieval_reason:  string;         // e.g. 'local:eligible', 'ol:subject:mystery'
+  _retrieval_reason:  string;     // e.g. 'local:eligible', 'ol:genre:mystery'
 };
 
 export type ScoredBook = CandidateBook & {
@@ -56,10 +85,27 @@ export type ScoredBook = CandidateBook & {
   confidence: 'low' | 'medium' | 'high';
   reasons:    string[];
   risks:      string[];
-  // ── Ranking debug fields ───────────────────────────────────────────────────
+  // ── Ranking provenance ─────────────────────────────────────────────────────
   _debug: {
     pool_size: number;   // total candidates before ranking
-    rank:      number;   // 1-based rank within scored pool
+    rank:      number;   // 1-based rank within the scored pool
+  };
+};
+
+export type QualityGate =
+  | 'passed'
+  | 'insufficient_pool'    // fewer than MIN_CANDIDATES candidates total
+  | 'insufficient_score';  // pool exists but no book clears MIN_PASS_SCORE
+
+export type RankedRecsResult = {
+  recs: ScoredBook[];
+  meta: {
+    pool_size:              number;
+    sources_used:           CandidateSource[];
+    catalog_count:          number;
+    cached_external_count:  number;
+    live_ol_count:          number;
+    quality_gate:           QualityGate;
   };
 };
 
@@ -92,8 +138,7 @@ const GENRE_OL_SUBJECTS: Record<string, [string, string]> = {
 };
 
 // ── OL subject fetcher ────────────────────────────────────────────────────────
-// Fetches up to `limit` books for a given OL subject string.
-// Times out after 3s — returns [] on any error or slow response.
+// Returns [] on any error or slow response (3s timeout).
 
 type OLDoc = {
   key?:                     string;
@@ -147,20 +192,19 @@ async function fetchOLSubject(
   }
 }
 
-// ── Local DB retrieval ────────────────────────────────────────────────────────
-// Returns eligibility-filtered local DB books plus the user's existing ID sets.
+// ── Source A: Catalog (local DB, eligibility-filtered) ────────────────────────
+// Returns eligibility-filtered catalog books + the user's existing ID sets.
 
 type LocalResult = {
   candidates:      CandidateBook[];
-  readIds:         Set<string>;    // DB UUIDs — for local candidate exclusion
-  readExternalIds: Set<string>;    // OL /works/OL... keys — for OL candidate exclusion
+  readIds:         Set<string>;    // DB UUIDs
+  readExternalIds: Set<string>;    // OL /works/OL... keys
 };
 
 async function getLocalCandidates(
   client: SupabaseClient,
   userId: string,
 ): Promise<LocalResult> {
-  // Fetch user's existing books (both ID and external_id for dual exclusion)
   const { data: userBooks } = await client
     .from('user_books')
     .select('book_id, book:books(external_id)')
@@ -174,12 +218,6 @@ async function getLocalCandidates(
     ubRows.map(r => r.book?.external_id).filter((x): x is string => !!x)
   );
 
-  // Quality-eligible local books:
-  //   • subjects present  → classified by Open Library
-  //   • description present → enriched via book detail page
-  //   • isbn present       → imported from Goodreads (published book)
-  // Books inserted only via recommendation-send (title+author+cover_url) fail
-  // all three checks and are excluded automatically.
   const { data: dbBooks } = await client
     .from('books')
     .select('id, title, author, cover_url, external_id, subjects, page_count, description, isbn')
@@ -195,11 +233,8 @@ async function getLocalCandidates(
   const candidates: CandidateBook[] = ((dbBooks ?? []) as DBBook[])
     .filter(b => !readIds.has(b.id))
     .filter(b => {
-      // Subjects array must have at least one real entry
       if (b.subjects && b.subjects.length > 0) return true;
-      // Description must be non-trivial (> 30 chars)
       if (b.description && b.description.trim().length > 30) return true;
-      // ISBN presence alone is sufficient (Goodreads-imported published book)
       if (b.isbn) return true;
       return false;
     })
@@ -212,59 +247,112 @@ async function getLocalCandidates(
       subjects:          b.subjects,
       page_count:        b.page_count,
       description:       b.description,
-      _source:           'local_db',
+      _source:           'catalog',
       _retrieval_reason: 'local:eligible',
     }));
 
   return { candidates, readIds, readExternalIds };
 }
 
-// ── OL genre-matched retrieval ────────────────────────────────────────────────
-// Fetches books from OL for the user's top liked genres.
-// Deduplicates against both the user's library and local DB candidates.
+// ── Source B: Cached external (rec_candidate_cache) ───────────────────────────
+// Reads fresh (< CACHE_TTL_MS) rows for this user.
+// Returns null if table is missing (migration not yet applied) — fails silently.
+
+type CacheResult = {
+  candidates: CandidateBook[];
+  isFresh:    boolean;   // true when enough fresh rows exist to skip OL
+} | null;
+
+async function getCachedExternalCandidates(
+  client: SupabaseClient,
+  userId: string,
+  excludeExternalIds: Set<string>,
+): Promise<CacheResult> {
+  try {
+    const cutoff = new Date(Date.now() - CACHE_TTL_MS).toISOString();
+    const { data, error } = await client
+      .from('rec_candidate_cache')
+      .select('external_id, source, retrieval_reason, title, author, cover_url, subjects, page_count')
+      .eq('user_id', userId)
+      .gte('cached_at', cutoff)
+      .order('cached_at', { ascending: false })
+      .limit(80);
+
+    if (error) return null;   // table not yet created — skip gracefully
+
+    type CacheRow = {
+      external_id:      string;
+      source:           string;
+      retrieval_reason: string | null;
+      title:            string;
+      author:           string | null;
+      cover_url:        string | null;
+      subjects:         string[] | null;
+      page_count:       number | null;
+    };
+
+    const rows = (data ?? []) as CacheRow[];
+    const isFresh = rows.length >= CACHE_MIN_ROWS;
+
+    const candidates: CandidateBook[] = rows
+      .filter(r => !excludeExternalIds.has(r.external_id))
+      .map((r): CandidateBook => ({
+        id:                `ol:${r.external_id}`,
+        title:             r.title,
+        author:            r.author ?? 'Unknown author',
+        cover_url:         r.cover_url,
+        external_id:       r.external_id,
+        subjects:          r.subjects,
+        page_count:        r.page_count,
+        description:       null,
+        _source:           'cached_external',
+        _retrieval_reason: r.retrieval_reason ?? 'cache:restored',
+      }));
+
+    return { candidates, isFresh };
+  } catch {
+    return null;
+  }
+}
+
+// ── Source C: Live OL retrieval ───────────────────────────────────────────────
+// Guided by the user's genre affinities.
 
 async function getOLCandidates(
   profile: TasteProfile,
   readExternalIds: Set<string>,
-  localExternalIds: Set<string>,
+  excludeExternalIds: Set<string>,
 ): Promise<CandidateBook[]> {
-  const affinities  = profile.genre_affinities ?? {};
-  const diagAnswers = profile.evidence.diagnosis_answer_count;
+  const affinities = profile.genre_affinities ?? {};
 
-  // Liked genres: positive affinity, sorted descending
   let likedGenres = Object.entries(affinities)
     .filter(([, score]) => score > 0)
     .sort((a, b) => b[1] - a[1])
     .map(([genre]) => genre)
     .slice(0, 2);
 
-  // Fallback when affinities are empty (early-stage profile):
-  // Use preferred trait keys to guess genre appetite, then fall back to general
   if (likedGenres.length === 0) {
     const pref = profile.preferred_traits;
-    if ((pref['Insight'] ?? 0) + (pref['Evidence'] ?? 0) > 0.4) likedGenres = ['nonfiction', 'memoir_bio'];
+    if ((pref['Insight'] ?? 0) + (pref['Evidence'] ?? 0) > 0.4)  likedGenres = ['nonfiction', 'memoir_bio'];
     else if ((pref['Suspense'] ?? 0) + (pref['Pacing'] ?? 0) > 0.5) likedGenres = ['thriller_mystery'];
-    else if ((pref['Worldbuilding'] ?? 0) > 0.4) likedGenres = ['fantasy_scifi'];
-    else likedGenres = ['fiction' in GENRE_OL_SUBJECTS ? 'literary' : 'general'];
+    else if ((pref['Worldbuilding'] ?? 0) > 0.4)                  likedGenres = ['fantasy_scifi'];
+    else                                                           likedGenres = ['literary'];
   }
 
-  // Build fetch list: up to 2 subjects per genre, max 4 total
   const toFetch: Array<{ subject: string; reason: string }> = [];
   for (const genre of likedGenres) {
     const [s1, s2] = GENRE_OL_SUBJECTS[genre] ?? ['fiction', 'general fiction'];
-    const reason = `ol:genre:${genre}`;
+    const reason   = `ol:genre:${genre}`;
     if (toFetch.length < 4) toFetch.push({ subject: s1, reason });
     if (toFetch.length < 4) toFetch.push({ subject: s2, reason });
     if (toFetch.length >= 4) break;
   }
 
-  // Parallel fetch — individual failures return [] via fetchOLSubject's catch
   const resultSets = await Promise.all(
     toFetch.map(({ subject, reason }) => fetchOLSubject(subject, 20, reason))
   );
 
-  // Deduplicate by external_id, exclude user's library and local DB candidates
-  const exclude = new Set([...readExternalIds, ...localExternalIds]);
+  const exclude = new Set([...readExternalIds, ...excludeExternalIds]);
   const seen    = new Set<string>();
   const merged: CandidateBook[] = [];
 
@@ -280,26 +368,91 @@ async function getOLCandidates(
   return merged;
 }
 
+// ── Cache write: persist OL results for this user ─────────────────────────────
+// Upserts on (user_id, external_id) — refreshes cached_at on repeat fetch.
+// Fails silently if the table doesn't exist yet.
+
+async function persistOLCandidates(
+  client: SupabaseClient,
+  userId: string,
+  books: CandidateBook[],
+): Promise<void> {
+  if (books.length === 0) return;
+  try {
+    const rows = books
+      .filter(b => b.external_id)
+      .map(b => ({
+        user_id:          userId,
+        external_id:      b.external_id!,
+        source:           b._source,
+        retrieval_reason: b._retrieval_reason,
+        title:            b.title,
+        author:           b.author,
+        cover_url:        b.cover_url,
+        subjects:         b.subjects,
+        page_count:       b.page_count,
+        cached_at:        new Date().toISOString(),
+      }));
+
+    await client
+      .from('rec_candidate_cache')
+      .upsert(rows, { onConflict: 'user_id,external_id', ignoreDuplicates: false });
+  } catch {
+    // Cache write is best-effort; failure does not affect the current session
+  }
+}
+
 // ── Combined retrieval ────────────────────────────────────────────────────────
+// Returns merged candidates from all three sources.
 
 export async function getCandidateBooks(
   client: SupabaseClient,
   userId: string,
   profile: TasteProfile,
 ): Promise<CandidateBook[]> {
-  // Run local DB retrieval first (fast — one DB query)
+  // Source A: catalog (always run — single fast DB query)
   const local = await getLocalCandidates(client, userId);
 
-  const localExternalIds = new Set(
+  const catalogExternalIds = new Set(
     local.candidates.map(c => c.external_id).filter((x): x is string => !!x)
   );
 
-  // OL retrieval guided by the user's genre affinities
-  const olCandidates = await getOLCandidates(profile, local.readExternalIds, localExternalIds);
+  // Source B: check cache (skip OL fetch if fresh enough)
+  const cacheResult = await getCachedExternalCandidates(
+    client,
+    userId,
+    new Set([...local.readExternalIds, ...catalogExternalIds]),
+  );
 
-  // OL candidates first so genre-matched books score against well-classified subjects;
-  // local candidates supplement (they may have richer description/isbn data)
-  return [...olCandidates, ...local.candidates];
+  let externalCandidates: CandidateBook[];
+
+  if (cacheResult?.isFresh) {
+    // Cache is warm — use cached external candidates, skip OL API
+    externalCandidates = cacheResult.candidates;
+  } else {
+    // Source C: live OL fetch
+    const excludeForOL = new Set([
+      ...local.readExternalIds,
+      ...catalogExternalIds,
+      ...(cacheResult?.candidates.map(c => c.external_id).filter((x): x is string => !!x) ?? []),
+    ]);
+
+    const olLive = await getOLCandidates(profile, local.readExternalIds, excludeForOL);
+
+    // Merge fresh OL results on top of any stale cache rows (for breadth)
+    const stale = cacheResult?.candidates ?? [];
+    const olExternalIds = new Set(olLive.map(b => b.external_id).filter((x): x is string => !!x));
+    const nonDupStale   = stale.filter(b => !olExternalIds.has(b.external_id ?? ''));
+
+    externalCandidates = [...olLive, ...nonDupStale];
+
+    // Persist fresh OL results (best-effort, async)
+    persistOLCandidates(client, userId, olLive).catch(() => {});
+  }
+
+  // External first — genre-matched books score better against subjects;
+  // catalog books supplement with richer description/isbn metadata.
+  return [...externalCandidates, ...local.candidates];
 }
 
 // ── Scoring (pure) ────────────────────────────────────────────────────────────
@@ -319,7 +472,7 @@ export function scoreBookForUser(
   // 1. Preferred trait alignment
   const prefMatches: string[] = [];
   for (const [trait, userWeight] of Object.entries(pref)) {
-    const bookWeight = bt.traits[trait] ?? 0;
+    const bookWeight   = bt.traits[trait] ?? 0;
     const contribution = userWeight * bookWeight;
     if (contribution > 0.22) {
       prefMatches.push(trait.toLowerCase());
@@ -335,8 +488,8 @@ export function scoreBookForUser(
   // 2. Avoided trait penalties
   const avoidHits: string[] = [];
   for (const [trait, penalty] of Object.entries(avoid)) {
-    const bookWeight = bt.traits[trait] ?? 0;
-    const contribution = penalty * bookWeight; // penalty < 0
+    const bookWeight   = bt.traits[trait] ?? 0;
+    const contribution = penalty * bookWeight;
     if (contribution < -0.18) {
       avoidHits.push(trait.toLowerCase());
       score += contribution;
@@ -366,32 +519,35 @@ export function scoreBookForUser(
   const finalScore = Math.max(0, Math.min(1, score));
 
   let confidence: 'low' | 'medium' | 'high';
-  if (profile.tier >= 3 && finalScore > 0.42) {
-    confidence = 'high';
-  } else if (profile.tier >= 2 && finalScore > 0.22) {
-    confidence = 'medium';
-  } else {
-    confidence = 'low';
-  }
+  if (profile.tier >= 3 && finalScore > 0.42)      confidence = 'high';
+  else if (profile.tier >= 2 && finalScore > 0.22) confidence = 'medium';
+  else                                              confidence = 'low';
 
   return {
-    score:      +finalScore.toFixed(3),
+    score:   +finalScore.toFixed(3),
     confidence,
-    reasons:    [...new Set(reasons)].slice(0, 2),
-    risks:      [...new Set(risks)].slice(0, 1),
+    reasons: [...new Set(reasons)].slice(0, 2),
+    risks:   [...new Set(risks)].slice(0, 1),
   };
 }
 
-// ── Ranked recs (pure) ────────────────────────────────────────────────────────
+// ── Ranked recs ───────────────────────────────────────────────────────────────
+// Pure function — returns a RankedRecsResult with quality gate metadata.
 
 export function getRankedRecs(
   candidates: CandidateBook[],
   profile: TasteProfile,
   limit = 5,
-): ScoredBook[] {
-  if (candidates.length === 0) return [];
-
+): RankedRecsResult {
   const poolSize = candidates.length;
+
+  // ── Quality gate: pool size ───────────────────────────────────────────────
+  if (poolSize < MIN_CANDIDATES) {
+    return {
+      recs: [],
+      meta: buildMeta(candidates, poolSize, 'insufficient_pool'),
+    };
+  }
 
   const scored = candidates.map(book => ({
     ...book,
@@ -401,7 +557,16 @@ export function getRankedRecs(
 
   scored.sort((a, b) => b.score - a.score);
 
-  // Diversity: max 2 books per primary genre
+  // ── Quality gate: score threshold ─────────────────────────────────────────
+  const passing = scored.filter(b => b.score >= MIN_PASS_SCORE);
+  if (passing.length < MIN_PASSING_BOOKS) {
+    return {
+      recs: [],
+      meta: buildMeta(candidates, poolSize, 'insufficient_score'),
+    };
+  }
+
+  // ── Diversity: max 2 books per primary genre ───────────────────────────────
   const genreCount: Record<string, number> = {};
   const diverse: ScoredBook[] = [];
   let globalRank = 0;
@@ -417,7 +582,26 @@ export function getRankedRecs(
     if (diverse.length >= limit) break;
   }
 
-  return diverse;
+  return {
+    recs: diverse,
+    meta: buildMeta(candidates, poolSize, 'passed'),
+  };
+}
+
+function buildMeta(
+  candidates: CandidateBook[],
+  poolSize: number,
+  quality_gate: QualityGate,
+): RankedRecsResult['meta'] {
+  const sourcesSet = new Set<CandidateSource>(candidates.map(c => c._source));
+  return {
+    pool_size:             poolSize,
+    sources_used:          [...sourcesSet],
+    catalog_count:         candidates.filter(c => c._source === 'catalog').length,
+    cached_external_count: candidates.filter(c => c._source === 'cached_external').length,
+    live_ol_count:         candidates.filter(c => c._source === 'open_library').length,
+    quality_gate,
+  };
 }
 
 // ── Convenience async wrapper ─────────────────────────────────────────────────
@@ -427,7 +611,7 @@ export async function getPersonalizedRecs(
   userId: string,
   profile: TasteProfile,
   limit = 5,
-): Promise<ScoredBook[]> {
+): Promise<RankedRecsResult> {
   const candidates = await getCandidateBooks(client, userId, profile);
   return getRankedRecs(candidates, profile, limit);
 }

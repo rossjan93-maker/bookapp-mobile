@@ -24,7 +24,7 @@ import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computeTasteProfile } from '../../lib/tasteProfile';
 import type { TasteProfile } from '../../lib/tasteProfile';
 import { getCandidateBooks, getRankedRecs, fitLabel, fitColor } from '../../lib/recommender';
-import type { ScoredBook } from '../../lib/recommender';
+import type { ScoredBook, QualityGate } from '../../lib/recommender';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -724,6 +724,25 @@ function RecCard({ book }: { book: ScoredBook }) {
           )}
         </View>
       </View>
+
+      {/* Source attribution — subtle bottom strip */}
+      <View style={{
+        borderTopWidth: 1,
+        borderTopColor: '#f5f5f4',
+        paddingHorizontal: 12,
+        paddingVertical: 5,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+      }}>
+        <Text style={{ fontSize: 10, color: '#d6d3d1' }}>
+          {book._source === 'catalog' ? '📚 From catalog' : '🌐 From Open Library'}
+          {'  ·  '}
+          {book._debug.rank}/{book._debug.pool_size} candidates
+          {'  ·  '}
+          score {book.score.toFixed(2)}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -738,6 +757,7 @@ export default function RecommendationsScreen() {
   // ── Hub state ──────────────────────────────────────────────────────────────
   const [hubLoading, setHubLoading]           = useState(true);
   const [recsLoading, setRecsLoading]         = useState(false);
+  const [recsQualityGate, setRecsQualityGate] = useState<QualityGate | null>(null);
   const [booksToRate, setBooksToRate]         = useState<BookToRate[]>([]);
   const [booksToTag, setBooksToTag]           = useState<BookToTag[]>([]);
   const [incomingRecs, setIncomingRecs]       = useState<IncomingRec[]>([]);
@@ -886,10 +906,12 @@ export default function RecommendationsScreen() {
     if (!tp || tp.tier < 1) return;
 
     setRecsLoading(true);
+    setRecsQualityGate(null);
     try {
-      const candidates = await getCandidateBooks(supabase!, user.id, tp);
-      const recs       = getRankedRecs(candidates, tp, 5);
+      const candidates    = await getCandidateBooks(supabase!, user.id, tp);
+      const { recs, meta } = getRankedRecs(candidates, tp, 5);
       setRecommendations(recs);
+      setRecsQualityGate(meta.quality_gate !== 'passed' ? meta.quality_gate : null);
     } catch {
       // Recommendations fail silently — hub content is already visible
     } finally {
@@ -1119,8 +1141,31 @@ export default function RecommendationsScreen() {
                 </View>
               )}
 
+              {/* ── Quality gate: not enough signal or coverage ── */}
+              {recsQualityGate && !recsLoading && !hasRecs && (tasteProfile?.tier ?? 0) >= 1 && (
+                <View style={{
+                  backgroundColor: '#fff',
+                  borderRadius: 14,
+                  padding: 16,
+                  marginBottom: 16,
+                  borderWidth: 1,
+                  borderColor: '#e7e5e4',
+                }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', marginBottom: 6 }}>
+                    {recsQualityGate === 'insufficient_pool'
+                      ? 'Not enough books in your genres yet'
+                      : "No close matches in the current catalog"}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
+                    {recsQualityGate === 'insufficient_pool'
+                      ? 'We need more books in the genres you enjoy before we can make confident picks. Rate a few more books or add taste tags to help us.'
+                      : 'None of the books in our catalog scored closely enough against your profile. Keep rating books — your picks will sharpen as we learn more.'}
+                  </Text>
+                </View>
+              )}
+
               {/* ── No recs + no tasks → caught up ── */}
-              {!hasRecs && !recsLoading && !hasAnyTask && (
+              {!hasRecs && !recsQualityGate && !recsLoading && !hasAnyTask && (
                 <View style={{
                   backgroundColor: '#fff',
                   borderRadius: 14,

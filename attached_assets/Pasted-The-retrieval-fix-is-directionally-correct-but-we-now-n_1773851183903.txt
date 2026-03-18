@@ -1,0 +1,51 @@
+The retrieval fix is directionally correct, but we now need to make recommendation sourcing stable, inspectable, and more production-grade.
+
+Goal
+Turn the current two-source recommendation retrieval system into a more durable recommendation pipeline with caching, source visibility, and quality controls.
+
+Current state
+- recommendation eligibility filtering exists
+- local low-quality/shared-noise books are excluded
+- phase 1 loads hub/tasks quickly
+- phase 2 fetches recommendations asynchronously using local DB + live Open Library subject-search guided by genre affinities
+
+What to build next
+
+Part 1: Recommendation source tracing
+For every recommendation, persist or expose:
+- retrieval source (`local_catalog`, `open_library`)
+- retrieval reason
+- ranking reason
+- candidate pool size
+- final score
+
+Add a lightweight debug mode or structured object so we can inspect why each recommendation appeared.
+
+Part 2: Candidate caching
+Do not rely only on live Open Library retrieval at render time.
+Create a caching layer for externally retrieved books/candidates so:
+- high-quality external candidates can be stored locally
+- future recommendation loads are faster and more stable
+- we avoid repeated retrieval of the same books
+
+If schema changes are needed, propose the smallest clean version.
+
+Part 3: Canonical recommendation-eligible pool
+Introduce a clearer notion of canonical recommendation-eligible books.
+We should be able to distinguish:
+- clean shared catalog books
+- cached external recommendation candidates
+- user-added/library-only books that should not broadly contaminate recs
+
+Part 4: Quality thresholds
+Add minimum quality thresholds and fallback behavior:
+- if candidate pool is too small or weak, do not show low-conviction recommendations
+- instead show a graceful state indicating we need more signal or more candidate coverage
+
+Part 5: Output
+1. Explain the architecture changes
+2. List changed files
+3. Show how source tracing works
+4. Show how external candidates are cached
+5. Explain how the canonical recommendation pool is enforced
+6. Call out any schema migrations needed
