@@ -110,11 +110,11 @@ export default function LibraryScreen() {
   const [loading, setLoading]             = useState(true);
   const [error, setError]                 = useState<string | null>(null);
   const [updatingId, setUpdatingId]       = useState<string | null>(null);
-  const [pendingFeedback, setPendingFeedback] = useState<PendingFeedback | null>(null);
-  const [showTasteCapture, setShowTasteCapture] = useState<{ userBookId: string; bookId: string } | null>(null);
-  const [likedTags, setLikedTags]             = useState<string[]>([]);
-  const [dislikedTags, setDislikedTags]       = useState<string[]>([]);
-  const [savingTaste, setSavingTaste]         = useState(false);
+  const [pendingFeedback, setPendingFeedback]           = useState<PendingFeedback | null>(null);
+  const [pendingTasteUserBookId, setPendingTasteUserBookId] = useState<string | null>(null);
+  const [likedTags, setLikedTags]                       = useState<string[]>([]);
+  const [dislikedTags, setDislikedTags]                 = useState<string[]>([]);
+  const [savingTaste, setSavingTaste]                   = useState(false);
   const [activeFilter, setActiveFilter]   = useState<FilterKey>('all');
   const [sort, setSort]                   = useState<SortKey>('recent');
   // Accordion state for Finished+chronological mode.
@@ -237,28 +237,47 @@ export default function LibraryScreen() {
     if (wasFinish) {
       setLikedTags([]);
       setDislikedTags([]);
-      setShowTasteCapture({ userBookId, bookId });
+      setPendingTasteUserBookId(userBookId);
     }
   }
 
   async function saveTasteTags() {
-    const target  = showTasteCapture;
-    const liked   = likedTags;
+    // Capture everything synchronously before any state changes
+    const rowId    = pendingTasteUserBookId;
+    const liked    = likedTags;
     const disliked = dislikedTags;
-    setShowTasteCapture(null);
-    setLikedTags([]);
-    setDislikedTags([]);
-    if (!supabase || !target || (liked.length === 0 && disliked.length === 0)) return;
+
+    if (!supabase || !rowId) {
+      if (__DEV__) console.warn('[taste_tags] Cannot save — supabase or rowId missing', { supabase: !!supabase, rowId });
+      setPendingTasteUserBookId(null);
+      setLikedTags([]);
+      setDislikedTags([]);
+      return;
+    }
+
     setSavingTaste(true);
     const tags = { liked, didnt_work: disliked };
+
+    // Temporary debug logs — remove once confirmed working
+    console.log('[taste_tags] row id:', rowId);
+    console.log('[taste_tags] payload:', JSON.stringify(tags));
+
     const { error } = await supabase
       .from('user_books')
       .update({ taste_tags: tags })
-      .eq('id', target.userBookId);
-    if (error && __DEV__) {
-      console.warn('[taste_tags] Failed to save:', error.message);
+      .eq('id', rowId);
+
+    if (error) {
+      console.warn('[taste_tags] Supabase error:', error.message, error.code);
+    } else {
+      console.log('[taste_tags] saved successfully');
     }
+
+    // Reset state only AFTER the write completes
     setSavingTaste(false);
+    setPendingTasteUserBookId(null);
+    setLikedTags([]);
+    setDislikedTags([]);
   }
 
   async function handleUpdateStatus(userBook: UserBook, newStatus: UserBookStatus) {
@@ -982,10 +1001,14 @@ export default function LibraryScreen() {
 
     {/* ── Post-finish taste capture modal ── */}
     <Modal
-      visible={!!showTasteCapture}
+      visible={pendingTasteUserBookId !== null}
       transparent
       animationType="slide"
-      onRequestClose={() => setShowTasteCapture(null)}
+      onRequestClose={() => {
+        setPendingTasteUserBookId(null);
+        setLikedTags([]);
+        setDislikedTags([]);
+      }}
     >
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
         <View style={{
@@ -1000,7 +1023,11 @@ export default function LibraryScreen() {
               What stood out?
             </Text>
             <TouchableOpacity
-              onPress={() => setShowTasteCapture(null)}
+              onPress={() => {
+                setPendingTasteUserBookId(null);
+                setLikedTags([]);
+                setDislikedTags([]);
+              }}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Text style={{ fontSize: 13, color: '#a8a29e' }}>Skip</Text>
