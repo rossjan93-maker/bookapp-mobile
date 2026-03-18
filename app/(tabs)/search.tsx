@@ -224,36 +224,59 @@ export default function RecommendationsScreen() {
       computeTasteProfile(supabase!, user.id).catch(() => null),
     ]);
 
-    // Books to rate: finished, no rating
-    const toRate: BookToRate[] = ((rateRes.data ?? []) as Array<{ id: string; book_id: string; book: any[] }>)
-      .map(r => ({
-        id:         r.id,
-        book_id:    r.book_id,
-        title:      r.book?.[0]?.title      ?? '',
-        author:     r.book?.[0]?.author     ?? '',
-        cover_url:  r.book?.[0]?.cover_url  ?? null,
-        external_id: r.book?.[0]?.external_id ?? null,
-      }));
+    // ── Type for Supabase row with a many-to-one book join ───────────────────
+    // Supabase returns FK many-to-one joins as a SINGLE OBJECT, not an array.
+    // Accessing r.book?.[0] would always be undefined. Use r.book?.field instead.
+    type RateRow = {
+      id: string;
+      book_id: string;
+      book: { title: string; author: string; cover_url: string | null; external_id: string | null } | null;
+    };
+    type TagRow = {
+      id: string;
+      book_id: string;
+      taste_tags: { liked?: string[]; didnt_work?: string[] } | null;
+      book: { title: string; author: string; cover_url: string | null; external_id: string | null } | null;
+    };
 
-    // Books to tag: finished, rated, but taste_tags is null or empty
-    // A book in toRate cannot appear here (toRate requires rating IS NULL; toTag requires rating IS NOT NULL)
-    const toTag: BookToTag[] = (
-      (tagRes.data ?? []) as Array<{ id: string; book_id: string; taste_tags: { liked?: string[]; didnt_work?: string[] } | null; book: any[] }>
-    )
+    // Books to rate: finished, no rating (server-side filter: rating IS NULL)
+    const toRate: BookToRate[] = ((rateRes.data ?? []) as unknown as RateRow[]).map(r => {
+      const entry: BookToRate = {
+        id:          r.id,
+        book_id:     r.book_id,
+        title:       r.book?.title       ?? '',
+        author:      r.book?.author      ?? '',
+        cover_url:   r.book?.cover_url   ?? null,
+        external_id: r.book?.external_id ?? null,
+      };
+      console.log('[rate] candidate:', entry.id, entry.title, '→ included');
+      return entry;
+    });
+
+    // Books to tag: finished + rated (server-side). Client-filter: only where
+    // taste_tags is null, undefined, or both liked[] and didnt_work[] are empty.
+    // A book cannot appear in both lists — server filters are mutually exclusive.
+    const toTag: BookToTag[] = ((tagRes.data ?? []) as unknown as TagRow[])
       .filter(r => {
         const tt = r.taste_tags;
-        if (tt === null || tt === undefined) return true;
-        const liked    = tt.liked      ?? [];
-        const disliked = tt.didnt_work ?? [];
-        return liked.length === 0 && disliked.length === 0;
+        const liked    = (tt?.liked      ?? []) as string[];
+        const disliked = (tt?.didnt_work ?? []) as string[];
+        const include  = liked.length === 0 && disliked.length === 0;
+        console.log(
+          '[tag] candidate:', r.id, r.book?.title,
+          '| taste_tags:', JSON.stringify(tt),
+          '| liked:', liked.length, '| disliked:', disliked.length,
+          '→', include ? 'INCLUDED' : 'EXCLUDED'
+        );
+        return include;
       })
       .map(r => ({
         id:          r.id,
         book_id:     r.book_id,
-        title:       r.book?.[0]?.title      ?? '',
-        author:      r.book?.[0]?.author     ?? '',
-        cover_url:   r.book?.[0]?.cover_url  ?? null,
-        external_id: r.book?.[0]?.external_id ?? null,
+        title:       r.book?.title       ?? '',
+        author:      r.book?.author      ?? '',
+        cover_url:   r.book?.cover_url   ?? null,
+        external_id: r.book?.external_id ?? null,
       }));
 
     setBooksToRate(toRate);

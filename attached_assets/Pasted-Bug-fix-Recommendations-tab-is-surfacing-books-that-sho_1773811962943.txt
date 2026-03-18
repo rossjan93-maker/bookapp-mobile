@@ -1,0 +1,59 @@
+Bug fix: Recommendations tab is surfacing books that should not appear, and book cover images are not populating.
+
+Focus on `app/(tabs)/search.tsx` only unless a shared card component is being reused.
+
+Issues to fix
+
+1) “Add taste tags” is showing books that already have taste tags
+Expected behavior:
+Only show books where:
+- status = 'finished'
+- rating is not null
+- taste_tags is null
+OR
+- taste_tags.liked is empty AND taste_tags.didnt_work is empty
+
+Do NOT show books that already have any liked or didnt_work tags.
+
+Important:
+- Inspect the actual runtime shape of `taste_tags`
+- It may already be an object like:
+  { liked: ["Pacing"], didnt_work: [] }
+- The current filter is likely wrong, or `taste_tags` is not being selected/fetched correctly
+
+Add temporary console logs for each candidate book before filtering:
+- id
+- title
+- rating
+- taste_tags
+- final included/excluded decision
+
+2) “Rate a finished book” must not show books that already have a rating
+Expected behavior:
+Only show books where:
+- status = 'finished'
+- rating is null
+
+Add temporary console logs for this list too.
+
+3) Book cover images are not populating in the Recommendations hub
+Fix the card image rendering by reusing the same cover field/path and fallback logic already used successfully in Library or Book Detail.
+Do not invent a separate image mapping here if another screen already works.
+Verify whether the book object includes:
+- cover_url
+- thumbnail
+- image_url
+- coverImage
+or a nested `book.cover_url` style field
+
+Add a safe fallback placeholder if image is missing, but first try to use the exact existing working logic from elsewhere in the app.
+
+4) Refresh / stale state
+If these lists are built from stale state, ensure the hub refetches when the screen becomes active again after rating/tagging a book.
+
+Acceptance criteria
+- A finished book with rating and non-empty taste_tags does NOT appear in “Add taste tags”
+- A finished book with a rating but empty/null taste_tags DOES appear there
+- A finished book with no rating appears only in “Rate a finished book”
+- Recommendation hub cards display cover images consistently with Library/Book Detail
+- Explain the root cause for each bug, then show the exact code changes
