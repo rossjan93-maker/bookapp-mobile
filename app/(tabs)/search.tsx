@@ -2740,6 +2740,7 @@ export default function RecommendationsScreen() {
                                             ◆ {b._score_breakdown.series_label}
                                             {b._score_breakdown.series_name ? ` · ${b._score_breakdown.series_name}` : ''}
                                             {b._score_breakdown.series_position != null ? ` #${b._score_breakdown.series_position}` : ''}
+                                            {b._score_breakdown.series_confidence ? ` [${b._score_breakdown.series_confidence}/${b._score_breakdown.series_method}]` : ''}
                                           </Text>
                                         ) : null}
                                       </View>

@@ -150,11 +150,13 @@ export type ScoreBreakdown = {
   continuation_rank?:     number;   // rank among same-author books in pool (1 = best)
   continuation_discount?: number;   // effective-score reduction for sequel suppression
   // ── Recommendation Integrity Layer fields (populated in RIL pass) ─────────
-  series_name?:     string | null;  // detected series (e.g. "The Stormlight Archive")
-  series_position?: number | null;  // position in series (1 = starter, 2+ = continuation)
-  series_label?:    string | null;  // 'series_starter' | 'series_continuation' | 'series_later_volume'
-  ril_suppressed?:  boolean;        // true = removed from visible set by RIL
-  ril_reason?:      string;         // audit reason for RIL suppression
+  series_name?:       string | null;  // detected series (e.g. "The Stormlight Archive")
+  series_position?:   number | null;  // position in series (1 = starter, 2+ = continuation)
+  series_label?:      string | null;  // 'series_starter' | 'series_continuation' | 'series_later_volume'
+  series_confidence?: string | null;  // 'high' | 'medium' — how reliable the detection is
+  series_method?:     string | null;  // 'curated' | 'title_pattern' | 'description_pattern'
+  ril_suppressed?:    boolean;        // true = removed from visible set by RIL
+  ril_reason?:        string;         // audit reason for RIL suppression
 };
 
 export type ScoredBook = CandidateBook & {

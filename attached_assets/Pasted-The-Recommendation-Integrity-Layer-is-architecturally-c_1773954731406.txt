@@ -1,0 +1,66 @@
+The Recommendation Integrity Layer is architecturally correct, but the actual series-awareness is not yet working strongly enough in live recommendation output.
+
+Evidence:
+In the live forensic pool, books are still showing:
+- series_name: null
+- series_position: null
+- series_label: null
+
+So the RIL is wired, but the current series detection is too weak to reliably normalize or suppress mid-series books.
+
+Goal
+Make series detection robust enough that the RIL can actually prevent invalid mid-series recommendations in real recommendation runs.
+
+What to do
+
+Part 1: Strengthen series detection beyond title-parenthesis parsing
+Do not rely mainly on patterns like:
+- (Series, #N)
+- (Series #N)
+- (Series, Book N)
+
+Add broader series-detection logic using all available metadata:
+- title heuristics
+- series/franchise keywords
+- work/edition metadata if available
+- subject/category metadata if available
+- author + title clustering
+- numbering patterns in subtitles
+- sequel/continuation keywords
+- external metadata already available in the existing enrichment stack, if present
+
+Part 2: Add conservative confidence rules
+Series detection should produce a confidence level.
+If confidence is high:
+- assign series_name
+- assign series_position
+- normalize later books to book 1 or next unread
+
+If confidence is low:
+- do not confidently label a later volume as a valid standalone entry
+- bias toward suppressing likely later volumes rather than surfacing them as default recs
+
+Part 3: Validate on known live examples
+Test against live recommendation candidates from the current Goodreads-heavy user and explicitly show what happens for authors like:
+- Robin Hobb
+- Brandon Sanderson
+- Sarah J. Maas
+
+I want to see whether the engine can now identify:
+- later series entries
+- likely first books
+- proper “start here” normalization
+- “continue the series” only when appropriate
+
+Part 4: Output
+1. explain why the original title-pattern approach was insufficient
+2. list changed files
+3. show the upgraded series-detection logic
+4. show the confidence model
+5. show live examples where later-series candidates are now normalized or suppressed
+6. show the updated top recommendations after the fix
+
+Important
+Do NOT rework retrieval broadly.
+Do NOT focus on premium/expert mode.
+This is specifically a stronger series-detection and normalization pass so the existing RIL can actually work on live recommendation pools.
