@@ -1,0 +1,215 @@
+The free deterministic recommendation engine is now “plausible but off-center.”
+We need to fix the missing conceptual layer:
+
+CORE vs ADJACENT vs STRETCH
+
+Right now the engine can justify too many books with broad overlap, so stretch picks are showing up at the top of the list.
+For dense Goodreads-imported users, the top of the list must be mostly CORE fit.
+
+This is the next build.
+
+Goal
+Add an explicit deterministic classification layer so every recommendation is labeled and ranked as:
+- core_fit
+- adjacent_fit
+- stretch_fit
+- reject
+
+Then make ranking strongly prefer core over adjacent, and adjacent over stretch.
+
+Important context
+We are not solving cache or stale retrieval anymore.
+We are solving recommendation truthfulness for dense users.
+
+The current engine still over-promotes:
+- memoir/literary tolerance
+- graphic/prestige adjacency
+- speculative/literary crossover
+- books that are defensible but not central
+
+We need the deterministic engine to rank closer to the user’s true center of gravity.
+
+Product rule
+Free recommendations do NOT need to be “expert.”
+But they DO need to be credible.
+That means:
+- no embarrassing false positives
+- clear dominant-lane coherence
+- top results should feel central, not just explainable
+
+Part 1: Build deterministic center-of-gravity scoring
+Create an explicit center-of-gravity model for dense imported users.
+
+This should heavily weight:
+- repeated highly rated authors
+- repeated completed series
+- repeated high-rated subgenre/lane patterns
+- recurring market-position patterns
+- recurring reading feel
+- repeated high-signal shelf labels / metadata clusters
+
+The center of gravity should be represented in a structured way, for example:
+{
+  dominant_lanes: [...],
+  repeated_authors: [...],
+  repeated_series: [...],
+  commercial_modern_bias: number,
+  literary_tolerance: number,
+  memoir_tolerance: number,
+  graphic_tolerance: number,
+  suspense_subtype: ...,
+  fantasy_subtype: ...,
+  etc
+}
+
+Part 2: Add recommendation fit class
+For each candidate, compute:
+- center_of_gravity_fit
+- exception_dependency
+- market_position_fit
+- lane_match_strength
+- repeated_author_or_series_adjacency
+- format_match
+
+Then classify deterministically as:
+- core_fit
+- adjacent_fit
+- stretch_fit
+- reject
+
+Suggested interpretation:
+core_fit:
+- strongly aligned to dominant lanes
+- not dependent on one-off exceptions
+- strong market-position fit
+- little or no truthfulness concern
+
+adjacent_fit:
+- reasonably aligned
+- maybe one step removed from core lane
+- still believable
+
+stretch_fit:
+- explainable through tolerance or partial overlap
+- not central to user’s reading identity
+- should appear lower, rarely at the top
+
+reject:
+- mostly exception-driven
+- weak fit
+- embarrassing or misleading recommendation
+
+Part 3: Make ranking respect fit class
+Ranking must no longer be driven only by score.
+It must respect fit class.
+
+Rules:
+- core_fit should outrank adjacent_fit unless score difference is extreme
+- adjacent_fit should outrank stretch_fit unless score difference is extreme
+- stretch_fit should rarely appear in the top 5
+- reject should never be shown
+
+This can be implemented as:
+- class-based score bands
+- hard class ordering
+- or a strong class bonus/penalty
+
+But the result must be:
+top of list = mostly core
+
+Part 4: Reduce memoir/literary/graphic overreach
+For dense users like the Goodreads-imported reader:
+- memoir_bio should be capped unless repeated-author / repeated-lane evidence strongly supports it
+- literary should be capped unless a real literary lane exists
+- graphic should not help ranking unless graphic preference is actually demonstrated
+- prestige-adjacent books may be adjacent or stretch, but should not dominate top slots
+
+Specifically:
+- Maus / March / V for Vendetta style books may remain valid stretch or adjacent picks
+- they should not outrank books that are much closer to repeated commercial fantasy / women’s fiction / suspense behavior
+
+Part 5: Strengthen repeated-author and repeated-series influence
+For dense users, repeated authors and repeated series should matter much more.
+
+If the user repeatedly reads authors like:
+- Sarah J. Maas
+- Rebecca Yarros
+- Holly Black
+- Robin Hobb
+- Kristin Hannah
+- Lucy Foley
+etc.
+
+Then books adjacent to those lanes should gain strong core-fit support.
+
+A single high-rated literary classic should not compete with that repeated evidence.
+
+Part 6: Add market-position fit
+Create a deterministic “market-position” classifier for books, such as:
+- modern commercial fiction
+- book-club crossover fiction
+- romantasy / emotional fantasy
+- domestic suspense / contemporary thriller
+- puzzle/contemporary detective
+- memoir / narrative nonfiction
+- literary / canon
+- graphic / comic
+- classic / public-domain
+
+Then compare candidate market-position to the user’s center of gravity.
+
+A dense modern commercial reader should not have literary/canon/graphic books ranked like core unless there is explicit repeated evidence.
+
+Part 7: Better explanations
+Explanations must reflect fit class.
+
+Examples:
+core_fit:
+- “Feels closest to the fantasy series you repeatedly complete”
+- “Matches the contemporary, emotionally driven fiction at the center of your reading history”
+- “Fits the twisty, readable suspense lane you return to most often”
+
+adjacent_fit:
+- “Sits near a lane you often enjoy, though it is a bit more speculative/literary than your core picks”
+
+stretch_fit:
+- “This is more of a stretch pick based on overlap with a secondary part of your taste”
+
+Do NOT use the same generic explanation style for all classes.
+
+Part 8: Debug output
+For each recommendation, expose in debug mode:
+- fit_class
+- center_of_gravity_fit
+- lane_match_strength
+- market_position_fit
+- repeated_author_or_series_support
+- exception_dependency
+- format_match
+- why it was not rejected
+
+I want to see exactly why a book is core vs adjacent vs stretch.
+
+Part 9: Apply this specifically to dense Goodreads users
+This new classification layer should be especially active for users with:
+- large import history
+- enough ratings
+- enough repeated patterns
+
+For low-signal users, simpler deterministic ranking can still remain.
+
+Part 10: Output
+1. Explain the architecture
+2. List changed files
+3. Show how center of gravity is computed
+4. Show how core / adjacent / stretch / reject is determined
+5. Show how ranking now respects fit class
+6. Show how memoir/literary/graphic overreach was reduced
+7. Show how repeated-author and repeated-series influence increased
+8. Show how explanations differ by fit class
+9. Show the new top recommendations for the Goodreads-heavy user after the change
+
+Important
+Do not give me another infrastructure summary.
+Do not focus on caches unless they block testing.
+Focus on making the free deterministic list feel centered on the user’s actual reading identity.

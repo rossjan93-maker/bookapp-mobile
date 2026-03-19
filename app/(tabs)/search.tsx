@@ -1903,19 +1903,27 @@ export default function RecommendationsScreen() {
                                   <Text style={{ fontSize: 9, color: '#faf9f7', fontWeight: '600' }}>📋 LOG AUDIT</Text>
                                 </TouchableOpacity>
                               </View>
-                              {recsMeta.candidate_audit.slice(0, 20).map((b, i) => {
+                              {recsMeta.candidate_audit.slice(0, 25).map((b, i) => {
                                 const lane    = detectBookLane(b);
                                 const subtype = detectBookMysterySubtype(b) ?? '—';
                                 const inFinal = recommendations.some(r => r.id === b.id || r.title === b.title);
                                 const flags   = b._score_breakdown.audit_flags;
+                                const fitClass = b._score_breakdown.fit_class ?? '';
+                                const mktPos   = b._score_breakdown.market_position ?? '';
+                                const cogDelta = b._score_breakdown.cog_score_delta ?? 0;
+                                const isReject = fitClass === 'reject';
+                                const isCore   = fitClass === 'core_fit';
+                                const isStretch = fitClass === 'stretch_fit';
                                 const PROBLEM_TITLES = ['casino royale','the big sleep','maus','parable of the sower','v for vendetta','to kill a mockingbird','the sun also rises','anthem','genji','autobiography of a yogi'];
                                 const isProblem = PROBLEM_TITLES.some(p => b.title.toLowerCase().includes(p));
+                                const rowBg = isReject ? '#fef2f2' : isCore ? '#f0fdf4' : isStretch ? '#fff7ed' : 'transparent';
+                                const fitColor = isCore ? '#16a34a' : isReject ? '#dc2626' : isStretch ? '#ea580c' : '#2563eb';
                                 return (
                                   <View key={b.id + i} style={{
-                                    borderBottomWidth: i < 19 ? 1 : 0,
+                                    borderBottomWidth: i < 24 ? 1 : 0,
                                     borderBottomColor: '#e7e5e4',
                                     paddingVertical: 4,
-                                    backgroundColor: isProblem ? '#fff7ed' : 'transparent',
+                                    backgroundColor: rowBg,
                                   }}>
                                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                                       <Text style={{ fontSize: 8, color: '#a8a29e', width: 18 }}>#{i+1}</Text>
@@ -1926,13 +1934,19 @@ export default function RecommendationsScreen() {
                                         {b.score.toFixed(3)}
                                       </Text>
                                     </View>
-                                    <View style={{ flexDirection: 'row', paddingLeft: 22, gap: 8, flexWrap: 'wrap' }}>
-                                      <Text style={{ fontSize: 8, color: '#a8a29e' }}>{b._source.slice(0, 7)}</Text>
+                                    <View style={{ flexDirection: 'row', paddingLeft: 22, gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                                      {fitClass ? (
+                                        <Text style={{ fontSize: 8, fontWeight: '700', color: fitColor }}>
+                                          {fitClass === 'core_fit' ? 'CORE' : fitClass === 'adjacent_fit' ? 'ADJ' : fitClass === 'stretch_fit' ? 'STRCH' : 'REJ'}
+                                          {cogDelta !== 0 ? ` (${cogDelta > 0 ? '+' : ''}${cogDelta.toFixed(2)})` : ''}
+                                        </Text>
+                                      ) : null}
+                                      {mktPos ? <Text style={{ fontSize: 8, color: '#78716c' }}>{mktPos.replace(/_/g, '·')}</Text> : null}
                                       <Text style={{ fontSize: 8, color: '#a8a29e' }}>tr:{b._score_breakdown.trait_alignment.toFixed(2)}</Text>
                                       <Text style={{ fontSize: 8, color: '#a8a29e' }}>gn:{b._score_breakdown.genre_bonus.toFixed(2)}</Text>
                                       <Text style={{ fontSize: 8, color: '#a8a29e' }}>pe:{b._score_breakdown.metadata_penalty.toFixed(2)}</Text>
-                                      <Text style={{ fontSize: 8, color: '#78716c' }}>
-                                        {lane ?? '—'}{subtype !== '—' ? ` / ${subtype.slice(0,8)}` : ''}
+                                      <Text style={{ fontSize: 8, color: '#a8a29e' }}>
+                                        {lane ?? '—'}{subtype !== '—' ? `/${subtype.slice(0,6)}` : ''}
                                       </Text>
                                       {flags.length > 0 && (
                                         <Text style={{ fontSize: 8, color: '#ea580c' }}>⚑ {flags.join(',')}</Text>

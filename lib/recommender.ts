@@ -53,6 +53,7 @@ import type { SupabaseClient }       from '@supabase/supabase-js';
 import type { TasteProfile }         from './tasteProfile';
 import { getBookTraits, assessMetadataQuality, detectBookLane, detectBookMysterySubtype, isPhilosophyOrSpiritual } from './bookTraits';
 import type { DeterministicLane }    from './bookTraits';
+import { computeCenterOfGravity, classifyMarketPosition, computeFitClass } from './fitClassifier';
 import type { FeedbackContext }      from './recFeedback';
 import type { BookEnrichmentProfile } from './bookEnrichment';
 import { getEnrichmentForCandidates } from './bookEnrichment';
@@ -108,9 +109,16 @@ export type ScoreBreakdown = {
   enrichment_bonus: number;   // step 5 — consensus trait + popularity signal
   metadata_penalty: number;   // step 6 — weak metadata down-weight
   raw_score:        number;   // sum before clamping
-  final_score:      number;   // clamped 0–1 total
+  final_score:      number;   // clamped 0–1 total (after CoG delta)
   book_form:        string | null;   // detected form (poetry/play/etc.)
   audit_flags:      string[];        // any audit flags applied
+  // ── Center-of-gravity fit classifier fields (populated in getRankedRecs) ──
+  fit_class?:             string;   // core_fit | adjacent_fit | stretch_fit | reject
+  market_position?:       string;   // e.g. romantasy, domestic_suspense, classic_canon
+  lane_match_strength?:   string;   // strong | weak | none
+  repeated_author_match?: boolean;  // author is in user's repeated-liked list
+  exception_dependency?:  boolean;  // fit relies on tolerance, not repeated pattern
+  cog_score_delta?:       number;   // score adjustment applied: +0.25 / 0 / -0.20 / -9999
 };
 
 export type ScoredBook = CandidateBook & {
@@ -658,7 +666,10 @@ async function getOLCandidates(
 ): Promise<OLResult> {
   const affinities = profile.genre_affinities ?? {};
   const det        = profile.det_lanes;
-  const isDense    = !!(det?.is_dense_import && (det.dominant_lanes.length > 0 || det.repeated_liked_authors.length > 0));
+  // Dense mode: use actual pattern evidence, NOT the import flag (is_dense_import can
+  // be false when the source column is mismatched, even for a 265-book Goodreads user).
+  // A user is "dense" for retrieval if they have ≥2 dominant lanes OR ≥3 repeated authors.
+  const isDense    = !!(det && (det.dominant_lanes.length >= 2 || det.repeated_liked_authors.length >= 3));
 
   // ── Build fetch plan ──────────────────────────────────────────────────────
   type FetchItem =
@@ -1345,20 +1356,80 @@ export function getRankedRecs(
     };
   });
 
-  scored.sort((a, b) => b.score - a.score);
+  // ── Center-of-gravity fit classification ─────────────────────────────────
+  // For every candidate, compute:
+  //   1. Market position — what type of reading the book represents
+  //   2. Fit class       — core_fit / adjacent_fit / stretch_fit / reject
+  //   3. Score delta     — core +0.25, adjacent 0, stretch −0.20, reject −9999
+  //
+  // Re-sort AFTER applying deltas so the final order reflects fit quality,
+  // not just trait/genre score. Reject-class books are removed entirely.
+  // Rationale: a book that is "defensible" (high trait overlap) but not
+  // "central" (wrong market position) must not dominate the top of the list.
+  const cog = computeCenterOfGravity(profile);
 
-  // Quality gate: score threshold
-  const passing = scored.filter(b => b.score >= MIN_PASS_SCORE);
+  for (const book of scored) {
+    const bookLane  = detectBookLane(book);
+    const marketPos = classifyMarketPosition(book);
+    const fitResult = computeFitClass(book, bookLane, marketPos, cog);
+
+    // Apply score delta (clamp at 0 — score is always non-negative)
+    const adjustedScore = Math.max(0, book.score + fitResult.cog_score_delta);
+    book.score = +adjustedScore.toFixed(3);
+
+    // Replace first reason with class-aware explanation (skip for reject — they're filtered)
+    if (fitResult.fit_class !== 'reject' && fitResult.fit_explanation) {
+      const existingReasons = book.reasons ?? [];
+      book.reasons = [
+        fitResult.fit_explanation,
+        ...existingReasons.slice(0, 1),
+      ].filter((r, i, arr) => arr.indexOf(r) === i);
+    }
+
+    // Extend _score_breakdown with CoG fields
+    book._score_breakdown = {
+      ...book._score_breakdown,
+      fit_class:             fitResult.fit_class,
+      market_position:       fitResult.market_position,
+      lane_match_strength:   fitResult.lane_match_strength,
+      repeated_author_match: fitResult.repeated_author_match,
+      exception_dependency:  fitResult.exception_dependency,
+      cog_score_delta:       fitResult.cog_score_delta,
+      final_score:           book.score,
+    };
+  }
+
+  // Remove rejects, then re-sort by adjusted score
+  const nonRejected = scored.filter(b => b._score_breakdown.fit_class !== 'reject');
+  nonRejected.sort((a, b) => b.score - a.score);
+
+  if (__DEV__) {
+    const rejectCount = scored.length - nonRejected.length;
+    if (rejectCount > 0) {
+      console.log(`[COG] Removed ${rejectCount} reject-class books from pool of ${scored.length}`);
+    }
+    const top5 = nonRejected.slice(0, 5).map(b => ({
+      title: b.title,
+      score: b.score,
+      fit_class: b._score_breakdown.fit_class,
+      market_position: b._score_breakdown.market_position,
+      cog_delta: b._score_breakdown.cog_score_delta,
+    }));
+    console.log('[COG] Top-5 after fit classification:', JSON.stringify(top5));
+  }
+
+  // Quality gate: score threshold (applied to CoG-adjusted scores)
+  const passing = nonRejected.filter(b => b.score >= MIN_PASS_SCORE);
   if (passing.length < MIN_PASSING_BOOKS) {
     return { recs: [], meta: buildMeta('insufficient_score') };
   }
 
-  // Diversity: max 2 books per primary genre
+  // Diversity: max 2 books per primary genre (walk CoG-sorted order)
   const genreCount: Record<string, number> = {};
   const diverse: ScoredBook[] = [];
   let globalRank = 0;
 
-  for (const book of scored) {
+  for (const book of nonRejected) {
     globalRank++;
     const genre = getBookTraits(book).primaryGenre ?? 'general';
     const count = genreCount[genre] ?? 0;
@@ -1369,11 +1440,15 @@ export function getRankedRecs(
     if (diverse.length >= limit) break;
   }
 
+  // Audit order: CoG-sorted non-rejects first, then reject-class books at end
+  const rejectBooks = scored.filter(b => b._score_breakdown.fit_class === 'reject');
+  const auditList   = [...nonRejected, ...rejectBooks];
+
   return {
     recs:  diverse,
     meta: {
       ...buildMeta('passed'),
-      candidate_audit: scored.map(
+      candidate_audit: auditList.map(
         (b, i) => ({ ...b, _debug: { pool_size: poolSize, rank: i + 1 } })
       ),
     },
@@ -1476,7 +1551,8 @@ export async function getCandidateBooks(
   }
 
   const det = profile.det_lanes;
-  const isDense = !!(det?.is_dense_import && det.dominant_lanes.length > 0);
+  // Consistent with getOLCandidates: pattern evidence, not import flag
+  const isDense = !!(det && (det.dominant_lanes.length >= 2 || det.repeated_liked_authors.length >= 3));
 
   const retrieval_trace: RetrievalTrace = {
     top_genres_used:      olResult.top_genres_used,
@@ -1540,8 +1616,9 @@ export async function getPersonalizedRecsWithExpert(
   if (__DEV__ && userId === FORENSIC_USER_ID) {
     const fmt2 = (n: number) => +n.toFixed(2);
     const det   = profile.det_lanes;
-    const isDense = (profile.evidence.imported_books_count ?? 0) >= 20
-                 && (det?.dominant_lanes?.length ?? 0) > 0;
+    // Use pattern evidence, consistent with getOLCandidates + getCandidateBooks
+    const isDense = !!(det && (det.dominant_lanes.length >= 2 || det.repeated_liked_authors.length >= 3));
+    const cog     = computeCenterOfGravity(profile);
 
     // ── BLOCK A: Profile ──────────────────────────────────────────────────
     console.log('[FORENSIC PROFILE]', JSON.stringify({
@@ -1549,7 +1626,7 @@ export async function getPersonalizedRecsWithExpert(
       tier:                  profile.tier,
       strongSignalCount:     profile.strongSignalCount,
       imported_books_count:  profile.evidence.imported_books_count,
-      is_dense_import:       isDense,
+      is_dense_cog:          isDense,
       genre_affinities:      Object.fromEntries(
         Object.entries(profile.genre_affinities)
           .sort((a, b) => b[1] - a[1])
@@ -1567,6 +1644,16 @@ export async function getPersonalizedRecsWithExpert(
       repeated_liked_authors: det?.repeated_liked_authors ?? [],
       commercial_prior:      det ? fmt2(det.commercial_prior) : null,
       repeated_series:       (det as unknown as Record<string, unknown>)?.repeated_series ?? [],
+      cog: {
+        is_dense:           cog.is_dense,
+        commercial_bias:    fmt2(cog.commercial_bias),
+        literary_tolerance: fmt2(cog.literary_tolerance),
+        memoir_tolerance:   fmt2(cog.memoir_tolerance),
+        has_fantasy_core:   cog.has_fantasy_core,
+        has_suspense_core:  cog.has_suspense_core,
+        has_romance_core:   cog.has_romance_core,
+        has_memoir_core:    cog.has_memoir_core,
+      },
     }));
 
     // ── BLOCK B: Retrieval ────────────────────────────────────────────────
@@ -1599,6 +1686,10 @@ export async function getPersonalizedRecsWithExpert(
         subtype:          subtype ?? null,
         book_form:        bd.book_form,
         score:            bd.final_score,
+        fit_class:        bd.fit_class ?? null,
+        market_position:  bd.market_position ?? null,
+        cog_delta:        bd.cog_score_delta ?? null,
+        lane_strength:    bd.lane_match_strength ?? null,
         trait_alignment:  bd.trait_alignment,
         genre_bonus:      bd.genre_bonus,
         metadata_penalty: bd.metadata_penalty,
