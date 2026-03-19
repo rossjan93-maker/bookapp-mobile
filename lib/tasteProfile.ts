@@ -211,6 +211,18 @@ const GENERIC_OL_SUBJECTS = new Set([
   'war', 'history', 'coming of age', 'good and evil',
   'adventure and adventurers', 'man-woman relationships',
   'social problems', 'social classes', 'interpersonal relations',
+  // Marketing / bestseller labels — not content anchors
+  'bestseller', 'bestsellers', 'best seller', 'best sellers',
+  'new york times bestseller', 'new york times best seller',
+  'nyt bestseller', 'national bestseller', 'international bestseller',
+  'sunday times bestseller', 'usa today bestseller',
+  // Children's / juvenile — distinct from adult commercial fiction
+  "children's fiction", "children's literature", "children's books",
+  'juvenile nonfiction', 'picture books', "young adult fiction",
+  // Demographic shelf labels (Goodreads): describe audience, not content
+  'fiction, women', 'fiction women', 'women',
+  // Popularity / format labels that contaminate retrieval
+  'popular fiction', 'popular culture', 'adult fiction', 'adults',
 ]);
 
 // Subjects that indicate classic/PD content — not useful anchors for
@@ -251,6 +263,11 @@ function buildLikedAnchors(
       if (CLASSIC_ANCHOR_NOISE.has(norm)) continue;
       // Skip subjects that are more than 4 words (usually long descriptors, not useful anchors)
       if (norm.split(' ').length > 4) continue;
+      // Skip Goodreads-style category tree paths: "fiction, women", "fiction, fantasy, general"
+      // These are hierarchical shelving labels, not content anchors.
+      if (/^fiction,\s/.test(norm) || /,\s*fiction$/.test(norm)) continue;
+      // Skip subjects that start with "new york times" (bestseller marketing labels)
+      if (norm.startsWith('new york times')) continue;
       subjectFreq[norm] = (subjectFreq[norm] ?? 0) + 1;
     }
   }

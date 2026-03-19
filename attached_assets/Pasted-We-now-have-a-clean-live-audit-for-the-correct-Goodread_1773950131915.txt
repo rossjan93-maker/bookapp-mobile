@@ -1,0 +1,108 @@
+We now have a clean live audit for the correct Goodreads-heavy user.
+The system is finally retrieving from the right universe, but ranking discipline is still too weak.
+
+Goal
+Tighten CORE classification and remove noisy subject influence so the top of the list feels curated rather than merely plausible.
+
+Evidence from live audit
+- imported_books_count = 265 ✅
+- dense mode is active ✅
+- repeated authors are correctly detected ✅
+- retrieval anchors are now sensible ✅
+
+But remaining problems:
+1. almost every top candidate is classified as CORE
+2. liked_subjects still contains noisy terms:
+   - new york times bestseller
+   - children's fiction
+   - fiction, women
+3. repeated-author results are flooding the top
+4. trait layer is still too flat (preferred_traits all 1.0)
+5. broad lane/subject overlap is still enough to make books CORE
+
+Current top 20 examples:
+- Robin Hobb books all CORE
+- Sarah J. Maas books CORE
+- Guest List CORE
+- Queen's Gambit CORE
+- many 0.71–0.86 books are all CORE
+
+This is too permissive.
+
+What to change
+
+Part 1: Tighten CORE classification
+A book should not become CORE from a single strong signal alone.
+
+Implement a stricter rule:
+CORE should usually require at least 2 strong signals from:
+- repeated author adjacency
+- repeated series adjacency
+- dominant lane match
+- strong market-position fit
+- strong subject overlap
+- subtype fit
+
+If only one strong signal is present, the default should usually be ADJACENT, not CORE.
+
+Examples:
+- repeated author only → often ADJACENT unless lane/market-position also strongly fit
+- lane match only → often ADJACENT unless subject/subtype/market-position confirm it
+- weak broad overlap → never CORE
+
+Part 2: Clean noisy liked_subjects before overlap scoring
+Remove or heavily down-weight noisy Goodreads/OL subject labels such as:
+- new york times bestseller
+- children's fiction
+- fiction, women
+- generic marketing labels
+- generic demographic labels
+- low-information subject labels that are not true taste anchors
+
+This should apply generally, not just for one user.
+
+The goal:
+subject overlap should reflect actual content/taste, not popularity or broad shelving noise.
+
+Part 3: Strengthen repeated-author composition control
+Repeated-author evidence should help ranking, but should not dominate the set.
+
+Improve set composition so:
+- top 5 should usually include at most 1 book per author
+- top 10 at most 2 per author
+- if a repeated author floods the candidate pool, only the strongest 1–2 should survive
+- avoid recommending multiple direct continuations from the same author unless there is an intentional “continue this author/series” mode later
+
+Part 4: Add sequel/continuation discipline
+The system currently promotes multiple continuation books from the same author.
+
+For default recommendations:
+- do not flood the list with multiple books from the same ongoing series or subseries
+- prefer the strongest/most representative candidate from that lane/author
+- keep discovery value high
+
+Part 5: Improve classification labels
+After tightening CORE:
+- CORE should feel meaningfully rare and high-confidence
+- ADJACENT should cover many books that are good but not central
+- STRETCH should remain lower and clearly secondary
+
+I want the top 10 to contain a more believable mix of:
+- true core fits
+- some adjacent discovery
+- very few stretch picks
+
+Part 6: Output
+1. explain why CORE is currently too easy to earn
+2. list changed files
+3. show the new CORE rule
+4. show the noisy subject cleanup
+5. show the stronger author/series composition logic
+6. show the new top 10 with fit classes
+7. explain what became ADJACENT that used to be CORE
+8. explain any remaining limitations
+
+Important
+Do NOT rework retrieval broadly.
+Do NOT touch premium/expert mode.
+This is a ranking-discipline and subject-cleanliness pass on the deterministic engine.

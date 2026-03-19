@@ -9,10 +9,10 @@
 //
 // For dense users (≥2 dominant lanes OR ≥3 repeated liked authors), the fit
 // class is used to adjust the effective ranking score:
-//   core_fit    +0.25  (pushed above all adjacent and stretch books)
-//   adjacent_fit  0.00  (ranked purely on trait/genre score)
-//   stretch_fit  -0.20  (pushed below all core and adjacent books)
-//   reject      -9999  (filtered out entirely)
+//   core_fit    +0.25 / +0.30  (2-signal gate: needs ≥2 of {repeated_author, laneInDominant, primaryPos})
+//   adjacent_fit  +0.10 / 0.00 (+0.10 for repeated_author_only; 0.00 otherwise)
+//   stretch_fit    −0.20        (pushed below all core and adjacent books)
+//   reject         −9999        (filtered out entirely)
 //
 // For light users (no dominant-lane evidence), the classifier still applies
 // conservative reject logic (graphic format, classic canon) but does not
@@ -99,13 +99,18 @@ export type FitClassResult = {
 // "different book in the right genre" — which is the correct truthfulness order.
 
 const COG_DELTA: Record<FitClass, number> = {
-  core_fit:     +0.25,   // default; overridden to +0.30 for repeated_author_match
+  core_fit:     +0.25,   // default; overridden to +0.30 for repeated_author + lane
   adjacent_fit: +0.00,
   stretch_fit:  -0.20,
   reject:       -9999,
 };
 
+// Repeated author confirmed by a second strong signal (lane OR primary market position)
 const COG_DELTA_REPEATED_AUTHOR = +0.30;
+// Repeated author only — no lane or primary-market confirmation.
+// Earns a small bonus over plain adjacent to keep author evidence visible in ranking,
+// but must not reach the +0.25/+0.30 CORE band.
+const COG_DELTA_REPEATED_AUTHOR_ADJACENT = +0.10;
 
 // ── Known canonical / classic authors (pre-1950 era) ─────────────────────────
 
@@ -136,6 +141,21 @@ const LANE_ADJACENT_POSITIONS: Record<DeterministicLane, MarketPosition[]> = {
   memoir_nonfiction:    ['literary_prestige', 'book_club_fiction', 'general_fiction'],
   literary:             ['memoir_nonfiction', 'book_club_fiction', 'general_fiction', 'literary_prestige'],
   horror:               ['horror_dark', 'domestic_suspense', 'epic_fantasy', 'science_fiction'],
+};
+
+// Primary market positions per dominant lane.
+// A position is "primary" if it sits at the centre of that lane, not merely adjacent.
+// Used by the two-signal CORE gate: CORE requires at least 2 of
+//   {repeated_author_match, laneInDominant, marketPositionIsPrimary}.
+const LANE_PRIMARY_POSITIONS: Partial<Record<DeterministicLane, MarketPosition[]>> = {
+  romantasy:            ['romantasy'],
+  scifi_fantasy:        ['epic_fantasy', 'science_fiction', 'romantasy', 'horror_dark'],
+  modern_suspense:      ['domestic_suspense', 'cozy_detective'],
+  romance:              ['romance', 'book_club_fiction'],
+  contemporary_fiction: ['book_club_fiction'],
+  memoir_nonfiction:    ['memoir_nonfiction'],
+  literary:             ['literary_prestige'],
+  horror:               ['horror_dark'],
 };
 
 // ── Public: computeCenterOfGravity ───────────────────────────────────────────
@@ -364,19 +384,6 @@ export function computeFitClass(
     );
   }
 
-  // ── Repeated author → core regardless of lane ─────────────────────────────
-  // Principle: repeated behavior beats broad overlap.
-  // A book by an author the user has read 2+ times and liked is stronger evidence
-  // than a book that merely fits the genre lane. Score delta is +0.30, one step
-  // above the lane-only core_fit delta of +0.25.
-  if (repeated_author_match && format_match) {
-    return mk('core_fit', marketPosition, 'strong', true, false, format_match,
-      `repeated_author_match: ${authorLower} (+0.30 vs lane-only +0.25)`,
-      "Matches an author you've returned to multiple times",
-      COG_DELTA_REPEATED_AUTHOR,
-    );
-  }
-
   // ── Light user (no dense pattern evidence) ────────────────────────────────
   if (!cog.is_dense) {
     if (formatIsGraphic) {
@@ -397,34 +404,96 @@ export function computeFitClass(
     );
   }
 
-  // ── Dense user with lane evidence ─────────────────────────────────────────
+  // ── Dense user: two-signal CORE gate ──────────────────────────────────────
+  //
+  // Design principle: defensible ≠ central.
+  // A single strong signal (repeated author OR lane match) makes a book
+  // plausible but not central. CORE should reflect confirmed alignment across
+  // at least two independent axes of evidence.
+  //
+  // CORE requires ≥ 2 of these three signals:
+  //   S1  repeated_author_match     — user has read this author 2+ times and loved them
+  //   S2  laneInDominant            — book's detected genre lane is a user dominant lane
+  //   S3  marketPositionIsPrimary   — market position sits at the core of a dominant lane
+  //                                   (not merely adjacent)
+  //
+  // Score deltas by signal combination:
+  //   S1 + S2 (+ optionally S3)  → CORE  +0.30  (strongest: author evidence + lane fit)
+  //   S1 + S3 only               → CORE  +0.25  (author in right market-position, lane drift)
+  //   S2 + S3 only               → CORE  +0.25  (clean lane + primary market position)
+  //   S1 alone                   → ADJACENT +0.10 (author evidence but lane/market don't confirm)
+  //   S2 alone (any market pos)  → ADJACENT +0.00 (lane match, generic market position)
+  //   S3 alone                   → handled by adjacentToAny below
 
   const laneInDominant = bookLane !== null && cog.dominant_lanes.includes(bookLane);
 
-  if (laneInDominant && format_match) {
-    // Lane matches — classify by market position
+  const marketPositionIsPrimary = cog.dominant_lanes.some(
+    l => (LANE_PRIMARY_POSITIONS[l] ?? []).includes(marketPosition)
+  );
+
+  const strongSignals =
+    (repeated_author_match  ? 1 : 0) +
+    (laneInDominant         ? 1 : 0) +
+    (marketPositionIsPrimary ? 1 : 0);
+
+  // ── Two or more signals → CORE (with prestige/format safety) ──────────────
+  if (strongSignals >= 2 && format_match) {
+    // Prestige/format positions are capped at adjacent even with two signals,
+    // because the user's lane fit doesn't override format or literary distance.
     if (marketPosition === 'literary_prestige' || marketPosition === 'classic_canon'
         || marketPosition === 'graphic_format') {
-      // Lane matches but prestige/format pushes to adjacent
+      return mk('adjacent_fit', marketPosition, 'strong', repeated_author_match, true, format_match,
+        `2-signal but prestige/format cap: signals=${strongSignals}, pos=${marketPosition}`,
+        "Sits near your reading center but leans more literary or prestige"
+      );
+    }
+    // Clean CORE: higher delta when repeated author + lane both fire
+    const delta = (repeated_author_match && laneInDominant)
+      ? COG_DELTA_REPEATED_AUTHOR
+      : COG_DELTA.core_fit;
+    const matchStrength = laneInDominant ? 'strong' : 'weak';
+    return mk('core_fit', marketPosition, matchStrength, repeated_author_match, false, format_match,
+      `2-signal core: repeated_author=${repeated_author_match}, lane=${laneInDominant}(${bookLane}), primary_pos=${marketPositionIsPrimary}`,
+      repeated_author_match
+        ? "Matches an author you've returned to multiple times"
+        : buildCoreExplanation(bookLane!, cog),
+      delta,
+    );
+  }
+
+  // ── Single signal: repeated author only ───────────────────────────────────
+  // Lane and primary-market-position don't confirm. Earns a small bonus over
+  // plain adjacent to keep author evidence visible, but does not reach CORE.
+  if (repeated_author_match && format_match) {
+    return mk('adjacent_fit', marketPosition, 'none', true, false, format_match,
+      `repeated_author_only(+0.10): ${authorLower} — lane=${bookLane ?? 'null'}, primary_pos=${marketPositionIsPrimary}`,
+      "By an author you've read before, though it sits a step from your main lane",
+      COG_DELTA_REPEATED_AUTHOR_ADJACENT,
+    );
+  }
+
+  // ── Single signal: lane match only (generic market position) ──────────────
+  if (laneInDominant && format_match) {
+    if (marketPosition === 'literary_prestige' || marketPosition === 'classic_canon'
+        || marketPosition === 'graphic_format') {
       return mk('adjacent_fit', marketPosition, 'strong', false, true, format_match,
         `lane_match(${bookLane}) but prestige/format position: ${marketPosition}`,
         "Sits near your reading center but leans more literary or prestige"
       );
     }
-    // Clean core fit
-    return mk('core_fit', marketPosition, 'strong', false, false, true,
-      `lane_match(${bookLane}) + market_position(${marketPosition})`,
-      buildCoreExplanation(bookLane, cog)
+    return mk('adjacent_fit', marketPosition, 'strong', false, false, format_match,
+      `lane_match_only(${bookLane}): market_pos=${marketPosition} not primary — needs 2nd signal for CORE`,
+      buildAdjacentExplanation(marketPosition, cog)
     );
   }
 
-  // Lane adjacent check: market position adjacent to any dominant lane
+  // ── Lane adjacency check ───────────────────────────────────────────────────
   const adjacentToAny = cog.dominant_lanes.some(
     l => (LANE_ADJACENT_POSITIONS[l] ?? []).includes(marketPosition)
   );
 
   if (adjacentToAny && format_match) {
-    // Extra check: memoir for non-memoir reader — cap at adjacent unless tolerance is high
+    // Memoir for non-memoir reader — cap at stretch unless tolerance is high
     if (marketPosition === 'memoir_nonfiction' && !cog.has_memoir_core
         && cog.memoir_tolerance < 0.5) {
       return mk('stretch_fit', marketPosition, 'none', false, true, format_match,

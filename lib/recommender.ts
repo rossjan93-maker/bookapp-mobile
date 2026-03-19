@@ -90,7 +90,7 @@ const CACHE_MIN_ROWS = 5;
 // changes in a way that makes old cached candidates unreliable.  The read
 // path rejects any row whose retrieval_reason does NOT start with this tag,
 // which forces a live OL re-fetch and a fresh cache write.
-const CACHE_VERSION  = 'v3:';
+const CACHE_VERSION  = 'v4:';
 // User ID to force full live forensic audit (bypasses both caches, emits
 // structured trace logs). Only active in __DEV__ builds.
 const FORENSIC_USER_ID = '986aece4-9461-439c-bff9-3589161b313c';
@@ -1599,7 +1599,7 @@ export function getRankedRecs(
     };
   }
 
-  // Diversity: max 2 books per primary genre AND max 2 books per author.
+  // Diversity: max 2 books per primary genre AND position-aware author cap.
   //
   // Principle: dominant lanes should produce variety, not monopoly.
   // Without an author cap, 5 Robin Hobb books can fill all 5 slots (all
@@ -1607,13 +1607,13 @@ export function getRankedRecs(
   // as recommendations. A user who has already read 8 Hobb books doesn't
   // need 5 more suggested at once.
   //
-  // The genre cap and author cap work together:
-  //   genre cap  → ensures lane diversity (no genre monopoly)
-  //   author cap → ensures author diversity (no single-author sweep)
+  // Author cap rules:
+  //   Slots 1–5  → max 1 book per author (strongest diversity signal)
+  //   Slots 6–10 → max 2 books per author (second slot now permitted)
   //
-  // This applies to all reader types, not just dense users. A light user who
-  // happens to get 5 of the same author in the candidate pool still benefits
-  // from seeing variety at the top.
+  // This prevents a single author from sweeping the visible top-5 while still
+  // allowing a second book from the same author to appear further down if they
+  // are genuinely the best remaining match.
   const genreCount:  Record<string, number> = {};
   const authorCount: Record<string, number> = {};
   const diverse: ScoredBook[] = [];
@@ -1623,9 +1623,11 @@ export function getRankedRecs(
     globalRank++;
     const genre     = getBookTraits(book).primaryGenre ?? 'general';
     const authorKey = book.author.toLowerCase();
-    const gc = genreCount[genre]     ?? 0;
+    const gc = genreCount[genre]      ?? 0;
     const ac = authorCount[authorKey] ?? 0;
-    if (gc < 2 && ac < 2) {
+    // Tighter author cap in first 5 output slots; relaxed after that
+    const authorCap = diverse.length < 5 ? 1 : 2;
+    if (gc < 2 && ac < authorCap) {
       diverse.push({ ...book, _debug: { pool_size: poolSize, rank: globalRank } });
       genreCount[genre]      = gc + 1;
       authorCount[authorKey] = ac + 1;
