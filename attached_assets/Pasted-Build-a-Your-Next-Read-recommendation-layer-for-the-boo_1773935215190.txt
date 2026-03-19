@@ -1,0 +1,287 @@
+Build a “Your Next Read” recommendation layer for the book app.
+
+This is not just a search/filter feature.
+It must sit on top of the existing recommendation engine and make recommendations more context-aware.
+
+Core product idea
+We already model:
+- who the reader is overall
+
+Now we need to model:
+- what the reader wants next
+
+The recommendation system should become:
+
+reader taste profile × current intent = recommendation set
+
+Important product rule
+Do NOT let this become a generic faceted search tool.
+The recommendation engine must still do the thinking.
+Filters should narrow and guide retrieval/ranking, not replace the recommendation logic.
+
+Goal
+Allow users to express situational reading intent so the app can generate more useful recommendations for their next read.
+
+Examples of “Your Next Read” intent:
+- “I want something fast-paced”
+- “I want a thriller”
+- “I want contemporary fiction”
+- “I want a standalone, not a series”
+- “I want something lighter”
+- “No classics next”
+- “I only want shorter books”
+- “I want something like X, but not too dark”
+
+What to build
+
+Part 1: Add a structured “Your Next Read” intent model
+Create a structured model for user intent.
+
+Suggested shape:
+{
+  hard_filters: {
+    lanes?: string[],
+    fiction_nonfiction?: 'fiction' | 'nonfiction' | null,
+    standalone_only?: boolean,
+    series_only?: boolean,
+    max_page_count?: number | null,
+    min_page_count?: number | null
+  },
+  soft_preferences: {
+    pace?: 'slow' | 'medium' | 'fast' | null,
+    tone?: 'light' | 'balanced' | 'dark' | null,
+    emotional_intensity?: 'low' | 'medium' | 'high' | null,
+    market_position?: string[] | null,
+    mood?: string[] | null
+  },
+  exclusions: {
+    avoid_lanes?: string[],
+    avoid_classics?: boolean,
+    avoid_series?: boolean,
+    avoid_dark?: boolean,
+    avoid_heavy_topics?: boolean
+  },
+  anchor_mode?: {
+    like_this_book_id?: string | null,
+    unlike_this_book_id?: string | null
+  }
+}
+
+Use this as a first-pass structure. Adjust only if the existing architecture clearly needs a cleaner version.
+
+Part 2: UI in Recommendations tab
+Add a “Your Next Read” layer to the Recommendations experience.
+
+Requirements:
+- this should feel premium and lightweight, not like a clunky search form
+- it should work as a recommendation refinement surface
+- keep it optional
+- users should still be able to see default recommendations without using it
+
+Recommended UI structure:
+Section title:
+- “Your Next Read”
+
+Supporting copy:
+- “Tell us what you’re in the mood for.”
+
+Recommended UI sections:
+1. “What are you in the mood for?”
+2. “Anything to avoid?”
+3. optional “More like / Less like” anchor
+4. apply / clear controls
+
+Suggested filter dimensions
+Use the app’s recommendation vocabulary, not generic search language.
+
+Good candidate controls:
+- lane / genre:
+  - romantasy
+  - fantasy
+  - contemporary fiction
+  - suspense / thriller
+  - memoir / narrative nonfiction
+  - romance
+  - literary
+  - sci-fi
+- pace:
+  - fast
+  - medium
+  - slow
+- tone:
+  - light
+  - balanced
+  - dark
+- emotional intensity:
+  - low
+  - medium
+  - high
+- length:
+  - short
+  - medium
+  - long
+- format:
+  - standalone
+  - series
+- “avoid” controls:
+  - no classics
+  - no dark books
+  - no series
+  - no nonfiction
+  - no romance
+  - no literary
+
+This should not feel overwhelming.
+Use a small set of high-value controls.
+
+Part 3: Hard filters vs soft preferences vs exclusions
+The system must distinguish between:
+- hard filters
+- soft ranking boosts
+- exclusions
+
+Examples:
+Hard filters:
+- fiction only
+- standalone only
+- thriller lane only
+- under 400 pages
+
+Soft preferences:
+- fast-paced
+- emotionally intense
+- contemporary
+- discussion-friendly
+- more character-driven
+
+Exclusions:
+- avoid classics
+- avoid romance
+- avoid dark books
+- avoid series
+
+Implement this explicitly in the retrieval/ranking pipeline.
+
+Part 4: Integrate with recommendation retrieval
+Apply “Your Next Read” intent before final ranking.
+
+New pipeline:
+1. user taste profile
+2. current intent / “Your Next Read” input
+3. candidate retrieval
+4. filtering / exclusions
+5. ranking
+6. set composition
+
+What this means:
+- hard filters should narrow the candidate pool
+- soft preferences should affect scoring
+- exclusions should down-rank or reject
+- the user’s core taste profile should still dominate final quality
+
+This must improve retrieval precision, not just UI.
+
+Part 5: Integrate with current taste profile and fit logic
+The current recommendation system already has:
+- dominant lanes
+- repeated authors
+- repeated series
+- core / adjacent / stretch fit
+- market-position logic
+- center-of-gravity logic
+
+The “Your Next Read” layer should refine this, not replace it.
+
+Examples:
+- if the user’s core taste is romantasy + suspense, but they select:
+  - “fast-paced”
+  - “standalone”
+  - “no fantasy”
+  then the system should prioritize suspense books that still fit their taste
+
+- if the user’s core taste is literary + memoir, but they select:
+  - “lighter”
+  - “short”
+  - “fiction only”
+  then the system should constrain accordingly without abandoning profile fit
+
+Part 6: Add “More like this / Less like this” anchor mode
+In addition to broad filters, allow users to optionally anchor recommendations to a book.
+
+Examples:
+- “More like this”
+- “Less like this”
+
+This should work as an additional retrieval/ranking signal, not a hard override.
+
+Requirements:
+- selecting a “like this book” anchor should boost adjacency to that book’s lane, traits, market position, and comparable-title graph
+- selecting a “not like this” anchor should weaken books similar to it
+- this should remain optional
+
+Part 7: Recommendation explanations should reflect the input
+Explanations should now mention both:
+- the user’s general taste
+- the user’s current intent
+
+Examples:
+- “Fits your suspense lane and matches your request for something fast-paced and contemporary.”
+- “Aligned with your love of emotionally immersive fantasy, but filtered toward standalone reads.”
+- “This is a closer match for your current ‘lighter, shorter’ mood than your usual darker picks.”
+
+Do not make explanations overly verbose.
+Just make them context-aware.
+
+Part 8: Save / reset behavior
+Implement a clean experience for:
+- applying preferences
+- clearing them
+- resetting to default recommendations
+
+Optional but valuable:
+- remember the most recent “Your Next Read” state during the session
+- optionally save a few quick presets later (not required for v1)
+
+Part 9: Cohort-safe implementation
+Do NOT optimize this only for one dense Goodreads user.
+
+Any logic added here must generalize across:
+- dense commercial Goodreads import
+- dense literary/classics reader
+- dense memoir/nonfiction reader
+- graphic/manga-heavy reader
+- low-signal net-new user
+- mixed/generalist reader
+
+For every major logic change, output:
+1. the general rule introduced
+2. which cohorts benefit
+3. which cohorts might regress
+4. how overfitting is avoided
+
+Part 10: Debug / observability
+In debug mode, show:
+- current “Your Next Read” intent object
+- which parts were treated as hard filters
+- which parts were soft boosts
+- which exclusions fired
+- how the recommendation set changed because of the applied intent
+- whether the final picks are core / adjacent / stretch under the filtered context
+
+Part 11: Output
+When complete, provide:
+1. architecture summary
+2. files changed
+3. the final “Your Next Read” intent data structure
+4. how the UI works
+5. how retrieval changed
+6. how ranking changed
+7. how explanations changed
+8. how it generalizes across reader cohorts
+9. any deferred improvements
+
+Important
+This is not “advanced search.”
+It is contextual recommendation.
+The output should feel like:
+“I told the app what I want next, and it found books that fit both my taste and my current mood.”

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -25,9 +25,12 @@ import { computeTasteProfile } from '../../lib/tasteProfile';
 import type { TasteProfile } from '../../lib/tasteProfile';
 import { getCandidateBooks, getRankedRecs, fitLabel, fitColor, getPersonalizedRecsWithExpert } from '../../lib/recommender';
 import type { ScoredBook, QualityGate, RankedRecsResult } from '../../lib/recommender';
+import { emptyIntent as emptyNextReadIntent, isIntentActive, intentSummaryLabel } from '../../lib/nextReadIntent';
+import type { NextReadIntent, NextReadPace, NextReadTone } from '../../lib/nextReadIntent';
 import { loadFeedbackContext, persistFeedback, emptyContext } from '../../lib/recFeedback';
 import type { FeedbackContext } from '../../lib/recFeedback';
 import { getBookTraits, detectBookLane, detectBookMysterySubtype, isPhilosophyOrSpiritual } from '../../lib/bookTraits';
+import type { DeterministicLane } from '../../lib/bookTraits';
 import { getEntitlement } from '../../lib/recEntitlement';
 import type { RecEntitlement } from '../../lib/recEntitlement';
 import type { ReaderThesis } from '../../lib/expertRec';
@@ -189,6 +192,266 @@ function getBookAwareTraits(book: { subjects?: string[] | null; title?: string; 
     if (signals.some(s => corpus.includes(s))) return TRAITS[genre];
   }
   return TRAITS.general;
+}
+
+// ─── "Your Next Read" intent panel ───────────────────────────────────────────
+// Collapsible filter/preference panel that sits above the recommendation cards.
+// Drives the NextReadIntent model: hard filters, soft preferences, exclusions.
+//
+// Design: warm stone palette, pill/chip buttons, expandable with animation.
+// Intent state is managed as a "draft" until the user taps Apply.
+
+type NextReadPanelProps = {
+  draft:         NextReadIntent;
+  setDraft:      (intent: NextReadIntent) => void;
+  open:          boolean;
+  panelHeight:   Animated.Value;
+  onToggle:      () => void;
+  onApply:       () => void;
+  onClear:       () => void;
+  activeIntent:  NextReadIntent;
+};
+
+const LANE_OPTIONS: Array<{ lane: DeterministicLane; label: string }> = [
+  { lane: 'scifi_fantasy',        label: 'Fantasy / Sci-fi' },
+  { lane: 'modern_suspense',      label: 'Thriller'         },
+  { lane: 'romantasy',            label: 'Romantasy'        },
+  { lane: 'romance',              label: 'Romance'          },
+  { lane: 'horror',               label: 'Horror'           },
+  { lane: 'memoir_nonfiction',    label: 'Memoir'           },
+  { lane: 'contemporary_fiction', label: 'Contemporary'     },
+  { lane: 'literary',             label: 'Literary'         },
+];
+
+function NextReadPanel({
+  draft, setDraft, open, panelHeight, onToggle, onApply, onClear, activeIntent,
+}: NextReadPanelProps) {
+  const isActive = isIntentActive(activeIntent);
+
+  // ── Pill helpers ────────────────────────────────────────────────────────────
+
+  function Pill({
+    label, active, onPress,
+  }: { label: string; active: boolean; onPress: () => void }) {
+    return (
+      <TouchableOpacity
+        onPress={onPress}
+        style={{
+          backgroundColor: active ? '#1c1917' : '#f5f5f4',
+          borderRadius: 20,
+          paddingHorizontal: 12,
+          paddingVertical: 6,
+          borderWidth: 1,
+          borderColor: active ? '#1c1917' : '#e7e5e4',
+        }}
+      >
+        <Text style={{
+          fontSize: 12,
+          fontWeight: active ? '600' : '400',
+          color: active ? '#faf9f7' : '#57534e',
+        }}>
+          {label}
+        </Text>
+      </TouchableOpacity>
+    );
+  }
+
+  function PillRow({ children }: { children: React.ReactNode }) {
+    return (
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+        {children}
+      </View>
+    );
+  }
+
+  function FilterLabel({ children }: { children: string }) {
+    return (
+      <Text style={{
+        fontSize: 10, fontWeight: '600', color: '#a8a29e',
+        letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 6,
+      }}>
+        {children}
+      </Text>
+    );
+  }
+
+  // ── Lane toggle ─────────────────────────────────────────────────────────────
+
+  function toggleLane(lane: DeterministicLane) {
+    const current = draft.hard.lanes ?? [];
+    const next    = current.includes(lane)
+      ? current.filter(l => l !== lane)
+      : [...current, lane];
+    setDraft({ ...draft, hard: { ...draft.hard, lanes: next.length ? next : undefined } });
+  }
+
+  // ── Pace / tone toggles (single-select) ─────────────────────────────────────
+
+  function setPace(pace: NextReadPace) {
+    setDraft({ ...draft, soft: { ...draft.soft, pace: draft.soft.pace === pace ? null : pace } });
+  }
+
+  function setTone(tone: NextReadTone) {
+    setDraft({ ...draft, soft: { ...draft.soft, tone: draft.soft.tone === tone ? null : tone } });
+  }
+
+  // ── Format toggles ──────────────────────────────────────────────────────────
+
+  function toggleStandalone() {
+    setDraft({ ...draft, hard: { ...draft.hard, standalone_only: !draft.hard.standalone_only } });
+  }
+
+  function toggleShort() {
+    const current = draft.hard.max_page_count;
+    setDraft({ ...draft, hard: { ...draft.hard, max_page_count: current ? null : 320 } });
+  }
+
+  // ── Exclusion toggles ───────────────────────────────────────────────────────
+
+  function toggleExclude(key: keyof NextReadIntent['exclude']) {
+    setDraft({ ...draft, exclude: { ...draft.exclude, [key]: !draft.exclude[key] } });
+  }
+
+  // ── Collapsed summary ───────────────────────────────────────────────────────
+
+  const summaryText = isActive ? intentSummaryLabel(activeIntent) : null;
+
+  return (
+    <View style={{ marginBottom: 10 }}>
+
+      {/* ── Toggle row ── */}
+      <TouchableOpacity
+        onPress={onToggle}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingVertical: 8,
+          paddingHorizontal: 12,
+          backgroundColor: isActive ? '#f5f0e8' : '#f5f5f4',
+          borderRadius: 8,
+          borderWidth: 1,
+          borderColor: isActive ? '#d6c9b0' : '#e7e5e4',
+        }}
+      >
+        <Text style={{ fontSize: 12, color: '#78716c', flex: 1 }}>
+          {open ? '▲' : '▼'}{'  '}
+          {isActive && summaryText
+            ? summaryText
+            : 'What are you in the mood for?'
+          }
+        </Text>
+        {isActive && (
+          <View style={{
+            backgroundColor: '#1c1917', borderRadius: 4,
+            paddingHorizontal: 5, paddingVertical: 2,
+          }}>
+            <Text style={{ fontSize: 9, fontWeight: '700', color: '#faf9f7', letterSpacing: 0.4 }}>
+              FILTERED
+            </Text>
+          </View>
+        )}
+      </TouchableOpacity>
+
+      {/* ── Expandable body ── */}
+      <Animated.View style={{
+        maxHeight: panelHeight.interpolate({ inputRange: [0, 1], outputRange: [0, 560] }),
+        overflow: 'hidden',
+      }}>
+        <View style={{
+          backgroundColor: '#faf9f7',
+          borderRadius: 10,
+          padding: 14,
+          marginTop: 4,
+          borderWidth: 1,
+          borderColor: '#e7e5e4',
+          gap: 14,
+        }}>
+
+          {/* Genre / Lane */}
+          <View>
+            <FilterLabel>Genre</FilterLabel>
+            <PillRow>
+              {LANE_OPTIONS.map(({ lane, label }) => (
+                <Pill
+                  key={lane}
+                  label={label}
+                  active={(draft.hard.lanes ?? []).includes(lane)}
+                  onPress={() => toggleLane(lane)}
+                />
+              ))}
+            </PillRow>
+          </View>
+
+          {/* Pace */}
+          <View>
+            <FilterLabel>Pace</FilterLabel>
+            <PillRow>
+              <Pill label="Fast-paced" active={draft.soft.pace === 'fast'} onPress={() => setPace('fast')} />
+              <Pill label="Slow burn"  active={draft.soft.pace === 'slow'} onPress={() => setPace('slow')} />
+            </PillRow>
+          </View>
+
+          {/* Tone */}
+          <View>
+            <FilterLabel>Tone</FilterLabel>
+            <PillRow>
+              <Pill label="Light & fun" active={draft.soft.tone === 'light'} onPress={() => setTone('light')} />
+              <Pill label="Dark"        active={draft.soft.tone === 'dark'}  onPress={() => setTone('dark')}  />
+            </PillRow>
+          </View>
+
+          {/* Format */}
+          <View>
+            <FilterLabel>Format</FilterLabel>
+            <PillRow>
+              <Pill label="Standalone"   active={!!draft.hard.standalone_only}          onPress={toggleStandalone} />
+              <Pill label="Short (<320p)" active={draft.hard.max_page_count === 320}    onPress={toggleShort}      />
+            </PillRow>
+          </View>
+
+          {/* Avoid */}
+          <View>
+            <FilterLabel>Avoid</FilterLabel>
+            <PillRow>
+              <Pill label="No classics"   active={!!draft.exclude.avoid_classics}   onPress={() => toggleExclude('avoid_classics')}   />
+              <Pill label="No dark"       active={!!draft.exclude.avoid_dark}       onPress={() => toggleExclude('avoid_dark')}       />
+              <Pill label="No literary"   active={!!draft.exclude.avoid_literary}   onPress={() => toggleExclude('avoid_literary')}   />
+              <Pill label="No romance"    active={!!draft.exclude.avoid_romance}    onPress={() => toggleExclude('avoid_romance')}    />
+              <Pill label="No nonfiction" active={!!draft.exclude.avoid_nonfiction} onPress={() => toggleExclude('avoid_nonfiction')} />
+              <Pill label="No series"     active={!!draft.exclude.avoid_series}     onPress={() => toggleExclude('avoid_series')}     />
+            </PillRow>
+          </View>
+
+          {/* Action buttons */}
+          <View style={{ flexDirection: 'row', gap: 8, paddingTop: 2 }}>
+            <TouchableOpacity
+              onPress={onClear}
+              style={{
+                flex: 1, paddingVertical: 10, borderRadius: 8,
+                backgroundColor: '#f5f5f4',
+                borderWidth: 1, borderColor: '#e7e5e4',
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#57534e' }}>Clear</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={onApply}
+              style={{
+                flex: 2, paddingVertical: 10, borderRadius: 8,
+                backgroundColor: '#1c1917',
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#faf9f7' }}>Apply filters</Text>
+            </TouchableOpacity>
+          </View>
+
+        </View>
+      </Animated.View>
+    </View>
+  );
 }
 
 // ─── Skeleton loading card ────────────────────────────────────────────────────
@@ -1028,6 +1291,12 @@ export default function RecommendationsScreen() {
   const [thesisOpen, setThesisOpen]           = useState(false);
   const thesisHeight                          = useRef(new Animated.Value(0)).current;
 
+  // ── "Your Next Read" intent layer state ──────────────────────────────────
+  const [nextReadIntent, setNextReadIntent]   = useState<NextReadIntent>(emptyNextReadIntent());
+  const [draftIntent, setDraftIntent]         = useState<NextReadIntent>(emptyNextReadIntent());
+  const [intentPanelOpen, setIntentPanelOpen] = useState(false);
+  const intentPanelHeight                     = useRef(new Animated.Value(0)).current;
+
   // ── Search/send flow state ────────────────────────────────────────────────
   const [query, setQuery]               = useState('');
   const [bookResults, setBookResults]   = useState<BookResult[]>([]);
@@ -1187,6 +1456,7 @@ export default function RecommendationsScreen() {
 
       const { recs, meta } = await getPersonalizedRecsWithExpert(
         supabase!, user.id, tp, activeEntitlement, 5, fbCtx,
+        isIntentActive(nextReadIntent) ? nextReadIntent : undefined,
       );
 
       setRecommendations(recs);
@@ -1233,6 +1503,45 @@ export default function RecommendationsScreen() {
       }
     } catch {
       // Recommendations fail silently — hub content is already visible
+    } finally {
+      setRecsLoading(false);
+    }
+  }
+
+  // ── Reload recs with a specific intent (Phase 2 only, no hub re-fetch) ──────
+  // Called when the user applies or clears their "Your Next Read" intent.
+  // Re-runs the recommendation pipeline using already-loaded state values.
+  // OL candidates are cached, so this is fast (DB read + in-memory scoring).
+
+  async function reloadRecs(intent: NextReadIntent) {
+    if (!supabase || !currentUserId || !tasteProfile || tasteProfile.tier < 1) return;
+    setNextReadIntent(intent);
+    setRecsLoading(true);
+    setRecsQualityGate(null);
+    try {
+      const activeEntitlement = entitlement ?? {
+        plan: 'free' as const,
+        expert_recs_enabled: false,
+        expert_refreshes_remaining_this_period: 0,
+        has_used_free_import_analysis: false,
+        next_refresh_available_at: null,
+        _raw: {
+          free_expert_used: false,
+          expert_refreshes_this_period: 0,
+          period_start_at: new Date().toISOString(),
+          last_expert_refresh_at: null,
+        },
+      };
+      const activeIntent = isIntentActive(intent) ? intent : undefined;
+      const { recs, meta } = await getPersonalizedRecsWithExpert(
+        supabase!, currentUserId, tasteProfile, activeEntitlement, 5, feedbackCtx,
+        activeIntent,
+      );
+      setRecommendations(recs);
+      setRecsMeta(meta);
+      setRecsQualityGate(meta.quality_gate !== 'passed' ? meta.quality_gate : null);
+    } catch {
+      // silent — recommendations fail gracefully
     } finally {
       setRecsLoading(false);
     }
@@ -1667,6 +1976,46 @@ export default function RecommendationsScreen() {
                     </View>
                   )}
 
+                  {/* ── "Your Next Read" intent panel ── */}
+                  <NextReadPanel
+                    draft={draftIntent}
+                    setDraft={setDraftIntent}
+                    open={intentPanelOpen}
+                    panelHeight={intentPanelHeight}
+                    activeIntent={nextReadIntent}
+                    onToggle={() => {
+                      const open = !intentPanelOpen;
+                      setIntentPanelOpen(open);
+                      Animated.timing(intentPanelHeight, {
+                        toValue: open ? 1 : 0,
+                        duration: 220,
+                        useNativeDriver: false,
+                      }).start();
+                    }}
+                    onApply={() => {
+                      const open = false;
+                      setIntentPanelOpen(open);
+                      Animated.timing(intentPanelHeight, {
+                        toValue: 0,
+                        duration: 180,
+                        useNativeDriver: false,
+                      }).start();
+                      reloadRecs(draftIntent);
+                    }}
+                    onClear={() => {
+                      const cleared = emptyNextReadIntent();
+                      setDraftIntent(cleared);
+                      const open = false;
+                      setIntentPanelOpen(open);
+                      Animated.timing(intentPanelHeight, {
+                        toValue: 0,
+                        duration: 180,
+                        useNativeDriver: false,
+                      }).start();
+                      reloadRecs(cleared);
+                    }}
+                  />
+
                   {/* Save toast */}
                   {saveToast && (
                     <View style={{
@@ -1719,6 +2068,7 @@ export default function RecommendationsScreen() {
                       >
                         <Text style={{ fontSize: 10, color: '#a8a29e', flex: 1 }}>
                           {traceOpen ? '▲' : '▼'}  Debug — {recMode ?? 'det'} · {recsMeta.is_from_cache ? 'cached' : 'fresh'}
+                          {recsMeta.intent_filtered_count ? ` · intent −${recsMeta.intent_filtered_count}` : ''}
                         </Text>
                         <Text style={{ fontSize: 10, color: '#d6d3d1' }}>
                           pool {recsMeta.pool_size} · excl {recsMeta.hygiene_excluded} · enr {recsMeta.enriched_count}
@@ -1985,23 +2335,50 @@ export default function RecommendationsScreen() {
               {/* ── Quality gate: not enough signal or coverage ── */}
               {recsQualityGate && !recsLoading && !hasRecs && (tasteProfile?.tier ?? 0) >= 1 && (
                 <View style={{
-                  backgroundColor: '#fff',
+                  backgroundColor: recsQualityGate === 'intent_filtered_empty' ? '#faf9f7' : '#fff',
                   borderRadius: 14,
                   padding: 16,
                   marginBottom: 16,
                   borderWidth: 1,
-                  borderColor: '#e7e5e4',
+                  borderColor: recsQualityGate === 'intent_filtered_empty' ? '#e7e5e4' : '#e7e5e4',
                 }}>
                   <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', marginBottom: 6 }}>
-                    {recsQualityGate === 'insufficient_pool'
-                      ? 'Not enough books in your genres yet'
-                      : "No close matches in the current catalog"}
+                    {recsQualityGate === 'intent_filtered_empty'
+                      ? 'No matches with these filters'
+                      : recsQualityGate === 'insufficient_pool'
+                        ? 'Not enough books in your genres yet'
+                        : "No close matches in the current catalog"}
                   </Text>
                   <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
-                    {recsQualityGate === 'insufficient_pool'
-                      ? 'We need more books in the genres you enjoy before we can make confident picks. Rate a few more books or add taste tags to help us.'
-                      : 'None of the books in our catalog scored closely enough against your profile. Keep rating books — your picks will sharpen as we learn more.'}
+                    {recsQualityGate === 'intent_filtered_empty'
+                      ? 'Your current filters are too narrow for the available pool. Try relaxing a filter or clearing them to see your regular picks.'
+                      : recsQualityGate === 'insufficient_pool'
+                        ? 'We need more books in the genres you enjoy before we can make confident picks. Rate a few more books or add taste tags to help us.'
+                        : 'None of the books in our catalog scored closely enough against your profile. Keep rating books — your picks will sharpen as we learn more.'}
                   </Text>
+                  {recsQualityGate === 'intent_filtered_empty' && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        const cleared = emptyNextReadIntent();
+                        setDraftIntent(cleared);
+                        Animated.timing(intentPanelHeight, { toValue: 0, duration: 180, useNativeDriver: false }).start();
+                        setIntentPanelOpen(false);
+                        reloadRecs(cleared);
+                      }}
+                      style={{
+                        marginTop: 10,
+                        alignSelf: 'flex-start',
+                        backgroundColor: '#1c1917',
+                        borderRadius: 8,
+                        paddingHorizontal: 12,
+                        paddingVertical: 7,
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: '#faf9f7' }}>
+                        Clear filters
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
 

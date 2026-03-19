@@ -54,6 +54,15 @@ import type { TasteProfile }         from './tasteProfile';
 import { getBookTraits, assessMetadataQuality, detectBookLane, detectBookMysterySubtype, isPhilosophyOrSpiritual } from './bookTraits';
 import type { DeterministicLane }    from './bookTraits';
 import { computeCenterOfGravity, classifyMarketPosition, computeFitClass } from './fitClassifier';
+import type { MarketPosition }       from './fitClassifier';
+import {
+  isIntentActive,
+  passesIntentHardFilters,
+  getIntentExclusionReason,
+  computeIntentBoost,
+  buildIntentSuffix,
+} from './nextReadIntent';
+import type { NextReadIntent }       from './nextReadIntent';
 import type { FeedbackContext }      from './recFeedback';
 import type { BookEnrichmentProfile } from './bookEnrichment';
 import { getEnrichmentForCandidates } from './bookEnrichment';
@@ -136,7 +145,8 @@ export type ScoredBook = CandidateBook & {
 export type QualityGate =
   | 'passed'
   | 'insufficient_pool'
-  | 'insufficient_score';
+  | 'insufficient_score'
+  | 'intent_filtered_empty';  // pool passed but intent filters narrowed it to 0
 
 export type RetrievalTrace = {
   top_genres_used:      string[];
@@ -174,6 +184,9 @@ export type RankedRecsResult = {
     // Full candidate audit — all scored candidates before diversity cap.
     // Always populated; use for forensic debugging via the debug panel.
     candidate_audit?:       ScoredBook[];
+    // Count of books removed by intent hard filters / exclusions.
+    // Present and > 0 when "Your Next Read" intent is active and filtering occurred.
+    intent_filtered_count?: number;
   };
 };
 
@@ -1325,6 +1338,7 @@ export function getRankedRecs(
     hygiene_excluded:    0,
     enriched_count:      0,
   },
+  intent?: NextReadIntent,
 ): RankedRecsResult {
   const poolSize = candidates.length;
 
@@ -1412,6 +1426,61 @@ export function getRankedRecs(
   const nonRejected = scored.filter(b => b._score_breakdown.fit_class !== 'reject');
   nonRejected.sort((a, b) => b.score - a.score);
 
+  // ── Intent layer ──────────────────────────────────────────────────────────
+  // Applied AFTER CoG classification so the taste profile still governs
+  // base quality. Intent narrows the ranked pool; it never replaces CoG fit.
+  //
+  // Order of operations per book:
+  //   1. Check exclusions      → hard-remove if matched
+  //   2. Check hard filters    → hard-remove if not matching
+  //   3. Apply soft boost      → small score nudge for preference match
+  //   4. Re-sort intentFiltered by adjusted score
+  //
+  // If intent filtering leaves fewer than MIN_PASSING_BOOKS that clear the
+  // score threshold, the quality gate catches it and the UI should guide the
+  // user to relax their filters (no silent fallback to unfiltered results).
+  let intentFiltered = nonRejected as typeof nonRejected;
+  let intentRejectedCount = 0;
+  if (intent && isIntentActive(intent)) {
+    const kept: typeof nonRejected = [];
+    for (const book of nonRejected) {
+      const bookLane  = detectBookLane(book);
+      const marketPos = (book._score_breakdown.market_position as MarketPosition) ?? 'general_fiction';
+
+      // Exclusions take priority over hard filters
+      const exclusionReason = getIntentExclusionReason(book, intent, marketPos);
+      if (exclusionReason) {
+        intentRejectedCount++;
+        continue;
+      }
+
+      // Hard filter check
+      if (!passesIntentHardFilters(book, intent, bookLane, marketPos)) {
+        intentRejectedCount++;
+        continue;
+      }
+
+      // Soft preference boost (small, capped at ±0.05)
+      const boost = computeIntentBoost(book, intent);
+      if (boost !== 0) {
+        book.score = +Math.max(0, book.score + boost).toFixed(3);
+      }
+
+      kept.push(book);
+    }
+
+    // Re-sort after soft boosts (only when at least one boost was non-zero)
+    if (intentRejectedCount > 0 || kept.some(b => b._score_breakdown.cog_score_delta !== (nonRejected.find(r => r === b)?._score_breakdown.cog_score_delta ?? 0))) {
+      kept.sort((a, b) => b.score - a.score);
+    }
+
+    intentFiltered = kept;
+
+    if (__DEV__ && intentRejectedCount > 0) {
+      console.log(`[INTENT] ${intentRejectedCount} books removed by intent filters; ${intentFiltered.length} remain`);
+    }
+  }
+
   if (__DEV__) {
     const rejectCount = scored.length - nonRejected.length;
     if (rejectCount > 0) {
@@ -1427,10 +1496,17 @@ export function getRankedRecs(
     console.log('[COG] Top-5 after fit classification:', JSON.stringify(top5));
   }
 
-  // Quality gate: score threshold (applied to CoG-adjusted scores)
-  const passing = nonRejected.filter(b => b.score >= MIN_PASS_SCORE);
+  // Quality gate: score threshold (applied to CoG-adjusted + intent-boosted scores)
+  // Uses intentFiltered so user-excluded books don't pad the passing count.
+  const passing = intentFiltered.filter(b => b.score >= MIN_PASS_SCORE);
   if (passing.length < MIN_PASSING_BOOKS) {
-    return { recs: [], meta: buildMeta('insufficient_score') };
+    return {
+      recs: [],
+      meta: {
+        ...buildMeta(intentRejectedCount > 0 ? 'intent_filtered_empty' : 'insufficient_score'),
+        intent_filtered_count: intentRejectedCount || undefined,
+      },
+    };
   }
 
   // Diversity: max 2 books per primary genre AND max 2 books per author.
@@ -1453,7 +1529,7 @@ export function getRankedRecs(
   const diverse: ScoredBook[] = [];
   let globalRank = 0;
 
-  for (const book of nonRejected) {
+  for (const book of intentFiltered) {
     globalRank++;
     const genre     = getBookTraits(book).primaryGenre ?? 'general';
     const authorKey = book.author.toLowerCase();
@@ -1467,7 +1543,9 @@ export function getRankedRecs(
     if (diverse.length >= limit) break;
   }
 
-  // Audit order: CoG-sorted non-rejects first, then reject-class books at end
+  // Audit order: CoG-sorted non-rejects first, then reject-class books at end.
+  // Audit always reflects the CoG-filtered pool (before intent), so the debug
+  // panel shows why a book was included or excluded by the engine itself.
   const rejectBooks = scored.filter(b => b._score_breakdown.fit_class === 'reject');
   const auditList   = [...nonRejected, ...rejectBooks];
 
@@ -1478,6 +1556,7 @@ export function getRankedRecs(
       candidate_audit: auditList.map(
         (b, i) => ({ ...b, _debug: { pool_size: poolSize, rank: i + 1 } })
       ),
+      intent_filtered_count: intentRejectedCount > 0 ? intentRejectedCount : undefined,
     },
   };
 }
@@ -1608,10 +1687,11 @@ export async function getPersonalizedRecs(
   profile:   TasteProfile,
   limit      = 5,
   feedback?: FeedbackContext,
+  intent?:   NextReadIntent,
 ): Promise<RankedRecsResult> {
   const { candidates, enrichmentMap, retrieval_trace } =
     await getCandidateBooks(client, userId, profile, feedback);
-  return getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace);
+  return getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent);
 }
 
 // ── Expert-layer orchestration ────────────────────────────────────────────────
@@ -1633,11 +1713,12 @@ export async function getPersonalizedRecsWithExpert(
   entitlement: RecEntitlement,
   limit        = 5,
   feedback?:   FeedbackContext,
+  intent?:     NextReadIntent,
 ): Promise<RankedRecsResult> {
   // ── Step 1: Deterministic pipeline (always runs) ──────────────────────────
   const { candidates, enrichmentMap, retrieval_trace } =
     await getCandidateBooks(client, userId, profile, feedback);
-  const baseResult = getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace);
+  const baseResult = getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent);
 
   // ── Forensic audit log (forensic user only, dev mode) ────────────────────
   if (__DEV__ && userId === FORENSIC_USER_ID) {
@@ -1814,7 +1895,7 @@ export async function getPersonalizedRecsWithExpert(
     detScores.set(r.id, r.score);
   }
   // Also score the broader candidate pool (not just top-5) for better coverage
-  const allScored = getRankedRecs(candidates, profile, EXPERT_JUDGE_CAP, feedback, enrichmentMap, retrieval_trace);
+  const allScored = getRankedRecs(candidates, profile, EXPERT_JUDGE_CAP, feedback, enrichmentMap, retrieval_trace, intent);
   for (const r of allScored.recs) {
     const key = r.external_id ?? r.id;
     if (!detScores.has(key)) detScores.set(key, r.score);
