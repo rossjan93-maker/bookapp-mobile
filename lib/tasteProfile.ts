@@ -106,11 +106,12 @@ export function confidenceLevel(tier: ConfidenceTier): 'low' | 'medium' | 'high'
 type TasteTagPayload = { liked?: string[]; didnt_work?: string[] };
 
 type RawUserBook = {
-  status:      string;
-  rating:      number | null;
-  taste_tags:  TasteTagPayload | null;
-  review_body: string | null;
-  source:      string | null;
+  status:        string;
+  rating:        number | null;
+  taste_tags:    TasteTagPayload | null;
+  review_body:   string | null;
+  source:        string | null;
+  import_source: string | null;  // set by goodreadsExecutor; separate from source
 };
 
 function buildTraitScores(rows: RawUserBook[]): {
@@ -365,6 +366,26 @@ function buildDeterministicLanes(
 }
 
 // ── Genre affinities from rated finished books ─────────────────────────────────
+//
+// Bayesian smoothing rationale:
+//   The raw formula (pos - neg) / total returns 1.0 for a single loved book in
+//   a genre — e.g. one Goodreads-imported memoir with a 5★ rating gives
+//   memoir_bio = 1.0, which is then treated as a dominant signal everywhere.
+//   A single book is not enough to establish that a genre "dominates" the user's
+//   reading identity. We apply confidence scaling:
+//
+//     affinity = raw × min(1, total / GENRE_MIN_EVIDENCE)
+//
+//   This shrinks high-affinity values toward 0 when evidence is thin:
+//   • 1 book rated 5★:   raw=1.0, confidence=0.20 → affinity=0.20
+//   • 2 books, both 5★:  raw=1.0, confidence=0.40 → affinity=0.40
+//   • 5 books, all 5★:   raw=1.0, confidence=1.00 → affinity=1.00
+//   • 10 books rated 4★: raw=1.0, confidence=1.00 → affinity=1.00
+//
+//   This never hurts genuine heavy readers — they have enough evidence for
+//   full confidence. It only suppresses noise from 1-2 shelf-categorised imports.
+
+const GENRE_MIN_EVIDENCE = 5;  // books needed in a genre for full affinity confidence
 
 function buildGenreAffinities(rows: FinishedBookRow[]): Record<string, number> {
   const counts: Record<string, { pos: number; neg: number; total: number }> = {};
@@ -388,7 +409,11 @@ function buildGenreAffinities(rows: FinishedBookRow[]): Record<string, number> {
   const affinities: Record<string, number> = {};
   for (const [genre, { pos, neg, total }] of Object.entries(counts)) {
     if (total < 1) continue;
-    affinities[genre] = +((pos - neg) / total).toFixed(2);
+    const rawAffinity  = (pos - neg) / total;
+    // Bayesian shrinkage: scale by evidence confidence so sparse genres
+    // cannot reach extreme affinity values from 1–2 books.
+    const confidence   = Math.min(1, total / GENRE_MIN_EVIDENCE);
+    affinities[genre]  = +(rawAffinity * confidence).toFixed(2);
   }
   return affinities;
 }
@@ -430,7 +455,7 @@ export async function computeTasteProfile(
   const [booksRes, finishedRatedRes, prefsRes] = await Promise.all([
     client
       .from('user_books')
-      .select('status, rating, taste_tags, review_body, source')
+      .select('status, rating, taste_tags, review_body, source, import_source')
       .eq('user_id', userId),
 
     // For genre affinity: finished books with rating + book subjects.
@@ -457,9 +482,15 @@ export async function computeTasteProfile(
   const diagnosisAnswers = ((prefsRes.data as { diagnosis_answers?: Record<string, string> } | null)
     ?.diagnosis_answers ?? {}) as Record<string, string>;
 
+  // Helper: recognise a Goodreads-imported row regardless of which column was set.
+  // goodreadsStager sets source='goodreads'; goodreadsExecutor sets import_source='goodreads'.
+  // Both paths must be counted to avoid imported_books_count=0 for large GR users.
+  const isGoodreadsRow = (r: RawUserBook) =>
+    r.source === 'goodreads' || r.import_source === 'goodreads';
+
   const evidence: TasteProfileEvidence = {
     completed_books_count:  finished.length,
-    imported_books_count:   rows.filter(r => r.source === 'goodreads').length,
+    imported_books_count:   rows.filter(isGoodreadsRow).length,
     rated_books_count:      rows.filter(r => r.rating !== null).length,
     taste_tag_count:        rows.filter(r => {
       const t = r.taste_tags;
@@ -473,7 +504,7 @@ export async function computeTasteProfile(
     r.rating !== null ||
     (r.taste_tags && ((r.taste_tags.liked?.length ?? 0) + (r.taste_tags.didnt_work?.length ?? 0)) > 0) ||
     (r.review_body && r.review_body.trim() !== '') ||
-    r.source === 'goodreads'
+    isGoodreadsRow(r)
   ).length;
 
   const tier       = computeConfidenceTier(evidence, strongSignalCount);

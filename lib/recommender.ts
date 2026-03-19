@@ -1001,15 +1001,31 @@ function applyHygiene(
 //
 // These caps prevent any single step from saturating the 0–1 scale.
 // Maximum theoretical score (no penalties):
-//   0.38 (trait) + 0.22 (genre) + 0.10 (feedback) + 0.08 (enrichment) = 0.78
-// Real "Strong fit" (>0.60) therefore requires genre + multiple trait signals.
+//   0.38 (trait+subj) + 0.22 (genre) + 0.10 (feedback) + 0.08 (enrichment) = 0.78
+// Real "Strong fit" (>0.60) therefore requires genre + multiple trait/subject signals.
+//
+// Step 1 split — trait matching + subject overlap density:
+//   STEP1_CAP       = 0.38  total ceiling (trait matching + subject overlap combined)
+//   STEP1_BASE_CAP  = 0.32  trait-only ceiling when liked_subjects are available
+//                           (reserves 0.06 for subject overlap discrimination)
+//   STEP1_OVERLAP_MAX = 0.06 max bonus from subject overlap (1 hit = 0.02, cap at 3)
+//
+// Rationale for the split:
+//   getBookTraits() returns the same prior scores for every book of the same genre
+//   type, so the trait loop maxes out at 0.38 for ALL candidates in a genre cohort.
+//   Subject overlap (book.subjects ∩ profile.liked_subjects) varies per book —
+//   a fantasy novel set in the same niche as the user's loved reads outscores a
+//   generic fantasy novel. This creates the within-cohort discrimination that was
+//   missing and causing all books to land at identical raw_score = 0.56.
 
-const TRAIT_CONTRIB_CAP = 0.14;  // per-trait ceiling in step 1
-const STEP1_CAP         = 0.38;  // total step 1 ceiling
-const STEP3_BONUS_HIGH  = 0.22;  // genre affinity >0.5
-const STEP3_BONUS_MED   = 0.10;  // genre affinity 0.2–0.5
-const STEP3_PENALTY     = 0.18;  // genre affinity <-0.35
-const TRAIT_THRESHOLD   = 0.28;  // min contribution to count for step 1
+const TRAIT_CONTRIB_CAP  = 0.14;  // per-trait ceiling in step 1
+const STEP1_CAP          = 0.38;  // total step 1 ceiling (trait + subject overlap)
+const STEP1_BASE_CAP     = 0.32;  // trait-only ceiling when subject overlap can apply
+const STEP1_OVERLAP_MAX  = 0.06;  // max subject overlap contribution (capped at 3 hits × 0.02)
+const STEP3_BONUS_HIGH   = 0.22;  // genre affinity >0.5
+const STEP3_BONUS_MED    = 0.10;  // genre affinity 0.2–0.5
+const STEP3_PENALTY      = 0.18;  // genre affinity <-0.35
+const TRAIT_THRESHOLD    = 0.28;  // min contribution to count for step 1
 
 // ── Scoring (pure) ────────────────────────────────────────────────────────────
 
@@ -1035,14 +1051,20 @@ export function scoreBookForUser(
   let s5_enr      = 0;
   let s6_meta_pen = 0;
 
-  // ── Step 1: Preferred trait alignment (capped) ────────────────────────────
+  // ── Step 1: Preferred trait alignment ────────────────────────────────────
   // Rules:
   //   a) The book must have a meaningful signal for this trait (bookWeight ≥ 0.55).
   //      This prevents vague genre-level priors from inflating the score.
   //   b) Each matching trait adds at most TRAIT_CONTRIB_CAP to the total.
-  //   c) Total step 1 is capped at STEP1_CAP regardless of how many traits match.
+  //   c) Trait-only total is capped at STEP1_BASE_CAP (0.32) when liked_subjects
+  //      are available, reserving headroom for the subject overlap signal below.
+  //      When no liked_subjects exist the cap falls back to STEP1_CAP (0.38),
+  //      so new/low-signal users are unaffected.
   //   d) Traits that are not valid for this book's form are already absent from
   //      bt.traits (zeroed by getBookTraits), so they contribute nothing.
+  const hasLikedSubjects = (profile.liked_subjects?.length ?? 0) > 0;
+  const traitOnlyCap     = hasLikedSubjects ? STEP1_BASE_CAP : STEP1_CAP;
+
   const prefMatches: string[] = [];
   for (const [trait, userWeight] of Object.entries(pref)) {
     if (userWeight < 0.12) continue;                // negligible user preference
@@ -1050,12 +1072,32 @@ export function scoreBookForUser(
     if (bookWeight < 0.55) continue;                // book doesn't genuinely have this trait
     const contribution = Math.min(TRAIT_CONTRIB_CAP, userWeight * bookWeight);
     prefMatches.push(trait.toLowerCase());
-    s1_trait = Math.min(STEP1_CAP, s1_trait + contribution);
+    s1_trait = Math.min(traitOnlyCap, s1_trait + contribution);
   }
   if (prefMatches.length >= 2) {
     reasons.push(`Aligns with your preference for ${prefMatches.slice(0, 2).join(' and ')}`);
   } else if (prefMatches.length === 1) {
     reasons.push(`Matches your appreciation for ${prefMatches[0]}`);
+  }
+
+  // ── Step 1b: Subject overlap density ─────────────────────────────────────
+  // Counts how many of the book's subjects appear in the user's liked_subjects
+  // (subjects extracted from 4+★ finished reads). This is the primary within-
+  // cohort discriminator: two books of the same genre may have very different
+  // topic specificity relative to what the user actually loved.
+  //
+  // Overlap contribution: 1 match → +0.02, 2 matches → +0.04, 3+ → +0.06
+  // Combined with trait matching, the step 1 total is capped at STEP1_CAP (0.38).
+  // Safety: when liked_subjects is empty (new/low-signal users), traitOnlyCap
+  // already equals STEP1_CAP so no room is reserved and no overlap is computed.
+  if (hasLikedSubjects) {
+    const bookSubjNorm  = new Set((book.subjects ?? []).map(s => s.toLowerCase().trim()).filter(Boolean));
+    const likedSubjNorm = new Set(profile.liked_subjects.map(s => s.toLowerCase().trim()));
+    const overlapCount  = [...bookSubjNorm].filter(s => likedSubjNorm.has(s)).length;
+    const overlapBonus  = Math.min(STEP1_OVERLAP_MAX, overlapCount * 0.02);
+    if (overlapBonus > 0) {
+      s1_trait = Math.min(STEP1_CAP, s1_trait + overlapBonus);
+    }
   }
 
   // ── Step 2: Avoided trait penalties ───────────────────────────────────────
@@ -1646,13 +1688,36 @@ export async function getCandidateBooks(
   if (cacheResult?.isFresh) {
     externalCandidates = cacheResult.candidates;
     // Reconstruct trace from cache retrieval_reasons.
-    // Strip CACHE_VERSION prefix (e.g. "v2:") so trace shows clean reason strings.
+    // Strip CACHE_VERSION prefix (e.g. "v3:") so trace shows clean reason strings.
     const cacheReasons = cacheResult.candidates
       .map(c => c._retrieval_reason.startsWith(CACHE_VERSION)
         ? c._retrieval_reason.slice(CACHE_VERSION.length)
         : c._retrieval_reason)
       .filter(Boolean);
     olResult.ol_queries = [...new Set(cacheReasons)].slice(0, 10);
+
+    // Reconstruct the trace attribution fields from the cached retrieval reason
+    // strings. Without this, genres_used / liked_subjects_used / liked_authors_used
+    // all show as [] on cache hits, making the debug panel lie about how retrieval
+    // actually worked. Each reason was written with a structured prefix:
+    //   genre:<genre>            from standard mode genre anchors
+    //   lane:<lane>              from dense-import mode lane anchors
+    //   liked_subject:<subject>  from liked-subject anchors
+    //   author_anchor:<author>   from standard mode author anchor
+    //   repeated_author:<author> from dense-import mode author anchors
+    const genresSet   = new Set<string>();
+    const subjSet     = new Set<string>();
+    const authorsSet  = new Set<string>();
+    for (const reason of cacheReasons) {
+      if      (reason.startsWith('genre:'))           genresSet.add(reason.slice(6));
+      else if (reason.startsWith('lane:'))            genresSet.add(reason.slice(5));
+      else if (reason.startsWith('liked_subject:'))   subjSet.add(reason.slice(14));
+      else if (reason.startsWith('author_anchor:'))   authorsSet.add(reason.slice(14));
+      else if (reason.startsWith('repeated_author:')) authorsSet.add(reason.slice(16));
+    }
+    olResult.top_genres_used      = [...genresSet];
+    olResult.liked_subjects_used  = [...subjSet];
+    olResult.liked_authors_used   = [...authorsSet];
   } else {
     // ── Source C: live OL multi-anchor fetch ──────────────────────────────
     const excludeForOL = new Set([

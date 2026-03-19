@@ -1,0 +1,101 @@
+Next priority: recommendation calibration and profile normalization.
+
+Do NOT move to “Like this book” anchor mode yet.
+The new “Your Next Read” layer, natural-language parsing, and intent/debug instrumentation are now in place.
+Before adding more surface area, we need to fix the remaining engine-level distortions that affect every user.
+
+Current known issues
+From the live system and scratchpad:
+- raw scores are still too compressed (many candidates land in narrow bands like 0.56)
+- memoir_bio / literary affinities are inflated to 1.0 for some Goodreads-imported users
+- genres_used / retrieval metadata are not preserved cleanly through cache round-trips
+- imported_books_count is still 0 due to source mismatch
+- these issues distort both default recommendations and “Your Next Read” filtered recommendations
+
+Goal
+Improve the underlying recommendation engine so the current recommendation system becomes more truthful, discriminating, and stable across all cohorts before we add anchor mode.
+
+Part 1: Fix score compression
+Right now raw scores are still too flat inside fit classes.
+We need more meaningful separation between:
+- clearly better candidates
+- decent candidates
+- borderline candidates
+
+Focus especially on:
+- trait_alignment precision
+- subject overlap density
+- repeated-author vs lane-only differentiation
+- stronger within-lane ranking discrimination
+- making “same class” books spread out more naturally
+
+Do NOT just add arbitrary constants.
+Explain where the compression is coming from and fix it structurally.
+
+Part 2: Normalize memoir_bio / literary inflation
+Some Goodreads-imported users are getting memoir_bio and literary affinities inflated to 1.0.
+
+Investigate why:
+- raw_shelves may be over-contributing
+- Goodreads shelf noise may be treated as strong genre evidence
+- normalization may be too permissive
+- sparse/partial metadata may be over-amplifying literary/memoir signals
+
+Fix this generally, not just for one user.
+
+Requirements:
+- repeated commercial reading should not be drowned out by memoir/literary tolerance
+- memoir/literary should only dominate when truly supported by repeated evidence
+- the fix must still work for genuine memoir-heavy and literary-heavy readers
+
+Part 3: Preserve retrieval metadata through cache round-trips
+The debug layer should remain truthful on cache hits as well as live runs.
+
+Fix:
+- genres_used
+- queries_used
+- retrieval_reason integrity
+- lane/anchor attribution
+across cache load/write cycles
+
+If the app says a rec came from a lane/query, that should still be visible and correct after caching.
+
+Part 4: Fix imported_books_count source mismatch
+The recommendation system now no longer depends on this field for dense mode, which is good.
+But the profile/debug layer is still wrong if imported_books_count is 0 for a Goodreads-heavy user.
+
+Fix the source mismatch so imported Goodreads users are correctly recognized in profile/debug reporting.
+
+Part 5: Cohort-safe validation
+Do not optimize these fixes for just the current Goodreads-heavy user.
+
+Validate against:
+- dense commercial Goodreads import
+- dense literary/classics reader
+- dense memoir/nonfiction reader
+- graphic/manga-heavy reader
+- low-signal net-new user
+- mixed/generalist reader
+
+For each major calibration change, output:
+1. the general rule introduced
+2. which cohorts should benefit
+3. which cohorts might regress
+4. how the implementation avoids overfitting
+
+Part 6: Output
+When complete, provide:
+1. root cause of score compression
+2. root cause of memoir/literary inflation
+3. files changed
+4. how scoring discrimination improved
+5. how memoir/literary normalization changed
+6. how retrieval metadata survives cache round-trips now
+7. how imported_books_count/source mismatch was fixed
+8. expected impact across the six user cohorts
+9. what remains deferred before anchor mode
+
+Important
+Do NOT treat this as a UI task.
+Do NOT move to anchor mode until the base engine is more stable.
+This is about improving the truthfulness and reliability of the current recommendation system for everyone.
