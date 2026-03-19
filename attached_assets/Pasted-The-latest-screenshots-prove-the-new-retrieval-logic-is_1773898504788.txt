@@ -1,0 +1,61 @@
+The latest screenshots prove the new retrieval logic is still NOT what generated the current recommendations.
+
+Evidence from the live debug panel:
+- OL CACHED = 31
+- OL LIVE = 0
+- queries still include:
+  - genre:memoir_bio
+  - genre:literary
+  - liked_subject:new york times bestseller
+- top scores are still the same old compressed pattern around 0.560
+
+This means the app is still serving a cached external candidate pool built by the old retrieval logic.
+
+Goal
+Find out exactly why the old candidate cache is still being used or repopulated, and fix that before any more recommendation tuning.
+
+Required investigation
+
+1. Audit the cache read path at runtime
+For this Goodreads user, log:
+- current timestamp
+- CACHE_MIN_DATE
+- computed cache cutoff
+- newest cached_at in rec_candidate_cache
+- how many rows survived the cache validation filter
+- whether the code path treated the cache as fresh
+- why OL LIVE = 0
+
+2. Audit the cache write path at runtime
+I want to know:
+- which function writes rec_candidate_cache
+- what retrieval queries it used on the write that produced these 31 rows
+- why `liked_subject:new york times bestseller` is still appearing even though it was supposedly added to GENERIC_RETRIEVAL_SUBJECTS
+- whether the running code actually contains the new generic-subject filter
+
+3. Prove whether the updated code is actually running
+Add runtime logs for:
+- the value of GENERIC_RETRIEVAL_SUBJECTS containing or not containing "new york times bestseller"
+- the value of CACHE_MIN_DATE
+- the branch that decides OL CACHED vs OL LIVE
+- the exact retrieval reasons being written to rec_candidate_cache
+
+4. Fix the actual problem
+Possible causes to verify:
+- cache invalidation logic is not firing
+- old rows still pass the validation filter
+- the new code was not actually deployed/reloaded in the running app
+- the cache write path still uses the old query builder
+- the “remove bestseller anchor” logic is not in the runtime code path
+- retrieval_reason format/versioning is not being used correctly
+
+5. Output
+1. Root cause
+2. Exact runtime values
+3. Which branch is still serving/creating the stale candidate pool
+4. Exact fix
+5. Proof that the next run will show:
+   - OL LIVE > 0
+   - OL CACHED reset or rebuilt under the new logic
+   - no liked_subject:new york times bestseller
+   - no literary-drift-dominated query set

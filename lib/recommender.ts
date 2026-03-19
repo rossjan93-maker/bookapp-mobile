@@ -73,11 +73,12 @@ const MIN_PASSING_BOOKS = 2;
 
 const CACHE_TTL_MS   = 24 * 60 * 60 * 1000;
 const CACHE_MIN_ROWS = 5;
-// Reject candidate-cache rows built before this date.  Bump this constant
-// whenever retrieval logic changes meaningfully (new genre expansion, year
-// filter changes, subtype fixes, etc.) so stale batches are automatically
-// replaced on the next live OL fetch.
-const CACHE_MIN_DATE = '2026-03-19T00:00:00Z';
+// Version tag embedded in retrieval_reason for every row written to
+// rec_candidate_cache.  Increment (v3, v4, …) whenever retrieval logic
+// changes in a way that makes old cached candidates unreliable.  The read
+// path rejects any row whose retrieval_reason does NOT start with this tag,
+// which forces a live OL re-fetch and a fresh cache write.
+const CACHE_VERSION  = 'v2:';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -558,15 +559,10 @@ async function getCachedExternalCandidates(
   excludeExternalIds: Set<string>,
 ): Promise<CacheResult> {
   try {
-    const ttlCutoff = new Date(Date.now() - CACHE_TTL_MS).toISOString();
-    // Use whichever cutoff is more recent: the rolling TTL window OR the
-    // minimum build date.  CACHE_MIN_DATE invalidates all rows that were
-    // written before a breaking retrieval-logic change, even if they would
-    // otherwise still be within the TTL window.
-    const cutoff = ttlCutoff > CACHE_MIN_DATE ? ttlCutoff : CACHE_MIN_DATE;
+    const cutoff = new Date(Date.now() - CACHE_TTL_MS).toISOString();
     const { data, error } = await client
       .from('rec_candidate_cache')
-      .select('external_id, source, retrieval_reason, title, author, cover_url, subjects, page_count')
+      .select('external_id, source, retrieval_reason, title, author, cover_url, subjects, page_count, cached_at')
       .eq('user_id', userId)
       .gte('cached_at', cutoff)
       .order('cached_at', { ascending: false })
@@ -583,18 +579,31 @@ async function getCachedExternalCandidates(
       cover_url:        string | null;
       subjects:         string[] | null;
       page_count:       number | null;
+      cached_at:        string;
     };
 
-    const rows    = (data ?? []) as CacheRow[];
+    const rows = (data ?? []) as CacheRow[];
 
-    // Invalidate stale entries written by old code: old retrieval_reason format
-    // was `ol:genre:<name>` (with "ol:" prefix). New format is `genre:<name>`,
-    // `lane:<name>`, `repeated_author:<name>`, etc. Rows with old-format reasons
-    // contain bad literary/canon books from before the retrieval fix and must be
-    // treated as if they never existed.
+    // Version-gate: only accept rows written by the current retrieval logic.
+    // Every row written by persistOLCandidates is tagged with CACHE_VERSION
+    // (e.g. "v2:") as a prefix on retrieval_reason.  Any row without that
+    // prefix was written by old code and must be treated as a cache miss so
+    // the engine performs a fresh live OL fetch under the updated query set.
     const validRows = rows.filter(r =>
-      !r.retrieval_reason || !r.retrieval_reason.startsWith('ol:')
+      r.retrieval_reason?.startsWith(CACHE_VERSION)
     );
+
+    if (__DEV__) {
+      const newest = rows[0]?.cached_at ?? '(none)';
+      console.log(
+        '[CACHE DIAG] cutoff:', cutoff,
+        '| CACHE_VERSION:', CACHE_VERSION,
+        '| rows_from_db:', rows.length,
+        '| valid_rows (v' + CACHE_VERSION + '):', validRows.length,
+        '| newest_cached_at:', newest,
+        '| reasons_seen:', [...new Set(rows.map(r => r.retrieval_reason?.split(':')[0] ?? 'null'))].join(','),
+      );
+    }
 
     const isFresh = validRows.length >= CACHE_MIN_ROWS;
 
@@ -788,20 +797,30 @@ async function persistOLCandidates(
 ): Promise<void> {
   if (books.length === 0) return;
   try {
+    const now = new Date().toISOString();
     const rows = books
       .filter(b => b.external_id)
-      .map(b => ({
-        user_id:          userId,
-        external_id:      b.external_id!,
-        source:           b._source,
-        retrieval_reason: b._retrieval_reason,
-        title:            b.title,
-        author:           b.author,
-        cover_url:        b.cover_url,
-        subjects:         b.subjects,
-        page_count:       b.page_count,
-        cached_at:        new Date().toISOString(),
-      }));
+      .map(b => {
+        // Prefix every retrieval_reason with CACHE_VERSION so the read path
+        // can distinguish rows written by this version of the logic from rows
+        // written by older code.  The prefix is stripped before the reason is
+        // used for display or trace logging.
+        const reason = b._retrieval_reason.startsWith(CACHE_VERSION)
+          ? b._retrieval_reason
+          : `${CACHE_VERSION}${b._retrieval_reason}`;
+        return {
+          user_id:          userId,
+          external_id:      b.external_id!,
+          source:           b._source,
+          retrieval_reason: reason,
+          title:            b.title,
+          author:           b.author,
+          cover_url:        b.cover_url,
+          subjects:         b.subjects,
+          page_count:       b.page_count,
+          cached_at:        now,
+        };
+      });
 
     await client
       .from('rec_candidate_cache')
@@ -1183,14 +1202,14 @@ export function scoreBookForUser(
 
   // Graphic novel format mismatch: comic/graphic-novel format is a distinct
   // reading medium that most readers don't seek out proactively. Apply a format
-  // penalty unless the user's feedback shows they've already engaged with and
-  // rated graphic novels (feedback_boost offsets this for known fans).
-  // Threshold: memoir affinity >= 0.8 waives the penalty because graphic memoirs
-  // (Maus, Persepolis) are core to that genre. Below that threshold the format
-  // is an unknown risk, not an assumption.
-  if (bt.bookForm === 'graphic' && memoirAffinity < 0.8) {
+  // penalty unconditionally — users who have explicitly liked graphic novels
+  // already receive a feedback_boost (+0.14) on similar books, which fully
+  // offsets this penalty for known fans while protecting everyone else from
+  // unexpected format surprises.
+  if (bt.bookForm === 'graphic') {
     s6_meta_pen -= 0.10;
     audit_flags.push('graphic_format');
+    if (__DEV__) console.log('[GRAPHIC PENALTY] fired for', book.title, '| memoirAffinity:', memoirAffinity.toFixed(3));
     if (risks.length < 1) risks.push('Graphic novel format — a different reading experience from most of your rated books');
   }
 
@@ -1388,9 +1407,12 @@ export async function getCandidateBooks(
 
   if (cacheResult?.isFresh) {
     externalCandidates = cacheResult.candidates;
-    // Reconstruct trace from cache retrieval_reasons
+    // Reconstruct trace from cache retrieval_reasons.
+    // Strip CACHE_VERSION prefix (e.g. "v2:") so trace shows clean reason strings.
     const cacheReasons = cacheResult.candidates
-      .map(c => c._retrieval_reason)
+      .map(c => c._retrieval_reason.startsWith(CACHE_VERSION)
+        ? c._retrieval_reason.slice(CACHE_VERSION.length)
+        : c._retrieval_reason)
       .filter(Boolean);
     olResult.ol_queries = [...new Set(cacheReasons)].slice(0, 10);
   } else {

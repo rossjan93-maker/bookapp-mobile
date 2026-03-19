@@ -43,7 +43,10 @@ const POETRY_SIGNALS = [
 
 const SHORT_STORY_SIGNALS = [
   'short stories', 'short story', 'short fiction', 'novellas', 'novella',
-  'stories', 'tale collection', 'tales collection',
+  'tale collection', 'tales collection',
+  // NOTE: bare 'stories' intentionally omitted — it matches too many OL subject
+  // tags (e.g. "Legal stories, American", "Fiction—stories") and causes
+  // novels like To Kill a Mockingbird to be misclassified.
 ];
 
 const PLAY_SIGNALS = [
@@ -52,8 +55,12 @@ const PLAY_SIGNALS = [
 ];
 
 const GRAPHIC_SIGNALS = [
-  'comic', 'comics', 'graphic novel', 'manga', 'illustrated novel',
-  'sequential art', 'comic book',
+  // NOTE: bare 'comic' intentionally omitted — it matches the very common OL
+  // tag "Comic books, strips, etc." as a substring and fires on prose books
+  // (e.g. Parable of the Sower) that happen to receive that OL classification.
+  // Use the more specific 'comics', 'comic book', 'comic strip' instead.
+  'comics', 'graphic novel', 'manga', 'illustrated novel',
+  'sequential art', 'comic book', 'comic strip',
 ];
 
 const ANTHOLOGY_SIGNALS = [
