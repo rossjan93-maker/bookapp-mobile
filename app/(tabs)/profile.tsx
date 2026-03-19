@@ -482,6 +482,11 @@ export default function ProfileScreen() {
               {displayName}
             </Text>
             <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 1 }}>@{username}</Text>
+            {__DEV__ && userId && (
+              <Text style={{ fontSize: 9, color: '#d6d3d1', marginTop: 3, fontFamily: 'monospace' }} selectable>
+                user_id: {userId}
+              </Text>
+            )}
           </View>
           <TouchableOpacity
             onPress={() => router.push('/settings')}

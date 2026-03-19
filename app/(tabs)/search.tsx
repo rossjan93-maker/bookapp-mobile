@@ -1740,6 +1740,14 @@ export default function RecommendationsScreen() {
                           borderColor: '#e7e5e4',
                           marginBottom: 8,
                         }}>
+                          {/* Current user ID */}
+                          {currentUserId && (
+                            <View style={{ marginBottom: 8, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#e7e5e4' }}>
+                              <Text style={{ fontSize: 9, fontWeight: '600', color: '#a8a29e', marginBottom: 2 }}>CURRENT USER_ID</Text>
+                              <Text style={{ fontSize: 10, color: '#57534e', fontFamily: 'monospace' }} selectable>{currentUserId}</Text>
+                            </View>
+                          )}
+
                           {/* Sources row */}
                           <View style={{ flexDirection: 'row', gap: 16, marginBottom: 8 }}>
                             {[
