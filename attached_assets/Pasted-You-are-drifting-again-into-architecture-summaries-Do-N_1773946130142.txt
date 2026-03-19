@@ -1,0 +1,76 @@
+You are drifting again into architecture summaries.
+
+Do NOT summarize the premium/expert scaffolding.
+Do NOT recap T001–T007.
+Do NOT tell me what is already implemented.
+
+Focus ONLY on validating the four engine/profile fixes you just made for the correct Goodreads user:
+user_id = 986aece4-9461-439c-bff9-3589161b313c
+
+The four fixes to validate are:
+1. score compression improvement via subject-overlap headroom
+2. memoir_bio / literary Bayesian smoothing
+3. cache retrieval-trace reconstruction
+4. imported_books_count source/import_source fix
+
+Goal
+Show me whether these four fixes materially improved the recommendation engine for the correct Goodreads user.
+
+Required output
+
+Part 1: Before vs after profile comparison for this user
+Show:
+- imported_books_count
+- genre_affinities
+- preferred_traits
+- dominant_lanes
+- repeated_liked_authors
+- liked_subjects
+
+I specifically want to see whether memoir_bio / literary are no longer artificially pinned at 1.0 unless truly supported.
+
+Part 2: Before vs after score-shape comparison
+For at least the top 10 candidates, show:
+- title
+- old raw score / trait_alignment pattern if available
+- new raw score / trait_alignment pattern
+- subject overlap contribution
+- final score
+- fit class
+
+I want to know whether same-lane books now separate meaningfully instead of collapsing into identical flat scores.
+
+Part 3: Validate imported_books_count
+Prove that the correct Goodreads user is now recognized as imported.
+Show exactly which column/value is being read (`source` vs `import_source`) and the resulting count.
+
+Part 4: Validate cache-trace reconstruction
+On a cache hit, show that the debug trace now correctly reconstructs:
+- genres_used
+- liked_subjects_used
+- liked_authors_used
+from cached retrieval reasons.
+
+I want an example cache-hit trace, not just a code explanation.
+
+Part 5: Actual recommendation outcome
+After those four fixes, show the new top 10 recommendations for the correct Goodreads user and explain:
+- what materially improved
+- what still looks off
+- what the next highest-leverage fix is
+
+Part 6: Stay on this scope
+Do NOT discuss:
+- entitlement scaffolding
+- free preview banners
+- expert mode architecture
+- migration summaries
+unless one of them directly blocks validating the four fixes above
+
+Output format
+1. profile before/after
+2. score-shape before/after
+3. imported_books_count proof
+4. cache-trace proof
+5. new top 10
+6. next highest-leverage fix

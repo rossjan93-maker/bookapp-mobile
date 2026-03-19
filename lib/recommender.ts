@@ -1842,101 +1842,111 @@ export async function getPersonalizedRecsWithExpert(
     const isDense = !!(det && (det.dominant_lanes.length >= 2 || det.repeated_liked_authors.length >= 3));
     const cog     = computeCenterOfGravity(profile);
 
-    // ── BLOCK A: Profile ──────────────────────────────────────────────────
-    console.log('[FORENSIC PROFILE]', JSON.stringify({
-      user_id:               userId,
-      tier:                  profile.tier,
-      strongSignalCount:     profile.strongSignalCount,
-      imported_books_count:  profile.evidence.imported_books_count,
-      is_dense_cog:          isDense,
-      genre_affinities:      Object.fromEntries(
+    // ── BLOCK A: Profile (chunked — each log ≤ 400 chars of payload) ─────
+    console.log('[FA1]', JSON.stringify({
+      uid:  userId.slice(0, 8),
+      tier: profile.tier,
+      sc:   profile.strongSignalCount,
+      ibc:  profile.evidence.imported_books_count,
+      dense: isDense,
+    }));
+    console.log('[FA2_AFFIN]', JSON.stringify(
+      Object.fromEntries(
         Object.entries(profile.genre_affinities)
           .sort((a, b) => b[1] - a[1])
           .map(([k, v]) => [k, fmt2(v)])
-      ),
-      preferred_traits: Object.fromEntries(
+      )
+    ));
+    console.log('[FA3_TRAITS]', JSON.stringify(
+      Object.fromEntries(
         Object.entries(profile.preferred_traits)
           .sort((a, b) => b[1] - a[1])
-          .slice(0, 10)
+          .slice(0, 12)
           .map(([k, v]) => [k, fmt2(v)])
-      ),
-      liked_subjects:        (profile.liked_subjects ?? []).slice(0, 10),
-      liked_authors:         (profile.liked_authors  ?? []).slice(0, 10),
-      dominant_lanes:        det?.dominant_lanes ?? [],
-      repeated_liked_authors: det?.repeated_liked_authors ?? [],
-      commercial_prior:      det ? fmt2(det.commercial_prior) : null,
-      repeated_series:       (det as unknown as Record<string, unknown>)?.repeated_series ?? [],
-      cog: {
-        is_dense:           cog.is_dense,
-        commercial_bias:    fmt2(cog.commercial_bias),
-        literary_tolerance: fmt2(cog.literary_tolerance),
-        memoir_tolerance:   fmt2(cog.memoir_tolerance),
-        has_fantasy_core:   cog.has_fantasy_core,
-        has_suspense_core:  cog.has_suspense_core,
-        has_romance_core:   cog.has_romance_core,
-        has_memoir_core:    cog.has_memoir_core,
-      },
+      )
+    ));
+    console.log('[FA4_SUBJ]', JSON.stringify((profile.liked_subjects ?? []).slice(0, 15)));
+    console.log('[FA5_AUTHORS]', JSON.stringify({
+      liked:    (profile.liked_authors ?? []).slice(0, 10),
+      repeated: (det?.repeated_liked_authors ?? []).slice(0, 10),
+    }));
+    console.log('[FA6_LANES]', JSON.stringify({
+      det_lanes:       det?.dominant_lanes ?? [],
+      commercial_prior: det ? fmt2(det.commercial_prior) : null,
+    }));
+    console.log('[FA7_COG]', JSON.stringify({
+      is_dense:           cog.is_dense,
+      commercial_bias:    fmt2(cog.commercial_bias),
+      literary_tolerance: fmt2(cog.literary_tolerance),
+      memoir_tolerance:   fmt2(cog.memoir_tolerance),
+      has_fantasy_core:   cog.has_fantasy_core,
+      has_suspense_core:  cog.has_suspense_core,
+      has_romance_core:   cog.has_romance_core,
+      has_memoir_core:    cog.has_memoir_core,
     }));
 
-    // ── BLOCK B: Retrieval ────────────────────────────────────────────────
-    console.log('[FORENSIC RETRIEVAL]', JSON.stringify({
-      ol_queries:       retrieval_trace.ol_queries,
-      genres_used:      retrieval_trace.top_genres_used,
-      subjects_used:    retrieval_trace.liked_subjects_used,
-      authors_used:     retrieval_trace.liked_authors_used,
-      dense_mode:       retrieval_trace.dense_import_mode,
-      detected_lanes:   retrieval_trace.detected_lanes,
-      catalog_count:    baseResult.meta.catalog_count,
-      live_ol_count:    baseResult.meta.live_ol_count,
-      cached_ext_count: baseResult.meta.cached_external_count,
-      hygiene_excluded: baseResult.meta.hygiene_excluded,
-      pool_size:        baseResult.meta.pool_size,
+    // ── BLOCK B: Retrieval (chunked) ──────────────────────────────────────
+    console.log('[FB1_RETR]', JSON.stringify({
+      dense_mode:      retrieval_trace.dense_import_mode,
+      detected_lanes:  retrieval_trace.detected_lanes,
+      catalog:         baseResult.meta.catalog_count,
+      live_ol:         baseResult.meta.live_ol_count,
+      cached_ext:      baseResult.meta.cached_external_count,
+      excl:            baseResult.meta.hygiene_excluded,
+      pool:            baseResult.meta.pool_size,
+    }));
+    console.log('[FB2_TRACE]', JSON.stringify({
+      genres_used:   retrieval_trace.top_genres_used,
+      subjects_used: retrieval_trace.liked_subjects_used,
+      authors_used:  retrieval_trace.liked_authors_used,
+      ol_queries:    retrieval_trace.ol_queries,
     }));
 
-    // ── BLOCK C: Top 20 candidates (pre-diversity-cap) ───────────────────
+    // ── BLOCK C: Top 20 candidates — split into two rows of 10 ───────────
+    // Also compute subject overlap for each book vs profile.liked_subjects
+    const likedSubjSet = new Set((profile.liked_subjects ?? []).map(s => s.toLowerCase().trim()));
     const top20 = (baseResult.meta.candidate_audit ?? []).slice(0, 20).map((b, i) => {
       const lane    = detectBookLane(b);
       const subtype = detectBookMysterySubtype(b);
       const bd      = b._score_breakdown;
+      // Count subject matches
+      const bookSubjs  = (b.subjects ?? []).map(s => s.toLowerCase().trim());
+      const subjHits   = bookSubjs.filter(s => likedSubjSet.has(s));
+      const subjOverlap = Math.min(0.06, subjHits.length * 0.02);
       return {
-        rank:             i + 1,
-        title:            b.title,
-        author:           b.author,
-        source:           b._source,
-        retrieval_reason: b._retrieval_reason,
-        lane,
-        subtype:          subtype ?? null,
-        book_form:        bd.book_form,
-        score:            bd.final_score,
-        fit_class:        bd.fit_class ?? null,
-        market_position:  bd.market_position ?? null,
-        cog_delta:        bd.cog_score_delta ?? null,
-        lane_strength:    bd.lane_match_strength ?? null,
-        trait_alignment:  bd.trait_alignment,
-        genre_bonus:      bd.genre_bonus,
-        metadata_penalty: bd.metadata_penalty,
-        feedback_boost:   bd.feedback_boost,
-        enrichment_bonus: bd.enrichment_bonus,
-        avoided_penalty:  bd.avoided_penalty,
-        audit_flags:      bd.audit_flags,
+        r:  i + 1,
+        t:  b.title.slice(0, 28),
+        tr: bd.trait_alignment,
+        gb: bd.genre_bonus,
+        so: +subjOverlap.toFixed(2),   // subject overlap bonus
+        sh: subjHits.slice(0, 2),      // matching subject strings
+        sc: +bd.final_score.toFixed(2),
+        fc: bd.fit_class ?? null,
+        ln: lane,
+        fl: bd.audit_flags.slice(0, 2),
       };
     });
-    console.log('[FORENSIC TOP20]', JSON.stringify(top20));
+    console.log('[FC1_TOP10]', JSON.stringify(top20.slice(0, 10)));
+    console.log('[FC2_TOP20]', JSON.stringify(top20.slice(10, 20)));
 
-    // ── BLOCK D: Final top 10 ────────────────────────────────────────────
-    const top10 = baseResult.recs.slice(0, 10).map((r, i) => ({
-      rank:    i + 1,
-      title:   r.title,
-      author:  r.author,
-      score:   r.score,
-      source:  r._source,
-      reason:  r._retrieval_reason,
-      lane:    detectBookLane(r),
-      subtype: detectBookMysterySubtype(r) ?? null,
-      flags:   r._score_breakdown.audit_flags,
-      breakdown: r._score_breakdown,
-    }));
-    console.log('[FORENSIC TOP10]', JSON.stringify(top10));
+    // ── BLOCK D: Final top 10 (one per log call) ──────────────────────────
+    baseResult.recs.slice(0, 10).forEach((r, i) => {
+      const bd = r._score_breakdown;
+      console.log(`[FD${i+1}]`, JSON.stringify({
+        rank:    i + 1,
+        title:   r.title.slice(0, 30),
+        author:  r.author,
+        score:   r.score,
+        source:  r._source,
+        reason:  r._retrieval_reason,
+        lane:    detectBookLane(r),
+        trait:   bd.trait_alignment,
+        genre_b: bd.genre_bonus,
+        cog_d:   bd.cog_score_delta ?? null,
+        flags:   bd.audit_flags,
+        fit:     bd.fit_class ?? null,
+      }));
+    });
   }
 
   // ── Step 2: Expert access decision ───────────────────────────────────────
