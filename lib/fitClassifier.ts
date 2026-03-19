@@ -86,13 +86,26 @@ export type FitClassResult = {
 
 // ── Score deltas by fit class ─────────────────────────────────────────────────
 // Applied on top of the base score before re-ranking.
+//
+// Principle: repeated behavior should beat broad overlap.
+//   repeated_author_match → +0.30  (author evidence is the strongest signal)
+//   lane_core_fit          → +0.25  (lane evidence is strong but not as specific)
+//   adjacent_fit           →  0.00  (ranked purely on trait/genre score)
+//   stretch_fit            → -0.20  (pushed below all core and adjacent)
+//   reject                 → -9999  (filtered out entirely)
+//
+// The extra +0.05 for repeated-author books relative to lane-only core books
+// ensures that "same author the user repeatedly returned to" always ranks above
+// "different book in the right genre" — which is the correct truthfulness order.
 
 const COG_DELTA: Record<FitClass, number> = {
-  core_fit:     +0.25,
+  core_fit:     +0.25,   // default; overridden to +0.30 for repeated_author_match
   adjacent_fit: +0.00,
   stretch_fit:  -0.20,
   reject:       -9999,
 };
+
+const COG_DELTA_REPEATED_AUTHOR = +0.30;
 
 // ── Known canonical / classic authors (pre-1950 era) ─────────────────────────
 
@@ -201,6 +214,26 @@ export function classifyMarketPosition(book: {
     return 'memoir_nonfiction';
   }
 
+  // ── Fantasy / horror disambiguation ─────────────────────────────────────────
+  // Principle: market position must reflect the book's primary genre identity,
+  // not just the first signal matched. Horror books that incidentally use "magic"
+  // or "supernatural" must not fall into epic_fantasy ahead of horror_dark.
+  //
+  // Strategy: if explicit horror genre signals are present AND the book lacks
+  // clear high-fantasy markers (fae, elves, epic fantasy, dragons, etc.),
+  // classify as horror_dark before the generic hasFantasy epic_fantasy catch.
+
+  // Epic-fantasy core signals — unambiguous high fantasy
+  const hasEpicFantasyCore = has('epic fantasy', 'high fantasy', 'sword and sorcery',
+                                  'fae', 'fey', 'elves', 'orcs', 'dragons',
+                                  'realm of the elderlings', 'wheel of time', 'tolkien');
+
+  // Explicit horror genre subjects — unambiguous horror
+  const hasStrongHorror = has('horror fiction', 'horror novel', 'horror stories',
+                               'supernatural horror', 'gothic horror',
+                               'psychological horror', 'horror and ghost stories',
+                               'occult fiction', 'dark fiction');
+
   // Romantasy: fantasy + romance signals co-present
   const hasFantasy = has('fantasy', 'magic', 'fae', 'fey', 'romantasy', 'dragons',
                          'witch', 'sorcerer', 'spellbinding', 'realm', 'kingdom',
@@ -216,10 +249,25 @@ export function classifyMarketPosition(book: {
     return 'science_fiction';
   }
 
+  // Horror before generic epic_fantasy: if explicit horror markers are present
+  // and there are no unambiguous high-fantasy core signals, classify as horror.
+  // This correctly handles King's supernatural novels, Jackson's gothic horror,
+  // Pessl's dark fiction, etc. that use "supernatural" but are not fantasy.
+  if (hasStrongHorror && !hasEpicFantasyCore) return 'horror_dark';
+
+  // Soft horror + general supernatural → check if clearly horror author
+  const KNOWN_HORROR_AUTHORS = new Set([
+    'stephen king', 'shirley jackson', 'dean koontz', 'clive barker',
+    'joe hill', 'mariana pessl', 'paul tremblay', 'peter straub',
+    'richard laymon', 'bentley little', 'ramsey campbell',
+  ]);
+  if (KNOWN_HORROR_AUTHORS.has(authorLower) && !hasEpicFantasyCore) return 'horror_dark';
+
   // Epic fantasy (without dominant romance element)
   if (hasFantasy) return 'epic_fantasy';
 
-  // Horror
+  // General horror (soft signals — comes after epic_fantasy to avoid misclassifying
+  // dark fantasy as horror)
   if (has('horror', 'supernatural horror', 'gothic horror', 'occult', 'paranormal')) {
     return 'horror_dark';
   }
@@ -317,10 +365,15 @@ export function computeFitClass(
   }
 
   // ── Repeated author → core regardless of lane ─────────────────────────────
+  // Principle: repeated behavior beats broad overlap.
+  // A book by an author the user has read 2+ times and liked is stronger evidence
+  // than a book that merely fits the genre lane. Score delta is +0.30, one step
+  // above the lane-only core_fit delta of +0.25.
   if (repeated_author_match && format_match) {
     return mk('core_fit', marketPosition, 'strong', true, false, format_match,
-      `repeated_author_match: ${authorLower}`,
-      "Matches an author you've returned to multiple times"
+      `repeated_author_match: ${authorLower} (+0.30 vs lane-only +0.25)`,
+      "Matches an author you've returned to multiple times",
+      COG_DELTA_REPEATED_AUTHOR,
     );
   }
 
@@ -438,6 +491,7 @@ function mk(
   format_match:          boolean,
   fit_reasoning:         string,
   fit_explanation:       string,
+  custom_delta?:         number,
 ): FitClassResult {
   return {
     fit_class,
@@ -446,7 +500,7 @@ function mk(
     repeated_author_match,
     exception_dependency,
     format_match,
-    cog_score_delta: COG_DELTA[fit_class],
+    cog_score_delta: custom_delta ?? COG_DELTA[fit_class],
     fit_reasoning,
     fit_explanation,
   };

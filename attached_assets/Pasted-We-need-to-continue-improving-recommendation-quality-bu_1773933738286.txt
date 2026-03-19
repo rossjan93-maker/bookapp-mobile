@@ -1,0 +1,138 @@
+We need to continue improving recommendation quality, but with one critical constraint:
+
+Do NOT optimize only for the current Goodreads-heavy user.
+Use that user as a stress-test and failure detector, but every fix must be generalized so the recommendation system improves for all reader types.
+
+Current state
+The recommendations are much better than before, but they are still not fully centered enough on the user’s true reading identity.
+The remaining problem is no longer random bad drift.
+The remaining problem is that the engine still over-promotes plausible but secondary/stretch picks relative to true core-fit recommendations.
+
+For example:
+- some recommendations are now believable, but still too speculative / graphic / literary-adjacent for the user’s actual center of gravity
+- core-vs-adjacent-vs-stretch needs to influence ranking more strongly
+- repeated-author / repeated-series / dominant-lane evidence still needs to outweigh broad overlap more consistently
+
+Goal
+Improve the output of suggestions so the top of the list feels more centered, truthful, and useful — while making sure the logic generalizes across many reader types, not just this one example user.
+
+Important product rule
+Every recommendation change must be framed as a GENERAL principle, not as a user-specific patch.
+
+Bad example:
+- “down-rank literary books because this user didn’t like them”
+
+Good example:
+- “repeated behavior should outweigh isolated exceptions”
+- “dominant lanes should outrank tolerated lanes”
+- “format should only help if repeated format preference is shown”
+- “top of list should be mostly core-fit, not stretch-fit”
+- “broad metadata overlap should not outrank repeated-author and repeated-series evidence”
+
+What to improve next
+
+Part 1: Improve suggestion quality through stronger center-of-gravity ranking
+The next ranking improvement should focus on making the top suggestions feel more central to the reader’s taste.
+
+Requirements:
+- strengthen center-of-gravity weighting
+- make repeated authors matter more
+- make repeated series matter more
+- make dominant lanes matter more
+- make broad “defensible overlap” matter less
+- ensure top slots are mostly core-fit, not stretch-fit
+
+This should improve the output of suggestions for dense users without relying on user-specific hardcoding.
+
+Part 2: Strengthen core vs adjacent vs stretch behavior
+We already introduced fit classes. Now make them matter more in final ranking.
+
+Requirements:
+- core_fit should dominate the top of the list
+- adjacent_fit can appear, but mostly below core
+- stretch_fit should be rarer and lower
+- reject should never surface
+- score math should not allow many stretch picks to cluster near the top just because they are broadly plausible
+
+Part 3: Reduce over-promotion of secondary signals
+The engine still appears to over-weight some tolerated or secondary signals.
+
+General improvements to make:
+- repeated behavior should beat one-off tolerance
+- dominant lanes should beat exception lanes
+- market-position fit should matter more
+- format should not strongly boost unless repeated preference exists
+- memoir/literary/graphic/speculative prestige overlap should not outrank clear core-fit books unless that lane is truly dominant for the user
+
+This should be implemented as a general rule across users, not a special case for one account.
+
+Part 4: Improve explanation quality
+The output of suggestions is not only about what appears, but how clearly and truthfully it is explained.
+
+Improve explanations so they:
+- distinguish core vs adjacent vs stretch
+- use lane-aware language
+- reflect repeated-author / repeated-series patterns
+- avoid generic trait-only wording when better language exists
+
+Examples:
+core_fit:
+- “Feels closest to the fantasy series you repeatedly return to”
+- “Matches the contemporary, emotionally driven fiction at the center of your reading history”
+- “Fits the twisty, readable suspense lane you return to most often”
+
+adjacent_fit:
+- “Sits near a lane you often enjoy, though it is a bit more speculative/literary than your core picks”
+
+stretch_fit:
+- “A stretch pick based on overlap with a secondary part of your taste”
+
+Part 5: Make the fixes holistic, not overfit
+For every change, explicitly state:
+1. the general principle being introduced
+2. which reader cohorts should benefit
+3. which cohorts might regress
+4. what safeguards prevent overfitting
+
+You must evaluate each major recommendation change against these cohorts:
+- dense commercial Goodreads import
+- dense literary/classics reader
+- dense memoir/nonfiction reader
+- graphic/manga-heavy reader
+- low-signal net-new user
+- mixed/generalist reader
+
+Do NOT ship logic that improves one cohort by breaking others.
+
+Part 6: Add a lightweight recommendation evaluation harness
+For each cohort above, inspect the top recommendations and classify them as:
+- core
+- adjacent
+- stretch
+- wrong
+
+Then compare before vs after.
+
+I want each major change to include:
+- expected benefit by cohort
+- possible regression risk
+- why the change is still worth it
+- how the system guards against harm to other reader types
+
+Part 7: Output requirements
+When you implement the next recommendation-quality improvements, output:
+
+1. the general recommendation principle introduced
+2. the files changed
+3. how suggestion quality was improved
+4. how core vs adjacent vs stretch ranking changed
+5. how repeated-author / repeated-series / dominant-lane weighting changed
+6. how explanations improved
+7. how the change avoids overfitting to the current Goodreads user
+8. expected impact across the six reader cohorts
+9. the new top recommendations for the Goodreads-heavy user after the change
+10. any remaining limitations
+
+Critical instruction
+Do NOT respond with another infrastructure summary.
+Focus on improving the actual output quality of recommendations while keeping the logic generalizable across all users.

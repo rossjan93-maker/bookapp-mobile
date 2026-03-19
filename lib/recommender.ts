@@ -79,7 +79,7 @@ const CACHE_MIN_ROWS = 5;
 // changes in a way that makes old cached candidates unreliable.  The read
 // path rejects any row whose retrieval_reason does NOT start with this tag,
 // which forces a live OL re-fetch and a fresh cache write.
-const CACHE_VERSION  = 'v2:';
+const CACHE_VERSION  = 'v3:';
 // User ID to force full live forensic audit (bypasses both caches, emits
 // structured trace logs). Only active in __DEV__ builds.
 const FORENSIC_USER_ID = '986aece4-9461-439c-bff9-3589161b313c';
@@ -1369,16 +1369,25 @@ export function getRankedRecs(
   const cog = computeCenterOfGravity(profile);
 
   for (const book of scored) {
-    const bookLane  = detectBookLane(book);
-    const marketPos = classifyMarketPosition(book);
-    const fitResult = computeFitClass(book, bookLane, marketPos, cog);
+    // Principle: format detection must resolve at the classification boundary.
+    // CandidateBook has no book_form field — compute it from subjects so
+    // graphic novels are correctly rejected by classifyMarketPosition.
+    const bookTraits = getBookTraits(book);
+    const bookLane   = detectBookLane(book);
+    const marketPos  = classifyMarketPosition({ ...book, book_form: bookTraits.bookForm });
+    const fitResult  = computeFitClass(book, bookLane, marketPos, cog);
 
     // Apply score delta (clamp at 0 — score is always non-negative)
     const adjustedScore = Math.max(0, book.score + fitResult.cog_score_delta);
     book.score = +adjustedScore.toFixed(3);
 
-    // Replace first reason with class-aware explanation (skip for reject — they're filtered)
-    if (fitResult.fit_class !== 'reject' && fitResult.fit_explanation) {
+    // Explanation principle: one strong, specific reason beats two near-duplicates.
+    // For core_fit, the CoG explanation already captures lane/author context —
+    // appending the old lane reason creates redundancy. For adjacent/stretch,
+    // keep one existing reason as context alongside the CoG explanation.
+    if (fitResult.fit_class === 'core_fit' && fitResult.fit_explanation) {
+      book.reasons = [fitResult.fit_explanation];
+    } else if (fitResult.fit_class !== 'reject' && fitResult.fit_explanation) {
       const existingReasons = book.reasons ?? [];
       book.reasons = [
         fitResult.fit_explanation,
@@ -1424,18 +1433,36 @@ export function getRankedRecs(
     return { recs: [], meta: buildMeta('insufficient_score') };
   }
 
-  // Diversity: max 2 books per primary genre (walk CoG-sorted order)
-  const genreCount: Record<string, number> = {};
+  // Diversity: max 2 books per primary genre AND max 2 books per author.
+  //
+  // Principle: dominant lanes should produce variety, not monopoly.
+  // Without an author cap, 5 Robin Hobb books can fill all 5 slots (all
+  // score identically at 0.81) — correct in fit-class terms but not useful
+  // as recommendations. A user who has already read 8 Hobb books doesn't
+  // need 5 more suggested at once.
+  //
+  // The genre cap and author cap work together:
+  //   genre cap  → ensures lane diversity (no genre monopoly)
+  //   author cap → ensures author diversity (no single-author sweep)
+  //
+  // This applies to all reader types, not just dense users. A light user who
+  // happens to get 5 of the same author in the candidate pool still benefits
+  // from seeing variety at the top.
+  const genreCount:  Record<string, number> = {};
+  const authorCount: Record<string, number> = {};
   const diverse: ScoredBook[] = [];
   let globalRank = 0;
 
   for (const book of nonRejected) {
     globalRank++;
-    const genre = getBookTraits(book).primaryGenre ?? 'general';
-    const count = genreCount[genre] ?? 0;
-    if (count < 2) {
+    const genre     = getBookTraits(book).primaryGenre ?? 'general';
+    const authorKey = book.author.toLowerCase();
+    const gc = genreCount[genre]     ?? 0;
+    const ac = authorCount[authorKey] ?? 0;
+    if (gc < 2 && ac < 2) {
       diverse.push({ ...book, _debug: { pool_size: poolSize, rank: globalRank } });
-      genreCount[genre] = count + 1;
+      genreCount[genre]      = gc + 1;
+      authorCount[authorKey] = ac + 1;
     }
     if (diverse.length >= limit) break;
   }
