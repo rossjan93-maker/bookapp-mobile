@@ -324,6 +324,10 @@ const CANON_LITERARY_AUTHORS = new Set([
   'truman capote', 'carson mccullers',
   'john updike', 'philip roth', 'saul bellow', 'ralph ellison',
   'vladimir nabokov', 'milan kundera',
+  // Ideological / political fiction that drifts into literary and dystopian searches
+  'ayn rand', 'george orwell',
+  // Spiritual / yoga autobiographies that drift into memoir searches
+  'paramahansa yogananda', 'swami vivekananda', 'sri aurobindo',
 ]);
 
 // ── Classic / ancient subject signals (hard-exclude for non-literary lanes) ───
@@ -394,9 +398,11 @@ async function fetchOLSubject(
 
     return (json.docs ?? [])
       .filter(doc => doc.key && doc.title)
-      // Hard-reject pre-1930 books from broad subject searches: they are almost
-      // always public-domain classics that contaminate modern recommendations.
-      .filter(doc => !doc.first_publish_year || doc.first_publish_year >= 1930)
+      // Hard-reject pre-1950 books from broad subject searches: they are almost
+      // always public-domain or canonical-literary classics that contaminate
+      // modern commercial recommendations (Anthem 1938, For Whom the Bell Tolls
+      // 1940, Brave New World 1932, The Sun Also Rises 1926 all blocked here).
+      .filter(doc => !doc.first_publish_year || doc.first_publish_year >= 1950)
       .map((doc): CandidateBook => ({
         id:                `ol:${doc.key}`,
         title:             doc.title ?? '',
@@ -442,6 +448,10 @@ async function fetchOLByAuthor(
 
     return (json.docs ?? [])
       .filter(doc => doc.key && doc.title)
+      // Same pre-1950 block applied to author searches — prevents old spy/noir
+      // works (Casino Royale 1953 exempt, Fleming's later works in) while still
+      // rejecting pulp-era authors whose earliest works predate 1950.
+      .filter(doc => !doc.first_publish_year || doc.first_publish_year >= 1950)
       .map((doc): CandidateBook => ({
         id:                `ol:${doc.key}`,
         title:             doc.title ?? '',
@@ -655,11 +665,16 @@ async function getOLCandidates(
 
   } else {
     // ── Standard multi-anchor retrieval ───────────────────────────────────
-    // ── 1. Top 3 genre affinities ─────────────────────────────────────────
-    let topGenres = Object.entries(affinities)
+    // ── 1. Genre affinities: always top-3, plus any with affinity > 0.4 ──
+    // Rationale: a user whose #4 genre (e.g. thriller_mystery) has 0.5+
+    // affinity should still get OL candidates in that genre, otherwise the
+    // local catalog's old spy/noir books go uncontested at scoring time.
+    const sortedAffinities = Object.entries(affinities)
       .filter(([, score]) => score > 0)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
+      .sort((a, b) => b[1] - a[1]);
+    let topGenres = sortedAffinities
+      .filter((entry, i) => i < 3 || entry[1] > 0.4)
+      .slice(0, 5)
       .map(([g]) => g);
 
     // Fallback: infer from trait preferences if no rated genres yet.
@@ -1090,20 +1105,69 @@ export function scoreBookForUser(
     s6_meta_pen -= 0.06;
   }
 
-  // ── Step 7: Dense-import lane calibration ─────────────────────────────────
-  // For users with a well-established repeated reading pattern, penalise books
-  // that sit outside their dominant lanes and replace generic trait-match
-  // reasons with lane-aware language.
+  // ── Step 7: Subtype calibration and lane penalties ────────────────────────
   //
-  // Key rules:
-  //   • Literary / canon drift   → hard penalty when literary is NOT a dominant lane
-  //   • Hard-boiled noir drift   → hard penalty when user's mystery subtype is contemporary_thriller
-  //   • Philosophy / spiritual   → penalty when user's dominant lanes are commercial
-  //   • Modern commercial prior  → small boost when book matches commercial dominant lane
+  // Structure:
+  //   7a — Classify the book (runs always, results shared by 7b and 7c)
+  //   7b — Unconditional penalties: fire for EVERY user, based on
+  //          genre_affinities + book subtype, no dominant_lanes required.
+  //          These are the critical fixes for noir/spy/spiritual/literary drift
+  //          affecting users who haven't yet established a dominant lane pattern.
+  //   7c — Lane-calibration extras: only when dominant_lanes is established.
+  //          Adds stronger incremental penalties + lane-aware reason language.
+
+  // ── 7a: Book classifiers ──────────────────────────────────────────────────
+  const bookLane      = detectBookLane(book);
+  const bookSubtype   = detectBookMysterySubtype(book);
+  const isPhi         = isPhilosophyOrSpiritual(book);
+  const bookIsLiterary = bookLane === 'literary'
+    || bt.primaryGenre === 'literary'
+    || subjLower.includes('literary fiction');
+
+  // Pull key affinities for 7b decisions
+  const thrillAffinity   = affinities['thriller_mystery'] ?? 0;
+  const literaryAffinity = affinities['literary'] ?? 0;
+  const memoirAffinity   = affinities['memoir_bio'] ?? 0;
+  const nonfictAffinity  = affinities['nonfiction'] ?? 0;
+
+  // ── 7b: Unconditional subtype penalties ───────────────────────────────────
+
+  // Hard-boiled noir: penalise when user has any thriller affinity but book
+  // is Chandler-style noir — structurally different from modern suspense.
+  if (thrillAffinity > 0.15 && bookSubtype === 'hard_boiled_noir') {
+    s6_meta_pen -= 0.22;
+    audit_flags.push('noir_drift');
+    if (risks.length < 1) risks.push('Hard-boiled noir — different feel from the modern suspense you rate highest');
+  }
+
+  // Spy / adventure: penalise for thriller readers whose signals skew domestic.
+  if (thrillAffinity > 0.15 && bookSubtype === 'spy_adventure') {
+    s6_meta_pen -= 0.16;
+    audit_flags.push('spy_drift');
+    if (risks.length < 1) risks.push('Classic spy / adventure — more old-school than the modern suspense you prefer');
+  }
+
+  // Philosophy / spiritual: applies to all users unless they have strong memoir
+  // or nonfiction signal that specifically includes this territory.
+  // Threshold: memoirAffinity must be very high (>= 0.7) to suppress — a
+  // moderate memoir affinity doesn't mean the user wants yoga autobiographies.
+  if (isPhi && memoirAffinity < 0.7 && nonfictAffinity < 0.5) {
+    s6_meta_pen -= 0.22;
+    audit_flags.push('philosophy_drift');
+    if (risks.length < 1) risks.push('Philosophical or spiritual focus — different territory from your main reads');
+  }
+
+  // Literary drift: fires for users with low literary affinity regardless of
+  // whether a dominant lane has been established.
+  if (bookIsLiterary && literaryAffinity < 0.2) {
+    s6_meta_pen -= 0.16;
+    audit_flags.push('literary_drift');
+    if (risks.length < 1) risks.push('Leans more literary than your strongest recurring reads');
+  }
+
+  // ── 7c: Dense lane calibration (dominant lanes established) ───────────────
   const det = profile.det_lanes;
   if (det?.dominant_lanes && det.dominant_lanes.length > 0) {
-    const bookLane = detectBookLane(book);
-
     // Lane-aware explanation (replaces generic trait-match text when available)
     if (bookLane && det.dominant_lanes.includes(bookLane)) {
       const laneReason = LANE_REASON[bookLane];
@@ -1112,40 +1176,33 @@ export function scoreBookForUser(
       }
     }
 
-    // ── Literary / classic drift penalty ────────────────────────────────────
-    // If the book is literary and the user's dominant lanes are commercial, penalise.
-    const bookIsLiterary = bookLane === 'literary'
-      || bt.primaryGenre === 'literary'
-      || subjLower.includes('literary fiction');
+    // Extra literary penalty when commercial_prior is strong AND 7b didn't
+    // already fire (user has >= 0.2 literary affinity but proven commercial lanes)
     const userHasLiteraryLane = det.dominant_lanes.includes('literary');
-    if (bookIsLiterary && !userHasLiteraryLane && det.commercial_prior > 0.5) {
-      s6_meta_pen -= 0.18;
-      audit_flags.push('literary_drift');
+    if (bookIsLiterary && !userHasLiteraryLane && det.commercial_prior > 0.5 && literaryAffinity >= 0.2) {
+      s6_meta_pen -= 0.12;
+      if (!audit_flags.includes('literary_drift')) audit_flags.push('literary_drift');
       if (risks.length < 1) risks.push('Leans more literary than your strongest recurring reads');
     }
 
-    // ── Hard-boiled noir penalty for contemporary-thriller users ────────────
-    if (det.mystery_subtype === 'contemporary_thriller') {
-      const bookSubtype = detectBookMysterySubtype(book);
-      if (bookSubtype === 'hard_boiled_noir') {
-        s6_meta_pen -= 0.20;
-        audit_flags.push('noir_drift');
-        if (risks.length < 1) risks.push('Hard-boiled noir — different feel from the modern suspense you rate highest');
-      }
+    // Extra noir penalty when the user's mystery_subtype is confirmed contemporary
+    if (det.mystery_subtype === 'contemporary_thriller' && bookSubtype === 'hard_boiled_noir'
+        && !audit_flags.includes('noir_drift')) {
+      s6_meta_pen -= 0.10;
+      audit_flags.push('noir_drift_confirmed');
     }
 
-    // ── Philosophy / spiritual drift penalty ────────────────────────────────
-    // Spiritual memoir (e.g. Autobiography of a Yogi) contaminates memoir lanes;
-    // philosophy contaminates literary lanes — penalise unless user explicitly has
-    // those as dominant lanes.
-    const isPhi = isPhilosophyOrSpiritual(book);
-    if (isPhi && !det.dominant_lanes.includes('memoir_nonfiction') && !det.dominant_lanes.includes('literary')) {
+    // Extra spiritual penalty when dominant lanes are commercial but memoir
+    // affinity was high enough to suppress 7b
+    if (isPhi && memoirAffinity >= 0.7
+        && !det.dominant_lanes.includes('memoir_nonfiction')
+        && !det.dominant_lanes.includes('literary')) {
       s6_meta_pen -= 0.15;
-      audit_flags.push('philosophy_drift');
+      if (!audit_flags.includes('philosophy_drift')) audit_flags.push('philosophy_drift');
       if (risks.length < 1) risks.push('Philosophical or spiritual focus — different territory from your usual reads');
     }
 
-    // ── Modern commercial prior — small boost ────────────────────────────────
+    // Modern commercial prior — small boost when lane matches
     if (bookLane && COMMERCIAL_LANES.has(bookLane as DeterministicLane) && det.commercial_prior > 0.6) {
       s6_meta_pen = Math.min(0, s6_meta_pen) + 0.05;
     }

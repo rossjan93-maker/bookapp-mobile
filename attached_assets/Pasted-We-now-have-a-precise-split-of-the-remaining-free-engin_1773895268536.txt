@@ -1,0 +1,114 @@
+We now have a precise split of the remaining free-engine failures for this dense Goodreads user.
+
+Confirmed facts
+
+Local catalog path:
+- `Casino Royale` exists in `books`
+- `The Big Sleep` exists in `books`
+
+Live Open Library path:
+- `The Sun Also Rises` is NOT in `books`
+- `Genji monogatari` is NOT in `books`
+- `Autobiography of a Yogi` is NOT in `books`
+- `Anthem` is NOT in `books`
+
+Caches are NOT the issue:
+- `rec_cache` is empty for this user
+- `rec_candidate_cache` is empty for this user
+
+So the remaining bad recommendations are being produced fresh by TWO different live paths:
+1. local catalog ranking
+2. live Open Library retrieval + filtering
+
+Goal
+Fix both live deterministic paths for this dense Goodreads-imported user.
+
+Part 1: Fix local catalog path
+Explain exactly why these local books are ranking:
+- Casino Royale
+- The Big Sleep
+
+I want:
+- lane classification
+- mystery/suspense subtype classification
+- market-position classification
+- score breakdown
+- penalties considered
+- why they still survived final filtering
+
+Then fix it so:
+- spy/adventure does not rank highly for this user unless explicitly supported
+- hard-boiled noir does not rank highly for a modern commercial suspense reader
+- broad “mystery” overlap is not enough
+- market-position mismatch matters much more
+
+For this user, local catalog books should need stronger support from:
+- dominant lane match
+- subtype fit
+- repeated-author adjacency
+- repeated-series adjacency
+- strong market-position fit
+
+If not, reject them.
+
+Part 2: Fix live Open Library path
+Explain exactly why these OL books are still surfacing:
+- The Sun Also Rises
+- Genji monogatari
+- Autobiography of a Yogi
+- Anthem
+
+I want:
+- exact OL queries being sent
+- which branch generated them
+- whether dense-import mode is active
+- dominant_lanes for this user
+- whether a fallback branch is still too broad
+- why hygiene did not reject these books
+- why publication-era / classic / spiritual / non-English guards are still insufficient
+
+Then fix it so that for dense modern commercial readers without a proven literary/classics lane:
+- classic/canon drift is hard-blocked or near-hard blocked
+- ancient/non-English drift is hard-blocked
+- philosophy/spiritual drift is hard-blocked
+- literary fallback is impossible
+- broad generic genre retrieval does not overwhelm lane-specific retrieval
+
+Part 3: Stronger lane and market-position logic
+The system must explicitly distinguish:
+- romantasy / emotional fantasy
+- contemporary women’s fiction / book-club crossover
+- modern suspense / domestic thriller
+- puzzle/contemporary detective
+- hard-boiled noir
+- spy/adventure
+- memoir/narrative nonfiction
+- literary/classics
+
+For this user, the engine should strongly favor modern commercial books that fit those actual repeated lanes.
+
+Part 4: Show fewer but truer recommendations
+If the deterministic pool is weak after proper filtering, show fewer recommendations.
+Do not fill the screen with wrong books.
+
+Part 5: Debug output
+For this user, print a split trace:
+A. local catalog recommendations
+- lane
+- subtype
+- market-position class
+- why it passed
+- penalties considered
+
+B. live OL recommendations
+- OL queries
+- retrieval branch
+- why candidate survived hygiene
+- penalties considered
+
+Output
+1. Root cause for local catalog failures
+2. Root cause for live OL failures
+3. Exact branches producing them
+4. Exact fixes
+5. New top 10 recommendations after the fix

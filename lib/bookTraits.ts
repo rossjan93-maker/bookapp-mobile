@@ -278,7 +278,8 @@ export type DeterministicLane =
 export type MysterySubtype =
   | 'contemporary_thriller' // psychological thriller, domestic thriller, modern suspense
   | 'puzzle_detective'      // cozy, whodunit, amateur detective, classic puzzle
-  | 'hard_boiled_noir';     // noir, hard-boiled, private detective (Chandler style)
+  | 'hard_boiled_noir'      // noir, hard-boiled, private detective (Chandler style)
+  | 'spy_adventure';        // espionage / spy / secret-agent thriller (Fleming, le Carré)
 
 // ── Lane detection for a single book ─────────────────────────────────────────
 // Priority order: romantasy → scifi_fantasy → modern_suspense → romance →
@@ -354,6 +355,9 @@ export function detectBookMysterySubtype(book: {
 
   const has = (...terms: string[]) => terms.some(t => corpus.includes(t));
 
+  // Spy / espionage detected first — these are distinct from domestic thriller
+  if (has('espionage', 'spy fiction', 'secret service', 'intelligence service', 'cold war spy',
+          'james bond', 'spy thriller', 'spy novel', 'spies')) return 'spy_adventure';
   if (has('hard-boiled', 'hard boiled', 'noir', 'private detective', 'private investigator', 'pulp fiction')) return 'hard_boiled_noir';
   if (has('cozy mystery', 'cozy', 'amateur detective', 'whodunit', 'puzzle mystery', 'classic detective', 'village mystery')) return 'puzzle_detective';
   if (has('psychological thriller', 'domestic thriller', 'psychological suspense')) return 'contemporary_thriller';
