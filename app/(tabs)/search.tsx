@@ -673,6 +673,7 @@ function TagCard({ book, onComplete }: TagCardProps) {
 
 function RecCard({
   book,
+  isExpert         = false,
   onSave           = () => {},
   onDismiss        = () => {},
   onMoreLikeThis   = () => {},
@@ -680,6 +681,7 @@ function RecCard({
   onExplanationOpen= () => {},
 }: {
   book:              ScoredBook;
+  isExpert?:         boolean;
   onSave?:           () => void;
   onDismiss?:        () => void;
   onMoreLikeThis?:   () => void;
@@ -793,9 +795,21 @@ function RecCard({
             </View>
           </View>
 
-          <Text style={{ fontSize: 12, color: '#a8a29e', marginBottom: 7 }} numberOfLines={1}>
-            {book.author}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 7, gap: 6 }}>
+            <Text style={{ fontSize: 12, color: '#a8a29e', flex: 1 }} numberOfLines={1}>
+              {book.author}
+            </Text>
+            {isExpert && (
+              <View style={{
+                backgroundColor: '#1c1917', borderRadius: 4,
+                paddingHorizontal: 5, paddingVertical: 2,
+              }}>
+                <Text style={{ fontSize: 9, fontWeight: '700', color: '#faf9f7', letterSpacing: 0.4 }}>
+                  EXPERT PICK
+                </Text>
+              </View>
+            )}
+          </View>
 
           {book.reasons.length > 0 && (
             <Text style={{ fontSize: 12, color: '#57534e', lineHeight: 17 }} numberOfLines={2}>
@@ -1675,6 +1689,7 @@ export default function RecommendationsScreen() {
                     <RecCard
                       key={rec.id}
                       book={rec}
+                      isExpert={recMode === 'expert'}
                       onSave={() => handleRecSave(rec)}
                       onDismiss={() => handleRecDismiss(rec)}
                       onMoreLikeThis={() => handleRecMoreLikeThis(rec)}

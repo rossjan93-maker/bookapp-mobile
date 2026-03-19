@@ -1,0 +1,123 @@
+The dense Goodreads free-mode recommendation fix did NOT work.
+
+Evidence from the current recs:
+- `The Man Who Knew Too Much` is still being retrieved from `ol:genre:literary`
+- `The Sun Also Rises` is still being retrieved from `ol:genre:literary`
+- `Genji monogatari` is still surfacing, which means classic/non-English drift is not being blocked hard enough
+- `Casino Royale` is still ranking highly, which suggests the suspense lane is still too broad and is letting spy/adventure material through
+
+This means the deterministic dense-import logic is still not correctly governing retrieval and exclusion.
+
+Goal
+Fix the free deterministic engine so dense Goodreads-imported users do NOT get literary/canon/classic/noir/spiritual spillover unless there is repeated evidence that those are true dominant lanes.
+
+Critical requirements
+
+Part 1: Prove which branch is actually running
+Add explicit debug output for this user showing:
+- is_dense_import: true/false
+- dominant_lanes
+- repeated_liked_authors
+- repeated_liked_series
+- genre_affinities
+- exact OL queries sent
+- whether retrieval used:
+  - dense-import lane mode
+  - standard mode
+  - fallback mode
+
+I want to know exactly why `ol:genre:literary` is still being sent.
+
+Part 2: Hard-disable literary fallback for dense imported users
+For users with dense imported history:
+- do NOT allow `literary` as a retrieval fallback unless a true literary/classics lane is explicitly proven
+- if dominant lanes are missing, fall back to commercial/general contemporary retrieval, not literary
+- if there is not enough support for a literary lane, literary retrieval must be blocked entirely
+
+Part 3: Loosen lane detection if it is failing to detect obvious lanes
+The current thresholds may be too strict.
+
+For dense Goodreads users, lane detection should be able to identify obvious recurring lanes from:
+- repeated authors
+- repeated high ratings
+- repeated series
+- recurring market-position patterns
+
+This user clearly has lanes around:
+- romantasy / emotional fantasy
+- contemporary women’s fiction / book-club crossover
+- modern suspense / thriller / puzzle mystery
+
+If `dominant_lanes` is empty or weak for this user, the lane builder is underfitting and needs to be fixed.
+
+Part 4: Add hard exclusion rules for dense imported users
+For dense Goodreads users WITHOUT a proven classics/canon lane:
+- exclude or heavily block public-domain/classic drift
+- exclude or heavily block very old literary/canon books
+- exclude philosophy/spiritual drift
+- exclude non-English drift when multilingual reading is not supported by the user history
+- exclude ancient/classical works like `Genji monogatari`
+
+These should not merely receive a small score penalty.
+They should usually be rejected before final ranking.
+
+Part 5: Add publication-era / canon guardrails
+Add stronger deterministic rules such as:
+- if a candidate is pre-1950 (or another sensible threshold) and the user does not have a repeated classics lane, heavily down-rank or exclude it
+- if a candidate is public-domain/canonical/literary and the user’s center of gravity is clearly modern commercial reading, block it
+- one or two well-rated classics in the import must not unlock broad canon retrieval
+
+Part 6: Fix mystery subtype handling further
+Do not treat these as the same:
+- domestic suspense / contemporary thriller
+- puzzle/contemporary detective
+- hard-boiled noir
+- spy/adventure
+
+A user with Anthony Horowitz + Lucy Foley should not drift into Chandler or Fleming unless there is repeated evidence for those subtypes.
+
+Casino Royale should not be near the top for this user unless there is a very clear subtype reason.
+
+Part 7: Require stronger support for every recommendation
+For dense imported users, a recommendation should need support from one of:
+- dominant lane evidence
+- repeated-author adjacency
+- repeated-series adjacency
+- multiple recurring high-signal subjects
+- clear modern commercial fit
+
+If a recommendation is supported mainly by:
+- broad literary affinity
+- one-off exceptions
+- weak generic trait overlap
+
+then reject it.
+
+Part 8: If the pool is weak, show fewer recommendations
+Do NOT fill the list with bad recs just to have a list.
+
+If only 2–3 candidates are truthy, show 2–3.
+If none are strong enough, show an honest “still refining your recs” state rather than embarrassing recommendations.
+
+Part 9: Better free-mode explanations
+The explanations are still too generic.
+
+Replace lines like:
+- “Aligns with your preference for characters and ending”
+- “Matches your appreciation for originality”
+
+with lane-aware deterministic reasoning such as:
+- “Feels adjacent to the fantasy series you repeatedly complete”
+- “Matches the contemporary, emotionally driven fiction you rate highly”
+- “Fits the twisty, readable suspense lane in your history”
+- “Sits closer to your recurring favorites than to your one-off literary exceptions”
+
+Part 10: Output
+1. Explain exactly why `ol:genre:literary` is still being used for this user
+2. Show the branch/debug output proving which retrieval mode ran
+3. List changed files
+4. Show how dense-import lane detection was fixed
+5. Show the new hard exclusion logic
+6. Show how publication-era/classics guardrails work
+7. Show how mystery subtype / spy-noir handling now works
+8. Explain how the engine now prefers fewer truthful recs over a fuller but worse list
