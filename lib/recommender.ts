@@ -295,7 +295,48 @@ const PD_AUTHORS = new Set([
   'sax rohmer', 'arthur morrison', 'israel zangwill',
   // Early genre / pulp drift
   'robert w. chambers', 'robert w chambers', 'a. merritt', 'a merritt',
+  // Missing early-20th-century classical/pre-modern (died ≤ 1940 or pre-modern)
+  'g.k. chesterton', 'g. k. chesterton', 'gilbert keith chesterton',
+  'murasaki shikibu', 'lady murasaki', 'sei shonagon',
+  'rabindranath tagore', 'lafcadio hearn',
+  'd.h. lawrence', 'd. h. lawrence', 'david herbert lawrence',
+  'virginia woolf', 'joseph conrad', 'e.m. forster', 'e. m. forster',
+  'thomas mann', 'rainer maria rilke', 'stefan zweig',
+  'f. scott fitzgerald', 'f.s. fitzgerald',
+  'gertrude stein', 'sherwood anderson', 'sinclair lewis',
+  'theodore dreiser', 'willa cather', 'ellen glasgow',
+  'ambrose bierce',
 ]);
+
+// ── Canonical literary-drift authors (mid-20th century) ───────────────────────
+// These are copyrighted but appear heavily in OL "literary fiction" subject
+// searches. They cause drift for commercial/genre readers. Hard-excluded in
+// hygiene unless the user's dominant lanes include 'literary'.
+const CANON_LITERARY_AUTHORS = new Set([
+  'ernest hemingway', 'william faulkner', 'john steinbeck',
+  'james joyce', 'samuel beckett', 'ezra pound',
+  't.s. eliot', 'henry miller', 'anaïs nin', 'anais nin',
+  'jean-paul sartre', 'albert camus', 'simone de beauvoir',
+  'franz kafka', 'robert musil', 'arthur schnitzler',
+  'gabriel garcía márquez', 'gabriel garcia marquez',
+  'jorge luis borges', 'julio cortázar', 'julio cortazar',
+  'william s. burroughs', 'jack kerouac', 'allen ginsberg',
+  'truman capote', 'carson mccullers',
+  'john updike', 'philip roth', 'saul bellow', 'ralph ellison',
+  'vladimir nabokov', 'milan kundera',
+]);
+
+// ── Classic / ancient subject signals (hard-exclude for non-literary lanes) ───
+// Books with these subjects in their subject list are pre-modern classics that
+// produce nonsensical trait explanations for contemporary commercial readers.
+const ANCIENT_CLASSIC_SUBJECT_SIGNALS = [
+  '11th century', '12th century', '13th century', '14th century',
+  '15th century', '16th century', '17th century',
+  'classical antiquity', 'ancient rome', 'ancient greece',
+  'classical japanese literature', 'japanese classical literature',
+  'heian period', 'ancient literature', 'classical literature',
+  'medieval literature', 'middle ages literature',
+];
 
 // ── Children's / juvenile subject signals ─────────────────────────────────────
 const JUVENILE_SUBJECT_SIGNALS = [
@@ -353,6 +394,9 @@ async function fetchOLSubject(
 
     return (json.docs ?? [])
       .filter(doc => doc.key && doc.title)
+      // Hard-reject pre-1930 books from broad subject searches: they are almost
+      // always public-domain classics that contaminate modern recommendations.
+      .filter(doc => !doc.first_publish_year || doc.first_publish_year >= 1930)
       .map((doc): CandidateBook => ({
         id:                `ol:${doc.key}`,
         title:             doc.title ?? '',
@@ -516,9 +560,19 @@ async function getCachedExternalCandidates(
     };
 
     const rows    = (data ?? []) as CacheRow[];
-    const isFresh = rows.length >= CACHE_MIN_ROWS;
 
-    const candidates: CandidateBook[] = rows
+    // Invalidate stale entries written by old code: old retrieval_reason format
+    // was `ol:genre:<name>` (with "ol:" prefix). New format is `genre:<name>`,
+    // `lane:<name>`, `repeated_author:<name>`, etc. Rows with old-format reasons
+    // contain bad literary/canon books from before the retrieval fix and must be
+    // treated as if they never existed.
+    const validRows = rows.filter(r =>
+      !r.retrieval_reason || !r.retrieval_reason.startsWith('ol:')
+    );
+
+    const isFresh = validRows.length >= CACHE_MIN_ROWS;
+
+    const candidates: CandidateBook[] = validRows
       .filter(r => !excludeExternalIds.has(r.external_id))
       .map((r): CandidateBook => ({
         id:                `ol:${r.external_id}`,
@@ -744,12 +798,15 @@ type HygieneResult = {
 };
 
 function applyHygiene(
-  candidates:    CandidateBook[],
-  enrichmentMap: Map<string, BookEnrichmentProfile>,
-  likedAuthors:  string[],
+  candidates:     CandidateBook[],
+  enrichmentMap:  Map<string, BookEnrichmentProfile>,
+  likedAuthors:   string[],
+  dominantLanes?: string[],
 ): HygieneResult {
   const reasons: string[] = [];
   let excluded = 0;
+
+  const hasLiteraryLane = (dominantLanes ?? []).includes('literary');
 
   // Author-anchor candidates get PD exemption
   const likedAuthorKeys = new Set(likedAuthors.map(a => a.toLowerCase()));
@@ -791,6 +848,30 @@ function applyHygiene(
       excluded++;
       if (reasons.length < 8) reasons.push(`pd_author: ${book.author}`);
       return false;
+    }
+
+    // ── 3b. Canonical literary-drift authors (mid-20th century) ──────────
+    // Excluded for non-literary-lane users. These authors reliably indicate
+    // OL literary-subject drift and never suit commercial/genre readers.
+    if (!hasLiteraryLane && !isLikedAuthor && CANON_LITERARY_AUTHORS.has(authorLower)) {
+      excluded++;
+      if (reasons.length < 8) reasons.push(`literary_drift_author: ${book.author}`);
+      return false;
+    }
+
+    // ── 3c. Ancient / classical text by subject ───────────────────────────
+    // Books tagged with ancient-era or pre-modern period subjects are
+    // structurally incompatible with contemporary commercial trait scoring.
+    // Hard-exclude unless the user has a proven literary lane.
+    if (!hasLiteraryLane && !isLikedAuthor) {
+      const hasAncientSubject = ANCIENT_CLASSIC_SUBJECT_SIGNALS.some(sig =>
+        subjLower.some(s => s.includes(sig))
+      );
+      if (hasAncientSubject) {
+        excluded++;
+        if (reasons.length < 8) reasons.push(`ancient_classic: ${book.title}`);
+        return false;
+      }
     }
 
     // ── 4. Non-English via enrichment ─────────────────────────────────────
@@ -1253,7 +1334,12 @@ export async function getCandidateBooks(
   const enrichmentMap = await getEnrichmentForCandidates(client, all);
 
   // ── Hygiene filter ─────────────────────────────────────────────────────────
-  const hygiene = applyHygiene(all, enrichmentMap, profile.liked_authors ?? []);
+  const hygiene = applyHygiene(
+    all,
+    enrichmentMap,
+    profile.liked_authors ?? [],
+    profile.det_lanes?.dominant_lanes,
+  );
 
   // ── Apply dismissals from feedback ────────────────────────────────────────
   let filtered = hygiene.passed;

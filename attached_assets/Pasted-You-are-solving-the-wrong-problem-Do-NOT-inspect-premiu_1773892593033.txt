@@ -1,0 +1,90 @@
+You are solving the wrong problem.
+
+Do NOT inspect premium/expert scaffolding, entitlements, badges, or migrations.
+Do NOT summarize infrastructure.
+Do NOT tell me what files already exist.
+
+The actual problem is:
+For the dense Goodreads-imported user, the free deterministic recommendation engine is STILL surfacing bad recommendations such as:
+- The Man Who Knew Too Much
+- The Sun Also Rises
+- Genji monogatari
+and the retrieval reasons still include `ol:genre:literary`.
+
+This means the free retrieval logic is still wrong.
+
+Your task now is a targeted bug investigation and fix.
+
+Goal
+Prove exactly why `ol:genre:literary` is still being used for this user in free mode, then fix it.
+
+Required approach
+1. Trace the actual runtime path for this Goodreads user from:
+   - taste profile
+   - deterministic lane detection
+   - candidate retrieval
+   - OL query construction
+   - candidate filtering
+   - final recommendation render
+
+2. Show me the exact values for this user:
+   - is_dense_import
+   - det_lanes
+   - dominant_lanes
+   - repeated_liked_authors
+   - liked_subjects
+   - genre_affinities
+   - retrieval trace
+   - exact OL queries sent
+   - whether the engine used:
+     - dense-import mode
+     - standard mode
+     - fallback mode
+
+3. I want the ROOT CAUSE, not a summary of architecture.
+Answer these specifically:
+   - Why is `ol:genre:literary` still being generated?
+   - Which branch in code is producing it?
+   - Is dense-import mode failing to trigger?
+   - Is dominant_lanes empty or too weak?
+   - Is a fallback branch still defaulting to literary?
+   - Are stale deterministic recommendations being read from cache instead of recomputed?
+
+4. Fix the bug after proving the cause.
+
+Likely failure areas to inspect
+- deterministic lane detection too strict, producing empty dominant_lanes
+- fallback branch still using literary somewhere
+- cached deterministic recs bypassing the new logic
+- OL query builder still appending literary in a branch not yet updated
+- recommendation render showing stale cached results
+- classics/canon exclusion happening too late (after retrieval and ranking)
+- non-English / ancient literature not being hard-rejected for dense commercial readers
+
+Required fixes
+A. For dense imported users:
+- literary retrieval must be impossible unless a true repeated literary/classics lane is proven
+- if no dominant lanes are detected, fallback must be general/commercial contemporary, never literary
+
+B. For this user type:
+- ancient/classic/non-English drift like `Genji monogatari` must be hard-excluded, not merely penalized
+- public-domain/canon spillover must be blocked unless a repeated classics lane exists
+- hard-boiled / old-school literary mystery must not appear for a modern suspense reader
+
+C. If cache is the issue:
+- fix the cache invalidation logic for deterministic recs
+- prove whether the rendered recs came from cache or fresh recomputation
+
+Output format
+1. Root cause
+2. Exact runtime values for this user
+3. Exact file/branch producing `ol:genre:literary`
+4. Exact fix made
+5. Why the new logic will prevent this specific bad output
+6. Show the new top 10 recommendations or at least the top 5 after the fix
+
+Important
+Do not give me another infrastructure summary.
+Do not tell me migrations exist.
+Do not tell me expert mode is implemented.
+Stay on the Goodreads free-mode retrieval bug until it is actually fixed.
