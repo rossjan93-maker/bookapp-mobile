@@ -73,6 +73,11 @@ const MIN_PASSING_BOOKS = 2;
 
 const CACHE_TTL_MS   = 24 * 60 * 60 * 1000;
 const CACHE_MIN_ROWS = 5;
+// Reject candidate-cache rows built before this date.  Bump this constant
+// whenever retrieval logic changes meaningfully (new genre expansion, year
+// filter changes, subtype fixes, etc.) so stale batches are automatically
+// replaced on the next live OL fetch.
+const CACHE_MIN_DATE = '2026-03-19T00:00:00Z';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -154,6 +159,9 @@ export type RankedRecsResult = {
     expert_decision?:       ExpertAccessDecision | null;
     is_from_cache?:         boolean;
     cache_built_at?:        string | null;
+    // Full candidate audit — all scored candidates before diversity cap.
+    // Always populated; use for forensic debugging via the debug panel.
+    candidate_audit?:       ScoredBook[];
   };
 };
 
@@ -235,6 +243,9 @@ const GENERIC_RETRIEVAL_SUBJECTS = new Set([
   'literature', 'books', 'accessible book', 'protected daisy', 'large type books',
   'open library nl', 'internet archive wishlist', 'reading level',
   'adventure and adventurers', 'good and evil',
+  // Marketing/awards tags that carry no meaningful genre or quality signal
+  'bestseller', 'new york times bestseller', 'bestsellers', 'award winner',
+  'pulitzer prize', 'oprah book club', 'book club', 'book of the month',
 ]);
 
 // ── Known public-domain / classic-drift authors ────────────────────────────────
@@ -547,7 +558,12 @@ async function getCachedExternalCandidates(
   excludeExternalIds: Set<string>,
 ): Promise<CacheResult> {
   try {
-    const cutoff = new Date(Date.now() - CACHE_TTL_MS).toISOString();
+    const ttlCutoff = new Date(Date.now() - CACHE_TTL_MS).toISOString();
+    // Use whichever cutoff is more recent: the rolling TTL window OR the
+    // minimum build date.  CACHE_MIN_DATE invalidates all rows that were
+    // written before a breaking retrieval-logic change, even if they would
+    // otherwise still be within the TTL window.
+    const cutoff = ttlCutoff > CACHE_MIN_DATE ? ttlCutoff : CACHE_MIN_DATE;
     const { data, error } = await client
       .from('rec_candidate_cache')
       .select('external_id, source, retrieval_reason, title, author, cover_url, subjects, page_count')
@@ -1165,6 +1181,19 @@ export function scoreBookForUser(
     if (risks.length < 1) risks.push('Leans more literary than your strongest recurring reads');
   }
 
+  // Graphic novel format mismatch: comic/graphic-novel format is a distinct
+  // reading medium that most readers don't seek out proactively. Apply a format
+  // penalty unless the user's feedback shows they've already engaged with and
+  // rated graphic novels (feedback_boost offsets this for known fans).
+  // Threshold: memoir affinity >= 0.8 waives the penalty because graphic memoirs
+  // (Maus, Persepolis) are core to that genre. Below that threshold the format
+  // is an unknown risk, not an assumption.
+  if (bt.bookForm === 'graphic' && memoirAffinity < 0.8) {
+    s6_meta_pen -= 0.10;
+    audit_flags.push('graphic_format');
+    if (risks.length < 1) risks.push('Graphic novel format — a different reading experience from most of your rated books');
+  }
+
   // ── 7c: Dense lane calibration (dominant lanes established) ───────────────
   const det = profile.det_lanes;
   if (det?.dominant_lanes && det.dominant_lanes.length > 0) {
@@ -1313,7 +1342,15 @@ export function getRankedRecs(
     if (diverse.length >= limit) break;
   }
 
-  return { recs: diverse, meta: buildMeta('passed') };
+  return {
+    recs:  diverse,
+    meta: {
+      ...buildMeta('passed'),
+      candidate_audit: scored.map(
+        (b, i) => ({ ...b, _debug: { pool_size: poolSize, rank: i + 1 } })
+      ),
+    },
+  };
 }
 
 // ── Combined retrieval ────────────────────────────────────────────────────────

@@ -27,7 +27,7 @@ import { getCandidateBooks, getRankedRecs, fitLabel, fitColor, getPersonalizedRe
 import type { ScoredBook, QualityGate, RankedRecsResult } from '../../lib/recommender';
 import { loadFeedbackContext, persistFeedback, emptyContext } from '../../lib/recFeedback';
 import type { FeedbackContext } from '../../lib/recFeedback';
-import { getBookTraits } from '../../lib/bookTraits';
+import { getBookTraits, detectBookLane, detectBookMysterySubtype, isPhilosophyOrSpiritual } from '../../lib/bookTraits';
 import { getEntitlement } from '../../lib/recEntitlement';
 import type { RecEntitlement } from '../../lib/recEntitlement';
 import type { ReaderThesis } from '../../lib/expertRec';
@@ -1808,6 +1808,134 @@ export default function RecommendationsScreen() {
                               ))}
                             </View>
                           )}
+                          {/* Forensic candidate audit table */}
+                          {recsMeta.candidate_audit && recsMeta.candidate_audit.length > 0 && (
+                            <View style={{ marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#e7e5e4' }}>
+                              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                <Text style={{ fontSize: 9, fontWeight: '600', color: '#a8a29e' }}>
+                                  CANDIDATE AUDIT (all {recsMeta.candidate_audit.length}, pre-diversity-cap)
+                                </Text>
+                                <TouchableOpacity
+                                  onPress={() => {
+                                    if (!recsMeta.candidate_audit || !tasteProfile) return;
+                                    const PROBLEM_TITLES = ['casino royale','the big sleep','maus','parable of the sower','v for vendetta','to kill a mockingbird','the sun also rises','anthem','genji','autobiography of a yogi'];
+                                    const isProblem = (title: string) => PROBLEM_TITLES.some(p => title.toLowerCase().includes(p));
+                                    const report = {
+                                      user_profile: {
+                                        tier: tasteProfile.tier,
+                                        genre_affinities: tasteProfile.genre_affinities,
+                                        preferred_traits: tasteProfile.preferred_traits,
+                                        avoided_traits: tasteProfile.avoided_traits,
+                                        liked_subjects: tasteProfile.liked_subjects,
+                                        liked_authors: tasteProfile.liked_authors,
+                                        det_lanes: tasteProfile.det_lanes,
+                                        evidence: tasteProfile.evidence,
+                                        strongSignalCount: tasteProfile.strongSignalCount,
+                                      },
+                                      retrieval_trace: recsMeta.retrieval_trace,
+                                      meta: {
+                                        pool_size: recsMeta.pool_size,
+                                        hygiene_excluded: recsMeta.hygiene_excluded,
+                                        catalog_count: recsMeta.catalog_count,
+                                        live_ol_count: recsMeta.live_ol_count,
+                                        cached_external_count: recsMeta.cached_external_count,
+                                      },
+                                      candidate_table: recsMeta.candidate_audit.map((b, i) => {
+                                        const lane    = detectBookLane(b);
+                                        const subtype = detectBookMysterySubtype(b);
+                                        const isPhi   = isPhilosophyOrSpiritual(b);
+                                        const bt      = getBookTraits(b);
+                                        return {
+                                          rank: i + 1,
+                                          is_problem_book: isProblem(b.title),
+                                          in_final_recs: recommendations.some(r => r.id === b.id || r.title === b.title),
+                                          title: b.title,
+                                          author: b.author,
+                                          source: b._source,
+                                          retrieval_reason: b._retrieval_reason,
+                                          lane,
+                                          subtype,
+                                          is_philosophy_spiritual: isPhi,
+                                          book_form: bt.bookForm,
+                                          primary_genre: bt.primaryGenre,
+                                          subjects: (b.subjects ?? []).slice(0, 8),
+                                          score: b.score,
+                                          breakdown: b._score_breakdown,
+                                          reasons: b.reasons,
+                                          risks: b.risks,
+                                        };
+                                      }),
+                                      problem_books_explicit: recsMeta.candidate_audit
+                                        .filter(b => isProblem(b.title))
+                                        .map(b => ({
+                                          title: b.title,
+                                          rank: recsMeta.candidate_audit!.indexOf(b) + 1,
+                                          score: b.score,
+                                          source: b._source,
+                                          retrieval_reason: b._retrieval_reason,
+                                          lane: detectBookLane(b),
+                                          subtype: detectBookMysterySubtype(b),
+                                          breakdown: b._score_breakdown,
+                                          audit_flags: b._score_breakdown.audit_flags,
+                                          risks: b.risks,
+                                          subjects: (b.subjects ?? []).slice(0, 8),
+                                        })),
+                                    };
+                                    console.log('=== READSTACK FORENSIC AUDIT ===');
+                                    console.log(JSON.stringify(report, null, 2));
+                                    console.log('=== END FORENSIC AUDIT ===');
+                                  }}
+                                  style={{
+                                    backgroundColor: '#1c1917',
+                                    paddingHorizontal: 8,
+                                    paddingVertical: 3,
+                                    borderRadius: 4,
+                                  }}
+                                >
+                                  <Text style={{ fontSize: 9, color: '#faf9f7', fontWeight: '600' }}>📋 LOG AUDIT</Text>
+                                </TouchableOpacity>
+                              </View>
+                              {recsMeta.candidate_audit.slice(0, 20).map((b, i) => {
+                                const lane    = detectBookLane(b);
+                                const subtype = detectBookMysterySubtype(b) ?? '—';
+                                const inFinal = recommendations.some(r => r.id === b.id || r.title === b.title);
+                                const flags   = b._score_breakdown.audit_flags;
+                                const PROBLEM_TITLES = ['casino royale','the big sleep','maus','parable of the sower','v for vendetta','to kill a mockingbird','the sun also rises','anthem','genji','autobiography of a yogi'];
+                                const isProblem = PROBLEM_TITLES.some(p => b.title.toLowerCase().includes(p));
+                                return (
+                                  <View key={b.id + i} style={{
+                                    borderBottomWidth: i < 19 ? 1 : 0,
+                                    borderBottomColor: '#e7e5e4',
+                                    paddingVertical: 4,
+                                    backgroundColor: isProblem ? '#fff7ed' : 'transparent',
+                                  }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                      <Text style={{ fontSize: 8, color: '#a8a29e', width: 18 }}>#{i+1}</Text>
+                                      <Text style={{ fontSize: 9, fontWeight: '600', color: isProblem ? '#c2410c' : '#1c1917', flex: 1 }} numberOfLines={1}>
+                                        {inFinal ? '★ ' : ''}{isProblem ? '⚠ ' : ''}{b.title}
+                                      </Text>
+                                      <Text style={{ fontSize: 9, fontWeight: '700', color: b.score >= 0.5 ? '#16a34a' : b.score >= 0.35 ? '#78716c' : '#dc2626' }}>
+                                        {b.score.toFixed(3)}
+                                      </Text>
+                                    </View>
+                                    <View style={{ flexDirection: 'row', paddingLeft: 22, gap: 8, flexWrap: 'wrap' }}>
+                                      <Text style={{ fontSize: 8, color: '#a8a29e' }}>{b._source.slice(0, 7)}</Text>
+                                      <Text style={{ fontSize: 8, color: '#a8a29e' }}>tr:{b._score_breakdown.trait_alignment.toFixed(2)}</Text>
+                                      <Text style={{ fontSize: 8, color: '#a8a29e' }}>gn:{b._score_breakdown.genre_bonus.toFixed(2)}</Text>
+                                      <Text style={{ fontSize: 8, color: '#a8a29e' }}>pe:{b._score_breakdown.metadata_penalty.toFixed(2)}</Text>
+                                      <Text style={{ fontSize: 8, color: '#78716c' }}>
+                                        {lane ?? '—'}{subtype !== '—' ? ` / ${subtype.slice(0,8)}` : ''}
+                                      </Text>
+                                      {flags.length > 0 && (
+                                        <Text style={{ fontSize: 8, color: '#ea580c' }}>⚑ {flags.join(',')}</Text>
+                                      )}
+                                    </View>
+                                  </View>
+                                );
+                              })}
+                            </View>
+                          )}
+
                           {/* Entitlement debug */}
                           {entitlement && (
                             <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#e7e5e4' }}>

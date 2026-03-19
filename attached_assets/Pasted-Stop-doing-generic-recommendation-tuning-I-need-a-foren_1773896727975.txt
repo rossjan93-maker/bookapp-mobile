@@ -1,0 +1,117 @@
+Stop doing generic recommendation tuning.
+
+I need a forensic single-user recommendation audit for one specific Goodreads-imported user.
+
+User to audit
+user_id = 78d5d2c4-d513-4747-b77f-52898c2dd4a8
+
+Goal
+For the current top recommendations shown to this user, I want a full source-and-ranking trace so we can see exactly:
+- where each book came from
+- why it entered the candidate pool
+- why it survived filtering
+- why it ranked where it did
+
+This is not a generic improvement task.
+This is a debugging and truthfulness audit.
+
+Part 1: Build a recommendation audit output for this single user
+For the current top 20 recommendation candidates, produce a structured debug table/object with one row per candidate containing:
+
+- title
+- author
+- source_path:
+  - `local_catalog`
+  - `open_library_live`
+  - `rec_candidate_cache`
+  - `rec_cache`
+- source_reason / retrieval_reason
+- retrieval_branch:
+  - dense-import mode
+  - standard mode
+  - fallback mode
+- exact query or retrieval anchor used
+- lane classification
+- subtype classification
+- market-position classification
+- book form / format classification
+- dominant_lanes detected for the user
+- whether the candidate was treated as:
+  - core fit
+  - adjacent fit
+  - stretch fit
+- score breakdown:
+  - trait_alignment
+  - genre_bonus
+  - avoided_penalty
+  - feedback_boost
+  - enrichment_bonus
+  - metadata_penalty
+  - raw_score
+  - final_score
+- penalties considered
+- penalties applied
+- why it survived filtering
+- why it was shown to the user
+
+Part 2: Audit the shown books specifically
+I want explicit audit lines for these books if they are in the current candidate set:
+- Casino Royale
+- The Big Sleep
+- Maus I
+- Maus II
+- Parable of the Sower
+- V for Vendetta
+- To Kill a Mockingbird
+- The Sun Also Rises
+- Anthem
+- Genji monogatari
+- Autobiography of a Yogi
+
+For each one, answer:
+1. where was it found?
+2. what retrieval query or catalog logic brought it in?
+3. what lane/subtype did the system assign it?
+4. what made it rank?
+5. why wasn’t it rejected?
+
+Part 3: Explain the ranking logic plainly
+For this user, tell me in plain English:
+- what currently matters most in ranking
+- what is being overweighted
+- what is being underweighted
+- why broad trait overlap is beating true center-of-gravity fit
+- why many top books end up with nearly identical scores
+
+Part 4: Add a top-level user summary
+Before proposing fixes, output a user summary showing:
+- repeated authors
+- repeated high-rated authors
+- repeated series
+- strongest recurring subjects
+- strongest dominant lanes
+- strongest exception lanes
+- center of gravity
+- where the engine is currently overfitting exceptions
+
+Part 5: Only after the audit, propose fixes
+Do not start by coding blind.
+First diagnose the weakest branch.
+
+Then tell me:
+- is the main problem local catalog ranking?
+- is the main problem Open Library retrieval?
+- is the main problem lane detection?
+- is the main problem score compression?
+- is the main problem core-vs-stretch differentiation?
+- or some combination?
+
+Then recommend the smallest, highest-leverage fix order.
+
+Part 6: Output format
+1. User profile summary
+2. Candidate audit table
+3. Current ranking diagnosis
+4. Root cause hierarchy (most important to least important)
+5. Exact recommended fix order
+6. Only then show code changes
