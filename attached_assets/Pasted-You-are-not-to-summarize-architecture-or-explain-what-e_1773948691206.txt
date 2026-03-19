@@ -1,0 +1,87 @@
+You are not to summarize architecture or explain what exists.
+
+You are to run a full live validation of the recommendation engine fixes for the correct Goodreads user and return only evidence-based output.
+
+USER
+user_id = 986aece4-9461-439c-bff9-3589161b313c
+
+GOAL
+Validate whether the following four fixes materially improved the live recommendation system:
+
+1. imported_books_count fix (source vs import_source)
+2. Bayesian smoothing of genre affinities (memoir_bio, literary)
+3. score compression improvement (subject overlap contribution)
+4. cache trace reconstruction
+
+EXECUTION (REQUIRED)
+
+Run TWO live recommendation passes:
+- Pass A: cache miss (fresh retrieval)
+- Pass B: cache hit
+
+Do not infer anything from code. Use live runtime data only.
+
+OUTPUT (STRICT FORMAT)
+
+Part 1 — Live Profile (current state)
+Return:
+- imported_books_count
+- strongSignalCount
+- genre_affinities (top 8)
+- preferred_traits
+- dominant_lanes
+- repeated_liked_authors
+- liked_subjects
+
+Part 2 — Key Fix Validation
+
+A. imported_books_count
+- show the value
+- confirm which column triggered it (source vs import_source)
+
+B. memoir_bio + literary
+- show current affinity values
+- show supporting book counts for each
+- confirm they are no longer artificially pinned at 1.0
+
+C. score shape
+For top 10 candidates, return table:
+
+title
+trait_alignment
+subject_overlap_hits
+genre_bonus
+penalty
+final_score
+fit_class
+
+- confirm whether scores are now meaningfully separated within the same lane
+
+D. cache trace
+On Pass B (cache hit), show:
+- genres_used
+- liked_subjects_used
+- liked_authors_used
+
+Confirm these are reconstructed from cached retrieval reasons.
+
+Part 3 — Top 10 Recommendations (live)
+Return current top 10 with:
+- title
+- final_score
+- fit_class
+- short reason
+
+Part 4 — Diagnosis (concise)
+Answer ONLY:
+1. what improved (specific)
+2. what is still wrong (specific)
+3. the single highest-leverage next fix
+
+CONSTRAINTS
+- no architecture summaries
+- no “expected” or inferred outcomes
+- no repetition of previous work
+- no discussion of entitlement, expert mode, or UI
+
+Only live, verifiable system behavior.
