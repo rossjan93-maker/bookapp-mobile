@@ -455,7 +455,7 @@ export function computeFitClass(
     return mk('core_fit', marketPosition, matchStrength, repeated_author_match, false, format_match,
       `2-signal core: repeated_author=${repeated_author_match}, lane=${laneInDominant}(${bookLane}), primary_pos=${marketPositionIsPrimary}`,
       repeated_author_match
-        ? "Matches an author you've returned to multiple times"
+        ? buildAuthorCoreExplanation(book.author ?? '', laneInDominant, bookLane)
         : buildCoreExplanation(bookLane!, cog),
       delta,
     );
@@ -465,9 +465,10 @@ export function computeFitClass(
   // Lane and primary-market-position don't confirm. Earns a small bonus over
   // plain adjacent to keep author evidence visible, but does not reach CORE.
   if (repeated_author_match && format_match) {
+    const displayName = book.author || 'This author';
     return mk('adjacent_fit', marketPosition, 'none', true, false, format_match,
       `repeated_author_only(+0.10): ${authorLower} — lane=${bookLane ?? 'null'}, primary_pos=${marketPositionIsPrimary}`,
-      "By an author you've read before, though it sits a step from your main lane",
+      `By ${displayName}, an author you've returned to — a step outside your main lane, worth exploring`,
       COG_DELTA_REPEATED_AUTHOR_ADJACENT,
     );
   }
@@ -577,6 +578,20 @@ function mk(
 
 // ── Explanation builders ──────────────────────────────────────────────────────
 
+// Human-readable label for each lane, used in generated explanation sentences.
+const LANE_LABELS: Record<DeterministicLane, string> = {
+  romantasy:            'romantic fantasy',
+  scifi_fantasy:        'fantasy and speculative fiction',
+  modern_suspense:      'psychological suspense',
+  romance:              'emotionally driven romance',
+  contemporary_fiction: 'contemporary character-driven fiction',
+  memoir_nonfiction:    'narrative nonfiction',
+  literary:             'literary fiction',
+  horror:               'dark atmospheric fiction',
+};
+
+// Called for the 2-signal CORE case where lane evidence is the primary driver
+// (no repeated-author match, or author already named in the surrounding context).
 function buildCoreExplanation(lane: DeterministicLane, _cog: CenterOfGravity): string {
   const CORE_EXPLANATIONS: Partial<Record<DeterministicLane, string>> = {
     romantasy:            "Feels closest to the romantic fantasy series you return to most",
@@ -589,6 +604,22 @@ function buildCoreExplanation(lane: DeterministicLane, _cog: CenterOfGravity): s
     horror:               "Fits the dark, atmospheric fiction you return to consistently",
   };
   return CORE_EXPLANATIONS[lane] ?? "Strongly aligned with your most repeated reading patterns";
+}
+
+// Called for the 2-signal CORE case where repeated-author match is one of the
+// signals. Combines the author name with lane context for a specific sentence.
+function buildAuthorCoreExplanation(
+  authorName: string,
+  laneInDominant: boolean,
+  bookLane:       DeterministicLane | null,
+): string {
+  const displayName = authorName || 'This author';
+  if (laneInDominant && bookLane) {
+    const laneLabel = LANE_LABELS[bookLane] ?? bookLane;
+    return `By ${displayName}, a consistent favorite — lands exactly in your ${laneLabel} reading`;
+  }
+  // Author match fires but lane doesn't — still CORE via author + primary_pos.
+  return `By ${displayName}, an author you keep returning to — sits in a style you've loved`;
 }
 
 function buildAdjacentExplanation(pos: MarketPosition, _cog: CenterOfGravity): string {

@@ -1,0 +1,82 @@
+The recommendation engine is now retrieving from the right universe, but the final list composition is still weak.
+
+Goal
+Improve deterministic final-set composition so the top recommendations feel curated, diverse, and central to the user — not flooded by one lane, one author, or one series.
+
+Current problems shown by the live audit
+- fantasy/speculative lane is still dominating too many slots
+- continuation / sequel books are flooding the top
+- too many books still qualify as CORE
+- weak ADJACENT books like Casino Royale / The Big Sleep still surface in the visible set
+- Pass A and Pass B still produce meaningfully different final top 10s
+
+This means retrieval is now mostly good, but set composition is still underpowered.
+
+What to build
+
+Part 1: Add deterministic final-set composition rules
+The final top recommendations should optimize for:
+- core fit
+- lane diversity
+- author diversity
+- discovery value
+- minimal redundancy
+
+This is a set-level problem, not just an individual-rank problem.
+
+Part 2: Add continuation / sequel suppression
+For default recommendations:
+- later-in-series books should usually be downgraded or excluded
+- direct continuations should not flood the top of the list
+- recommend at most one representative from a given series/franchise in top slots unless there is an explicit “continue this series” mode
+- if series detection is imperfect, use title/order/metadata heuristics
+
+This should be a general rule, not user-specific.
+
+Part 3: Strengthen lane balancing in final composition
+The user has multiple dominant lanes.
+The final top 10 should reflect that.
+
+Add a composition rule such as:
+- top 5 should span at least 3 dominant lanes when the pool supports it
+- top 10 should not be monopolized by one lane unless that lane is overwhelmingly dominant
+- strongly prefer a balanced set of core candidates across dominant lanes
+
+Part 4: Tighten visible-set threshold
+ADJACENT books can remain in the candidate pool, but the visible recommendation set should be stricter.
+
+Rules:
+- if enough CORE books exist, weak ADJACENT books should not appear in the shown top set
+- books like Casino Royale and The Big Sleep may remain in audit/debug views, but should not be surfaced to the user if stronger options exist
+
+Part 5: Tighten CORE one more step
+Some current CORE books still feel too easy.
+
+Refine CORE so that:
+- repeated-author + strong lane fit + reasonable discovery value is better than repeated-author + obvious continuation flood
+- lane-only books do not all become CORE if they are generic or redundant
+- core fit reflects both closeness and usefulness in the set
+
+Part 6: Improve stability between fresh and cache-backed runs
+Pass A and Pass B should not produce meaningfully different top 10 personalities.
+
+Investigate and reduce instability caused by:
+- candidate ordering
+- cache reconstruction ordering
+- diversity pass sensitivity
+- equal-score ties
+
+Part 7: Output
+1. explain why the current final set is still not curated enough
+2. list changed files
+3. show the new continuation/series suppression logic
+4. show the new lane-balancing logic
+5. show the visible-set threshold logic
+6. show how Pass A / Pass B stability improved
+7. show the new top 10 for this Goodreads user
+8. explain how this remains general and not overfit to one user
+
+Important
+Do NOT broadly change retrieval again.
+Do NOT focus on premium/expert mode.
+This is a deterministic set-composition and curation pass.

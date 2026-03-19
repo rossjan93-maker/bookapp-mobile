@@ -81,6 +81,20 @@ const MIN_CANDIDATES    = 5;
 const MIN_PASS_SCORE    = 0.12;
 const MIN_PASSING_BOOKS = 2;
 
+// ── Composition constants ───────────────────────────────────────────────────
+// Applied in the set-composition engine after scoring and CoG classification.
+
+// Score reduction per additional book from the same author (effective score only).
+// The 1st book from an author: no discount.  2nd book: −0.04.  3rd: −0.08.  Etc.
+// This orders same-author books by quality and suppresses sequel/series floods
+// without permanently blocking them from the candidate pool.
+const CONTINUATION_DISCOUNT_PER_RANK = 0.04;
+
+// ADJACENT books are only surfaced to the user when the CORE pool is small.
+// When CORE books ≥ this fraction of the requested limit, ADJACENT books are
+// kept in the audit list but not shown in the visible recommendation set.
+const ADJACENT_VISIBLE_THRESHOLD_FRAC = 0.5;
+
 // ── Cache constants ────────────────────────────────────────────────────────────
 
 const CACHE_TTL_MS   = 24 * 60 * 60 * 1000;
@@ -90,7 +104,7 @@ const CACHE_MIN_ROWS = 5;
 // changes in a way that makes old cached candidates unreliable.  The read
 // path rejects any row whose retrieval_reason does NOT start with this tag,
 // which forces a live OL re-fetch and a fresh cache write.
-const CACHE_VERSION  = 'v4:';
+const CACHE_VERSION  = 'v5:';
 // User ID to force full live forensic audit (bypasses both caches, emits
 // structured trace logs). Only active in __DEV__ builds.
 const FORENSIC_USER_ID = '986aece4-9461-439c-bff9-3589161b313c';
@@ -130,6 +144,10 @@ export type ScoreBreakdown = {
   repeated_author_match?: boolean;  // author is in user's repeated-liked list
   exception_dependency?:  boolean;  // fit relies on tolerance, not repeated pattern
   cog_score_delta?:       number;   // score adjustment applied: +0.25 / 0 / -0.20 / -9999
+  book_lane?:             string | null; // detected DeterministicLane (stored for composition)
+  // ── Composition engine fields (populated in set-composition pass) ────────
+  continuation_rank?:     number;   // rank among same-author books in pool (1 = best)
+  continuation_discount?: number;   // effective-score reduction for sequel suppression
 };
 
 export type ScoredBook = CandidateBook & {
@@ -1462,6 +1480,7 @@ export function getRankedRecs(
     // Extend _score_breakdown with CoG fields
     book._score_breakdown = {
       ...book._score_breakdown,
+      book_lane:             bookLane ?? null,
       fit_class:             fitResult.fit_class,
       market_position:       fitResult.market_position,
       lane_match_strength:   fitResult.lane_match_strength,
@@ -1599,41 +1618,154 @@ export function getRankedRecs(
     };
   }
 
-  // Diversity: max 2 books per primary genre AND position-aware author cap.
+  // ── Set Composition Engine ─────────────────────────────────────────────────
   //
-  // Principle: dominant lanes should produce variety, not monopoly.
-  // Without an author cap, 5 Robin Hobb books can fill all 5 slots (all
-  // score identically at 0.81) — correct in fit-class terms but not useful
-  // as recommendations. A user who has already read 8 Hobb books doesn't
-  // need 5 more suggested at once.
+  // Three-phase curated composition that replaces the old greedy diversity loop.
   //
-  // Author cap rules:
-  //   Slots 1–5  → max 1 book per author (strongest diversity signal)
-  //   Slots 6–10 → max 2 books per author (second slot now permitted)
+  // Phase 1 — Lane seeding (dense multi-lane users only):
+  //   For each dominant lane, reserve the best available CORE book so the
+  //   output always spans multiple dominant lanes. A user with 5 dominant
+  //   lanes will always see at least one representative from each lane in
+  //   the final set (when the pool supports it).
   //
-  // This prevents a single author from sweeping the visible top-5 while still
-  // allowing a second book from the same author to appear further down if they
-  // are genuinely the best remaining match.
-  const genreCount:  Record<string, number> = {};
-  const authorCount: Record<string, number> = {};
-  const diverse: ScoredBook[] = [];
-  let globalRank = 0;
+  // Phase 2 — CORE fill:
+  //   Remaining slots filled by best available CORE books (by effective score).
+  //   The per-lane cap prevents any single lane from monopolising the set.
+  //
+  // Phase 3 — ADJACENT fill (suppressed when CORE pool is healthy):
+  //   ADJACENT books only enter the visible output when CORE books are fewer
+  //   than ADJACENT_VISIBLE_THRESHOLD_FRAC × limit. When the CORE pool is
+  //   rich enough, ADJACENT books remain in the audit list but are not shown.
+  //
+  // Cross-cutting constraints:
+  //   Continuation discount — later books from the same author earn a
+  //     progressively lower effective score (−CONTINUATION_DISCOUNT_PER_RANK
+  //     per rank). This suppresses sequel/series floods while preserving the
+  //     best book from each author. book.score is NOT mutated — the discount
+  //     only affects composition ordering. Display scores remain intact.
+  //   Author cap — max 1 per author in slots 1–5; max 2 in full set.
+  //   Lane cap — max ⌈limit / dominant_lanes⌉ books per lane.
+  //   Tiebreak — equal-score ties broken by external_id sort for Pass A/B
+  //     stability (same candidates always produce same final set).
+
+  // Step A: Continuation discount — compute effective scores for ordering.
+  // intentFiltered is already sorted descending by CoG-adjusted score, so the
+  // first time we see an author their highest-scoring book gets rank 0 (no
+  // discount); subsequent books get increasing discounts.
+  const authorRankInPool: Record<string, number> = {};
+  const effScoreMap = new Map<string, number>();
+
+  function compId(b: ScoredBook): string {
+    return b.external_id ?? `${b.author}::${b.title}`;
+  }
 
   for (const book of intentFiltered) {
-    globalRank++;
-    const genre     = getBookTraits(book).primaryGenre ?? 'general';
-    const authorKey = book.author.toLowerCase();
-    const gc = genreCount[genre]      ?? 0;
-    const ac = authorCount[authorKey] ?? 0;
-    // Tighter author cap in first 5 output slots; relaxed after that
-    const authorCap = diverse.length < 5 ? 1 : 2;
-    if (gc < 2 && ac < authorCap) {
-      diverse.push({ ...book, _debug: { pool_size: poolSize, rank: globalRank } });
-      genreCount[genre]      = gc + 1;
-      authorCount[authorKey] = ac + 1;
+    const aKey    = book.author.toLowerCase();
+    const rank    = authorRankInPool[aKey] ?? 0;
+    authorRankInPool[aKey] = rank + 1;
+    const discount = rank * CONTINUATION_DISCOUNT_PER_RANK;
+    effScoreMap.set(compId(book), Math.max(0, book.score - discount));
+    if (rank > 0) {
+      book._score_breakdown = {
+        ...book._score_breakdown,
+        continuation_rank:     rank + 1,
+        continuation_discount: +discount.toFixed(3),
+      };
     }
-    if (diverse.length >= limit) break;
   }
+
+  // Step B: Re-sort by effective score with deterministic tiebreak.
+  const compPool = [...intentFiltered].sort((a, b) => {
+    const ea = effScoreMap.get(compId(a)) ?? a.score;
+    const eb = effScoreMap.get(compId(b)) ?? b.score;
+    if (Math.abs(ea - eb) > 0.0005) return eb - ea;
+    // Deterministic tiebreak: lexicographic on external_id (stable across runs)
+    return (a.external_id ?? a.title ?? '').localeCompare(b.external_id ?? b.title ?? '');
+  });
+
+  // Step C: ADJACENT visibility gate.
+  const adjacentThreshold = Math.max(3, Math.ceil(limit * ADJACENT_VISIBLE_THRESHOLD_FRAC));
+  const coreInPool    = compPool.filter(b => b._score_breakdown.fit_class === 'core_fit').length;
+  const showAdjacent  = coreInPool < adjacentThreshold;
+
+  // Per-lane cap: prevent any single lane from monopolising the set.
+  // For a user with N dominant lanes and a limit of L, each lane can hold
+  // at most ⌈L / N⌉ books. Minimum of 2 so low-N users still get variety.
+  const dominantLaneCount = Math.max(1, cog.dominant_lanes.length);
+  const laneCap = Math.max(2, Math.ceil(limit / dominantLaneCount));
+
+  // Composition state
+  const composedSet  = new Set<string>();
+  const composed:    ScoredBook[] = [];
+  const authUsed:    Record<string, number> = {};
+  const laneUsed:    Record<string, number> = {};
+
+  function compositionAllows(b: ScoredBook): boolean {
+    const aKey  = b.author.toLowerCase();
+    const bLane = b._score_breakdown.book_lane as (string | null | undefined);
+    const ac    = authUsed[aKey] ?? 0;
+    // Tight author cap in first 5 output slots, relaxed after
+    const authorCap = composed.length < 5 ? 1 : 2;
+    if (ac >= authorCap) return false;
+    if (bLane && (laneUsed[bLane] ?? 0) >= laneCap) return false;
+    return true;
+  }
+
+  function addComposed(b: ScoredBook): void {
+    const aKey  = b.author.toLowerCase();
+    const bLane = b._score_breakdown.book_lane as (string | null | undefined);
+    composed.push(b);
+    composedSet.add(compId(b));
+    authUsed[aKey] = (authUsed[aKey] ?? 0) + 1;
+    if (bLane) laneUsed[bLane] = (laneUsed[bLane] ?? 0) + 1;
+  }
+
+  // Phase 1: Lane seeding — guarantee one CORE book per dominant lane.
+  // Applied only for dense users who have ≥2 distinct dominant lanes.
+  // Seed up to floor(limit/2) lanes so Phase 1 fills at most half the set,
+  // leaving room for Phase 2 quality-sorted additions.
+  if (cog.is_dense && cog.dominant_lanes.length >= 2) {
+    const seedTarget = Math.min(cog.dominant_lanes.length, Math.floor(limit / 2));
+    for (const lane of cog.dominant_lanes) {
+      if (composed.length >= seedTarget) break;
+      const seed = compPool.find(b =>
+        !composedSet.has(compId(b)) &&
+        b._score_breakdown.fit_class === 'core_fit' &&
+        b._score_breakdown.book_lane === lane &&
+        compositionAllows(b)
+      );
+      if (seed) addComposed(seed);
+    }
+  }
+
+  // Phase 2: CORE fill — greedy by effective score, respecting lane/author caps.
+  for (const book of compPool) {
+    if (composed.length >= limit) break;
+    if (composedSet.has(compId(book))) continue;
+    if (book._score_breakdown.fit_class !== 'core_fit') continue;
+    if (!compositionAllows(book)) continue;
+    addComposed(book);
+  }
+
+  // Phase 3: ADJACENT fill — only when the CORE pool is thin.
+  if (showAdjacent) {
+    for (const book of compPool) {
+      if (composed.length >= limit) break;
+      if (composedSet.has(compId(book))) continue;
+      if (book._score_breakdown.fit_class === 'core_fit') continue;
+      if (book._score_breakdown.fit_class === 'reject') continue;
+      if (!compositionAllows(book)) continue;
+      addComposed(book);
+    }
+  }
+
+  // Sort final set by display score descending and assign ranks.
+  // Phase 1 seeds that scored lower than Phase 2 additions will appear
+  // further down the visible list — that is correct behaviour.
+  composed.sort((a, b) => b.score - a.score);
+  const diverse = composed.map(
+    (b, i) => ({ ...b, _debug: { pool_size: poolSize, rank: i + 1 } })
+  );
 
   // Audit order: CoG-sorted non-rejects first, then reject-class books at end.
   // Audit always reflects the CoG-filtered pool (before intent), so the debug
