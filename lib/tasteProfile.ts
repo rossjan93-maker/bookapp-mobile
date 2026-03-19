@@ -184,7 +184,8 @@ function applyDiagnosisBoosts(
 // Used by the recommender as anchor terms for OL subject / author searches.
 
 type FinishedBookRow = {
-  rating: number | null;
+  rating:      number | null;
+  raw_shelves: string[] | null;  // Goodreads import shelf names — used as subject supplements
   book: { subjects?: string[] | null; title?: string | null; author?: string | null } | null;
 };
 
@@ -305,14 +306,18 @@ function buildDeterministicLanes(
 
     authorFreq[authorKey] = (authorFreq[authorKey] ?? 0) + 1;
 
-    const lane = detectBookLane({ subjects: row.book.subjects, title: row.book.title, author: authorRaw });
+    // Combine OL subjects with Goodreads shelf names for lane detection.
+    // Imported books have subjects = null until OL repair runs; shelf names
+    // (e.g. "fantasy", "romance", "thriller") act as a bridging signal.
+    const combinedSubjects = [...(row.book.subjects ?? []), ...(row.raw_shelves ?? [])];
+    const lane = detectBookLane({ subjects: combinedSubjects, title: row.book.title, author: authorRaw });
     if (lane) {
       laneFreq[lane] = (laneFreq[lane] ?? 0) + 1;
     }
 
     // Mystery subtype tracking — only for books in the suspense family
-    if (lane === 'modern_suspense' || (row.book.subjects ?? []).join(' ').toLowerCase().includes('mystery')) {
-      const subtype = detectBookMysterySubtype({ subjects: row.book.subjects, title: row.book.title });
+    if (lane === 'modern_suspense' || combinedSubjects.join(' ').toLowerCase().includes('mystery')) {
+      const subtype = detectBookMysterySubtype({ subjects: combinedSubjects, title: row.book.title });
       if (subtype) {
         mysterySubtypeCounts[subtype] = (mysterySubtypeCounts[subtype] ?? 0) + 1;
       }
@@ -366,7 +371,13 @@ function buildGenreAffinities(rows: FinishedBookRow[]): Record<string, number> {
 
   for (const row of rows) {
     if (!row.rating || !row.book) continue;
-    const genre = detectGenre(row.book);
+    // Combine OL subjects with Goodreads shelf names so imported books
+    // (which land with subjects = null until metadata repair runs) can
+    // still contribute to genre affinities.
+    const genre = detectGenre({
+      ...row.book,
+      subjects: [...(row.book.subjects ?? []), ...(row.raw_shelves ?? [])],
+    });
     if (!genre) continue;
     if (!counts[genre]) counts[genre] = { pos: 0, neg: 0, total: 0 };
     counts[genre].total++;
@@ -422,10 +433,12 @@ export async function computeTasteProfile(
       .select('status, rating, taste_tags, review_body, source')
       .eq('user_id', userId),
 
-    // For genre affinity: finished books with rating + book subjects
+    // For genre affinity: finished books with rating + book subjects.
+    // raw_shelves (Goodreads shelf names) supplements subjects for imported
+    // books that have not yet had OL metadata repair run on them.
     client
       .from('user_books')
-      .select('rating, book:books(subjects, title, author)')
+      .select('rating, raw_shelves, book:books(subjects, title, author)')
       .eq('user_id', userId)
       .eq('status', 'finished')
       .not('rating', 'is', null),

@@ -79,6 +79,9 @@ const CACHE_MIN_ROWS = 5;
 // path rejects any row whose retrieval_reason does NOT start with this tag,
 // which forces a live OL re-fetch and a fresh cache write.
 const CACHE_VERSION  = 'v2:';
+// User ID to force full live forensic audit (bypasses both caches, emits
+// structured trace logs). Only active in __DEV__ builds.
+const FORENSIC_USER_ID = '986aece4-9461-439c-bff9-3589161b313c';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -558,6 +561,11 @@ async function getCachedExternalCandidates(
   userId:             string,
   excludeExternalIds: Set<string>,
 ): Promise<CacheResult> {
+  // Forensic mode: bypass candidate cache entirely, force live OL fetch
+  if (__DEV__ && userId === FORENSIC_USER_ID) {
+    console.log('[FORENSIC] rec_candidate_cache BYPASSED for', userId);
+    return null;
+  }
   try {
     const cutoff = new Date(Date.now() - CACHE_TTL_MS).toISOString();
     const { data, error } = await client
@@ -1528,6 +1536,96 @@ export async function getPersonalizedRecsWithExpert(
     await getCandidateBooks(client, userId, profile, feedback);
   const baseResult = getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace);
 
+  // ── Forensic audit log (forensic user only, dev mode) ────────────────────
+  if (__DEV__ && userId === FORENSIC_USER_ID) {
+    const fmt2 = (n: number) => +n.toFixed(2);
+    const det   = profile.det_lanes;
+    const isDense = (profile.evidence.imported_books_count ?? 0) >= 20
+                 && (det?.dominant_lanes?.length ?? 0) > 0;
+
+    // ── BLOCK A: Profile ──────────────────────────────────────────────────
+    console.log('[FORENSIC PROFILE]', JSON.stringify({
+      user_id:               userId,
+      tier:                  profile.tier,
+      strongSignalCount:     profile.strongSignalCount,
+      imported_books_count:  profile.evidence.imported_books_count,
+      is_dense_import:       isDense,
+      genre_affinities:      Object.fromEntries(
+        Object.entries(profile.genre_affinities)
+          .sort((a, b) => b[1] - a[1])
+          .map(([k, v]) => [k, fmt2(v)])
+      ),
+      preferred_traits: Object.fromEntries(
+        Object.entries(profile.preferred_traits)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 10)
+          .map(([k, v]) => [k, fmt2(v)])
+      ),
+      liked_subjects:        (profile.liked_subjects ?? []).slice(0, 10),
+      liked_authors:         (profile.liked_authors  ?? []).slice(0, 10),
+      dominant_lanes:        det?.dominant_lanes ?? [],
+      repeated_liked_authors: det?.repeated_liked_authors ?? [],
+      commercial_prior:      det ? fmt2(det.commercial_prior) : null,
+      repeated_series:       (det as unknown as Record<string, unknown>)?.repeated_series ?? [],
+    }));
+
+    // ── BLOCK B: Retrieval ────────────────────────────────────────────────
+    console.log('[FORENSIC RETRIEVAL]', JSON.stringify({
+      ol_queries:       retrieval_trace.ol_queries,
+      genres_used:      retrieval_trace.top_genres_used,
+      subjects_used:    retrieval_trace.liked_subjects_used,
+      authors_used:     retrieval_trace.liked_authors_used,
+      dense_mode:       retrieval_trace.dense_import_mode,
+      detected_lanes:   retrieval_trace.detected_lanes,
+      catalog_count:    baseResult.meta.catalog_count,
+      live_ol_count:    baseResult.meta.live_ol_count,
+      cached_ext_count: baseResult.meta.cached_external_count,
+      hygiene_excluded: baseResult.meta.hygiene_excluded,
+      pool_size:        baseResult.meta.pool_size,
+    }));
+
+    // ── BLOCK C: Top 20 candidates (pre-diversity-cap) ───────────────────
+    const top20 = (baseResult.meta.candidate_audit ?? []).slice(0, 20).map((b, i) => {
+      const lane    = detectBookLane(b);
+      const subtype = detectBookMysterySubtype(b);
+      const bd      = b._score_breakdown;
+      return {
+        rank:             i + 1,
+        title:            b.title,
+        author:           b.author,
+        source:           b._source,
+        retrieval_reason: b._retrieval_reason,
+        lane,
+        subtype:          subtype ?? null,
+        book_form:        bd.book_form,
+        score:            bd.final_score,
+        trait_alignment:  bd.trait_alignment,
+        genre_bonus:      bd.genre_bonus,
+        metadata_penalty: bd.metadata_penalty,
+        feedback_boost:   bd.feedback_boost,
+        enrichment_bonus: bd.enrichment_bonus,
+        avoided_penalty:  bd.avoided_penalty,
+        audit_flags:      bd.audit_flags,
+      };
+    });
+    console.log('[FORENSIC TOP20]', JSON.stringify(top20));
+
+    // ── BLOCK D: Final top 10 ────────────────────────────────────────────
+    const top10 = baseResult.recs.slice(0, 10).map((r, i) => ({
+      rank:    i + 1,
+      title:   r.title,
+      author:  r.author,
+      score:   r.score,
+      source:  r._source,
+      reason:  r._retrieval_reason,
+      lane:    detectBookLane(r),
+      subtype: detectBookMysterySubtype(r) ?? null,
+      flags:   r._score_breakdown.audit_flags,
+      breakdown: r._score_breakdown,
+    }));
+    console.log('[FORENSIC TOP10]', JSON.stringify(top10));
+  }
+
   // ── Step 2: Expert access decision ───────────────────────────────────────
   const decision = canRunExpertRecs(entitlement, profile);
 
@@ -1546,7 +1644,13 @@ export async function getPersonalizedRecsWithExpert(
   }
 
   // ── Step 3: Cache check (skip rebuild if results are still fresh) ─────────
-  const cacheCheck = await loadCachedRecs(client, userId);
+  // Forensic mode: skip rec_cache entirely so we always see live expert run
+  if (__DEV__ && userId === FORENSIC_USER_ID) {
+    console.log('[FORENSIC] rec_cache BYPASSED for expert path');
+  }
+  const cacheCheck = __DEV__ && userId === FORENSIC_USER_ID
+    ? { hit: false, entry: null, reason: 'forensic_bypass' as const }
+    : await loadCachedRecs(client, userId);
 
   if (cacheCheck.hit && cacheCheck.entry?.mode === 'expert') {
     const { count: feedbackCount } = await client
