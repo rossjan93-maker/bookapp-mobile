@@ -1,0 +1,237 @@
+Upgrade “Your Next Read” in two connected ways:
+
+1. make recommendation selection against filters fully inspectable
+2. improve the filter/input experience so it feels more natural, nuanced, and premium
+
+This is not just a UI tweak.
+This is a recommendation-debugging and intent-capture upgrade.
+
+Goal
+I want to be able to see exactly how books are being selected and ranked against the active “Your Next Read” input so I can refine the system intelligently.
+
+At the same time, I want the input experience to move beyond rigid chips and support more natural user intent such as:
+- “Something I can read passively”
+- “Heavy romance”
+- “Like X book I previously read”
+- “Fast-paced, standalone, not too dark”
+- “Book club vibe, but not literary”
+- “Something emotionally immersive and easy to get into”
+
+Part 1: Build transparent “How this was selected” instrumentation
+For every recommendation shown under “Your Next Read”, expose a debug trace that shows how the active intent affected retrieval and ranking.
+
+For each book, I want to see:
+- which active inputs applied
+- which parts were interpreted as hard filters
+- which parts were interpreted as soft preferences
+- which parts were interpreted as exclusions
+- whether the book survived because it matched a dominant lane
+- whether it was boosted because of the user’s profile
+- whether it was boosted or filtered because of the “Your Next Read” input
+- final fit class (core / adjacent / stretch)
+- final score breakdown after intent adjustments
+
+Suggested per-book debug structure:
+{
+  title: string,
+  source: string,
+  fit_class: string,
+  base_profile_score: number,
+  intent_adjusted_score: number,
+  hard_filter_passes: string[],
+  hard_filter_failures: string[],
+  soft_boosts_applied: string[],
+  exclusions_considered: string[],
+  dominant_lane_match: string | null,
+  market_position_match: string | null,
+  final_reason: string[]
+}
+
+Part 2: Add a top-level “Why these picks” debug summary
+At the set level, show how the recommendation pool changed because of the current intent.
+
+I want:
+- total candidates before intent
+- candidates removed by hard filters
+- candidates removed by exclusions
+- candidates re-ranked by soft preferences
+- final pool size
+- final top 10
+- which lanes were favored by the current input
+- whether the final set became narrower, broader, darker, lighter, etc.
+
+Example debug summary:
+- started with 42 candidates
+- 18 removed by “No classics”
+- 6 removed by “Standalone only”
+- 8 boosted by “Fast-paced”
+- 5 boosted by “Thriller”
+- 3 demoted by “No dark”
+- final set biased toward modern suspense + contemporary fiction
+
+Part 3: Improve the language of the filter system
+The current chip labels are too mechanical and blunt.
+
+Refine the UI copy so it feels more editorial and human.
+
+Current categories like:
+- Genre
+- Pace
+- Tone
+- Format
+- Avoid
+
+should feel more premium and intuitive.
+
+Suggested direction:
+Section title:
+- “Your Next Read”
+
+Lead copy:
+- “Tell us what sounds good.”
+
+Potential section labels:
+- “What are you in the mood for?”
+- “How do you want it to feel?”
+- “What should we avoid?”
+- “Anything specific you want more of?”
+
+Improve chip language so it sounds more reader-native.
+
+Examples:
+Instead of:
+- Fantasy / Sci-fi
+Use:
+- Speculative
+or split:
+- Fantasy
+- Sci-fi
+
+Instead of:
+- Contemporary
+Use:
+- Contemporary fiction
+
+Instead of:
+- Light & fun
+Use:
+- Light
+- Comforting
+- Fun
+
+Instead of:
+- Dark
+Use:
+- Darker
+or
+- Intense
+
+Instead of:
+- Short (<320p)
+Use:
+- Shorter read
+
+Instead of:
+- No literary
+Use:
+- Less literary
+or
+- More accessible
+
+Part 4: Add natural-language “Describe what you want” input
+Add a text input above or alongside the chips where the user can type what they want in their own words.
+
+Examples:
+- “Something I can read passively”
+- “Heavy romance”
+- “Like Fourth Wing but not as dark”
+- “Fast-paced thriller I can get into quickly”
+- “Book club fiction, emotional but not depressing”
+- “Fantasy with strong relationships and easy writing”
+
+This should not replace the chips.
+It should complement them.
+
+Part 5: Parse natural language into structured intent
+When a user writes a freeform prompt, translate it into the existing structured “Your Next Read” model.
+
+For example:
+“Something I can read passively”
+might become:
+- soft_preferences.pace = fast or medium
+- soft_preferences.tone = light or balanced
+- exclusions.avoid_heavy_topics = true
+- market_position = accessible / commercial
+
+“Heavy romance”
+might become:
+- hard_filters.lanes = romance or romantasy
+- soft_preferences.emotional_intensity = high
+
+“Like X book I previously read”
+might become:
+- anchor_mode.like_this_book_id = matched book
+- soft boosts toward its lane / market position / traits
+
+Important:
+- show the parsed interpretation in debug mode
+- ideally show a lightweight user-facing summary too, like:
+  “Using: fast-paced, emotionally immersive, less dark, similar to Fourth Wing”
+
+Part 6: Add a hybrid input model
+The ideal UX is:
+- user can type what they want
+- system interprets it into structured intent
+- user can still refine with chips
+- the app then explains how that input shaped the picks
+
+This is the model I want:
+natural-language intent + structured refinement + transparent recommendation reasoning
+
+Part 7: “Like this book” search / anchor input
+Make the “like X book I previously read” use case real.
+
+Add a searchable input that lets the user:
+- search their read history
+- select a prior book as an anchor
+- optionally select a second “not like this” anchor
+
+This should feed anchor_mode into recommendation generation.
+
+Part 8: Better user-facing explanation language
+For the actual rec cards, improve the explanation language so it reflects both:
+- the user’s core taste
+- the current “Your Next Read” input
+
+Examples:
+- “Fits your suspense lane and your request for something fast-paced.”
+- “Close to the emotionally immersive fantasy you love, but better suited to a lighter mood.”
+- “A more accessible pick shaped by your request for something less literary.”
+
+Part 9: Keep this cohort-safe
+Do NOT optimize this just for one Goodreads-heavy user.
+The improvements must generalize across:
+- dense commercial Goodreads import
+- dense literary/classics reader
+- dense memoir/nonfiction reader
+- graphic/manga-heavy reader
+- low-signal net-new user
+- mixed/generalist reader
+
+For every major rule introduced, explain:
+1. the general principle
+2. who benefits
+3. who might regress
+4. how overfitting is avoided
+
+Part 10: Output
+When complete, provide:
+1. architecture summary
+2. files changed
+3. the new natural-language + structured intent flow
+4. how intent parsing works
+5. how “how this was selected” works
+6. how the set-level debug summary works
+7. the refined filter language / copy
+8. how this remains recommendation, not search
+9. any deferred improvements

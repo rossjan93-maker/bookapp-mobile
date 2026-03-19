@@ -61,8 +61,10 @@ import {
   getIntentExclusionReason,
   computeIntentBoost,
   buildIntentSuffix,
+  evaluateHardFilters,
+  computeIntentBoostWithReasons,
 } from './nextReadIntent';
-import type { NextReadIntent }       from './nextReadIntent';
+import type { NextReadIntent, IntentBookTrace, IntentSetSummary } from './nextReadIntent';
 import type { FeedbackContext }      from './recFeedback';
 import type { BookEnrichmentProfile } from './bookEnrichment';
 import { getEnrichmentForCandidates } from './bookEnrichment';
@@ -140,6 +142,9 @@ export type ScoredBook = CandidateBook & {
     pool_size: number;
     rank:      number;
   };
+  // Populated when "Your Next Read" intent is active.
+  // Shows exactly how this book was evaluated by the intent layer.
+  _intent_trace?: IntentBookTrace;
 };
 
 export type QualityGate =
@@ -187,6 +192,9 @@ export type RankedRecsResult = {
     // Count of books removed by intent hard filters / exclusions.
     // Present and > 0 when "Your Next Read" intent is active and filtering occurred.
     intent_filtered_count?: number;
+    // Set-level intent summary — pool stats before/after intent filtering.
+    // Populated whenever intent is active; used by the debug panel.
+    intent_summary?:        IntentSetSummary;
   };
 };
 
@@ -1361,13 +1369,13 @@ export function getRankedRecs(
     return { recs: [], meta: buildMeta('insufficient_pool') };
   }
 
-  const scored = candidates.map(book => {
+  const scored: ScoredBook[] = candidates.map(book => {
     const enrichment = book.external_id ? enrichmentMap.get(book.external_id) : undefined;
     return {
       ...book,
       ...scoreBookForUser(book, profile, feedback, enrichment),
       _debug: { pool_size: poolSize, rank: 0 },
-    };
+    } as ScoredBook;
   });
 
   // ── Center-of-gravity fit classification ─────────────────────────────────
@@ -1439,45 +1447,84 @@ export function getRankedRecs(
   // If intent filtering leaves fewer than MIN_PASSING_BOOKS that clear the
   // score threshold, the quality gate catches it and the UI should guide the
   // user to relax their filters (no silent fallback to unfiltered results).
-  let intentFiltered = nonRejected as typeof nonRejected;
+  let intentFiltered      = nonRejected as typeof nonRejected;
   let intentRejectedCount = 0;
+  let intentSummary: IntentSetSummary | undefined;
+
   if (intent && isIntentActive(intent)) {
     const kept: typeof nonRejected = [];
+    const exclusionCounts: Record<string, number> = {};
+    let removedByExclusion  = 0;
+    let removedByHardFilter = 0;
+    let softBoostedCount    = 0;
+
     for (const book of nonRejected) {
       const bookLane  = detectBookLane(book);
       const marketPos = (book._score_breakdown.market_position as MarketPosition) ?? 'general_fiction';
 
-      // Exclusions take priority over hard filters
+      // 1. Exclusions take priority over hard filters
       const exclusionReason = getIntentExclusionReason(book, intent, marketPos);
       if (exclusionReason) {
         intentRejectedCount++;
+        removedByExclusion++;
+        exclusionCounts[exclusionReason] = (exclusionCounts[exclusionReason] ?? 0) + 1;
+        book._intent_trace = {
+          excluded_by:        exclusionReason,
+          hard_filter_passes: [],
+          hard_filter_fails:  [],
+          soft_boosts:        [],
+          score_delta:        0,
+        };
         continue;
       }
 
-      // Hard filter check
-      if (!passesIntentHardFilters(book, intent, bookLane, marketPos)) {
+      // 2. Hard filters (trace-aware)
+      const hardEval = evaluateHardFilters(book, intent, bookLane, marketPos);
+      if (!hardEval.passes) {
         intentRejectedCount++;
+        removedByHardFilter++;
+        book._intent_trace = {
+          excluded_by:        null,
+          hard_filter_passes: hardEval.passReasons,
+          hard_filter_fails:  hardEval.failReasons,
+          soft_boosts:        [],
+          score_delta:        0,
+        };
         continue;
       }
 
-      // Soft preference boost (small, capped at ±0.05)
-      const boost = computeIntentBoost(book, intent);
+      // 3. Soft preference boost (trace-aware)
+      const { delta: boost, reasons: boostReasons } = computeIntentBoostWithReasons(book, intent);
       if (boost !== 0) {
         book.score = +Math.max(0, book.score + boost).toFixed(3);
+        if (boost > 0) softBoostedCount++;
       }
+
+      book._intent_trace = {
+        excluded_by:        null,
+        hard_filter_passes: hardEval.passReasons,
+        hard_filter_fails:  [],
+        soft_boosts:        boostReasons,
+        score_delta:        boost,
+      };
 
       kept.push(book);
     }
 
-    // Re-sort after soft boosts (only when at least one boost was non-zero)
-    if (intentRejectedCount > 0 || kept.some(b => b._score_breakdown.cog_score_delta !== (nonRejected.find(r => r === b)?._score_breakdown.cog_score_delta ?? 0))) {
-      kept.sort((a, b) => b.score - a.score);
-    }
-
+    kept.sort((a, b) => b.score - a.score);
     intentFiltered = kept;
 
+    intentSummary = {
+      before_intent:          nonRejected.length,
+      removed_by_exclusion:   removedByExclusion,
+      removed_by_hard_filter: removedByHardFilter,
+      soft_boosted:           softBoostedCount,
+      after_intent:           kept.length,
+      exclusion_breakdown:    exclusionCounts,
+    };
+
     if (__DEV__ && intentRejectedCount > 0) {
-      console.log(`[INTENT] ${intentRejectedCount} books removed by intent filters; ${intentFiltered.length} remain`);
+      console.log(`[INTENT] ${intentRejectedCount} removed (${removedByExclusion} excl, ${removedByHardFilter} hard); ${intentFiltered.length} remain`);
     }
   }
 
@@ -1505,6 +1552,7 @@ export function getRankedRecs(
       meta: {
         ...buildMeta(intentRejectedCount > 0 ? 'intent_filtered_empty' : 'insufficient_score'),
         intent_filtered_count: intentRejectedCount || undefined,
+        intent_summary: intentSummary,
       },
     };
   }
@@ -1557,6 +1605,7 @@ export function getRankedRecs(
         (b, i) => ({ ...b, _debug: { pool_size: poolSize, rank: i + 1 } })
       ),
       intent_filtered_count: intentRejectedCount > 0 ? intentRejectedCount : undefined,
+      intent_summary: intentSummary,
     },
   };
 }

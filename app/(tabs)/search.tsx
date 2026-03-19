@@ -25,8 +25,14 @@ import { computeTasteProfile } from '../../lib/tasteProfile';
 import type { TasteProfile } from '../../lib/tasteProfile';
 import { getCandidateBooks, getRankedRecs, fitLabel, fitColor, getPersonalizedRecsWithExpert } from '../../lib/recommender';
 import type { ScoredBook, QualityGate, RankedRecsResult } from '../../lib/recommender';
-import { emptyIntent as emptyNextReadIntent, isIntentActive, intentSummaryLabel } from '../../lib/nextReadIntent';
-import type { NextReadIntent, NextReadPace, NextReadTone } from '../../lib/nextReadIntent';
+import {
+  emptyIntent as emptyNextReadIntent,
+  isIntentActive,
+  intentSummaryLabel,
+  parseNaturalLanguageIntent,
+  mergeIntents,
+} from '../../lib/nextReadIntent';
+import type { NextReadIntent, NextReadPace, NextReadTone, NLParseResult } from '../../lib/nextReadIntent';
 import { loadFeedbackContext, persistFeedback, emptyContext } from '../../lib/recFeedback';
 import type { FeedbackContext } from '../../lib/recFeedback';
 import { getBookTraits, detectBookLane, detectBookMysterySubtype, isPhilosophyOrSpiritual } from '../../lib/bookTraits';
@@ -204,29 +210,37 @@ function getBookAwareTraits(book: { subjects?: string[] | null; title?: string; 
 type NextReadPanelProps = {
   draft:         NextReadIntent;
   setDraft:      (intent: NextReadIntent) => void;
+  nlInput:       string;
+  setNlInput:    (s: string) => void;
   open:          boolean;
   panelHeight:   Animated.Value;
   onToggle:      () => void;
-  onApply:       () => void;
+  onApply:       (mergedIntent: NextReadIntent) => void;
   onClear:       () => void;
   activeIntent:  NextReadIntent;
 };
 
+// Lane options — two chips cover scifi_fantasy (Fantasy + Sci-fi) for clarity.
+// Both map to the same underlying lane; selecting either adds it.
 const LANE_OPTIONS: Array<{ lane: DeterministicLane; label: string }> = [
-  { lane: 'scifi_fantasy',        label: 'Fantasy / Sci-fi' },
-  { lane: 'modern_suspense',      label: 'Thriller'         },
-  { lane: 'romantasy',            label: 'Romantasy'        },
-  { lane: 'romance',              label: 'Romance'          },
-  { lane: 'horror',               label: 'Horror'           },
-  { lane: 'memoir_nonfiction',    label: 'Memoir'           },
-  { lane: 'contemporary_fiction', label: 'Contemporary'     },
-  { lane: 'literary',             label: 'Literary'         },
+  { lane: 'scifi_fantasy',        label: 'Fantasy'              },
+  { lane: 'scifi_fantasy',        label: 'Sci-fi'               },
+  { lane: 'modern_suspense',      label: 'Thriller'             },
+  { lane: 'romantasy',            label: 'Romantasy'            },
+  { lane: 'romance',              label: 'Romance'              },
+  { lane: 'horror',               label: 'Horror'               },
+  { lane: 'memoir_nonfiction',    label: 'Memoir'               },
+  { lane: 'contemporary_fiction', label: 'Contemporary fiction' },
+  { lane: 'literary',             label: 'Literary fiction'     },
 ];
 
 function NextReadPanel({
-  draft, setDraft, open, panelHeight, onToggle, onApply, onClear, activeIntent,
+  draft, setDraft, nlInput, setNlInput,
+  open, panelHeight, onToggle, onApply, onClear, activeIntent,
 }: NextReadPanelProps) {
-  const isActive = isIntentActive(activeIntent);
+  const isActive   = isIntentActive(activeIntent);
+  const nlParsed   = nlInput.trim() ? parseNaturalLanguageIntent(nlInput) : null;
+  const hasNLMatch = nlParsed?.interpreted ?? false;
 
   // ── Pill helpers ────────────────────────────────────────────────────────────
 
@@ -264,11 +278,11 @@ function NextReadPanel({
     );
   }
 
-  function FilterLabel({ children }: { children: string }) {
+  function SectionLabel({ children }: { children: string }) {
     return (
       <Text style={{
-        fontSize: 10, fontWeight: '600', color: '#a8a29e',
-        letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 6,
+        fontSize: 10, fontWeight: '700', color: '#a8a29e',
+        letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 7,
       }}>
         {children}
       </Text>
@@ -285,7 +299,11 @@ function NextReadPanel({
     setDraft({ ...draft, hard: { ...draft.hard, lanes: next.length ? next : undefined } });
   }
 
-  // ── Pace / tone toggles (single-select) ─────────────────────────────────────
+  function isLaneActive(lane: DeterministicLane): boolean {
+    return (draft.hard.lanes ?? []).includes(lane);
+  }
+
+  // ── Pace / tone / intensity toggles (single-select within each group) ────────
 
   function setPace(pace: NextReadPace) {
     setDraft({ ...draft, soft: { ...draft.soft, pace: draft.soft.pace === pace ? null : pace } });
@@ -293,6 +311,10 @@ function NextReadPanel({
 
   function setTone(tone: NextReadTone) {
     setDraft({ ...draft, soft: { ...draft.soft, tone: draft.soft.tone === tone ? null : tone } });
+  }
+
+  function setIntensity(level: 'high' | 'low') {
+    setDraft({ ...draft, soft: { ...draft.soft, intensity: draft.soft.intensity === level ? null : level } });
   }
 
   // ── Format toggles ──────────────────────────────────────────────────────────
@@ -303,13 +325,21 @@ function NextReadPanel({
 
   function toggleShort() {
     const current = draft.hard.max_page_count;
-    setDraft({ ...draft, hard: { ...draft.hard, max_page_count: current ? null : 320 } });
+    setDraft({ ...draft, hard: { ...draft.hard, max_page_count: current ? null : 350 } });
   }
 
   // ── Exclusion toggles ───────────────────────────────────────────────────────
 
   function toggleExclude(key: keyof NextReadIntent['exclude']) {
     setDraft({ ...draft, exclude: { ...draft.exclude, [key]: !draft.exclude[key] } });
+  }
+
+  // ── Apply: merge chip draft + NL-parsed intent ───────────────────────────────
+
+  function handleApply() {
+    const nlIntent = nlParsed?.intent ?? emptyNextReadIntent();
+    const merged   = mergeIntents(draft, nlIntent);
+    onApply(merged);
   }
 
   // ── Collapsed summary ───────────────────────────────────────────────────────
@@ -325,19 +355,19 @@ function NextReadPanel({
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          paddingVertical: 8,
-          paddingHorizontal: 12,
+          paddingVertical: 9,
+          paddingHorizontal: 13,
           backgroundColor: isActive ? '#f5f0e8' : '#f5f5f4',
-          borderRadius: 8,
+          borderRadius: 9,
           borderWidth: 1,
           borderColor: isActive ? '#d6c9b0' : '#e7e5e4',
         }}
       >
-        <Text style={{ fontSize: 12, color: '#78716c', flex: 1 }}>
+        <Text style={{ fontSize: 12, color: '#78716c', flex: 1, lineHeight: 17 }}>
           {open ? '▲' : '▼'}{'  '}
           {isActive && summaryText
             ? summaryText
-            : 'What are you in the mood for?'
+            : 'Tell us what sounds good'
           }
         </Text>
         {isActive && (
@@ -354,7 +384,7 @@ function NextReadPanel({
 
       {/* ── Expandable body ── */}
       <Animated.View style={{
-        maxHeight: panelHeight.interpolate({ inputRange: [0, 1], outputRange: [0, 560] }),
+        maxHeight: panelHeight.interpolate({ inputRange: [0, 1], outputRange: [0, 720] }),
         overflow: 'hidden',
       }}>
         <View style={{
@@ -367,62 +397,108 @@ function NextReadPanel({
           gap: 14,
         }}>
 
-          {/* Genre / Lane */}
+          {/* ── Natural-language freeform input ── */}
           <View>
-            <FilterLabel>Genre</FilterLabel>
+            <SectionLabel>Describe what you want</SectionLabel>
+            <TextInput
+              value={nlInput}
+              onChangeText={setNlInput}
+              placeholder={'e.g. "Fast-paced thriller, standalone, not too dark"'}
+              placeholderTextColor="#c4bdb7"
+              multiline
+              numberOfLines={2}
+              style={{
+                backgroundColor: '#fff',
+                borderRadius: 9,
+                paddingHorizontal: 11,
+                paddingVertical: 9,
+                fontSize: 13,
+                color: '#1c1917',
+                lineHeight: 19,
+                borderWidth: 1,
+                borderColor: '#e7e5e4',
+                minHeight: 52,
+                textAlignVertical: 'top',
+              }}
+            />
+            {hasNLMatch && nlParsed && (
+              <View style={{
+                flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6,
+                paddingHorizontal: 2,
+              }}>
+                <Text style={{ fontSize: 10, color: '#a8a29e', alignSelf: 'center', marginRight: 2 }}>
+                  Using:
+                </Text>
+                {nlParsed.labels.map(label => (
+                  <View key={label} style={{
+                    backgroundColor: '#f0ede8', borderRadius: 10,
+                    paddingHorizontal: 8, paddingVertical: 3,
+                  }}>
+                    <Text style={{ fontSize: 10, color: '#57534e', fontWeight: '500' }}>
+                      {label}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            {nlInput.trim().length > 0 && !hasNLMatch && (
+              <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 5, paddingHorizontal: 2 }}>
+                No signals detected — try words like "fast-paced", "thriller", or "standalone".
+              </Text>
+            )}
+          </View>
+
+          {/* ── Genre / Lane ── */}
+          <View>
+            <SectionLabel>What are you in the mood for?</SectionLabel>
             <PillRow>
-              {LANE_OPTIONS.map(({ lane, label }) => (
+              {LANE_OPTIONS.map(({ lane, label }, idx) => (
                 <Pill
-                  key={lane}
+                  key={`${lane}-${idx}`}
                   label={label}
-                  active={(draft.hard.lanes ?? []).includes(lane)}
+                  active={isLaneActive(lane)}
                   onPress={() => toggleLane(lane)}
                 />
               ))}
             </PillRow>
           </View>
 
-          {/* Pace */}
+          {/* ── Pace + Tone + Intensity ── */}
           <View>
-            <FilterLabel>Pace</FilterLabel>
+            <SectionLabel>How should it feel?</SectionLabel>
             <PillRow>
-              <Pill label="Fast-paced" active={draft.soft.pace === 'fast'} onPress={() => setPace('fast')} />
-              <Pill label="Slow burn"  active={draft.soft.pace === 'slow'} onPress={() => setPace('slow')} />
+              <Pill label="Fast-paced"          active={draft.soft.pace === 'fast'}       onPress={() => setPace('fast')}          />
+              <Pill label="Slow burn"            active={draft.soft.pace === 'slow'}       onPress={() => setPace('slow')}          />
+              <Pill label="Light"                active={draft.soft.tone === 'light'}      onPress={() => setTone('light')}         />
+              <Pill label="Darker"               active={draft.soft.tone === 'dark'}       onPress={() => setTone('dark')}          />
+              <Pill label="Emotionally intense"  active={draft.soft.intensity === 'high'}  onPress={() => setIntensity('high')}     />
+              <Pill label="Low-key"              active={draft.soft.intensity === 'low'}   onPress={() => setIntensity('low')}      />
             </PillRow>
           </View>
 
-          {/* Tone */}
+          {/* ── Format ── */}
           <View>
-            <FilterLabel>Tone</FilterLabel>
+            <SectionLabel>Anything specific?</SectionLabel>
             <PillRow>
-              <Pill label="Light & fun" active={draft.soft.tone === 'light'} onPress={() => setTone('light')} />
-              <Pill label="Dark"        active={draft.soft.tone === 'dark'}  onPress={() => setTone('dark')}  />
+              <Pill label="Standalone"    active={!!draft.hard.standalone_only}          onPress={toggleStandalone} />
+              <Pill label="Shorter read"  active={draft.hard.max_page_count === 350}    onPress={toggleShort}      />
             </PillRow>
           </View>
 
-          {/* Format */}
+          {/* ── Avoid / Exclusions ── */}
           <View>
-            <FilterLabel>Format</FilterLabel>
+            <SectionLabel>What to avoid?</SectionLabel>
             <PillRow>
-              <Pill label="Standalone"   active={!!draft.hard.standalone_only}          onPress={toggleStandalone} />
-              <Pill label="Short (<320p)" active={draft.hard.max_page_count === 320}    onPress={toggleShort}      />
+              <Pill label="No classics"      active={!!draft.exclude.avoid_classics}   onPress={() => toggleExclude('avoid_classics')}   />
+              <Pill label="No dark content"  active={!!draft.exclude.avoid_dark}       onPress={() => toggleExclude('avoid_dark')}       />
+              <Pill label="More accessible"  active={!!draft.exclude.avoid_literary}   onPress={() => toggleExclude('avoid_literary')}   />
+              <Pill label="No romance"       active={!!draft.exclude.avoid_romance}    onPress={() => toggleExclude('avoid_romance')}    />
+              <Pill label="Fiction only"     active={!!draft.exclude.avoid_nonfiction} onPress={() => toggleExclude('avoid_nonfiction')} />
+              <Pill label="No series"        active={!!draft.exclude.avoid_series}     onPress={() => toggleExclude('avoid_series')}     />
             </PillRow>
           </View>
 
-          {/* Avoid */}
-          <View>
-            <FilterLabel>Avoid</FilterLabel>
-            <PillRow>
-              <Pill label="No classics"   active={!!draft.exclude.avoid_classics}   onPress={() => toggleExclude('avoid_classics')}   />
-              <Pill label="No dark"       active={!!draft.exclude.avoid_dark}       onPress={() => toggleExclude('avoid_dark')}       />
-              <Pill label="No literary"   active={!!draft.exclude.avoid_literary}   onPress={() => toggleExclude('avoid_literary')}   />
-              <Pill label="No romance"    active={!!draft.exclude.avoid_romance}    onPress={() => toggleExclude('avoid_romance')}    />
-              <Pill label="No nonfiction" active={!!draft.exclude.avoid_nonfiction} onPress={() => toggleExclude('avoid_nonfiction')} />
-              <Pill label="No series"     active={!!draft.exclude.avoid_series}     onPress={() => toggleExclude('avoid_series')}     />
-            </PillRow>
-          </View>
-
-          {/* Action buttons */}
+          {/* ── Action buttons ── */}
           <View style={{ flexDirection: 'row', gap: 8, paddingTop: 2 }}>
             <TouchableOpacity
               onPress={onClear}
@@ -437,14 +513,16 @@ function NextReadPanel({
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={onApply}
+              onPress={handleApply}
               style={{
                 flex: 2, paddingVertical: 10, borderRadius: 8,
                 backgroundColor: '#1c1917',
                 alignItems: 'center',
               }}
             >
-              <Text style={{ fontSize: 13, fontWeight: '600', color: '#faf9f7' }}>Apply filters</Text>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#faf9f7' }}>
+                {hasNLMatch ? 'Apply' : 'Apply filters'}
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -1294,6 +1372,7 @@ export default function RecommendationsScreen() {
   // ── "Your Next Read" intent layer state ──────────────────────────────────
   const [nextReadIntent, setNextReadIntent]   = useState<NextReadIntent>(emptyNextReadIntent());
   const [draftIntent, setDraftIntent]         = useState<NextReadIntent>(emptyNextReadIntent());
+  const [nlInput, setNlInput]                 = useState('');
   const [intentPanelOpen, setIntentPanelOpen] = useState(false);
   const intentPanelHeight                     = useRef(new Animated.Value(0)).current;
 
@@ -1980,6 +2059,8 @@ export default function RecommendationsScreen() {
                   <NextReadPanel
                     draft={draftIntent}
                     setDraft={setDraftIntent}
+                    nlInput={nlInput}
+                    setNlInput={setNlInput}
                     open={intentPanelOpen}
                     panelHeight={intentPanelHeight}
                     activeIntent={nextReadIntent}
@@ -1992,21 +2073,20 @@ export default function RecommendationsScreen() {
                         useNativeDriver: false,
                       }).start();
                     }}
-                    onApply={() => {
-                      const open = false;
-                      setIntentPanelOpen(open);
+                    onApply={(merged) => {
+                      setIntentPanelOpen(false);
                       Animated.timing(intentPanelHeight, {
                         toValue: 0,
                         duration: 180,
                         useNativeDriver: false,
                       }).start();
-                      reloadRecs(draftIntent);
+                      reloadRecs(merged);
                     }}
                     onClear={() => {
                       const cleared = emptyNextReadIntent();
                       setDraftIntent(cleared);
-                      const open = false;
-                      setIntentPanelOpen(open);
+                      setNlInput('');
+                      setIntentPanelOpen(false);
                       Animated.timing(intentPanelHeight, {
                         toValue: 0,
                         duration: 180,
@@ -2166,6 +2246,35 @@ export default function RecommendationsScreen() {
                               ))}
                             </View>
                           )}
+                          {/* Intent pool summary */}
+                          {recsMeta.intent_summary && (
+                            <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#e7e5e4' }}>
+                              <Text style={{ fontSize: 9, fontWeight: '600', color: '#7c3aed', marginBottom: 4 }}>
+                                INTENT POOL SUMMARY
+                              </Text>
+                              <Text style={{ fontSize: 9, color: '#57534e', lineHeight: 14 }}>
+                                {recsMeta.intent_summary.before_intent} non-rejected
+                                {' → '}after intent: {recsMeta.intent_summary.after_intent}
+                                {recsMeta.intent_summary.removed_by_exclusion > 0
+                                  ? `  ·  excl: −${recsMeta.intent_summary.removed_by_exclusion}`
+                                  : ''}
+                                {recsMeta.intent_summary.removed_by_hard_filter > 0
+                                  ? `  ·  hard: −${recsMeta.intent_summary.removed_by_hard_filter}`
+                                  : ''}
+                                {recsMeta.intent_summary.soft_boosted > 0
+                                  ? `  ·  boosted: +${recsMeta.intent_summary.soft_boosted}`
+                                  : ''}
+                              </Text>
+                              {Object.keys(recsMeta.intent_summary.exclusion_breakdown).length > 0 && (
+                                <Text style={{ fontSize: 9, color: '#a8a29e', lineHeight: 13, marginTop: 2 }}>
+                                  {Object.entries(recsMeta.intent_summary.exclusion_breakdown)
+                                    .map(([k, v]) => `${k.replace('avoid_', '')}: ${v}`)
+                                    .join('  ·  ')}
+                                </Text>
+                              )}
+                            </View>
+                          )}
+
                           {/* Forensic candidate audit table */}
                           {recsMeta.candidate_audit && recsMeta.candidate_audit.length > 0 && (
                             <View style={{ marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#e7e5e4' }}>
@@ -2302,6 +2411,30 @@ export default function RecommendationsScreen() {
                                         <Text style={{ fontSize: 8, color: '#ea580c' }}>⚑ {flags.join(',')}</Text>
                                       )}
                                     </View>
+                                    {/* Intent trace row (shown when intent is active) */}
+                                    {b._intent_trace && (
+                                      <View style={{ paddingLeft: 22, marginTop: 2 }}>
+                                        {b._intent_trace.excluded_by ? (
+                                          <Text style={{ fontSize: 7.5, color: '#b91c1c', fontWeight: '600' }}>
+                                            ✕ intent excl: {b._intent_trace.excluded_by}
+                                          </Text>
+                                        ) : b._intent_trace.hard_filter_fails.length > 0 ? (
+                                          <Text style={{ fontSize: 7.5, color: '#c2410c', fontWeight: '600' }}>
+                                            ✕ intent filter: {b._intent_trace.hard_filter_fails.join(', ')}
+                                          </Text>
+                                        ) : (
+                                          <Text style={{ fontSize: 7.5, color: '#15803d' }}>
+                                            ✓ intent pass
+                                            {b._intent_trace.soft_boosts.length > 0
+                                              ? `  · boost: ${b._intent_trace.soft_boosts.join(', ')} (${b._intent_trace.score_delta > 0 ? '+' : ''}${b._intent_trace.score_delta.toFixed(3)})`
+                                              : ''}
+                                            {b._intent_trace.hard_filter_passes.length > 0
+                                              ? `  · ${b._intent_trace.hard_filter_passes.join(', ')}`
+                                              : ''}
+                                          </Text>
+                                        )}
+                                      </View>
+                                    )}
                                   </View>
                                 );
                               })}
