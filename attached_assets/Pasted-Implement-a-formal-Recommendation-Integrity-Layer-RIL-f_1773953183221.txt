@@ -1,0 +1,212 @@
+Implement a formal Recommendation Integrity Layer (RIL) for the deterministic recommendation engine.
+
+This is not a small ranking tweak.
+This is a system-level guardrail layer that sits between scoring and final output so the app stops making technically plausible but experientially wrong recommendations.
+
+Core product principle
+The engine should not just ask:
+- “Which books score highest?”
+
+It should ask:
+- “What is the best set of books to show this reader right now?”
+
+The Recommendation Integrity Layer must enforce common-sense rules before final set composition.
+
+Main goal
+Prevent bad recommendation behavior such as:
+- recommending later books in a series as entry points
+- flooding the list with one author or one series
+- surfacing weak adjacent books when stronger core books exist
+- outputting a list that is individually plausible but editorially poor
+
+Important product addition
+When a recommendation is the start of a series, highlight that clearly in the UI.
+This should be a positive signal, not hidden metadata.
+
+Examples:
+- “Start here”
+- “Series starter”
+- “Book 1 of a series”
+- “If this clicks, there are more in the series”
+
+This should feel premium and editorial, not clunky.
+
+PART 1: Build a formal Recommendation Integrity Layer
+Create a new recommendation integrity pass that runs after scoring / fit classification and before final output.
+
+Pipeline should become:
+
+candidate retrieval
+→ scoring / fit classification
+→ Recommendation Integrity Layer
+→ final set composition
+→ user-facing recs
+
+The integrity layer should enforce the following:
+
+1. Entry-point integrity
+2. Set composition integrity
+3. Redundancy suppression
+4. Output quality threshold
+5. Stability / deterministic behavior
+6. Explanation integrity
+
+PART 2: Entry-point integrity (series awareness)
+This is the highest-priority new rule.
+
+Default rule:
+Do NOT recommend a mid-series book as a user-facing entry point.
+
+If a candidate is part of an ordered series and is not book 1:
+- do not surface that volume as the recommendation by default
+- instead:
+  - map to book 1 of the series if the user has not started it
+  - OR map to the next unread volume if the user has already read earlier entries
+  - OR, if series order is uncertain, prefer the earliest known entry or suppress it from the visible set
+
+This should be implemented as a general principle, not hardcoded for specific books.
+
+Requirements:
+- detect series name
+- detect sequence number / order if available
+- determine if the user has already read the earlier books
+- normalize later-volume candidates to the appropriate visible recommendation
+
+Examples:
+- if “Words of Radiance” is the strongest candidate, but the user has not read Stormlight #1, recommend “The Way of Kings” instead
+- if the user has already read #1 and #2, recommending #3 is valid
+- if a series is detected but order is uncertain, do not confidently recommend a later volume
+
+PART 3: Highlight series starters in the UI
+When a recommendation is a series entry point, highlight it.
+
+Add user-facing signals such as:
+- “Start here”
+- “Series starter”
+- “Book 1 of a series”
+
+This should appear:
+- on the recommendation card
+- and/or in the explanation area
+
+Make the language elegant and restrained.
+It should feel like an editorial cue, not a warning label.
+
+If the recommendation is a continuation instead:
+- show “Continue the series”
+- only when the user has actually started that series
+
+PART 4: Collapse series flooding
+If multiple books from the same series are in the candidate pool:
+- collapse them into one visible candidate for default recommendations
+- do not let 3–5 books from the same series compete independently in the top list
+
+This should work even if metadata is imperfect.
+Use all available signals and safe fallbacks.
+
+PART 5: Set composition integrity
+The visible recommendation list is a set, not just a score sort.
+
+Rules:
+- top 5 should usually include at least 3 different authors if the pool supports it
+- top 5 should usually span at least 2–3 dominant lanes if the pool supports it
+- top 10 should not be dominated by one author, one series, or one lane unless overwhelmingly justified
+
+This should continue the existing composition improvements and move them into the formal integrity layer.
+
+PART 6: Redundancy suppression
+If multiple books are near-identical in recommendation role:
+- keep the strongest representative
+- suppress redundant variants
+
+Examples:
+- multiple books by the same author in the same lane
+- multiple books from the same series
+- multiple books with essentially the same market-position role in the set
+
+The engine should maximize useful coverage, not repetition.
+
+PART 7: Output quality threshold
+If enough CORE books exist:
+- weak ADJACENT books should not appear in the visible set
+
+Books can remain in the audit/debug pool, but the user-facing set should be stricter.
+
+This should help remove things like weak suspense-adjacent titles from the visible set when stronger books are available.
+
+PART 8: Stability integrity
+Fresh and cache-backed runs should produce the same personality of list.
+
+Reduce instability caused by:
+- tie ordering
+- candidate ordering sensitivity
+- cache reconstruction differences
+- composition pass sensitivity
+
+The final visible set should be stable.
+
+PART 9: Explanation integrity
+Recommendation explanations should reflect the integrity logic.
+
+If a book is shown because it is:
+- the start of a series
+- the next unread book in a series
+- the strongest representative from a lane
+- a core fit with repeated-author support
+
+Say that clearly and elegantly.
+
+Examples:
+- “Start here — the first book in a fantasy series that strongly fits your reading history.”
+- “Continue the series — this is your next unread installment.”
+- “A strong fit from a lane you return to often.”
+- “By an author you consistently come back to.”
+
+Do not present later series books as clean standalone entry points.
+
+PART 10: Cohort-safe implementation
+This must generalize across all reader types, not just the current Goodreads-heavy user.
+
+Validate against:
+- dense commercial Goodreads import
+- dense literary/classics reader
+- dense memoir/nonfiction reader
+- graphic/manga-heavy reader
+- low-signal net-new user
+- mixed/generalist reader
+
+For every major rule introduced, explain:
+1. the general principle
+2. who benefits
+3. who might regress
+4. how overfitting is avoided
+
+PART 11: Debug visibility
+In debug mode, show:
+- whether a visible recommendation was normalized from a later series book to book 1
+- whether it is a series starter or continuation
+- whether the user had already started the series
+- why redundant books from the same series/author were suppressed
+- how the integrity layer changed the final set
+
+PART 12: Output
+When complete, provide:
+1. architecture summary of the Recommendation Integrity Layer
+2. files changed
+3. how series detection works
+4. how series normalization works
+5. how series starters are highlighted in the UI
+6. how continuation recommendations work
+7. how redundancy suppression works
+8. how set composition is enforced
+9. the new top recommendations after this pass
+10. any remaining limitations, especially around imperfect series metadata
+
+Important constraints
+- Do NOT broadly rewrite retrieval again
+- Do NOT focus on premium/expert mode
+- Do NOT hardcode specific books or series
+- Do implement a general editorial/common-sense integrity layer
+
+The product outcome should be:
+the app no longer recommends users skip into the middle of a series, and series starters are clearly surfaced as attractive entry points.

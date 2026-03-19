@@ -74,6 +74,7 @@ import type { ReaderThesis, ExpertRecResult, CandidateJudgment } from './expertR
 import { buildReaderThesis, judgeCandidateFit, composeRecommendationSet } from './expertRec';
 import { buildEvidencePack }                                  from './evidencePack';
 import { loadCachedRecs, persistRecCache, shouldRebuild, buildSignalSnapshot } from './recCache';
+import { applyIntegrityLayer } from './recommendationIntegrity';
 
 // ── Quality gate constants ─────────────────────────────────────────────────────
 
@@ -148,6 +149,12 @@ export type ScoreBreakdown = {
   // ── Composition engine fields (populated in set-composition pass) ────────
   continuation_rank?:     number;   // rank among same-author books in pool (1 = best)
   continuation_discount?: number;   // effective-score reduction for sequel suppression
+  // ── Recommendation Integrity Layer fields (populated in RIL pass) ─────────
+  series_name?:     string | null;  // detected series (e.g. "The Stormlight Archive")
+  series_position?: number | null;  // position in series (1 = starter, 2+ = continuation)
+  series_label?:    string | null;  // 'series_starter' | 'series_continuation' | 'series_later_volume'
+  ril_suppressed?:  boolean;        // true = removed from visible set by RIL
+  ril_reason?:      string;         // audit reason for RIL suppression
 };
 
 export type ScoredBook = CandidateBook & {
@@ -1495,6 +1502,30 @@ export function getRankedRecs(
   const nonRejected = scored.filter(b => b._score_breakdown.fit_class !== 'reject');
   nonRejected.sort((a, b) => b.score - a.score);
 
+  // ── Recommendation Integrity Layer ────────────────────────────────────────
+  // Runs after CoG so repeated_author_match is populated.
+  // Annotates every book with series_name / series_position / series_label.
+  // Removes series_later_volume books from the visible pool (placed in audit).
+  const rilResult = applyIntegrityLayer(nonRejected, cog);
+  const rilPool   = rilResult.visible;          // feeds the intent / composition stages
+  const rilSuppressed = rilResult.integritySuppressed;
+
+  if (__DEV__ && rilSuppressed.length > 0) {
+    console.log(`[RIL] suppressed ${rilSuppressed.length} book(s):`);
+    for (const b of rilSuppressed) {
+      console.log(`  [RIL_SUPPRESS] "${b.title}" by ${b.author} — ${b._score_breakdown.ril_reason ?? '?'}`);
+    }
+  }
+  if (__DEV__) {
+    const annotatedWithSeries = rilPool.filter(b => b._score_breakdown.series_label);
+    for (const b of annotatedWithSeries) {
+      const sb = b._score_breakdown;
+      console.log(
+        `[RIL_LABEL] "${b.title}" → ${sb.series_label} (${sb.series_name} #${sb.series_position})`
+      );
+    }
+  }
+
   // ── Intent layer ──────────────────────────────────────────────────────────
   // Applied AFTER CoG classification so the taste profile still governs
   // base quality. Intent narrows the ranked pool; it never replaces CoG fit.
@@ -1508,18 +1539,18 @@ export function getRankedRecs(
   // If intent filtering leaves fewer than MIN_PASSING_BOOKS that clear the
   // score threshold, the quality gate catches it and the UI should guide the
   // user to relax their filters (no silent fallback to unfiltered results).
-  let intentFiltered      = nonRejected as typeof nonRejected;
+  let intentFiltered      = rilPool as typeof rilPool;
   let intentRejectedCount = 0;
   let intentSummary: IntentSetSummary | undefined;
 
   if (intent && isIntentActive(intent)) {
-    const kept: typeof nonRejected = [];
+    const kept: typeof rilPool = [];
     const exclusionCounts: Record<string, number> = {};
     let removedByExclusion  = 0;
     let removedByHardFilter = 0;
     let softBoostedCount    = 0;
 
-    for (const book of nonRejected) {
+    for (const book of rilPool) {
       const bookLane  = detectBookLane(book);
       const marketPos = (book._score_breakdown.market_position as MarketPosition) ?? 'general_fiction';
 
@@ -1576,7 +1607,7 @@ export function getRankedRecs(
     intentFiltered = kept;
 
     intentSummary = {
-      before_intent:          nonRejected.length,
+      before_intent:          rilPool.length,
       removed_by_exclusion:   removedByExclusion,
       removed_by_hard_filter: removedByHardFilter,
       soft_boosted:           softBoostedCount,
@@ -1594,14 +1625,18 @@ export function getRankedRecs(
     if (rejectCount > 0) {
       console.log(`[COG] Removed ${rejectCount} reject-class books from pool of ${scored.length}`);
     }
-    const top5 = nonRejected.slice(0, 5).map(b => ({
+    if (rilSuppressed.length > 0) {
+      console.log(`[RIL] Suppressed ${rilSuppressed.length} book(s) (series integrity); ${rilPool.length} remain`);
+    }
+    const top5 = rilPool.slice(0, 5).map(b => ({
       title: b.title,
       score: b.score,
       fit_class: b._score_breakdown.fit_class,
       market_position: b._score_breakdown.market_position,
       cog_delta: b._score_breakdown.cog_score_delta,
+      series_label: b._score_breakdown.series_label,
     }));
-    console.log('[COG] Top-5 after fit classification:', JSON.stringify(top5));
+    console.log('[COG+RIL] Top-5 after fit classification + integrity:', JSON.stringify(top5));
   }
 
   // Quality gate: score threshold (applied to CoG-adjusted + intent-boosted scores)
@@ -1771,7 +1806,9 @@ export function getRankedRecs(
   // Audit always reflects the CoG-filtered pool (before intent), so the debug
   // panel shows why a book was included or excluded by the engine itself.
   const rejectBooks = scored.filter(b => b._score_breakdown.fit_class === 'reject');
-  const auditList   = [...nonRejected, ...rejectBooks];
+  // Include integrity-suppressed books in the audit so the debug panel can surface them.
+  // They carry ril_suppressed=true + ril_reason for full transparency.
+  const auditList   = [...nonRejected, ...rilSuppressed, ...rejectBooks];
 
   return {
     recs:  diverse,

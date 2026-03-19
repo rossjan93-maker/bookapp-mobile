@@ -1153,6 +1153,37 @@ function RecCard({
             )}
           </View>
 
+          {/* ── Series badge ── */}
+          {(book._score_breakdown.series_label === 'series_starter' ||
+            book._score_breakdown.series_label === 'series_continuation') && (
+            <View style={{
+              alignSelf: 'flex-start',
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 4,
+              marginBottom: 6,
+              paddingHorizontal: 7,
+              paddingVertical: 3,
+              borderRadius: 6,
+              backgroundColor: book._score_breakdown.series_label === 'series_starter'
+                ? '#fef3c7'
+                : '#f0fdf4',
+            }}>
+              <Text style={{
+                fontSize: 10,
+                fontWeight: '600',
+                color: book._score_breakdown.series_label === 'series_starter'
+                  ? '#92400e'
+                  : '#166534',
+                letterSpacing: 0.2,
+              }}>
+                {book._score_breakdown.series_label === 'series_starter'
+                  ? '◆ Start here'
+                  : '→ Continue the series'}
+              </Text>
+            </View>
+          )}
+
           {book.reasons.length > 0 && (
             <Text style={{ fontSize: 12, color: '#57534e', lineHeight: 17 }} numberOfLines={2}>
               {book.reasons[0]}
@@ -1269,6 +1300,27 @@ function RecCard({
             <Text style={{ fontSize: 9, color: '#a8a29e', marginTop: 2 }} numberOfLines={1}>
               ↵ {book._retrieval_reason}
             </Text>
+            {/* ── Series context (RIL) ── */}
+            {book._score_breakdown.series_label && (
+              <View style={{ marginTop: 6, borderTopWidth: 1, borderTopColor: '#e7e5e4', paddingTop: 6 }}>
+                <Text style={{ fontSize: 10, fontWeight: '600', color: '#a8a29e', marginBottom: 3 }}>
+                  SERIES
+                </Text>
+                <Text style={{ fontSize: 11, color: '#57534e' }}>
+                  {book._score_breakdown.series_name ?? 'Unknown series'}
+                  {book._score_breakdown.series_position != null
+                    ? ` · Book ${book._score_breakdown.series_position}`
+                    : ''}
+                </Text>
+                <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 2 }}>
+                  {book._score_breakdown.series_label === 'series_starter'
+                    ? 'Best entry point — start here'
+                    : book._score_breakdown.series_label === 'series_continuation'
+                    ? 'Continuation — you\'ve read this author'
+                    : book._score_breakdown.series_label}
+                </Text>
+              </View>
+            )}
           </View>
 
           {uncertainty && (
@@ -2674,6 +2726,22 @@ export default function RecommendationsScreen() {
                                               : ''}
                                           </Text>
                                         )}
+                                      </View>
+                                    )}
+                                    {/* RIL (series integrity) row */}
+                                    {(b._score_breakdown.series_label || b._score_breakdown.ril_suppressed) && (
+                                      <View style={{ paddingLeft: 22, marginTop: 2, flexDirection: 'row', gap: 4, flexWrap: 'wrap' }}>
+                                        {b._score_breakdown.ril_suppressed ? (
+                                          <Text style={{ fontSize: 7.5, color: '#b45309', fontWeight: '600' }}>
+                                            ◆ RIL SUPPRESSED · {b._score_breakdown.ril_reason ?? ''}
+                                          </Text>
+                                        ) : b._score_breakdown.series_label ? (
+                                          <Text style={{ fontSize: 7.5, color: '#0369a1' }}>
+                                            ◆ {b._score_breakdown.series_label}
+                                            {b._score_breakdown.series_name ? ` · ${b._score_breakdown.series_name}` : ''}
+                                            {b._score_breakdown.series_position != null ? ` #${b._score_breakdown.series_position}` : ''}
+                                          </Text>
+                                        ) : null}
                                       </View>
                                     )}
                                   </View>
