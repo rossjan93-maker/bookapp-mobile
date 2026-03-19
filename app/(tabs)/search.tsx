@@ -4,6 +4,7 @@ import {
   Animated,
   FlatList,
   LayoutAnimation,
+  Modal,
   Platform,
   ScrollView,
   Text,
@@ -1338,6 +1339,73 @@ function RecCard({
   );
 }
 
+// ─── Forensic audit types ─────────────────────────────────────────────────────
+
+type AuditCandidate = {
+  rank: number;
+  title: string;
+  author: string;
+  source: string;
+  retrieval_reason: string;
+  fit_class: string;
+  trait_alignment: number;
+  subject_overlap_hits: string[];
+  subject_overlap_bonus: number;
+  genre_bonus: number;
+  penalty: number;
+  final_score: number;
+  flags: string[];
+};
+
+type AuditRec = {
+  rank: number;
+  title: string;
+  author: string;
+  score: number;
+  fit_class: string;
+  reason: string;
+};
+
+type ForensicAudit = {
+  user_id: string;
+  timestamp: string;
+  profile: {
+    imported_books_count: number;
+    strongSignalCount: number;
+    tier: number;
+    genre_affinities: Record<string, number>;
+    preferred_traits: Record<string, number>;
+    dominant_lanes: string[];
+    repeated_liked_authors: string[];
+    liked_subjects: string[];
+  };
+  fresh: {
+    mode: string;
+    cache_hit: boolean;
+    genres_used: string[];
+    subjects_used: string[];
+    authors_used: string[];
+    ol_queries: string[];
+    pool_size: number;
+    catalog_count: number;
+    live_ol_count: number;
+    cached_external_count: number;
+    hygiene_excluded: number;
+    enriched_count: number;
+    top20: AuditCandidate[];
+    top10: AuditRec[];
+  };
+  cache?: {
+    mode: string;
+    cache_hit: boolean;
+    genres_used: string[];
+    subjects_used: string[];
+    authors_used: string[];
+    top10: AuditRec[];
+    cache_built_at: string | null;
+  };
+};
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function RecommendationsScreen() {
@@ -1368,6 +1436,12 @@ export default function RecommendationsScreen() {
   const [isFreePreview, setIsFreePreview]     = useState(false);
   const [thesisOpen, setThesisOpen]           = useState(false);
   const thesisHeight                          = useRef(new Animated.Value(0)).current;
+
+  // ── In-app forensic audit state ────────────────────────────────────────────
+  const [forensicModalVisible, setForensicModalVisible] = useState(false);
+  const [forensicAuditData, setForensicAuditData]       = useState<ForensicAudit | null>(null);
+  const [auditRunning, setAuditRunning]                 = useState(false);
+  const [auditSection, setAuditSection]                 = useState<'profile' | 'retrieval' | 'candidates' | 'recs'>('profile');
 
   // ── "Your Next Read" intent layer state ──────────────────────────────────
   const [nextReadIntent, setNextReadIntent]   = useState<NextReadIntent>(emptyNextReadIntent());
@@ -1623,6 +1697,158 @@ export default function RecommendationsScreen() {
       // silent — recommendations fail gracefully
     } finally {
       setRecsLoading(false);
+    }
+  }
+
+  // ── In-app live forensic audit ────────────────────────────────────────────
+
+  async function runForensicAudit() {
+    if (!supabase || !tasteProfile || !entitlement) return;
+    setAuditRunning(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const fbCtx = await loadFeedbackContext(supabase, user.id);
+      const activeEnt = entitlement;
+      const likedSubjSet = new Set((tasteProfile.liked_subjects ?? []).map(s => s.toLowerCase().trim()));
+
+      // ── Pass A: fresh (skip cache) ──────────────────────────────────────
+      const freshResult = await getPersonalizedRecsWithExpert(
+        supabase, user.id, tasteProfile, activeEnt, 10, fbCtx, undefined,
+        { skipCache: true },
+      );
+      const freshMeta = freshResult.meta;
+      const freshTrace = freshMeta.retrieval_trace;
+
+      const top20: AuditCandidate[] = (freshMeta.candidate_audit ?? []).slice(0, 20).map((b, i) => {
+        const bd = b._score_breakdown;
+        const bookSubjs = (b.subjects ?? []).map(s => s.toLowerCase().trim());
+        const subjHits  = bookSubjs.filter(s => likedSubjSet.has(s));
+        return {
+          rank:                  i + 1,
+          title:                 b.title,
+          author:                b.author,
+          source:                b._source ?? '',
+          retrieval_reason:      b._retrieval_reason ?? '',
+          fit_class:             bd.fit_class ?? '',
+          trait_alignment:       +bd.trait_alignment.toFixed(3),
+          subject_overlap_hits:  subjHits.slice(0, 4),
+          subject_overlap_bonus: +Math.min(0.06, subjHits.length * 0.02).toFixed(3),
+          genre_bonus:           +bd.genre_bonus.toFixed(3),
+          penalty:               +bd.metadata_penalty.toFixed(3),
+          final_score:           +bd.final_score.toFixed(3),
+          flags:                 bd.audit_flags.slice(0, 4),
+        };
+      });
+
+      const top10Fresh: AuditRec[] = freshResult.recs.slice(0, 10).map((r, i) => ({
+        rank:      i + 1,
+        title:     r.title,
+        author:    r.author,
+        score:     +r.score.toFixed(3),
+        fit_class: r._score_breakdown.fit_class ?? '',
+        reason:    (r.reasons ?? []).slice(0, 2).join(' · '),
+      }));
+
+      // ── Pass B: cache (allow cache) ─────────────────────────────────────
+      const cacheResult = await getPersonalizedRecsWithExpert(
+        supabase, user.id, tasteProfile, activeEnt, 10, fbCtx, undefined,
+        { skipCache: false },
+      );
+      const cacheMeta  = cacheResult.meta;
+      const cacheTrace = cacheMeta.retrieval_trace;
+
+      const top10Cache: AuditRec[] = cacheResult.recs.slice(0, 10).map((r, i) => ({
+        rank:      i + 1,
+        title:     r.title,
+        author:    r.author,
+        score:     +r.score.toFixed(3),
+        fit_class: r._score_breakdown.fit_class ?? '',
+        reason:    (r.reasons ?? []).slice(0, 2).join(' · '),
+      }));
+
+      const det = tasteProfile.det_lanes;
+      const audit: ForensicAudit = {
+        user_id:   user.id,
+        timestamp: new Date().toISOString(),
+        profile: {
+          imported_books_count:  tasteProfile.evidence.imported_books_count,
+          strongSignalCount:     tasteProfile.strongSignalCount,
+          tier:                  tasteProfile.tier,
+          genre_affinities:      Object.fromEntries(
+            Object.entries(tasteProfile.genre_affinities)
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 10)
+              .map(([k, v]) => [k, +v.toFixed(2)])
+          ),
+          preferred_traits:      Object.fromEntries(
+            Object.entries(tasteProfile.preferred_traits)
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 10)
+              .map(([k, v]) => [k, +v.toFixed(2)])
+          ),
+          dominant_lanes:        det?.dominant_lanes ?? [],
+          repeated_liked_authors: det?.repeated_liked_authors ?? [],
+          liked_subjects:        tasteProfile.liked_subjects ?? [],
+        },
+        fresh: {
+          mode:                 freshMeta.mode ?? 'deterministic',
+          cache_hit:            freshMeta.is_from_cache ?? false,
+          genres_used:          freshTrace.top_genres_used,
+          subjects_used:        freshTrace.liked_subjects_used,
+          authors_used:         freshTrace.liked_authors_used,
+          ol_queries:           freshTrace.ol_queries,
+          pool_size:            freshMeta.pool_size,
+          catalog_count:        freshMeta.catalog_count,
+          live_ol_count:        freshMeta.live_ol_count,
+          cached_external_count: freshMeta.cached_external_count,
+          hygiene_excluded:     freshMeta.hygiene_excluded,
+          enriched_count:       freshMeta.enriched_count,
+          top20,
+          top10: top10Fresh,
+        },
+        cache: {
+          mode:         cacheMeta.mode ?? 'deterministic',
+          cache_hit:    cacheMeta.is_from_cache ?? false,
+          genres_used:  cacheTrace.top_genres_used,
+          subjects_used: cacheTrace.liked_subjects_used,
+          authors_used: cacheTrace.liked_authors_used,
+          top10:        top10Cache,
+          cache_built_at: cacheMeta.cache_built_at ?? null,
+        },
+      };
+
+      setForensicAuditData(audit);
+      setAuditSection('profile');
+      setForensicModalVisible(true);
+
+      // ── Chunked console backup (each chunk ≤400 chars) ──────────────────
+      const chunks = [
+        ['[AUD_PROF]', { uid: user.id.slice(0,8), ibc: audit.profile.imported_books_count, sc: audit.profile.strongSignalCount, tier: audit.profile.tier }],
+        ['[AUD_AFFIN]', audit.profile.genre_affinities],
+        ['[AUD_TRAITS]', audit.profile.preferred_traits],
+        ['[AUD_LANES]', { lanes: audit.profile.dominant_lanes, authors: audit.profile.repeated_liked_authors.slice(0,5) }],
+        ['[AUD_SUBJ]', audit.profile.liked_subjects.slice(0,10)],
+        ['[AUD_FRESH_META]', { mode: audit.fresh.mode, cache_hit: audit.fresh.cache_hit, pool: audit.fresh.pool_size, excl: audit.fresh.hygiene_excluded, enr: audit.fresh.enriched_count }],
+        ['[AUD_FRESH_TRACE]', { genres: audit.fresh.genres_used, subjects: audit.fresh.subjects_used, authors: audit.fresh.authors_used }],
+        ['[AUD_CACHE_META]', { mode: audit.cache?.mode, cache_hit: audit.cache?.cache_hit, built: audit.cache?.cache_built_at }],
+      ] as [string, unknown][];
+
+      for (const [tag, payload] of chunks) {
+        console.log(tag, JSON.stringify(payload));
+      }
+      audit.fresh.top20.slice(0, 10).forEach((c, i) => {
+        console.log(`[AUD_C${String(i+1).padStart(2,'0')}]`, JSON.stringify({ r: c.rank, t: c.title.slice(0,22), tr: c.trait_alignment, so: c.subject_overlap_bonus, sh: c.subject_overlap_hits, gb: c.genre_bonus, pe: c.penalty, sc: c.final_score, fc: c.fit_class }));
+      });
+      audit.fresh.top10.forEach((r, i) => {
+        console.log(`[AUD_R${i+1}]`, JSON.stringify({ t: r.title.slice(0,25), sc: r.score, fc: r.fit_class }));
+      });
+
+    } catch (e) {
+      console.error('[FORENSIC AUDIT ERROR]', e);
+    } finally {
+      setAuditRunning(false);
     }
   }
 
@@ -2361,6 +2587,21 @@ export default function RecommendationsScreen() {
                                 >
                                   <Text style={{ fontSize: 9, color: '#faf9f7', fontWeight: '600' }}>📋 LOG AUDIT</Text>
                                 </TouchableOpacity>
+                                <TouchableOpacity
+                                  onPress={runForensicAudit}
+                                  disabled={auditRunning}
+                                  style={{
+                                    backgroundColor: auditRunning ? '#57534e' : '#15803d',
+                                    paddingHorizontal: 8,
+                                    paddingVertical: 3,
+                                    borderRadius: 4,
+                                    marginLeft: 4,
+                                  }}
+                                >
+                                  <Text style={{ fontSize: 9, color: '#faf9f7', fontWeight: '600' }}>
+                                    {auditRunning ? '⏳ RUNNING…' : '🔬 LIVE AUDIT'}
+                                  </Text>
+                                </TouchableOpacity>
                               </View>
                               {recsMeta.candidate_audit.slice(0, 25).map((b, i) => {
                                 const lane    = detectBookLane(b);
@@ -2822,6 +3063,257 @@ export default function RecommendationsScreen() {
             </View>
           </>
         )}
+
+        {/* ── In-app live forensic audit modal ── */}
+        <Modal
+          visible={forensicModalVisible}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setForensicModalVisible(false)}
+        >
+          <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
+            {/* Header */}
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+              paddingHorizontal: 16, paddingTop: 20, paddingBottom: 12,
+              borderBottomWidth: 1, borderBottomColor: '#e7e5e4',
+            }}>
+              <Text style={{ fontSize: 14, fontWeight: '700', color: '#1c1917' }}>
+                🔬 Live Rec Audit
+              </Text>
+              {forensicAuditData && (
+                <Text style={{ fontSize: 9, color: '#a8a29e', flex: 1, marginLeft: 10 }} numberOfLines={1}>
+                  {forensicAuditData.user_id.slice(0, 8)}  ·  {forensicAuditData.timestamp.slice(11, 19)}
+                </Text>
+              )}
+              <TouchableOpacity
+                onPress={() => setForensicModalVisible(false)}
+                style={{ paddingHorizontal: 10, paddingVertical: 4, backgroundColor: '#e7e5e4', borderRadius: 6 }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: '600', color: '#1c1917' }}>Close</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Section tabs */}
+            <View style={{ flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8, gap: 6 }}>
+              {(['profile', 'retrieval', 'candidates', 'recs'] as const).map(sec => (
+                <TouchableOpacity
+                  key={sec}
+                  onPress={() => setAuditSection(sec)}
+                  style={{
+                    flex: 1, paddingVertical: 6, borderRadius: 6,
+                    backgroundColor: auditSection === sec ? '#1c1917' : '#e7e5e4',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ fontSize: 9, fontWeight: '700', color: auditSection === sec ? '#faf9f7' : '#78716c' }}>
+                    {sec === 'profile' ? 'PROFILE' : sec === 'retrieval' ? 'RETRIEVAL' : sec === 'candidates' ? 'CAND-20' : 'TOP-10'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {forensicAuditData ? (
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 14 }}>
+
+                {/* ── Part A: Profile ── */}
+                {auditSection === 'profile' && (
+                  <View>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#a8a29e', marginBottom: 8 }}>A · LIVE PROFILE</Text>
+                    {[
+                      ['user_id', forensicAuditData.user_id],
+                      ['imported_books_count', String(forensicAuditData.profile.imported_books_count)],
+                      ['strongSignalCount', String(forensicAuditData.profile.strongSignalCount)],
+                      ['tier', String(forensicAuditData.profile.tier)],
+                    ].map(([label, val]) => (
+                      <View key={label} style={{ marginBottom: 6 }}>
+                        <Text style={{ fontSize: 8, color: '#a8a29e', fontWeight: '600' }}>{label}</Text>
+                        <Text style={{ fontSize: 10, color: '#1c1917', fontFamily: 'monospace' }} selectable>{val}</Text>
+                      </View>
+                    ))}
+                    <Text style={{ fontSize: 8, color: '#a8a29e', fontWeight: '600', marginTop: 4 }}>genre_affinities</Text>
+                    <Text style={{ fontSize: 9, color: '#1c1917', fontFamily: 'monospace', lineHeight: 15 }} selectable>
+                      {Object.entries(forensicAuditData.profile.genre_affinities).map(([k, v]) => `${k}: ${v}`).join('\n')}
+                    </Text>
+                    <Text style={{ fontSize: 8, color: '#a8a29e', fontWeight: '600', marginTop: 8 }}>preferred_traits</Text>
+                    <Text style={{ fontSize: 9, color: '#1c1917', fontFamily: 'monospace', lineHeight: 15 }} selectable>
+                      {Object.entries(forensicAuditData.profile.preferred_traits).map(([k, v]) => `${k}: ${v}`).join('\n')}
+                    </Text>
+                    <Text style={{ fontSize: 8, color: '#a8a29e', fontWeight: '600', marginTop: 8 }}>dominant_lanes</Text>
+                    <Text style={{ fontSize: 9, color: '#1c1917', fontFamily: 'monospace' }} selectable>
+                      {forensicAuditData.profile.dominant_lanes.join(', ')}
+                    </Text>
+                    <Text style={{ fontSize: 8, color: '#a8a29e', fontWeight: '600', marginTop: 8 }}>repeated_liked_authors</Text>
+                    <Text style={{ fontSize: 9, color: '#1c1917', fontFamily: 'monospace' }} selectable>
+                      {forensicAuditData.profile.repeated_liked_authors.join(', ')}
+                    </Text>
+                    <Text style={{ fontSize: 8, color: '#a8a29e', fontWeight: '600', marginTop: 8 }}>liked_subjects</Text>
+                    <Text style={{ fontSize: 9, color: '#1c1917', fontFamily: 'monospace', lineHeight: 15 }} selectable>
+                      {forensicAuditData.profile.liked_subjects.join('\n')}
+                    </Text>
+                  </View>
+                )}
+
+                {/* ── Part B: Retrieval ── */}
+                {auditSection === 'retrieval' && (
+                  <View>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#a8a29e', marginBottom: 8 }}>B · RETRIEVAL</Text>
+                    {/* Fresh pass */}
+                    <Text style={{ fontSize: 9, fontWeight: '700', color: '#15803d', marginBottom: 4 }}>Pass A — Fresh (skipCache=true)</Text>
+                    {[
+                      ['mode', forensicAuditData.fresh.mode],
+                      ['cache_hit', String(forensicAuditData.fresh.cache_hit)],
+                      ['pool_size', String(forensicAuditData.fresh.pool_size)],
+                      ['catalog', String(forensicAuditData.fresh.catalog_count)],
+                      ['live_ol', String(forensicAuditData.fresh.live_ol_count)],
+                      ['cached_ext', String(forensicAuditData.fresh.cached_external_count)],
+                      ['hygiene_excluded', String(forensicAuditData.fresh.hygiene_excluded)],
+                      ['enriched', String(forensicAuditData.fresh.enriched_count)],
+                    ].map(([label, val]) => (
+                      <Text key={label} style={{ fontSize: 9, color: '#57534e', fontFamily: 'monospace', lineHeight: 14 }}>
+                        {label}: <Text style={{ color: '#1c1917' }} selectable>{val}</Text>
+                      </Text>
+                    ))}
+                    <Text style={{ fontSize: 8, color: '#a8a29e', fontWeight: '600', marginTop: 6 }}>genres_used</Text>
+                    <Text style={{ fontSize: 9, color: '#1c1917', fontFamily: 'monospace' }} selectable>{forensicAuditData.fresh.genres_used.join(', ') || '—'}</Text>
+                    <Text style={{ fontSize: 8, color: '#a8a29e', fontWeight: '600', marginTop: 4 }}>subjects_used</Text>
+                    <Text style={{ fontSize: 9, color: '#1c1917', fontFamily: 'monospace' }} selectable>{forensicAuditData.fresh.subjects_used.join(', ') || '—'}</Text>
+                    <Text style={{ fontSize: 8, color: '#a8a29e', fontWeight: '600', marginTop: 4 }}>authors_used</Text>
+                    <Text style={{ fontSize: 9, color: '#1c1917', fontFamily: 'monospace' }} selectable>{forensicAuditData.fresh.authors_used.join(', ') || '—'}</Text>
+                    <Text style={{ fontSize: 8, color: '#a8a29e', fontWeight: '600', marginTop: 4 }}>ol_queries ({forensicAuditData.fresh.ol_queries.length})</Text>
+                    <Text style={{ fontSize: 9, color: '#1c1917', fontFamily: 'monospace', lineHeight: 15 }} selectable>
+                      {forensicAuditData.fresh.ol_queries.map((q, i) => `${i+1}. ${q}`).join('\n')}
+                    </Text>
+                    {/* Cache pass */}
+                    {forensicAuditData.cache && (
+                      <View style={{ marginTop: 14, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#e7e5e4' }}>
+                        <Text style={{ fontSize: 9, fontWeight: '700', color: '#2563eb', marginBottom: 4 }}>Pass B — Cache (skipCache=false)</Text>
+                        {[
+                          ['mode', forensicAuditData.cache.mode],
+                          ['cache_hit', String(forensicAuditData.cache.cache_hit)],
+                          ['cache_built_at', forensicAuditData.cache.cache_built_at ?? 'n/a'],
+                        ].map(([label, val]) => (
+                          <Text key={label} style={{ fontSize: 9, color: '#57534e', fontFamily: 'monospace', lineHeight: 14 }}>
+                            {label}: <Text style={{ color: '#1c1917' }} selectable>{val}</Text>
+                          </Text>
+                        ))}
+                        <Text style={{ fontSize: 8, color: '#a8a29e', fontWeight: '600', marginTop: 6 }}>genres_used (reconstructed)</Text>
+                        <Text style={{ fontSize: 9, color: '#1c1917', fontFamily: 'monospace' }} selectable>{forensicAuditData.cache.genres_used.join(', ') || '—'}</Text>
+                        <Text style={{ fontSize: 8, color: '#a8a29e', fontWeight: '600', marginTop: 4 }}>subjects_used</Text>
+                        <Text style={{ fontSize: 9, color: '#1c1917', fontFamily: 'monospace' }} selectable>{forensicAuditData.cache.subjects_used.join(', ') || '—'}</Text>
+                        <Text style={{ fontSize: 8, color: '#a8a29e', fontWeight: '600', marginTop: 4 }}>authors_used</Text>
+                        <Text style={{ fontSize: 9, color: '#1c1917', fontFamily: 'monospace' }} selectable>{forensicAuditData.cache.authors_used.join(', ') || '—'}</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {/* ── Part C: Top 20 candidates ── */}
+                {auditSection === 'candidates' && (
+                  <View>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#a8a29e', marginBottom: 8 }}>C · TOP-20 CANDIDATES (fresh pass)</Text>
+                    {/* Column header */}
+                    <View style={{ flexDirection: 'row', paddingBottom: 4, marginBottom: 4, borderBottomWidth: 1, borderBottomColor: '#e7e5e4' }}>
+                      <Text style={{ fontSize: 7, color: '#a8a29e', width: 18 }}>#</Text>
+                      <Text style={{ fontSize: 7, color: '#a8a29e', flex: 1 }}>title · author</Text>
+                      <Text style={{ fontSize: 7, color: '#a8a29e', width: 26, textAlign: 'right' }}>tr</Text>
+                      <Text style={{ fontSize: 7, color: '#a8a29e', width: 26, textAlign: 'right' }}>so</Text>
+                      <Text style={{ fontSize: 7, color: '#a8a29e', width: 26, textAlign: 'right' }}>gb</Text>
+                      <Text style={{ fontSize: 7, color: '#a8a29e', width: 26, textAlign: 'right' }}>pe</Text>
+                      <Text style={{ fontSize: 7, color: '#a8a29e', width: 32, textAlign: 'right' }}>score</Text>
+                    </View>
+                    {forensicAuditData.fresh.top20.map(c => {
+                      const isCore = c.fit_class === 'core_fit';
+                      const isRej  = c.fit_class === 'reject';
+                      return (
+                        <View key={c.rank} style={{
+                          paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#f5f5f4',
+                          backgroundColor: isCore ? '#f0fdf4' : isRej ? '#fef2f2' : 'transparent',
+                        }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <Text style={{ fontSize: 8, color: '#a8a29e', width: 18 }}>#{c.rank}</Text>
+                            <Text style={{ fontSize: 8, color: '#1c1917', flex: 1 }} numberOfLines={1}>{c.title}</Text>
+                            <Text style={{ fontSize: 8, color: '#57534e', width: 26, textAlign: 'right' }}>{c.trait_alignment.toFixed(2)}</Text>
+                            <Text style={{ fontSize: 8, color: c.subject_overlap_bonus > 0 ? '#15803d' : '#a8a29e', width: 26, textAlign: 'right' }}>{c.subject_overlap_bonus.toFixed(2)}</Text>
+                            <Text style={{ fontSize: 8, color: '#57534e', width: 26, textAlign: 'right' }}>{c.genre_bonus.toFixed(2)}</Text>
+                            <Text style={{ fontSize: 8, color: c.penalty > 0 ? '#dc2626' : '#a8a29e', width: 26, textAlign: 'right' }}>{c.penalty.toFixed(2)}</Text>
+                            <Text style={{ fontSize: 8, fontWeight: '700', color: c.final_score >= 0.5 ? '#15803d' : c.final_score >= 0.35 ? '#78716c' : '#dc2626', width: 32, textAlign: 'right' }}>{c.final_score.toFixed(3)}</Text>
+                          </View>
+                          <View style={{ flexDirection: 'row', paddingLeft: 18, gap: 6, marginTop: 1, flexWrap: 'wrap' }}>
+                            <Text style={{ fontSize: 7, color: '#78716c' }}>{c.author}</Text>
+                            <Text style={{ fontSize: 7, color: isCore ? '#15803d' : isRej ? '#dc2626' : '#2563eb', fontWeight: '700' }}>
+                              {c.fit_class.replace('_fit', '').toUpperCase()}
+                            </Text>
+                            {c.subject_overlap_hits.length > 0 && (
+                              <Text style={{ fontSize: 7, color: '#15803d' }}>subj: {c.subject_overlap_hits.join(', ')}</Text>
+                            )}
+                            {c.flags.length > 0 && <Text style={{ fontSize: 7, color: '#ea580c' }}>⚑ {c.flags.join(',')}</Text>}
+                            <Text style={{ fontSize: 7, color: '#a8a29e' }}>{c.retrieval_reason.slice(0, 22)}</Text>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+
+                {/* ── Part D: Top 10 recs ── */}
+                {auditSection === 'recs' && (
+                  <View>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#a8a29e', marginBottom: 8 }}>D · TOP-10 RECS</Text>
+                    <Text style={{ fontSize: 9, fontWeight: '700', color: '#15803d', marginBottom: 6 }}>Pass A — Fresh</Text>
+                    {forensicAuditData.fresh.top10.map(r => (
+                      <View key={r.rank} style={{ marginBottom: 8, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#e7e5e4' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Text style={{ fontSize: 9, color: '#a8a29e', width: 18 }}>#{r.rank}</Text>
+                          <Text style={{ fontSize: 10, fontWeight: '600', color: '#1c1917', flex: 1 }} numberOfLines={1}>{r.title}</Text>
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: r.score >= 0.5 ? '#15803d' : '#78716c' }}>{r.score.toFixed(3)}</Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', paddingLeft: 26, gap: 8, marginTop: 2 }}>
+                          <Text style={{ fontSize: 8, color: '#78716c' }}>{r.author}</Text>
+                          <Text style={{ fontSize: 8, fontWeight: '700', color: r.fit_class === 'core_fit' ? '#15803d' : r.fit_class === 'reject' ? '#dc2626' : '#2563eb' }}>
+                            {r.fit_class.replace('_fit','').toUpperCase()}
+                          </Text>
+                        </View>
+                        {r.reason.length > 0 && (
+                          <Text style={{ fontSize: 8, color: '#78716c', paddingLeft: 26, marginTop: 2, fontStyle: 'italic' }} numberOfLines={2}>{r.reason}</Text>
+                        )}
+                      </View>
+                    ))}
+                    {forensicAuditData.cache && (
+                      <View style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#e7e5e4' }}>
+                        <Text style={{ fontSize: 9, fontWeight: '700', color: '#2563eb', marginBottom: 6 }}>
+                          Pass B — Cache ({forensicAuditData.cache.cache_hit ? 'HIT ✓' : 'MISS — fresh run'})
+                        </Text>
+                        {forensicAuditData.cache.top10.map(r => (
+                          <View key={r.rank} style={{ marginBottom: 8, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#e7e5e4' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                              <Text style={{ fontSize: 9, color: '#a8a29e', width: 18 }}>#{r.rank}</Text>
+                              <Text style={{ fontSize: 10, fontWeight: '600', color: '#1c1917', flex: 1 }} numberOfLines={1}>{r.title}</Text>
+                              <Text style={{ fontSize: 10, fontWeight: '700', color: r.score >= 0.5 ? '#15803d' : '#78716c' }}>{r.score.toFixed(3)}</Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', paddingLeft: 26, gap: 8, marginTop: 2 }}>
+                              <Text style={{ fontSize: 8, color: '#78716c' }}>{r.author}</Text>
+                              <Text style={{ fontSize: 8, fontWeight: '700', color: r.fit_class === 'core_fit' ? '#15803d' : r.fit_class === 'reject' ? '#dc2626' : '#2563eb' }}>
+                                {r.fit_class.replace('_fit','').toUpperCase()}
+                              </Text>
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                )}
+
+              </ScrollView>
+            ) : (
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                <ActivityIndicator size="large" color="#1c1917" />
+                <Text style={{ marginTop: 12, color: '#a8a29e', fontSize: 13 }}>Running pipeline…</Text>
+              </View>
+            )}
+          </View>
+        </Modal>
+
       </ScrollView>
     );
   }

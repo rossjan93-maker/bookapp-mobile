@@ -1828,6 +1828,7 @@ export async function getPersonalizedRecsWithExpert(
   limit        = 5,
   feedback?:   FeedbackContext,
   intent?:     NextReadIntent,
+  opts?:       { skipCache?: boolean },
 ): Promise<RankedRecsResult> {
   // ── Step 1: Deterministic pipeline (always runs) ──────────────────────────
   const { candidates, enrichmentMap, retrieval_trace } =
@@ -1971,7 +1972,7 @@ export async function getPersonalizedRecsWithExpert(
   if (__DEV__ && userId === FORENSIC_USER_ID) {
     console.log('[FORENSIC] rec_cache BYPASSED for expert path');
   }
-  const cacheCheck = __DEV__ && userId === FORENSIC_USER_ID
+  const cacheCheck = (__DEV__ && userId === FORENSIC_USER_ID) || opts?.skipCache
     ? { hit: false, entry: null, reason: 'forensic_bypass' as const }
     : await loadCachedRecs(client, userId);
 

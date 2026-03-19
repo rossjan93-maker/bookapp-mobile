@@ -1,0 +1,97 @@
+Stop summarizing what exists and stop telling me you need a service role key.
+
+You already have the correct path:
+the signed-in app session can access the live user through Supabase auth context.
+
+Your job is to build and use an IN-APP LIVE FORENSIC EXPORT for the currently signed-in user so we can validate the recommendation engine without RLS issues or log truncation.
+
+GOAL
+For the currently signed-in user, run the real live recommendation pipeline in-app and produce a compact forensic export that survives console truncation.
+
+REQUIREMENTS
+
+1. Build a forensic export action in the app
+For the currently signed-in user only, add a debug-only button in the Recommendations screen:
+- “Export Live Recommendation Audit”
+
+When tapped, it must run the full live recommendation pipeline for the signed-in user and write a structured JSON audit to one of these:
+- a downloadable file in the app sandbox
+OR
+- a visible in-app debug text panel with paginated/sectioned output
+OR
+- a single compact JSON blob copied to clipboard / console in chunked sections
+
+Pick the cleanest option that works reliably in this environment.
+Do NOT depend on long console lines that get truncated.
+
+2. The export must include ONLY live runtime data
+No inferred values from code.
+No expected values.
+No architecture summary.
+
+For the signed-in user, export:
+
+A. live profile
+- current user_id
+- imported_books_count
+- strongSignalCount
+- genre_affinities
+- preferred_traits
+- dominant_lanes
+- repeated_liked_authors
+- liked_subjects
+
+B. live retrieval
+- mode used
+- cache hit/miss
+- genres_used
+- liked_subjects_used
+- liked_authors_used
+- exact queries sent
+- candidate counts by source
+- excluded count
+- enriched count
+
+C. top 20 candidate audit
+For each:
+- title
+- source
+- retrieval_reason
+- fit_class
+- trait_alignment
+- subject_overlap_hits
+- genre_bonus
+- penalties
+- final_score
+
+D. final top 10 recs
+- title
+- score
+- fit_class
+- user-facing reason
+
+3. Add one-run cache controls
+In debug mode, add a toggle or parameter to run:
+- fresh/no-cache
+- cache-hit
+so we can validate both paths without asking again.
+
+4. Then use it immediately
+After building the export, run it for the currently signed-in user and return:
+
+Part 1 — where the export was written / how to access it
+Part 2 — the live profile summary
+Part 3 — the top 10 recommendations
+Part 4 — one concise diagnosis:
+- what improved
+- what is still wrong
+- single highest-leverage next fix
+
+CONSTRAINTS
+- no discussion of service role keys
+- no explanation of RLS limitations
+- no recap of T001–T007
+- no inferred outcomes from code
+- no asking me to do manual debugging steps beyond opening the screen and pressing the button if required
+
+I want a working in-app live forensic export and one actual run from the signed-in user.
