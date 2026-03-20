@@ -128,6 +128,7 @@ export default function LibraryScreen() {
   // Accordion state for Finished+chronological mode.
   // Starts empty (all years collapsed). User taps a year row to expand/collapse it.
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
+  const [hasGoodreadsImport, setHasGoodreadsImport] = useState<boolean | null>(null);
 
   useFocusEffect(useCallback(() => {
     // Background cover enrichment for any book in this library load with no
@@ -212,6 +213,14 @@ export default function LibraryScreen() {
           loadedItems.filter(it => it.book_id).map(it => it.book_id),
         )];
         repairBooksMetadata(allLibraryBookIds, { cap: 30 }).catch(() => {});
+
+        // Check whether user has any Goodreads-imported books
+        const { count: importedCount } = await supabase
+          .from('user_books')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('import_source', 'goodreads');
+        setHasGoodreadsImport((importedCount ?? 0) > 0);
       }
       setLoading(false);
     }
@@ -546,6 +555,35 @@ export default function LibraryScreen() {
                 );
               })}
             </ScrollView>
+          )}
+
+          {/* ── Goodreads import banner (shown until user imports) ── */}
+          {hasGoodreadsImport === false && (
+            <TouchableOpacity
+              onPress={() => router.push('/import/goodreads')}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: '#fff',
+                borderRadius: 12,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+                marginBottom: 14,
+                borderWidth: 1,
+                borderColor: '#e7e5e4',
+              }}
+            >
+              <Text style={{ fontSize: 16, marginRight: 10 }}>⤵</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917' }}>
+                  Import from Goodreads
+                </Text>
+                <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 1 }}>
+                  Bring in your reading history to improve recommendations
+                </Text>
+              </View>
+              <Text style={{ fontSize: 16, color: '#d6d3d1' }}>›</Text>
+            </TouchableOpacity>
           )}
 
           {/* ── Sort toggle (Reading: 2+ books; Finished: 2+ books) ── */}

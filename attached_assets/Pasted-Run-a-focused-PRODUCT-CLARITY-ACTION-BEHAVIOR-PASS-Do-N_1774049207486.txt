@@ -1,0 +1,131 @@
+Run a focused PRODUCT CLARITY + ACTION BEHAVIOR PASS.
+
+Do NOT redesign the app.
+Do NOT change recommendation logic.
+Do NOT add new features beyond what is specified.
+First audit → then implement.
+
+---
+
+PART 1 — AUDIT (REQUIRED FIRST)
+
+Before making changes, inspect and report:
+
+1. Recommendation actions behavior:
+- What does "Save" currently do (DB writes, UI updates)?
+- What does "Not for me" currently do?
+- What does "More like this" currently do?
+
+For each:
+- frontend effect (UI change)
+- backend effect (tables updated, fields written, events fired)
+
+2. Rating + taste tags:
+- Where is rating triggered?
+- Where are taste_tags written?
+- Are they connected or separate flows?
+
+3. Goodreads import:
+- Where is it currently rendered?
+- What component/file controls it?
+
+Output:
+- Short audit summary BEFORE making changes
+
+---
+
+PART 2 — FIX RECOMMENDATION ACTIONS (STRICT BEHAVIOR)
+
+Implement clean, deterministic behavior:
+
+SAVE:
+- Insert into user_books with status = 'want_to_read'
+- Remove card from recommendations immediately (optimistic UI)
+- Write positive signal (reuse existing event system if present)
+- Prevent duplicates (if already in library → no-op or update)
+
+NOT FOR ME:
+- Remove card from UI immediately
+- Write negative signal (event or flag)
+- Ensure it influences future recommendations (use existing mechanism)
+
+MORE LIKE THIS:
+- ONLY keep if it already writes a distinct positive signal
+- If it does nothing or duplicates "Save" → REMOVE button entirely
+- If kept:
+  - do NOT add to library
+  - write directional positive signal
+
+---
+
+PART 3 — MERGE “RATE” + “TASTE TAGS”
+
+Create a single section:
+
+Title: "Refine your taste"
+
+Structure:
+- Show finished books needing rating
+- After rating is applied → reveal taste tags inline (or next step)
+
+Rules:
+- No duplicate surfaces
+- Rating is primary action
+- Taste tags are secondary enrichment
+
+Remove:
+- Separate “Add taste tags” section
+- Any duplicate prompts
+
+---
+
+PART 4 — HIDE DEBUG PANEL
+
+- Hide debug UI unless explicitly in dev mode
+- Condition example:
+  - __DEV__ OR explicit flag
+- Ensure it is completely invisible to normal users
+
+---
+
+PART 5 — MOVE GOODREADS IMPORT
+
+Move import UI from recommendations → library
+
+Library placement:
+- Top section or empty-state block
+
+Copy:
+- "Import your library"
+- Short subtext: improve recommendations by importing your reading history
+
+Remove from recommendations screen entirely
+
+---
+
+PART 6 — OUTPUT SUMMARY
+
+After implementation, report:
+
+1. Final behavior of:
+   - Save
+   - Not for me
+   - More like this (kept or removed)
+
+2. What changed in:
+   - recommendations UI
+   - library screen
+   - taste refinement flow
+
+3. Any assumptions made
+
+---
+
+CONSTRAINT
+
+If something is unclear:
+- DO NOT guess
+- surface it in the audit instead
+
+Goal:
+Make the product behavior obvious, consistent, and trustworthy.

@@ -2193,8 +2193,8 @@ export default function RecommendationsScreen() {
   if (step === 'hub') {
     const hasRateTasks    = booksToRate.length > 0;
     const hasTagTasks     = booksToTag.length > 0;
-    const hasImport       = (tasteProfile?.evidence.imported_books_count ?? 0) === 0;
-    const hasAnyTask      = hasRateTasks || hasTagTasks || hasImport;
+    const hasAnalyseTask  = (tasteProfile?.evidence.imported_books_count ?? 0) > 0 && (tasteProfile?.tier ?? 0) < 3;
+    const hasAnyTask      = hasRateTasks || hasTagTasks || hasAnalyseTask;
     const hasRecs         = recommendations.length > 0 || continuations.length > 0;
 
     return (
@@ -2915,103 +2915,40 @@ export default function RecommendationsScreen() {
               {/* ── Tasks (always shown when available, regardless of recs) ── */}
               {hasAnyTask && (
                 <>
-                  {/* ── Rate a finished book ── */}
-                  {hasRateTasks && (
+                  {/* ── Refine your taste ── */}
+                  {(hasRateTasks || hasTagTasks) && (
                     <View style={{ marginBottom: 16 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                         <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', flex: 1 }}>
-                          Rate a finished book
+                          Refine your taste
                         </Text>
                         <Text style={{ fontSize: 12, color: '#a8a29e' }}>
-                          {booksToRate.length} book{booksToRate.length !== 1 ? 's' : ''}
+                          {booksToRate.length + booksToTag.length} book{booksToRate.length + booksToTag.length !== 1 ? 's' : ''}
                         </Text>
                       </View>
                       <Text style={{ fontSize: 12, color: '#78716c', marginBottom: 12 }}>
-                        Ratings are our strongest signal for learning your taste.
+                        Ratings and tags are our strongest signals for learning your taste.
                       </Text>
                       <View style={{ gap: 8 }}>
                         {booksToRate.slice(0, 3).map(b => (
                           <RateCard key={b.id} book={b} onComplete={handleRateComplete} />
                         ))}
-                        {booksToRate.length > 3 && (
-                          <TouchableOpacity onPress={() => router.push('/(tabs)/library')}>
-                            <Text style={{ fontSize: 13, color: '#78716c', paddingVertical: 6 }}>
-                              +{booksToRate.length - 3} more in Library →
-                            </Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    </View>
-                  )}
-
-                  {/* ── Add taste tags ── */}
-                  {hasTagTasks && (
-                    <View style={{ marginBottom: 16 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', flex: 1 }}>
-                          Add taste tags
-                        </Text>
-                        <Text style={{ fontSize: 12, color: '#a8a29e' }}>
-                          {booksToTag.length} book{booksToTag.length !== 1 ? 's' : ''}
-                        </Text>
-                      </View>
-                      <Text style={{ fontSize: 12, color: '#78716c', marginBottom: 12 }}>
-                        Tag what stood out — pacing, characters, originality, and more.
-                      </Text>
-                      <View style={{ gap: 8 }}>
-                        {booksToTag.slice(0, 3).map(b => (
+                        {booksToTag.slice(0, Math.max(0, 3 - booksToRate.length)).map(b => (
                           <TagCard key={b.id} book={b} onComplete={handleTagComplete} />
                         ))}
-                        {booksToTag.length > 3 && (
+                        {(booksToRate.length + booksToTag.length) > 3 && (
                           <TouchableOpacity onPress={() => router.push('/(tabs)/library')}>
                             <Text style={{ fontSize: 13, color: '#78716c', paddingVertical: 6 }}>
-                              +{booksToTag.length - 3} more in Library →
+                              +{booksToRate.length + booksToTag.length - 3} more in Library →
                             </Text>
                           </TouchableOpacity>
                         )}
                       </View>
                     </View>
-                  )}
-
-                  {/* ── Import reading history ── */}
-                  {hasImport && (
-                    <TouchableOpacity
-                      onPress={() => router.push('/import/goodreads')}
-                      style={{
-                        backgroundColor: '#fff',
-                        borderRadius: 12,
-                        padding: 14,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        shadowColor: '#000',
-                        shadowOpacity: 0.04,
-                        shadowRadius: 4,
-                        shadowOffset: { width: 0, height: 1 },
-                        elevation: 1,
-                        marginBottom: 8,
-                      }}
-                    >
-                      <View style={{
-                        width: 36, height: 36, borderRadius: 18,
-                        backgroundColor: '#f5f5f4',
-                        alignItems: 'center', justifyContent: 'center', marginRight: 12,
-                      }}>
-                        <Text style={{ fontSize: 18 }}>⤵</Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>
-                          Import reading history
-                        </Text>
-                        <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 2 }}>
-                          Goodreads CSV gives us a head start
-                        </Text>
-                      </View>
-                      <Text style={{ fontSize: 16, color: '#d6d3d1' }}>›</Text>
-                    </TouchableOpacity>
                   )}
 
                   {/* Analyse imports — shown only if user has imports but not yet diagnosed */}
-                  {!hasImport && (tasteProfile?.tier ?? 0) < 3 && (
+                  {hasAnalyseTask && (
                     <TouchableOpacity
                       onPress={() => router.push('/import/diagnosis')}
                       style={{
