@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Animated,
   FlatList,
+  Image,
   LayoutAnimation,
   Modal,
   Platform,
@@ -1013,6 +1014,21 @@ function TagCard({ book, onComplete }: TagCardProps) {
 // ─── RecCard ──────────────────────────────────────────────────────────────────
 // Shows a single personalised book recommendation with fit label, reasons, risk.
 
+// Strip "By [Author], " prefix from reason text since author is already shown.
+function stripAuthorPrefix(reason: string, author: string): string {
+  const prefix = `By ${author}, `;
+  if (reason.startsWith(prefix)) return reason.slice(prefix.length);
+  if (reason.toLowerCase().startsWith(prefix.toLowerCase())) return reason.slice(prefix.length);
+  return reason;
+}
+
+// Capitalise first letter after stripping prefix
+function capitalize(s: string): string {
+  return s.length > 0 ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+type SeriesCover = { olKey: string; coverId: number | null; title: string };
+
 function RecCard({
   book,
   isExpert         = false,
@@ -1035,9 +1051,10 @@ function RecCard({
   const whyHeight = useRef(new Animated.Value(0)).current;
 
   // Local state
-  const [expanded, setExpanded]         = useState(false);
-  const [moreDone, setMoreDone]         = useState(false);
+  const [expanded, setExpanded]           = useState(false);
+  const [moreDone, setMoreDone]           = useState(false);
   const [pendingAction, setPendingAction] = useState(false);
+  const [seriesCovers, setSeriesCovers]   = useState<SeriesCover[]>([]);
   const impressionFired = useRef(false);
 
   // Fire impression once on mount
@@ -1046,6 +1063,28 @@ function RecCard({
       impressionFired.current = true;
       onImpression();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Fetch series book covers from Open Library for the visual series row
+  useEffect(() => {
+    const sn = book._score_breakdown.series_name;
+    if (!sn || !book._score_breakdown.series_position) return;
+    const q = encodeURIComponent(`series:"${sn}" author:${book.author}`);
+    fetch(`https://openlibrary.org/search.json?q=${q}&sort=old&fields=key,title,cover_i&limit=6`)
+      .then(r => r.json())
+      .then((data: { docs?: Array<{ key: string; cover_i?: number; title?: string }> }) => {
+        const docs = data.docs ?? [];
+        setSeriesCovers(
+          docs.slice(0, 5).map(d => ({
+            olKey:   d.key,
+            coverId: d.cover_i ?? null,
+            title:   d.title ?? '',
+          }))
+        );
+      })
+      .catch(() => {});
+  // Only run on mount — series name/position don't change per card
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1081,7 +1120,7 @@ function RecCard({
       Animated.timing(whyHeight, { toValue: 0, duration: 200, useNativeDriver: false }).start();
       setExpanded(false);
     } else {
-      Animated.timing(whyHeight, { toValue: 330, duration: 220, useNativeDriver: false }).start();
+      Animated.timing(whyHeight, { toValue: 600, duration: 250, useNativeDriver: false }).start();
       setExpanded(true);
       onExplanationOpen();
     }
@@ -1092,6 +1131,18 @@ function RecCard({
     : book.score < 0.32
     ? 'Moderate fit — a few more ratings will sharpen this pick.'
     : null;
+
+  // Series row: identify which cover is "this" book by OL key match, fallback to index
+  const seriesPos = book._score_breakdown.series_position;
+  const normalizedExtId = book.external_id?.replace('/works/', '') ?? null;
+  const hasSeriesRow = seriesCovers.length >= 2 && seriesPos != null;
+
+  // Reason text for collapsed view — strip author prefix since author is shown above
+  const collapsedReason = book.reasons.length > 0
+    ? capitalize(stripAuthorPrefix(book.reasons[0], book.author))
+    : null;
+  // Short "why it fits" for expanded panel footer
+  const whyFitLine = collapsedReason;
 
   return (
     <Animated.View style={{
@@ -1116,6 +1167,7 @@ function RecCard({
           height={64}
         />
         <View style={{ flex: 1, marginLeft: 12 }}>
+          {/* Title */}
           <Text
             style={{ fontSize: 15, fontWeight: '700', color: '#1c1917', lineHeight: 21, marginBottom: 3 }}
             numberOfLines={2}
@@ -1123,7 +1175,8 @@ function RecCard({
             {book.title}
           </Text>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 7, gap: 6 }}>
+          {/* Author + expert badge */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 6 }}>
             <Text style={{ fontSize: 12, color: '#78716c', flex: 1 }} numberOfLines={1}>
               {book.author}
             </Text>
@@ -1138,6 +1191,52 @@ function RecCard({
               </View>
             )}
           </View>
+
+          {/* ── Series visual row ── */}
+          {hasSeriesRow && (
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 5, marginBottom: 8 }}>
+              {seriesCovers.map((sc, i) => {
+                const pos = i + 1;
+                // Match current book by external_id (most reliable), fallback to position index
+                const isCurrent = normalizedExtId
+                  ? sc.olKey.replace('/works/', '') === normalizedExtId
+                  : pos === seriesPos;
+                const coverUri = sc.coverId
+                  ? `https://covers.openlibrary.org/b/id/${sc.coverId}-S.jpg`
+                  : null;
+                return (
+                  <View
+                    key={sc.olKey}
+                    style={{
+                      opacity: isCurrent ? 1 : 0.35,
+                      borderWidth: isCurrent ? 1.5 : 0,
+                      borderColor: '#1c1917',
+                      borderRadius: 4,
+                    }}
+                  >
+                    {coverUri ? (
+                      <Image
+                        source={{ uri: coverUri }}
+                        style={{
+                          width:        isCurrent ? 34 : 27,
+                          height:       isCurrent ? 50 : 42,
+                          borderRadius: 3,
+                          backgroundColor: '#e7e5e4',
+                        }}
+                      />
+                    ) : (
+                      <View style={{
+                        width:           isCurrent ? 34 : 27,
+                        height:          isCurrent ? 50 : 42,
+                        borderRadius:    3,
+                        backgroundColor: '#e7e5e4',
+                      }} />
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          )}
 
           {/* ── Series badge ── */}
           {(book._score_breakdown.series_label === 'series_starter' ||
@@ -1170,27 +1269,23 @@ function RecCard({
             </View>
           )}
 
-          {book.reasons.length > 0 && (
+          {/* Collapsed: 1 short reason (author prefix stripped) */}
+          {collapsedReason && (
             <Text style={{ fontSize: 12, color: '#57534e', lineHeight: 17 }} numberOfLines={2}>
-              {book.reasons[0]}
-            </Text>
-          )}
-          {book.risks.length > 0 && (
-            <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 4, lineHeight: 16, fontStyle: 'italic' }} numberOfLines={1}>
-              {book.risks[0]}
+              {collapsedReason}
             </Text>
           )}
 
-          {/* Why this? toggle */}
+          {/* "Tell me more" toggle */}
           <TouchableOpacity onPress={toggleWhy} style={{ marginTop: 9 }}>
             <Text style={{ fontSize: 11, color: '#a8a29e' }}>
-              {expanded ? 'Close ▴' : 'Why this pick ▾'}
+              {expanded ? 'Close ▴' : 'Tell me more ▾'}
             </Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* ── Expandable "Why" panel ── */}
+      {/* ── Expandable detail panel ── */}
       <Animated.View style={{ maxHeight: whyHeight, overflow: 'hidden' }}>
         <View style={{
           marginHorizontal: 12,
@@ -1199,19 +1294,19 @@ function RecCard({
           borderRadius: 10,
           padding: 13,
         }}>
-          {/* Primary reason */}
-          {book.reasons.length > 0 && (
-            <Text style={{ fontSize: 13, color: '#1c1917', lineHeight: 19, marginBottom: 6 }}>
-              {book.reasons[0]}
+          {/* Full book description */}
+          {book.description && book.description.trim().length > 20 ? (
+            <Text style={{ fontSize: 13, color: '#1c1917', lineHeight: 20, marginBottom: 10 }}>
+              {book.description.trim()}
+            </Text>
+          ) : null}
+          {/* Why it fits (1 line, stripped) */}
+          {whyFitLine && (
+            <Text style={{ fontSize: 12, color: '#57534e', lineHeight: 17, marginBottom: 6, fontStyle: 'italic' }}>
+              {whyFitLine}
             </Text>
           )}
-          {/* Secondary reason (if present) */}
-          {book.reasons.length > 1 && (
-            <Text style={{ fontSize: 12, color: '#57534e', lineHeight: 18, marginBottom: 6 }}>
-              {book.reasons[1]}
-            </Text>
-          )}
-          {/* Caveat (softened) */}
+          {/* Caveat */}
           {book.risks.length > 0 && (
             <Text style={{ fontSize: 11, color: '#a8a29e', lineHeight: 16, fontStyle: 'italic', marginBottom: 2 }}>
               Keep in mind: {book.risks[0]}
@@ -2227,68 +2322,19 @@ export default function RecommendationsScreen() {
                     </View>
                   )}
 
-                  {/* ── Upgrade CTA (shown when quota exhausted) ── */}
-                  {recMode === 'deterministic' && entitlement?.has_used_free_import_analysis && (
-                    entitlement.expert_refreshes_remaining_this_period === 0 ||
-                    entitlement.expert_refreshes_remaining_this_period === null
-                  ) && entitlement.plan === 'free' && (
-                    <View style={{
-                      backgroundColor: '#fafaf9', borderRadius: 10,
-                      padding: 14, marginBottom: 12,
-                      borderWidth: 1, borderColor: '#e7e5e4',
-                    }}>
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', marginBottom: 4 }}>
-                        Unlock ongoing expert picks
-                      </Text>
-                      <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
-                        Get deeper, more personal recommendations as your reading evolves — with stronger false-positive screening.
-                        {entitlement.next_refresh_available_at
-                          ? ` Your next free refresh is available ${new Date(entitlement.next_refresh_available_at).toLocaleDateString()}.`
-                          : ''}
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* ── "Your Next Read" intent panel ── */}
-                  <NextReadPanel
-                    draft={draftIntent}
-                    setDraft={setDraftIntent}
-                    nlInput={nlInput}
-                    setNlInput={setNlInput}
-                    open={intentPanelOpen}
-                    panelHeight={intentPanelHeight}
-                    activeIntent={nextReadIntent}
-                    onToggle={() => {
-                      const open = !intentPanelOpen;
-                      setIntentPanelOpen(open);
-                      Animated.timing(intentPanelHeight, {
-                        toValue: open ? 1 : 0,
-                        duration: 220,
-                        useNativeDriver: false,
-                      }).start();
-                    }}
-                    onApply={(merged) => {
-                      setIntentPanelOpen(false);
-                      Animated.timing(intentPanelHeight, {
-                        toValue: 0,
-                        duration: 180,
-                        useNativeDriver: false,
-                      }).start();
-                      reloadRecs(merged);
-                    }}
-                    onClear={() => {
-                      const cleared = emptyNextReadIntent();
-                      setDraftIntent(cleared);
-                      setNlInput('');
-                      setIntentPanelOpen(false);
-                      Animated.timing(intentPanelHeight, {
-                        toValue: 0,
-                        duration: 180,
-                        useNativeDriver: false,
-                      }).start();
-                      reloadRecs(cleared);
-                    }}
-                  />
+                  {/* ── Coming soon teaser ── */}
+                  <View style={{
+                    backgroundColor: '#fafaf9', borderRadius: 10,
+                    padding: 14, marginBottom: 12,
+                    borderWidth: 1, borderColor: '#e7e5e4',
+                  }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', marginBottom: 4 }}>
+                      Coming soon
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
+                      Deeper, more personalized recommendations based on your reading patterns.
+                    </Text>
+                  </View>
 
                   {/* Save toast */}
                   {saveToast && (
