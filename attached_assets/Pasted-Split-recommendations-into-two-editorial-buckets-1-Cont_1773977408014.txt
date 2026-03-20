@@ -1,0 +1,165 @@
+Split recommendations into two editorial buckets:
+
+1. Continue Reading
+2. Discover Next
+
+This is a product-structure improvement, not just a UI tweak.
+
+Why this matters
+The recommendation engine is now series-aware enough to distinguish:
+- valid continuations in a series the user has already started
+- valid discovery recommendations for new books/series
+
+Those are both useful, but they should not compete in the same undifferentiated list.
+
+Goal
+Make the Recommendations experience clearer and more helpful by separating:
+- “Continue Reading” = books that advance a series the user has already started
+- “Discover Next” = new recommendations that fit the user’s taste and current intent
+
+Core product rule
+A valid continuation recommendation is not the same as a discovery recommendation.
+Both should exist, but they should be surfaced separately.
+
+What to build
+
+Part 1: Add two recommendation buckets
+Create two explicit recommendation outputs:
+
+A. Continue Reading
+Books that are:
+- next unread installments in a series the user has already started
+- high-confidence series continuations
+- not generic later volumes — only actual “next step” recommendations
+
+B. Discover Next
+Books that are:
+- new books the user has not started
+- series starters
+- standalones
+- new authors or familiar authors, but functioning as discovery picks rather than continuation picks
+
+Part 2: Continue Reading rules
+This bucket should be strict and high-confidence.
+
+Only include books when:
+- series detection is confident enough
+- the user has already read earlier books in the exact same series
+- the book is the next logical unread installment, not a random later volume
+
+Rules:
+- do not show book 4 if book 3 is unread
+- recommend the next unread installment in order
+- cap the bucket to a small number, such as top 3–5
+- sort by relevance + urgency / fit
+
+Examples of user-facing copy:
+- “Continue the series”
+- “Next in the series”
+- “You’ve already started this story”
+
+Part 3: Discover Next rules
+This remains the main recommendation surface for discovery.
+
+Include:
+- series starters
+- standalones
+- books from familiar or new authors
+- books shaped by the user’s taste profile and “Your Next Read” intent
+
+Important:
+- do not let valid continuations crowd out discovery picks in this list
+- if a book is a continuation and belongs in “Continue Reading,” it should usually not also appear in “Discover Next”
+
+Part 4: Recommendation Integrity Layer integration
+Update the integrity logic so that:
+- series continuations are routed to the continuation bucket
+- series starters are routed to discovery
+- default discovery ranking is not polluted by later-volume books from already-started series
+
+This should keep the current series-awareness logic, but improve how it is surfaced.
+
+Part 5: UI structure
+Update the Recommendations tab so it has two distinct sections.
+
+Suggested structure:
+- Your Next Read
+  - this remains the discovery/intention-driven area
+- Continue Reading
+  - smaller, more focused section for next unread installments
+
+Or, if the flow feels better visually:
+- Continue Reading
+- Discover Next
+
+Choose the structure that feels most premium and intuitive.
+
+Requirements:
+- sections should feel editorial, not mechanical
+- “Continue Reading” should be visually distinct but not oversized
+- discovery remains the main broader recommendation surface
+
+Part 6: Explanations
+Explanations should differ by bucket.
+
+Continue Reading examples:
+- “Next unread in a series you’ve already started.”
+- “Continue the series — this is your next installment.”
+- “You’ve already entered this world; here’s the next step.”
+
+Discover Next examples:
+- “Start here — the first book in a series that fits your reading history.”
+- “A strong fit for your fantasy lane.”
+- “Matches the emotionally driven fiction you return to often.”
+
+Part 7: Prevent duplication across buckets
+Do not show the same book in both:
+- Continue Reading
+- Discover Next
+
+If a book qualifies as a continuation, it belongs in Continue Reading.
+If it is a series starter or standalone, it belongs in Discover Next.
+
+Part 8: Cohort-safe implementation
+This must generalize across:
+- dense commercial Goodreads import
+- dense literary/classics reader
+- dense memoir/nonfiction reader
+- graphic/manga-heavy reader
+- low-signal net-new user
+- mixed/generalist reader
+
+For every major rule introduced, explain:
+1. the general principle
+2. who benefits
+3. who might regress
+4. how overfitting is avoided
+
+Part 9: Debug visibility
+In debug mode, show:
+- which books were routed to Continue Reading
+- which books were routed to Discover Next
+- why they were routed there
+- whether any books were suppressed due to bucket duplication
+- whether a continuation was chosen because it was the next unread installment
+
+Part 10: Output
+When complete, provide:
+1. architecture summary
+2. files changed
+3. how continuation routing works
+4. how discovery routing works
+5. how duplication across buckets is prevented
+6. how the UI changed
+7. examples of new explanations
+8. the updated recommendation output for the Goodreads-heavy user
+9. any remaining limitations, especially around imperfect series metadata
+
+Important constraints
+- Do NOT broadly rewrite retrieval again
+- Do NOT focus on premium/expert mode
+- Do NOT hardcode specific authors or series
+- Do implement this as a general recommendation-surfacing improvement
+
+The product outcome should be:
+users can clearly see what to continue versus what to discover next, without the two competing in the same list.

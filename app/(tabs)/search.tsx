@@ -1480,6 +1480,8 @@ export default function RecommendationsScreen() {
   const [sentRecs, setSentRecs]               = useState<SentRec[]>([]);
   const [tasteProfile, setTasteProfile]       = useState<TasteProfile | null>(null);
   const [recommendations, setRecommendations] = useState<ScoredBook[]>([]);
+  const [continuations,   setContinuations]   = useState<ScoredBook[]>([]);
+  const [discoveries,     setDiscoveries]     = useState<ScoredBook[]>([]);
 
   // ── Entitlement + expert mode state ───────────────────────────────────────
   const [entitlement, setEntitlement]         = useState<RecEntitlement | null>(null);
@@ -1659,12 +1661,15 @@ export default function RecommendationsScreen() {
       // Uses expert layer if entitlement allows + signal is sufficient
       const activeEntitlement = ent ?? { plan: 'free' as const, expert_recs_enabled: false, expert_refreshes_remaining_this_period: 0, has_used_free_import_analysis: false, next_refresh_available_at: null, _raw: { free_expert_used: false, expert_refreshes_this_period: 0, period_start_at: new Date().toISOString(), last_expert_refresh_at: null } };
 
-      const { recs, meta } = await getPersonalizedRecsWithExpert(
+      const recResult = await getPersonalizedRecsWithExpert(
         supabase!, user.id, tp, activeEntitlement, 5, fbCtx,
         isIntentActive(nextReadIntent) ? nextReadIntent : undefined,
       );
+      const { recs, meta } = recResult;
 
       setRecommendations(recs);
+      setContinuations(recResult.continuations ?? []);
+      setDiscoveries(recResult.discoveries ?? recs);
       setRecsMeta(meta);
       setRecsQualityGate(meta.quality_gate !== 'passed' ? meta.quality_gate : null);
       setRecMode(meta.mode ?? 'deterministic');
@@ -1738,11 +1743,14 @@ export default function RecommendationsScreen() {
         },
       };
       const activeIntent = isIntentActive(intent) ? intent : undefined;
-      const { recs, meta } = await getPersonalizedRecsWithExpert(
+      const intentResult = await getPersonalizedRecsWithExpert(
         supabase!, currentUserId, tasteProfile, activeEntitlement, 5, feedbackCtx,
         activeIntent,
       );
+      const { recs, meta } = intentResult;
       setRecommendations(recs);
+      setContinuations(intentResult.continuations ?? []);
+      setDiscoveries(intentResult.discoveries ?? recs);
       setRecsMeta(meta);
       setRecsQualityGate(meta.quality_gate !== 'passed' ? meta.quality_gate : null);
     } catch {
@@ -1965,8 +1973,11 @@ export default function RecommendationsScreen() {
       book_db_id: bookDbId ?? undefined,
     }).catch(() => {});
 
-    // Optimistic UI: remove from recommendations list
-    setRecommendations(prev => prev.filter(b => b.id !== book.id));
+    // Optimistic UI: remove from all buckets
+    const bookFilter = (b: ScoredBook) => b.id !== book.id;
+    setRecommendations(prev => prev.filter(bookFilter));
+    setContinuations(prev   => prev.filter(bookFilter));
+    setDiscoveries(prev     => prev.filter(bookFilter));
 
     // Toast
     setSaveToast(`"${book.title}" added to your library`);
@@ -1976,8 +1987,11 @@ export default function RecommendationsScreen() {
   async function handleRecDismiss(book: ScoredBook) {
     if (!supabase || !currentUserId) return;
     persistFeedback(supabase, currentUserId, book, 'dismissed').catch(() => {});
-    // Optimistic UI: already animated out by RecCard, now remove from list
-    setRecommendations(prev => prev.filter(b => b.id !== book.id));
+    // Optimistic UI: remove from all buckets
+    const bookFilter = (b: ScoredBook) => b.id !== book.id;
+    setRecommendations(prev => prev.filter(bookFilter));
+    setContinuations(prev   => prev.filter(bookFilter));
+    setDiscoveries(prev     => prev.filter(bookFilter));
     // Update local feedback context so dismissed book is excluded if the list reloads
     setFeedbackCtx(prev => {
       const next = new Set(prev.dismissedIds);
@@ -2153,7 +2167,7 @@ export default function RecommendationsScreen() {
     const hasTagTasks     = booksToTag.length > 0;
     const hasImport       = (tasteProfile?.evidence.imported_books_count ?? 0) === 0;
     const hasAnyTask      = hasRateTasks || hasTagTasks || hasImport;
-    const hasRecs         = recommendations.length > 0;
+    const hasRecs         = recommendations.length > 0 || continuations.length > 0;
 
     return (
       <ScrollView
@@ -2392,18 +2406,87 @@ export default function RecommendationsScreen() {
                     </View>
                   )}
 
-                  {recommendations.map(rec => (
-                    <RecCard
-                      key={rec.id}
-                      book={rec}
-                      isExpert={recMode === 'expert'}
-                      onSave={() => handleRecSave(rec)}
-                      onDismiss={() => handleRecDismiss(rec)}
-                      onMoreLikeThis={() => handleRecMoreLikeThis(rec)}
-                      onImpression={() => handleRecImpression(rec)}
-                      onExplanationOpen={() => handleRecExplanationOpen(rec)}
-                    />
-                  ))}
+                  {/* ── Continue Reading bucket ── */}
+                  {continuations.length > 0 && (
+                    <>
+                      <View style={{
+                        flexDirection: 'row', alignItems: 'center',
+                        marginBottom: 4, marginTop: 4,
+                      }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{
+                            fontSize: 13, fontWeight: '700',
+                            color: '#1c1917', letterSpacing: 0.1,
+                          }}>
+                            Continue Reading
+                          </Text>
+                          <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>
+                            Next in series you've already started
+                          </Text>
+                        </View>
+                        <View style={{
+                          backgroundColor: '#fef3c7', borderRadius: 5,
+                          paddingHorizontal: 7, paddingVertical: 2,
+                        }}>
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: '#92400e' }}>
+                            {continuations.length}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {continuations.map(rec => (
+                        <RecCard
+                          key={rec.id}
+                          book={rec}
+                          isExpert={recMode === 'expert'}
+                          onSave={() => handleRecSave(rec)}
+                          onDismiss={() => handleRecDismiss(rec)}
+                          onMoreLikeThis={() => handleRecMoreLikeThis(rec)}
+                          onImpression={() => handleRecImpression(rec)}
+                          onExplanationOpen={() => handleRecExplanationOpen(rec)}
+                        />
+                      ))}
+
+                      {discoveries.length > 0 && (
+                        <View style={{
+                          height: 1, backgroundColor: '#e7e5e4',
+                          marginTop: 8, marginBottom: 16,
+                        }} />
+                      )}
+                    </>
+                  )}
+
+                  {/* ── Discover Next bucket ── */}
+                  {discoveries.length > 0 && (
+                    <>
+                      {continuations.length > 0 && (
+                        <View style={{ marginBottom: 10 }}>
+                          <Text style={{
+                            fontSize: 13, fontWeight: '700',
+                            color: '#1c1917', letterSpacing: 0.1,
+                          }}>
+                            Discover Next
+                          </Text>
+                          <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>
+                            Shaped by your reading history and taste
+                          </Text>
+                        </View>
+                      )}
+
+                      {discoveries.map(rec => (
+                        <RecCard
+                          key={rec.id}
+                          book={rec}
+                          isExpert={recMode === 'expert'}
+                          onSave={() => handleRecSave(rec)}
+                          onDismiss={() => handleRecDismiss(rec)}
+                          onMoreLikeThis={() => handleRecMoreLikeThis(rec)}
+                          onImpression={() => handleRecImpression(rec)}
+                          onExplanationOpen={() => handleRecExplanationOpen(rec)}
+                        />
+                      ))}
+                    </>
+                  )}
 
                   {/* ── Retrieval trace debug panel ── */}
                   {recsMeta && (

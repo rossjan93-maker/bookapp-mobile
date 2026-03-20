@@ -96,6 +96,10 @@ const CONTINUATION_DISCOUNT_PER_RANK = 0.04;
 // kept in the audit list but not shown in the visible recommendation set.
 const ADJACENT_VISIBLE_THRESHOLD_FRAC = 0.5;
 
+// Maximum number of books in the "Continue Reading" editorial bucket.
+// One per series (lowest unread position), sorted by score.
+const CONT_CAP = 3;
+
 // ── Cache constants ────────────────────────────────────────────────────────────
 
 const CACHE_TTL_MS   = 24 * 60 * 60 * 1000;
@@ -195,7 +199,9 @@ export type RetrievalTrace = {
 };
 
 export type RankedRecsResult = {
-  recs: ScoredBook[];
+  recs:          ScoredBook[];
+  continuations: ScoredBook[];   // "Continue Reading" bucket — next in series already started
+  discoveries:   ScoredBook[];   // "Discover Next" bucket — starters, standalones, new picks
   meta: {
     pool_size:              number;
     sources_used:           CandidateSource[];
@@ -1444,7 +1450,7 @@ export function getRankedRecs(
   };
 
   if (poolSize < MIN_CANDIDATES) {
-    return { recs: [], meta: buildMeta('insufficient_pool') };
+    return { recs: [], continuations: [], discoveries: [], meta: buildMeta('insufficient_pool') };
   }
 
   const scored: ScoredBook[] = candidates.map(book => {
@@ -1537,9 +1543,60 @@ export function getRankedRecs(
     }
   }
 
+  // ── Bucket partition: Continue Reading vs Discover Next ───────────────────
+  // Series continuations (high-confidence, user has started the series) are
+  // extracted from the RIL-visible pool before the composition engine runs.
+  // This gives them their own editorial slot without competing for discovery
+  // positions. Discovery books (starters, standalones, new authors) feed
+  // the composition engine unchanged so author caps / lane diversity apply.
+  //
+  // Principle: continuation eligibility is determined by RIL series familiarity.
+  // A book is in "Continue Reading" only if series_label === 'series_continuation'
+  // (meaning the user has read an earlier book in that exact series).
+  //
+  // Cohort safety: users with no started series get no continuation bucket —
+  // all books fall through to Discover Next. Dense commercial readers with
+  // many started series may see up to CONT_CAP continuations. Literary and
+  // nonfiction readers almost never trigger the continuation path.
+  const continuationPool = rilPool.filter(
+    b => b._score_breakdown.series_label === 'series_continuation'
+  );
+  const discoveryPool = rilPool.filter(
+    b => b._score_breakdown.series_label !== 'series_continuation'
+  );
+
+  // One per series (lowest series_position = the actual next installment),
+  // sorted by score, capped at CONT_CAP.
+  const contBySeries = new Map<string, ScoredBook>();
+  for (const book of continuationPool) {
+    const sKey = (book._score_breakdown.series_name ?? `${book.author}::${book.title}`).toLowerCase();
+    const pos  = book._score_breakdown.series_position ?? 999;
+    const prev = contBySeries.get(sKey);
+    if (!prev || pos < (prev._score_breakdown.series_position ?? 999)) {
+      contBySeries.set(sKey, book);
+    }
+  }
+  const continuationRecs = [...contBySeries.values()]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, CONT_CAP);
+
+  if (__DEV__) {
+    if (continuationRecs.length > 0) {
+      console.log(
+        `[BUCKET] Continue Reading (${continuationRecs.length}):`,
+        continuationRecs.map(b =>
+          `"${b.title}" — ${b._score_breakdown.series_name} #${b._score_breakdown.series_position}`
+        ).join(', ')
+      );
+    }
+    console.log(`[BUCKET] Discover Next pool: ${discoveryPool.length} book(s)`);
+  }
+
   // ── Intent layer ──────────────────────────────────────────────────────────
   // Applied AFTER CoG classification so the taste profile still governs
   // base quality. Intent narrows the ranked pool; it never replaces CoG fit.
+  // Runs on discoveryPool only — continuations are trusted editorial picks
+  // not subject to intent hard-filters.
   //
   // Order of operations per book:
   //   1. Check exclusions      → hard-remove if matched
@@ -1550,18 +1607,18 @@ export function getRankedRecs(
   // If intent filtering leaves fewer than MIN_PASSING_BOOKS that clear the
   // score threshold, the quality gate catches it and the UI should guide the
   // user to relax their filters (no silent fallback to unfiltered results).
-  let intentFiltered      = rilPool as typeof rilPool;
+  let intentFiltered      = discoveryPool as typeof discoveryPool;
   let intentRejectedCount = 0;
   let intentSummary: IntentSetSummary | undefined;
 
   if (intent && isIntentActive(intent)) {
-    const kept: typeof rilPool = [];
+    const kept: typeof discoveryPool = [];
     const exclusionCounts: Record<string, number> = {};
     let removedByExclusion  = 0;
     let removedByHardFilter = 0;
     let softBoostedCount    = 0;
 
-    for (const book of rilPool) {
+    for (const book of discoveryPool) {
       const bookLane  = detectBookLane(book);
       const marketPos = (book._score_breakdown.market_position as MarketPosition) ?? 'general_fiction';
 
@@ -1618,7 +1675,7 @@ export function getRankedRecs(
     intentFiltered = kept;
 
     intentSummary = {
-      before_intent:          rilPool.length,
+      before_intent:          discoveryPool.length,
       removed_by_exclusion:   removedByExclusion,
       removed_by_hard_filter: removedByHardFilter,
       soft_boosted:           softBoostedCount,
@@ -1655,7 +1712,7 @@ export function getRankedRecs(
   const passing = intentFiltered.filter(b => b.score >= MIN_PASS_SCORE);
   if (passing.length < MIN_PASSING_BOOKS) {
     return {
-      recs: [],
+      recs: [], continuations: [], discoveries: [],
       meta: {
         ...buildMeta(intentRejectedCount > 0 ? 'intent_filtered_empty' : 'insufficient_score'),
         intent_filtered_count: intentRejectedCount || undefined,
@@ -1822,7 +1879,9 @@ export function getRankedRecs(
   const auditList   = [...nonRejected, ...rilSuppressed, ...rejectBooks];
 
   return {
-    recs:  diverse,
+    recs:          [...continuationRecs, ...diverse],
+    continuations: continuationRecs,
+    discoveries:   diverse,
     meta: {
       ...buildMeta('passed'),
       candidate_audit: auditList.map(
@@ -2175,10 +2234,13 @@ export async function getPersonalizedRecsWithExpert(
     const rebuildDecision = shouldRebuild(cacheCheck.entry, currentSignals);
 
     if (!rebuildDecision.should_rebuild) {
-      // Return cached expert result
+      // Return cached expert result — forward continuation bucket from deterministic pass
       const cachedRecs = cacheCheck.entry.rec_set;
+      const cachedCont = baseResult.continuations ?? [];
       return {
-        recs:  cachedRecs,
+        recs:          [...cachedCont, ...cachedRecs],
+        continuations: cachedCont,
+        discoveries:   cachedRecs,
         meta: {
           ...baseResult.meta,
           mode:            'expert',
@@ -2316,8 +2378,11 @@ export async function getPersonalizedRecsWithExpert(
     });
   }
 
+  const expertCont = baseResult.continuations ?? [];
   return {
-    recs:  expertRecs,
+    recs:          [...expertCont, ...expertRecs],
+    continuations: expertCont,
+    discoveries:   expertRecs,
     meta: {
       ...baseResult.meta,
       mode:            'expert',
