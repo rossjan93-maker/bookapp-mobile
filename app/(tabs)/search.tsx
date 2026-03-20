@@ -43,6 +43,11 @@ import { getEntitlement } from '../../lib/recEntitlement';
 import type { RecEntitlement } from '../../lib/recEntitlement';
 import type { ReaderThesis } from '../../lib/expertRec';
 
+// ─── Dev / internal constants ─────────────────────────────────────────────────
+// Debug UI (retrieval trace, candidate audit) is only shown for this user.
+// All other users — including beta testers — see a clean, production-ready screen.
+const INTERNAL_DEBUG_USER = '986aece4-9461-439c-bff9-3589161b313c';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Step = 'hub' | 'search' | 'friends' | 'done';
@@ -1055,7 +1060,8 @@ function RecCard({
   const [moreDone, setMoreDone]           = useState(false);
   const [pendingAction, setPendingAction] = useState(false);
   const [seriesCovers, setSeriesCovers]   = useState<SeriesCover[]>([]);
-  const impressionFired = useRef(false);
+  const seriesRowOpacity = useRef(new Animated.Value(0)).current;
+  const impressionFired  = useRef(false);
 
   // Fire impression once on mount
   useEffect(() => {
@@ -1066,22 +1072,37 @@ function RecCard({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fetch series book covers from Open Library for the visual series row
+  // Fetch series book covers from Open Library for the visual series row.
+  // Use separate author= + q= params (not series:"…" prefix) for maximum
+  // OL search compatibility — the series: field is not reliably indexed.
   useEffect(() => {
     const sn = book._score_breakdown.series_name;
     if (!sn || !book._score_breakdown.series_position) return;
-    const q = encodeURIComponent(`series:"${sn}" author:${book.author}`);
-    fetch(`https://openlibrary.org/search.json?q=${q}&sort=old&fields=key,title,cover_i&limit=6`)
+    const url = [
+      'https://openlibrary.org/search.json',
+      `?author=${encodeURIComponent(book.author)}`,
+      `&q=${encodeURIComponent(sn)}`,
+      '&sort=old&fields=key,title,cover_i&limit=8',
+    ].join('');
+    fetch(url)
       .then(r => r.json())
       .then((data: { docs?: Array<{ key: string; cover_i?: number; title?: string }> }) => {
         const docs = data.docs ?? [];
-        setSeriesCovers(
-          docs.slice(0, 5).map(d => ({
-            olKey:   d.key,
-            coverId: d.cover_i ?? null,
-            title:   d.title ?? '',
-          }))
-        );
+        const covers = docs.slice(0, 5).map(d => ({
+          olKey:   d.key,
+          coverId: d.cover_i ?? null,
+          title:   d.title ?? '',
+        }));
+        setSeriesCovers(covers);
+        // Fade in the row once covers are ready
+        if (covers.length >= 1) {
+          Animated.timing(seriesRowOpacity, {
+            toValue:         1,
+            duration:        420,
+            delay:           80,
+            useNativeDriver: false,
+          }).start();
+        }
       })
       .catch(() => {});
   // Only run on mount — series name/position don't change per card
@@ -1133,16 +1154,15 @@ function RecCard({
     : null;
 
   // Series row: identify which cover is "this" book by OL key match, fallback to index
-  const seriesPos = book._score_breakdown.series_position;
+  const seriesPos       = book._score_breakdown.series_position;
   const normalizedExtId = book.external_id?.replace('/works/', '') ?? null;
-  const hasSeriesRow = seriesCovers.length >= 2 && seriesPos != null;
+  // Show row with as few as 1 cover — graceful placeholders fill gaps
+  const hasSeriesRow = seriesCovers.length >= 1 && seriesPos != null;
 
   // Reason text for collapsed view — strip author prefix since author is shown above
   const collapsedReason = book.reasons.length > 0
     ? capitalize(stripAuthorPrefix(book.reasons[0], book.author))
     : null;
-  // Short "why it fits" for expanded panel footer
-  const whyFitLine = collapsedReason;
 
   return (
     <Animated.View style={{
@@ -1194,7 +1214,13 @@ function RecCard({
 
           {/* ── Series visual row ── */}
           {hasSeriesRow && (
-            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 5, marginBottom: 8 }}>
+            <Animated.View style={{
+              opacity:        seriesRowOpacity,
+              flexDirection:  'row',
+              alignItems:     'flex-end',
+              gap:            5,
+              marginBottom:   8,
+            }}>
               {seriesCovers.map((sc, i) => {
                 const pos = i + 1;
                 // Match current book by external_id (most reliable), fallback to position index
@@ -1208,7 +1234,7 @@ function RecCard({
                   <View
                     key={sc.olKey}
                     style={{
-                      opacity: isCurrent ? 1 : 0.35,
+                      opacity:     isCurrent ? 1 : 0.38,
                       borderWidth: isCurrent ? 1.5 : 0,
                       borderColor: '#1c1917',
                       borderRadius: 4,
@@ -1218,24 +1244,27 @@ function RecCard({
                       <Image
                         source={{ uri: coverUri }}
                         style={{
-                          width:        isCurrent ? 34 : 27,
-                          height:       isCurrent ? 50 : 42,
-                          borderRadius: 3,
+                          width:           isCurrent ? 34 : 27,
+                          height:          isCurrent ? 50 : 42,
+                          borderRadius:    3,
                           backgroundColor: '#e7e5e4',
                         }}
                       />
                     ) : (
+                      /* Graceful placeholder — looks like an unloaded spine */
                       <View style={{
                         width:           isCurrent ? 34 : 27,
                         height:          isCurrent ? 50 : 42,
                         borderRadius:    3,
-                        backgroundColor: '#e7e5e4',
+                        backgroundColor: '#ece9e4',
+                        borderWidth:     1,
+                        borderColor:     '#e0dbd4',
                       }} />
                     )}
                   </View>
                 );
               })}
-            </View>
+            </Animated.View>
           )}
 
           {/* ── Series badge ── */}
@@ -1294,17 +1323,18 @@ function RecCard({
           borderRadius: 10,
           padding: 13,
         }}>
-          {/* Full book description */}
+          {/* Full book description / synopsis — the "back of the book" */}
           {book.description && book.description.trim().length > 20 ? (
             <Text style={{ fontSize: 13, color: '#1c1917', lineHeight: 20, marginBottom: 10 }}>
               {book.description.trim()}
             </Text>
-          ) : null}
-          {/* Why it fits (1 line, stripped) */}
-          {whyFitLine && (
-            <Text style={{ fontSize: 12, color: '#57534e', lineHeight: 17, marginBottom: 6, fontStyle: 'italic' }}>
-              {whyFitLine}
-            </Text>
+          ) : (
+            /* Fallback when no description: show reasons (not collapsedReason — show all) */
+            book.reasons.slice(1).map((r, idx) => (
+              <Text key={idx} style={{ fontSize: 12, color: '#57534e', lineHeight: 17, marginBottom: 6 }}>
+                {r}
+              </Text>
+            ))
           )}
           {/* Caveat */}
           {book.risks.length > 0 && (
@@ -2438,8 +2468,8 @@ export default function RecommendationsScreen() {
                     </>
                   )}
 
-                  {/* ── Retrieval trace debug panel ── */}
-                  {recsMeta && (
+                  {/* ── Retrieval trace debug panel (internal only) ── */}
+                  {recsMeta && currentUserId === INTERNAL_DEBUG_USER && (
                     <View style={{ marginTop: 4 }}>
                       <TouchableOpacity
                         onPress={() => {

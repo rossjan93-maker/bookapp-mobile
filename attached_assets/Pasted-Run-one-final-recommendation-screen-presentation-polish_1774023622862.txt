@@ -1,0 +1,83 @@
+Run one final recommendation-screen presentation polish pass before beta sharing.
+
+Do NOT change recommendation logic.
+Do NOT add new product features.
+Do NOT rework backend systems.
+
+Goal
+Tighten the recommendation presentation so the screen feels polished and trustworthy for test users.
+
+Current issues to fix
+
+1. Continue Reading series row inconsistency
+- Books in Continue Reading should also show the series image row when series metadata is available
+- Mad Ship is not currently showing the series row, even though it should
+- Make series-row rendering consistent across both:
+  - Continue Reading
+  - Discover Next
+
+2. Expanded panel is still repetitive
+- The expanded “Tell me more” state is still repeating the same line shown above
+- That is not the right UX
+
+New rule:
+- collapsed state = short editorial reason only
+- expanded state = actual book description / synopsis (like the back of the book)
+- optional series context can appear below the description
+- do NOT repeat the same explanation line as the main expanded content
+
+3. Improve series-row loading quality
+- In Discover Next, some series rows are loading only partially
+- Make the row feel complete and intentional
+
+Requirements:
+- attempt to load all available series images
+- when some images are unavailable, use a graceful fallback that still looks clean
+- avoid broken / awkward partially-rendered visual states
+
+4. Add subtle animation to series row
+- Add a restrained premium animation for the series row
+- Keep it tasteful and light
+
+Good options:
+- fade in on mount
+- slight horizontal slide-in
+- slightly stronger emphasis on the recommended/current book
+- gentle opacity/scale differences across the row
+
+Do NOT make it flashy or distracting.
+
+5. Hide debug tools from test users
+- The debug / deterministic / forensic UI should no longer be visible in the normal test-user experience
+- Keep the tooling in the codebase if needed, but hide it from standard user-facing screens
+- It should only be available in a true internal/dev mode
+
+Implementation guidance
+
+For recommendation cards:
+- keep title / author / badge / short reason in collapsed state
+- “Tell me more” should reveal:
+  - full description / synopsis
+  - optional one-line “why it fits”
+  - optional series context
+- do not lead the expanded panel with the same sentence already shown above
+
+For series row:
+- render whenever series metadata is present and enough related books can be resolved
+- make the current recommended book visually stand out
+- ensure the row works the same way in both recommendation sections
+
+For debug tools:
+- remove from visible beta/test-user UI
+- do not delete the tooling unless necessary
+- just hide or gate it cleanly behind dev-only behavior
+
+Output
+When complete, provide:
+1. files changed
+2. what was fixed in Continue Reading
+3. how the expanded description behavior changed
+4. how series-row loading/fallback works now
+5. what animation was added
+6. how debug tools were hidden
+7. any small presentation limitations still deferred
