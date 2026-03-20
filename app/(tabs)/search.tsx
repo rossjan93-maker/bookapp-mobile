@@ -1098,8 +1098,10 @@ function RecCard({
 
     const BAD_EDITION = /collection|omnibus|boxed|box set|complete works|anthology/i;
 
-    // One targeted OL lookup per series book (title + author, limit 3).
-    // Returns the first result that has a cover and isn't a collection edition.
+    // One targeted OL lookup per series book (title + author, limit 5).
+    // No sort applied — default relevance ranking returns the best-indexed
+    // edition first, which is far more likely to carry cover_i than the
+    // oldest edition (sort=old biases toward un-scanned archival entries).
     const fetchCover = async (
       b: { title: string; author: string },
     ): Promise<SeriesCover | null> => {
@@ -1108,7 +1110,7 @@ function RecCard({
           'https://openlibrary.org/search.json',
           `?title=${encodeURIComponent(b.title)}`,
           `&author=${encodeURIComponent(b.author)}`,
-          '&fields=key,title,cover_i&sort=old&limit=3',
+          '&fields=key,title,cover_i&limit=5',
         ].join('');
         const data: { docs?: Array<{ key: string; cover_i?: number; title?: string }> } =
           await fetch(url).then(r => r.json());
@@ -1300,40 +1302,34 @@ function RecCard({
                - series in static catalog
                - series_position and series_total both present
                - all catalog.orderedBooks have canonical single-edition covers
-               If the contract is invalid the card renders as a standalone rec. */}
-          {hasSeriesRow && catalogMeta && seriesPos != null && seriesTotal != null && (
+               If the contract is invalid the card renders as a standalone rec.
+               Copy is intentionally minimal — richer info lives in the detail
+               view. */}
+          {hasSeriesRow && (
             <View style={{
               alignSelf:        'flex-start',
+              flexDirection:    'row',
+              alignItems:       'center',
+              gap:              4,
               marginBottom:     6,
               paddingHorizontal:7,
-              paddingVertical:  4,
+              paddingVertical:  3,
               borderRadius:     6,
               backgroundColor:  book._score_breakdown.series_label === 'series_starter'
                 ? '#fef3c7'
                 : '#f0fdf4',
             }}>
               <Text style={{
-                fontSize:    10,
-                fontWeight:  '700',
-                color:       book._score_breakdown.series_label === 'series_starter'
+                fontSize:     10,
+                fontWeight:   '600',
+                color:        book._score_breakdown.series_label === 'series_starter'
                   ? '#92400e'
                   : '#166534',
                 letterSpacing: 0.2,
               }}>
-                {catalogMeta.displayName}
-              </Text>
-              <Text style={{
-                fontSize:    10,
-                fontWeight:  '500',
-                color:       book._score_breakdown.series_label === 'series_starter'
-                  ? '#92400e'
-                  : '#166534',
-                letterSpacing: 0.1,
-                marginTop:   1,
-              }}>
                 {book._score_breakdown.series_label === 'series_starter'
-                  ? `Book ${seriesPos} of ${seriesTotal} · Start here`
-                  : `Book ${seriesPos} of ${seriesTotal} · Continue the series`}
+                  ? 'Start here'
+                  : 'Continue the series'}
               </Text>
             </View>
           )}
