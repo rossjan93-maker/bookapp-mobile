@@ -1,0 +1,50 @@
+The live validation is good overall. Duplicate suppression, weak_metadata suppression, and discovery entry-point integrity are working.
+
+The one remaining material issue is:
+seriesReadSet is still unstable across fresh runs.
+
+Evidence:
+- Run 1: seriesReadSet.size = 2, Continue Reading empty
+- Run 2: seriesReadSet.size = 4, Continue Reading contains Mad Ship
+- The variance is being driven by which already-read OL books happen to appear in the fresh fetch and get captured as excluded read-books
+
+This is still too opportunistic.
+Continue Reading must not depend on whether Open Library happened to return a read book from a started series in that run.
+
+Goal
+Make seriesReadSet deterministic from the user’s library + curated series mapping, not dependent on fresh OL fetch variance.
+
+What to change
+
+Part 1: Build seriesReadSet directly from the user’s library
+For every book already in the user’s library:
+- run it through the curated series database / series matcher
+- map it to a normalized series identity
+- store that in seriesReadSet
+
+This should happen independently of whether OL returns that book in the current retrieval pass.
+
+Part 2: Stop relying on OL-excluded read-books as the main series familiarity source
+OL-excluded read-books can remain a supplement, but they should not be the primary source.
+The primary source should be:
+- books already in user_books / books
+- matched against the curated series DB
+
+Part 3: Stabilize continuation routing
+Once the user has a book mapped into a known series:
+- that series should consistently qualify for continuation logic on every run
+- Continue Reading should not appear/disappear because of OL response variance
+
+Part 4: Validate
+Run two fresh passes again and prove:
+- seriesReadSet is stable
+- Continue Reading is stable
+- Mad Ship / Fool’s Fate / House of Sky and Breath route consistently if the user has started those series
+- discovery recommendations remain clean
+
+Output
+1. root cause of current instability
+2. files changed
+3. how seriesReadSet is now built deterministically
+4. before/after stability across two fresh runs
+5. updated Continue Reading and Discover Next outputs

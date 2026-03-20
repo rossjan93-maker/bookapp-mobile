@@ -353,9 +353,31 @@ const CURATED: Record<string, Record<string, CuratedEntry>> = {
 };
 
 // Author name normalisation — handles common formatting variants.
-// "Sarah J. Maas", "Sarah J Maas", "S.J. Maas" → 'sarah j maas'
+// "Sarah J. Maas", "Sarah J Maas" → "sarah j maas"
+// "Hobb, Robin" (Goodreads "Last, First" import format) → "robin hobb"
+// "Maas, Sarah J." → "sarah j maas"
 function normalizeAuthor(author: string): string {
+  const commaIdx = author.indexOf(',');
+  if (commaIdx > 0) {
+    // "Last, First" → "First Last"
+    const last  = author.slice(0, commaIdx).trim();
+    const first = author.slice(commaIdx + 1).trim();
+    return normKey(`${first} ${last}`);
+  }
   return normKey(author);
+}
+
+// Strip subtitle suffixes from a title before normKey lookup.
+// Handles both the original string (e.g. "Fool's Fate: A Tawny Man Novel")
+// and the already-normalized key (e.g. "fools fate a tawny man novel" where
+// the colon was collapsed to a space by normKey).
+// Strategy: work on the original string so separators are still intact.
+function stripTitleSubtitle(title: string): string {
+  return title
+    .replace(/\s*:\s+.*$/, '')    // strip ": subtitle" (colon + space)
+    .replace(/\s+\/\s+.*$/, '')   // strip " / subtitle"
+    .replace(/\s+[-\u2013\u2014]\s+.*$/, '') // strip " - " or " – " or " — "
+    .trim();
 }
 
 function lookupCurated(
@@ -368,12 +390,26 @@ function lookupCurated(
   const authorMap = CURATED[aKey];
   if (!authorMap) return null;
 
-  // Exact title match
+  // 1. Exact title match
   if (authorMap[tKey]) return authorMap[tKey];
 
-  // Strip leading article variants ("the ", "a ", "an ") from title key
+  // 2. Strip leading article variants ("the ", "a ", "an ")
   const stripped = tKey.replace(/^(the|a|an) /, '');
   if (stripped !== tKey && authorMap[stripped]) return authorMap[stripped];
+
+  // 3. Subtitle truncation: many library imports store "Title: Subtitle" or
+  //    "Title - Subtitle". Strip the subtitle and retry.
+  //    e.g. "Fool's Fate: A Tawny Man Novel" → normKey → "fools fate"
+  const titleNoSub = stripTitleSubtitle(title);
+  if (titleNoSub !== title) {
+    const tKeyNoSub = normKey(titleNoSub);
+    if (tKeyNoSub !== tKey) {
+      if (authorMap[tKeyNoSub]) return authorMap[tKeyNoSub];
+      // Also try article-stripped version of subtitle-truncated key
+      const strippedNoSub = tKeyNoSub.replace(/^(the|a|an) /, '');
+      if (strippedNoSub !== tKeyNoSub && authorMap[strippedNoSub]) return authorMap[strippedNoSub];
+    }
+  }
 
   return null;
 }

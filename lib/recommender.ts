@@ -1968,6 +1968,17 @@ export async function getCandidateBooks(
   // ── Source A: catalog ─────────────────────────────────────────────────────
   const local = await getLocalCandidates(client, userId);
 
+  // ── seriesReadSet — built deterministically from user library ─────────────
+  // Must happen BEFORE any OL fetch so Continue Reading routing is stable
+  // regardless of OL response variance. With subtitle-stripping in lookupCurated,
+  // import variants like "Fool's Fate: A Tawny Man Novel" now resolve correctly.
+  // This is the primary, stable source. OL-excluded books are added later as
+  // a supplemental fallback (additive only — can never remove series).
+  const seriesReadSet = buildSeriesReadSet(local.readBooks);
+  if (__DEV__) {
+    console.log(`[SERIES_RS] readBooks=${local.readBooks.length} primarySize=${seriesReadSet.size} series=[${[...seriesReadSet].join(', ')}]`);
+  }
+
   const catalogExternalIds = new Set(
     local.candidates.map(c => c.external_id).filter((x): x is string => !!x)
   );
@@ -2094,16 +2105,15 @@ export async function getCandidateBooks(
     } : {}),
   };
 
-  // Supplement with titles/authors from OL-fetched books the user has already
-  // read (excluded from the candidate pool but still returned by OL queries).
-  // This catches cases where the user_books → books join returned incomplete
-  // data, ensuring series already underway are recognised reliably.
-  const seriesReadSet = buildSeriesReadSet([
-    ...local.readBooks,
-    ...olResult.excluded_read_books,
-  ]);
-  if (__DEV__ && olResult.excluded_read_books.length > 0) {
-    console.log(`[SERIES_RS] readBooks=${local.readBooks.length} olExcluded=${olResult.excluded_read_books.length} seriesReadSet.size=${seriesReadSet.size}`);
+  // OL-excluded supplement (additive fallback only — seriesReadSet was already
+  // built from local.readBooks before the OL fetch; this can only ADD series,
+  // never remove them, so it does not affect stability).
+  if (olResult.excluded_read_books.length > 0) {
+    const olSupp = buildSeriesReadSet(olResult.excluded_read_books);
+    for (const s of olSupp) seriesReadSet.add(s);
+    if (__DEV__ && olSupp.size > 0) {
+      console.log(`[SERIES_RS_OL] fallback added ${olSupp.size} series from OL-excluded: [${[...olSupp].join(', ')}] → total=${seriesReadSet.size}`);
+    }
   }
 
   return { candidates: filtered, enrichmentMap, retrieval_trace, seriesReadSet };
