@@ -1051,12 +1051,12 @@ function RecCard({
   onImpression?:     () => void;
   onExplanationOpen?:() => void;
 }) {
-  // Animation refs
-  const opacity   = useRef(new Animated.Value(1)).current;
-  const whyHeight = useRef(new Animated.Value(0)).current;
+  const router = useRouter();
+
+  // Animation ref — card fade-out on dismiss/save
+  const opacity = useRef(new Animated.Value(1)).current;
 
   // Local state
-  const [expanded, setExpanded]           = useState(false);
   const [moreDone, setMoreDone]           = useState(false);
   const [pendingAction, setPendingAction] = useState(false);
   const [seriesCovers, setSeriesCovers]   = useState<SeriesCover[]>([]);
@@ -1084,18 +1084,26 @@ function RecCard({
       `&q=${encodeURIComponent(sn)}`,
       '&sort=old&fields=key,title,cover_i&limit=8',
     ].join('');
+    // Regexp for multi-book / anthology editions that show inconsistent covers
+    const BAD_EDITION = /collection|omnibus|boxed|box set|complete works|anthology/i;
     fetch(url)
       .then(r => r.json())
       .then((data: { docs?: Array<{ key: string; cover_i?: number; title?: string }> }) => {
         const docs = data.docs ?? [];
-        const covers = docs.slice(0, 5).map(d => ({
+        // Only include entries that (a) have a real cover_i and (b) are not
+        // multi-book editions (collections, omnibus, boxed sets) which show
+        // inconsistent composite-cover images.
+        const cleanDocs = docs.filter(
+          d => d.cover_i != null && !BAD_EDITION.test(d.title ?? '')
+        );
+        const covers = cleanDocs.slice(0, 5).map(d => ({
           olKey:   d.key,
           coverId: d.cover_i ?? null,
           title:   d.title ?? '',
         }));
         setSeriesCovers(covers);
-        // Fade in the row once covers are ready
-        if (covers.length >= 1) {
+        // Fade in the row once we have enough clean covers
+        if (covers.length >= 3) {
           Animated.timing(seriesRowOpacity, {
             toValue:         1,
             duration:        420,
@@ -1136,17 +1144,6 @@ function RecCard({
     setTimeout(() => setMoreDone(false), 2200);
   }
 
-  function toggleWhy() {
-    if (expanded) {
-      Animated.timing(whyHeight, { toValue: 0, duration: 200, useNativeDriver: false }).start();
-      setExpanded(false);
-    } else {
-      Animated.timing(whyHeight, { toValue: 600, duration: 250, useNativeDriver: false }).start();
-      setExpanded(true);
-      onExplanationOpen();
-    }
-  }
-
   const uncertainty = book.score < 0.20
     ? 'Early signal — confidence will grow as your profile develops.'
     : book.score < 0.32
@@ -1156,8 +1153,8 @@ function RecCard({
   // Series row: identify which cover is "this" book by OL key match, fallback to index
   const seriesPos       = book._score_breakdown.series_position;
   const normalizedExtId = book.external_id?.replace('/works/', '') ?? null;
-  // Show row with as few as 1 cover — graceful placeholders fill gaps
-  const hasSeriesRow = seriesCovers.length >= 1 && seriesPos != null;
+  // Only show when we have 3+ clean real covers (all have cover_i; bad editions filtered)
+  const hasSeriesRow = seriesCovers.length >= 3 && seriesPos != null;
 
   // Reason text for collapsed view — strip author prefix since author is shown above
   const collapsedReason = book.reasons.length > 0
@@ -1305,67 +1302,26 @@ function RecCard({
             </Text>
           )}
 
-          {/* "Tell me more" toggle */}
-          <TouchableOpacity onPress={toggleWhy} style={{ marginTop: 9 }}>
-            <Text style={{ fontSize: 11, color: '#a8a29e' }}>
-              {expanded ? 'Close ▴' : 'Tell me more ▾'}
+          {/* View details CTA */}
+          <TouchableOpacity
+            onPress={() => router.push({
+              pathname: '/book/[id]',
+              params: {
+                id:         '',
+                title:      book.title,
+                author:     book.author,
+                coverUrl:   book.cover_url ?? '',
+                externalId: book.external_id ?? '',
+              },
+            })}
+            style={{ marginTop: 9 }}
+          >
+            <Text style={{ fontSize: 11, color: '#78716c', fontWeight: '500' }}>
+              View details →
             </Text>
           </TouchableOpacity>
         </View>
       </View>
-
-      {/* ── Expandable detail panel ── */}
-      <Animated.View style={{ maxHeight: whyHeight, overflow: 'hidden' }}>
-        <View style={{
-          marginHorizontal: 12,
-          marginBottom: 12,
-          backgroundColor: '#faf9f7',
-          borderRadius: 10,
-          padding: 13,
-        }}>
-          {/* Full book description / synopsis — the "back of the book" */}
-          {book.description && book.description.trim().length > 20 ? (
-            <Text style={{ fontSize: 13, color: '#1c1917', lineHeight: 20, marginBottom: 10 }}>
-              {book.description.trim()}
-            </Text>
-          ) : (
-            /* Fallback when no description: show reasons (not collapsedReason — show all) */
-            book.reasons.slice(1).map((r, idx) => (
-              <Text key={idx} style={{ fontSize: 12, color: '#57534e', lineHeight: 17, marginBottom: 6 }}>
-                {r}
-              </Text>
-            ))
-          )}
-          {/* Caveat */}
-          {book.risks.length > 0 && (
-            <Text style={{ fontSize: 11, color: '#a8a29e', lineHeight: 16, fontStyle: 'italic', marginBottom: 2 }}>
-              Keep in mind: {book.risks[0]}
-            </Text>
-          )}
-          {/* Series context */}
-          {book._score_breakdown.series_label && (
-            <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#e7e5e4' }}>
-              <Text style={{ fontSize: 12, fontWeight: '600', color: '#57534e' }}>
-                {book._score_breakdown.series_name ?? 'Series'}
-                {book._score_breakdown.series_position != null
-                  ? ` · Book ${book._score_breakdown.series_position}`
-                  : ''}
-              </Text>
-              <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 2 }}>
-                {book._score_breakdown.series_label === 'series_starter'
-                  ? 'Best entry point — start here.'
-                  : 'Your next installment in this series.'}
-              </Text>
-            </View>
-          )}
-          {/* Confidence note for low-signal profiles */}
-          {uncertainty && (
-            <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 8, lineHeight: 16, fontStyle: 'italic' }}>
-              {uncertainty}
-            </Text>
-          )}
-        </View>
-      </Animated.View>
 
       {/* ── Action bar ── */}
       <View style={{
