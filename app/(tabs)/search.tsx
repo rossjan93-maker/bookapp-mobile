@@ -1030,9 +1030,6 @@ function RecCard({
   onImpression?:     () => void;
   onExplanationOpen?:() => void;
 }) {
-  const label   = fitLabel(book.score);
-  const color   = fitColor(book.score);
-
   // Animation refs
   const opacity   = useRef(new Animated.Value(1)).current;
   const whyHeight = useRef(new Animated.Value(0)).current;
@@ -1090,7 +1087,6 @@ function RecCard({
     }
   }
 
-  const sourceLabel = book._source === 'catalog' ? 'Catalog' : 'Open Library';
   const uncertainty = book.score < 0.20
     ? 'Early signal — confidence will grow as your profile develops.'
     : book.score < 0.32
@@ -1120,25 +1116,15 @@ function RecCard({
           height={64}
         />
         <View style={{ flex: 1, marginLeft: 12 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 3 }}>
-            <Text
-              style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', flex: 1, lineHeight: 20 }}
-              numberOfLines={2}
-            >
-              {book.title}
-            </Text>
-            <View style={{
-              marginLeft: 8, marginTop: 2,
-              paddingHorizontal: 8, paddingVertical: 3,
-              borderRadius: 10,
-              backgroundColor: color + '18',
-            }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', color }}>{label}</Text>
-            </View>
-          </View>
+          <Text
+            style={{ fontSize: 15, fontWeight: '700', color: '#1c1917', lineHeight: 21, marginBottom: 3 }}
+            numberOfLines={2}
+          >
+            {book.title}
+          </Text>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 7, gap: 6 }}>
-            <Text style={{ fontSize: 12, color: '#a8a29e', flex: 1 }} numberOfLines={1}>
+            <Text style={{ fontSize: 12, color: '#78716c', flex: 1 }} numberOfLines={1}>
               {book.author}
             </Text>
             {isExpert && (
@@ -1178,8 +1164,8 @@ function RecCard({
                 letterSpacing: 0.2,
               }}>
                 {book._score_breakdown.series_label === 'series_starter'
-                  ? '◆ Start here'
-                  : '→ Continue the series'}
+                  ? 'Start here'
+                  : 'Continue the series'}
               </Text>
             </View>
           )}
@@ -1190,15 +1176,15 @@ function RecCard({
             </Text>
           )}
           {book.risks.length > 0 && (
-            <Text style={{ fontSize: 11, color: '#b45309', marginTop: 5, lineHeight: 16 }} numberOfLines={1}>
-              ⚠ {book.risks[0]}
+            <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 4, lineHeight: 16, fontStyle: 'italic' }} numberOfLines={1}>
+              {book.risks[0]}
             </Text>
           )}
 
           {/* Why this? toggle */}
-          <TouchableOpacity onPress={toggleWhy} style={{ marginTop: 8 }}>
+          <TouchableOpacity onPress={toggleWhy} style={{ marginTop: 9 }}>
             <Text style={{ fontSize: 11, color: '#a8a29e' }}>
-              {expanded ? '▲ Hide explanation' : '▼ Why this recommendation?'}
+              {expanded ? 'Close ▴' : 'Why this pick ▾'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -1208,121 +1194,46 @@ function RecCard({
       <Animated.View style={{ maxHeight: whyHeight, overflow: 'hidden' }}>
         <View style={{
           marginHorizontal: 12,
-          marginBottom: 10,
+          marginBottom: 12,
           backgroundColor: '#faf9f7',
           borderRadius: 10,
-          padding: 12,
+          padding: 13,
         }}>
+          {/* Primary reason */}
           {book.reasons.length > 0 && (
-            <View style={{ marginBottom: 8 }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', color: '#78716c', marginBottom: 4 }}>
-                WHY IT FITS
-              </Text>
-              {book.reasons.map((r, i) => (
-                <Text key={i} style={{ fontSize: 12, color: '#57534e', lineHeight: 18 }}>• {r}</Text>
-              ))}
-            </View>
-          )}
-          {book.risks.length > 0 && (
-            <View style={{ marginBottom: 8 }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', color: '#78716c', marginBottom: 4 }}>
-                POTENTIAL MISMATCH
-              </Text>
-              {book.risks.map((r, i) => (
-                <Text key={i} style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>• {r}</Text>
-              ))}
-            </View>
-          )}
-          <View style={{ flexDirection: 'row', gap: 16 }}>
-            <View>
-              <Text style={{ fontSize: 10, fontWeight: '600', color: '#a8a29e' }}>SOURCE</Text>
-              <Text style={{ fontSize: 11, color: '#57534e' }}>{sourceLabel}</Text>
-            </View>
-            <View>
-              <Text style={{ fontSize: 10, fontWeight: '600', color: '#a8a29e' }}>SCORE</Text>
-              <Text style={{ fontSize: 11, color: '#57534e' }}>{book.score.toFixed(2)} / 1.00</Text>
-            </View>
-            <View>
-              <Text style={{ fontSize: 10, fontWeight: '600', color: '#a8a29e' }}>POOL</Text>
-              <Text style={{ fontSize: 11, color: '#57534e' }}>#{book._debug.rank} of {book._debug.pool_size}</Text>
-            </View>
-          </View>
-
-          {/* ── Score breakdown ── */}
-          <View style={{ marginTop: 10, borderTopWidth: 1, borderTopColor: '#e7e5e4', paddingTop: 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 5 }}>
-              <Text style={{ fontSize: 10, fontWeight: '600', color: '#a8a29e', flex: 1 }}>
-                SCORE BREAKDOWN
-              </Text>
-              {book._score_breakdown.book_form && (
-                <Text style={{ fontSize: 9, color: '#78716c', backgroundColor: '#f5f5f4', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 }}>
-                  {book._score_breakdown.book_form}
-                </Text>
-              )}
-            </View>
-            {[
-              { label: 'Trait align', value: book._score_breakdown.trait_alignment  },
-              { label: 'Avoided',     value: book._score_breakdown.avoided_penalty  },
-              { label: 'Genre',       value: book._score_breakdown.genre_bonus      },
-              { label: 'Feedback',    value: book._score_breakdown.feedback_boost   },
-              { label: 'Enrichment',  value: book._score_breakdown.enrichment_bonus },
-              { label: 'Metadata',    value: book._score_breakdown.metadata_penalty },
-            ].map(({ label, value }) => {
-              const isNeg  = value < 0;
-              const isZero = value === 0;
-              const color  = isZero ? '#d6d3d1' : isNeg ? '#ef4444' : '#16a34a';
-              const prefix = value > 0 ? '+' : '';
-              const barW   = Math.round(Math.min(Math.abs(value) * 280, 80));
-              return (
-                <View key={label} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 3 }}>
-                  <Text style={{ fontSize: 10, color: '#78716c', width: 72 }}>{label}</Text>
-                  <View style={{
-                    width: Math.max(2, barW), height: 4, borderRadius: 2, marginRight: 6,
-                    backgroundColor: isZero ? '#e7e5e4' : color,
-                    opacity: isZero ? 0.3 : 0.72,
-                  }} />
-                  <Text style={{ fontSize: 10, color, fontVariant: ['tabular-nums'] }}>
-                    {prefix}{value.toFixed(3)}
-                  </Text>
-                </View>
-              );
-            })}
-            <View style={{ flexDirection: 'row', marginTop: 4, gap: 8 }}>
-              <Text style={{ fontSize: 9, color: '#a8a29e' }}>
-                raw {book._score_breakdown.raw_score.toFixed(3)} → {book._score_breakdown.final_score.toFixed(3)}
-              </Text>
-              {book._score_breakdown.audit_flags.length > 0 && (
-                <Text style={{ fontSize: 9, color: '#ef4444' }}>
-                  ⚑ {book._score_breakdown.audit_flags.join(', ')}
-                </Text>
-              )}
-            </View>
-            <Text style={{ fontSize: 9, color: '#a8a29e', marginTop: 2 }} numberOfLines={1}>
-              ↵ {book._retrieval_reason}
+            <Text style={{ fontSize: 13, color: '#1c1917', lineHeight: 19, marginBottom: 6 }}>
+              {book.reasons[0]}
             </Text>
-            {/* ── Series context (RIL) ── */}
-            {book._score_breakdown.series_label && (
-              <View style={{ marginTop: 6, borderTopWidth: 1, borderTopColor: '#e7e5e4', paddingTop: 6 }}>
-                <Text style={{ fontSize: 10, fontWeight: '600', color: '#a8a29e', marginBottom: 3 }}>
-                  SERIES
-                </Text>
-                <Text style={{ fontSize: 11, color: '#57534e' }}>
-                  {book._score_breakdown.series_name ?? 'Unknown series'}
-                  {book._score_breakdown.series_position != null
-                    ? ` · Book ${book._score_breakdown.series_position}`
-                    : ''}
-                </Text>
-                <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 2 }}>
-                  {book._score_breakdown.series_label === 'series_starter'
-                    ? 'Best entry point — start here'
-                    : book._score_breakdown.series_label === 'series_continuation'
-                    ? 'Continuation — you\'ve read this author'
-                    : book._score_breakdown.series_label}
-                </Text>
-              </View>
-            )}
-          </View>
-
+          )}
+          {/* Secondary reason (if present) */}
+          {book.reasons.length > 1 && (
+            <Text style={{ fontSize: 12, color: '#57534e', lineHeight: 18, marginBottom: 6 }}>
+              {book.reasons[1]}
+            </Text>
+          )}
+          {/* Caveat (softened) */}
+          {book.risks.length > 0 && (
+            <Text style={{ fontSize: 11, color: '#a8a29e', lineHeight: 16, fontStyle: 'italic', marginBottom: 2 }}>
+              Keep in mind: {book.risks[0]}
+            </Text>
+          )}
+          {/* Series context */}
+          {book._score_breakdown.series_label && (
+            <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#e7e5e4' }}>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: '#57534e' }}>
+                {book._score_breakdown.series_name ?? 'Series'}
+                {book._score_breakdown.series_position != null
+                  ? ` · Book ${book._score_breakdown.series_position}`
+                  : ''}
+              </Text>
+              <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 2 }}>
+                {book._score_breakdown.series_label === 'series_starter'
+                  ? 'Best entry point — start here.'
+                  : 'Your next installment in this series.'}
+              </Text>
+            </View>
+          )}
+          {/* Confidence note for low-signal profiles */}
           {uncertainty && (
             <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 8, lineHeight: 16, fontStyle: 'italic' }}>
               {uncertainty}
@@ -1378,15 +1289,6 @@ function RecCard({
         </TouchableOpacity>
       </View>
 
-      {/* ── Source/debug strip ── */}
-      <View style={{ backgroundColor: '#fafaf9', paddingHorizontal: 12, paddingVertical: 4 }}>
-        <Text style={{ fontSize: 10, color: '#d6d3d1' }}>
-          {book._source === 'catalog' ? '📚' : '🌐'} {sourceLabel}
-          {'  ·  '}rank {book._debug.rank}/{book._debug.pool_size}
-          {'  ·  '}score {book.score.toFixed(2)}
-          {'  ·  '}{book._retrieval_reason}
-        </Text>
-      </View>
     </Animated.View>
   );
 }
@@ -2407,31 +2309,18 @@ export default function RecommendationsScreen() {
                   )}
 
                   {/* ── Continue Reading bucket ── */}
-                  {continuations.length > 0 && (
+                  {continuations.length > 0 ? (
                     <>
-                      <View style={{
-                        flexDirection: 'row', alignItems: 'center',
-                        marginBottom: 4, marginTop: 4,
-                      }}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={{
-                            fontSize: 13, fontWeight: '700',
-                            color: '#1c1917', letterSpacing: 0.1,
-                          }}>
-                            Continue Reading
-                          </Text>
-                          <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>
-                            Next in series you've already started
-                          </Text>
-                        </View>
-                        <View style={{
-                          backgroundColor: '#fef3c7', borderRadius: 5,
-                          paddingHorizontal: 7, paddingVertical: 2,
+                      <View style={{ marginBottom: 10, marginTop: 6 }}>
+                        <Text style={{
+                          fontSize: 16, fontWeight: '700',
+                          color: '#1c1917', letterSpacing: -0.2,
                         }}>
-                          <Text style={{ fontSize: 10, fontWeight: '700', color: '#92400e' }}>
-                            {continuations.length}
-                          </Text>
-                        </View>
+                          Continue Reading
+                        </Text>
+                        <Text style={{ fontSize: 12, color: '#78716c', marginTop: 2 }}>
+                          Pick up where you left off
+                        </Text>
                       </View>
 
                       {continuations.map(rec => (
@@ -2450,28 +2339,43 @@ export default function RecommendationsScreen() {
                       {discoveries.length > 0 && (
                         <View style={{
                           height: 1, backgroundColor: '#e7e5e4',
-                          marginTop: 8, marginBottom: 16,
+                          marginTop: 8, marginBottom: 20,
                         }} />
                       )}
                     </>
+                  ) : (
+                    <View style={{
+                      backgroundColor: '#faf9f7',
+                      borderRadius: 10,
+                      paddingVertical: 16,
+                      paddingHorizontal: 14,
+                      marginBottom: 20,
+                      borderWidth: 1,
+                      borderColor: '#e7e5e4',
+                    }}>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', marginBottom: 3 }}>
+                        Continue Reading
+                      </Text>
+                      <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>
+                        No active series yet — start one below.
+                      </Text>
+                    </View>
                   )}
 
                   {/* ── Discover Next bucket ── */}
                   {discoveries.length > 0 && (
                     <>
-                      {continuations.length > 0 && (
-                        <View style={{ marginBottom: 10 }}>
-                          <Text style={{
-                            fontSize: 13, fontWeight: '700',
-                            color: '#1c1917', letterSpacing: 0.1,
-                          }}>
-                            Discover Next
-                          </Text>
-                          <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>
-                            Shaped by your reading history and taste
-                          </Text>
-                        </View>
-                      )}
+                      <View style={{ marginBottom: 10, marginTop: continuations.length === 0 ? 0 : 2 }}>
+                        <Text style={{
+                          fontSize: 16, fontWeight: '700',
+                          color: '#1c1917', letterSpacing: -0.2,
+                        }}>
+                          Discover Next
+                        </Text>
+                        <Text style={{ fontSize: 12, color: '#78716c', marginTop: 2 }}>
+                          New books aligned to your taste
+                        </Text>
+                      </View>
 
                       {discoveries.map(rec => (
                         <RecCard

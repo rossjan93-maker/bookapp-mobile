@@ -1,0 +1,186 @@
+Run a tightly scoped UX polish sprint for the book app before beta sharing.
+
+This is NOT a feature sprint.
+Do NOT add new recommendation logic.
+Do NOT add new product surfaces.
+Do NOT expand scope.
+
+Goal
+Improve the general presentation, clarity, and editorial feel of the app so it looks trustworthy, intuitive, and premium when shared with real users.
+
+This sprint is about:
+- clearer layout
+- better information hierarchy
+- better copy
+- cleaner recommendation presentation
+- stronger empty / edge states
+- overall polish
+
+It is NOT about:
+- new recommendation systems
+- new social features
+- new onboarding flows
+- new backend logic
+
+Core product principle
+The app should feel like:
+- thoughtful
+- calm
+- premium
+- editorial
+not like:
+- a debug tool
+- a data dump
+- a generic app template
+
+Main UX priorities
+
+Part 1: Improve recommendation section framing
+The recommendation areas should feel like curated editorial sections, not generic lists.
+
+Update the section presentation so it feels intentional.
+
+Suggested structure:
+- Continue Reading
+  - subtitle: “Pick up where you left off”
+- Discover Next
+  - subtitle: “New books aligned to your taste”
+
+If there is a better phrasing that feels even more premium and natural, use it.
+Keep it restrained and clean.
+
+Requirements:
+- strengthen section hierarchy
+- make the purpose of each section instantly clear
+- make the page feel guided, not mechanical
+
+Part 2: Upgrade RecCard information hierarchy
+Recommendation cards should feel like decision objects, not containers of metadata.
+
+Improve visual hierarchy:
+- title should be the strongest text
+- author secondary
+- editorial badge (Start here / Continue the series) small but visible
+- main reason should be short, human, and easy to scan
+
+Reduce clutter.
+The card should answer:
+1. what is this?
+2. why am I seeing it?
+3. what should I do?
+
+Part 3: Rewrite recommendation copy to feel more human
+Current recommendation language should be reviewed and improved where needed.
+
+Rules:
+- reduce system-y wording
+- avoid sounding like an analytics engine
+- keep explanations concise
+- sound like a smart books editor, not a scoring function
+
+Examples of preferred tone:
+- “Start here — the first book in a series that fits your reading taste.”
+- “Continue the series — this is your next installment.”
+- “A strong fit for your suspense lane.”
+- “You’ve returned to this author before — this is a natural next pick.”
+
+Do not use overly technical internal vocabulary in the main UI:
+- avoid “CoG”
+- avoid “lane” unless it truly reads naturally
+- avoid debug-style phrasing in user-facing areas
+
+Part 4: Simplify and improve the “why” experience
+The recommendation detail / explanation experience should feel cleaner.
+
+Rules:
+- one primary reason
+- at most one or two supporting signals
+- no long walls of justification
+- no internal jargon
+- if expanded details exist, make them cleaner and easier to scan
+
+The “why” should build trust without overwhelming the user.
+
+Part 5: Add better editorial cues for series books
+We already have series-aware recommendation logic.
+Now make the presentation feel better.
+
+For series starters:
+- show a subtle premium cue such as:
+  - “Start here”
+  - “Series starter”
+  - “Book 1 of a series”
+
+For continuations:
+- show:
+  - “Continue the series”
+  - “Next in the series”
+
+These cues should feel elegant and helpful, not loud or gamified.
+
+Part 6: Improve empty / edge states
+The app should handle sparse states gracefully.
+
+Examples:
+If Continue Reading is empty:
+- show a calm, useful message such as:
+  - “No active series yet — start one below.”
+or something similarly polished
+
+If recommendation confidence is thin:
+- present a thoughtful fallback
+- avoid dead or awkward empty space
+
+If there is a filtered / constrained state:
+- keep the messaging clear and reassuring
+
+Part 7: Reduce visual noise and improve overall polish
+Do a restrained visual polish pass.
+
+Focus on:
+- spacing consistency
+- section separation
+- card spacing
+- typography hierarchy
+- subtle shadows / borders if appropriate
+- reducing clutter
+- removing anything that feels debug-like in normal UI
+- making the page feel calm and intentional
+
+Do not over-style it.
+Premium here means restraint, clarity, and consistency.
+
+Part 8: Preserve debug functionality without contaminating the main experience
+If debug tools remain in the app:
+- keep them clearly separated
+- make sure normal user-facing areas do not feel like debug surfaces
+- do not let system internals visually leak into the main recommendation experience
+
+Part 9: Keep scope strict
+Do NOT:
+- add new features
+- redesign the app from scratch
+- change recommendation logic
+- add anchor mode
+- add social features
+- add onboarding flows
+- expand into unrelated screens unless required for consistency
+
+Only improve presentation and usability of what already exists.
+
+Part 10: Output
+When complete, provide:
+1. what UI/UX areas were improved
+2. files changed
+3. the main copy changes
+4. the main layout/hierarchy changes
+5. the empty/edge state improvements
+6. any small polish items deferred for later
+
+Success criterion
+The app should feel ready to show real users:
+- clear
+- polished
+- credible
+- premium
+- easy to understand
