@@ -1,0 +1,81 @@
+We need a precision correction pass. Do NOT do more general UI work.
+
+There are two exact failures to fix:
+
+1. "View details" is broken
+Current behavior:
+- tapping "View details" sends the user to an unmatched route page
+
+This must be fixed immediately.
+
+Requirement:
+- "View details" must navigate to the same in-app book detail screen pattern already used elsewhere in the app (like the Library flow)
+- Do NOT use a web-style or ad hoc route
+- Reuse the existing working navigation pattern for book detail
+- Pass the correct params required by that screen
+- Confirm this works for recommendation cards in both:
+  - Continue Reading
+  - Discover Next
+
+2. Series rendering is inconsistent
+Current behavior:
+- Mad Ship shows a series row
+- Fool's Assassin does not appear to be receiving the correct series treatment consistently, even though it is part of a series
+
+Requirement:
+- if a recommendation has valid series metadata, the card should render the series treatment consistently
+- this includes:
+  - series row
+  - correct badge ("Start here" vs "Continue the series")
+- the logic must be the same across Continue Reading and Discover Next
+- verify with these exact examples:
+  - Mad Ship
+  - Fool's Assassin
+  - House of Earth and Blood
+
+We need correctness, not approximation.
+
+What to do
+
+Part 1: Fix navigation
+- inspect how Library opens the detail page
+- reuse that exact route/navigation contract
+- do not invent a new path
+- ensure recommendation cards navigate with the same working screen + params
+
+Part 2: Fix series-card consistency
+- inspect what data each RecCard receives for:
+  - series_name
+  - series_position
+  - series_label
+- verify whether Fool's Assassin is missing metadata or whether rendering is failing conditionally
+- make the output consistent for all valid series books
+
+Part 3: Validate explicitly
+Return proof for these 3 books:
+- Mad Ship
+- Fool's Assassin
+- House of Earth and Blood
+
+For each, show:
+- route target used by "View details"
+- whether navigation now works
+- series_name
+- series_position
+- series_label
+- whether series row renders
+- whether badge renders
+
+Output
+1. root cause of unmatched route
+2. files changed
+3. exact navigation fix applied
+4. exact cause of the Fool's Assassin inconsistency
+5. proof for all 3 named books
+6. confirmation that both failures are fixed
+
+Important
+- Do NOT do more broad design polish
+- Do NOT change recommendation logic
+- Do NOT change unrelated screens
+- This is a surgical correctness pass only

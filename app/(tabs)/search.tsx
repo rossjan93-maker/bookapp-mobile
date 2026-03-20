@@ -1102,8 +1102,10 @@ function RecCard({
           title:   d.title ?? '',
         }));
         setSeriesCovers(covers);
-        // Fade in the row once we have enough clean covers
-        if (covers.length >= 3) {
+        // Fade in the row once we have at least 2 clean covers.
+        // Threshold is 2, not 3: some trilogies return only 2 OL-indexed editions
+        // with cover_i, and suppressing to nothing is worse than a short row.
+        if (covers.length >= 2) {
           Animated.timing(seriesRowOpacity, {
             toValue:         1,
             duration:        420,
@@ -1153,8 +1155,10 @@ function RecCard({
   // Series row: identify which cover is "this" book by OL key match, fallback to index
   const seriesPos       = book._score_breakdown.series_position;
   const normalizedExtId = book.external_id?.replace('/works/', '') ?? null;
-  // Only show when we have 3+ clean real covers (all have cover_i; bad editions filtered)
-  const hasSeriesRow = seriesCovers.length >= 3 && seriesPos != null;
+  // Render row with 2+ clean real covers — 2 is enough to show meaningful series context.
+  // The threshold was 3 but some well-known trilogies (Fitz and the Fool, Crescent City)
+  // return only 2 entries with cover_i from OL, causing silent suppression.
+  const hasSeriesRow = seriesCovers.length >= 2 && seriesPos != null;
 
   // Reason text for collapsed view — strip author prefix since author is shown above
   const collapsedReason = book.reasons.length > 0
@@ -1302,12 +1306,18 @@ function RecCard({
             </Text>
           )}
 
-          {/* View details CTA */}
+          {/* View details CTA — same navigation contract as Library/Home.
+              The `id` param must be non-empty for Expo Router to match /book/[id]
+              and for the detail screen's enrichment useEffect to fire.
+              For recommendation cards that are not yet in the user's library,
+              we have no DB UUID; pass the OL work key (sans /works/ prefix) so
+              the route matches. The detail screen's DB lookups return nothing
+              (graceful) while OL metadata loads via the separate `externalId` param. */}
           <TouchableOpacity
             onPress={() => router.push({
               pathname: '/book/[id]',
               params: {
-                id:         '',
+                id:         book.external_id?.replace('/works/', '') ?? 'rec',
                 title:      book.title,
                 author:     book.author,
                 coverUrl:   book.cover_url ?? '',
