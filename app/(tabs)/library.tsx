@@ -1,11 +1,12 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { fetchGoogleBooksCoverUrl } from '../../lib/googleBooks';
 import { repairBooksMetadata } from '../../lib/metadataRepair';
-import { ActivityIndicator, FlatList, Modal, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { computePagePacing, computeDatePacing } from '../../lib/pacing';
+import { transitionStatus, saveCurrentPage } from '../../lib/userBookActions';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -111,6 +112,12 @@ export default function LibraryScreen() {
   const [error, setError]                 = useState<string | null>(null);
   const [updatingId, setUpdatingId]       = useState<string | null>(null);
   const [pendingFeedback, setPendingFeedback]           = useState<PendingFeedback | null>(null);
+  // Quick-page-log state (inline progress update on reading cards)
+  const [quickLogId, setQuickLogId]       = useState<string | null>(null);
+  const [quickLogInput, setQuickLogInput] = useState('');
+  const [quickLogSaving, setQuickLogSaving] = useState(false);
+  const [quickLogError, setQuickLogError]   = useState<string | null>(null);
+  const quickLogRef = useRef<TextInput>(null);
   const [pendingTasteUserBookId, setPendingTasteUserBookId] = useState<string | null>(null);
   const [likedTags, setLikedTags]                       = useState<string[]>([]);
   const [dislikedTags, setDislikedTags]                 = useState<string[]>([]);
@@ -284,85 +291,17 @@ export default function LibraryScreen() {
     if (!supabase || !currentUserId) return;
     setUpdatingId(userBook.id);
 
-    const now = new Date().toISOString();
-    let completionEventId: string | null = null;
-    const userBookUpdate: Record<string, unknown> = { status: newStatus };
-    if (newStatus === 'reading')                              userBookUpdate.started_at  = now;
-    if (newStatus === 'finished' || newStatus === 'dnf')     userBookUpdate.finished_at = now;
+    const { data, error: transErr } = await transitionStatus(supabase, {
+      userBookId: userBook.id,
+      bookId:     userBook.book_id,
+      userId:     currentUserId,
+      newStatus,
+    });
 
-    const { error: updateError } = await supabase
-      .from('user_books')
-      .update(userBookUpdate)
-      .eq('id', userBook.id);
-
-    if (updateError) {
-      setError('Could not update status. Please try again.');
+    if (transErr) {
+      setError(transErr);
       setUpdatingId(null);
       return;
-    }
-
-    const { data: rec } = await supabase
-      .from('recommendations')
-      .select('id, from_user_id, to_user_id, book_id')
-      .eq('user_book_id', userBook.id)
-      .maybeSingle();
-
-    if (rec) {
-      const recStatusMap: Record<UserBookStatus, string> = {
-        want_to_read: 'saved',
-        reading:      'started',
-        finished:     'finished',
-        dnf:          'dnf',
-      };
-      const recUpdate: Record<string, unknown> = { status: recStatusMap[newStatus] };
-      if (newStatus === 'finished' || newStatus === 'dnf') recUpdate.resolved_at = now;
-
-      const { error: recUpdateError } = await supabase
-        .from('recommendations')
-        .update(recUpdate)
-        .eq('id', rec.id);
-
-      if (!recUpdateError && newStatus === 'finished') {
-        const { data: existingEvent } = await supabase
-          .from('credibility_events')
-          .select('id')
-          .eq('recommendation_id', rec.id)
-          .maybeSingle();
-        if (!existingEvent) {
-          await supabase.from('credibility_events').insert({
-            recommendation_id: rec.id,
-            from_user_id: rec.from_user_id,
-            to_user_id:   rec.to_user_id,
-            book_id:      rec.book_id,
-          });
-        }
-      }
-
-      if (!recUpdateError) {
-        if (newStatus === 'reading') {
-          await supabase.from('activity_events').insert({
-            actor_id: currentUserId, event_type: 'recommendation_started',
-            book_id: rec.book_id, recommendation_id: rec.id,
-          });
-        } else if (newStatus === 'finished') {
-          const { data: evtData } = await supabase
-            .from('activity_events')
-            .insert({
-              actor_id: currentUserId, event_type: 'recommendation_finished',
-              book_id: rec.book_id, recommendation_id: rec.id,
-            })
-            .select('id')
-            .single();
-          completionEventId = evtData?.id ?? null;
-        }
-      }
-    } else if (newStatus === 'finished') {
-      const { data: evtData } = await supabase
-        .from('activity_events')
-        .insert({ actor_id: currentUserId, event_type: 'book_finished', book_id: userBook.book_id })
-        .select('id')
-        .single();
-      completionEventId = evtData?.id ?? null;
     }
 
     setItems(prev => prev.map(item =>
@@ -370,16 +309,53 @@ export default function LibraryScreen() {
         ? {
             ...item,
             status:      newStatus,
-            started_at:  newStatus === 'reading'                          ? now : item.started_at,
-            finished_at: newStatus === 'finished' || newStatus === 'dnf'  ? now : item.finished_at,
+            started_at:  data?.startedAt  ?? item.started_at,
+            finished_at: data?.finishedAt ?? item.finished_at,
           }
         : item
     ));
 
     if (newStatus === 'finished' || newStatus === 'dnf') {
-      setPendingFeedback({ userBookId: userBook.id, bookId: userBook.book_id, status: newStatus, pendingEventId: completionEventId });
+      setPendingFeedback({
+        userBookId:     userBook.id,
+        bookId:         userBook.book_id,
+        status:         newStatus,
+        pendingEventId: data?.completionEventId ?? null,
+      });
     }
     setUpdatingId(null);
+  }
+
+  async function handleQuickLog(item: UserBook) {
+    if (!supabase || !currentUserId || !item.id) return;
+    const newPage = parseInt(quickLogInput.trim(), 10);
+    if (isNaN(newPage) || newPage < 0) {
+      setQuickLogError('Enter a valid page number.');
+      return;
+    }
+    if (item.book?.page_count && newPage > item.book.page_count) {
+      setQuickLogError(`Can't exceed total pages (${item.book.page_count}).`);
+      return;
+    }
+    setQuickLogError(null);
+    setQuickLogSaving(true);
+    const { error } = await saveCurrentPage(supabase, {
+      userBookId:  item.id,
+      bookId:      item.book_id,
+      userId:      currentUserId,
+      newPage,
+      currentPage: item.current_page,
+    });
+    setQuickLogSaving(false);
+    if (!error) {
+      setItems(prev => prev.map(it =>
+        it.id === item.id ? { ...it, current_page: newPage } : it
+      ));
+      setQuickLogId(null);
+      setQuickLogInput('');
+    } else {
+      setQuickLogError(error);
+    }
   }
 
   // ── Derived state ─────────────────────────────────────────────────────────
@@ -772,11 +748,91 @@ export default function LibraryScreen() {
                   )}
                   {!hasProgress && item.status === 'reading' && (
                     <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 6 }}>
-                      {pacingNote ? pacingNote : 'In progress — open to log pages'}
+                      {pacingNote ? pacingNote : 'In progress'}
                     </Text>
                   )}
                 </View>
               </TouchableOpacity>
+
+              {/* Quick-page-log — shown when not rating / not updating */}
+              {!hasPendingRating && !isUpdating && (
+                <View style={{ marginBottom: 10 }}>
+                  {quickLogId === item.id ? (
+                    <View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <TextInput
+                          ref={quickLogRef}
+                          value={quickLogInput}
+                          onChangeText={setQuickLogInput}
+                          keyboardType="number-pad"
+                          placeholder={item.current_page != null ? String(item.current_page) : '0'}
+                          placeholderTextColor="#a8a29e"
+                          returnKeyType="done"
+                          onSubmitEditing={() => handleQuickLog(item)}
+                          style={{
+                            width: 72,
+                            height: 36,
+                            borderWidth: 1.5,
+                            borderColor: '#d6d3d1',
+                            borderRadius: 7,
+                            paddingHorizontal: 10,
+                            fontSize: 15,
+                            fontWeight: '700',
+                            color: '#1c1917',
+                            textAlign: 'center',
+                          }}
+                        />
+                        {item.book?.page_count != null && (
+                          <Text style={{ fontSize: 12, color: '#a8a29e' }}>
+                            of {item.book.page_count}
+                          </Text>
+                        )}
+                        <TouchableOpacity
+                          onPress={() => handleQuickLog(item)}
+                          disabled={quickLogSaving}
+                          style={{
+                            backgroundColor: quickLogSaving ? '#d6d3d1' : '#1c1917',
+                            borderRadius: 7,
+                            paddingHorizontal: 14,
+                            paddingVertical: 8,
+                          }}
+                        >
+                          <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>
+                            {quickLogSaving ? '…' : 'Save'}
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => { setQuickLogId(null); setQuickLogError(null); }}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Text style={{ fontSize: 12, color: '#a8a29e' }}>Cancel</Text>
+                        </TouchableOpacity>
+                      </View>
+                      {quickLogError && (
+                        <Text style={{ fontSize: 11, color: '#b91c1c', marginTop: 4 }}>
+                          {quickLogError}
+                        </Text>
+                      )}
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setQuickLogInput(item.current_page != null ? String(item.current_page) : '');
+                        setQuickLogError(null);
+                        setQuickLogId(item.id);
+                        setTimeout(() => quickLogRef.current?.focus(), 60);
+                      }}
+                      hitSlop={{ top: 6, bottom: 6, left: 0, right: 24 }}
+                    >
+                      <Text style={{ fontSize: 12, color: '#78716c', fontWeight: '500' }}>
+                        {item.current_page != null
+                          ? `Update pages — p.${item.current_page}`
+                          : 'Log current page →'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
 
               {/* Action row */}
               {hasPendingRating ? (

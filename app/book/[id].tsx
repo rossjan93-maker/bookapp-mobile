@@ -16,6 +16,8 @@ import { computePacingNote, computePagePacing } from '../../lib/pacing';
 import { fetchGoogleBooksMetadata } from '../../lib/googleBooks';
 import { fetchOLMeta, searchOLWork, isOLId } from '../../lib/openLibrary';
 import type { OLMeta } from '../../lib/openLibrary';
+import { transitionStatus } from '../../lib/userBookActions';
+import type { UserBookStatus } from '../../lib/userBookActions';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -56,11 +58,11 @@ export default function BookDetailScreen() {
     author,
     coverUrl,
     externalId,
-    status,
+    status: statusParam,
     note,
     fromUser,
     toUser,
-    startedAt,
+    startedAt: startedAtParam,
     readingGoal: readingGoalParam,
   } = useLocalSearchParams<{
     id?: string;
@@ -121,6 +123,19 @@ export default function BookDetailScreen() {
   // Taste preferences state (used by Taste Match section)
   const [hasTastePrefs, setHasTastePrefs] = useState<boolean | null>(null);
 
+  // Local status — tracks post-transition status independently from route params
+  const [localStatus, setLocalStatus]     = useState<string | undefined>(statusParam);
+  const [localStartedAt, setLocalStartedAt] = useState<string | undefined>(startedAtParam);
+  // Status-transition (Start Reading / Mark Finished / DNF from Book Detail)
+  const [transitioning, setTransitioning]   = useState(false);
+  const [transitionError, setTransitionError] = useState<string | null>(null);
+  // Post-finish inline rating prompt
+  const [pendingDetailRating, setPendingDetailRating] = useState<{
+    completionEventId: string | null;
+  } | null>(null);
+  const [detailRating, setDetailRating]     = useState<number | null>(null);
+  const [savingDetailRating, setSavingDetailRating] = useState(false);
+
   const pageInputRef      = useRef<TextInput>(null);
   const pageCountInputRef = useRef<TextInput>(null);
 
@@ -161,9 +176,9 @@ export default function BookDetailScreen() {
     fetchHistory();
   }, [bookId]);
 
-  const badge     = status ? (STATUS_META[status] ?? null) : null;
+  const badge     = localStatus ? (STATUS_META[localStatus] ?? null) : null;
   const hasRecCtx = !!(fromUser || toUser || note);
-  const isReading = status === 'reading' || status === 'started';
+  const isReading = localStatus === 'reading' || localStatus === 'started';
 
   // ── Self-healing metadata enrichment ─────────────────────────────────────
   // Runs for every book (not just those with an OL externalId).
@@ -522,11 +537,63 @@ export default function BookDetailScreen() {
     }
   }
 
+  // ── Status transitions (Start Reading / Mark Finished / DNF) ─────────────
+
+  async function handleTransition(newStatus: UserBookStatus) {
+    if (!supabase || !userBookId || !bookId) return;
+    const uid = userId ?? (await supabase.auth.getUser()).data.user?.id ?? null;
+    if (!uid) return;
+    setTransitionError(null);
+    setTransitioning(true);
+
+    const { data, error } = await transitionStatus(supabase, {
+      userBookId,
+      bookId,
+      userId: uid,
+      newStatus,
+    });
+
+    setTransitioning(false);
+    if (error) {
+      setTransitionError(error);
+      return;
+    }
+
+    setLocalStatus(newStatus);
+    if (data?.startedAt)  setLocalStartedAt(data.startedAt);
+
+    if (newStatus === 'finished' || newStatus === 'dnf') {
+      setPendingDetailRating({ completionEventId: data?.completionEventId ?? null });
+    }
+  }
+
+  async function handleDetailRating(rating: number) {
+    if (!supabase || !userBookId || !bookId) return;
+    setSavingDetailRating(true);
+    const sentiment =
+      rating >= 5 ? 'loved' :
+      rating >= 4 ? 'liked' :
+      rating === 3 ? 'okay' : 'not_for_me';
+    await supabase.from('user_books').update({ rating, sentiment }).eq('id', userBookId);
+    const eventId = pendingDetailRating?.completionEventId ?? null;
+    if (eventId) {
+      await supabase.from('activity_events').update({ rating }).eq('id', eventId);
+    } else if (userId && bookId) {
+      await supabase.from('activity_events').insert({
+        actor_id: userId, event_type: 'book_rated', book_id: bookId, rating,
+      });
+    }
+    setSavingDetailRating(false);
+    setPendingDetailRating(null);
+    setDetailRating(null);
+    router.back();
+  }
+
   // ── Derived pacing ────────────────────────────────────────────────────────
 
   const hasPaging      = currentPage != null && pageCount != null && pageCount > 0;
-  const pagePacing     = hasPaging ? computePagePacing(currentPage!, pageCount!, startedAt, yearlyGoal) : null;
-  const datePacingNote = !hasPaging ? computePacingNote(startedAt, yearlyGoal) : null;
+  const pagePacing     = hasPaging ? computePagePacing(currentPage!, pageCount!, localStartedAt, yearlyGoal) : null;
+  const datePacingNote = !hasPaging ? computePacingNote(localStartedAt, yearlyGoal) : null;
   const pacingState    = pagePacing?.state ?? null;
   const isAhead        = pacingState === 'ahead';
   const progressPct    = hasPaging ? Math.min(100, Math.round((currentPage! / pageCount!) * 100)) : null;
@@ -592,6 +659,32 @@ export default function BookDetailScreen() {
           </View>
         )}
         {!badge && <View style={{ marginBottom: 28 }} />}
+
+        {/* ── Start Reading CTA — shown for want_to_read books that have been saved ── */}
+        {localStatus === 'want_to_read' && userBookId && (
+          <View style={{ marginBottom: 20 }}>
+            <TouchableOpacity
+              onPress={() => handleTransition('reading')}
+              disabled={transitioning}
+              style={{
+                backgroundColor: transitioning ? '#d6d3d1' : '#1c1917',
+                borderRadius: 12,
+                paddingVertical: 15,
+                alignItems: 'center',
+              }}
+            >
+              {transitioning
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: 0.2 }}>Start Reading</Text>
+              }
+            </TouchableOpacity>
+            {transitionError && (
+              <Text style={{ fontSize: 12, color: '#b91c1c', marginTop: 8, textAlign: 'center' }}>
+                {transitionError}
+              </Text>
+            )}
+          </View>
+        )}
 
         {/* ── Reading Progress card (primary module) ── */}
         {isReading && (
@@ -863,6 +956,46 @@ export default function BookDetailScreen() {
                     )}
                   </View>
                 )}
+
+                {/* ── Finish / DNF actions ── */}
+                {!editingProgress && !editingPageCount && (
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
+                    <TouchableOpacity
+                      onPress={() => handleTransition('finished')}
+                      disabled={transitioning}
+                      style={{
+                        flex: 1,
+                        backgroundColor: transitioning ? '#d6d3d1' : '#1c1917',
+                        borderRadius: 10,
+                        paddingVertical: 11,
+                        alignItems: 'center',
+                      }}
+                    >
+                      {transitioning
+                        ? <ActivityIndicator color="#fff" size="small" />
+                        : <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>Mark Finished</Text>
+                      }
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleTransition('dnf')}
+                      disabled={transitioning}
+                      style={{
+                        borderWidth: 1,
+                        borderColor: '#fecaca',
+                        borderRadius: 10,
+                        paddingVertical: 11,
+                        paddingHorizontal: 16,
+                        alignItems: 'center',
+                        opacity: transitioning ? 0.4 : 1,
+                      }}
+                    >
+                      <Text style={{ color: '#b91c1c', fontSize: 13, fontWeight: '600' }}>DNF</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                {transitionError && (
+                  <Text style={{ fontSize: 12, color: '#b91c1c', marginTop: 8 }}>{transitionError}</Text>
+                )}
               </>
             )}
           </View>
@@ -1072,7 +1205,7 @@ export default function BookDetailScreen() {
         ) : null}
 
         {/* ── Taste Match — status-gated, preference-aware ── */}
-        {externalId && (!status || status === 'want_to_read' || status === 'sent' || status === 'saved') ? (
+        {externalId && (!localStatus || localStatus === 'want_to_read' || localStatus === 'sent' || localStatus === 'saved') ? (
           <View style={{
             backgroundColor: '#fafaf9',
             borderRadius: 16,
@@ -1213,6 +1346,86 @@ export default function BookDetailScreen() {
               }
             </TouchableOpacity>
           </View>
+        </View>
+      </View>
+    </Modal>
+
+    {/* ── Post-finish rating modal ── */}
+    <Modal
+      visible={pendingDetailRating !== null}
+      transparent
+      animationType="fade"
+      onRequestClose={() => { setPendingDetailRating(null); router.back(); }}
+    >
+      <View style={{
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        justifyContent: 'flex-end',
+      }}>
+        <View style={{
+          backgroundColor: '#fff',
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
+          padding: 28,
+          paddingBottom: 44,
+        }}>
+          <Text style={{
+            fontSize: 17,
+            fontWeight: '700',
+            color: '#1c1917',
+            marginBottom: 6,
+          }}>
+            How was it?
+          </Text>
+          <Text style={{
+            fontSize: 13,
+            color: '#a8a29e',
+            marginBottom: 24,
+          }}>
+            {title ?? 'This book'}
+          </Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginBottom: 28 }}>
+            {[1, 2, 3, 4, 5].map(n => (
+              <TouchableOpacity
+                key={n}
+                onPress={() => setDetailRating(detailRating === n ? null : n)}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+              >
+                <Text style={{
+                  fontSize: 40,
+                  color: detailRating != null && n <= detailRating ? '#f59e0b' : '#e7e5e4',
+                }}>
+                  ★
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TouchableOpacity
+            onPress={() => detailRating != null && handleDetailRating(detailRating)}
+            disabled={detailRating == null || savingDetailRating}
+            style={{
+              backgroundColor: detailRating == null ? '#e7e5e4' : '#1c1917',
+              borderRadius: 10,
+              paddingVertical: 14,
+              alignItems: 'center',
+              marginBottom: 12,
+            }}
+          >
+            {savingDetailRating
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Text style={{
+                  color: detailRating == null ? '#a8a29e' : '#fff',
+                  fontSize: 14,
+                  fontWeight: '600',
+                }}>Save rating</Text>
+            }
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => { setPendingDetailRating(null); setDetailRating(null); router.back(); }}
+            style={{ alignItems: 'center', paddingVertical: 8 }}
+          >
+            <Text style={{ fontSize: 13, color: '#a8a29e' }}>Skip</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </Modal>

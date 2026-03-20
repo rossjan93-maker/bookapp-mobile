@@ -1,0 +1,102 @@
+Build the smallest-scope Reading Progress MVP based on the current codebase audit.
+
+Do NOT redesign this area.
+Do NOT add new screens.
+Do NOT add reading analytics yet.
+Do NOT broaden scope.
+
+Goal
+Close the core UX gaps in reading progress using the existing data model and pacing engine.
+
+This sprint should make the app support the real loop:
+- save a book
+- start reading it
+- update progress
+- mark it finished or DNF
+
+Use the audit findings as the source of truth.
+
+What already exists (do not rebuild)
+- user_books has status, started_at, finished_at, current_page, progress_updated_at, rating, sentiment, taste_tags
+- books has page_count
+- reading_progress_events exists and is already written on page saves
+- Book Detail already has a polished progress module for reading books
+- Library already renders reading progress bars and pacing notes
+- handleUpdateStatus in library.tsx already contains the most complete status-transition logic
+
+What is missing (this is the work)
+1. no Start Reading / Mark Finished / DNF actions in Book Detail
+2. no quick page update entry point in Library
+3. progress module is invisible for want_to_read books in Book Detail, so there is no in-screen way to begin reading
+4. status logic is duplicated and should not be copied again
+
+Build exactly this:
+
+Part 1: Extract canonical user-book actions
+Extract the current full status-transition logic from library.tsx into a shared utility/module, for example:
+- lib/userBookActions.ts
+
+This shared logic should handle the existing behavior already present in Library:
+- status update
+- started_at / finished_at handling
+- recommendation sync if applicable
+- activity_events / credibility_events handling
+- post-finish flow compatibility
+
+Do NOT create a second or third divergent status-update implementation.
+
+Part 2: Add Book Detail reading actions
+In app/book/[id].tsx:
+
+A. For want_to_read books
+- show a clear “Start Reading” CTA
+- transitioning to reading should set started_at correctly
+- once started, the progress module should become active
+
+B. For reading books
+- keep the existing progress UI
+- add:
+  - Mark as finished
+  - Mark as DNF
+
+These should use the shared extracted action utility, not duplicated inline logic.
+
+Part 3: Add quick progress update in Library
+In app/(tabs)/library.tsx:
+
+For books in reading status:
+- add a lightweight “Log pages” / “Update progress” interaction directly from the card
+- this should be minimal and fast
+- user should not have to open Book Detail just to bump current_page
+
+Keep this simple:
+- one input
+- one save action
+- update current_page + progress_updated_at
+- preserve existing progress bar and pacing UI
+
+Do NOT overbuild this into a full session logger.
+
+Part 4: Keep Book Detail and Library behavior consistent
+Make sure:
+- current_page updates reflect in both Library and Book Detail
+- status changes reflect in both places
+- there is one source of truth for reading status transitions
+
+Part 5: Do not touch these yet
+- user-book/[id].tsx placeholder route
+- reading analytics
+- progress history views
+- per-user page_count overrides
+- goals redesign
+- session logging
+- social features
+
+Output
+When complete, provide:
+1. files changed
+2. what logic was extracted into the shared utility
+3. what Book Detail can now do
+4. what Library can now do
+5. how status transitions are kept consistent
+6. any small edge cases intentionally deferred
