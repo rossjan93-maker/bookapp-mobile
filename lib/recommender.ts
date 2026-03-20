@@ -554,10 +554,11 @@ async function fetchOLByAuthor(
 // ── Source A: Catalog ─────────────────────────────────────────────────────────
 
 type LocalResult = {
-  candidates:      CandidateBook[];
-  readIds:         Set<string>;
-  readExternalIds: Set<string>;
-  readBooks:       Array<{ title: string; author: string }>; // for series-familiarity detection
+  candidates:           CandidateBook[];
+  readIds:              Set<string>;
+  readExternalIds:      Set<string>;
+  readBooks:            Array<{ title: string; author: string }>; // truly-read books only — for series-started detection
+  trueReadExternalIds:  Set<string>;  // external IDs of truly-read books — for OL supplement
 };
 
 async function getLocalCandidates(
@@ -566,22 +567,50 @@ async function getLocalCandidates(
 ): Promise<LocalResult> {
   const { data: userBooks } = await client
     .from('user_books')
-    .select('book_id, book:books(external_id, title, author)')
+    .select('book_id, status, finished_at, book:books(external_id, title, author)')
     .eq('user_id', userId);
 
   type UBRow = {
-    book_id: string;
+    book_id:     string;
+    status:      string | null;
+    finished_at: string | null;
     book: { external_id: string | null; title: string | null; author: string | null } | null;
   };
   const ubRows = ((userBooks ?? []) as unknown) as UBRow[];
 
+  // "Truly read" = the user has actually read (or is currently reading) the book.
+  // want_to_read / saved-only entries must NOT be treated as evidence of series progress.
+  //   finished   → clearly read
+  //   reading    → in-progress counts — user has started the series
+  //   dnf        → excluded — user abandoned; do not count as "series started"
+  //   want_to_read / null → excluded — library presence ≠ series started
+  function isTrulyRead(status: string | null): boolean {
+    return status === 'finished' || status === 'reading';
+  }
+
+  // All library book IDs — used to EXCLUDE books the user has from the candidate pool.
+  // This stays broad (all statuses) so we never re-recommend saved/want-to-read books.
   const readIds         = new Set(ubRows.map(r => r.book_id));
   const readExternalIds = new Set(
     ubRows.map(r => r.book?.external_id).filter((x): x is string => !!x)
   );
+
+  // Truly-read books only — the ONLY set that feeds seriesReadSet.
+  // Filtered to finished / reading status so want_to_read entries cannot
+  // fraudulently mark a series as "started".
   const readBooks = ubRows
+    .filter(r => isTrulyRead(r.status))
     .map(r => ({ title: r.book?.title ?? '', author: r.book?.author ?? '' }))
     .filter(b => b.title.length > 0 && b.author.length > 0);
+
+  // External IDs of truly-read books — used in the OL supplement so we only
+  // credit series from books the user has actually read (not just saved).
+  const trueReadExternalIds = new Set(
+    ubRows
+      .filter(r => isTrulyRead(r.status))
+      .map(r => r.book?.external_id)
+      .filter((x): x is string => !!x)
+  );
 
   const { data: dbBooks } = await client
     .from('books')
@@ -616,7 +645,7 @@ async function getLocalCandidates(
       _retrieval_reason: 'local:eligible',
     }));
 
-  return { candidates, readIds, readExternalIds, readBooks };
+  return { candidates, readIds, readExternalIds, readBooks, trueReadExternalIds };
 }
 
 // ── Source B: Cached external ─────────────────────────────────────────────────
@@ -723,9 +752,10 @@ type OLResult = {
 };
 
 async function getOLCandidates(
-  profile:            TasteProfile,
-  readExternalIds:    Set<string>,
-  excludeExternalIds: Set<string>,
+  profile:              TasteProfile,
+  readExternalIds:      Set<string>,
+  excludeExternalIds:   Set<string>,
+  trueReadExternalIds?: Set<string>,  // truly-read subset — for OL supplement (series-started detection only)
 ): Promise<OLResult> {
   const affinities = profile.genre_affinities ?? {};
   const det        = profile.det_lanes;
@@ -851,8 +881,11 @@ async function getOLCandidates(
       const key = book.external_id ?? book.id;
       if (seen.has(key)) continue;
       if (exclude.has(key)) {
-        // Only collect if this is a "read" exclusion (in readExternalIds), not just a pool-dedup
-        if (book.external_id && readExternalIds.has(book.external_id) && book.title && book.author) {
+        // Only collect if the user has TRULY READ this OL book (not just saved it).
+        // Use trueReadExternalIds when available; fall back to readExternalIds for
+        // callers that don't distinguish (e.g. cached retrieval path).
+        const trulyReadSet = trueReadExternalIds ?? readExternalIds;
+        if (book.external_id && trulyReadSet.has(book.external_id) && book.title && book.author) {
           excludedReadBooksMap.set(key, { title: book.title, author: book.author });
         }
         continue;
@@ -1976,7 +2009,7 @@ export async function getCandidateBooks(
   // a supplemental fallback (additive only — can never remove series).
   const seriesReadSet = buildSeriesReadSet(local.readBooks);
   if (__DEV__) {
-    console.log(`[SERIES_RS] readBooks=${local.readBooks.length} primarySize=${seriesReadSet.size} series=[${[...seriesReadSet].join(', ')}]`);
+    console.log(`[SERIES_RS] trulyRead=${local.readBooks.length} (of ${local.readIds.size} in library) primarySize=${seriesReadSet.size} series=[${[...seriesReadSet].join(', ')}]`);
     if (seriesReadSet.size === 0 && local.readBooks.length > 0) {
       // Emit a sample so we can see the exact author/title format stored in the DB
       console.log(`[SERIES_RS_SAMPLE]`, local.readBooks.slice(0, 8).map(b => `"${b.title}" / "${b.author}"`));
@@ -2045,7 +2078,7 @@ export async function getCandidateBooks(
       ...(cacheResult?.candidates.map(c => c.external_id).filter((x): x is string => !!x) ?? []),
     ]);
 
-    olResult = await getOLCandidates(profile, local.readExternalIds, excludeForOL);
+    olResult = await getOLCandidates(profile, local.readExternalIds, excludeForOL, local.trueReadExternalIds);
 
     // Merge fresh OL on top of any stale cache rows for breadth
     const stale       = cacheResult?.candidates ?? [];

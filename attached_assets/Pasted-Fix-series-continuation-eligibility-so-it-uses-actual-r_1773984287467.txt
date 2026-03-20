@@ -1,0 +1,96 @@
+Fix series continuation eligibility so it uses actual reading history, not just library presence.
+
+Problem
+The current recommendation system is treating:
+- “book exists in user library”
+as if it means:
+- “user has started this series”
+
+That is incorrect.
+
+Example:
+The Goodreads-heavy user has “The Way of Kings” in their library, but:
+- Exclusive Shelf = to-read
+- Date Read = null
+
+So they have NOT started Stormlight.
+That means “Words of Radiance” should NOT appear in Continue Reading.
+Instead, “The Way of Kings” should appear in Discover Next as the proper entry point.
+
+Goal
+Make Continue Reading only show the next unread installment in a series the user has actually READ, not merely saved.
+
+Core rule
+A series is considered “started” only if the user has read a book in that series.
+
+Do NOT treat:
+- want_to_read
+- to-read
+- saved-only
+as evidence that the user started the series.
+
+What to change
+
+Part 1: Redefine series-started logic
+Update the seriesReadSet / continuation eligibility logic so that a user counts as having started a series only if they have actually read a book in that series.
+
+Use evidence such as:
+- status = finished
+- status = reading / currently_reading if that exists and represents true progress
+- Date Read not null
+- Goodreads Exclusive Shelf = read
+- any equivalent “completed/started reading” signal already stored
+
+Do NOT count:
+- want_to_read
+- to-read
+- saved-only
+- library presence alone
+
+Part 2: Build read-series set from true read books only
+When constructing the set of series the user has started:
+- only use books that qualify as actually read / actually started
+- exclude books that are merely saved in the library
+
+Part 3: Continuation routing
+A book should only route to Continue Reading when:
+1. it belongs to a known ordered series
+2. it is not book 1
+3. the user has actually read an earlier book in that exact series
+4. it is the next unread installment
+
+If those conditions are not met:
+- do NOT route it to Continue Reading
+- route the correct starter to Discover Next instead, when appropriate
+
+Part 4: Validate with the Stormlight example
+I want explicit proof for the current Goodreads-heavy user:
+
+- show whether “The Way of Kings” is marked read vs to-read
+- show whether Stormlight is considered started before the fix
+- show whether Stormlight is considered started after the fix
+- confirm that “Words of Radiance” no longer appears in Continue Reading if Book 1 is only saved, not read
+- confirm that “The Way of Kings” appears as the discovery entry point instead
+
+Part 5: Preserve the current good behavior
+Do NOT break valid continuations where the user has truly started the series.
+
+Examples that should still work if actually read:
+- Mad Ship if Ship of Magic is read
+- House of Sky and Breath if House of Earth and Blood is read
+- other true next-in-series cases
+
+Part 6: Output
+When complete, provide:
+1. root cause
+2. files changed
+3. the new “series started” rule
+4. proof using the Stormlight example
+5. updated Continue Reading and Discover Next output for the Goodreads-heavy user
+6. any remaining limitations
+
+Important
+Do NOT broadly rewrite retrieval.
+Do NOT rework the whole integrity layer.
+This is a narrow but critical truthfulness fix:
+saved books are not the same as read books.
