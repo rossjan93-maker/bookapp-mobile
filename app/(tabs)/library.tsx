@@ -5,7 +5,7 @@ import { ActivityIndicator, FlatList, Modal, ScrollView, Text, TextInput, Toucha
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
-import { computePagePacing, computeDatePacing } from '../../lib/pacing';
+import { computePagePacing, computeDatePacing, formatLastUpdated } from '../../lib/pacing';
 import { transitionStatus, saveCurrentPage } from '../../lib/userBookActions';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -21,6 +21,7 @@ type UserBook = {
   started_at: string | null;
   finished_at: string | null;
   current_page: number | null;
+  progress_updated_at: string | null;
   book: {
     title: string;
     author: string;
@@ -179,14 +180,14 @@ export default function LibraryScreen() {
       // Try with progress columns; fall back gracefully if migration not yet applied.
       let result = await supabase
         .from('user_books')
-        .select('id, book_id, status, started_at, finished_at, current_page, book:books(title, author, cover_url, external_id, page_count)')
+        .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, book:books(title, author, cover_url, external_id, page_count)')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (result.error) {
         result = await supabase
           .from('user_books')
-          .select('id, book_id, status, started_at, finished_at, book:books(title, author, cover_url, external_id)')
+          .select('id, book_id, status, started_at, finished_at, progress_updated_at, book:books(title, author, cover_url, external_id)')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false });
       }
@@ -371,9 +372,13 @@ export default function LibraryScreen() {
   //   All other cases → preserve DB order (created_at desc).
   const displayedItems: ListItem[] = (() => {
     if (activeFilter === 'all') {
-      // Reading first (operational priority), then finished sorted by most recently
-      // finished (uses imported finish dates), then want-to-read, then DNF.
-      const reading    = filteredItems.filter(i => i.status === 'reading');
+      // Reading first (operational priority), sorted by most recently updated.
+      // Then finished sorted by most recently finished, then want-to-read, then DNF.
+      const reading    = [...filteredItems.filter(i => i.status === 'reading')].sort((a, b) => {
+        const aDate = a.progress_updated_at ?? a.started_at ?? '';
+        const bDate = b.progress_updated_at ?? b.started_at ?? '';
+        return bDate.localeCompare(aDate);
+      });
       const finished   = [...filteredItems.filter(i => i.status === 'finished')]
         .sort((a, b) => {
           if (a.finished_at && b.finished_at) return b.finished_at.localeCompare(a.finished_at);
@@ -384,6 +389,13 @@ export default function LibraryScreen() {
       const wantToRead = filteredItems.filter(i => i.status === 'want_to_read');
       const dnf        = filteredItems.filter(i => i.status === 'dnf');
       return [...reading, ...finished, ...wantToRead, ...dnf];
+    }
+    if (activeFilter === 'reading' && sort === 'recent') {
+      return [...filteredItems].sort((a, b) => {
+        const aDate = a.progress_updated_at ?? a.started_at ?? '';
+        const bDate = b.progress_updated_at ?? b.started_at ?? '';
+        return bDate.localeCompare(aDate);
+      });
     }
     if (activeFilter === 'reading' && sort === 'progress') {
       return [...filteredItems].sort((a, b) => {
@@ -669,13 +681,18 @@ export default function LibraryScreen() {
             if (s === 'behind') return '#fcd34d';
             return '#d6d3d1';
           })();
-          const pacingNote = hasProgress ? borderPacing?.note ?? null : datePacing?.note ?? null;
+          const pacingNote     = hasProgress ? borderPacing?.note ?? null : datePacing?.note ?? null;
+          const lastUpdatedText = formatLastUpdated(item.progress_updated_at);
+          const daysSinceUpdate = item.progress_updated_at
+            ? Math.floor((Date.now() - new Date(item.progress_updated_at).getTime()) / 86_400_000)
+            : null;
+          const isStale = daysSinceUpdate != null && daysSinceUpdate > 3;
 
           return (
             <View>
               {showNowReadingHeader && (
                 <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 8 }}>
-                  Now Reading
+                  Currently Reading
                 </Text>
               )}
               <View style={{
@@ -749,6 +766,16 @@ export default function LibraryScreen() {
                   {!hasProgress && item.status === 'reading' && (
                     <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 6 }}>
                       {pacingNote ? pacingNote : 'In progress'}
+                    </Text>
+                  )}
+                  {lastUpdatedText && (
+                    <Text style={{ fontSize: 11, color: '#c4b5a5', marginTop: 4 }}>
+                      {lastUpdatedText}
+                    </Text>
+                  )}
+                  {isStale && (
+                    <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 2, fontStyle: 'italic' }}>
+                      Pick this back up?
                     </Text>
                   )}
                 </View>

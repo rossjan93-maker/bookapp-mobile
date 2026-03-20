@@ -12,7 +12,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
-import { computePacingNote, computePagePacing } from '../../lib/pacing';
+import { computePacingNote, computePagePacing, estimatePaceFinish, formatLastUpdated, shortDate } from '../../lib/pacing';
 import { fetchGoogleBooksMetadata } from '../../lib/googleBooks';
 import { fetchOLMeta, searchOLWork, isOLId } from '../../lib/openLibrary';
 import type { OLMeta } from '../../lib/openLibrary';
@@ -95,11 +95,12 @@ export default function BookDetailScreen() {
   } | null>(null);
 
   // Reading progress state
-  const [userBookId, setUserBookId]     = useState<string | null>(null);
-  const [userId, setUserId]             = useState<string | null>(null);
-  const [currentPage, setCurrentPage]   = useState<number | null>(null);
-  const [pageCount, setPageCount]       = useState<number | null>(null);
-  const [yearlyGoal, setYearlyGoal]     = useState<number | null>(null);
+  const [userBookId, setUserBookId]           = useState<string | null>(null);
+  const [userId, setUserId]                   = useState<string | null>(null);
+  const [currentPage, setCurrentPage]         = useState<number | null>(null);
+  const [pageCount, setPageCount]             = useState<number | null>(null);
+  const [yearlyGoal, setYearlyGoal]           = useState<number | null>(null);
+  const [progressUpdatedAt, setProgressUpdatedAt] = useState<string | null>(null);
   const [progressLoading, setProgressLoading] = useState(false);
 
   // Inline progress editor
@@ -372,7 +373,7 @@ export default function BookDetailScreen() {
       const [userBookRes, bookRes, profileRes] = await Promise.all([
         supabase
           .from('user_books')
-          .select('id, current_page')
+          .select('id, current_page, progress_updated_at')
           .eq('user_id', user.id)
           .eq('book_id', bookId!)
           .maybeSingle(),
@@ -401,6 +402,7 @@ export default function BookDetailScreen() {
         const cp = userBookRes.data.current_page ?? null;
         setCurrentPage(cp);
         setPageInput(cp != null ? String(cp) : '');
+        setProgressUpdatedAt((userBookRes.data.progress_updated_at as string | null) ?? null);
       }
       if (bookRes.data?.page_count) {
         setPageCount(bookRes.data.page_count);
@@ -598,6 +600,15 @@ export default function BookDetailScreen() {
   const isAhead        = pacingState === 'ahead';
   const progressPct    = hasPaging ? Math.min(100, Math.round((currentPage! / pageCount!) * 100)) : null;
 
+  const paceEstimate   = hasPaging
+    ? estimatePaceFinish(currentPage!, pageCount!, localStartedAt)
+    : null;
+  const daysSinceUpdate = progressUpdatedAt
+    ? Math.floor((Date.now() - new Date(progressUpdatedAt).getTime()) / 86_400_000)
+    : null;
+  const isStale        = daysSinceUpdate != null && daysSinceUpdate > 3;
+  const lastUpdatedLabel = formatLastUpdated(progressUpdatedAt);
+
   const descText       = olMeta?.description ?? null;
   const DESC_LIMIT     = 320;
   const descTruncated  = descText && descText.length > DESC_LIMIT && !descExpanded;
@@ -735,6 +746,15 @@ export default function BookDetailScreen() {
                     <Text style={{ fontSize: 13, color: '#78716c' }}>
                       Page {currentPage} of {pageCount} · {pagePacing?.pagesLeft ?? 0} left
                     </Text>
+                    {paceEstimate != null ? (
+                      <Text style={{ fontSize: 12, color: '#78716c', marginTop: 5 }}>
+                        At your current pace: finish by {shortDate(paceEstimate.estimatedFinish)}
+                      </Text>
+                    ) : (
+                      <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 5 }}>
+                        Log progress to estimate your pace
+                      </Text>
+                    )}
                   </View>
                 )}
 
@@ -955,6 +975,17 @@ export default function BookDetailScreen() {
                       <Text style={{ fontSize: 12, color: '#b91c1c', marginTop: 8 }}>{progressError}</Text>
                     )}
                   </View>
+                )}
+
+                {lastUpdatedLabel && (
+                  <Text style={{ fontSize: 12, color: '#c4b5a5', marginBottom: 8 }}>
+                    {lastUpdatedLabel}
+                  </Text>
+                )}
+                {isStale && !editingProgress && !editingPageCount && (
+                  <Text style={{ fontSize: 12, color: '#a8a29e', fontStyle: 'italic', marginBottom: 10 }}>
+                    Pick this back up?
+                  </Text>
                 )}
 
                 {/* ── Finish / DNF actions ── */}

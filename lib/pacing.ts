@@ -195,6 +195,57 @@ export function computePagePacing(
 }
 
 // ---------------------------------------------------------------------------
+// Momentum helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns a human-readable "last updated" string for a reading progress timestamp.
+ *   "Updated today"
+ *   "Updated 2 days ago"
+ *   "Updated 1 week ago"
+ */
+export function formatLastUpdated(progressUpdatedAt: string | null | undefined): string | null {
+  if (!progressUpdatedAt) return null;
+  const updated = new Date(progressUpdatedAt);
+  if (isNaN(updated.getTime())) return null;
+  const daysDiff = Math.floor((Date.now() - updated.getTime()) / 86_400_000);
+  if (daysDiff === 0) return 'Updated today';
+  if (daysDiff === 1) return 'Updated 1 day ago';
+  if (daysDiff < 7)  return `Updated ${daysDiff} days ago`;
+  const weeks = Math.floor(daysDiff / 7);
+  return weeks === 1 ? 'Updated 1 week ago' : `Updated ${weeks} weeks ago`;
+}
+
+/**
+ * Estimates actual reading pace and projected finish date.
+ * Uses real reading data (pages read / days elapsed since start) — NOT yearly goal.
+ *
+ * Returns null when insufficient data:
+ *   - No startedAt, no pages read yet, < 12h of data, or already finished
+ */
+export function estimatePaceFinish(
+  currentPage: number,
+  pageCount: number,
+  startedAt: string | null | undefined,
+): { pagesLeft: number; pagesPerDay: number; estimatedFinish: Date } | null {
+  if (!startedAt || currentPage <= 0 || pageCount <= 0) return null;
+  const start = new Date(startedAt);
+  if (isNaN(start.getTime())) return null;
+  const daysElapsed = (Date.now() - start.getTime()) / 86_400_000;
+  if (daysElapsed < 0.5) return null;
+  const pagesPerDay = currentPage / daysElapsed;
+  if (pagesPerDay <= 0) return null;
+  const pagesLeft = Math.max(0, pageCount - currentPage);
+  if (pagesLeft === 0) return null;
+  const daysToFinish = pagesLeft / pagesPerDay;
+  return {
+    pagesLeft,
+    pagesPerDay: Math.round(pagesPerDay * 10) / 10,
+    estimatedFinish: new Date(Date.now() + daysToFinish * 86_400_000),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Year-to-date goal progress
 // ---------------------------------------------------------------------------
 
