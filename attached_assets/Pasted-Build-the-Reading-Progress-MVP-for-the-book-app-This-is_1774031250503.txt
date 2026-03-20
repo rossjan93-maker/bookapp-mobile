@@ -1,0 +1,142 @@
+Build the Reading Progress MVP for the book app.
+
+This is the next core product layer after recommendations.
+Do NOT rework the recommendation system.
+Do NOT add social features.
+Do NOT broaden scope.
+
+Goal
+Make the app feel materially more complete by giving users a clear, useful way to track their reading progress.
+
+Core product principle
+The app should support this loop cleanly:
+- discover a book
+- save it
+- start reading it
+- track progress
+- finish it
+
+This sprint is about making the “track progress” part feel real and useful.
+
+What to build
+
+Part 1: Core reading progress fields
+Support these progress concepts for a user-book relationship:
+- reading status
+  - want_to_read
+  - reading
+  - finished
+  - dnf (if already supported, preserve it)
+- current page
+- total page count
+- percentage complete
+
+Requirements:
+- if total page count exists, compute progress percentage
+- if total page count is missing, allow manual input
+- keep the model simple and robust
+
+Part 2: Update library and detail behavior
+Wherever a user interacts with a book they are reading, they should be able to:
+- mark as currently reading
+- update current page
+- mark as finished
+- optionally mark DNF if that already exists cleanly
+
+Apply this coherently across:
+- Library
+- Book detail
+- any recommendation → detail flow if relevant
+
+Do NOT create multiple conflicting ways to manage reading state.
+Keep the interaction model consistent.
+
+Part 3: Simple progress UI
+Add clear progress UI for books marked as reading.
+
+Examples:
+- progress bar
+- “123 / 420 pages”
+- “29% complete”
+
+This should appear:
+- in Library for actively reading books
+- on the book detail page
+
+Keep it elegant and lightweight.
+
+Part 4: Manual page count fallback
+If metadata does not provide page count:
+- allow the user to enter page count manually
+- clearly indicate that this is optional but improves progress tracking
+- once entered, use it as the authoritative total for that user-book
+
+Do NOT overcomplicate this with multiple data sources.
+Just make it work cleanly.
+
+Part 5: Reading state transitions
+Ensure the state transitions make sense.
+
+Expected flows:
+- want_to_read → reading
+- reading → finished
+- reading → dnf
+- finished should reflect full completion
+- changing current page to the end should optionally support marking finished if that fits existing UX
+
+Do not create confusing or contradictory transitions.
+
+Part 6: UX quality
+This should feel clean, not like spreadsheet input.
+
+Requirements:
+- progress editing should be simple
+- avoid clutter
+- do not make users hunt for where to update progress
+- keep copy calm and clear
+
+Examples of good microcopy:
+- “Update progress”
+- “Current page”
+- “Total pages”
+- “Mark as finished”
+
+Part 7: Cohesion with recommendations
+A user who taps a recommended book and opens details should be able to:
+- save it
+- start reading it
+- later track progress from the same book page
+
+This does not require new recommendation logic.
+It just means the detail page should connect naturally to the progress system.
+
+Part 8: Data model discipline
+Keep the implementation clean.
+If the schema needs extension, do it clearly and minimally.
+If current page count already exists somewhere, reuse it rather than duplicating concepts.
+
+Avoid:
+- redundant progress fields
+- duplicate state
+- temporary hacks that conflict with future reading insights
+
+Part 9: Output
+When complete, provide:
+1. files changed
+2. any schema/data model changes
+3. where users can update progress
+4. how progress is shown in Library
+5. how progress is shown in Book Detail
+6. how missing page counts are handled
+7. any deferred improvements
+
+Important constraints
+- Do NOT add social features
+- Do NOT add reading analytics yet
+- Do NOT add goal systems yet
+- Do NOT add session logging yet
+- Do NOT rework recommendations
+
+This is the Reading Progress MVP only.
+The result should be:
+a user can realistically use the app to track a book they are currently reading.

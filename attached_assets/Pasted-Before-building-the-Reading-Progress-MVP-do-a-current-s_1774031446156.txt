@@ -1,0 +1,87 @@
+Before building the Reading Progress MVP, do a current-state audit of everything already implemented in this area.
+
+Do NOT start coding.
+Do NOT propose new architecture yet.
+Do NOT summarize the whole app.
+
+Goal
+Show the current implementation state of reading progress and related book-state management so we can brief the next build precisely and avoid duplicated or conflicting work.
+
+Audit scope
+Inspect only the current reading/progress/book-state system, including:
+- Library
+- Book Detail
+- any recommendation → detail flow
+- user_books data model
+- page count handling
+- reading status handling
+- finished / DNF / want_to_read / reading logic
+- any progress UI already present
+- any functions or components already used to update book state
+
+Required output
+
+Part 1 — Data model
+Show the current schema/fields relevant to reading progress and book state.
+Specifically identify whether these already exist and where:
+- status
+- rating
+- current_page
+- page_count
+- percent_complete
+- started_at / finished_at if any
+- DNF-related fields if any
+- manual page count fields if any
+
+Part 2 — Existing UI surfaces
+For each of these areas, list what is already built:
+- Library
+- Book Detail
+- Recommendations → Book Detail flow
+
+For each, state:
+- what the user can currently do
+- what progress/status UI already exists
+- what is missing
+
+Part 3 — Existing logic / functions
+Identify the current functions/components/hooks that already manage:
+- status changes
+- saving books
+- marking finished
+- DNF
+- rating
+- progress or page updates if they exist
+
+Show file names and function/component names.
+
+Part 4 — Current gaps
+List the exact missing pieces required to make Reading Progress MVP real.
+
+Examples:
+- no current page field persisted
+- no page input UI
+- no consistent reading status transition logic
+- progress shown in one place but not another
+- page count unavailable or not editable
+- duplicated state logic across screens
+
+Part 5 — Risks / duplication traps
+Call out anything that would make a naïve MVP brief sloppy, such as:
+- partially built overlapping logic
+- duplicated status code in multiple files
+- inconsistent naming
+- conflicting sources of truth
+- screens that already do part of the job differently
+
+Part 6 — Recommendation
+Based on the audit, tell me:
+1. whether Reading Progress MVP should be built now
+2. the cleanest implementation path
+3. the smallest-scope next brief that fits the existing codebase
+
+Important
+- Do NOT build yet
+- Do NOT redesign unrelated areas
+- Do NOT give a generic summary
+- Be specific and codebase-grounded
