@@ -714,11 +714,12 @@ async function getCachedExternalCandidates(
 // Returns candidates + retrieval trace metadata.
 
 type OLResult = {
-  candidates:          CandidateBook[];
-  ol_queries:          string[];
-  top_genres_used:     string[];
-  liked_subjects_used: string[];
-  liked_authors_used:  string[];
+  candidates:           CandidateBook[];
+  ol_queries:           string[];
+  top_genres_used:      string[];
+  liked_subjects_used:  string[];
+  liked_authors_used:   string[];
+  excluded_read_books:  Array<{ title: string; author: string }>;
 };
 
 async function getOLCandidates(
@@ -841,11 +842,21 @@ async function getOLCandidates(
   const exclude = new Set([...readExternalIds, ...excludeExternalIds]);
   const seen    = new Set<string>();
   const merged: CandidateBook[] = [];
+  // Books returned by OL that the user has already read — carry title+author
+  // so callers can supplement buildSeriesReadSet when the DB join is incomplete.
+  const excludedReadBooksMap = new Map<string, { title: string; author: string }>();
 
   for (const set of resultSets) {
     for (const book of set) {
       const key = book.external_id ?? book.id;
-      if (seen.has(key) || exclude.has(key)) continue;
+      if (seen.has(key)) continue;
+      if (exclude.has(key)) {
+        // Only collect if this is a "read" exclusion (in readExternalIds), not just a pool-dedup
+        if (book.external_id && readExternalIds.has(book.external_id) && book.title && book.author) {
+          excludedReadBooksMap.set(key, { title: book.title, author: book.author });
+        }
+        continue;
+      }
       seen.add(key);
       merged.push(book);
     }
@@ -861,11 +872,12 @@ async function getOLCandidates(
     : plan.filter(i => i.reason.startsWith('author_anchor:')).map(i => i.value);
 
   return {
-    candidates:          merged,
+    candidates:           merged,
     ol_queries,
     top_genres_used,
     liked_subjects_used,
     liked_authors_used,
+    excluded_read_books:  [...excludedReadBooksMap.values()],
   };
 }
 
@@ -942,9 +954,22 @@ function applyHygiene(
   // Author-anchor candidates get PD exemption
   const likedAuthorKeys = new Set(likedAuthors.map(a => a.toLowerCase()));
 
+  // Parenthetical markers in OL titles that indicate bad/duplicate data entries
+  const BAD_TITLE_PARENS = /\(\s*(duplictate|duplicate|dupe|bad\s*data|incorrect|wrong\s*edition|test)\s*\)/i;
+
   const passed = candidates.filter(book => {
     const subjects  = book.subjects ?? [];
     const subjLower = subjects.map(s => s.toLowerCase());
+
+    // ── 0. OL bad-data title markers ─────────────────────────────────────
+    // Open Library occasionally has entries like "Fool's Assassin (duplictate)"
+    // which are flagged typo/duplicate entries. Reject them so the cleaner
+    // OL work entry (if present in the pool) wins via title-normalized dedup.
+    if (BAD_TITLE_PARENS.test(book.title)) {
+      excluded++;
+      if (reasons.length < 8) reasons.push(`bad_title_marker: ${book.title}`);
+      return false;
+    }
 
     // ── 1. Children's / juvenile ──────────────────────────────────────────
     const isJuvenile = JUVENILE_SUBJECT_SIGNALS.some(sig =>
@@ -1519,11 +1544,41 @@ export function getRankedRecs(
   const nonRejected = scored.filter(b => b._score_breakdown.fit_class !== 'reject');
   nonRejected.sort((a, b) => b.score - a.score);
 
+  // ── Title-normalized dedup ─────────────────────────────────────────────────
+  // Strips parenthetical edition qualifiers before keying, so variants like
+  // "Fool's Assassin (duplictate)" and "Fool's Assassin" share the same key.
+  // Within each work-key, keep only the highest-scoring candidate.
+  function normWorkKey(title: string, author: string): string {
+    const normT = title
+      .toLowerCase()
+      .replace(/['''\u2018\u2019]/g, '')   // strip apostrophes
+      .replace(/\s*\([^)]*\)/g, '')        // strip parenthetical qualifiers
+      .replace(/[^a-z0-9 ]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const normA = author
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return `${normA}::${normT}`;
+  }
+  const workBest = new Map<string, ScoredBook>();
+  for (const book of nonRejected) {
+    const wk = normWorkKey(book.title, book.author);
+    const prev = workBest.get(wk);
+    if (!prev || book.score > prev.score) workBest.set(wk, book);
+  }
+  const dedupedNonRejected = [...workBest.values()].sort((a, b) => b.score - a.score);
+  if (__DEV__ && dedupedNonRejected.length < nonRejected.length) {
+    console.log(`[TITLE_DEDUP] Collapsed ${nonRejected.length - dedupedNonRejected.length} duplicate work(s)`);
+  }
+
   // ── Recommendation Integrity Layer ────────────────────────────────────────
   // Runs after CoG so repeated_author_match is populated.
   // Annotates every book with series_name / series_position / series_label.
   // Removes series_later_volume books from the visible pool (placed in audit).
-  const rilResult = applyIntegrityLayer(nonRejected, seriesReadSet);
+  const rilResult = applyIntegrityLayer(dedupedNonRejected, seriesReadSet);
   const rilPool   = rilResult.visible;          // feeds the intent / composition stages
   const rilSuppressed = rilResult.integritySuppressed;
 
@@ -1787,8 +1842,15 @@ export function getRankedRecs(
   });
 
   // Step C: ADJACENT visibility gate.
+  // Books flagged weak_metadata are demoted to ADJACENT regardless of their fit_class
+  // so they only surface when CORE picks are thin.
+  function isCompCore(b: ScoredBook): boolean {
+    if (b._score_breakdown.fit_class !== 'core_fit') return false;
+    if (b._score_breakdown.audit_flags?.includes('weak_metadata')) return false;
+    return true;
+  }
   const adjacentThreshold = Math.max(3, Math.ceil(limit * ADJACENT_VISIBLE_THRESHOLD_FRAC));
-  const coreInPool    = compPool.filter(b => b._score_breakdown.fit_class === 'core_fit').length;
+  const coreInPool    = compPool.filter(isCompCore).length;
   const showAdjacent  = coreInPool < adjacentThreshold;
 
   // Per-lane cap: prevent any single lane from monopolising the set.
@@ -1833,7 +1895,7 @@ export function getRankedRecs(
       if (composed.length >= seedTarget) break;
       const seed = compPool.find(b =>
         !composedSet.has(compId(b)) &&
-        b._score_breakdown.fit_class === 'core_fit' &&
+        isCompCore(b) &&
         b._score_breakdown.book_lane === lane &&
         compositionAllows(b)
       );
@@ -1845,7 +1907,7 @@ export function getRankedRecs(
   for (const book of compPool) {
     if (composed.length >= limit) break;
     if (composedSet.has(compId(book))) continue;
-    if (book._score_breakdown.fit_class !== 'core_fit') continue;
+    if (!isCompCore(book)) continue;
     if (!compositionAllows(book)) continue;
     addComposed(book);
   }
@@ -1876,7 +1938,7 @@ export function getRankedRecs(
   const rejectBooks = scored.filter(b => b._score_breakdown.fit_class === 'reject');
   // Include integrity-suppressed books in the audit so the debug panel can surface them.
   // They carry ril_suppressed=true + ril_reason for full transparency.
-  const auditList   = [...nonRejected, ...rilSuppressed, ...rejectBooks];
+  const auditList   = [...dedupedNonRejected, ...rilSuppressed, ...rejectBooks];
 
   return {
     recs:          [...continuationRecs, ...diverse],
@@ -1919,11 +1981,12 @@ export async function getCandidateBooks(
 
   let externalCandidates: CandidateBook[];
   let olResult: OLResult = {
-    candidates:          [],
-    ol_queries:          [],
-    top_genres_used:     [],
-    liked_subjects_used: [],
-    liked_authors_used:  [],
+    candidates:           [],
+    ol_queries:           [],
+    top_genres_used:      [],
+    liked_subjects_used:  [],
+    liked_authors_used:   [],
+    excluded_read_books:  [],
   };
 
   if (cacheResult?.isFresh) {
@@ -2031,7 +2094,17 @@ export async function getCandidateBooks(
     } : {}),
   };
 
-  const seriesReadSet = buildSeriesReadSet(local.readBooks);
+  // Supplement with titles/authors from OL-fetched books the user has already
+  // read (excluded from the candidate pool but still returned by OL queries).
+  // This catches cases where the user_books → books join returned incomplete
+  // data, ensuring series already underway are recognised reliably.
+  const seriesReadSet = buildSeriesReadSet([
+    ...local.readBooks,
+    ...olResult.excluded_read_books,
+  ]);
+  if (__DEV__ && olResult.excluded_read_books.length > 0) {
+    console.log(`[SERIES_RS] readBooks=${local.readBooks.length} olExcluded=${olResult.excluded_read_books.length} seriesReadSet.size=${seriesReadSet.size}`);
+  }
 
   return { candidates: filtered, enrichmentMap, retrieval_trace, seriesReadSet };
 }

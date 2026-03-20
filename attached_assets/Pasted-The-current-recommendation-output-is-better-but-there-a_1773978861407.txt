@@ -1,0 +1,107 @@
+The current recommendation output is better, but there are still several product-level integrity failures in the live set.
+
+This is now a final-set quality and stability pass.
+
+Current live problems
+From the actual Goodreads-heavy user output:
+
+1. Duplicate leakage
+- user-facing cards like “Fool's Assassin (duplicate)” are still surfacing
+- duplicate titles / duplicate works / duplicate edition variants must never be visible
+
+2. Series logic is still inconsistent
+- series-awareness improved, but final output is still unstable between passes
+- Pass A and Pass B still produce different top sets
+- The Final Empire appears correctly in one pass but not the other
+- continuation vs starter logic is still not consistently winning in the final visible set
+
+3. Continue vs Discover separation is still too weak
+- the user-facing recommendations still feel mixed rather than editorially clear
+- continuation-worthy books and discovery-worthy books are still competing too directly
+
+4. Weak metadata books are surfacing too high
+- books flagged with weak_metadata are still appearing as visible CORE recommendations
+- that should not happen if stronger candidates exist
+
+5. CORE classification still looks too permissive
+- too many books are still labeled CORE
+- some should be ADJACENT or suppressed entirely
+
+Goal
+Make the final user-facing recommendation output:
+- deduplicated
+- stable between fresh/cache runs
+- cleaner in series handling
+- stricter on weak metadata
+- more editorially trustworthy
+
+What to build
+
+Part 1: Hard duplicate suppression
+Add a final visible-set dedupe layer that guarantees:
+- no duplicate titles
+- no duplicate work IDs / external IDs
+- no edition duplicates
+- no “(duplicate)” user-facing cards ever
+
+If two candidates resolve to the same underlying book/work:
+- keep only the strongest one
+- suppress the rest before rendering
+
+Part 2: Final-set series integrity
+Strengthen the visible-set series logic so that:
+- if a series starter is the correct discovery recommendation, it wins consistently
+- if a valid continuation belongs in Continue Reading, it should not also distort Discover Next
+- later-volume books should not appear in default discovery if the starter is the better entry point
+- starter-vs-continuation routing must be stable across Pass A and Pass B
+
+Part 3: Continue Reading vs Discover Next should be truly separate
+Improve the bucket logic so the user-facing output clearly behaves as:
+- Continue Reading = next unread installment only
+- Discover Next = starters / standalones / discovery picks
+
+A continuation should not compete directly against discovery picks in the same visible ranking context.
+
+Part 4: Weak metadata quality threshold
+Add a stronger visible-set threshold for books with weak metadata.
+
+Rules:
+- weak_metadata books may remain in the candidate pool / audit
+- but should not surface in the visible recommendation set if stronger-supported books exist
+- weak metadata should materially reduce eligibility for visible CORE / top-slot placement
+
+Part 5: Tighten CORE one more step
+CORE should only survive into the visible set when confidence is truly high.
+
+Re-check the current logic so that:
+- repeated-author alone is not enough
+- weak metadata should usually prevent visible CORE placement
+- broad lane fit alone is not enough
+- visible CORE books should feel obviously central, not just plausible
+
+Part 6: Stability between fresh and cache-backed output
+Pass A and Pass B should converge much more closely.
+
+Investigate and reduce instability caused by:
+- candidate ordering
+- series normalization ordering
+- bucket routing
+- composition pass sensitivity
+- duplicate resolution timing
+
+The visible set should feel stable.
+
+Part 7: Output
+1. explain why the current visible set is still failing
+2. list changed files
+3. show the hard dedupe logic
+4. show the stronger series/starter/continuation routing
+5. show the weak_metadata visible-set suppression rule
+6. show how Pass A and Pass B were made more stable
+7. show the updated top recommendations after the fix
+8. explain what became suppressed and why
+
+Important
+Do NOT broadly rewrite retrieval again.
+Do NOT focus on premium/expert mode.
+This is a final-set integrity and stability pass on the deterministic recommendation engine.
