@@ -74,7 +74,7 @@ import type { ReaderThesis, ExpertRecResult, CandidateJudgment } from './expertR
 import { buildReaderThesis, judgeCandidateFit, composeRecommendationSet } from './expertRec';
 import { buildEvidencePack }                                  from './evidencePack';
 import { loadCachedRecs, persistRecCache, shouldRebuild, buildSignalSnapshot } from './recCache';
-import { applyIntegrityLayer } from './recommendationIntegrity';
+import { applyIntegrityLayer, buildSeriesReadSet } from './recommendationIntegrity';
 
 // ── Quality gate constants ─────────────────────────────────────────────────────
 
@@ -230,6 +230,7 @@ export type CandidateResult = {
   candidates:      CandidateBook[];
   enrichmentMap:   Map<string, BookEnrichmentProfile>;
   retrieval_trace: RetrievalTrace;
+  seriesReadSet:   Set<string>;   // series names the user has already started
 };
 
 // ── Fit label helpers (used by the UI) ────────────────────────────────────────
@@ -550,6 +551,7 @@ type LocalResult = {
   candidates:      CandidateBook[];
   readIds:         Set<string>;
   readExternalIds: Set<string>;
+  readBooks:       Array<{ title: string; author: string }>; // for series-familiarity detection
 };
 
 async function getLocalCandidates(
@@ -558,16 +560,22 @@ async function getLocalCandidates(
 ): Promise<LocalResult> {
   const { data: userBooks } = await client
     .from('user_books')
-    .select('book_id, book:books(external_id)')
+    .select('book_id, book:books(external_id, title, author)')
     .eq('user_id', userId);
 
-  type UBRow = { book_id: string; book: { external_id: string | null } | null };
-  const ubRows = (userBooks ?? []) as UBRow[];
+  type UBRow = {
+    book_id: string;
+    book: { external_id: string | null; title: string | null; author: string | null } | null;
+  };
+  const ubRows = ((userBooks ?? []) as unknown) as UBRow[];
 
   const readIds         = new Set(ubRows.map(r => r.book_id));
   const readExternalIds = new Set(
     ubRows.map(r => r.book?.external_id).filter((x): x is string => !!x)
   );
+  const readBooks = ubRows
+    .map(r => ({ title: r.book?.title ?? '', author: r.book?.author ?? '' }))
+    .filter(b => b.title.length > 0 && b.author.length > 0);
 
   const { data: dbBooks } = await client
     .from('books')
@@ -602,7 +610,7 @@ async function getLocalCandidates(
       _retrieval_reason: 'local:eligible',
     }));
 
-  return { candidates, readIds, readExternalIds };
+  return { candidates, readIds, readExternalIds, readBooks };
 }
 
 // ── Source B: Cached external ─────────────────────────────────────────────────
@@ -1415,7 +1423,8 @@ export function getRankedRecs(
     hygiene_excluded:    0,
     enriched_count:      0,
   },
-  intent?: NextReadIntent,
+  intent?:      NextReadIntent,
+  seriesReadSet: Set<string> = new Set(),
 ): RankedRecsResult {
   const poolSize = candidates.length;
 
@@ -1508,7 +1517,7 @@ export function getRankedRecs(
   // Runs after CoG so repeated_author_match is populated.
   // Annotates every book with series_name / series_position / series_label.
   // Removes series_later_volume books from the visible pool (placed in audit).
-  const rilResult = applyIntegrityLayer(nonRejected, cog);
+  const rilResult = applyIntegrityLayer(nonRejected, seriesReadSet);
   const rilPool   = rilResult.visible;          // feeds the intent / composition stages
   const rilSuppressed = rilResult.integritySuppressed;
 
@@ -1963,7 +1972,9 @@ export async function getCandidateBooks(
     } : {}),
   };
 
-  return { candidates: filtered, enrichmentMap, retrieval_trace };
+  const seriesReadSet = buildSeriesReadSet(local.readBooks);
+
+  return { candidates: filtered, enrichmentMap, retrieval_trace, seriesReadSet };
 }
 
 // ── Convenience async wrapper ─────────────────────────────────────────────────
@@ -1976,9 +1987,9 @@ export async function getPersonalizedRecs(
   feedback?: FeedbackContext,
   intent?:   NextReadIntent,
 ): Promise<RankedRecsResult> {
-  const { candidates, enrichmentMap, retrieval_trace } =
+  const { candidates, enrichmentMap, retrieval_trace, seriesReadSet } =
     await getCandidateBooks(client, userId, profile, feedback);
-  return getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent);
+  return getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet);
 }
 
 // ── Expert-layer orchestration ────────────────────────────────────────────────
@@ -2004,9 +2015,9 @@ export async function getPersonalizedRecsWithExpert(
   opts?:       { skipCache?: boolean },
 ): Promise<RankedRecsResult> {
   // ── Step 1: Deterministic pipeline (always runs) ──────────────────────────
-  const { candidates, enrichmentMap, retrieval_trace } =
+  const { candidates, enrichmentMap, retrieval_trace, seriesReadSet } =
     await getCandidateBooks(client, userId, profile, feedback);
-  const baseResult = getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent);
+  const baseResult = getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet);
 
   // ── Forensic audit log (forensic user only, dev mode) ────────────────────
   if (__DEV__ && userId === FORENSIC_USER_ID) {
@@ -2193,7 +2204,7 @@ export async function getPersonalizedRecsWithExpert(
     detScores.set(r.id, r.score);
   }
   // Also score the broader candidate pool (not just top-5) for better coverage
-  const allScored = getRankedRecs(candidates, profile, EXPERT_JUDGE_CAP, feedback, enrichmentMap, retrieval_trace, intent);
+  const allScored = getRankedRecs(candidates, profile, EXPERT_JUDGE_CAP, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet);
   for (const r of allScored.recs) {
     const key = r.external_id ?? r.id;
     if (!detScores.has(key)) detScores.set(key, r.score);

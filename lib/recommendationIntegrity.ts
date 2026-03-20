@@ -58,6 +58,23 @@ export type IntegrityLayerResult = {
   integritySuppressed: ScoredBook[];    // audit-only
 };
 
+// ── Series-read set builder ───────────────────────────────────────────────────
+// Builds the set of series names the user has already started reading.
+// Runs every read book through the curated database and collects series names.
+// This is the authoritative source for continuation eligibility — author
+// familiarity alone is not a sufficient signal.
+
+export function buildSeriesReadSet(
+  readBooks: Array<{ title: string; author: string }>,
+): Set<string> {
+  const names = new Set<string>();
+  for (const book of readBooks) {
+    const entry = lookupCurated(book.author, book.title);
+    if (entry) names.add(normKey(entry.series));
+  }
+  return names;
+}
+
 // ── Helper ───────────────────────────────────────────────────────────────────
 
 function normKey(s: string): string {
@@ -494,30 +511,37 @@ export function detectSeriesPosition(book: {
 
 // ── Series label derivation ───────────────────────────────────────────────────
 
+// Why author familiarity alone is insufficient:
+//   A reader may have read 10 books by Robin Hobb but never started the
+//   Liveship Traders series. Surfacing "Mad Ship" (Liveship #2) as a
+//   "Continue the series" pick is wrong — the user hasn't started that series.
+//   The rule must be: user has read a book from THIS EXACT SERIES, not merely
+//   from this author. `seriesReadSet` is built from the user's actual library
+//   by running every read book through the curated database lookup.
+
 export function deriveSeriesLabel(
-  series: SeriesPosition | null,
-  repeated_author_match: boolean,
+  series:        SeriesPosition | null,
+  seriesReadSet: Set<string>,
 ): SeriesLabel | null {
   if (!series) return null;
   if (series.series_position <= 1) return 'series_starter';
-  if (repeated_author_match)        return 'series_continuation';
+  if (seriesReadSet.has(normKey(series.series_name))) return 'series_continuation';
   return 'series_later_volume';
 }
 
 // ── Main integrity pass ───────────────────────────────────────────────────────
 
 export function applyIntegrityLayer(
-  books:  ScoredBook[],
-  _cog?:  unknown,
+  books:         ScoredBook[],
+  seriesReadSet: Set<string> = new Set(),
 ): IntegrityLayerResult {
 
   type Annotated = { book: ScoredBook; series: SeriesPosition | null; label: SeriesLabel | null };
 
   // ── Step 1: Annotate ──────────────────────────────────────────────────────
   const annotated: Annotated[] = books.map(book => {
-    const series   = detectSeriesPosition(book);
-    const repeated = !!(book._score_breakdown.repeated_author_match);
-    const label    = deriveSeriesLabel(series, repeated);
+    const series = detectSeriesPosition(book);
+    const label  = deriveSeriesLabel(series, seriesReadSet);
 
     // Persist into score breakdown for UI and audit
     (book._score_breakdown as Record<string, unknown>)['series_name']      = series?.series_name      ?? null;
@@ -547,10 +571,9 @@ export function applyIntegrityLayer(
   }
 
   // ── Step 3: Determine suppressions ───────────────────────────────────────
-  // Key change from v1: single-member groups are still evaluated.
-  // A book at position > 1 with high/medium confidence and no repeated-author
-  // relationship is suppressed even when it is the only pool member of that
-  // series (the most common real-world case — no book 1 retrieved alongside it).
+  // Continuation eligibility: user must have read a book from THIS specific
+  // series. Author familiarity alone is insufficient — a reader may know Robin
+  // Hobb well but never have started the Liveship Traders series.
   const suppressedIds = new Set<string>();
 
   function suppressBook(item: Annotated, reason: string) {
@@ -559,26 +582,31 @@ export function applyIntegrityLayer(
     (item.book._score_breakdown as Record<string, unknown>)['ril_reason']     = reason;
   }
 
+  function hasStartedSeries(seriesName: string): boolean {
+    return seriesReadSet.has(normKey(seriesName));
+  }
+
   for (const [, group] of seriesGroups) {
     group.members.sort(
       (a, b) => (a.series?.series_position ?? 99) - (b.series?.series_position ?? 99)
     );
 
     const [best, ...rest] = group.members;
-    const bestPos     = best.series!.series_position;
-    const bestRepeated = !!(best.book._score_breakdown.repeated_author_match);
+    const bestPos         = best.series!.series_position;
+    const seriesName      = best.series!.series_name;
+    const bestStarted     = hasStartedSeries(seriesName);
 
-    // Suppress redundant higher-position members for non-repeated-author readers
+    // Suppress redundant higher-position members when user hasn't started this series
     for (const item of rest) {
-      if (!item.book._score_breakdown.repeated_author_match) {
+      if (!hasStartedSeries(seriesName)) {
         suppressBook(item, `series_dedup: #${item.series!.series_position} suppressed; best entry point is #${bestPos} [${item.series!.detection_method}/${item.series!.confidence}]`);
       }
     }
 
-    // Key fix: suppress the "best" if it is still a continuation with no established relationship.
-    // This fires even when it is the only pool member of its series.
-    if (bestPos > 1 && !bestRepeated) {
-      suppressBook(best, `series_no_entry_point: #${bestPos} suppressed; no book 1 in pool, author unfamiliar [${best.series!.detection_method}/${best.series!.confidence}]`);
+    // Suppress even the "best" pool member if it's still a continuation
+    // and user hasn't started this specific series. Fires even for solo pool members.
+    if (bestPos > 1 && !bestStarted) {
+      suppressBook(best, `series_no_entry_point: #${bestPos} suppressed; user has not started ${seriesName} [${best.series!.detection_method}/${best.series!.confidence}]`);
     }
   }
 

@@ -1,0 +1,63 @@
+The upgraded series detection is directionally correct and is now preventing obvious mid-series entry errors.
+
+However, one important refinement is still needed:
+
+Repeated-author familiarity is not the same as series familiarity.
+
+Problem
+The engine is currently allowing continuation books for authors the user has returned to multiple times, even when there is no evidence the user has started that specific series/subseries.
+
+Examples from the current output:
+- Fool's Fate can surface because Robin Hobb is a repeated author
+- Winter Stroll can surface because Elin Hilderbrand is a repeated author
+
+But product-wise, author familiarity alone is too weak.
+A user may know an author well without having read the earlier books in that specific series.
+
+Goal
+Tighten continuation eligibility so default recommendations only surface later series books when the user has actually started that series.
+
+New rule hierarchy
+
+1. If the user has read earlier books in the exact same series:
+   - continuation is valid
+   - recommend the next unread installment
+
+2. If the user has NOT read earlier books in that exact series:
+   - do NOT surface later volumes as default recommendations
+   - normalize to book 1 of that series instead
+
+3. Repeated author alone is NOT enough to permit a continuation recommendation.
+
+What to build
+
+Part 1: Series-read detection
+Determine whether the user has already read earlier books in the same series.
+Use:
+- exact series_name match when available
+- normalized series identity from the curated series DB
+- earlier volume positions
+- user_books history
+
+Part 2: Tighten continuation logic
+Update the RIL logic so:
+- repeated author is no longer sufficient for continuation eligibility
+- continuation requires evidence that the user has started the series
+- if series familiarity is absent, map to the starter instead
+
+Part 3: Keep discovery vs continuation distinct
+Default recommendations should prioritize:
+- series starter for new series
+- next unread installment only for already-started series
+
+Part 4: Output
+1. explain why author familiarity was too permissive
+2. list changed files
+3. show the new series-familiarity rule
+4. show examples where continuation was downgraded to starter
+5. show the updated top recommendations after the fix
+
+Important
+Do NOT broadly rewrite series detection again.
+Do NOT rework retrieval.
+This is a narrow refinement to continuation eligibility inside the Recommendation Integrity Layer.
