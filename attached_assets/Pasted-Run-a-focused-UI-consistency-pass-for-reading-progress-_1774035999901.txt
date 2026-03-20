@@ -1,0 +1,85 @@
+Run a focused UI consistency pass for reading progress cards and action buttons.
+
+Do NOT change product logic.
+Do NOT redesign the app.
+Do NOT broaden scope.
+
+Goal
+Make reading progress display and button styling feel consistent, polished, and more engaging across the app.
+
+Current issues
+1. Progress display is inconsistent:
+- Home shows: “Page 55 of 472 · 12%”
+- Library does not present progress in the same compact, readable way
+
+2. Buttons feel too plain / utility-like:
+- Update pages / Mark Finished / DNF do not yet feel like a polished action system
+- button hierarchy is not visually strong enough
+
+What to change
+
+Part 1: Unify progress display between Home and Library
+For active reading cards in Library:
+- show the same compact progress line used on Home:
+  - “Page X of Y · Z%”
+- keep pacing and last-updated as secondary lines below it
+- preserve the progress bar
+
+Target structure:
+- title
+- author
+- progress bar
+- “Page X of Y · Z%”
+- pacing line
+- updated line
+
+This should match Home more closely so the app feels coherent.
+
+Part 2: Improve button hierarchy in Library and Book Detail
+Create a clearer action hierarchy:
+
+Primary action:
+- Update progress
+
+Secondary action:
+- Mark finished
+
+Tertiary / destructive-light action:
+- DNF
+
+Requirements:
+- primary button should be the strongest visual action
+- secondary should still be clearly tappable but less dominant
+- DNF should be quieter and clearly lower priority
+- spacing between actions should feel intentional
+
+Part 3: Standardize button styles across the app
+Define or apply a consistent button system for:
+- Library reading cards
+- Book Detail progress card
+- recommendation card actions where appropriate
+
+At minimum align:
+- height
+- border radius
+- font size / weight
+- padding
+- primary / secondary / tertiary visual variants
+
+Do not overdesign.
+Aim for calm, premium, and consistent.
+
+Part 4: Keep current momentum signals
+Do not remove:
+- progress bar
+- pacing note
+- updated today / updated X days ago
+
+Just improve layout and consistency.
+
+Output
+1. files changed
+2. what changed in Library progress cards
+3. what changed in Book Detail buttons
+4. what button style hierarchy is now used
+5. any small UI inconsistencies still deferred

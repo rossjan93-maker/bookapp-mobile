@@ -996,15 +996,16 @@ export default function BookDetailScreen() {
                       disabled={transitioning}
                       style={{
                         flex: 1,
-                        backgroundColor: transitioning ? '#d6d3d1' : '#1c1917',
+                        borderWidth: 1,
+                        borderColor: transitioning ? '#e7e5e4' : '#d6d3d1',
                         borderRadius: 10,
                         paddingVertical: 11,
                         alignItems: 'center',
                       }}
                     >
                       {transitioning
-                        ? <ActivityIndicator color="#fff" size="small" />
-                        : <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>Mark Finished</Text>
+                        ? <ActivityIndicator color="#78716c" size="small" />
+                        : <Text style={{ color: transitioning ? '#a8a29e' : '#44403c', fontSize: 13, fontWeight: '500' }}>Mark Finished</Text>
                       }
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -1012,15 +1013,15 @@ export default function BookDetailScreen() {
                       disabled={transitioning}
                       style={{
                         borderWidth: 1,
-                        borderColor: '#fecaca',
+                        borderColor: transitioning ? '#e7e5e4' : '#fca5a5',
                         borderRadius: 10,
                         paddingVertical: 11,
                         paddingHorizontal: 16,
                         alignItems: 'center',
-                        opacity: transitioning ? 0.4 : 1,
+                        opacity: transitioning ? 0.5 : 1,
                       }}
                     >
-                      <Text style={{ color: '#b91c1c', fontSize: 13, fontWeight: '600' }}>DNF</Text>
+                      <Text style={{ color: '#b91c1c', fontSize: 13, fontWeight: '500' }}>DNF</Text>
                     </TouchableOpacity>
                   </View>
                 )}

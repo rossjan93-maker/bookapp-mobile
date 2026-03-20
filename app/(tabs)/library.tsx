@@ -758,9 +758,14 @@ export default function LibraryScreen() {
                           borderRadius: 2,
                         }} />
                       </View>
-                      <Text style={{ fontSize: 11, color: '#a8a29e' }}>
-                        {pacingNote ? pacingNote : `Page ${item.current_page} of ${item.book?.page_count} · ${progressPct}%`}
+                      <Text style={{ fontSize: 11, color: '#57534e', fontWeight: '500' }}>
+                        Page {item.current_page} of {item.book?.page_count} · {progressPct}%
                       </Text>
+                      {pacingNote && (
+                        <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 2 }}>
+                          {pacingNote}
+                        </Text>
+                      )}
                     </>
                   )}
                   {!hasProgress && item.status === 'reading' && (
@@ -781,87 +786,7 @@ export default function LibraryScreen() {
                 </View>
               </TouchableOpacity>
 
-              {/* Quick-page-log — shown when not rating / not updating */}
-              {!hasPendingRating && !isUpdating && (
-                <View style={{ marginBottom: 10 }}>
-                  {quickLogId === item.id ? (
-                    <View>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <TextInput
-                          ref={quickLogRef}
-                          value={quickLogInput}
-                          onChangeText={setQuickLogInput}
-                          keyboardType="number-pad"
-                          placeholder={item.current_page != null ? String(item.current_page) : '0'}
-                          placeholderTextColor="#a8a29e"
-                          returnKeyType="done"
-                          onSubmitEditing={() => handleQuickLog(item)}
-                          style={{
-                            width: 72,
-                            height: 36,
-                            borderWidth: 1.5,
-                            borderColor: '#d6d3d1',
-                            borderRadius: 7,
-                            paddingHorizontal: 10,
-                            fontSize: 15,
-                            fontWeight: '700',
-                            color: '#1c1917',
-                            textAlign: 'center',
-                          }}
-                        />
-                        {item.book?.page_count != null && (
-                          <Text style={{ fontSize: 12, color: '#a8a29e' }}>
-                            of {item.book.page_count}
-                          </Text>
-                        )}
-                        <TouchableOpacity
-                          onPress={() => handleQuickLog(item)}
-                          disabled={quickLogSaving}
-                          style={{
-                            backgroundColor: quickLogSaving ? '#d6d3d1' : '#1c1917',
-                            borderRadius: 7,
-                            paddingHorizontal: 14,
-                            paddingVertical: 8,
-                          }}
-                        >
-                          <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>
-                            {quickLogSaving ? '…' : 'Save'}
-                          </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={() => { setQuickLogId(null); setQuickLogError(null); }}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        >
-                          <Text style={{ fontSize: 12, color: '#a8a29e' }}>Cancel</Text>
-                        </TouchableOpacity>
-                      </View>
-                      {quickLogError && (
-                        <Text style={{ fontSize: 11, color: '#b91c1c', marginTop: 4 }}>
-                          {quickLogError}
-                        </Text>
-                      )}
-                    </View>
-                  ) : (
-                    <TouchableOpacity
-                      onPress={() => {
-                        setQuickLogInput(item.current_page != null ? String(item.current_page) : '');
-                        setQuickLogError(null);
-                        setQuickLogId(item.id);
-                        setTimeout(() => quickLogRef.current?.focus(), 60);
-                      }}
-                      hitSlop={{ top: 6, bottom: 6, left: 0, right: 24 }}
-                    >
-                      <Text style={{ fontSize: 12, color: '#78716c', fontWeight: '500' }}>
-                        {item.current_page != null
-                          ? `Update pages — p.${item.current_page}`
-                          : 'Log current page →'}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-
-              {/* Action row */}
+              {/* Unified action area */}
               {hasPendingRating ? (
                 <View style={{ marginTop: 2 }}>
                   <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 8 }}>How would you rate it?</Text>
@@ -883,10 +808,87 @@ export default function LibraryScreen() {
                 </View>
               ) : isUpdating ? (
                 <ActivityIndicator color="#78716c" style={{ alignSelf: 'flex-start' }} />
+              ) : quickLogId === item.id ? (
+                <View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <TextInput
+                      ref={quickLogRef}
+                      value={quickLogInput}
+                      onChangeText={setQuickLogInput}
+                      keyboardType="number-pad"
+                      placeholder={item.current_page != null ? String(item.current_page) : '0'}
+                      placeholderTextColor="#a8a29e"
+                      returnKeyType="done"
+                      onSubmitEditing={() => handleQuickLog(item)}
+                      style={{
+                        width: 72,
+                        height: 40,
+                        borderWidth: 1.5,
+                        borderColor: '#d6d3d1',
+                        borderRadius: 10,
+                        paddingHorizontal: 10,
+                        fontSize: 15,
+                        fontWeight: '700',
+                        color: '#1c1917',
+                        textAlign: 'center',
+                      }}
+                    />
+                    {item.book?.page_count != null && (
+                      <Text style={{ fontSize: 12, color: '#a8a29e' }}>
+                        of {item.book.page_count}
+                      </Text>
+                    )}
+                    <TouchableOpacity
+                      onPress={() => handleQuickLog(item)}
+                      disabled={quickLogSaving}
+                      style={{
+                        backgroundColor: quickLogSaving ? '#d6d3d1' : '#1c1917',
+                        borderRadius: 10,
+                        paddingHorizontal: 16,
+                        paddingVertical: 10,
+                      }}
+                    >
+                      <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>
+                        {quickLogSaving ? '…' : 'Save'}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => { setQuickLogId(null); setQuickLogError(null); }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={{ fontSize: 13, color: '#a8a29e' }}>Cancel</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {quickLogError && (
+                    <Text style={{ fontSize: 11, color: '#b91c1c', marginTop: 4 }}>
+                      {quickLogError}
+                    </Text>
+                  )}
+                </View>
               ) : (
                 <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <PrimaryButton label="Mark Finished" onPress={() => handleUpdateStatus(item, 'finished')} disabled={isBlocked} />
-                  <DangerButton  label="DNF"           onPress={() => handleUpdateStatus(item, 'dnf')}      disabled={isBlocked} />
+                  <TouchableOpacity
+                    onPress={() => {
+                      setQuickLogInput(item.current_page != null ? String(item.current_page) : '');
+                      setQuickLogError(null);
+                      setQuickLogId(item.id);
+                      setTimeout(() => quickLogRef.current?.focus(), 60);
+                    }}
+                    disabled={isBlocked}
+                    style={{
+                      flex: 1,
+                      backgroundColor: isBlocked ? '#d6d3d1' : '#1c1917',
+                      borderRadius: 10,
+                      paddingVertical: 10,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>
+                      {item.current_page != null ? 'Update pages' : 'Log pages'}
+                    </Text>
+                  </TouchableOpacity>
+                  <OutlineButton label="Finished" onPress={() => handleUpdateStatus(item, 'finished')} disabled={isBlocked} />
+                  <DangerButton  label="DNF"      onPress={() => handleUpdateStatus(item, 'dnf')}      disabled={isBlocked} />
                 </View>
               )}
             </View>
@@ -1194,12 +1196,13 @@ function PrimaryButton({ label, onPress, disabled }: { label: string; onPress: (
       disabled={disabled}
       style={{
         backgroundColor: disabled ? '#d6d3d1' : '#1c1917',
-        borderRadius: 8,
-        paddingHorizontal: 14,
-        paddingVertical: 7,
+        borderRadius: 10,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        alignItems: 'center',
       }}
     >
-      <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>{label}</Text>
+      <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -1212,12 +1215,13 @@ function OutlineButton({ label, onPress, disabled }: { label: string; onPress: (
       style={{
         borderWidth: 1,
         borderColor: disabled ? '#e7e5e4' : '#d6d3d1',
-        borderRadius: 8,
-        paddingHorizontal: 14,
-        paddingVertical: 7,
+        borderRadius: 10,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        alignItems: 'center',
       }}
     >
-      <Text style={{ color: disabled ? '#a8a29e' : '#57534e', fontSize: 12, fontWeight: '500' }}>{label}</Text>
+      <Text style={{ color: disabled ? '#a8a29e' : '#44403c', fontSize: 13, fontWeight: '500' }}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -1230,12 +1234,13 @@ function DangerButton({ label, onPress, disabled }: { label: string; onPress: ()
       style={{
         borderWidth: 1,
         borderColor: disabled ? '#e7e5e4' : '#fca5a5',
-        borderRadius: 8,
+        borderRadius: 10,
         paddingHorizontal: 14,
-        paddingVertical: 7,
+        paddingVertical: 10,
+        alignItems: 'center',
       }}
     >
-      <Text style={{ color: disabled ? '#a8a29e' : '#b91c1c', fontSize: 12, fontWeight: '500' }}>{label}</Text>
+      <Text style={{ color: disabled ? '#a8a29e' : '#b91c1c', fontSize: 13, fontWeight: '500' }}>{label}</Text>
     </TouchableOpacity>
   );
 }
