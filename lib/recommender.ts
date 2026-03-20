@@ -156,6 +156,7 @@ export type ScoreBreakdown = {
   // ── Recommendation Integrity Layer fields (populated in RIL pass) ─────────
   series_name?:       string | null;  // detected series (e.g. "The Stormlight Archive")
   series_position?:   number | null;  // position in series (1 = starter, 2+ = continuation)
+  series_total?:      number | null;  // total books in series — from seriesCatalog only, never inferred
   series_label?:      string | null;  // 'series_starter' | 'series_continuation' | 'series_later_volume'
   series_confidence?: string | null;  // 'high' | 'medium' — how reliable the detection is
   series_method?:     string | null;  // 'curated' | 'title_pattern' | 'description_pattern'

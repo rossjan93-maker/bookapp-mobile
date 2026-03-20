@@ -42,6 +42,7 @@ import type { DeterministicLane } from '../../lib/bookTraits';
 import { getEntitlement } from '../../lib/recEntitlement';
 import type { RecEntitlement } from '../../lib/recEntitlement';
 import type { ReaderThesis } from '../../lib/expertRec';
+import { getSeriesCatalog } from '../../lib/seriesCatalog';
 
 // ─── Dev / internal constants ─────────────────────────────────────────────────
 // Debug UI (retrieval trace, candidate audit) is only shown for this user.
@@ -1072,49 +1073,71 @@ function RecCard({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fetch series book covers from Open Library for the visual series row.
-  // Use separate author= + q= params (not series:"…" prefix) for maximum
-  // OL search compatibility — the series: field is not reliably indexed.
+  // Canonical per-book cover lookup — strict series data contract.
+  //
+  // Series structure (name, position, total, order) comes exclusively from
+  // the static seriesCatalog.  Open Library is used only to resolve a cover
+  // IMAGE for each known series book — it is never used to discover series
+  // membership or count.
+  //
+  // CONTRACT VALIDATION (all conditions must hold to render any series UI):
+  //   1. series_name is present and catalogued in seriesCatalog
+  //   2. series_position is present
+  //   3. series_total is present (set by RIL from catalog)
+  //   4. Every book in catalog.orderedBooks returns exactly one canonical
+  //      single-edition cover (no collections, omnibus, boxed sets)
+  //
+  // If ANY condition fails → series UI is fully hidden.
   useEffect(() => {
     const sn = book._score_breakdown.series_name;
-    if (!sn || !book._score_breakdown.series_position) return;
-    const url = [
-      'https://openlibrary.org/search.json',
-      `?author=${encodeURIComponent(book.author)}`,
-      `&q=${encodeURIComponent(sn)}`,
-      '&sort=old&fields=key,title,cover_i&limit=8',
-    ].join('');
-    // Regexp for multi-book / anthology editions that show inconsistent covers
+    const sp = book._score_breakdown.series_position;
+    if (!sn || sp == null) return;
+
+    const meta = getSeriesCatalog(sn);
+    if (!meta) return; // Not in static catalog → no series UI
+
     const BAD_EDITION = /collection|omnibus|boxed|box set|complete works|anthology/i;
-    fetch(url)
-      .then(r => r.json())
-      .then((data: { docs?: Array<{ key: string; cover_i?: number; title?: string }> }) => {
+
+    // One targeted OL lookup per series book (title + author, limit 3).
+    // Returns the first result that has a cover and isn't a collection edition.
+    const fetchCover = async (
+      b: { title: string; author: string },
+    ): Promise<SeriesCover | null> => {
+      try {
+        const url = [
+          'https://openlibrary.org/search.json',
+          `?title=${encodeURIComponent(b.title)}`,
+          `&author=${encodeURIComponent(b.author)}`,
+          '&fields=key,title,cover_i&sort=old&limit=3',
+        ].join('');
+        const data: { docs?: Array<{ key: string; cover_i?: number; title?: string }> } =
+          await fetch(url).then(r => r.json());
         const docs = data.docs ?? [];
-        // Only include entries that (a) have a real cover_i and (b) are not
-        // multi-book editions (collections, omnibus, boxed sets) which show
-        // inconsistent composite-cover images.
-        const cleanDocs = docs.filter(
-          d => d.cover_i != null && !BAD_EDITION.test(d.title ?? '')
-        );
-        const covers = cleanDocs.slice(0, 5).map(d => ({
-          olKey:   d.key,
-          coverId: d.cover_i ?? null,
-          title:   d.title ?? '',
-        }));
-        setSeriesCovers(covers);
-        // Fade in the row once we have at least 2 clean covers.
-        // Threshold is 2, not 3: some trilogies return only 2 OL-indexed editions
-        // with cover_i, and suppressing to nothing is worse than a short row.
-        if (covers.length >= 2) {
-          Animated.timing(seriesRowOpacity, {
-            toValue:         1,
-            duration:        420,
-            delay:           80,
-            useNativeDriver: false,
-          }).start();
-        }
-      })
-      .catch(() => {});
+        const clean = docs.find(d => d.cover_i != null && !BAD_EDITION.test(d.title ?? ''));
+        if (!clean || clean.cover_i == null) return null;
+        return { olKey: clean.key, coverId: clean.cover_i, title: clean.title ?? b.title };
+      } catch {
+        return null;
+      }
+    };
+
+    let cancelled = false;
+    Promise.all(meta.orderedBooks.map(fetchCover)).then(results => {
+      if (cancelled) return;
+      // Strict: if any book in the catalog list could not get a canonical
+      // single-edition cover, the contract is violated → hide all series UI.
+      if (results.some(r => r === null)) return;
+      const covers = results as SeriesCover[];
+      setSeriesCovers(covers);
+      Animated.timing(seriesRowOpacity, {
+        toValue:         1,
+        duration:        420,
+        delay:           80,
+        useNativeDriver: false,
+      }).start();
+    });
+
+    return () => { cancelled = true; };
   // Only run on mount — series name/position don't change per card
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1152,13 +1175,20 @@ function RecCard({
     ? 'Moderate fit — a few more ratings will sharpen this pick.'
     : null;
 
-  // Series row: identify which cover is "this" book by OL key match, fallback to index
-  const seriesPos       = book._score_breakdown.series_position;
-  const normalizedExtId = book.external_id?.replace('/works/', '') ?? null;
-  // Render row with 2+ clean real covers — 2 is enough to show meaningful series context.
-  // The threshold was 3 but some well-known trilogies (Fitz and the Fool, Crescent City)
-  // return only 2 entries with cover_i from OL, causing silent suppression.
-  const hasSeriesRow = seriesCovers.length >= 2 && seriesPos != null;
+  // Series contract — all fields must be present for any series UI to render.
+  // catalogMeta is null when series_name is not in the static catalog, which
+  // means series_total is also null (RIL sets it from the same catalog lookup).
+  const seriesPos    = book._score_breakdown.series_position;
+  const seriesTotal  = book._score_breakdown.series_total;
+  const catalogMeta  = getSeriesCatalog(book._score_breakdown.series_name ?? '');
+  // The cover array is populated only when ALL catalog.orderedBooks returned a
+  // canonical single-edition cover (see useEffect above).  Length equality
+  // with orderedBooks confirms the strict fetch succeeded end-to-end.
+  const hasSeriesRow =
+    catalogMeta != null &&
+    seriesPos   != null &&
+    seriesTotal != null &&
+    seriesCovers.length === catalogMeta.orderedBooks.length;
 
   // Reason text for collapsed view — strip author prefix since author is shown above
   const collapsedReason = book.reasons.length > 0
@@ -1223,21 +1253,19 @@ function RecCard({
               marginBottom:   8,
             }}>
               {seriesCovers.map((sc, i) => {
-                const pos = i + 1;
-                // Match current book by external_id (most reliable), fallback to position index
-                const isCurrent = normalizedExtId
-                  ? sc.olKey.replace('/works/', '') === normalizedExtId
-                  : pos === seriesPos;
-                const coverUri = sc.coverId
+                // Position is 1-indexed; orderedBooks is in series order so
+                // index i corresponds to series position i+1.
+                const isCurrent = (i + 1) === seriesPos;
+                const coverUri  = sc.coverId
                   ? `https://covers.openlibrary.org/b/id/${sc.coverId}-S.jpg`
                   : null;
                 return (
                   <View
                     key={sc.olKey}
                     style={{
-                      opacity:     isCurrent ? 1 : 0.38,
-                      borderWidth: isCurrent ? 1.5 : 0,
-                      borderColor: '#1c1917',
+                      opacity:      isCurrent ? 1 : 0.38,
+                      borderWidth:  isCurrent ? 1.5 : 0,
+                      borderColor:  '#1c1917',
                       borderRadius: 4,
                     }}
                   >
@@ -1252,7 +1280,6 @@ function RecCard({
                         }}
                       />
                     ) : (
-                      /* Graceful placeholder — looks like an unloaded spine */
                       <View style={{
                         width:           isCurrent ? 34 : 27,
                         height:          isCurrent ? 50 : 42,
@@ -1268,33 +1295,45 @@ function RecCard({
             </Animated.View>
           )}
 
-          {/* ── Series badge ── */}
-          {(book._score_breakdown.series_label === 'series_starter' ||
-            book._score_breakdown.series_label === 'series_continuation') && (
+          {/* ── Series badge ────────────────────────────────────────────────────
+               Only rendered when the full series contract is valid:
+               - series in static catalog
+               - series_position and series_total both present
+               - all catalog.orderedBooks have canonical single-edition covers
+               If the contract is invalid the card renders as a standalone rec. */}
+          {hasSeriesRow && catalogMeta && seriesPos != null && seriesTotal != null && (
             <View style={{
-              alignSelf: 'flex-start',
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 4,
-              marginBottom: 6,
-              paddingHorizontal: 7,
-              paddingVertical: 3,
-              borderRadius: 6,
-              backgroundColor: book._score_breakdown.series_label === 'series_starter'
+              alignSelf:        'flex-start',
+              marginBottom:     6,
+              paddingHorizontal:7,
+              paddingVertical:  4,
+              borderRadius:     6,
+              backgroundColor:  book._score_breakdown.series_label === 'series_starter'
                 ? '#fef3c7'
                 : '#f0fdf4',
             }}>
               <Text style={{
-                fontSize: 10,
-                fontWeight: '600',
-                color: book._score_breakdown.series_label === 'series_starter'
+                fontSize:    10,
+                fontWeight:  '700',
+                color:       book._score_breakdown.series_label === 'series_starter'
                   ? '#92400e'
                   : '#166534',
                 letterSpacing: 0.2,
               }}>
+                {catalogMeta.displayName}
+              </Text>
+              <Text style={{
+                fontSize:    10,
+                fontWeight:  '500',
+                color:       book._score_breakdown.series_label === 'series_starter'
+                  ? '#92400e'
+                  : '#166534',
+                letterSpacing: 0.1,
+                marginTop:   1,
+              }}>
                 {book._score_breakdown.series_label === 'series_starter'
-                  ? 'Start here'
-                  : 'Continue the series'}
+                  ? `Book ${seriesPos} of ${seriesTotal} · Start here`
+                  : `Book ${seriesPos} of ${seriesTotal} · Continue the series`}
               </Text>
             </View>
           )}

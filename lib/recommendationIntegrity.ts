@@ -36,6 +36,7 @@
 //   of its series in the pool — the most common real-world case.
 
 import type { ScoredBook, ScoreBreakdown } from './recommender';
+import { getSeriesCatalog }               from './seriesCatalog';
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
@@ -582,9 +583,14 @@ export function applyIntegrityLayer(
     const series = detectSeriesPosition(book);
     const label  = deriveSeriesLabel(series, seriesReadSet);
 
-    // Persist into score breakdown for UI and audit
+    // Persist into score breakdown for UI and audit.
+    // series_total is sourced exclusively from the static seriesCatalog — never
+    // inferred from OL search results or title patterns.  If the series is not
+    // in the catalog, series_total is null and the UI must not show series UI.
+    const catalogEntry = series ? getSeriesCatalog(series.series_name) : null;
     (book._score_breakdown as Record<string, unknown>)['series_name']      = series?.series_name      ?? null;
     (book._score_breakdown as Record<string, unknown>)['series_position']  = series?.series_position  ?? null;
+    (book._score_breakdown as Record<string, unknown>)['series_total']     = catalogEntry?.total      ?? null;
     (book._score_breakdown as Record<string, unknown>)['series_label']     = label;
     (book._score_breakdown as Record<string, unknown>)['series_confidence']= series?.confidence       ?? null;
     (book._score_breakdown as Record<string, unknown>)['series_method']    = series?.detection_method ?? null;
