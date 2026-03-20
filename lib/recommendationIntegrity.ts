@@ -368,14 +368,17 @@ function normalizeAuthor(author: string): string {
 }
 
 // Strip subtitle suffixes from a title before normKey lookup.
-// Handles both the original string (e.g. "Fool's Fate: A Tawny Man Novel")
-// and the already-normalized key (e.g. "fools fate a tawny man novel" where
-// the colon was collapsed to a space by normKey).
+// Handles:
+//   "Fool's Fate: A Tawny Man Novel"      → "Fool's Fate"
+//   "Ship of Magic (Liveship Traders, #1)" → "Ship of Magic"
+//   "The Way of Kings / subtitle"          → "The Way of Kings"
+//   "Assassin's Apprentice - Book 1"       → "Assassin's Apprentice"
 // Strategy: work on the original string so separators are still intact.
 function stripTitleSubtitle(title: string): string {
   return title
-    .replace(/\s*:\s+.*$/, '')    // strip ": subtitle" (colon + space)
-    .replace(/\s+\/\s+.*$/, '')   // strip " / subtitle"
+    .replace(/\s*\(.*\)\s*$/, '')            // strip "(parenthetical)" at end — e.g. "(Liveship Traders, #1)"
+    .replace(/\s*:\s+.*$/, '')               // strip ": subtitle" (colon + space)
+    .replace(/\s+\/\s+.*$/, '')              // strip " / subtitle"
     .replace(/\s+[-\u2013\u2014]\s+.*$/, '') // strip " - " or " – " or " — "
     .trim();
 }

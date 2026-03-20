@@ -1977,6 +1977,10 @@ export async function getCandidateBooks(
   const seriesReadSet = buildSeriesReadSet(local.readBooks);
   if (__DEV__) {
     console.log(`[SERIES_RS] readBooks=${local.readBooks.length} primarySize=${seriesReadSet.size} series=[${[...seriesReadSet].join(', ')}]`);
+    if (seriesReadSet.size === 0 && local.readBooks.length > 0) {
+      // Emit a sample so we can see the exact author/title format stored in the DB
+      console.log(`[SERIES_RS_SAMPLE]`, local.readBooks.slice(0, 8).map(b => `"${b.title}" / "${b.author}"`));
+    }
   }
 
   const catalogExternalIds = new Set(
