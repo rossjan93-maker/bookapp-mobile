@@ -1,0 +1,105 @@
+This is the final ship-gate sprint for the deterministic recommendation engine.
+
+Do NOT treat this as an open-ended improvement pass.
+Do NOT broaden scope.
+Do NOT add new major features.
+Do NOT work on premium/expert mode, anchor mode, or additional UI surfaces.
+
+We are now in release mode.
+
+Goal
+Get the recommendation system to a clear “good enough to ship beta” state using a fixed acceptance bar.
+
+Ship criteria
+The recommender is considered beta-ready only if all 5 conditions below pass:
+
+1. No entry-point integrity failures
+- no later-volume books recommended as discovery entry points
+- Continue Reading only shows true next unread installments
+- Discover Next only shows series starters / standalones / valid discovery books
+
+2. No duplicate or junk user-facing recs
+- no duplicate titles
+- no duplicate edition variants
+- no bad-data titles like “(duplicate)” or similar junk
+
+3. Visible recommendations feel credible
+- no weak_metadata books surfacing in top visible recommendations when stronger books exist
+- no obviously off-lane or misleading books in the top set
+
+4. Continue Reading vs Discover Next is stable
+- fresh and cache-backed runs should preserve the same overall personality of the visible recommendation set
+- the split between continuation and discovery should remain consistent
+
+5. Top 5 passes cohort sanity checks
+Validate against these 4 user cohorts:
+- dense commercial Goodreads reader
+- literary/classics reader
+- memoir/nonfiction reader
+- low-signal new user
+
+For each cohort, the top 5 should feel directionally right and not contain obvious integrity failures.
+
+Scope for this sprint
+Only work on issues that block the 5 ship criteria above.
+
+Allowed work:
+- narrow calibration improvements
+- within-bucket ranking refinement
+- visible-set threshold tuning
+- cache/fresh stability tuning
+- cohort validation tooling / reporting
+
+Not allowed:
+- broad retrieval rewrites
+- premium/expert work
+- anchor mode
+- bookstore scan features
+- additional recommendation product surfaces
+- speculative architecture changes
+
+Execution plan
+
+Part 1: Run the ship-gate validation
+For the 4 required cohorts, run the live recommendation pipeline and report:
+- Continue Reading
+- Discover Next
+- visible top 5
+- any integrity failures
+- whether the cohort passes or fails the ship criteria
+
+Part 2: Identify only the true blockers
+If any cohort fails, identify:
+- the exact failing criterion
+- the smallest fix needed
+- the expected effect
+
+Do NOT make multiple broad changes if one narrow one will solve the problem.
+
+Part 3: Apply only blocker fixes
+If fixes are needed, implement only the minimum necessary to make the failing criteria pass.
+
+Part 4: Re-run validation
+Re-run the same 4 cohorts and show:
+- pass/fail for each ship criterion
+- final visible top 5
+- whether the recommender is now beta-ready
+
+Required output
+1. ship-gate validation results by cohort
+2. exact blockers, if any
+3. files changed
+4. minimal fixes applied
+5. final pass/fail table against the 5 ship criteria
+6. clear recommendation:
+   - beta-ready
+   - or not beta-ready, with exact remaining blockers
+
+Important instruction
+Do NOT give me another “what exists” summary.
+Do NOT give me another architecture recap.
+This sprint ends with a binary answer:
+- beta-ready
+or
+- not beta-ready
+with exact reasons.

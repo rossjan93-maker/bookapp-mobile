@@ -374,7 +374,7 @@ function normalizeAuthor(author: string): string {
 //   "The Way of Kings / subtitle"          → "The Way of Kings"
 //   "Assassin's Apprentice - Book 1"       → "Assassin's Apprentice"
 // Strategy: work on the original string so separators are still intact.
-function stripTitleSubtitle(title: string): string {
+export function stripTitleSubtitle(title: string): string {
   return title
     .replace(/\s*\(.*\)\s*$/, '')            // strip "(parenthetical)" at end — e.g. "(Liveship Traders, #1)"
     .replace(/\s*:\s+.*$/, '')               // strip ": subtitle" (colon + space)

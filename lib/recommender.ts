@@ -74,7 +74,7 @@ import type { ReaderThesis, ExpertRecResult, CandidateJudgment } from './expertR
 import { buildReaderThesis, judgeCandidateFit, composeRecommendationSet } from './expertRec';
 import { buildEvidencePack }                                  from './evidencePack';
 import { loadCachedRecs, persistRecCache, shouldRebuild, buildSignalSnapshot } from './recCache';
-import { applyIntegrityLayer, buildSeriesReadSet } from './recommendationIntegrity';
+import { applyIntegrityLayer, buildSeriesReadSet, stripTitleSubtitle } from './recommendationIntegrity';
 
 // ── Quality gate constants ─────────────────────────────────────────────────────
 
@@ -483,7 +483,7 @@ async function fetchOLSubject(
       .filter(doc => !doc.first_publish_year || doc.first_publish_year >= 1950)
       .map((doc): CandidateBook => ({
         id:                `ol:${doc.key}`,
-        title:             doc.title ?? '',
+        title:             stripTitleSubtitle(doc.title ?? ''),
         author:            doc.author_name?.[0] ?? 'Unknown author',
         cover_url:         doc.cover_i
                              ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
@@ -532,7 +532,7 @@ async function fetchOLByAuthor(
       .filter(doc => !doc.first_publish_year || doc.first_publish_year >= 1950)
       .map((doc): CandidateBook => ({
         id:                `ol:${doc.key}`,
-        title:             doc.title ?? '',
+        title:             stripTitleSubtitle(doc.title ?? ''),
         author:            doc.author_name?.[0] ?? author,
         cover_url:         doc.cover_i
                              ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
