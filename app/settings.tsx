@@ -197,6 +197,10 @@ export default function SettingsScreen() {
       setProfileDirty(false);
       setProfileSaved(true);
       setTimeout(() => setProfileSaved(false), 2500);
+    } else if (error.code === '23505') {
+      setProfileError('That username is already taken. Please choose another.');
+    } else {
+      setProfileError('Could not save — try again.');
     }
   }
 

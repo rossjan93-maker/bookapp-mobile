@@ -55,6 +55,20 @@ export default function LoginScreen() {
       return;
     }
 
+    // Pre-check username availability before creating the auth account.
+    // This prevents orphaned auth users when the username is already taken.
+    const { data: taken } = await supabase!
+      .from('profiles')
+      .select('id')
+      .eq('username', uname)
+      .maybeSingle();
+
+    if (taken) {
+      setStatus('That username is already taken. Please choose another.');
+      setLoading(false);
+      return;
+    }
+
     const { data: authData, error } = await supabase!.auth.signUp({
       email,
       password,
@@ -71,12 +85,19 @@ export default function LoginScreen() {
       setStatus(error.message);
     } else {
       if (authData?.user) {
-        await supabase!.from('profiles').upsert({
+        const { error: profileError } = await supabase!.from('profiles').upsert({
           id:         authData.user.id,
           username:   uname,
           first_name: firstName.trim(),
           last_name:  lastName.trim(),
         });
+        // Race-condition guard: another signup claimed the same username between
+        // the pre-check and this insert (unique_violation code = '23505').
+        if (profileError?.code === '23505') {
+          setStatus('That username was just claimed by someone else. Please choose another.');
+          setLoading(false);
+          return;
+        }
       }
       setStatus('Check your email to confirm your account.');
     }
