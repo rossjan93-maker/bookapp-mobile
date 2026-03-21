@@ -1,0 +1,123 @@
+Refactor the Reading Goal card so it feels more engaging, directional, and useful.
+
+Do NOT change backend logic.
+Do NOT change schemas.
+Do NOT redesign the whole screen.
+This is a focused presentation and hierarchy refactor for the Reading Goal card only.
+
+Goal
+The current Reading Goal section contains good information, but it feels flat and report-like.
+We want it to feel like a clear progress narrative:
+- how far along am I?
+- am I on track?
+- where am I likely to end up?
+
+Core principle
+Shift the card from a static status display to a trajectory display.
+
+Current issues
+- “18 of 100” + “Behind pace” + “~216 pages/day avg” feels visually flat
+- the arrow icon is decorative rather than meaningful
+- the progress bar does not communicate where the user should be by now
+- the card answers “what is happening” but not “what this means”
+
+What to build
+
+Part 1: Rewrite the information hierarchy
+Refactor the card so it reads in this order:
+
+1. headline progress:
+- “18 / 100 books”
+
+2. status statement:
+- “You’re 12 books behind pace”
+or equivalent clean phrasing based on existing goal logic
+
+3. progress bar
+
+4. finish projection:
+- “At your current pace, you’ll finish ~78 books this year”
+(or equivalent wording)
+
+5. compact pace line:
+- “~216 pages/day · Behind pace”
+or similar compact combination of pace + state
+
+Do NOT stack too many separate labels.
+Do NOT make it feel like a dashboard.
+
+Part 2: Make the progress bar goal-aware
+Update the bar so it visually communicates:
+- actual progress
+- target position for today
+
+Examples:
+- actual filled portion
+- subtle target marker showing where the user should be by now
+
+This does not need to become a complex chart.
+Keep it elegant and lightweight.
+
+Requirements:
+- target marker should be visible but subtle
+- actual progress should remain the main visual signal
+
+Part 3: Make the direction icon meaningful
+The arrow icon currently feels decorative.
+
+Refactor it so it clearly reflects status:
+- ↑ ahead
+- → on track
+- ↓ behind
+
+Place it so it supports the status meaning, not just as a floating decorative glyph.
+
+Part 4: Tighten the copy
+Replace stacked / disconnected text with more coherent phrases.
+
+Preferred tone:
+- concise
+- editorial
+- motivating without sounding gimmicky
+
+Examples:
+- “You’re 12 books behind pace”
+- “At your current pace, you’ll finish ~78 books this year”
+- “~216 pages/day · Behind pace”
+
+Avoid:
+- overly technical phrasing
+- noisy metrics
+- duplicate status language
+
+Part 5: Keep the card visually calm
+Do not overdesign this.
+Aim for:
+- strong hierarchy
+- better spacing
+- clearer meaning
+- calm, premium presentation
+
+No charts.
+No gamification.
+No unnecessary color explosions.
+
+Part 6: Use existing data/model
+Do not invent new data sources.
+Use the current goal / pace data already available in the app.
+
+If a projection cannot be computed confidently, degrade gracefully.
+
+Part 7: Output
+When complete, provide:
+1. files changed
+2. what hierarchy changed in the card
+3. how the target marker works
+4. how the projection is calculated/presented
+5. what copy changed
+6. any visual details intentionally kept simple
+
+Important
+This is not a logic sprint.
+Do not rework the goal system.
+Do not broaden scope beyond the Reading Goal card.

@@ -108,15 +108,6 @@ function relativeTime(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function isOnPace(finishedCount: number, goal: number | null): boolean {
-  if (!goal || goal <= 0) return false;
-  const today = new Date();
-  const dayOfYear = Math.floor(
-    (today.getTime() - new Date(today.getFullYear(), 0, 0).getTime()) / (24 * 60 * 60 * 1000)
-  );
-  const expectedByNow = Math.floor((dayOfYear / 365) * goal);
-  return finishedCount >= expectedByNow;
-}
 
 function shortFinishDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -433,6 +424,31 @@ export default function HomeScreen() {
     }))
   );
 
+  // ── Reading Goal card derived values ─────────────────────────────────────────
+  const goalDayOfYear = Math.floor(
+    (new Date().getTime() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86_400_000
+  );
+  const goalExpectedByNow  = yearlyGoal ? Math.floor((goalDayOfYear / 365) * yearlyGoal) : 0;
+  const goalSurplus        = Math.max(0, booksThisYear.length - goalExpectedByNow);
+  const goalDeficit        = Math.max(0, goalExpectedByNow - booksThisYear.length);
+  const goalActualPct      = yearlyGoal ? Math.min(100, Math.round((booksThisYear.length / yearlyGoal) * 100)) : 0;
+  const goalExpectedPct    = yearlyGoal ? Math.min(100, Math.round((goalExpectedByNow / yearlyGoal) * 100)) : 0;
+  const goalIsAhead        = goalSurplus >= 2;
+  const goalIsBehind       = goalDeficit >= 2;
+  const goalDirIcon        = goalIsAhead ? '↑' : goalIsBehind ? '↓' : '→';
+  const goalDirColor       = goalIsAhead ? '#15803d' : goalIsBehind ? '#d97706' : '#78716c';
+  const goalStatusText     = goalIsAhead
+    ? `You're ${goalSurplus} book${goalSurplus !== 1 ? 's' : ''} ahead of pace`
+    : goalIsBehind
+    ? `You're ${goalDeficit} book${goalDeficit !== 1 ? 's' : ''} behind pace`
+    : goalExpectedByNow === 0
+    ? 'Keep reading to build your pace'
+    : "You're right on pace";
+  const goalProjected: number | null =
+    booksThisYear.length > 0 && goalDayOfYear >= 14
+      ? Math.round(booksThisYear.length / (goalDayOfYear / 365))
+      : null;
+
   function homeCardBorderColor(cr: CurrentRead, goal: number | null): string {
     const pageCount = cr.page_count;
     if (!goal || !pageCount || pageCount <= 0) return '#d6d3d1';
@@ -687,42 +703,77 @@ export default function HomeScreen() {
             <View style={{
               backgroundColor: '#fff',
               borderRadius: 16,
-              padding: 16,
+              padding: 18,
               shadowColor: '#000',
               shadowOpacity: 0.06,
               shadowRadius: 8,
               shadowOffset: { width: 0, height: 2 },
               elevation: 2,
             }}>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 }}>
+              {/* ── 1. Headline + directional icon ── */}
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 22, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5 }}>
+                  <Text style={{ fontSize: 24, fontWeight: '800', color: '#1c1917', letterSpacing: -0.6 }}>
                     {booksThisYear.length}
-                    <Text style={{ fontSize: 15, fontWeight: '400', color: '#a8a29e' }}> of {yearlyGoal}</Text>
-                  </Text>
-                  <Text style={{ fontSize: 12, color: '#78716c', marginTop: 3 }}>
-                    books read in {new Date().getFullYear()}
+                    <Text style={{ fontSize: 15, fontWeight: '400', color: '#a8a29e' }}> / {yearlyGoal} books</Text>
                   </Text>
                 </View>
-                <Text style={{ fontSize: 18, color: '#d6d3d1', marginLeft: 8, marginTop: 4 }}>
-                  {goalExpanded ? '↑' : '↓'}
+                <Text style={{ fontSize: 22, color: goalDirColor, marginLeft: 10, marginTop: 3 }}>
+                  {goalDirIcon}
                 </Text>
               </View>
-              <View style={{ height: 3, backgroundColor: '#e7e5e4', borderRadius: 2, overflow: 'hidden', marginBottom: 6 }}>
+
+              {/* ── 2. Status statement ── */}
+              <Text style={{ fontSize: 13, color: goalDirColor, fontWeight: '500', marginBottom: 14 }}>
+                {goalStatusText}
+              </Text>
+
+              {/* ── 3. Goal-aware progress bar ── */}
+              <View style={{
+                height: 5,
+                backgroundColor: '#e7e5e4',
+                borderRadius: 3,
+                marginBottom: 14,
+              }}>
                 <View style={{
-                  height: 3,
-                  width: `${Math.min(100, Math.round((booksThisYear.length / yearlyGoal) * 100))}%`,
+                  height: 5,
+                  width: `${goalActualPct}%`,
                   backgroundColor: '#1c1917',
-                  borderRadius: 2,
+                  borderRadius: 3,
                 }} />
+                {goalExpectedPct > 0 && goalExpectedPct < 100 && (
+                  <View style={{
+                    position: 'absolute',
+                    left: `${goalExpectedPct}%`,
+                    top: 0,
+                    bottom: 0,
+                    width: 2,
+                    backgroundColor: goalActualPct >= goalExpectedPct
+                      ? 'rgba(255,255,255,0.55)'
+                      : 'rgba(0,0,0,0.18)',
+                  }} />
+                )}
               </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Text style={{ fontSize: 11, color: isOnPace(booksThisYear.length, yearlyGoal) ? '#78716c' : '#d97706' }}>
-                  {isOnPace(booksThisYear.length, yearlyGoal) ? 'On pace ✓' : 'Behind pace'}
+
+              {/* ── 4. Finish projection ── */}
+              {goalProjected !== null && (
+                <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18, marginBottom: 10 }}>
+                  {`At your current pace, you'll finish ~${goalProjected} book${goalProjected !== 1 ? 's' : ''} this year`}
                 </Text>
-                {yearAvgPace !== null && (
+              )}
+
+              {/* ── 5. Compact pace chip + expand indicator ── */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                {yearAvgPace !== null ? (
                   <Text style={{ fontSize: 11, color: '#a8a29e' }}>
-                    ~{yearAvgPace} pages/day avg
+                    {`~${yearAvgPace} pages/day · ${goalIsAhead ? 'Ahead of pace' : goalIsBehind ? 'Behind pace' : 'On pace'}`}
+                  </Text>
+                ) : <View />}
+                {booksThisYear.length > 0 && (
+                  <Text style={{ fontSize: 11, color: '#c4b5a5' }}>
+                    {goalExpanded
+                      ? '▴ hide'
+                      : `▾ ${booksThisYear.length} book${booksThisYear.length !== 1 ? 's' : ''}`}
                   </Text>
                 )}
               </View>
