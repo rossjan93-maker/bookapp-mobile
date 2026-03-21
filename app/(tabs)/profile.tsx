@@ -11,7 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computeGoalProgress } from '../../lib/pacing';
-import { computeAvgPagesPerDay, computeSourceCompletion, sourceCompletionInsight } from '../../lib/signals';
+import { computeAvgPagesPerDay, computeSourceCompletion } from '../../lib/signals';
 import type { SourceCompletion } from '../../lib/signals';
 
 type Profile = {
@@ -383,10 +383,11 @@ export default function ProfileScreen() {
     );
   }
 
-  const username    = profile?.username ?? '—';
-  const displayName = getDisplayName(profile);
-  const yearlyGoal  = profile?.yearly_reading_goal ?? null;
-  const goalProgress = stats ? computeGoalProgress(stats.finishedThisYear, yearlyGoal) : null;
+  const username         = profile?.username?.trim() ?? '';
+  const hasChosenUsername = username.length > 0;
+  const displayName      = getDisplayName(profile);
+  const yearlyGoal       = profile?.yearly_reading_goal ?? null;
+  const goalProgress     = stats ? computeGoalProgress(stats.finishedThisYear, yearlyGoal) : null;
 
   const hasTasteData = prefs && (
     (prefs.favorite_genres?.length ?? 0) > 0 ||
@@ -394,61 +395,6 @@ export default function ProfileScreen() {
     (prefs.reading_styles?.length ?? 0) > 0 ||
     !!prefs.favorite_authors
   );
-
-  // ── Reading Intelligence: Signals (quantitative) & Patterns (editorial) ──
-  type SignalRow = { key: string; value: string; label: string };
-  type PatternRow = { key: string; text: string };
-
-  const signalRows: SignalRow[] = [];
-  const patternRows: PatternRow[] = [];
-
-  if (signals) {
-    if (signals.avgPagesPerDay !== null && signals.avgPagesPerDay > 0) {
-      const days = Math.round(300 / signals.avgPagesPerDay);
-      const paceLabel = `pages/day \u00B7 a 300-page book in about ${days} day${days === 1 ? '' : 's'}`;
-      signalRows.push({ key: 'pace', value: `~${signals.avgPagesPerDay}`, label: paceLabel });
-    }
-    if (signals.resolved >= 3 && signals.completionRate !== null) {
-      const pct = Math.round(signals.completionRate * 100);
-      signalRows.push({
-        key: 'completion', value: `${pct}%`,
-        label: pct >= 80 ? 'of books finished \u2014 you rarely put them down'
-             : pct >= 50 ? 'of books read to completion'
-             : 'of books finished \u2014 it\u2019s fine to DNF',
-      });
-    }
-    if (signals.totalRecsReceived >= 3 && signals.recConversionRate !== null) {
-      const pct = Math.round(signals.recConversionRate * 100);
-      signalRows.push({ key: 'recs', value: `${pct}%`, label: 'of recommendations you\u2019ve finished' });
-    }
-  }
-
-  if (sourceCompletion) {
-    const srcLine = sourceCompletionInsight(sourceCompletion);
-    if (srcLine) patternRows.push({ key: 'source_completion', text: srcLine });
-  }
-  if (patterns) {
-    const sourceTotal = patterns.selfAdded + patterns.recAdded;
-    if (sourceTotal >= 5) {
-      const recShare = patterns.recAdded / sourceTotal;
-      patternRows.push({
-        key: 'source_mix',
-        text: recShare >= 0.7 ? "Your reading list leans heavily on friends\u2019 recommendations \u2014 you trust their taste."
-            : recShare >= 0.4 ? "About half your library came from recommendations, half from your own picks."
-            : "Most of your library is self-picked \u2014 you know what you want to read.",
-      });
-    }
-  }
-  const sentCountIntel = sentRecs.length;
-  const recvCountIntel = signals?.totalRecsReceived ?? 0;
-  if (sentCountIntel + recvCountIntel >= 3) {
-    const text = sentCountIntel > recvCountIntel * 1.5
-      ? "You recommend more than you receive \u2014 your friends are in good hands."
-      : recvCountIntel > sentCountIntel * 1.5
-      ? "Friends recommend to you more than you recommend back."
-      : "You and your friends trade recommendations in both directions.";
-    patternRows.push({ key: 'social_direction', text });
-  }
 
   return (
     <ScrollView
@@ -460,9 +406,8 @@ export default function ProfileScreen() {
       <View style={{
         paddingHorizontal: 24,
         paddingTop: 44,
-        paddingBottom: 24,
+        paddingBottom: 20,
       }}>
-        {/* Avatar + name row */}
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <View style={{
             width: 64,
@@ -481,7 +426,13 @@ export default function ProfileScreen() {
             <Text style={{ fontSize: 22, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5 }}>
               {displayName}
             </Text>
-            <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 1 }}>@{username}</Text>
+            {hasChosenUsername ? (
+              <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 2 }}>@{username}</Text>
+            ) : (
+              <TouchableOpacity onPress={() => router.push('/settings')} style={{ marginTop: 4 }}>
+                <Text style={{ fontSize: 13, color: '#c4b5a5' }}>Choose a username →</Text>
+              </TouchableOpacity>
+            )}
             {__DEV__ && userId && (
               <Text style={{ fontSize: 9, color: '#d6d3d1', marginTop: 3, fontFamily: 'monospace' }} selectable>
                 user_id: {userId}
@@ -503,24 +454,70 @@ export default function ProfileScreen() {
             <Text style={{ fontSize: 16, lineHeight: 20 }}>⚙</Text>
           </TouchableOpacity>
         </View>
+      </View>
 
-        {/* ── Goal display ── */}
+      {/* ── Stats row ── */}
+      {stats && (
+        <View style={{
+          flexDirection: 'row',
+          paddingHorizontal: 24,
+          paddingBottom: 24,
+          borderBottomWidth: 1,
+          borderBottomColor: '#e7e5e4',
+        }}>
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={{ fontSize: 28, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 34 }}>{stats.finishedBooks}</Text>
+            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 3, letterSpacing: 0.7, textTransform: 'uppercase' }}>Finished</Text>
+          </View>
+          <View style={{ width: 1, backgroundColor: '#e7e5e4', alignSelf: 'stretch', marginVertical: 4 }} />
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+              <Text style={{ fontSize: 28, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 34 }}>{stats.friendsCount}</Text>
+              {pendingRequests.length > 0 && (
+                <View style={{
+                  width: 7, height: 7, borderRadius: 4,
+                  backgroundColor: '#f59e0b',
+                  marginTop: 5, marginLeft: 3,
+                }} />
+              )}
+            </View>
+            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 3, letterSpacing: 0.7, textTransform: 'uppercase' }}>Friends</Text>
+          </View>
+          <View style={{ width: 1, backgroundColor: '#e7e5e4', alignSelf: 'stretch', marginVertical: 4 }} />
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={{ fontSize: 28, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 34 }}>{stats.recsLanded}</Text>
+            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 3, letterSpacing: 0.7, textTransform: 'uppercase' }}>Recs Landed</Text>
+          </View>
+        </View>
+      )}
+
+      {/* ── Reading Goal ── */}
+      <View style={{ paddingHorizontal: 24, marginTop: 24, marginBottom: 0 }}>
         {goalProgress ? (
-          <View style={{ marginTop: 20 }}>
+          <View style={{
+            backgroundColor: '#fff',
+            borderRadius: 14,
+            padding: 16,
+            shadowColor: '#000',
+            shadowOpacity: 0.04,
+            shadowRadius: 6,
+            shadowOffset: { width: 0, height: 1 },
+            elevation: 1,
+          }}>
             <TouchableOpacity
               activeOpacity={0.7}
               onPress={() => setGoalExpanded(e => !e)}
-              style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}
+              style={{ flexDirection: 'row', alignItems: 'center' }}
             >
               <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500', flex: 1 }}>
                 {goalProgress}
               </Text>
-              <Text style={{ fontSize: 15, color: '#d6d3d1', marginLeft: 8 }}>
+              <Text style={{ fontSize: 14, color: '#d6d3d1', marginLeft: 8 }}>
                 {goalExpanded ? '↑' : '↓'}
               </Text>
             </TouchableOpacity>
             {yearlyGoal && stats && (
-              <View style={{ height: 3, backgroundColor: '#e7e5e4', borderRadius: 2, overflow: 'hidden' }}>
+              <View style={{ height: 3, backgroundColor: '#e7e5e4', borderRadius: 2, overflow: 'hidden', marginTop: 10 }}>
                 <View style={{
                   height: 3,
                   width: `${Math.min(100, Math.round((stats.finishedThisYear / yearlyGoal) * 100))}%`,
@@ -536,7 +533,7 @@ export default function ProfileScreen() {
                     No books finished yet this year.
                   </Text>
                 ) : (
-                  <View style={{ borderRadius: 12, overflow: 'hidden' }}>
+                  <View>
                     {booksThisYear.map((book, idx) => (
                       <TouchableOpacity
                         key={book.id}
@@ -590,52 +587,28 @@ export default function ProfileScreen() {
         ) : (
           <TouchableOpacity
             onPress={() => router.push('/settings')}
-            style={{ marginTop: 16 }}
+            style={{
+              backgroundColor: '#fff',
+              borderRadius: 14,
+              padding: 16,
+              shadowColor: '#000',
+              shadowOpacity: 0.04,
+              shadowRadius: 6,
+              shadowOffset: { width: 0, height: 1 },
+              elevation: 1,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
           >
-            <Text style={{ fontSize: 13, color: '#a8a29e' }}>
-              Set a yearly reading goal →
-            </Text>
+            <Text style={{ fontSize: 13, color: '#a8a29e' }}>Set a yearly reading goal</Text>
+            <Text style={{ fontSize: 14, color: '#d6d3d1' }}>›</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      {/* ── Stats row ── */}
-      {stats && (
-        <View style={{
-          flexDirection: 'row',
-          paddingHorizontal: 24,
-          paddingBottom: 24,
-          borderBottomWidth: 1,
-          borderBottomColor: '#e7e5e4',
-        }}>
-          <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 28, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 34 }}>{stats.finishedBooks}</Text>
-            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 3, letterSpacing: 0.7, textTransform: 'uppercase' }}>Finished</Text>
-          </View>
-          <View style={{ width: 1, backgroundColor: '#e7e5e4', alignSelf: 'stretch', marginVertical: 4 }} />
-          <View style={{ flex: 1, alignItems: 'center' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-              <Text style={{ fontSize: 28, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 34 }}>{stats.friendsCount}</Text>
-              {pendingRequests.length > 0 && (
-                <View style={{
-                  width: 7, height: 7, borderRadius: 4,
-                  backgroundColor: '#f59e0b',
-                  marginTop: 5, marginLeft: 3,
-                }} />
-              )}
-            </View>
-            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 3, letterSpacing: 0.7, textTransform: 'uppercase' }}>Friends</Text>
-          </View>
-          <View style={{ width: 1, backgroundColor: '#e7e5e4', alignSelf: 'stretch', marginVertical: 4 }} />
-          <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 28, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 34 }}>{stats.recsLanded}</Text>
-            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 3, letterSpacing: 0.7, textTransform: 'uppercase' }}>Recs Landed</Text>
-          </View>
-        </View>
-      )}
-
       {/* ── Taste profile card ── */}
-      <View style={{ paddingHorizontal: 24, marginTop: 28, marginBottom: 24 }}>
+      <View style={{ paddingHorizontal: 24, marginTop: 14, marginBottom: 24 }}>
         <TouchableOpacity
           onPress={() => router.push('/edit-preferences')}
           style={{
@@ -713,83 +686,34 @@ export default function ProfileScreen() {
       {/* ── Reading Intelligence ── */}
       <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
         <SectionLabel>Reading Intelligence</SectionLabel>
-
-        {/* Signals card */}
         <View style={{
           backgroundColor: '#fff',
           borderRadius: 14,
-          overflow: 'hidden',
-          shadowColor: '#000',
-          shadowOpacity: 0.04,
-          shadowRadius: 6,
-          shadowOffset: { width: 0, height: 1 },
-          elevation: 1,
-          marginBottom: 14,
-        }}>
-          <View style={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: signalRows.length > 0 ? 0 : 14 }}>
-            <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: signalRows.length > 0 ? 10 : 0 }}>Signals</Text>
-          </View>
-          {signalRows.length === 0 ? (
-            <View style={{ paddingHorizontal: 18, paddingBottom: 18 }}>
-              <Text style={{ fontSize: 14, color: '#a8a29e', lineHeight: 21 }}>
-                Finish a few more books to unlock reading signals.
-              </Text>
-            </View>
-          ) : (
-            signalRows.map((row, i) => (
-              <View key={row.key} style={{
-                paddingHorizontal: 18, paddingVertical: 14,
-                borderTopWidth: i > 0 ? 1 : 0, borderTopColor: '#f5f5f4',
-                flexDirection: 'row', alignItems: 'center', gap: 14,
-              }}>
-                <Text style={{ fontSize: 26, fontWeight: '800', color: '#1c1917', minWidth: 66 }}>
-                  {row.value}
-                </Text>
-                <Text style={{ fontSize: 13, color: '#78716c', flex: 1, lineHeight: 19 }}>
-                  {row.label}
-                </Text>
-              </View>
-            ))
-          )}
-        </View>
-
-        {/* Patterns card */}
-        <View style={{
-          backgroundColor: '#fff',
-          borderRadius: 14,
-          overflow: 'hidden',
+          padding: 18,
           shadowColor: '#000',
           shadowOpacity: 0.04,
           shadowRadius: 6,
           shadowOffset: { width: 0, height: 1 },
           elevation: 1,
         }}>
-          <View style={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: patternRows.length > 0 ? 0 : 14 }}>
-            <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: patternRows.length > 0 ? 10 : 0 }}>Patterns</Text>
+          <View style={{
+            alignSelf: 'flex-start',
+            backgroundColor: '#f5f5f4',
+            borderRadius: 6,
+            paddingHorizontal: 8,
+            paddingVertical: 3,
+            marginBottom: 10,
+          }}>
+            <Text style={{ fontSize: 10, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.7, textTransform: 'uppercase' }}>
+              Coming soon
+            </Text>
           </View>
-          {patternRows.length === 0 ? (
-            <View style={{ paddingHorizontal: 18, paddingBottom: 18 }}>
-              <Text style={{ fontSize: 14, color: '#a8a29e', lineHeight: 21 }}>
-                Keep reading to reveal your patterns.
-              </Text>
-            </View>
-          ) : (
-            patternRows.map((row, i) => (
-              <View key={row.key} style={{
-                paddingHorizontal: 18, paddingVertical: 14,
-                borderTopWidth: i > 0 ? 1 : 0, borderTopColor: '#f5f5f4',
-                flexDirection: 'row', alignItems: 'flex-start', gap: 12,
-              }}>
-                <View style={{
-                  width: 2, height: 18, borderRadius: 1,
-                  backgroundColor: '#d6d3d1', marginTop: 2, flexShrink: 0,
-                }} />
-                <Text style={{ fontSize: 13, color: '#57534e', lineHeight: 20, flex: 1 }}>
-                  {row.text}
-                </Text>
-              </View>
-            ))
-          )}
+          <Text style={{ fontSize: 14, color: '#57534e', lineHeight: 22 }}>
+            Signals and patterns from your reading life.
+          </Text>
+          <Text style={{ fontSize: 13, color: '#a8a29e', lineHeight: 20, marginTop: 6 }}>
+            Pace, completion habits, and how your taste aligns with friends — surfaced as you read.
+          </Text>
         </View>
       </View>
 

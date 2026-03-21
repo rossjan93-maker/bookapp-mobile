@@ -17,6 +17,7 @@ export default function LoginScreen() {
   const [password, setPassword]   = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName]   = useState('');
+  const [username, setUsername]   = useState('');
   const [loading, setLoading]     = useState(false);
   const [status, setStatus]       = useState('');
 
@@ -31,19 +32,52 @@ export default function LoginScreen() {
   async function handleSignUp() {
     setLoading(true);
     setStatus('');
-    const { error } = await supabase!.auth.signUp({
+
+    if (!firstName.trim()) {
+      setStatus('First name is required.');
+      setLoading(false);
+      return;
+    }
+    if (!lastName.trim()) {
+      setStatus('Last name is required.');
+      setLoading(false);
+      return;
+    }
+    const uname = username.trim().toLowerCase().replace(/\s+/g, '');
+    if (!uname) {
+      setStatus('Please choose a username.');
+      setLoading(false);
+      return;
+    }
+    if (!/^[a-z0-9_]{3,20}$/.test(uname)) {
+      setStatus('Username must be 3–20 characters: letters, numbers, or underscores.');
+      setLoading(false);
+      return;
+    }
+
+    const { data: authData, error } = await supabase!.auth.signUp({
       email,
       password,
       options: {
         data: {
-          first_name: firstName.trim() || null,
-          last_name:  lastName.trim()  || null,
+          first_name: firstName.trim(),
+          last_name:  lastName.trim(),
+          username:   uname,
         },
       },
     });
+
     if (error) {
       setStatus(error.message);
     } else {
+      if (authData?.user) {
+        await supabase!.from('profiles').upsert({
+          id:         authData.user.id,
+          username:   uname,
+          first_name: firstName.trim(),
+          last_name:  lastName.trim(),
+        });
+      }
       setStatus('Check your email to confirm your account.');
     }
     setLoading(false);
@@ -74,7 +108,7 @@ export default function LoginScreen() {
   return (
     <ScrollView
       contentContainerStyle={{
-        flex: 1,
+        flexGrow: 1,
         alignItems: 'center',
         justifyContent: 'center',
         padding: 28,
@@ -138,17 +172,18 @@ export default function LoginScreen() {
         ))}
       </View>
 
-      {/* ── Name fields (signup only) ── */}
+      {/* ── Signup fields ── */}
       {mode === 'signup' && (
         <View style={{ width: '100%' }}>
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 0 }}>
+          {/* Name row */}
+          <View style={{ flexDirection: 'row', gap: 10 }}>
             <TextInput
               placeholder="First name"
               value={firstName}
               onChangeText={setFirstName}
               autoCapitalize="words"
               placeholderTextColor="#a8a29e"
-              style={[inputStyle, { flex: 1, marginBottom: 10 }]}
+              style={[inputStyle, { flex: 1 }]}
             />
             <TextInput
               placeholder="Last name"
@@ -156,11 +191,34 @@ export default function LoginScreen() {
               onChangeText={setLastName}
               autoCapitalize="words"
               placeholderTextColor="#a8a29e"
-              style={[inputStyle, { flex: 1, marginBottom: 10 }]}
+              style={[inputStyle, { flex: 1 }]}
             />
           </View>
-          <Text style={{ fontSize: 12, color: '#a8a29e', marginBottom: 14, marginTop: -4 }}>
-            Optional — you can add this later.
+
+          {/* Username */}
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            borderWidth: 1,
+            borderColor: '#e7e5e4',
+            borderRadius: 10,
+            backgroundColor: '#fff',
+            marginBottom: 10,
+            paddingHorizontal: 13,
+          }}>
+            <Text style={{ fontSize: 15, color: '#a8a29e', paddingVertical: 13 }}>@</Text>
+            <TextInput
+              placeholder="username"
+              value={username}
+              onChangeText={setUsername}
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholderTextColor="#a8a29e"
+              style={{ flex: 1, fontSize: 15, color: '#1c1917', paddingVertical: 13 }}
+            />
+          </View>
+          <Text style={{ fontSize: 12, color: '#a8a29e', marginBottom: 16, marginTop: -4, lineHeight: 17 }}>
+            3–20 characters, letters, numbers, or underscores.
           </Text>
         </View>
       )}
@@ -210,7 +268,7 @@ export default function LoginScreen() {
           marginTop: 18,
           textAlign: 'center',
           fontSize: 13,
-          color: status.includes('error') || status.includes('Error') ? '#b91c1c' : '#57534e',
+          color: status.includes('error') || status.includes('Error') || status.includes('required') || status.includes('must be') || status.includes('Please') ? '#b91c1c' : '#57534e',
           lineHeight: 20,
         }}>
           {status}

@@ -140,6 +140,7 @@ export default function SettingsScreen() {
   const [profileDirty, setProfileDirty] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaved, setProfileSaved]   = useState(false);
+  const [profileError, setProfileError]   = useState<string | null>(null);
 
   const [goalDraft, setGoalDraft] = useState('');
   const [goalDirty, setGoalDirty] = useState(false);
@@ -174,12 +175,21 @@ export default function SettingsScreen() {
 
   async function handleSaveProfile() {
     if (!supabase || !userId) return;
+    setProfileError(null);
+
+    const uname = username.trim().toLowerCase().replace(/\s+/g, '');
+    if (uname && !/^[a-z0-9_]{3,20}$/.test(uname)) {
+      setProfileError('Username must be 3–20 characters: letters, numbers, or underscores.');
+      return;
+    }
+
     setSavingProfile(true);
     const { error } = await supabase
       .from('profiles')
       .update({
         first_name: firstName.trim() || null,
         last_name:  lastName.trim()  || null,
+        username:   uname || null,
       })
       .eq('id', userId);
     setSavingProfile(false);
@@ -274,6 +284,19 @@ export default function SettingsScreen() {
       <SectionHeader>Profile</SectionHeader>
       <SettingsCard>
         <SettingsRow>
+          <RowLabel>Username</RowLabel>
+          <Text style={{ fontSize: 15, color: '#a8a29e', paddingVertical: 2 }}>@</Text>
+          <TextInput
+            value={username}
+            onChangeText={v => { setUsername(v); setProfileDirty(true); setProfileSaved(false); setProfileError(null); }}
+            placeholder="your_username"
+            placeholderTextColor="#c4b5a5"
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={{ flex: 1, fontSize: 15, color: '#1c1917', paddingVertical: 2, marginLeft: 2 }}
+          />
+        </SettingsRow>
+        <SettingsRow>
           <RowLabel>First name</RowLabel>
           <TextInput
             value={firstName}
@@ -304,19 +327,24 @@ export default function SettingsScreen() {
             </Text>
           ) : (
             <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>
-              Add your name — shown to friends instead of{' '}
-              <Text style={{ fontWeight: '500', color: '#78716c' }}>@{username}</Text>.
+              Add your name — shown to friends instead of your username.
             </Text>
           )}
         </CardFooter>
       </SettingsCard>
+
+      {profileError && (
+        <Text style={{ fontSize: 12, color: '#b91c1c', marginTop: 8, paddingHorizontal: 2 }}>
+          {profileError}
+        </Text>
+      )}
 
       {(profileDirty || profileSaved) && (
         <SaveButton
           onPress={handleSaveProfile}
           saving={savingProfile}
           saved={profileSaved}
-          label="Save Name"
+          label="Save Profile"
         />
       )}
 
