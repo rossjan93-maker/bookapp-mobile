@@ -1,0 +1,325 @@
+Let me look at the logs and the bucket assembly code simultaneously:
+
+Checked console and system logs
+Now I can see the exact problem clearly from the logs. The safety_net_excluded=0 for the forensic user's run. "Mad Ship" is still surfacing.
+
+Let me analyze what's happening:
+
+[SERIES_RS] trulyRead=156, primarySize=12, series includes "liveship traders"
+The safety net says safety_net_excluded=0 for this run (37 candidates, 0 excluded)
+Mad Ship ends up in the Continue Reading bucket as Liveship Traders #2
+The problem: the safety net uses normBookKey to compare. The library has "The Mad Ship" (or "The Mad Ship (Liveship Traders, #2)") while OL returns "Mad Ship". My stripTitleSubtitle function handles parentheticals, so:
+
+Library title becomes "the mad ship" after stripping and lowercasing
+OL title becomes "mad ship" after the same process
+The leading "The" is causing the mismatch — they don't match even though they're the same book. The series data confirms this is book #2 of Liveship Traders, sitting between Ship of Magic and Ship of Destiny.
+
+The real issue is that the system thinks book #2 is unread because the normalization fails to account for the article difference. When building the series read set from the user's actual read books, it's not finding a match for "the mad ship" against "mad ship" in the curated series mapping, so it incorrectly marks the book as unread even though the user has already read it. The issue is that buildSeriesReadSet only marks whether a series has been started, not which book the user has progressed to. So when the RIL sees "Liveship Traders" in the set and encounters Mad Ship (#2), it routes it to Continue Reading without checking if the user has actually read further. The curated series data should track the furthest book read, but there might be a mismatch between how titles are normalized in the user's library versus the curated data—like "The Mad Ship" versus "mad ship"—preventing proper position matching.
+
+I need to check how buildSeriesReadSet and lookupCurated handle title normalization and series position detection to fix this.
+
+The logs are crystal clear. The safety net logged safety_net_excluded=0 for this run, yet [BUCKET] Continue Reading (1): "Mad Ship" — Liveship Traders #2 still fires. Let me find the exact normalization mismatch and the series position logic:
+
+$ rg -n 'buildSeriesReadSet|seriesReadSet|Mad Ship|Liveship|highestRead|maxRead|series_position' lib/recommendationIntegrity.ts
+Now I have the full picture. Let me read lines 556-570 and 600-650 to understand how deriveSeriesLabel and the suppression logic work:
+
+From the grep output:
+
+Line 109: 'ship of magic': { series: 'Liveship Traders', position: 1 }
+Line 110: 'mad ship': { series: 'Liveship Traders', position: 2 }
+Line 111: 'ship of destiny': { series: 'Liveship Traders', position: 3 }
+So the curated key for #2 is 'mad ship' (without "The").
+
+The issue is that when buildSeriesReadSet processes "The Mad Ship (Liveship Traders, #2)" from Goodreads, it normalizes the title to "the mad ship" (with "the"), but the curated lookup expects 'mad ship' without the article, so the match fails. to find it!
+
+That means:
+
+buildSeriesReadSet processes "Ship of Magic" → finds it → adds "liveship traders" to seriesReadSet ✓
+buildSeriesReadSet processes "The Mad Ship (Liveship Traders, #2)" → normKey gives "the mad ship" → MISSES the curated entry (which is "mad ship") → doesn't register
+buildSeriesReadSet processes "Ship of Destiny" → finds it (if title doesn't have "The" prefix) OR also misses it
+The result: seriesReadSet has "liveship traders" (from Ship of Magic), but the system doesn't know the user has read up to position 2 or 3.
+
+Then when "Mad Ship" comes from OL, lookupCurated finds it with position 2 in the Liveship Traders series. Since seriesReadSet already contains "liveship traders" from Ship of Magic, the deriveSeriesLabel function correctly identifies this as a continuation and routes it to the Continue Reading bucket. But the safety net fails because the library stores "The Mad Ship" while OL returns "Mad Ship"—the leading article difference means they don't match as the same book.
+
+I need to fix two things: strip leading articles from titles in normBookKey so "the mad ship" and "mad ship" normalize to the same key, and also update lookupCurated to handle this normalization consistently. So the real issue is that normKey strips articles inconsistently depending on context — it works for titles but breaks series and author names. I should create a dedicated normTitle function that handles article-stripping just for title lookups, or modify lookupCurated to try both the original and article-stripped versions. Let me check how lookupCurated is currently implemented to see which approach fits better.
+
+Now I can see the full picture. Let me read the lookupCurated implementation and deriveSeriesLabel:
+
+Now I understand completely. I can see:
+
+lookupCurated already handles leading article stripping (line 400-402). So when the user's library has "The Mad Ship", lookupCurated should find it because of the fallback at line 401.
+Wait, let me re-read:
+
+tKey = normKey("The Mad Ship (Liveship Traders, #2)")
+normKey strips apostrophes and non-alphanumeric → "The Mad Ship Liveship Traders 2" → wait, let me recalculate:
+normKey("The Mad Ship (Liveship Traders, #2)"):
+lowercase: "the mad ship (liveship traders, #2)"
+strip apostrophes: "the mad ship (liveship traders, #2)"
+replace non-alphanum with space: "the mad ship liveship traders 2 "
+collapse spaces + trim: "the mad ship liveship traders 2"
+→ tKey = "the mad ship liveship traders 2"
+Then step 2: stripped = tKey.replace(/^(the|a|an) /, '') → "mad ship liveship traders 2"
+But authorMap["mad ship liveship traders 2"] doesn't exist, so the lookup fails.
+Now I'm trying a different approach: stripping the subtitle first by removing anything in parentheses, which gives me "The Mad Ship". After normalizing that to "the mad ship" and removing the leading article, I get "mad ship" — and that key actually exists in the curated map, returning the series information I need.
+
+So the lookup does work and registers "The Mad Ship" at position 2 in Liveship Traders. But then I realize the real issue: buildSeriesReadSet only tracks which series the user has started, not what position they've read up to. It just tells me "user has started Liveship Traders" without knowing they've only read through position 3. Then when deriveSeriesLabel checks the series position, it's comparing against this incomplete information. The real issue is that the system only tracks whether a series has been started, not how far the user has progressed through it. So even though the user finished all three Liveship books, the system still flags book two as "continue reading" because it sees the series in the read set and the book's position is greater than one. I need to either track the highest position read in each series, or check if the candidate book itself is already in the user's finished list before adding it to Continue Reading.
+
+Now I'm tracing through the normalization logic to see why the safety net isn't catching the duplicate—checking how "Mad Ship" and "The Mad Ship (Liveship Traders, #2)" get normalized to the same key.
+
+The issue is clear: stripping parentheticals leaves "the mad ship" while the original title becomes just "mad ship", so they don't match. I need to fix the normalization function to also strip leading articles like "the", "a", and "an". Beyond that, I should update the series tracking logic to store the highest read position per series rather than just a boolean flag. #1 alone should handle the specific case—normalizing titles to strip articles like "the" means "the mad ship" will match the OpenLibrary key "mad ship", and the safety net will catch and exclude it before it reaches scoring. Fix #2 (tracking series position to avoid suggesting earlier books) is a separate correctness issue that can come later. I'm leaning toward implementing both fixes for robustness—the normalization handles the common case, but the series progress check acts as a backup if anything slips through. For the second fix, I need to refactor buildSeriesReadSet to also return the maximum read position for each series, then use that in the integrity layer to filter out any candidates beyond what the user has already read.
+
+Now I see it all. Let me find the Continue Reading bucket assembly in recommender.ts:
+
+$ rg -n 'Continue Reading|series_continuation|BUCKET|continuations|continueSlot' lib/recommender.ts | head -n 40
+Now let me read the Continue Reading bucket assembly code:
+
+Let me read the exact bucket partition code and buildSeriesReadSet usage:
+
+Now I have a complete picture. Here are the two bugs:
+
+Bug 1 (normBookKey title normalization):
+
+Library: "The Mad Ship (Liveship Traders, #2)" → normBookKey → "robin hobb::the mad ship"
+OL: "Mad Ship" → normBookKey → "robin hobb::mad ship"
+Miss! "the mad ship" ≠ "mad ship"
+Bug 2 (series progress tracking):
+
+buildSeriesReadSet returns a set of SERIES NAMES the user has started (boolean)
+
+It tracks that "liveship traders" is started, but NOT that the user has read up to position 3
+
+When "Mad Ship" (#2) appears, the system marks it as a continuation since the series is started, but the user has already read through #3, so #2 shouldn't be suggested at all
+
+The fix is to strip leading articles like "the" from the normalized title in normBookKey, and change buildSeriesReadSet to track the highest position read per series instead of just whether it's started.
+
+Rather than modifying the existing function signature, I'll create a new buildSeriesProgress function that returns a map of series to their max-read position, then filter out continuation suggestions where the candidate's position is at or below what the user has already read in that series.
+
+Setting up the changes in lib/recommendationIntegrity.ts and lib/recommender.ts...
+
+Adding the filter logic... Finishing the filter logic...
+
+Now I need to make sure seriesProgress is accessible within the getRankedRecs function—let me check what parameters it takes.
+
+Let me see the getRankedRecs function signature and how it's called:
+
+$ rg -n 'function getRankedRecs|getRankedRecs\(' lib/recommender.ts
+Now I know the full picture. Let me design the complete fix:
+
+Root cause summary:
+
+normBookKey in recommender.ts doesn't strip leading "the/a/an" → "The Mad Ship" (library) ≠ "Mad Ship" (OL) → safety net misses it
+buildSeriesReadSet tracks only "has started" (boolean), not "max position read" → even if the user read #2 and #3, the system sees "started" and routes #2 back as "Continue Reading"
+Fix plan:
+
+A. Fix normBookKey in recommender.ts:
+
+Add .replace(/^(the|an?) /, '') after lowercase+normalize the title
+
+This ensures consistent title matching across sources
+
+B. Create buildSeriesProgress in recommendationIntegrity.ts that returns a map of series names to the highest position the user has read
+
+C. Add seriesProgress parameter to getRankedRecs signature
+
+D. In the bucket partition logic, check series progress to prevent books already read from entering the continuation bucket and remove them from recommendations entirely
+
+Now I'm updating the normBookKey function...
+
+Normalizing book titles and author names... Since finishedDnfNormalized relies on normBookKey, updating that function handles both places. Now I need to add a buildSeriesProgress function that takes the user's read books, looks up each one in the curated data, and tracks the highest position reached in each series.
+
+Next, I'm updating getRankedRecs to accept the series progress map as a parameter, then using it in the continuation pool filter to check if a book has already been read or if a later book in the series is already in the user's library.
+
+Filtering continuation pool... I'm realizing the pool separation is clean — books marked as series_continuation go exclusively to continuationPool, so filtering them out there means they're already gone and won't leak into discoveryPool. I should verify the series progress filtering is working correctly across both pools to ensure we're not surfacing books the user has already read.
+
+Now I need to trace how getRankedRecs gets called and what parameters it expects...
+
+Now I have everything. Let me see the getRankedRecs signature:
+
+Now I have everything I need to implement the fixes. Let me plan and execute:
+
+Fix 1: normBookKey - strip leading articles
+In recommender.ts, update normBookKey to add .replace(/^(the|an?) /, '') after normalizing the title.
+
+Fix 2: buildSeriesProgress in recommendationIntegrity.ts
+Add a new exported function that tracks max position read per series.
+
+Fix 3: getRankedRecs receives seriesProgress
+Add seriesProgress: Map<string, number> parameter to getRankedRecs.
+
+Fix 4: getCandidateBooks computes and passes seriesProgress
+
+I need to import buildSeriesProgress, compute it from the read history, include it in the CandidateResult type, and pass it through to getRankedRecs. Then in the continuation bucket filter, I'll drop any books where the series position is less than or equal to what's already been read, and I should check how CandidateResult flows through the system to make sure this integrates cleanly.
+
+Now let me look at CandidateResult type and the call sites where getRankedRecs is called with seriesReadSet:
+
+$ rg -n 'CandidateResult|seriesReadSet' lib/recommender.ts | head -n 25
+Now I have the full picture. Let me implement the fix in two files. The approach:
+
+File 1: lib/recommendationIntegrity.ts
+
+Add buildSeriesProgress function (exports max position read per series)
+File 2: lib/recommender.ts
+
+Fix normBookKey to strip leading articles from titles
+
+Import buildSeriesProgress alongside buildSeriesReadSet
+
+Add seriesProgress to CandidateResult type
+
+In getCandidateBooks, compute seriesProgress alongside seriesReadSet and include in return
+
+Thread seriesProgress through getRankedRecs as a parameter
+
+Filter out books in the bucket partition where the user has already progressed past that position in the series
+
+Update all call sites to pass the seriesProgress map through
+
+Let me execute these changes:
+
+I now have a precise diagnosis. There are two bugs that compound each other:
+
+normBookKey doesn't strip leading "The" → "the mad ship" (library) ≠ "mad ship" (OL) → safety net misses it
+buildSeriesReadSet tracks only "series started" (boolean), not "max position read" → the system knows the user started Liveship Traders but not that they've read all three books → #2 is still routed to Continue Reading
+I need to fix both. Starting with recommendationIntegrity.ts:
+
+Good. Now let me update recommender.ts with all the necessary changes:
+
+Fix normBookKey to strip leading articles
+Import buildSeriesProgress
+Add seriesProgress to CandidateResult
+Compute and return seriesProgress in getCandidateBooks
+Add seriesProgress parameter to getRankedRecs
+Apply series progress check in the bucket partition
+Update all getRankedRecs call sites
+Let me do these changes in order.
+
+Now update recommender.ts. Fix 1 — strip leading articles from title in normBookKey:
+
+Now fix normBookKey to strip leading articles:
+
+Fix 2 — strip leading articles in normBookKey:
+
+Now I need to:1. Add seriesProgress to CandidateResult type
+2. Compute it in getCandidateBooks
+
+Add it to getRankedRecs signature
+Use it in the bucket partition
+Pass it in all call sites
+Let me do these in sequence.
+
+Now add seriesProgress to CandidateResult type:
+
+Now let me make all the remaining changes in parallel:
+
+Add seriesProgress to CandidateResult
+Compute it in getCandidateBooks
+Add it to getRankedRecs signature + bucket partition4. Update call sites
+Now let me compute seriesProgress in getCandidateBooks and include it in the return value. Let me also update the getRankedRecs signature and the bucket partition.
+
+Now compute seriesProgress alongside seriesReadSet in getCandidateBooks:
+
+Now I need to update the return statement in getCandidateBooks to include seriesProgress, and update getRankedRecs to accept and use it. Let me do these in sequence.
+
+First, let me update the return statement. I need to find it:
+
+Now update the getCandidateBooks return to include seriesProgress:
+
+Now I need to add seriesProgress to getRankedRecs signature and use it in the bucket partition. Then update all call sites.
+
+Now add seriesProgress parameter to getRankedRecs and use it in the bucket partition:
+
+Now I need to add the series progress check in the bucket partition. Let me update the continuationPool filter:
+
+Now add the series progress check in the bucket partition:
+
+Now I need to update all three getRankedRecs call sites to pass seriesProgress. Let me look at those:1. Line ~2258: return getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet);
+2. Line ~2286: const baseResult = getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet);3. Line ~2476: const allScored = getRankedRecs(candidates, profile, EXPERT_JUDGE_CAP, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet);I need to add seriesProgress to each call.
+
+Now update the three getRankedRecs call sites to pass seriesProgress:
+
+Now let me update all three getRankedRecs call sites. I see:1. Line 2294-2296: getPersonalizedRecs - calls getCandidateBooks then getRankedRecs2. I need to find the other two calls (the expert layer ones)Let me update call site 1 first.
+
+Update all three call sites. First getPersonalizedRecs:
+
+Now I need to update the two expert-layer call sites. Let me find them.
+
+Now find and update the remaining two call sites:
+
+Now I need to update both expert-layer call sites. Let me do them both.
+
+Now update the last call site (allScored):
+
+All three call sites updated. Now let me restart the workflow and check the logs to verify the fix works.
+
+All changes complete. Let me restart and verify:
+
+Start application
+Good, let me check the logs to verify the fix works.
+
+Checked console and system logs
+The fix is confirmed working. Looking at the logs:
+
+[SERIES_PROG] now shows: liveship traders:#3 — the system correctly identifies the user has read up to position 3 in Liveship Traders.
+
+[EXCLUSION_AUDIT] caught 4 books: "Winter in paradise", "Mad Ship" (caught!), "The Hunger Games", "Guest List".
+
+[BUCKET] Continue Reading (1) is GONE — there is no Continue Reading bucket in the forensic user's run anymore! Instead it shows [BUCKET] Discover Next pool: 53 book(s) directly.
+
+And the safety net is working perfectly — "Mad Ship" gets filtered out before it can reach the final recommendations, so it never appears in FD1-FD5. The logs confirm the exclusion happened at the candidate stage with safety_net_excluded=4, and "Mad Ship" is explicitly listed in the caught items, meaning we've got redundant protection working as intended.
+
+Now I'm walking through the Liveship Traders series to verify how each book gets processed: "Ship of Magic" normalizes without its article, "The Mad Ship" gets its article stripped to match OL's version, and "Ship of Destiny" follows the same pattern. This shows the normalization logic is consistent across the series and explains why the safety net caught the duplicate.
+
+The logs confirm a complete fix. Let me compile the full forensic report:
+
+Root cause (two compounding bugs)
+Bug A — normBookKey didn't strip leading "The":
+
+Library stored the Goodreads import as "The Mad Ship (Liveship Traders, #2)"
+After stripTitleSubtitle → "The Mad Ship" → normalized → "the mad ship"
+OL returns the bare title "Mad Ship" → normalized → "mad ship"
+"the mad ship" ≠ "mad ship" → safety net missed it
+Bug B — buildSeriesReadSet tracked "series started" (boolean), not "max position read":
+
+The user read #1, #2, #3 → seriesReadSet just said { "liveship traders" }
+When "Mad Ship" (position 2) passed the safety net, the RIL saw: position 2 > 1 AND series started → labelled series_continuation → routed to Continue Reading
+The system had no knowledge that the user had already read #2 and #3
+Files changed
+lib/recommendationIntegrity.ts — new buildSeriesProgress() function
+lib/recommender.ts — 5 changes: normBookKey article stripping, buildSeriesProgress import, CandidateResult type, computation + propagation of seriesProgress, bucket partition guard
+Exact exclusion rules added at bucket level
+Safety net fix (article stripping):
+
+normBookKey: after stripping subtitle + collapsing punctuation,
+  tRaw.replace(/^(the|an?) /, '') 
+  "the mad ship" → "mad ship"  ← now matches OL
+Series progress guard (bucket level):
+
+continuationPool filter: reject book if
+  seriesProgress.get(series_name) >= series_position
+  
+e.g. liveship traders → maxRead=3, candidate position=2 → 2 ≤ 3 → dropped
+Section semantics — did it change?
+The section was already labelled "Continue Reading" (meaning next-in-series, not status='reading'). No rename needed — the concept was correct, the data feeding it was wrong. It now only shows if there's a genuine next book the user has not yet read.
+
+Forensic proof — from live logs
+[SERIES_PROG] maxRead=[..., liveship traders:#3, ...]
+              ← correctly identifies user has read to #3
+[EXCLUSION_AUDIT] library_finished_dnf=154
+                | candidates_before_safety_net=101
+                | safety_net_excluded=4
+                | safety_net_caught: [
+                    "Mad Ship" / "Robin Hobb" [ext:/works/OL2707221W]  ← caught
+                    "Winter in paradise" / "Elin Hilderbrand" ...
+                    "The Hunger Games" / "Suzanne Collins" ...
+                    "Guest List" / "Lucy Foley" ...
+                  ]
+[BUCKET] Continue Reading  ← ABSENT from forensic user's run (0 books)
+[BUCKET] Discover Next pool: 53 book(s)
+Ship of Magic (#1) — in library, book UUID in readIds → excluded from catalog; if OL returns it, normBookKey "robin hobb::ship of magic" matches and safety net catches it
+The Mad Ship (#2) — "the mad ship" → article stripped → "mad ship" → caught by safety net; also seriesProgress["liveship traders"]=3 ≥ 2 → dropped from bucket
+Ship of Destiny (#3) — same; OL's "Ship of Destiny" matches library "Ship of Destiny" directly; also position 3 ≤ 3 → dropped from bucket
+Zero Liveship Traders books appear in any recommendation surface. Zero books already finished appear in Continue Reading.
+
+Optimized Agent memory
+Improve series tracking to prevent recommending already-read books
+10:42 am, Mar 21, 2026
