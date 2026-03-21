@@ -554,12 +554,49 @@ async function fetchOLByAuthor(
 
 // ── Source A: Catalog ─────────────────────────────────────────────────────────
 
+// Stable normalized key used for the finished/DNF safety-net exclusion.
+// Applied identically to both the user's library and every recommendation candidate
+// so that Goodreads-imported books (which often carry Google Books external_ids
+// instead of OL keys) are caught even when external_id matching fails.
+//
+// Normalization steps (in priority order):
+//   1. Strip subtitle ("Fool's Fate: A Tawny Man Novel" → "Fool's Fate")
+//   2. Strip parentheticals ("Ship of Magic (Liveship Traders, #1)" → "Ship of Magic")
+//   3. Lowercase + collapse punctuation + collapse whitespace
+//   4. Invert "Last, First" author format (Goodreads export convention)
+//
+// Key format: "<normalized author>::<normalized title>"
+function normBookKey(title: string, author: string): string {
+  const strippedTitle = stripTitleSubtitle(title);
+  const t = strippedTitle
+    .toLowerCase()
+    .replace(/['''\u2018\u2019]/g, '')   // strip apostrophes
+    .replace(/\s*\([^)]*\)/g, '')        // strip remaining parentheticals
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Handle Goodreads "Last, First" export format by inverting before stripping
+  const rawA = /^[^,]+,\s*.+$/.test(author)
+    ? author.replace(/^([^,]+),\s*(.+)$/, '$2 $1')
+    : author;
+  const a = rawA
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return `${a}::${t}`;
+}
+
 type LocalResult = {
-  candidates:           CandidateBook[];
-  readIds:              Set<string>;
-  readExternalIds:      Set<string>;
-  readBooks:            Array<{ title: string; author: string }>; // truly-read books only — for series-started detection
-  trueReadExternalIds:  Set<string>;  // external IDs of truly-read books — for OL supplement
+  candidates:             CandidateBook[];
+  readIds:                Set<string>;
+  readExternalIds:        Set<string>;
+  readBooks:              Array<{ title: string; author: string }>; // truly-read books only — for series-started detection
+  trueReadExternalIds:    Set<string>;  // external IDs of truly-read books — for OL supplement
+  finishedDnfNormalized:  Set<string>;  // normBookKey() for ALL finished + DNF books — safety-net exclusion layer
+  finishedDnfCount:       number;       // raw count for forensic logging
 };
 
 async function getLocalCandidates(
@@ -613,6 +650,21 @@ async function getLocalCandidates(
       .filter((x): x is string => !!x)
   );
 
+  // Safety-net exclusion set — normalized title+author keys for every book the
+  // user has finished OR DNF'd.  This catches Goodreads-imported books whose
+  // books.external_id is a Google Books ID (or NULL) rather than an OL key,
+  // which means external_id matching alone would silently miss them when the
+  // same work returns from an OL query under a different identifier.
+  const finishedDnfRows = ubRows.filter(
+    r => r.status === 'finished' || r.status === 'dnf'
+  );
+  const finishedDnfNormalized = new Set(
+    finishedDnfRows
+      .filter(r => r.book?.title && r.book?.author)
+      .map(r => normBookKey(r.book!.title!, r.book!.author!))
+  );
+  const finishedDnfCount = finishedDnfRows.length;
+
   const { data: dbBooks } = await client
     .from('books')
     .select('id, title, author, cover_url, external_id, subjects, page_count, description, isbn')
@@ -646,7 +698,7 @@ async function getLocalCandidates(
       _retrieval_reason: 'local:eligible',
     }));
 
-  return { candidates, readIds, readExternalIds, readBooks, trueReadExternalIds };
+  return { candidates, readIds, readExternalIds, readBooks, trueReadExternalIds, finishedDnfNormalized, finishedDnfCount };
 }
 
 // ── Source B: Cached external ─────────────────────────────────────────────────
@@ -2102,12 +2154,46 @@ export async function getCandidateBooks(
   // ── Merge all candidates ───────────────────────────────────────────────────
   const all = [...externalCandidates, ...local.candidates];
 
+  // ── Hard finished/DNF exclusion (safety-net layer) ────────────────────────
+  // Layer 1: book UUID match (readIds) — already applied in getLocalCandidates
+  //          for local catalog books.
+  // Layer 2: external_id match (readExternalIds) — applied per source above.
+  // Layer 3: normalized title+author — catches Goodreads-imported books whose
+  //          books.external_id is a Google Books ID (or NULL), so the same work
+  //          returning from OL under a different key would otherwise slip through.
+  //
+  // This runs BEFORE scoring so no finished/DNF book ever reaches ranking.
+  const preFilterCount = all.length;
+  const safeAll = all.filter(b => {
+    if (!b.title || !b.author) return true; // can't match without metadata, keep
+    return !local.finishedDnfNormalized.has(normBookKey(b.title, b.author));
+  });
+  const safeNetExcluded = preFilterCount - safeAll.length;
+
+  if (__DEV__) {
+    console.log(
+      '[EXCLUSION_AUDIT]',
+      `library_finished_dnf=${local.finishedDnfCount}`,
+      `| candidates_before_safety_net=${preFilterCount}`,
+      `| safety_net_excluded=${safeNetExcluded}`,
+      `| candidates_after=${safeAll.length}`,
+    );
+    if (safeNetExcluded > 0) {
+      // Log the titles that were caught by the safety net (not by external_id)
+      const safeAllIds = new Set(safeAll.map(b => b.id));
+      const caught = all
+        .filter(b => !safeAllIds.has(b.id))
+        .map(b => `"${b.title}" / "${b.author}" [ext:${b.external_id ?? 'none'}]`);
+      console.log('[EXCLUSION_AUDIT] safety_net_caught:', caught);
+    }
+  }
+
   // ── Enrichment (cache-first; fetch uncached for top candidates) ────────────
-  const enrichmentMap = await getEnrichmentForCandidates(client, all);
+  const enrichmentMap = await getEnrichmentForCandidates(client, safeAll);
 
   // ── Hygiene filter ─────────────────────────────────────────────────────────
   const hygiene = applyHygiene(
-    all,
+    safeAll,
     enrichmentMap,
     profile.liked_authors ?? [],
     profile.det_lanes?.dominant_lanes,

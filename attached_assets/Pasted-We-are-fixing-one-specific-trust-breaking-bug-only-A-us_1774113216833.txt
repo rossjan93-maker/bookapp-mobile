@@ -1,0 +1,79 @@
+We are fixing one specific trust-breaking bug only:
+
+A user who imported Goodreads history is being recommended books they already finished before import.
+This must not happen.
+
+Do NOT redesign the UI.
+Do NOT change series presentation yet.
+Do NOT touch interaction patterns yet.
+Fix recommendation eligibility only.
+
+Goal
+Ensure that no book already marked as finished or DNF in the user's library can appear in recommendations.
+
+What to do
+
+Part 1 — Audit the recommendation eligibility path
+Inspect the full recommendation pipeline and identify exactly where candidate books are pulled and filtered.
+
+I need you to determine:
+1. how recommendation candidates are currently joined/matched against the user's library
+2. whether finished/DNF books are being excluded at all
+3. whether Goodreads-imported books are failing to match because of:
+   - external_id mismatch
+   - title normalization mismatch
+   - author normalization mismatch
+   - duplicate book row mismatch
+   - import_source/source inconsistency
+
+Part 2 — Implement a hard exclusion rule
+Before scoring/ranking/final output, exclude any book already present in user_books with:
+- status = 'finished'
+- status = 'dnf'
+
+This must apply to:
+- Goodreads-imported books
+- manually added books
+- all recommendation sources
+
+Important:
+This exclusion should happen BEFORE ranking, not just after display.
+
+Part 3 — Matching robustness
+If finished books are slipping through because matching is weak, strengthen the matching layer.
+Use the most reliable available identity in priority order, for example:
+1. canonical/internal book id
+2. external_id
+3. normalized title + normalized author fallback
+
+Do not guess. Be explicit about the matching hierarchy you implement.
+
+Part 4 — Add forensic proof
+I need proof this is fixed for the Goodreads-import user.
+
+Return:
+1. root cause
+2. files changed
+3. exact exclusion rule added
+4. exact matching hierarchy used
+5. before/after counts:
+   - how many finished/DNF books were in the user's library
+   - how many were leaking into recommendations before
+   - how many leak after the fix (must be 0)
+
+Part 5 — Logging
+Add a temporary debug log during validation showing something like:
+- total library finished count
+- total excluded finished count
+- total remaining candidate count
+
+This is for validation only.
+
+Constraints
+- Do NOT work on series logic yet
+- Do NOT change RecCard UI yet
+- Do NOT change Book Detail yet
+- Do NOT broaden scope
+
+Success condition
+For the Goodreads-import user, zero books already marked finished or DNF appear in recommendations.
