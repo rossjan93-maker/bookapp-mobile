@@ -2469,8 +2469,8 @@ export default function RecommendationsScreen() {
                     </>
                   )}
 
-                  {/* ── Retrieval trace debug panel (internal only) ── */}
-                  {recsMeta && currentUserId === INTERNAL_DEBUG_USER && (
+                  {/* ── Retrieval trace debug panel (internal only, dev builds only) ── */}
+                  {recsMeta && __DEV__ && currentUserId === INTERNAL_DEBUG_USER && (
                     <View style={{ marginTop: 4 }}>
                       <TouchableOpacity
                         onPress={() => {

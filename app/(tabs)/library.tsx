@@ -576,10 +576,10 @@ export default function LibraryScreen() {
               <Text style={{ fontSize: 16, marginRight: 10 }}>⤵</Text>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917' }}>
-                  Import from Goodreads
+                  Import your library
                 </Text>
                 <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 1 }}>
-                  Bring in your reading history to improve recommendations
+                  Bring in your reading history to improve recommendations.
                 </Text>
               </View>
               <Text style={{ fontSize: 16, color: '#d6d3d1' }}>›</Text>

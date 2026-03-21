@@ -1,0 +1,165 @@
+We need a correction pass that combines three unresolved product issues:
+
+1. the debug section is still visible in the app
+2. the Goodreads import entry point is not actually visible in Library
+3. the recommendation action semantics (Save / Not for me / More like this) still need to be audited and corrected
+
+This is a PRODUCT CLARITY + VISIBILITY FIX pass.
+Do NOT redesign the app.
+Do NOT change recommendation logic broadly.
+Do NOT touch unrelated screens.
+
+---
+
+PART 1 — DEBUG PANEL MUST BE HIDDEN FROM NORMAL USERS
+
+Current issue:
+- the debug section is still visible in the app
+
+Required behavior:
+- debug / forensic / deterministic panels must be completely hidden from all normal users
+- they should only appear in true internal/dev mode
+
+Audit first:
+- identify every UI surface where debug content is rendered
+- identify the exact condition currently gating it
+- explain why it is still visible
+
+Then implement:
+- hide debug UI behind a strict dev-only gate
+- acceptable examples:
+  - __DEV__ plus explicit internal user check
+  - explicit internal flag only
+- normal users must not see:
+  - debug panel
+  - forensic modal trigger
+  - deterministic/fresh labels
+  - live audit buttons
+  - candidate audit lists
+
+Output required:
+- root cause of current visibility
+- exact gating condition now used
+- files changed
+
+---
+
+PART 2 — GOODREADS IMPORT MUST BE VISIBLE IN LIBRARY
+
+Current issue:
+- the Goodreads import entry point is nowhere to be found in Library
+
+Audit first:
+- identify where the Library import banner is currently rendered
+- identify the exact condition currently gating it
+- explain why it is not appearing
+
+Then implement:
+- Goodreads import should visibly live in Library
+- place it near the top of Library in a clear, calm, useful position
+- it should be visible to users who have NOT imported yet
+- it should disappear automatically after import is present
+
+Required copy:
+Title: "Import your library"
+Body: "Bring in your reading history to improve recommendations."
+
+Behavior:
+- tapping it should route to the existing Goodreads import flow
+- do not create a fake or dead entry point
+
+Important:
+- verify the gating uses the correct field(s)
+- if import_source = 'goodreads' is the true signal, use that correctly
+- do not rely on the wrong column if that is the current bug
+
+Output required:
+- root cause of why it was not visible
+- final visibility rule
+- exact placement in Library
+- files changed
+
+---
+
+PART 3 — AUDIT RECOMMENDATION ACTION SEMANTICS
+
+We need exact clarity on:
+- Save
+- Not for me
+- More like this
+
+For each action, report:
+
+1. Frontend effect
+- what happens immediately in UI?
+- does the card disappear?
+- does anything move into Library?
+
+2. Backend effect
+- what table(s) are written?
+- what fields are changed?
+- what events are fired?
+
+3. Product meaning
+- what would a reasonable user think this action means today?
+
+---
+
+PART 4 — DECIDE WHETHER “MORE LIKE THIS” STAYS
+
+We need a binary answer:
+- either “More like this” has a real, distinct product meaning
+- or it does not
+
+Intended distinctions:
+- Save = add this exact book to my library / Want to Read
+- Not for me = dismiss this book and weaken similar recommendations
+- More like this = do not save this book, but strengthen this recommendation direction
+
+If the code does NOT support a distinct meaning for “More like this”:
+- remove that button from the recommendation cards for beta
+
+If it DOES support a distinct meaning:
+- keep it
+- ensure it writes a distinct backend signal from Save
+- explain exactly how it differs
+
+---
+
+PART 5 — IMPLEMENT THE CORRECT ACTION BEHAVIOR
+
+SAVE must:
+- add the book to user_books as want_to_read (or no-op if already exists)
+- remove the card from recommendations immediately
+- write a positive signal
+
+NOT FOR ME must:
+- remove the card immediately
+- write a negative signal
+- affect future recommendation behavior using existing mechanisms
+
+MORE LIKE THIS:
+- keep only if it has distinct directional meaning
+- if kept:
+  - do NOT add the book to library
+  - do write a distinct positive directional signal
+- if not distinct:
+  - remove it
+
+---
+
+PART 6 — OUTPUT
+
+Return:
+1. root cause of debug still being visible
+2. root cause of Goodreads import not appearing in Library
+3. exact final behavior of Save
+4. exact final behavior of Not for me
+5. whether More like this was kept or removed
+6. files changed
+7. why the app is now clearer and more trustworthy
+
+Important:
+- Do NOT guess
+- audit first, then implement
+- this is about product clarity and visible correctness
