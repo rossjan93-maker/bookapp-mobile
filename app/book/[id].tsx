@@ -12,7 +12,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
-import { computePacingNote, computePagePacing, estimatePaceFinish, formatLastUpdated, shortDate, computeBookPace, computeUserAvgPace } from '../../lib/pacing';
+import { computeDatePacing, computePagePacing, estimatePaceFinish, formatLastUpdated, shortDate, computeBookPace, computeUserAvgPace } from '../../lib/pacing';
 import { fetchGoogleBooksMetadata } from '../../lib/googleBooks';
 import { fetchOLMeta, searchOLWork, isOLId } from '../../lib/openLibrary';
 import type { OLMeta } from '../../lib/openLibrary';
@@ -612,29 +612,28 @@ export default function BookDetailScreen() {
 
   // ── Derived pacing ────────────────────────────────────────────────────────
 
-  const hasPaging      = currentPage != null && pageCount != null && pageCount > 0;
-  const pagePacing     = hasPaging ? computePagePacing(currentPage!, pageCount!, localStartedAt, yearlyGoal) : null;
-  const datePacingNote = !hasPaging ? computePacingNote(localStartedAt, yearlyGoal) : null;
-  const pacingState    = pagePacing?.state ?? null;
-  const isAhead        = pacingState === 'ahead';
-  const progressPct    = hasPaging ? Math.min(100, Math.round((currentPage! / pageCount!) * 100)) : null;
+  const hasPaging       = currentPage != null && pageCount != null && pageCount > 0;
+  const pagePacing      = hasPaging ? computePagePacing(currentPage!, pageCount!, localStartedAt, yearlyGoal) : null;
+  const datePacing      = !hasPaging ? computeDatePacing(localStartedAt, yearlyGoal) : null;
+  const pacingState     = pagePacing?.state ?? null;
+  const progressPct     = hasPaging ? Math.min(100, Math.round((currentPage! / pageCount!) * 100)) : null;
 
-  const paceEstimate   = hasPaging
+  const paceEstimate    = hasPaging
     ? estimatePaceFinish(currentPage!, pageCount!, localStartedAt)
     : null;
   const daysSinceUpdate = progressUpdatedAt
     ? Math.floor((Date.now() - new Date(progressUpdatedAt).getTime()) / 86_400_000)
     : null;
-  const isStale        = daysSinceUpdate != null && daysSinceUpdate > 3;
+  const isStale         = daysSinceUpdate != null && daysSinceUpdate > 3;
   const lastUpdatedLabel = formatLastUpdated(progressUpdatedAt);
 
-  const descText       = olMeta?.description ?? null;
-  const DESC_LIMIT     = 320;
-  const descTruncated  = descText && descText.length > DESC_LIMIT && !descExpanded;
-  const displayDesc    = descTruncated ? descText!.slice(0, DESC_LIMIT).trimEnd() + '…' : descText;
+  const descText        = olMeta?.description ?? null;
+  const DESC_LIMIT      = 320;
+  const descTruncated   = descText && descText.length > DESC_LIMIT && !descExpanded;
+  const displayDesc     = descTruncated ? descText!.slice(0, DESC_LIMIT).trimEnd() + '…' : descText;
 
-  const pacingChipColor = pacingState === 'ahead' ? '#15803d' : pacingState === 'behind' ? '#b91c1c' : '#78716c';
-  const pacingChipBg    = pacingState === 'ahead' ? '#f0fdf4' : pacingState === 'behind' ? '#fef2f2' : '#f5f5f4';
+  const pacingChipColor  = pacingState === 'ahead' ? '#15803d' : pacingState === 'behind' ? '#b91c1c' : '#78716c';
+  const pacingChipBg     = pacingState === 'ahead' ? '#f0fdf4' : pacingState === 'behind' ? '#fef2f2' : '#f5f5f4';
   const pacingChipBorder = pacingState === 'ahead' ? '#bbf7d0' : pacingState === 'behind' ? '#fecaca' : '#e7e5e4';
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -737,8 +736,9 @@ export default function BookDetailScreen() {
               <ActivityIndicator color="#a8a29e" size="small" />
             ) : (
               <>
+                {/* ── 1. Primary: % + bar + page position ── */}
                 {hasPaging && (
-                  <View style={{ marginBottom: 16 }}>
+                  <View style={{ marginBottom: 14 }}>
                     <Text style={{
                       fontSize: 36,
                       fontWeight: '800',
@@ -749,42 +749,40 @@ export default function BookDetailScreen() {
                       {progressPct ?? 0}%
                     </Text>
                     <View style={{
-                      height: 10,
+                      height: 8,
                       backgroundColor: '#e7e5e4',
-                      borderRadius: 5,
+                      borderRadius: 4,
                       overflow: 'hidden',
                       marginBottom: 8,
                     }}>
                       <View style={{
-                        height: 10,
+                        height: 8,
                         width: `${progressPct ?? 0}%`,
                         backgroundColor: '#1c1917',
-                        borderRadius: 5,
+                        borderRadius: 4,
                       }} />
                     </View>
                     <Text style={{ fontSize: 13, color: '#78716c' }}>
                       Page {currentPage} of {pageCount} · {pagePacing?.pagesLeft ?? 0} left
                     </Text>
-                    {paceEstimate != null ? (
-                      <Text style={{ fontSize: 12, color: '#78716c', marginTop: 5 }}>
-                        At your current pace: finish by {shortDate(paceEstimate.estimatedFinish)}
-                      </Text>
-                    ) : avgUserPace != null && pageCount != null && currentPage != null && pageCount > 0 ? (
-                      <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 5 }}>
-                        At your avg pace (~{avgUserPace} ppd): finish by {shortDate(new Date(Date.now() + ((pageCount - currentPage) / avgUserPace) * 86_400_000))}
-                      </Text>
-                    ) : (
-                      <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 5 }}>
-                        Log progress to estimate your pace
-                      </Text>
-                    )}
                   </View>
                 )}
 
-                {pagePacing?.note && (
+                {/* ── 2. Secondary: ONE projection line ── */}
+                {hasPaging && paceEstimate != null && (
+                  <Text style={{ fontSize: 13, color: '#78716c', marginBottom: 14 }}>
+                    Finish by {shortDate(paceEstimate.estimatedFinish)} at your current pace
+                  </Text>
+                )}
+                {hasPaging && paceEstimate == null && avgUserPace != null && pageCount != null && currentPage != null && pageCount > 0 && (
+                  <Text style={{ fontSize: 13, color: '#a8a29e', marginBottom: 14 }}>
+                    Finish by {shortDate(new Date(Date.now() + ((pageCount - currentPage) / avgUserPace) * 86_400_000))} at your usual pace
+                  </Text>
+                )}
+
+                {/* ── 3. Supporting: ONE pacing chip (state label only, no ppd/dates) ── */}
+                {pagePacing && (
                   <View style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
                     alignSelf: 'flex-start',
                     backgroundColor: pacingChipBg,
                     borderRadius: 20,
@@ -792,34 +790,30 @@ export default function BookDetailScreen() {
                     paddingVertical: 6,
                     borderWidth: 1,
                     borderColor: pacingChipBorder,
-                    marginBottom: 16,
+                    marginBottom: 14,
                   }}>
                     <Text style={{ fontSize: 13, fontWeight: '600', color: pacingChipColor }}>
-                      {pagePacing.note}
+                      {pacingState === 'ahead' ? 'Ahead of pace' : pacingState === 'behind' ? 'Behind pace' : 'On pace'}
                     </Text>
                   </View>
                 )}
-
-                {!pagePacing && datePacingNote && (
+                {!pagePacing && datePacing && (
                   <View style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
                     alignSelf: 'flex-start',
-                    backgroundColor: '#fef9f0',
+                    backgroundColor: datePacing.state === 'behind' ? '#fef9f0' : '#f5f5f4',
                     borderRadius: 20,
                     paddingHorizontal: 12,
                     paddingVertical: 6,
                     borderWidth: 1,
-                    borderColor: '#fde68a',
-                    marginBottom: 16,
+                    borderColor: datePacing.state === 'behind' ? '#fde68a' : '#e7e5e4',
+                    marginBottom: 14,
                   }}>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#92400e' }}>
-                      {datePacingNote}
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: datePacing.state === 'behind' ? '#92400e' : '#78716c' }}>
+                      {datePacing.state === 'behind' ? 'Behind pace' : 'On pace'}
                     </Text>
                   </View>
                 )}
-
-                {!pagePacing && !datePacingNote && !yearlyGoal && (
+                {!pagePacing && !datePacing && !yearlyGoal && (
                   <TouchableOpacity
                     onPress={() => router.push('/settings')}
                     style={{
@@ -827,7 +821,7 @@ export default function BookDetailScreen() {
                       borderRadius: 8,
                       paddingHorizontal: 12,
                       paddingVertical: 9,
-                      marginBottom: 16,
+                      marginBottom: 14,
                     }}
                   >
                     <Text style={{ fontSize: 12, color: '#a8a29e' }}>
@@ -836,6 +830,7 @@ export default function BookDetailScreen() {
                   </TouchableOpacity>
                 )}
 
+                {/* ── Page count missing prompt ── */}
                 {!pageCount && !editingPageCount && (
                   <View style={{
                     flexDirection: 'row',
@@ -845,7 +840,7 @@ export default function BookDetailScreen() {
                     borderRadius: 8,
                     paddingHorizontal: 12,
                     paddingVertical: 10,
-                    marginBottom: 16,
+                    marginBottom: 14,
                     gap: 12,
                   }}>
                     <Text style={{ fontSize: 13, color: '#a8a29e', flex: 1, lineHeight: 18 }}>
@@ -866,9 +861,8 @@ export default function BookDetailScreen() {
                     </TouchableOpacity>
                   </View>
                 )}
-
                 {!pageCount && editingPageCount && (
-                  <View style={{ marginBottom: 16 }}>
+                  <View style={{ marginBottom: 14 }}>
                     <Text style={{ fontSize: 12, color: '#78716c', fontWeight: '600', marginBottom: 8 }}>
                       Total pages in this book
                     </Text>
@@ -924,25 +918,77 @@ export default function BookDetailScreen() {
                   </View>
                 )}
 
+                {/* ── 4. Tertiary: last updated + stale nudge ── */}
+                {lastUpdatedLabel && !editingProgress && !editingPageCount && (
+                  <Text style={{ fontSize: 12, color: '#c4b5a5', marginBottom: isStale ? 3 : 16 }}>
+                    {lastUpdatedLabel}
+                  </Text>
+                )}
+                {isStale && !editingProgress && !editingPageCount && (
+                  <Text style={{ fontSize: 12, color: '#a8a29e', fontStyle: 'italic', marginBottom: 16 }}>
+                    Pick this back up?
+                  </Text>
+                )}
+
+                {/* ── 5. Actions ── */}
                 {!editingProgress ? (
-                  <TouchableOpacity
-                    onPress={() => {
-                      setPageInput(currentPage != null ? String(currentPage) : '');
-                      setProgressError(null);
-                      setEditingProgress(true);
-                      setTimeout(() => pageInputRef.current?.focus(), 80);
-                    }}
-                    style={{
-                      backgroundColor: '#1c1917',
-                      borderRadius: 10,
-                      paddingVertical: 13,
-                      alignItems: 'center',
-                    }}
-                  >
-                    <Text style={{ fontSize: 14, color: '#fff', fontWeight: '600' }}>
-                      {currentPage != null ? 'Update progress' : '+ Log current page'}
-                    </Text>
-                  </TouchableOpacity>
+                  <>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setPageInput(currentPage != null ? String(currentPage) : '');
+                        setProgressError(null);
+                        setEditingProgress(true);
+                        setTimeout(() => pageInputRef.current?.focus(), 80);
+                      }}
+                      style={{
+                        backgroundColor: '#1c1917',
+                        borderRadius: 10,
+                        paddingVertical: 13,
+                        alignItems: 'center',
+                        marginBottom: 8,
+                      }}
+                    >
+                      <Text style={{ fontSize: 14, color: '#fff', fontWeight: '600' }}>
+                        Update progress
+                      </Text>
+                    </TouchableOpacity>
+                    {!editingPageCount && (
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <TouchableOpacity
+                          onPress={() => handleTransition('finished')}
+                          disabled={transitioning}
+                          style={{
+                            flex: 1,
+                            borderWidth: 1,
+                            borderColor: transitioning ? '#e7e5e4' : '#d6d3d1',
+                            borderRadius: 10,
+                            paddingVertical: 11,
+                            alignItems: 'center',
+                          }}
+                        >
+                          {transitioning
+                            ? <ActivityIndicator color="#78716c" size="small" />
+                            : <Text style={{ color: transitioning ? '#a8a29e' : '#44403c', fontSize: 13, fontWeight: '500' }}>Mark Finished</Text>
+                          }
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => handleTransition('dnf')}
+                          disabled={transitioning}
+                          style={{
+                            flex: 1,
+                            borderWidth: 1,
+                            borderColor: transitioning ? '#e7e5e4' : '#d6d3d1',
+                            borderRadius: 10,
+                            paddingVertical: 11,
+                            alignItems: 'center',
+                            opacity: transitioning ? 0.5 : 1,
+                          }}
+                        >
+                          <Text style={{ color: transitioning ? '#a8a29e' : '#78716c', fontSize: 13, fontWeight: '500' }}>DNF</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </>
                 ) : (
                   <View>
                     <Text style={{ fontSize: 12, color: '#78716c', fontWeight: '600', marginBottom: 8 }}>
@@ -997,55 +1043,6 @@ export default function BookDetailScreen() {
                     {progressError && (
                       <Text style={{ fontSize: 12, color: '#b91c1c', marginTop: 8 }}>{progressError}</Text>
                     )}
-                  </View>
-                )}
-
-                {lastUpdatedLabel && (
-                  <Text style={{ fontSize: 12, color: '#c4b5a5', marginBottom: 8 }}>
-                    {lastUpdatedLabel}
-                  </Text>
-                )}
-                {isStale && !editingProgress && !editingPageCount && (
-                  <Text style={{ fontSize: 12, color: '#a8a29e', fontStyle: 'italic', marginBottom: 10 }}>
-                    Pick this back up?
-                  </Text>
-                )}
-
-                {/* ── Finish / DNF actions ── */}
-                {!editingProgress && !editingPageCount && (
-                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
-                    <TouchableOpacity
-                      onPress={() => handleTransition('finished')}
-                      disabled={transitioning}
-                      style={{
-                        flex: 1,
-                        borderWidth: 1,
-                        borderColor: transitioning ? '#e7e5e4' : '#d6d3d1',
-                        borderRadius: 10,
-                        paddingVertical: 11,
-                        alignItems: 'center',
-                      }}
-                    >
-                      {transitioning
-                        ? <ActivityIndicator color="#78716c" size="small" />
-                        : <Text style={{ color: transitioning ? '#a8a29e' : '#44403c', fontSize: 13, fontWeight: '500' }}>Mark Finished</Text>
-                      }
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => handleTransition('dnf')}
-                      disabled={transitioning}
-                      style={{
-                        borderWidth: 1,
-                        borderColor: transitioning ? '#e7e5e4' : '#fca5a5',
-                        borderRadius: 10,
-                        paddingVertical: 11,
-                        paddingHorizontal: 16,
-                        alignItems: 'center',
-                        opacity: transitioning ? 0.5 : 1,
-                      }}
-                    >
-                      <Text style={{ color: '#b91c1c', fontSize: 13, fontWeight: '500' }}>DNF</Text>
-                    </TouchableOpacity>
                   </View>
                 )}
                 {transitionError && (

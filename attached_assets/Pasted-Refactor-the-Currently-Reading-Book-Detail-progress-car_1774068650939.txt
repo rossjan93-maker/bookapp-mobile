@@ -1,0 +1,150 @@
+Refactor the “Currently Reading” / Book Detail progress card to make it visually cleaner and easier to understand.
+
+Do NOT change backend logic.
+Do NOT change schemas.
+Do NOT add new features.
+This is a presentation / hierarchy refactor only.
+
+Goal
+The reading-progress card currently contains too many competing signals and feels visually messy.
+We need to simplify it so a user can instantly understand:
+
+1. How far along they are
+2. When they are likely to finish
+3. What action to take next
+
+Core principle
+Do NOT show multiple competing pace interpretations at once.
+
+Right now the card mixes:
+- progress %
+- page position
+- finish projection
+- avg pace / ppd
+- goal pacing chip
+- updated today
+- actions
+
+This feels cluttered and can reduce trust.
+
+We need one clean narrative hierarchy.
+
+Target information hierarchy
+
+Primary:
+- progress percent
+- progress bar
+- page position line: “Page X of Y · Z left”
+
+Secondary:
+- one finish projection line only
+
+Supporting:
+- one small status chip only (example: “On pace” / “Behind pace” / “Ahead of pace”)
+
+Tertiary:
+- updated today / updated X days ago
+
+Actions:
+- Update progress
+- Finished
+- DNF
+
+Important rule:
+Only ONE pace interpretation should be visible in the card.
+
+Use this model:
+- Keep finish projection
+- Remove pages/day from the visible chip/line
+- The chip should only communicate pacing state:
+  - Ahead of pace
+  - On pace
+  - Behind pace
+
+Copy requirements
+
+Replace any copy like:
+- “At your avg pace (~216 ppd): finish by Mar 22”
+with cleaner language:
+- “Finish by Mar 22 at your usual pace”
+
+If current pace is the correct source instead of average pace, use:
+- “Finish by Mar 22 at your current pace”
+
+Do NOT show parentheses with ppd in the main card UI.
+
+Do NOT show a numeric pages/day metric in this card.
+
+Layout requirements
+
+Refactor the card so it feels cleaner:
+
+1. top:
+- READING PROGRESS label
+- large % value
+- progress bar
+
+2. under bar:
+- “Page X of Y · Z left”
+
+3. below that:
+- projection line:
+  - “Finish by Mar 22 at your usual pace”
+
+4. below that:
+- one compact pacing chip only:
+  - Ahead of pace
+  - On pace
+  - Behind pace
+
+5. below that:
+- “Updated today” / “Updated 2 days ago”
+
+6. actions at bottom:
+- primary full-width: Update progress
+- secondary row below:
+  - Finished
+  - DNF
+
+Button hierarchy
+
+Primary:
+- Update progress
+
+Secondary:
+- Finished
+- DNF
+
+Requirements:
+- Finished and DNF should have similar visual weight
+- DNF should not scream red by default
+- DNF can remain subtly destructive, but quieter than now
+- the actions should feel grouped and intentional
+
+Visual / spacing goals
+
+- reduce visual crowding
+- avoid competing text blocks
+- preserve calm, premium feel
+- keep the card scannable in 2 seconds
+
+Validation question
+After the refactor, a user should be able to answer instantly:
+- How far along am I?
+- When will I likely finish?
+- What should I tap next?
+
+Output
+When complete, provide:
+1. files changed
+2. what was removed from the visible card
+3. what the new hierarchy is
+4. what copy changed
+5. any small presentation limitations still deferred
+
+Important
+This is not a logic sprint.
+Do not rework pace calculations.
+Do not add more metrics.
+Do not redesign unrelated screens.
+Only simplify and improve the reading-progress card presentation.
