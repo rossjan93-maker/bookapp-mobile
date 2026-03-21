@@ -31,6 +31,7 @@ type CurrentRead = {
 
 type FeedEvent = {
   id: string;
+  actor_id: string;
   event_type: string;
   created_at: string;
   book_id: string | null;
@@ -214,7 +215,7 @@ export default function HomeScreen() {
         .map(f => (f.requester_id === user.id ? f.addressee_id : f.requester_id));
 
       await Promise.all([
-        loadFeed(acceptedFriendIds),
+        loadFeed([user.id, ...acceptedFriendIds]),
         loadCurrentRead(user.id),
         loadPendingRecs(user.id),
         loadBooksThisYear(user.id),
@@ -228,21 +229,20 @@ export default function HomeScreen() {
 
   // ── Data loaders ─────────────────────────────────────────────────────────────
 
-  async function loadFeed(friendIds: string[]) {
+  async function loadFeed(actorIds: string[]) {
     if (!supabase) return;
-    // No friends yet — feed is empty by definition.
-    if (friendIds.length === 0) {
+    if (actorIds.length === 0) {
       setFeed([]);
       return;
     }
     const { data, error } = await supabase
       .from('activity_events')
       .select(
-        'id, event_type, created_at, book_id, rating, ' +
+        'id, actor_id, event_type, created_at, book_id, rating, ' +
         'actor:profiles!activity_events_actor_id_fkey(username, first_name, last_name), ' +
         'book:books!activity_events_book_id_fkey(title, author, cover_url, external_id)'
       )
-      .in('actor_id', friendIds)
+      .in('actor_id', actorIds)
       .order('created_at', { ascending: false })
       .limit(50);
 
@@ -406,12 +406,7 @@ export default function HomeScreen() {
     .map(f => (f.requester_id === userId ? f.addressee : f.requester))
     .filter(Boolean) as { id: string; username: string; first_name: string | null; last_name: string | null }[];
 
-  const acceptedUsernames = new Set(acceptedFriends.map(f => f.username));
-  const friendFeedEvents = feed.filter(
-    e => e.actor && acceptedUsernames.has(e.actor.username) && eventVerb(e.event_type)
-  ).slice(0, 3);
-
-  const displayedFeed = feed.filter(e => eventVerb(e.event_type)).slice(0, 6);
+  const displayedFeed = feed.filter(e => eventVerb(e.event_type)).slice(0, 10);
   const totalFeedWithVerb = feed.filter(e => eventVerb(e.event_type)).length;
 
   // ── Loading ───────────────────────────────────────────────────────────────────
@@ -786,107 +781,56 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* ── 2. New from Friends (social strip + pending recs) ── */}
-      {acceptedFriends.length > 0 && (pendingRecCount > 0 || friendFeedEvents.length > 0) && (
-        <View style={{ marginBottom: 32 }}>
-          <SectionLabel>New from Friends</SectionLabel>
+      {/* ── 2. Timeline (self + network activity) ── */}
+      <View style={{ marginBottom: 32 }}>
+        <SectionLabel>Timeline</SectionLabel>
 
-          {pendingRecCount > 0 && (
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => router.push('/(tabs)/notes')}
-              style={{ marginBottom: friendFeedEvents.length > 0 ? 10 : 0 }}
-            >
-              <View style={{
-                backgroundColor: '#fff',
-                borderRadius: 14,
-                paddingHorizontal: 16,
-                paddingVertical: 16,
-                flexDirection: 'row',
-                alignItems: 'center',
-                shadowColor: '#000',
-                shadowOpacity: 0.04,
-                shadowRadius: 6,
-                shadowOffset: { width: 0, height: 1 },
-                elevation: 1,
-              }}>
-                <View style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 20,
-                  backgroundColor: '#f5f5f4',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginRight: 14,
-                }}>
-                  <Text style={{ fontSize: 20 }}>📬</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 15, fontWeight: '600', color: '#1c1917', marginBottom: 2 }}>
-                    {pendingRecCount === 1
-                      ? '1 recommendation waiting'
-                      : `${pendingRecCount} recommendations waiting`}
-                  </Text>
-                  <Text style={{ fontSize: 13, color: '#a8a29e' }}>
-                    See what your friends picked for you
-                  </Text>
-                </View>
-                <Text style={{ fontSize: 20, color: '#d6d3d1' }}>›</Text>
-              </View>
-            </TouchableOpacity>
-          )}
-
-          {friendFeedEvents.length > 0 && (
+        {/* Pending recs banner — surfaces above the event stream */}
+        {pendingRecCount > 0 && (
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => router.push('/(tabs)/notes')}
+            style={{ marginBottom: 12 }}
+          >
             <View style={{
               backgroundColor: '#fff',
               borderRadius: 14,
+              paddingHorizontal: 16,
+              paddingVertical: 14,
+              flexDirection: 'row',
+              alignItems: 'center',
               shadowColor: '#000',
               shadowOpacity: 0.04,
               shadowRadius: 6,
               shadowOffset: { width: 0, height: 1 },
               elevation: 1,
-              overflow: 'hidden',
             }}>
-              {friendFeedEvents.map((event, idx) => {
-                const name = getFirstName(event.actor);
-                const verb = eventVerb(event.event_type);
-                const bookTitle = event.book?.title ?? '';
-                return (
-                  <View
-                    key={event.id}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      paddingVertical: 10,
-                      paddingHorizontal: 14,
-                      borderBottomWidth: idx < friendFeedEvents.length - 1 ? 1 : 0,
-                      borderBottomColor: '#f5f5f4',
-                    }}
-                  >
-                    <InitialAvatar name={name} />
-                    <Text style={{ flex: 1, fontSize: 13, color: '#57534e', lineHeight: 18 }} numberOfLines={1}>
-                      <Text style={{ fontWeight: '600', color: '#1c1917' }}>{name}</Text>
-                      {' '}{verb}{' '}
-                      <Text style={{ fontStyle: 'italic' }}>"{bookTitle}"</Text>
-                    </Text>
-                    <Text style={{ fontSize: 11, color: '#c4b5a5', marginLeft: 8 }}>
-                      {relativeTime(event.created_at)}
-                    </Text>
-                  </View>
-                );
-              })}
+              <View style={{
+                width: 38, height: 38, borderRadius: 19,
+                backgroundColor: '#f5f5f4',
+                alignItems: 'center', justifyContent: 'center',
+                marginRight: 12,
+              }}>
+                <Text style={{ fontSize: 18 }}>📬</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 1 }}>
+                  {pendingRecCount === 1
+                    ? '1 recommendation waiting'
+                    : `${pendingRecCount} recommendations waiting`}
+                </Text>
+                <Text style={{ fontSize: 12, color: '#a8a29e' }}>
+                  See what your friends picked for you
+                </Text>
+              </View>
+              <Text style={{ fontSize: 18, color: '#d6d3d1' }}>›</Text>
             </View>
-          )}
-        </View>
-      )}
-
-      {/* ── 3. Activity Feed ── */}
-      <View style={{ marginBottom: 32 }}>
-        <SectionLabel>Activity</SectionLabel>
+          </TouchableOpacity>
+        )}
 
         {feedError ? (
           <Text style={{ color: '#b91c1c', marginBottom: 16, fontSize: 14 }}>{feedError}</Text>
-        ) : totalFeedWithVerb === 0 ? (
+        ) : totalFeedWithVerb === 0 && pendingRecCount === 0 ? (
           <View style={{
             backgroundColor: '#fff',
             borderRadius: 14,
@@ -899,14 +843,15 @@ export default function HomeScreen() {
             elevation: 1,
           }}>
             <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
-              Nothing yet.{'\n'}Add friends to see their activity here.
+              Nothing yet.{'\n'}Finish or rate a book to get started.
             </Text>
           </View>
         ) : (
           <>
             {displayedFeed.map(event => {
               const verb = eventVerb(event.event_type);
-              const actor = getFirstName(event.actor);
+              const isSelf = event.actor_id === userId;
+              const actor = isSelf ? 'You' : getFirstName(event.actor);
               const title = event.book?.title ?? '';
               const author = event.book?.author ?? '';
               const canTap = !!event.book_id && !!title;
@@ -983,7 +928,7 @@ export default function HomeScreen() {
               }
               return <View key={event.id}>{card}</View>;
             })}
-            {totalFeedWithVerb > 6 && (
+            {totalFeedWithVerb > 10 && (
               <Text
                 onPress={() => router.push('/(tabs)/notes')}
                 style={{
