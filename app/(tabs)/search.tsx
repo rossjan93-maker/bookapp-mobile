@@ -2912,86 +2912,18 @@ export default function RecommendationsScreen() {
                 </View>
               )}
 
-              {/* ── Tasks (always shown when available, regardless of recs) ── */}
-              {hasAnyTask && (
-                <>
-                  {/* ── Refine your taste ── */}
-                  {(hasRateTasks || hasTagTasks) && (
-                    <View style={{ marginBottom: 16 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', flex: 1 }}>
-                          Refine your taste
-                        </Text>
-                        <Text style={{ fontSize: 12, color: '#a8a29e' }}>
-                          {booksToRate.length + booksToTag.length} book{booksToRate.length + booksToTag.length !== 1 ? 's' : ''}
-                        </Text>
-                      </View>
-                      <Text style={{ fontSize: 12, color: '#78716c', marginBottom: 12 }}>
-                        Ratings and tags are our strongest signals for learning your taste.
-                      </Text>
-                      <View style={{ gap: 8 }}>
-                        {booksToRate.slice(0, 3).map(b => (
-                          <RateCard key={b.id} book={b} onComplete={handleRateComplete} />
-                        ))}
-                        {booksToTag.slice(0, Math.max(0, 3 - booksToRate.length)).map(b => (
-                          <TagCard key={b.id} book={b} onComplete={handleTagComplete} />
-                        ))}
-                        {(booksToRate.length + booksToTag.length) > 3 && (
-                          <TouchableOpacity onPress={() => router.push('/(tabs)/library')}>
-                            <Text style={{ fontSize: 13, color: '#78716c', paddingVertical: 6 }}>
-                              +{booksToRate.length + booksToTag.length - 3} more in Library →
-                            </Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    </View>
-                  )}
-
-                  {/* Analyse imports — shown only if user has imports but not yet diagnosed */}
-                  {hasAnalyseTask && (
-                    <TouchableOpacity
-                      onPress={() => router.push('/import/diagnosis')}
-                      style={{
-                        backgroundColor: '#fff',
-                        borderRadius: 12,
-                        padding: 14,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        shadowColor: '#000',
-                        shadowOpacity: 0.04,
-                        shadowRadius: 4,
-                        shadowOffset: { width: 0, height: 1 },
-                        elevation: 1,
-                        marginBottom: 8,
-                      }}
-                    >
-                      <View style={{
-                        width: 36, height: 36, borderRadius: 18,
-                        backgroundColor: '#f5f5f4',
-                        alignItems: 'center', justifyContent: 'center', marginRight: 12,
-                      }}>
-                        <Text style={{ fontSize: 18 }}>⟲</Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>
-                          Analyse imported history
-                        </Text>
-                        <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 2 }}>
-                          Answer 5 questions to sharpen your profile
-                        </Text>
-                      </View>
-                      <Text style={{ fontSize: 16, color: '#d6d3d1' }}>›</Text>
-                    </TouchableOpacity>
-                  )}
-                </>
-              )}
             </View>
 
             {/* ════════════════════════════════════════════════════════
-                Section 2 — From Friends
+                Section 2 — Shared Books (From Friends + Sent)
             ════════════════════════════════════════════════════════ */}
             <View style={{ marginBottom: 36 }}>
-              <SectionLabel>From Friends</SectionLabel>
+              <SectionLabel>Shared Books</SectionLabel>
+
+              {/* ── From friends sub-section ── */}
+              <Text style={{ fontSize: 12, fontWeight: '600', color: '#78716c', marginBottom: 10, letterSpacing: 0.3 }}>
+                FROM FRIENDS
+              </Text>
 
               {incomingRecs.length === 0 ? (
                 <View style={{
@@ -3004,6 +2936,7 @@ export default function RecommendationsScreen() {
                   shadowRadius: 6,
                   shadowOffset: { width: 0, height: 1 },
                   elevation: 1,
+                  marginBottom: 24,
                 }}>
                   <Text style={{ fontSize: 14, color: '#a8a29e', textAlign: 'center', lineHeight: 20 }}>
                     No recommendations from friends yet.
@@ -3019,6 +2952,7 @@ export default function RecommendationsScreen() {
                   shadowRadius: 6,
                   shadowOffset: { width: 0, height: 1 },
                   elevation: 1,
+                  marginBottom: 24,
                 }}>
                   {incomingRecs.map((rec, idx) => (
                     <TouchableOpacity
@@ -3060,15 +2994,12 @@ export default function RecommendationsScreen() {
                   </TouchableOpacity>
                 </View>
               )}
-            </View>
 
-            {/* ════════════════════════════════════════════════════════
-                Section 3 — Sent
-            ════════════════════════════════════════════════════════ */}
-            <View style={{ marginBottom: 16 }}>
-              <SectionLabel>Sent</SectionLabel>
+              {/* ── You sent sub-section ── */}
+              <Text style={{ fontSize: 12, fontWeight: '600', color: '#78716c', marginBottom: 10, letterSpacing: 0.3 }}>
+                YOU SENT
+              </Text>
 
-              {/* Primary CTA */}
               <TouchableOpacity
                 onPress={() => setStep('search')}
                 style={{
@@ -3131,6 +3062,82 @@ export default function RecommendationsScreen() {
                 </View>
               )}
             </View>
+
+            {/* ════════════════════════════════════════════════════════
+                Section 3 — Refine your taste (tasks)
+            ════════════════════════════════════════════════════════ */}
+            {hasAnyTask && (
+              <View style={{ marginBottom: 16 }}>
+                {/* ── Refine your taste ── */}
+                {(hasRateTasks || hasTagTasks) && (
+                  <View style={{ marginBottom: 16 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', flex: 1 }}>
+                        Refine your taste
+                      </Text>
+                      <Text style={{ fontSize: 12, color: '#a8a29e' }}>
+                        {booksToRate.length + booksToTag.length} book{booksToRate.length + booksToTag.length !== 1 ? 's' : ''}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 12, color: '#78716c', marginBottom: 12 }}>
+                      Ratings and tags are our strongest signals for learning your taste.
+                    </Text>
+                    <View style={{ gap: 8 }}>
+                      {booksToRate.slice(0, 3).map(b => (
+                        <RateCard key={b.id} book={b} onComplete={handleRateComplete} />
+                      ))}
+                      {booksToTag.slice(0, Math.max(0, 3 - booksToRate.length)).map(b => (
+                        <TagCard key={b.id} book={b} onComplete={handleTagComplete} />
+                      ))}
+                      {(booksToRate.length + booksToTag.length) > 3 && (
+                        <TouchableOpacity onPress={() => router.push('/(tabs)/library')}>
+                          <Text style={{ fontSize: 13, color: '#78716c', paddingVertical: 6 }}>
+                            +{booksToRate.length + booksToTag.length - 3} more in Library →
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                )}
+
+                {/* Analyse imports — shown only if user has imports but not yet diagnosed */}
+                {hasAnalyseTask && (
+                  <TouchableOpacity
+                    onPress={() => router.push('/import/diagnosis')}
+                    style={{
+                      backgroundColor: '#fff',
+                      borderRadius: 12,
+                      padding: 14,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      shadowColor: '#000',
+                      shadowOpacity: 0.04,
+                      shadowRadius: 4,
+                      shadowOffset: { width: 0, height: 1 },
+                      elevation: 1,
+                      marginBottom: 8,
+                    }}
+                  >
+                    <View style={{
+                      width: 36, height: 36, borderRadius: 18,
+                      backgroundColor: '#f5f5f4',
+                      alignItems: 'center', justifyContent: 'center', marginRight: 12,
+                    }}>
+                      <Text style={{ fontSize: 18 }}>⟲</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>
+                        Analyse imported history
+                      </Text>
+                      <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 2 }}>
+                        Answer 5 questions to sharpen your profile
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 16, color: '#d6d3d1' }}>›</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
           </>
         )}
 
