@@ -57,4 +57,9 @@ externalPort = 4200
 path = "scripts/post-merge.sh"
 timeoutMs = 120000
 
+[deployment]
+build = ["sh", "-c", "npx expo export --platform web"]
+deploymentTarget = "static"
+publicDir = "dist"
+
 
