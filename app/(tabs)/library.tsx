@@ -5,7 +5,7 @@ import { ActivityIndicator, FlatList, Modal, ScrollView, Text, TextInput, Toucha
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
-import { computePagePacing, computeDatePacing, formatLastUpdated } from '../../lib/pacing';
+import { computePagePacing, computeDatePacing, formatLastUpdated, computeBookPace, formatPaceChip, computeUserAvgPace } from '../../lib/pacing';
 import { transitionStatus, saveCurrentPage } from '../../lib/userBookActions';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -442,6 +442,17 @@ export default function LibraryScreen() {
     return parts.join(' · ');
   })();
 
+  const avgPace: number | null = (() => {
+    const finished = items.filter(i => i.status === 'finished');
+    return computeUserAvgPace(
+      finished.map(i => ({
+        started_at:  i.started_at,
+        finished_at: i.finished_at,
+        pageCount:   i.book?.page_count,
+      }))
+    );
+  })();
+
   // ── Loading / error ───────────────────────────────────────────────────────
 
   if (loading) {
@@ -632,6 +643,19 @@ export default function LibraryScreen() {
                   </TouchableOpacity>
                 </>
               )}
+            </View>
+          )}
+
+          {/* ── Avg pace summary (finished filter only) ── */}
+          {activeFilter === 'finished' && avgPace !== null && (
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingBottom: 12,
+            }}>
+              <Text style={{ fontSize: 12, color: '#a8a29e' }}>
+                Your reading pace · avg <Text style={{ color: '#78716c', fontWeight: '600' }}>{avgPace} pages/day</Text>
+              </Text>
             </View>
           )}
 
@@ -985,6 +1009,15 @@ export default function LibraryScreen() {
                         {new Date(item.finished_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                       </Text>
                     )}
+                    {item.status === 'finished' && (() => {
+                      const bp = computeBookPace(item.started_at, item.finished_at, item.book?.page_count);
+                      if (!bp) return null;
+                      return (
+                        <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 2 }}>
+                          {formatPaceChip(bp.pagesPerDay, bp.daysToFinish)}
+                        </Text>
+                      );
+                    })()}
                   </View>
                   <View style={{
                     backgroundColor: badge.bg, borderRadius: 6,

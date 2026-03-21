@@ -12,7 +12,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
-import { computePacingNote, computePagePacing, estimatePaceFinish, formatLastUpdated, shortDate } from '../../lib/pacing';
+import { computePacingNote, computePagePacing, estimatePaceFinish, formatLastUpdated, shortDate, computeBookPace, computeUserAvgPace } from '../../lib/pacing';
 import { fetchGoogleBooksMetadata } from '../../lib/googleBooks';
 import { fetchOLMeta, searchOLWork, isOLId } from '../../lib/openLibrary';
 import type { OLMeta } from '../../lib/openLibrary';
@@ -81,6 +81,7 @@ export default function BookDetailScreen() {
   const [olMeta, setOlMeta]             = useState<OLMeta | null>(null);
   const [metaLoading, setMetaLoading]   = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
+  const [avgUserPace, setAvgUserPace]   = useState<number | null>(null);
   // Enriched cover: set when Book Detail hydration finds a cover not present at
   // navigation time (e.g. imported books that had no cover in the DB yet).
   const [enrichedCoverUrl, setEnrichedCoverUrl] = useState<string | null>(null);
@@ -171,6 +172,24 @@ export default function BookDetailScreen() {
         if (h.rating || h.finishedAt || h.reviewBody || h.privateNote) {
           setUserHistory(h);
         }
+      }
+
+      const { data: finishedBooks } = await supabase
+        .from('user_books')
+        .select('started_at, finished_at, book:books(page_count)')
+        .eq('user_id', user.id)
+        .eq('status', 'finished')
+        .not('started_at', 'is', null)
+        .not('finished_at', 'is', null);
+      if (finishedBooks && finishedBooks.length >= 2) {
+        const pace = computeUserAvgPace(
+          (finishedBooks as any[]).map(r => ({
+            started_at:  r.started_at as string | null,
+            finished_at: r.finished_at as string | null,
+            pageCount:   (r.book as any)?.page_count as number | null,
+          }))
+        );
+        setAvgUserPace(pace);
       }
     }
 
@@ -749,6 +768,10 @@ export default function BookDetailScreen() {
                     {paceEstimate != null ? (
                       <Text style={{ fontSize: 12, color: '#78716c', marginTop: 5 }}>
                         At your current pace: finish by {shortDate(paceEstimate.estimatedFinish)}
+                      </Text>
+                    ) : avgUserPace != null && pageCount != null && currentPage != null && pageCount > 0 ? (
+                      <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 5 }}>
+                        At your avg pace (~{avgUserPace} ppd): finish by {shortDate(new Date(Date.now() + ((pageCount - currentPage) / avgUserPace) * 86_400_000))}
                       </Text>
                     ) : (
                       <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 5 }}>

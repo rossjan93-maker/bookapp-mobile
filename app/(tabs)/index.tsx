@@ -11,7 +11,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
-import { computePagePacing } from '../../lib/pacing';
+import { computePagePacing, computeUserAvgPace } from '../../lib/pacing';
 import { computeTasteProfile } from '../../lib/tasteProfile';
 import type { TasteProfile } from '../../lib/tasteProfile';
 
@@ -60,10 +60,12 @@ type YearBook = {
   id: string;
   book_id: string;
   finished_at: string | null;
+  started_at: string | null;
   title: string;
   author: string;
   cover_url: string | null;
   external_id: string | null;
+  page_count: number | null;
 };
 
 type RelationshipState = 'none' | 'pending' | 'accepted';
@@ -329,7 +331,7 @@ export default function HomeScreen() {
     const yearStart = `${new Date().getFullYear()}-01-01T00:00:00Z`;
     const { data } = await supabase
       .from('user_books')
-      .select('id, book_id, finished_at, book:books(title, author, cover_url, external_id)')
+      .select('id, book_id, started_at, finished_at, book:books(title, author, cover_url, external_id, page_count)')
       .eq('user_id', uid)
       .eq('status', 'finished')
       .gte('finished_at', yearStart)
@@ -340,11 +342,13 @@ export default function HomeScreen() {
       return {
         id:          r.id,
         book_id:     r.book_id,
+        started_at:  r.started_at ?? null,
         finished_at: r.finished_at ?? null,
         title:       b?.title ?? '',
         author:      b?.author ?? '',
         cover_url:   b?.cover_url ?? null,
         external_id: b?.external_id ?? null,
+        page_count:  b?.page_count ?? null,
       };
     }));
   }
@@ -420,6 +424,14 @@ export default function HomeScreen() {
   }
 
   // ── Progress + pacing helpers ─────────────────────────────────────────────────
+
+  const yearAvgPace: number | null = computeUserAvgPace(
+    booksThisYear.map(b => ({
+      started_at:  b.started_at,
+      finished_at: b.finished_at,
+      pageCount:   b.page_count,
+    }))
+  );
 
   function homeCardBorderColor(cr: CurrentRead, goal: number | null): string {
     const pageCount = cr.page_count;
@@ -704,9 +716,16 @@ export default function HomeScreen() {
                   borderRadius: 2,
                 }} />
               </View>
-              <Text style={{ fontSize: 11, color: isOnPace(booksThisYear.length, yearlyGoal) ? '#78716c' : '#d97706' }}>
-                {isOnPace(booksThisYear.length, yearlyGoal) ? 'On pace ✓' : 'Behind pace'}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Text style={{ fontSize: 11, color: isOnPace(booksThisYear.length, yearlyGoal) ? '#78716c' : '#d97706' }}>
+                  {isOnPace(booksThisYear.length, yearlyGoal) ? 'On pace ✓' : 'Behind pace'}
+                </Text>
+                {yearAvgPace !== null && (
+                  <Text style={{ fontSize: 11, color: '#a8a29e' }}>
+                    ~{yearAvgPace} pages/day avg
+                  </Text>
+                )}
+              </View>
             </View>
           </TouchableOpacity>
 

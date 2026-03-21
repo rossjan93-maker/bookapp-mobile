@@ -1,0 +1,153 @@
+Build a Reading Pace + Completion Metrics layer for completed and active books.
+
+Do NOT redesign the app.
+Do NOT add social features.
+Do NOT touch recommendation logic.
+Use the existing reading-progress data model.
+
+Goal
+Make reading history more meaningful by showing reader-centric pace metrics that:
+- help users understand how they read
+- make completed books feel more insightful
+- improve active-book finish projections
+
+Core product principle
+The metric should be about the READER, not the book.
+We care about:
+- pages per day
+- days to finish
+- pace relative to their own average
+
+We do NOT care about:
+- how long the author took to write the book
+- arbitrary speed scores
+- external metadata that is not already in the app
+
+Use only existing fields where possible:
+- user_books.started_at
+- user_books.finished_at
+- user_books.current_page
+- books.page_count
+- reading_progress_events if helpful, but do not require it for MVP
+
+--------------------------------
+Part 1 — Define pace metrics
+--------------------------------
+
+For completed books where enough data exists, compute:
+
+1. days_to_finish
+- based on started_at and finished_at
+- sensible handling for same-day finishes (minimum 1 day or clear same-day rule)
+
+2. pages_per_day
+- page_count / days_to_finish
+- only when page_count exists and timing data is usable
+
+3. optional relative pace
+- compare this book’s pages/day to the user’s average pages/day across completed books with valid data
+- examples:
+  - “Faster than your usual pace”
+  - “Slower than your average”
+  - or a simple % difference if it reads naturally
+
+Keep the logic simple and robust.
+Do not overfit edge cases.
+
+--------------------------------
+Part 2 — Show metrics on completed books
+--------------------------------
+
+In the completed books area / finished books list, add compact metrics for each book when data exists.
+
+Desired style:
+- subtle, scannable, not noisy
+- examples:
+  - “18 ppd · 6 days”
+  - “24 ppd · finished in 4 days”
+
+If space allows, prefer:
+- pages/day first
+- completion time second
+
+If data is incomplete:
+- do not force the metric
+- degrade gracefully
+
+--------------------------------
+Part 3 — Add a user-level reading pace summary
+--------------------------------
+
+At the top of the completed/reading-goal/history area, add a subtle summary of the user’s overall pace based on valid completed books.
+
+Examples:
+- “Your pace: ~22 pages/day”
+- “Typical pace: ~18 pages/day”
+
+This should feel lightweight and useful, not like an analytics dashboard.
+
+--------------------------------
+Part 4 — Improve active-book finish projection
+--------------------------------
+
+Use the same pace model to improve or support the active reading projection.
+
+For active books, if enough data exists:
+- pages left
+- estimated finish date based on the user’s actual pace
+
+If not enough data exists:
+- fall back gracefully
+- examples:
+  - “Log progress to estimate your pace”
+  - “Read a little more to estimate finish date”
+
+Important:
+- completed-book pace and active-book projection should use the same conceptual model
+- keep the system internally coherent
+
+--------------------------------
+Part 5 — Keep UX calm and elegant
+--------------------------------
+
+Requirements:
+- no loud stats dashboard
+- no clutter
+- no complicated charts for this MVP
+- keep the metrics concise and editorial
+- use restrained copy
+
+Good:
+- “18 ppd · 6 days”
+- “Your pace: ~22 pages/day”
+- “At your pace: finish by Mar 26”
+
+Avoid:
+- “reading velocity score”
+- “efficiency index”
+- anything gimmicky
+
+--------------------------------
+Part 6 — Output
+--------------------------------
+
+When complete, provide:
+1. files changed
+2. helper functions added
+3. how pages/day is calculated
+4. how days-to-finish is calculated
+5. how user average pace is calculated
+6. where the metrics now appear in the UI
+7. any assumptions or fallback rules used
+
+--------------------------------
+Constraints
+--------------------------------
+
+- Do NOT add new tables unless absolutely necessary
+- Do NOT build a full analytics dashboard
+- Do NOT add charts yet
+- Do NOT broaden scope beyond pace + completion metrics + projection consistency
+
+The result should be:
+users can understand how quickly they tend to finish books, and that same pace can inform how long current books may take.

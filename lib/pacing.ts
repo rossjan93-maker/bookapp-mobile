@@ -246,6 +246,60 @@ export function estimatePaceFinish(
 }
 
 // ---------------------------------------------------------------------------
+// Completed-book pace metrics
+// ---------------------------------------------------------------------------
+
+export type BookPaceResult = {
+  daysToFinish: number;
+  pagesPerDay: number;
+};
+
+/**
+ * Compute pace for a single completed book.
+ * Returns null when started_at, finished_at, or page_count are missing/invalid.
+ * Same-day finishes are treated as 1 day minimum.
+ */
+export function computeBookPace(
+  startedAt: string | null | undefined,
+  finishedAt: string | null | undefined,
+  pageCount: number | null | undefined,
+): BookPaceResult | null {
+  if (!startedAt || !finishedAt || !pageCount || pageCount <= 0) return null;
+  const start  = new Date(startedAt);
+  const finish = new Date(finishedAt);
+  if (isNaN(start.getTime()) || isNaN(finish.getTime())) return null;
+  const daysToFinish = Math.max(1, Math.round((finish.getTime() - start.getTime()) / 86_400_000));
+  const pagesPerDay  = Math.round(pageCount / daysToFinish);
+  if (pagesPerDay <= 0) return null;
+  return { daysToFinish, pagesPerDay };
+}
+
+/**
+ * Compact chip string for a completed book.
+ * e.g. "18 ppd · 6 days" or "24 ppd · 1 day"
+ */
+export function formatPaceChip(pagesPerDay: number, daysToFinish: number): string {
+  const dayStr = daysToFinish === 1 ? '1 day' : `${daysToFinish} days`;
+  return `${pagesPerDay} ppd · ${dayStr}`;
+}
+
+/**
+ * Compute the user's average pages/day across all completed books with valid data.
+ * Returns null when fewer than 2 books have valid pace data (too little signal).
+ */
+export function computeUserAvgPace(
+  books: Array<{ started_at?: string | null; finished_at?: string | null; pageCount?: number | null }>
+): number | null {
+  const rates: number[] = [];
+  for (const b of books) {
+    const result = computeBookPace(b.started_at, b.finished_at, b.pageCount);
+    if (result) rates.push(result.pagesPerDay);
+  }
+  if (rates.length < 2) return null;
+  return Math.round(rates.reduce((sum, r) => sum + r, 0) / rates.length);
+}
+
+// ---------------------------------------------------------------------------
 // Year-to-date goal progress
 // ---------------------------------------------------------------------------
 
