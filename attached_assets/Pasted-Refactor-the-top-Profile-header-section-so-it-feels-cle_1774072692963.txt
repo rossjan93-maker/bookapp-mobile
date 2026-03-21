@@ -1,0 +1,107 @@
+Refactor the top Profile header section so it feels cleaner, less crowded, and more personal.
+
+Do NOT redesign the whole profile screen.
+Do NOT add new features.
+Do NOT build charts or social systems.
+This is a focused profile-header hierarchy and layout improvement only.
+
+Goal
+The current top profile area feels crowded, bland, and overly data-like.
+We want it to feel like a personal reading identity header:
+- calm
+- clear
+- visually organized
+- less noisy
+- more premium
+
+Current problems
+- the header feels crowded
+- too many elements compete visually
+- user_id is visible and should not be
+- the stats row is visually heavy but not emotionally meaningful
+- the settings gear feels disconnected
+- the section reads like a data summary, not a personal profile
+
+What to change
+
+Part 1: Remove low-value noise
+- Remove user_id from the visible profile header entirely
+- Do not show raw internal identity data in the UI
+
+Part 2: Rebuild the top hierarchy
+Refactor the top section into a simpler identity hierarchy:
+
+Primary:
+- avatar
+- full name
+
+Secondary:
+- username
+
+Tertiary:
+- one meaningful reading stat, not a heavy 3-column block
+
+Examples of acceptable stat phrasing:
+- “154 books read”
+- “154 books finished”
+
+Do NOT keep the current large 3-stat row in the top header if it still makes the area feel crowded.
+
+Part 3: Reduce or relocate weak stats
+Friends and Recs Landed are low-value when they are zero and should not dominate the identity header.
+
+Preferred direction:
+- remove them from the top header
+- either move them lower in the profile
+- or keep them in a subtler section if they already exist elsewhere
+
+The header should not give equal visual importance to:
+- core identity
+- empty social stats
+- internal UI controls
+
+Part 4: Improve spacing and layout
+Make the section breathe more.
+
+Requirements:
+- clearer spacing between avatar / identity / stat summary
+- better alignment of the settings control
+- less “stacked blob” feeling
+- stronger visual grouping
+
+The header should read as:
+1. who this person is
+2. their reading identity
+3. then the rest of the profile continues
+
+Part 5: Improve the settings control placement
+The settings icon/button should feel intentionally placed, not floating awkwardly.
+
+Adjust its placement and weight so it feels like a secondary control.
+Keep it accessible, but not dominant.
+
+Part 6: Keep the design calm
+Do NOT overdesign this.
+Avoid:
+- gamification
+- excessive decoration
+- too many stats
+- adding more cards to fill space
+
+Aim for:
+- clean hierarchy
+- better typography balance
+- more white space / breathing room
+- more personal feel
+
+Part 7: Output
+When complete, provide:
+1. files changed
+2. what was removed from the header
+3. what the new hierarchy is
+4. what happened to the old stats row
+5. any small items intentionally deferred
+
+Important
+This is a profile-header polish pass only.
+Do NOT broaden scope into the full profile screen.

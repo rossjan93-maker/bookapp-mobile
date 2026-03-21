@@ -402,94 +402,59 @@ export default function ProfileScreen() {
       contentContainerStyle={{ paddingBottom: 48 }}
       keyboardShouldPersistTaps="handled"
     >
-      {/* ── Hero header ── */}
+      {/* ── Profile header ── */}
       <View style={{
         paddingHorizontal: 24,
-        paddingTop: 44,
-        paddingBottom: 20,
+        paddingTop: 48,
+        paddingBottom: 28,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f0ede8',
       }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+          {/* Avatar */}
           <View style={{
-            width: 64,
-            height: 64,
-            borderRadius: 32,
+            width: 60,
+            height: 60,
+            borderRadius: 30,
             backgroundColor: '#1c1917',
             alignItems: 'center',
             justifyContent: 'center',
-            marginRight: 14,
+            marginRight: 16,
+            flexShrink: 0,
           }}>
-            <Text style={{ fontSize: 25, fontWeight: '800', color: '#fff' }}>
+            <Text style={{ fontSize: 23, fontWeight: '800', color: '#fff' }}>
               {displayName.charAt(0).toUpperCase()}
             </Text>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 22, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5 }}>
+
+          {/* Identity */}
+          <View style={{ flex: 1, paddingTop: 2 }}>
+            <Text style={{ fontSize: 22, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 28 }}>
               {displayName}
             </Text>
             {hasChosenUsername ? (
-              <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 2 }}>@{username}</Text>
+              <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 4 }}>@{username}</Text>
             ) : (
-              <TouchableOpacity onPress={() => router.push('/settings')} style={{ marginTop: 4 }}>
+              <TouchableOpacity onPress={() => router.push('/settings')} style={{ marginTop: 5 }}>
                 <Text style={{ fontSize: 13, color: '#c4b5a5' }}>Choose a username →</Text>
               </TouchableOpacity>
             )}
-            {__DEV__ && userId && (
-              <Text style={{ fontSize: 9, color: '#d6d3d1', marginTop: 3, fontFamily: 'monospace' }} selectable>
-                user_id: {userId}
+            {stats && stats.finishedBooks > 0 && (
+              <Text style={{ fontSize: 13, color: '#78716c', marginTop: 10 }}>
+                {stats.finishedBooks} {stats.finishedBooks === 1 ? 'book' : 'books'} finished
               </Text>
             )}
           </View>
+
+          {/* Settings — low-weight text link, top-aligned */}
           <TouchableOpacity
             onPress={() => router.push('/settings')}
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 18,
-              borderWidth: 1,
-              borderColor: '#e7e5e4',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
+            style={{ paddingTop: 3, paddingLeft: 12 }}
           >
-            <Text style={{ fontSize: 16, lineHeight: 20 }}>⚙</Text>
+            <Text style={{ fontSize: 13, color: '#a8a29e' }}>Settings</Text>
           </TouchableOpacity>
         </View>
       </View>
-
-      {/* ── Stats row ── */}
-      {stats && (
-        <View style={{
-          flexDirection: 'row',
-          paddingHorizontal: 24,
-          paddingBottom: 24,
-          borderBottomWidth: 1,
-          borderBottomColor: '#e7e5e4',
-        }}>
-          <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 28, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 34 }}>{stats.finishedBooks}</Text>
-            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 3, letterSpacing: 0.7, textTransform: 'uppercase' }}>Finished</Text>
-          </View>
-          <View style={{ width: 1, backgroundColor: '#e7e5e4', alignSelf: 'stretch', marginVertical: 4 }} />
-          <View style={{ flex: 1, alignItems: 'center' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-              <Text style={{ fontSize: 28, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 34 }}>{stats.friendsCount}</Text>
-              {pendingRequests.length > 0 && (
-                <View style={{
-                  width: 7, height: 7, borderRadius: 4,
-                  backgroundColor: '#f59e0b',
-                  marginTop: 5, marginLeft: 3,
-                }} />
-              )}
-            </View>
-            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 3, letterSpacing: 0.7, textTransform: 'uppercase' }}>Friends</Text>
-          </View>
-          <View style={{ width: 1, backgroundColor: '#e7e5e4', alignSelf: 'stretch', marginVertical: 4 }} />
-          <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 28, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 34 }}>{stats.recsLanded}</Text>
-            <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 3, letterSpacing: 0.7, textTransform: 'uppercase' }}>Recs Landed</Text>
-          </View>
-        </View>
-      )}
 
       {/* ── Reading Goal ── */}
       <View style={{ paddingHorizontal: 24, marginTop: 24, marginBottom: 0 }}>
