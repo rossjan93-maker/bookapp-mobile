@@ -1,0 +1,57 @@
+We need to fix one trust-breaking issue first:
+
+A Goodreads-imported user is still seeing already-read books in the “Currently Reading” / continue surface.
+
+This is NOT resolved.
+
+Evidence from the uploaded Goodreads CSV:
+- Ship of Magic (Liveship Traders, #1) → read
+- The Mad Ship (Liveship Traders, #2) → read
+- Ship of Destiny (Liveship Traders, #3) → read
+
+Therefore:
+- Mad Ship must NOT appear in recommendations
+- Mad Ship must NOT appear in any continue/next-reading bucket
+- Mad Ship must NOT appear in a section labeled “Currently Reading”
+
+Do NOT work on UI polish generally.
+Do NOT broaden scope.
+Fix this eligibility/section-semantics issue only.
+
+Part 1 — Audit the bucket
+Inspect exactly how the top section is populated.
+
+I need to know:
+1. Is this section truly based on books with status='reading'?
+2. Or is it actually a “continue a series” recommendation bucket?
+3. Is it using the same finished/DNF exclusion safety net as the main recommendation feed?
+4. At what point can an already-read book like Mad Ship still enter this bucket?
+
+Part 2 — Enforce hard exclusion for the continue bucket
+Regardless of series logic, no book already in user_books with status in ('finished','dnf') may appear in:
+- Currently Reading
+- Continue Reading
+- any recommendation bucket
+
+This must be enforced again at the bucket assembly stage, not only earlier in the generic candidate pipeline.
+
+Part 3 — Clarify section semantics
+If the section is powered by “next in series” logic rather than actual user_books.status='reading', then rename the section appropriately.
+Rules:
+- “Currently Reading” = only books truly in status='reading'
+- “Continue Reading” = next unread book in a started series
+Do not mix the two concepts.
+
+Part 4 — Forensic proof
+Return:
+1. root cause of why Mad Ship is still surfacing
+2. files changed
+3. exact exclusion rule added at the bucket level
+4. whether the section was renamed or the logic changed
+5. proof using these exact titles:
+   - Ship of Magic
+   - The Mad Ship
+   - Ship of Destiny
+
+Success condition:
+A user who has finished all 3 Liveship Traders books never sees Mad Ship in any recommendation or continue-reading surface.

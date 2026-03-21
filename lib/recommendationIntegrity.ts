@@ -76,6 +76,26 @@ export function buildSeriesReadSet(
   return names;
 }
 
+// Tracks the HIGHEST position the user has finished/read in each series.
+// Used to prevent surfacing books the user has already read even when the series
+// name alone confirms they "started" it.
+// e.g. if user read Liveship Traders #1, #2, #3 → progress["liveship traders"] = 3
+// Candidate #2 ("Mad Ship") has position 2 ≤ 3 → must NOT appear in any bucket.
+export function buildSeriesProgress(
+  readBooks: Array<{ title: string; author: string }>,
+): Map<string, number> {
+  const progress = new Map<string, number>();
+  for (const book of readBooks) {
+    const entry = lookupCurated(book.author, book.title);
+    if (entry) {
+      const sKey = normKey(entry.series);
+      const prev = progress.get(sKey) ?? 0;
+      if (entry.position > prev) progress.set(sKey, entry.position);
+    }
+  }
+  return progress;
+}
+
 // ── Helper ───────────────────────────────────────────────────────────────────
 
 function normKey(s: string): string {

@@ -74,7 +74,7 @@ import type { ReaderThesis, ExpertRecResult, CandidateJudgment } from './expertR
 import { buildReaderThesis, judgeCandidateFit, composeRecommendationSet } from './expertRec';
 import { buildEvidencePack }                                  from './evidencePack';
 import { loadCachedRecs, persistRecCache, shouldRebuild, buildSignalSnapshot } from './recCache';
-import { applyIntegrityLayer, buildSeriesReadSet, stripTitleSubtitle } from './recommendationIntegrity';
+import { applyIntegrityLayer, buildSeriesReadSet, buildSeriesProgress, stripTitleSubtitle } from './recommendationIntegrity';
 
 // ── Quality gate constants ─────────────────────────────────────────────────────
 
@@ -237,7 +237,8 @@ export type CandidateResult = {
   candidates:      CandidateBook[];
   enrichmentMap:   Map<string, BookEnrichmentProfile>;
   retrieval_trace: RetrievalTrace;
-  seriesReadSet:   Set<string>;   // series names the user has already started
+  seriesReadSet:   Set<string>;              // series names the user has already started
+  seriesProgress:  Map<string, number>;      // series name → highest position the user has read
 };
 
 // ── Fit label helpers (used by the UI) ────────────────────────────────────────
@@ -568,13 +569,17 @@ async function fetchOLByAuthor(
 // Key format: "<normalized author>::<normalized title>"
 function normBookKey(title: string, author: string): string {
   const strippedTitle = stripTitleSubtitle(title);
-  const t = strippedTitle
+  const tRaw = strippedTitle
     .toLowerCase()
     .replace(/['''\u2018\u2019]/g, '')   // strip apostrophes
     .replace(/\s*\([^)]*\)/g, '')        // strip remaining parentheticals
     .replace(/[^a-z0-9 ]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+  // Strip leading articles so "The Mad Ship" (library) == "Mad Ship" (OL).
+  // This is the primary normalization that allows Goodreads-imported titles
+  // stored with "The/A/An" prefix to match their OL counterparts.
+  const t = tRaw.replace(/^(the|an?) /, '');
 
   // Handle Goodreads "Last, First" export format by inverting before stripping
   const rawA = /^[^,]+,\s*.+$/.test(author)
@@ -1540,8 +1545,9 @@ export function getRankedRecs(
     hygiene_excluded:    0,
     enriched_count:      0,
   },
-  intent?:      NextReadIntent,
-  seriesReadSet: Set<string> = new Set(),
+  intent?:       NextReadIntent,
+  seriesReadSet:  Set<string>     = new Set(),
+  seriesProgress: Map<string, number> = new Map(),
 ): RankedRecsResult {
   const poolSize = candidates.length;
 
@@ -1699,9 +1705,36 @@ export function getRankedRecs(
   // all books fall through to Discover Next. Dense commercial readers with
   // many started series may see up to CONT_CAP continuations. Literary and
   // nonfiction readers almost never trigger the continuation path.
-  const continuationPool = rilPool.filter(
-    b => b._score_breakdown.series_label === 'series_continuation'
-  );
+  // ── Series-progress guard ─────────────────────────────────────────────────
+  // A book with series_label='series_continuation' is only eligible for the
+  // Continue Reading bucket if the user has NOT already read it (or a later
+  // installment). Without this check, a user who has read Liveship Traders #1,
+  // #2, #3 would still see #2 ("Mad Ship") as a "Continue Reading" pick because
+  // the series-started boolean alone doesn't encode how far they have read.
+  //
+  // seriesProgress maps normKey(series_name) → highest position the user has
+  // finished. If candidate.position ≤ maxRead → user has already read it → drop.
+  function normSKey(s: string) {
+    return s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  const continuationPool = rilPool.filter(b => {
+    if (b._score_breakdown.series_label !== 'series_continuation') return false;
+    const sName = typeof b._score_breakdown.series_name === 'string'
+      ? b._score_breakdown.series_name : null;
+    const sPos  = typeof b._score_breakdown.series_position === 'number'
+      ? b._score_breakdown.series_position : null;
+    if (sName !== null && sPos !== null) {
+      const maxRead = seriesProgress.get(normSKey(sName)) ?? 0;
+      if (sPos <= maxRead) {
+        if (__DEV__) console.log(
+          `[SERIES_PROG] Dropped "${b.title}" #${sPos} from Continue Reading — user read up to #${maxRead} in "${sName}"`
+        );
+        return false;
+      }
+    }
+    return true;
+  });
   const discoveryPool = rilPool.filter(
     b => b._score_breakdown.series_label !== 'series_continuation'
   );
@@ -2060,9 +2093,14 @@ export async function getCandidateBooks(
   // import variants like "Fool's Fate: A Tawny Man Novel" now resolve correctly.
   // This is the primary, stable source. OL-excluded books are added later as
   // a supplemental fallback (additive only — can never remove series).
-  const seriesReadSet = buildSeriesReadSet(local.readBooks);
+  const seriesReadSet  = buildSeriesReadSet(local.readBooks);
+  const seriesProgress = buildSeriesProgress(local.readBooks);
   if (__DEV__) {
     console.log(`[SERIES_RS] trulyRead=${local.readBooks.length} (of ${local.readIds.size} in library) primarySize=${seriesReadSet.size} series=[${[...seriesReadSet].join(', ')}]`);
+    if (seriesProgress.size > 0) {
+      const progressStr = [...seriesProgress.entries()].map(([s, p]) => `${s}:#${p}`).join(', ');
+      console.log(`[SERIES_PROG] maxRead=[${progressStr}]`);
+    }
     if (seriesReadSet.size === 0 && local.readBooks.length > 0) {
       // Emit a sample so we can see the exact author/title format stored in the DB
       console.log(`[SERIES_RS_SAMPLE]`, local.readBooks.slice(0, 8).map(b => `"${b.title}" / "${b.author}"`));
@@ -2240,7 +2278,7 @@ export async function getCandidateBooks(
     }
   }
 
-  return { candidates: filtered, enrichmentMap, retrieval_trace, seriesReadSet };
+  return { candidates: filtered, enrichmentMap, retrieval_trace, seriesReadSet, seriesProgress };
 }
 
 // ── Convenience async wrapper ─────────────────────────────────────────────────
@@ -2253,9 +2291,9 @@ export async function getPersonalizedRecs(
   feedback?: FeedbackContext,
   intent?:   NextReadIntent,
 ): Promise<RankedRecsResult> {
-  const { candidates, enrichmentMap, retrieval_trace, seriesReadSet } =
+  const { candidates, enrichmentMap, retrieval_trace, seriesReadSet, seriesProgress } =
     await getCandidateBooks(client, userId, profile, feedback);
-  return getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet);
+  return getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet, seriesProgress);
 }
 
 // ── Expert-layer orchestration ────────────────────────────────────────────────
@@ -2281,9 +2319,9 @@ export async function getPersonalizedRecsWithExpert(
   opts?:       { skipCache?: boolean },
 ): Promise<RankedRecsResult> {
   // ── Step 1: Deterministic pipeline (always runs) ──────────────────────────
-  const { candidates, enrichmentMap, retrieval_trace, seriesReadSet } =
+  const { candidates, enrichmentMap, retrieval_trace, seriesReadSet, seriesProgress } =
     await getCandidateBooks(client, userId, profile, feedback);
-  const baseResult = getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet);
+  const baseResult = getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet, seriesProgress);
 
   // ── Forensic audit log (forensic user only, dev mode) ────────────────────
   if (__DEV__ && userId === FORENSIC_USER_ID) {
@@ -2473,7 +2511,7 @@ export async function getPersonalizedRecsWithExpert(
     detScores.set(r.id, r.score);
   }
   // Also score the broader candidate pool (not just top-5) for better coverage
-  const allScored = getRankedRecs(candidates, profile, EXPERT_JUDGE_CAP, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet);
+  const allScored = getRankedRecs(candidates, profile, EXPERT_JUDGE_CAP, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet, seriesProgress);
   for (const r of allScored.recs) {
     const key = r.external_id ?? r.id;
     if (!detScores.has(key)) detScores.set(key, r.score);
