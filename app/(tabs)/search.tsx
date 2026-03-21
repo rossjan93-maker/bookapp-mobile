@@ -2385,7 +2385,7 @@ export default function RecommendationsScreen() {
                     </View>
                   )}
 
-                  {/* ── Continue Reading bucket ── */}
+                  {/* ── Currently Reading bucket ── */}
                   {continuations.length > 0 ? (
                     <>
                       <View style={{ marginBottom: 10, marginTop: 6 }}>
@@ -2393,7 +2393,7 @@ export default function RecommendationsScreen() {
                           fontSize: 16, fontWeight: '700',
                           color: '#1c1917', letterSpacing: -0.2,
                         }}>
-                          Continue Reading
+                          Currently Reading
                         </Text>
                         <Text style={{ fontSize: 12, color: '#78716c', marginTop: 2 }}>
                           Pick up where you left off
@@ -2431,7 +2431,7 @@ export default function RecommendationsScreen() {
                       borderColor: '#e7e5e4',
                     }}>
                       <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', marginBottom: 3 }}>
-                        Continue Reading
+                        Currently Reading
                       </Text>
                       <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>
                         No active series yet — start one below.
