@@ -1670,7 +1670,7 @@ export function getRankedRecs(
   // Runs after CoG so repeated_author_match is populated.
   // Annotates every book with series_name / series_position / series_label.
   // Removes series_later_volume books from the visible pool (placed in audit).
-  const rilResult = applyIntegrityLayer(dedupedNonRejected, seriesReadSet);
+  const rilResult = applyIntegrityLayer(dedupedNonRejected, seriesReadSet, seriesProgress);
   const rilPool   = rilResult.visible;          // feeds the intent / composition stages
   const rilSuppressed = rilResult.integritySuppressed;
 

@@ -373,6 +373,37 @@ const CURATED: Record<string, Record<string, CuratedEntry>> = {
   },
 };
 
+// ── Series prerequisite map ───────────────────────────────────────────────────
+//
+// Maps an exact series name → list of prerequisite series that MUST be fully
+// completed (all published books read) before the entry point (position 1) of
+// that series may be recommended.
+//
+// "Fully completed" = seriesProgress[prereq] >= seriesCatalog[prereq].total
+//
+// Scope: only add entries where the narrative dependency is mandatory, not
+// merely preferred.  Casual recommendations ("nice to have read X first") do
+// not belong here.
+//
+// Current mandatory chains:
+//   Robin Hobb — Realm of the Elderlings (Fitz arc)
+//     Farseer Trilogy → Tawny Man Trilogy → Fitz and the Fool
+//   Robin Hobb — Realm of the Elderlings (Liveship arc)
+//     Liveship Traders → Rain Wilds Chronicles
+//   Brandon Sanderson — Cosmere (Mistborn)
+//     Mistborn Era 1 → Wax and Wayne (Era 2)
+//
+// Keys use the exact series name from the CURATED database above.
+const SERIES_PREREQS: Readonly<Record<string, string[]>> = {
+  // ── Robin Hobb — Fitz arc ───────────────────────────────────────────────
+  'Tawny Man Trilogy':     ['Farseer Trilogy'],
+  'Fitz and the Fool':     ['Tawny Man Trilogy'],
+  // ── Robin Hobb — Liveship / Rain Wilds arc ──────────────────────────────
+  'Rain Wilds Chronicles': ['Liveship Traders'],
+  // ── Sanderson — Mistborn ────────────────────────────────────────────────
+  'Wax and Wayne':         ['Mistborn'],
+};
+
 // Author name normalisation — handles common formatting variants.
 // "Sarah J. Maas", "Sarah J Maas" → "sarah j maas"
 // "Hobb, Robin" (Goodreads "Last, First" import format) → "robin hobb"
@@ -592,8 +623,9 @@ export function deriveSeriesLabel(
 // ── Main integrity pass ───────────────────────────────────────────────────────
 
 export function applyIntegrityLayer(
-  books:         ScoredBook[],
-  seriesReadSet: Set<string> = new Set(),
+  books:          ScoredBook[],
+  seriesReadSet:  Set<string>         = new Set(),
+  seriesProgress: Map<string, number> = new Map(),
 ): IntegrityLayerResult {
 
   type Annotated = { book: ScoredBook; series: SeriesPosition | null; label: SeriesLabel | null };
@@ -636,9 +668,26 @@ export function applyIntegrityLayer(
   }
 
   // ── Step 3: Determine suppressions ───────────────────────────────────────
-  // Continuation eligibility: user must have read a book from THIS specific
-  // series. Author familiarity alone is insufficient — a reader may know Robin
-  // Hobb well but never have started the Liveship Traders series.
+  //
+  // Three rules (applied in order):
+  //
+  //   Rule A — Entry-point integrity (unstarted series):
+  //     • Only position 1 may surface for a series the user hasn't started.
+  //     • Position 1 is additionally gated: ALL prerequisite sub-series in
+  //       SERIES_PREREQS must be fully completed (seriesProgress >= catalog
+  //       total). Prevents jumping into a later arc before finishing the
+  //       mandatory prior arc (e.g. no Fitz and the Fool until Tawny Man done).
+  //
+  //   Rule B — Strict progression (started series):
+  //     • Only position === maxRead + 1 is eligible.
+  //     • Skip-aheads (position > maxRead + 1) are suppressed.
+  //     • Already-read books (position ≤ maxRead) are suppressed.
+  //
+  //   Rule C — Group dedup:
+  //     • Within a series group, suppress all candidates except the one
+  //       selected by Rules A/B to avoid duplicate series picks in the feed.
+  //
+  // Logs: every ALLOW and REJECT decision emits a [SERIES_DECISION] line.
   const suppressedIds = new Set<string>();
 
   function suppressBook(item: Annotated, reason: string) {
@@ -651,6 +700,24 @@ export function applyIntegrityLayer(
     return seriesReadSet.has(normKey(seriesName));
   }
 
+  function maxReadInSeries(seriesName: string): number {
+    return seriesProgress.get(normKey(seriesName)) ?? 0;
+  }
+
+  // A prereq series is "fully completed" when maxRead ≥ catalog total.
+  // If the series is unknown to the catalog, we cannot confirm completion →
+  // be conservative and treat it as incomplete (blocks the dependent rec).
+  function isSeriesFullyCompleted(seriesName: string): boolean {
+    const cat = getSeriesCatalog(seriesName);
+    if (!cat) return false;
+    return maxReadInSeries(seriesName) >= cat.total;
+  }
+
+  // Returns the list of prereq series that have not yet been completed.
+  function getUnmetPrereqs(seriesName: string): string[] {
+    return (SERIES_PREREQS[seriesName] ?? []).filter(p => !isSeriesFullyCompleted(p));
+  }
+
   for (const [, group] of seriesGroups) {
     group.members.sort(
       (a, b) => (a.series?.series_position ?? 99) - (b.series?.series_position ?? 99)
@@ -659,19 +726,79 @@ export function applyIntegrityLayer(
     const [best, ...rest] = group.members;
     const bestPos         = best.series!.series_position;
     const seriesName      = best.series!.series_name;
-    const bestStarted     = hasStartedSeries(seriesName);
+    const seriesStarted   = hasStartedSeries(seriesName);
+    const maxRead         = maxReadInSeries(seriesName);
+    const needed          = maxRead + 1;
+    const detectInfo      = `[${best.series!.detection_method}/${best.series!.confidence}]`;
 
-    // Suppress redundant higher-position members when user hasn't started this series
+    // ── Rule C — Group dedup ────────────────────────────────────────────
+    // All non-"best" members are suppressed regardless of other rules.
+    // For a started series, the sole eligible position is maxRead+1, so any
+    // other group member is redundant by definition.
     for (const item of rest) {
-      if (!hasStartedSeries(seriesName)) {
-        suppressBook(item, `series_dedup: #${item.series!.series_position} suppressed; best entry point is #${bestPos} [${item.series!.detection_method}/${item.series!.confidence}]`);
+      const itemPos = item.series!.series_position;
+      if (!seriesStarted) {
+        suppressBook(item, `series_dedup: #${itemPos} suppressed; best entry point is #${bestPos} ${detectInfo}`);
+      } else {
+        suppressBook(item, `series_dedup: #${itemPos} suppressed; only #${needed} eligible ${detectInfo}`);
       }
     }
 
-    // Suppress even the "best" pool member if it's still a continuation
-    // and user hasn't started this specific series. Fires even for solo pool members.
-    if (bestPos > 1 && !bestStarted) {
-      suppressBook(best, `series_no_entry_point: #${bestPos} suppressed; user has not started ${seriesName} [${best.series!.detection_method}/${best.series!.confidence}]`);
+    // ── Rules A / B — primary eligibility check on the best candidate ───
+    if (!seriesStarted) {
+      // ── Rule A: unstarted series ───────────────────────────────────────
+      if (bestPos > 1) {
+        // No entry point in pool — suppress.
+        if (__DEV__) console.log(
+          `[SERIES_DECISION] candidate="${best.book.title}" exact_series="${seriesName}" ` +
+          `maxReadExact=${maxRead} position=${bestPos} decision="REJECT_NO_ENTRY_POINT"`,
+        );
+        suppressBook(best, `series_no_entry_point: #${bestPos} suppressed; user has not started ${seriesName} ${detectInfo}`);
+      } else {
+        // bestPos === 1 → valid entry point. Check prereqs.
+        const unmet = getUnmetPrereqs(seriesName);
+        if (unmet.length > 0) {
+          const prereqDetail = unmet.map(p => {
+            const cat = getSeriesCatalog(p);
+            return `${p}(${maxReadInSeries(p)}/${cat?.total ?? '?'})`;
+          }).join(', ');
+          if (__DEV__) console.log(
+            `[SERIES_DECISION] candidate="${best.book.title}" exact_series="${seriesName}" ` +
+            `maxReadExact=${maxRead} decision="REJECT_PREREQ_NOT_MET" ` +
+            `unmet_prereqs=[${prereqDetail}]`,
+          );
+          suppressBook(best, `series_prereq_not_met: "${seriesName}" entry blocked; complete first: ${unmet.join(', ')} ${detectInfo}`);
+        } else {
+          // All clear — entry point is eligible.
+          if (__DEV__) console.log(
+            `[SERIES_DECISION] candidate="${best.book.title}" exact_series="${seriesName}" ` +
+            `maxReadExact=${maxRead} decision="ALLOW_ENTRY_POINT"`,
+          );
+        }
+      }
+    } else {
+      // ── Rule B: started series — only maxRead+1 is eligible ───────────
+      if (bestPos === needed) {
+        if (__DEV__) console.log(
+          `[SERIES_DECISION] candidate="${best.book.title}" exact_series="${seriesName}" ` +
+          `maxReadExact=${maxRead} position=${bestPos} needed=${needed} decision="ALLOW_NEXT"`,
+        );
+      } else if (bestPos <= maxRead) {
+        // Already read — suppress (belt-and-suspenders; safety net + bucket
+        // filter should have caught this, but RIL is the last line of defence).
+        if (__DEV__) console.log(
+          `[SERIES_DECISION] candidate="${best.book.title}" exact_series="${seriesName}" ` +
+          `maxReadExact=${maxRead} position=${bestPos} needed=${needed} decision="REJECT_ALREADY_READ"`,
+        );
+        suppressBook(best, `series_already_read: #${bestPos} suppressed; user read up to #${maxRead} in ${seriesName} ${detectInfo}`);
+      } else {
+        // Skip-ahead — position > maxRead+1.
+        if (__DEV__) console.log(
+          `[SERIES_DECISION] candidate="${best.book.title}" exact_series="${seriesName}" ` +
+          `maxReadExact=${maxRead} position=${bestPos} needed=${needed} decision="REJECT_SKIP_AHEAD"`,
+        );
+        suppressBook(best, `series_skip_ahead: #${bestPos} suppressed; user needs #${needed} in ${seriesName} ${detectInfo}`);
+      }
     }
   }
 
