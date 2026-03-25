@@ -36,7 +36,7 @@
 //   of its series in the pool — the most common real-world case.
 
 import type { ScoredBook, ScoreBreakdown } from './recommender';
-import { getSeriesCatalog }               from './seriesCatalog';
+import { getSeriesCatalog, getAllSeriesCatalog } from './seriesCatalog';
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
@@ -94,6 +94,70 @@ export function buildSeriesProgress(
     }
   }
   return progress;
+}
+
+// ── Exact-series retrieval seeds ─────────────────────────────────────────────
+//
+// Returns the canonical "next book to read" for every series that is:
+//   • Unstarted and prereq-clear  → seed position 1
+//   • In-progress (started but not complete) → seed position maxRead + 1
+//   • Complete (maxRead ≥ total)  → no seed
+//
+// This compensates for OL broad-author searches not reliably returning
+// mid-sequence or lower-popularity titles (e.g. Tawny Man #1 "Fool's Errand",
+// Rain Wilds #1 "Dragon Keeper", Fitz and the Fool #1 "Fool's Assassin").
+// The results are fetched with exact title+author OL lookups and merged into
+// the candidate pool before ranking, guaranteeing the correct series book is
+// present for the already-validated RIL decision rules to act on.
+export type SeriesSeed = {
+  title:    string;
+  author:   string;
+  series:   string;
+  position: number;
+};
+
+export function getEligibleSeriesSeeds(
+  seriesProgress: Map<string, number>,
+  seriesReadSet:  Set<string>,
+): SeriesSeed[] {
+  const catalog = getAllSeriesCatalog();
+  const seeds: SeriesSeed[] = [];
+
+  for (const [seriesKey, entry] of Object.entries(catalog)) {
+    const sKeyNorm = normKey(seriesKey);
+    const maxRead  = seriesProgress.get(sKeyNorm) ?? 0;
+    const started  = seriesReadSet.has(sKeyNorm);
+    const total    = entry.total;
+
+    // Rule C: series fully complete → no seed needed
+    if (maxRead >= total) continue;
+
+    if (!started) {
+      // Rule A: unstarted series → seed #1, but only if all prereqs are met.
+      // Mirrors the same gate used in applyIntegrityLayer Rule A so the seeded
+      // book is guaranteed to pass the prereq check when it reaches RIL.
+      const unmet = (SERIES_PREREQS[seriesKey] ?? []).filter(prereq => {
+        const prereqCat = getSeriesCatalog(prereq);
+        if (!prereqCat) return true; // unknown catalog → conservative: treat as unmet
+        return (seriesProgress.get(normKey(prereq)) ?? 0) < prereqCat.total;
+      });
+      if (unmet.length > 0) continue;
+
+      const book1 = entry.orderedBooks[0];
+      if (book1) {
+        seeds.push({ title: book1.title, author: book1.author, series: seriesKey, position: 1 });
+      }
+    } else {
+      // Rule B: started but incomplete → seed maxRead + 1.
+      // orderedBooks is 0-indexed; position maxRead+1 is at index maxRead.
+      const nextBook = entry.orderedBooks[maxRead];
+      if (nextBook) {
+        seeds.push({ title: nextBook.title, author: nextBook.author, series: seriesKey, position: maxRead + 1 });
+      }
+    }
+  }
+
+  return seeds;
 }
 
 // ── Helper ───────────────────────────────────────────────────────────────────

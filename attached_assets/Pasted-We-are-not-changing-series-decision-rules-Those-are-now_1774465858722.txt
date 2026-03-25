@@ -1,0 +1,69 @@
+We are not changing series decision rules.
+Those are now validated.
+
+We are fixing the next issue only:
+retrieval coverage for the correct series reading decision.
+
+Problem
+The logic now correctly decides:
+- entry point
+- next unread
+- no skip-ahead
+- no already-read
+
+But important books are still missing because OL author queries do not reliably return the right exact titles.
+This is especially visible with Robin Hobb and other multi-series authors.
+
+Goal
+Make retrieval series-aware so the pool contains the correct candidate book for the already-validated series decision rules.
+
+What to do
+
+Part 1 — Audit retrieval coverage
+Inspect current retrieval and identify:
+1. how author-anchor retrieval currently works
+2. why exact series starters / next unread books are missing from the candidate pool
+3. which parts of the candidate pool depend too much on broad OL search recall
+
+Part 2 — Add exact-series retrieval
+Use the canonical series registry to explicitly seed retrieval candidates:
+
+Rule A:
+If exact series is unstarted and allowed by prereq rules:
+- seed Book 1 into retrieval
+
+Rule B:
+If exact series is started but incomplete:
+- seed position === maxRead + 1 into retrieval
+
+Rule C:
+If exact series is complete:
+- do not seed anything from that series
+
+This should apply before ranking so the correct exact-series book is actually present in the pool.
+
+Part 3 — Keep canonical control
+Do not rely on broad author search alone for these series decisions.
+Use the canonical registry for:
+- title
+- author
+- exact position
+
+If OL lookup is needed, do it for that exact book, not a broad guess.
+
+Part 4 — Proof
+Return:
+1. root cause of current retrieval gap
+2. files changed
+3. exact series-aware retrieval rule added
+4. proof with Robin Hobb examples:
+   - Fool's Assassin
+   - Fool's Fate
+   - one valid exact-series starter or next unread example
+5. confirmation that the correct series decision book now enters the pool when it should
+
+Constraints
+- Do NOT redesign UI
+- Do NOT change series decision logic
+- Do NOT change card interaction yet
+- Do NOT broaden scope beyond retrieval coverage

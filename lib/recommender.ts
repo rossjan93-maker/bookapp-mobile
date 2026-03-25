@@ -74,7 +74,7 @@ import type { ReaderThesis, ExpertRecResult, CandidateJudgment } from './expertR
 import { buildReaderThesis, judgeCandidateFit, composeRecommendationSet } from './expertRec';
 import { buildEvidencePack }                                  from './evidencePack';
 import { loadCachedRecs, persistRecCache, shouldRebuild, buildSignalSnapshot } from './recCache';
-import { applyIntegrityLayer, buildSeriesReadSet, buildSeriesProgress, stripTitleSubtitle } from './recommendationIntegrity';
+import { applyIntegrityLayer, buildSeriesReadSet, buildSeriesProgress, stripTitleSubtitle, getEligibleSeriesSeeds } from './recommendationIntegrity';
 
 // ── Quality gate constants ─────────────────────────────────────────────────────
 
@@ -547,6 +547,62 @@ async function fetchOLByAuthor(
         description:       null,
         _source:           'open_library',
         _retrieval_reason: `author_anchor:${author}`,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+// ── OL exact title+author lookup ──────────────────────────────────────────────
+//
+// Used by getExactSeriesCandidates to fetch the precise canonical book for
+// series seeding.  Unlike the broad author/subject searches, this targets a
+// specific title so it reliably surfaces low-popularity mid-sequence books
+// (e.g. "Fool's Errand" by Robin Hobb — Tawny Man #1) that author-search
+// `sort=rating` would bury past the top-12 limit.
+//
+// Returns the single best OL match (first result).  Silently returns [] on any
+// network / parse error so the rest of retrieval is never blocked.
+async function fetchOLByTitle(
+  title:    string,
+  author:   string,
+  series:   string,
+  position: number,
+): Promise<CandidateBook[]> {
+  try {
+    const url =
+      `https://openlibrary.org/search.json` +
+      `?title=${encodeURIComponent(title)}` +
+      `&author=${encodeURIComponent(author)}` +
+      `&fields=key,title,author_name,cover_i,number_of_pages_median,subject,first_publish_year,language` +
+      `&limit=3`;
+
+    const controller = new AbortController();
+    const timer      = setTimeout(() => controller.abort(), 4000);
+    const res        = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+
+    if (!res.ok) return [];
+    const json = await res.json() as { docs?: OLDoc[] };
+
+    return (json.docs ?? [])
+      .filter(doc => doc.key && doc.title)
+      .slice(0, 1)  // take only the top OL hit — exact query should rank it first
+      .map((doc): CandidateBook => ({
+        id:                `ol:${doc.key}`,
+        title:             stripTitleSubtitle(doc.title ?? ''),
+        author:            doc.author_name?.[0] ?? author,
+        cover_url:         doc.cover_i
+                             ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
+                             : null,
+        external_id:       doc.key ?? null,
+        subjects:          doc.subject?.slice(0, 20) ?? null,
+        page_count:        typeof doc.number_of_pages_median === 'number'
+                             ? doc.number_of_pages_median
+                             : null,
+        description:       null,
+        _source:           'open_library',
+        _retrieval_reason: `exact_series_seed:${series}#${position}`,
       }));
   } catch {
     return [];
@@ -2107,6 +2163,27 @@ export async function getCandidateBooks(
     }
   }
 
+  // ── Source D: exact-series seeds (launched immediately, runs in parallel) ───
+  // For each series in the canonical catalog that the user should read next
+  // (unstarted + prereq-clear, or in-progress + incomplete), fire an exact
+  // title+author OL lookup.  These are launched here — BEFORE the cache check
+  // and OL fetch below — so the latency is fully absorbed in parallel.
+  // Results are merged into externalCandidates after the OL fetch resolves.
+  const exactSeriesSeeds = getEligibleSeriesSeeds(seriesProgress, seriesReadSet);
+  if (__DEV__) {
+    console.log(
+      `[EXACT_SEEDS] seeding ${exactSeriesSeeds.length} series book(s): [` +
+      exactSeriesSeeds.map(s => `"${s.title}" (${s.series} #${s.position})`).join(', ') +
+      `]`,
+    );
+  }
+  const exactSeedsFetchP: Promise<CandidateBook[]> =
+    exactSeriesSeeds.length === 0
+      ? Promise.resolve([])
+      : Promise.all(
+          exactSeriesSeeds.map(s => fetchOLByTitle(s.title, s.author, s.series, s.position))
+        ).then(r => r.flat());
+
   const catalogExternalIds = new Set(
     local.candidates.map(c => c.external_id).filter((x): x is string => !!x)
   );
@@ -2180,6 +2257,32 @@ export async function getCandidateBooks(
 
     // Persist OL results (best-effort, async)
     persistOLCandidates(client, userId, olResult.candidates).catch(() => {});
+  }
+
+  // ── Merge exact-series seeds (await the parallel fetch started above) ────────
+  // Deduplicate against what OL / cache already returned so we don't double-count.
+  // Exact seeds are NOT excluded by the OL exclude set (readExternalIds) because
+  // we know they are unread — that check is by external_id and these books simply
+  // weren't in the user's library.  The safety-net layer below still catches any
+  // edge-case where a seed somehow matches finishedDnfNormalized.
+  const exactSeedsRaw = await exactSeedsFetchP;
+  if (exactSeedsRaw.length > 0) {
+    const existingExtIds = new Set(
+      externalCandidates.map(b => b.external_id).filter((x): x is string => !!x)
+    );
+    const newSeeds = exactSeedsRaw.filter(
+      b => b.external_id == null || !existingExtIds.has(b.external_id)
+    );
+    if (newSeeds.length > 0) {
+      externalCandidates = [...externalCandidates, ...newSeeds];
+      if (__DEV__) {
+        console.log(
+          `[EXACT_SEEDS] added ${newSeeds.length} exact-series book(s) to pool: [` +
+          newSeeds.map(b => `"${b.title}" [${b._retrieval_reason}]`).join(', ') +
+          `]`,
+        );
+      }
+    }
   }
 
   // ── Top trait anchors for trace ────────────────────────────────────────────

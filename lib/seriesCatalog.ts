@@ -412,3 +412,8 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
 export function getSeriesCatalog(seriesName: string): SeriesCatalogEntry | null {
   return SERIES_CATALOG[seriesName] ?? null;
 }
+
+// Returns the full catalog — used by exact-series retrieval seeding.
+export function getAllSeriesCatalog(): Readonly<Record<string, SeriesCatalogEntry>> {
+  return SERIES_CATALOG;
+}
