@@ -7,6 +7,7 @@ import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { computePagePacing, computeDatePacing, formatLastUpdated, computeBookPace, formatPaceChip, computeUserAvgPace } from '../../lib/pacing';
 import { transitionStatus, saveCurrentPage } from '../../lib/userBookActions';
+import { findSeriesForBook } from '../../lib/seriesCatalog';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -776,18 +777,25 @@ export default function LibraryScreen() {
               {/* Cover + title/author/progress */}
               <TouchableOpacity
                 activeOpacity={0.7}
-                onPress={() => router.push({
-                  pathname: '/book/[id]',
-                  params: {
-                    id:         item.book_id,
-                    title:      item.book?.title ?? '',
-                    author:     item.book?.author ?? '',
-                    coverUrl:   item.book?.cover_url ?? '',
-                    externalId: item.book?.external_id ?? '',
-                    status:     item.status,
-                    startedAt:  item.started_at ?? '',
-                  },
-                })}
+                onPress={() => {
+                  const seriesCtx = findSeriesForBook(item.book?.title ?? '', item.book?.author ?? '');
+                  router.push({
+                    pathname: '/book/[id]',
+                    params: {
+                      id:         item.book_id,
+                      title:      item.book?.title ?? '',
+                      author:     item.book?.author ?? '',
+                      coverUrl:   item.book?.cover_url ?? '',
+                      externalId: item.book?.external_id ?? '',
+                      status:     item.status,
+                      startedAt:  item.started_at ?? '',
+                      ...(seriesCtx ? {
+                        seriesName:     seriesCtx.seriesName,
+                        seriesPosition: String(seriesCtx.seriesPosition),
+                      } : {}),
+                    },
+                  });
+                }}
                 style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: hasExtraRow ? 12 : 0 }}
               >
                 <CoverThumb
@@ -974,18 +982,25 @@ export default function LibraryScreen() {
             }}>
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={() => router.push({
-                pathname: '/book/[id]',
-                params: {
-                  id:         item.book_id,
-                  title:      item.book?.title ?? '',
-                  author:     item.book?.author ?? '',
-                  coverUrl:   item.book?.cover_url ?? '',
-                  externalId: item.book?.external_id ?? '',
-                  status:     item.status,
-                  startedAt:  item.started_at ?? '',
-                },
-              })}
+              onPress={() => {
+                const seriesCtx = findSeriesForBook(item.book?.title ?? '', item.book?.author ?? '');
+                router.push({
+                  pathname: '/book/[id]',
+                  params: {
+                    id:         item.book_id,
+                    title:      item.book?.title ?? '',
+                    author:     item.book?.author ?? '',
+                    coverUrl:   item.book?.cover_url ?? '',
+                    externalId: item.book?.external_id ?? '',
+                    status:     item.status,
+                    startedAt:  item.started_at ?? '',
+                    ...(seriesCtx ? {
+                      seriesName:     seriesCtx.seriesName,
+                      seriesPosition: String(seriesCtx.seriesPosition),
+                    } : {}),
+                  },
+                });
+              }}
               style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: hasExtraRow ? 10 : 0 }}
             >
               <CoverThumb

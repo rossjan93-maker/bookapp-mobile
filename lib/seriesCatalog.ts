@@ -417,3 +417,34 @@ export function getSeriesCatalog(seriesName: string): SeriesCatalogEntry | null 
 export function getAllSeriesCatalog(): Readonly<Record<string, SeriesCatalogEntry>> {
   return SERIES_CATALOG;
 }
+
+// Normalise a title or author string for catalog matching:
+// lowercase, strip smart quotes and apostrophes, collapse non-alnum to spaces.
+function normForMatch(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/['']/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Given a book title + author, return the canonical series key and 1-indexed
+// position if the book is found in the static catalog, or null otherwise.
+// Used by Library navigation to attach series context to Book Detail routes.
+export function findSeriesForBook(
+  title: string,
+  author: string,
+): { seriesName: string; seriesPosition: number } | null {
+  const nt = normForMatch(title);
+  const na = normForMatch(author);
+  for (const [seriesName, entry] of Object.entries(SERIES_CATALOG)) {
+    for (let i = 0; i < entry.orderedBooks.length; i++) {
+      const b = entry.orderedBooks[i];
+      if (normForMatch(b.title) === nt && normForMatch(b.author) === na) {
+        return { seriesName, seriesPosition: i + 1 };
+      }
+    }
+  }
+  return null;
+}
