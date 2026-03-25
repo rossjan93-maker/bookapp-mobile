@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Keyboard,
   Modal,
   ScrollView,
@@ -12,6 +13,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
+import { getSeriesCatalog } from '../../lib/seriesCatalog';
 import { computeDatePacing, computePagePacing, estimatePaceFinish, formatLastUpdated, shortDate, computeBookPace, computeUserAvgPace } from '../../lib/pacing';
 import { fetchGoogleBooksMetadata } from '../../lib/googleBooks';
 import { fetchOLMeta, searchOLWork, isOLId } from '../../lib/openLibrary';
@@ -64,6 +66,8 @@ export default function BookDetailScreen() {
     toUser,
     startedAt: startedAtParam,
     readingGoal: readingGoalParam,
+    seriesName,
+    seriesPosition: seriesPositionParam,
   } = useLocalSearchParams<{
     id?: string;
     title?: string;
@@ -76,6 +80,8 @@ export default function BookDetailScreen() {
     toUser?: string;
     startedAt?: string;
     readingGoal?: string;
+    seriesName?: string;
+    seriesPosition?: string;
   }>();
 
   const [olMeta, setOlMeta]             = useState<OLMeta | null>(null);
@@ -124,6 +130,11 @@ export default function BookDetailScreen() {
 
   // Taste preferences state (used by Taste Match section)
   const [hasTastePrefs, setHasTastePrefs] = useState<boolean | null>(null);
+
+  // Series section — cover images for the series row (populated post-mount).
+  // Structure comes synchronously from the static catalog via seriesName param.
+  type SeriesCoverItem = { olKey: string; coverId: number | null; title: string };
+  const [seriesCovers, setSeriesCovers] = useState<SeriesCoverItem[]>([]);
 
   // Local status — tracks post-transition status independently from route params
   const [localStatus, setLocalStatus]     = useState<string | undefined>(statusParam);
@@ -461,6 +472,53 @@ export default function BookDetailScreen() {
     fetchPrefsExistence();
   }, []);
 
+  // ── Series cover fetch ────────────────────────────────────────────────────
+  // Fires once on mount when seriesName param is present.
+  // Series STRUCTURE (name, orderedBooks, total) is synchronous from the
+  // static catalog.  This effect only resolves cover IMAGE ids so the
+  // placeholder boxes already rendered on first paint can fill in.
+  useEffect(() => {
+    if (!seriesName) return;
+    const meta = getSeriesCatalog(seriesName);
+    if (!meta) return;
+
+    const BAD_EDITION = /collection|omnibus|boxed|box set|complete works|anthology/i;
+
+    const fetchCover = async (
+      b: { title: string; author: string },
+    ): Promise<SeriesCoverItem | null> => {
+      try {
+        const url = [
+          'https://openlibrary.org/search.json',
+          `?title=${encodeURIComponent(b.title)}`,
+          `&author=${encodeURIComponent(b.author)}`,
+          '&fields=key,title,cover_i&limit=5',
+        ].join('');
+        const data = await fetch(url).then(r => r.json()) as {
+          docs?: Array<{ key: string; cover_i?: number; title?: string }>;
+        };
+        const docs = data.docs ?? [];
+        const clean = docs.find(d => d.cover_i != null && !BAD_EDITION.test(d.title ?? ''));
+        if (!clean || clean.cover_i == null) return null;
+        return { olKey: clean.key, coverId: clean.cover_i, title: clean.title ?? b.title };
+      } catch {
+        return null;
+      }
+    };
+
+    let cancelled = false;
+    Promise.all(meta.orderedBooks.map(fetchCover)).then(results => {
+      if (cancelled) return;
+      const covers = results.map((r, i): SeriesCoverItem =>
+        r ?? { olKey: `placeholder-${i}`, coverId: null, title: meta.orderedBooks[i].title }
+      );
+      setSeriesCovers(covers);
+    });
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seriesName]);
+
   // ── Edit-history save ─────────────────────────────────────────────────────
 
   async function handleSaveEdit() {
@@ -636,6 +694,13 @@ export default function BookDetailScreen() {
   const pacingChipBg     = pacingState === 'ahead' ? '#f0fdf4' : pacingState === 'behind' ? '#fef2f2' : '#f5f5f4';
   const pacingChipBorder = pacingState === 'ahead' ? '#bbf7d0' : pacingState === 'behind' ? '#fecaca' : '#e7e5e4';
 
+  // Series section — synchronous from static catalog + route params.
+  // No async dependency: if seriesName and seriesPosition are in the params,
+  // and the name is in the catalog, the section renders on first paint.
+  const seriesPos    = seriesPositionParam ? parseInt(seriesPositionParam, 10) : null;
+  const seriesMeta   = seriesName ? getSeriesCatalog(seriesName) : null;
+  const hasSeriesMeta = seriesMeta != null && seriesPos != null && !isNaN(seriesPos);
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
@@ -687,7 +752,95 @@ export default function BookDetailScreen() {
             </View>
           </View>
         )}
-        {!badge && <View style={{ marginBottom: 28 }} />}
+        {!badge && !hasSeriesMeta && <View style={{ marginBottom: 28 }} />}
+
+        {/* ── Series section ──
+             Rendered on first paint when seriesName + seriesPosition params
+             are present and the series key resolves in the static catalog.
+             Cover images start as placeholder boxes and fill in post-mount. */}
+        {hasSeriesMeta && (
+          <View style={{
+            backgroundColor: '#fff',
+            borderRadius: 14,
+            padding: 16,
+            marginBottom: 24,
+            borderWidth: 1,
+            borderColor: '#e7e5e4',
+          }}>
+            <Text style={{
+              fontSize: 11,
+              fontWeight: '700',
+              color: '#a8a29e',
+              letterSpacing: 0.9,
+              textTransform: 'uppercase',
+              marginBottom: 12,
+            }}>
+              {seriesMeta!.displayName}
+            </Text>
+
+            {/* Ordered cover row */}
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginBottom: 12 }}>
+              {seriesMeta!.orderedBooks.map((b, i) => {
+                const isCurrent  = (i + 1) === seriesPos;
+                const cover      = seriesCovers[i];
+                const coverUri   = cover?.coverId
+                  ? `https://covers.openlibrary.org/b/id/${cover.coverId}-S.jpg`
+                  : null;
+                return (
+                  <TouchableOpacity
+                    key={`${b.title}-${i}`}
+                    disabled={isCurrent}
+                    activeOpacity={0.75}
+                    onPress={() => router.push({
+                      pathname: '/book/[id]',
+                      params: {
+                        id:             encodeURIComponent(b.title),
+                        title:          b.title,
+                        author:         b.author,
+                        coverUrl:       coverUri ?? '',
+                        seriesName:     seriesName!,
+                        seriesPosition: String(i + 1),
+                      },
+                    })}
+                    style={{
+                      opacity:      isCurrent ? 1 : 0.4,
+                      borderWidth:  isCurrent ? 2 : 0,
+                      borderColor:  '#1c1917',
+                      borderRadius: 5,
+                    }}
+                  >
+                    {coverUri ? (
+                      <Image
+                        source={{ uri: coverUri }}
+                        style={{
+                          width:           isCurrent ? 52 : 38,
+                          height:          isCurrent ? 78 : 58,
+                          borderRadius:    4,
+                          backgroundColor: '#e7e5e4',
+                        }}
+                      />
+                    ) : (
+                      <View style={{
+                        width:           isCurrent ? 52 : 38,
+                        height:          isCurrent ? 78 : 58,
+                        borderRadius:    4,
+                        backgroundColor: '#ece9e4',
+                        borderWidth:     1,
+                        borderColor:     '#e0dbd4',
+                      }} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Position label */}
+            <Text style={{ fontSize: 12, color: '#78716c' }}>
+              Book {seriesPos} of {seriesMeta!.total}
+              {seriesPos === 1 ? ' · Start here' : ''}
+            </Text>
+          </View>
+        )}
 
         {/* ── Start Reading CTA — shown for want_to_read books that have been saved ── */}
         {localStatus === 'want_to_read' && userBookId && (

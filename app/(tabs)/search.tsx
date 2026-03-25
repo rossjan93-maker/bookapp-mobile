@@ -1151,6 +1151,23 @@ function RecCard({
     setTimeout(() => setMoreDone(false), 2200);
   }
 
+  function handleCardPress() {
+    if (pendingAction) return;
+    const sn = book._score_breakdown.series_name;
+    const sp = book._score_breakdown.series_position;
+    router.push({
+      pathname: '/book/[id]',
+      params: {
+        id:         book.external_id?.replace('/works/', '') ?? 'rec',
+        title:      book.title,
+        author:     book.author,
+        coverUrl:   book.cover_url ?? '',
+        externalId: book.external_id ?? '',
+        ...(sn && sp != null ? { seriesName: sn, seriesPosition: String(sp) } : {}),
+      },
+    });
+  }
+
   const uncertainty = book.score < 0.20
     ? 'Early signal — confidence will grow as your profile develops.'
     : book.score < 0.32
@@ -1189,8 +1206,12 @@ function RecCard({
       elevation: 1,
       overflow: 'hidden',
     }}>
-      {/* ── Main content row ── */}
-      <View style={{ padding: 12, flexDirection: 'row', alignItems: 'flex-start' }}>
+      {/* ── Main content row — full area is tappable to open Book Detail ── */}
+      <TouchableOpacity
+        onPress={handleCardPress}
+        activeOpacity={0.75}
+        style={{ padding: 12, flexDirection: 'row', alignItems: 'flex-start' }}
+      >
         <CoverThumb
           url={book.cover_url}
           externalId={book.external_id}
@@ -1320,32 +1341,8 @@ function RecCard({
             </Text>
           )}
 
-          {/* View details CTA — same navigation contract as Library/Home.
-              The `id` param must be non-empty for Expo Router to match /book/[id]
-              and for the detail screen's enrichment useEffect to fire.
-              For recommendation cards that are not yet in the user's library,
-              we have no DB UUID; pass the OL work key (sans /works/ prefix) so
-              the route matches. The detail screen's DB lookups return nothing
-              (graceful) while OL metadata loads via the separate `externalId` param. */}
-          <TouchableOpacity
-            onPress={() => router.push({
-              pathname: '/book/[id]',
-              params: {
-                id:         book.external_id?.replace('/works/', '') ?? 'rec',
-                title:      book.title,
-                author:     book.author,
-                coverUrl:   book.cover_url ?? '',
-                externalId: book.external_id ?? '',
-              },
-            })}
-            style={{ marginTop: 9 }}
-          >
-            <Text style={{ fontSize: 11, color: '#78716c', fontWeight: '500' }}>
-              View details →
-            </Text>
-          </TouchableOpacity>
         </View>
-      </View>
+      </TouchableOpacity>
 
       {/* ── Action bar ── */}
       <View style={{
