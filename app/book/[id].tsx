@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
@@ -131,10 +132,12 @@ export default function BookDetailScreen() {
   // Taste preferences state (used by Taste Match section)
   const [hasTastePrefs, setHasTastePrefs] = useState<boolean | null>(null);
 
-  // Series section — cover images for the series row (populated post-mount).
+  // Series section — cover images for the carousel (populated post-mount).
   // Structure comes synchronously from the static catalog via seriesName param.
   type SeriesCoverItem = { olKey: string; coverId: number | null; title: string };
-  const [seriesCovers, setSeriesCovers] = useState<SeriesCoverItem[]>([]);
+  const [seriesCovers, setSeriesCovers]     = useState<SeriesCoverItem[]>([]);
+  const [snappedIndex, setSnappedIndex]     = useState<number>(0);
+  const seriesScrollRef = useRef<ScrollView>(null);
 
   // Local status — tracks post-transition status independently from route params
   const [localStatus, setLocalStatus]     = useState<string | undefined>(statusParam);
@@ -519,6 +522,21 @@ export default function BookDetailScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seriesName]);
 
+  // ── Auto-center carousel on current book position ─────────────────────────
+  // Fires once after mount (layout pass needed first) when series params exist.
+  // snappedIndex is initialised here so haptic baseline is correct.
+  const SNAP_W = 76; // item container width (68) + marginRight (8) = snap interval
+  useEffect(() => {
+    if (!hasSeriesMeta || seriesPos == null) return;
+    const targetIndex = seriesPos - 1;
+    setSnappedIndex(targetIndex);
+    const timer = setTimeout(() => {
+      seriesScrollRef.current?.scrollTo({ x: targetIndex * SNAP_W, animated: false });
+    }, 100);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Edit-history save ─────────────────────────────────────────────────────
 
   async function handleSaveEdit() {
@@ -778,14 +796,31 @@ export default function BookDetailScreen() {
               {seriesMeta!.displayName}
             </Text>
 
-            {/* Ordered cover row */}
-            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginBottom: 12 }}>
+            {/* Horizontally scrollable carousel — snaps per item, haptic on settle */}
+            <ScrollView
+              ref={seriesScrollRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={SNAP_W}
+              decelerationRate="fast"
+              contentContainerStyle={{ paddingRight: 8 }}
+              style={{ marginBottom: 12 }}
+              onMomentumScrollEnd={(e) => {
+                const newIdx = Math.round(e.nativeEvent.contentOffset.x / SNAP_W);
+                if (newIdx !== snappedIndex) {
+                  setSnappedIndex(newIdx);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                }
+              }}
+            >
               {seriesMeta!.orderedBooks.map((b, i) => {
-                const isCurrent  = (i + 1) === seriesPos;
-                const cover      = seriesCovers[i];
-                const coverUri   = cover?.coverId
+                const isCurrent = (i + 1) === seriesPos;
+                const cover     = seriesCovers[i];
+                const coverUri  = cover?.coverId
                   ? `https://covers.openlibrary.org/b/id/${cover.coverId}-S.jpg`
                   : null;
+                const coverW = isCurrent ? 54 : 42;
+                const coverH = isCurrent ? 80 : 62;
                 return (
                   <TouchableOpacity
                     key={`${b.title}-${i}`}
@@ -803,36 +838,43 @@ export default function BookDetailScreen() {
                       },
                     })}
                     style={{
-                      opacity:      isCurrent ? 1 : 0.4,
+                      width:         68,
+                      alignItems:    'center',
+                      justifyContent:'flex-end',
+                      marginRight:   8,
+                      opacity:       isCurrent ? 1 : 0.55,
+                    }}
+                  >
+                    <View style={{
                       borderWidth:  isCurrent ? 2 : 0,
                       borderColor:  '#1c1917',
                       borderRadius: 5,
-                    }}
-                  >
-                    {coverUri ? (
-                      <Image
-                        source={{ uri: coverUri }}
-                        style={{
-                          width:           isCurrent ? 52 : 38,
-                          height:          isCurrent ? 78 : 58,
+                    }}>
+                      {coverUri ? (
+                        <Image
+                          source={{ uri: coverUri }}
+                          style={{
+                            width:           coverW,
+                            height:          coverH,
+                            borderRadius:    4,
+                            backgroundColor: '#e7e5e4',
+                          }}
+                        />
+                      ) : (
+                        <View style={{
+                          width:           coverW,
+                          height:          coverH,
                           borderRadius:    4,
-                          backgroundColor: '#e7e5e4',
-                        }}
-                      />
-                    ) : (
-                      <View style={{
-                        width:           isCurrent ? 52 : 38,
-                        height:          isCurrent ? 78 : 58,
-                        borderRadius:    4,
-                        backgroundColor: '#ece9e4',
-                        borderWidth:     1,
-                        borderColor:     '#e0dbd4',
-                      }} />
-                    )}
+                          backgroundColor: '#ece9e4',
+                          borderWidth:     1,
+                          borderColor:     '#e0dbd4',
+                        }} />
+                      )}
+                    </View>
                   </TouchableOpacity>
                 );
               })}
-            </View>
+            </ScrollView>
 
             {/* Position label */}
             <Text style={{ fontSize: 12, color: '#78716c' }}>

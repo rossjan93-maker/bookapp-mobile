@@ -162,6 +162,8 @@ export type ScoreBreakdown = {
   series_method?:     string | null;  // 'curated' | 'title_pattern' | 'description_pattern'
   ril_suppressed?:    boolean;        // true = removed from visible set by RIL
   ril_reason?:        string;         // audit reason for RIL suppression
+  // ── Presentation-only annotation (no scoring impact) ─────────────────────
+  author_books_read?: number;  // books by this author the user has read/is reading — for explanation strings only
 };
 
 export type ScoredBook = CandidateBook & {
@@ -234,11 +236,12 @@ export type RankedRecsResult = {
 
 // CandidateResult — returned by getCandidateBooks; replaces the old plain array.
 export type CandidateResult = {
-  candidates:      CandidateBook[];
-  enrichmentMap:   Map<string, BookEnrichmentProfile>;
-  retrieval_trace: RetrievalTrace;
-  seriesReadSet:   Set<string>;              // series names the user has already started
-  seriesProgress:  Map<string, number>;      // series name → highest position the user has read
+  candidates:       CandidateBook[];
+  enrichmentMap:    Map<string, BookEnrichmentProfile>;
+  retrieval_trace:  RetrievalTrace;
+  seriesReadSet:    Set<string>;              // series names the user has already started
+  seriesProgress:   Map<string, number>;      // series name → highest position the user has read
+  authorReadCounts: Map<string, number>;      // author key → truly-read book count (presentation only)
 };
 
 // ── Fit label helpers (used by the UI) ────────────────────────────────────────
@@ -1601,9 +1604,10 @@ export function getRankedRecs(
     hygiene_excluded:    0,
     enriched_count:      0,
   },
-  intent?:       NextReadIntent,
-  seriesReadSet:  Set<string>     = new Set(),
-  seriesProgress: Map<string, number> = new Map(),
+  intent?:         NextReadIntent,
+  seriesReadSet:   Set<string>          = new Set(),
+  seriesProgress:  Map<string, number>  = new Map(),
+  authorReadCounts: Map<string, number> = new Map(),
 ): RankedRecsResult {
   const poolSize = candidates.length;
 
@@ -1674,7 +1678,7 @@ export function getRankedRecs(
       ].filter((r, i, arr) => arr.indexOf(r) === i);
     }
 
-    // Extend _score_breakdown with CoG fields
+    // Extend _score_breakdown with CoG fields + presentation annotation
     book._score_breakdown = {
       ...book._score_breakdown,
       book_lane:             bookLane ?? null,
@@ -1685,6 +1689,9 @@ export function getRankedRecs(
       exception_dependency:  fitResult.exception_dependency,
       cog_score_delta:       fitResult.cog_score_delta,
       final_score:           book.score,
+      // Presentation-only: how many of this author's books the user has read.
+      // Used by the explanation string generator — zero scoring impact.
+      author_books_read:     authorReadCounts.get(book.author.toLowerCase().trim()) ?? 0,
     };
   }
 
@@ -2151,6 +2158,15 @@ export async function getCandidateBooks(
   // a supplemental fallback (additive only — can never remove series).
   const seriesReadSet  = buildSeriesReadSet(local.readBooks);
   const seriesProgress = buildSeriesProgress(local.readBooks);
+
+  // Author read counts — purely for explanation strings (no scoring impact).
+  // Counts finished + currently-reading books per author (same set as readBooks).
+  const authorReadCounts = new Map<string, number>();
+  for (const b of local.readBooks) {
+    if (!b.author) continue;
+    const key = b.author.toLowerCase().trim();
+    authorReadCounts.set(key, (authorReadCounts.get(key) ?? 0) + 1);
+  }
   if (__DEV__) {
     console.log(`[SERIES_RS] trulyRead=${local.readBooks.length} (of ${local.readIds.size} in library) primarySize=${seriesReadSet.size} series=[${[...seriesReadSet].join(', ')}]`);
     if (seriesProgress.size > 0) {
@@ -2381,7 +2397,7 @@ export async function getCandidateBooks(
     }
   }
 
-  return { candidates: filtered, enrichmentMap, retrieval_trace, seriesReadSet, seriesProgress };
+  return { candidates: filtered, enrichmentMap, retrieval_trace, seriesReadSet, seriesProgress, authorReadCounts };
 }
 
 // ── Convenience async wrapper ─────────────────────────────────────────────────
@@ -2394,9 +2410,9 @@ export async function getPersonalizedRecs(
   feedback?: FeedbackContext,
   intent?:   NextReadIntent,
 ): Promise<RankedRecsResult> {
-  const { candidates, enrichmentMap, retrieval_trace, seriesReadSet, seriesProgress } =
+  const { candidates, enrichmentMap, retrieval_trace, seriesReadSet, seriesProgress, authorReadCounts } =
     await getCandidateBooks(client, userId, profile, feedback);
-  return getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet, seriesProgress);
+  return getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet, seriesProgress, authorReadCounts);
 }
 
 // ── Expert-layer orchestration ────────────────────────────────────────────────
@@ -2422,9 +2438,9 @@ export async function getPersonalizedRecsWithExpert(
   opts?:       { skipCache?: boolean },
 ): Promise<RankedRecsResult> {
   // ── Step 1: Deterministic pipeline (always runs) ──────────────────────────
-  const { candidates, enrichmentMap, retrieval_trace, seriesReadSet, seriesProgress } =
+  const { candidates, enrichmentMap, retrieval_trace, seriesReadSet, seriesProgress, authorReadCounts } =
     await getCandidateBooks(client, userId, profile, feedback);
-  const baseResult = getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet, seriesProgress);
+  const baseResult = getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet, seriesProgress, authorReadCounts);
 
   // ── Forensic audit log (forensic user only, dev mode) ────────────────────
   if (__DEV__ && userId === FORENSIC_USER_ID) {

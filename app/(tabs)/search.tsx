@@ -1028,6 +1028,36 @@ function capitalize(s: string): string {
   return s.length > 0 ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
+// Build a single behavior-driven explanation anchored to ONE concrete user signal.
+// Priority: series continuity > author affinity > existing reason fallback.
+function buildExplanation(book: ScoredBook, hasSeriesMeta: boolean): string | null {
+  const bd = book._score_breakdown;
+
+  // 1. Series continuity (highest priority) — already have all data from RIL
+  if (hasSeriesMeta && bd.series_position != null && bd.series_total != null) {
+    const pos = bd.series_position;
+    if (bd.series_label === 'series_starter' || pos === 1) {
+      return `Book 1 of ${bd.series_total} — a great place to start`;
+    }
+    const booksRead = pos - 1;
+    const readRange = booksRead === 1 ? 'Book 1' : `Books 1\u2013${booksRead}`;
+    return `You\u2019ve read ${readRange} in this series \u2014 this is next`;
+  }
+
+  // 2. Author affinity — concrete signal: user has read ≥2 books by this author
+  const authorCount = bd.author_books_read ?? 0;
+  if (authorCount >= 2) {
+    return `You\u2019ve read ${authorCount} book${authorCount === 1 ? '' : 's'} by ${book.author}`;
+  }
+
+  // 3. Fallback — existing reason string (strip author prefix, capitalise)
+  if (book.reasons.length > 0) {
+    return capitalize(stripAuthorPrefix(book.reasons[0], book.author));
+  }
+
+  return null;
+}
+
 type SeriesCover = { olKey: string; coverId: number | null; title: string };
 
 function RecCard({
@@ -1188,10 +1218,8 @@ function RecCard({
     seriesPos   != null &&
     seriesTotal != null;
 
-  // Reason text for collapsed view — strip author prefix since author is shown above
-  const collapsedReason = book.reasons.length > 0
-    ? capitalize(stripAuthorPrefix(book.reasons[0], book.author))
-    : null;
+  // Behavior-driven explanation — series > author affinity > generic fallback
+  const collapsedReason = buildExplanation(book, hasSeriesMeta);
 
   return (
     <Animated.View style={{
