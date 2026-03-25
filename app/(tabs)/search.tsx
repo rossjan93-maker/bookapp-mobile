@@ -1056,7 +1056,6 @@ function RecCard({
   const [moreDone, setMoreDone]           = useState(false);
   const [pendingAction, setPendingAction] = useState(false);
   const [seriesCovers, setSeriesCovers]   = useState<SeriesCover[]>([]);
-  const seriesRowOpacity = useRef(new Animated.Value(0)).current;
   const impressionFired  = useRef(false);
 
   // Fire impression once on mount
@@ -1068,35 +1067,27 @@ function RecCard({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Canonical per-book cover lookup — strict series data contract.
+  // Cover image fetch — fires once after mount to populate cover thumbnails.
   //
-  // Series structure (name, position, total, order) comes exclusively from
-  // the static seriesCatalog.  Open Library is used only to resolve a cover
-  // IMAGE for each known series book — it is never used to discover series
-  // membership or count.
+  // Series STRUCTURE (name, position, total, orderedBooks) comes exclusively
+  // from the static seriesCatalog and is synchronously available from
+  // book._score_breakdown props.  This effect only fetches cover IMAGES so
+  // they can replace the placeholder boxes that render immediately.
   //
-  // CONTRACT VALIDATION (all conditions must hold to render any series UI):
-  //   1. series_name is present and catalogued in seriesCatalog
-  //   2. series_position is present
-  //   3. series_total is present (set by RIL from catalog)
-  //   4. Every book in catalog.orderedBooks returns exactly one canonical
-  //      single-edition cover (no collections, omnibus, boxed sets)
-  //
-  // If ANY condition fails → series UI is fully hidden.
+  // Partial results are accepted: if a specific book's cover cannot be
+  // resolved, that position keeps its placeholder box.  The series row
+  // and badge are always rendered when series metadata is present — they
+  // do not depend on this fetch completing.
   useEffect(() => {
     const sn = book._score_breakdown.series_name;
     const sp = book._score_breakdown.series_position;
     if (!sn || sp == null) return;
 
     const meta = getSeriesCatalog(sn);
-    if (!meta) return; // Not in static catalog → no series UI
+    if (!meta) return;
 
     const BAD_EDITION = /collection|omnibus|boxed|box set|complete works|anthology/i;
 
-    // One targeted OL lookup per series book (title + author, limit 5).
-    // No sort applied — default relevance ranking returns the best-indexed
-    // edition first, which is far more likely to carry cover_i than the
-    // oldest edition (sort=old biases toward un-scanned archival entries).
     const fetchCover = async (
       b: { title: string; author: string },
     ): Promise<SeriesCover | null> => {
@@ -1121,17 +1112,11 @@ function RecCard({
     let cancelled = false;
     Promise.all(meta.orderedBooks.map(fetchCover)).then(results => {
       if (cancelled) return;
-      // Strict: if any book in the catalog list could not get a canonical
-      // single-edition cover, the contract is violated → hide all series UI.
-      if (results.some(r => r === null)) return;
-      const covers = results as SeriesCover[];
+      // Accept partial results — null entries keep placeholder boxes.
+      const covers = results.map((r, i): SeriesCover =>
+        r ?? { olKey: `placeholder-${i}`, coverId: null, title: meta.orderedBooks[i].title }
+      );
       setSeriesCovers(covers);
-      Animated.timing(seriesRowOpacity, {
-        toValue:         1,
-        duration:        420,
-        delay:           80,
-        useNativeDriver: false,
-      }).start();
     });
 
     return () => { cancelled = true; };
@@ -1178,14 +1163,13 @@ function RecCard({
   const seriesPos    = book._score_breakdown.series_position;
   const seriesTotal  = book._score_breakdown.series_total;
   const catalogMeta  = getSeriesCatalog(book._score_breakdown.series_name ?? '');
-  // The cover array is populated only when ALL catalog.orderedBooks returned a
-  // canonical single-edition cover (see useEffect above).  Length equality
-  // with orderedBooks confirms the strict fetch succeeded end-to-end.
-  const hasSeriesRow =
+  // Series metadata is fully available from props on first render.
+  // Cover images are populated asynchronously (see useEffect above) but
+  // do NOT gate the series row — only image content changes after load.
+  const hasSeriesMeta =
     catalogMeta != null &&
     seriesPos   != null &&
-    seriesTotal != null &&
-    seriesCovers.length === catalogMeta.orderedBooks.length;
+    seriesTotal != null;
 
   // Reason text for collapsed view — strip author prefix since author is shown above
   const collapsedReason = book.reasons.length > 0
@@ -1240,25 +1224,29 @@ function RecCard({
             )}
           </View>
 
-          {/* ── Series visual row ── */}
-          {hasSeriesRow && (
-            <Animated.View style={{
-              opacity:        seriesRowOpacity,
+          {/* ── Series visual row ──
+               Rendered immediately on first paint using the static catalog
+               structure (catalogMeta.orderedBooks).  Cover images start as
+               placeholder boxes and are swapped in by the useEffect cover
+               fetch without any card reshaping. */}
+          {hasSeriesMeta && (
+            <View style={{
               flexDirection:  'row',
               alignItems:     'flex-end',
               gap:            5,
               marginBottom:   8,
             }}>
-              {seriesCovers.map((sc, i) => {
+              {catalogMeta!.orderedBooks.map((b, i) => {
                 // Position is 1-indexed; orderedBooks is in series order so
                 // index i corresponds to series position i+1.
                 const isCurrent = (i + 1) === seriesPos;
-                const coverUri  = sc.coverId
-                  ? `https://covers.openlibrary.org/b/id/${sc.coverId}-S.jpg`
+                const cover    = seriesCovers[i];
+                const coverUri = cover?.coverId
+                  ? `https://covers.openlibrary.org/b/id/${cover.coverId}-S.jpg`
                   : null;
                 return (
                   <View
-                    key={sc.olKey}
+                    key={`${b.title}-${i}`}
                     style={{
                       opacity:      isCurrent ? 1 : 0.38,
                       borderWidth:  isCurrent ? 1.5 : 0,
@@ -1289,18 +1277,14 @@ function RecCard({
                   </View>
                 );
               })}
-            </Animated.View>
+            </View>
           )}
 
           {/* ── Series badge ────────────────────────────────────────────────────
-               Only rendered when the full series contract is valid:
-               - series in static catalog
-               - series_position and series_total both present
-               - all catalog.orderedBooks have canonical single-edition covers
-               If the contract is invalid the card renders as a standalone rec.
-               Copy is intentionally minimal — richer info lives in the detail
-               view. */}
-          {hasSeriesRow && (
+               Rendered immediately from props — series_label, series_position,
+               and series_total are all set by RIL before the card is rendered.
+               Does not depend on the async cover fetch. */}
+          {hasSeriesMeta && (
             <View style={{
               alignSelf:        'flex-start',
               flexDirection:    'row',

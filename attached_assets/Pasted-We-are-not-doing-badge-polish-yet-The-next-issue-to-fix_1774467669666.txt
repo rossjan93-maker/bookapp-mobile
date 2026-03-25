@@ -1,0 +1,56 @@
+We are not doing badge polish yet.
+
+The next issue to fix is deterministic first render.
+
+Problem
+Some screens initially render in an incomplete/incorrect format and then mutate a few seconds later into the correct display.
+This is especially visible in library/recommendation series presentation.
+
+That cannot happen.
+The first visible render must already be correct.
+
+Do NOT redesign UI.
+Do NOT broaden scope.
+Do NOT change recommendation decision logic again.
+Fix render determinism only.
+
+Goal
+Ensure that series-aware book/list/card surfaces render correctly on first paint, without delayed reshaping or second-pass mutation.
+
+Part 1 — Audit where delayed reshaping happens
+Inspect the current render pipeline and identify:
+1. which components are fetching/enriching after initial render
+2. which UI surfaces first render incomplete data and then mutate
+3. whether series covers / series metadata / enriched card state are being resolved inside component lifecycle rather than before render
+
+Part 2 — Move enrichment upstream
+Refactor so that display-critical data is fully resolved before render.
+
+Rules:
+- RecCard must not fetch critical display data after mount
+- Library cards must not fetch critical series display data after mount
+- series metadata, series row data, and any card-shaping data must be ready before the component is rendered
+
+Part 3 — Deterministic loading contract
+Define a strict rule:
+- if display-critical series data is incomplete, either:
+  - render the correct fallback immediately
+  - or hold the card/list until its final display shape is ready
+- do NOT render one shape and then morph into another
+
+Part 4 — Proof
+Return:
+1. root cause of the delayed reshaping
+2. files changed
+3. what data was moved upstream
+4. which components no longer fetch critical display data after mount
+5. proof that first render now matches final render
+
+Constraints
+- Do NOT redesign card visuals
+- Do NOT add new UX features
+- Do NOT reopen recommendation rules
+- This is a render determinism pass only
+
+Success condition
+Book/list/card surfaces render in their correct final format on first visible paint, with no delayed series-row reshaping.
