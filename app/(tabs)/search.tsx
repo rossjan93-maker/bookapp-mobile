@@ -1030,24 +1030,44 @@ function capitalize(s: string): string {
 
 // Build a single behavior-driven explanation anchored to ONE concrete user signal.
 // Priority: series continuity > author affinity > existing reason fallback.
-function buildExplanation(book: ScoredBook, hasSeriesMeta: boolean): string | null {
+//
+// Precision rules:
+//   Series starter (pos 1):
+//     - With known total → "Book 1 of N — a great place to start"
+//     - Without total   → "Book 1 — a great place to start"
+//   Series continuation (pos > 1):
+//     - Uses series_max_read (actual progress from seriesProgress map) not pos-1
+//     - Only fires when series_max_read > 0 (confirmed user history exists)
+//   Author affinity:
+//     - Uses author_books_read (finished-only count, never includes in-progress)
+//     - Threshold ≥ 2 to avoid "You've read 1 book by X" (too thin)
+function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | null {
   const bd = book._score_breakdown;
 
-  // 1. Series continuity (highest priority) — already have all data from RIL
-  if (hasSeriesMeta && bd.series_position != null && bd.series_total != null) {
+  // 1. Series continuity — fires when series position is detected (pos 1 allowed
+  //    without total; continuation requires confirmed progress via series_max_read).
+  if (bd.series_position != null && bd.series_name) {
     const pos = bd.series_position;
-    if (bd.series_label === 'series_starter' || pos === 1) {
-      return `Book 1 of ${bd.series_total} — a great place to start`;
+
+    // Starter: book is position 1 in the series
+    if (pos === 1) {
+      if (bd.series_total != null) {
+        return `Book 1 of ${bd.series_total} \u2014 a great place to start`;
+      }
+      return `Book 1 \u2014 a great place to start`;
     }
-    const booksRead = pos - 1;
-    const readRange = booksRead === 1 ? 'Book 1' : `Books 1\u2013${booksRead}`;
-    return `You\u2019ve read ${readRange} in this series \u2014 this is next`;
+
+    // Continuation: use ACTUAL highest position user has read (never overclaim)
+    const maxRead = bd.series_max_read ?? null;
+    if (maxRead != null && maxRead > 0) {
+      return `You\u2019ve read through Book ${maxRead} \u2014 this is next`;
+    }
   }
 
-  // 2. Author affinity — concrete signal: user has read ≥2 books by this author
+  // 2. Author affinity — finished books only, threshold ≥ 2
   const authorCount = bd.author_books_read ?? 0;
   if (authorCount >= 2) {
-    return `You\u2019ve read ${authorCount} book${authorCount === 1 ? '' : 's'} by ${book.author}`;
+    return `You\u2019ve read ${authorCount} books by ${book.author}`;
   }
 
   // 3. Fallback — existing reason string (strip author prefix, capitalise)

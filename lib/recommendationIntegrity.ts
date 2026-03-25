@@ -704,12 +704,19 @@ export function applyIntegrityLayer(
     // inferred from OL search results or title patterns.  If the series is not
     // in the catalog, series_total is null and the UI must not show series UI.
     const catalogEntry = series ? getSeriesCatalog(series.series_name) : null;
+    // series_max_read: the actual highest series position the user has already
+    // completed, sourced directly from seriesProgress.  Used by the explanation
+    // layer so it can say "You've read through Book N" without overclaiming.
+    const maxReadForSeries = series
+      ? (seriesProgress.get(normKey(series.series_name)) ?? null)
+      : null;
     (book._score_breakdown as Record<string, unknown>)['series_name']      = series?.series_name      ?? null;
     (book._score_breakdown as Record<string, unknown>)['series_position']  = series?.series_position  ?? null;
     (book._score_breakdown as Record<string, unknown>)['series_total']     = catalogEntry?.total      ?? null;
     (book._score_breakdown as Record<string, unknown>)['series_label']     = label;
     (book._score_breakdown as Record<string, unknown>)['series_confidence']= series?.confidence       ?? null;
     (book._score_breakdown as Record<string, unknown>)['series_method']    = series?.detection_method ?? null;
+    (book._score_breakdown as Record<string, unknown>)['series_max_read']  = maxReadForSeries;
 
     return { book, series, label };
   });

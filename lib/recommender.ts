@@ -162,8 +162,9 @@ export type ScoreBreakdown = {
   series_method?:     string | null;  // 'curated' | 'title_pattern' | 'description_pattern'
   ril_suppressed?:    boolean;        // true = removed from visible set by RIL
   ril_reason?:        string;         // audit reason for RIL suppression
-  // ── Presentation-only annotation (no scoring impact) ─────────────────────
-  author_books_read?: number;  // books by this author the user has read/is reading — for explanation strings only
+  // ── Presentation-only annotations (no scoring impact) ────────────────────
+  series_max_read?:   number | null;  // actual highest series position the user has completed (from seriesProgress)
+  author_books_read?: number;         // finished books by this author — for explanation strings only
 };
 
 export type ScoredBook = CandidateBook & {
@@ -658,6 +659,7 @@ type LocalResult = {
   readIds:                Set<string>;
   readExternalIds:        Set<string>;
   readBooks:              Array<{ title: string; author: string }>; // truly-read books only — for series-started detection
+  finishedReadBooks:      Array<{ title: string; author: string }>; // finished-only — for author affinity count
   trueReadExternalIds:    Set<string>;  // external IDs of truly-read books — for OL supplement
   finishedDnfNormalized:  Set<string>;  // normBookKey() for ALL finished + DNF books — safety-net exclusion layer
   finishedDnfCount:       number;       // raw count for forensic logging
@@ -702,6 +704,14 @@ async function getLocalCandidates(
   // fraudulently mark a series as "started".
   const readBooks = ubRows
     .filter(r => isTrulyRead(r.status))
+    .map(r => ({ title: r.book?.title ?? '', author: r.book?.author ?? '' }))
+    .filter(b => b.title.length > 0 && b.author.length > 0);
+
+  // Finished-only books — used for author affinity counts in explanation strings.
+  // Deliberately excludes "reading" so "You've read N books by X" only counts
+  // completed books, not the one the user is currently in the middle of.
+  const finishedReadBooks = ubRows
+    .filter(r => r.status === 'finished')
     .map(r => ({ title: r.book?.title ?? '', author: r.book?.author ?? '' }))
     .filter(b => b.title.length > 0 && b.author.length > 0);
 
@@ -762,7 +772,7 @@ async function getLocalCandidates(
       _retrieval_reason: 'local:eligible',
     }));
 
-  return { candidates, readIds, readExternalIds, readBooks, trueReadExternalIds, finishedDnfNormalized, finishedDnfCount };
+  return { candidates, readIds, readExternalIds, readBooks, finishedReadBooks, trueReadExternalIds, finishedDnfNormalized, finishedDnfCount };
 }
 
 // ── Source B: Cached external ─────────────────────────────────────────────────
@@ -2160,9 +2170,10 @@ export async function getCandidateBooks(
   const seriesProgress = buildSeriesProgress(local.readBooks);
 
   // Author read counts — purely for explanation strings (no scoring impact).
-  // Counts finished + currently-reading books per author (same set as readBooks).
+  // Uses finishedReadBooks (status === 'finished' only) so "You've read N books
+  // by X" never counts a book the user is currently in the middle of.
   const authorReadCounts = new Map<string, number>();
-  for (const b of local.readBooks) {
+  for (const b of local.finishedReadBooks) {
     if (!b.author) continue;
     const key = b.author.toLowerCase().trim();
     authorReadCounts.set(key, (authorReadCounts.get(key) ?? 0) + 1);
