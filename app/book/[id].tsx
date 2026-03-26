@@ -14,7 +14,7 @@ import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
-import { getSeriesCatalog } from '../../lib/seriesCatalog';
+import { getSeriesCatalog, getSagaForSeries, getAllSagaCatalog, findSeriesForBook } from '../../lib/seriesCatalog';
 import { computeDatePacing, computePagePacing, estimatePaceFinish, formatLastUpdated, shortDate, computeBookPace, computeUserAvgPace } from '../../lib/pacing';
 import { fetchGoogleBooksMetadata } from '../../lib/googleBooks';
 import { fetchOLMeta, searchOLWork, isOLId } from '../../lib/openLibrary';
@@ -138,6 +138,17 @@ export default function BookDetailScreen() {
   const [seriesCovers, setSeriesCovers]     = useState<SeriesCoverItem[]>([]);
   const [snappedIndex, setSnappedIndex]     = useState<number>(0);
   const seriesScrollRef = useRef<ScrollView>(null);
+
+  // Saga progress section — per-sub-series completion state.
+  // Structure (number of sub-series rows) is synchronous from the static
+  // SAGA_CATALOG.  Only the visual states (complete/in_progress/not_started)
+  // update async — no layout changes after load.
+  type SagaSeriesState = {
+    maxRead: number;
+    total:   number;
+    status:  'complete' | 'in_progress' | 'not_started';
+  };
+  const [sagaProgress, setSagaProgress] = useState<Map<string, SagaSeriesState> | null>(null);
 
   // Local status — tracks post-transition status independently from route params
   const [localStatus, setLocalStatus]     = useState<string | undefined>(statusParam);
@@ -537,6 +548,60 @@ export default function BookDetailScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Saga progress fetch ───────────────────────────────────────────────────
+  // Fetches the user's finished/reading books and cross-references with the
+  // saga catalog to determine per-sub-series completion state.
+  //
+  // The visual STATE (complete/in_progress/not_started) updates asynchronously.
+  // The visual STRUCTURE (number of sub-series rows, row heights) is
+  // deterministic from static catalog data and does not change after load.
+  useEffect(() => {
+    if (!seriesName || !userId) return;
+    const sagaEntry = getSagaForSeries(seriesName);
+    if (!sagaEntry) return;                        // book is not in a tracked saga
+    const allSagas = getAllSagaCatalog();
+    const saga     = allSagas[sagaEntry.sagaKey];
+    if (!saga) return;
+
+    supabase
+      .from('user_books')
+      .select('title, author, status')
+      .eq('user_id', userId)
+      .in('status', ['finished', 'reading'])
+      .then(({ data }) => {
+        if (!data) return;
+
+        // Map each fetched book to its series using the static catalog.
+        const maxReadBySeries = new Map<string, number>();
+        for (const book of data) {
+          const found = findSeriesForBook(book.title, book.author);
+          if (!found) continue;
+          if (!saga.series_order.includes(found.seriesName)) continue;
+          const prev = maxReadBySeries.get(found.seriesName) ?? 0;
+          if (found.seriesPosition > prev) {
+            maxReadBySeries.set(found.seriesName, found.seriesPosition);
+          }
+        }
+
+        // Build per-series state.
+        const progress = new Map<string, SagaSeriesState>();
+        for (const sKey of saga.series_order) {
+          const cat = getSeriesCatalog(sKey);
+          if (!cat) continue;
+          const maxRead = maxReadBySeries.get(sKey) ?? 0;
+          const total   = cat.total;
+          const status: SagaSeriesState['status'] =
+            maxRead >= total ? 'complete' :
+            maxRead > 0      ? 'in_progress' :
+            'not_started';
+          progress.set(sKey, { maxRead, total, status });
+        }
+        setSagaProgress(progress);
+      });
+  // userId is the resolved user id string; sagaKey is stable per seriesName.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seriesName, userId]);
+
   // ── Edit-history save ─────────────────────────────────────────────────────
 
   async function handleSaveEdit() {
@@ -715,9 +780,29 @@ export default function BookDetailScreen() {
   // Series section — synchronous from static catalog + route params.
   // No async dependency: if seriesName and seriesPosition are in the params,
   // and the name is in the catalog, the section renders on first paint.
-  const seriesPos    = seriesPositionParam ? parseInt(seriesPositionParam, 10) : null;
-  const seriesMeta   = seriesName ? getSeriesCatalog(seriesName) : null;
+  const seriesPos     = seriesPositionParam ? parseInt(seriesPositionParam, 10) : null;
+  const seriesMeta    = seriesName ? getSeriesCatalog(seriesName) : null;
   const hasSeriesMeta = seriesMeta != null && seriesPos != null && !isNaN(seriesPos);
+
+  // Saga section — synchronous from SAGA_CATALOG; visual states fill in async.
+  // hasSagaMeta gates the section; sagaNextAllowed gates locked state.
+  const sagaInfo          = seriesName ? getSagaForSeries(seriesName) : null;
+  const sagaCatalogEntry  = sagaInfo ? getAllSagaCatalog()[sagaInfo.sagaKey] : null;
+  const hasSagaMeta       = sagaInfo != null && sagaCatalogEntry != null;
+
+  // saga_next_allowed_index — mirrors the RIL computation.
+  // Before sagaProgress loads: default to current series index so the current
+  // series is always marked correctly on first paint.
+  // After sagaProgress loads: derived from actual per-series completion.
+  let sagaNextAllowed = sagaInfo?.seriesIndex ?? 0;
+  if (sagaProgress !== null && sagaCatalogEntry) {
+    sagaNextAllowed = 0;
+    for (let i = 0; i < sagaCatalogEntry.series_order.length; i++) {
+      const s = sagaProgress.get(sagaCatalogEntry.series_order[i]);
+      if (!s || s.status !== 'complete') { sagaNextAllowed = i; break; }
+      sagaNextAllowed = i + 1;
+    }
+  }
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -770,7 +855,153 @@ export default function BookDetailScreen() {
             </View>
           </View>
         )}
-        {!badge && !hasSeriesMeta && <View style={{ marginBottom: 28 }} />}
+        {!badge && !hasSeriesMeta && !hasSagaMeta && <View style={{ marginBottom: 28 }} />}
+        {!badge && hasSagaMeta && !hasSeriesMeta && <View style={{ marginBottom: 12 }} />}
+
+        {/* ── Saga Journey Section ─────────────────────────────────────────────
+             Shows the user's macro position in a multi-series universe.
+             Structure is synchronous from SAGA_CATALOG (static).
+             Visual states (complete/in_progress/not_started/locked) update
+             once after the user_books fetch completes — no layout changes.  */}
+        {hasSagaMeta && sagaCatalogEntry && (
+          <View style={{
+            backgroundColor: '#fff',
+            borderRadius: 14,
+            padding: 16,
+            marginBottom: 16,
+            borderWidth: 1,
+            borderColor: '#e7e5e4',
+          }}>
+            {/* Header */}
+            <Text style={{
+              fontSize: 11,
+              fontWeight: '700',
+              color: '#a8a29e',
+              letterSpacing: 0.9,
+              textTransform: 'uppercase',
+              marginBottom: 2,
+            }}>
+              {sagaInfo!.sagaName}
+            </Text>
+            <Text style={{
+              fontSize: 13,
+              color: '#78716c',
+              marginBottom: 14,
+            }}>
+              Your reading journey
+            </Text>
+
+            {/* Sub-series rows — one per entry in saga.series_order */}
+            {sagaCatalogEntry.series_order.map((sKey, i) => {
+              const cat         = getSeriesCatalog(sKey);
+              if (!cat) return null;
+
+              const state       = sagaProgress?.get(sKey);
+              const isCurrent   = sKey === seriesName;
+              const isComplete  = state?.status === 'complete';
+              const isInProg    = state?.status === 'in_progress';
+              // Locked = beyond sagaNextAllowed, only after progress loads
+              const isLocked    = sagaProgress !== null && i > sagaNextAllowed && !isCurrent;
+
+              // Navigation target: next unread book, or Book 1 for locked/complete/not-started
+              const targetPos   = isInProg
+                ? Math.min(state!.maxRead + 1, cat.orderedBooks.length)
+                : 1;
+              const targetIdx   = targetPos - 1;
+              const targetBook  = cat.orderedBooks[targetIdx] ?? cat.orderedBooks[0];
+
+              // Colors derived from state — only opacity/color changes after load
+              const nameColor  = isCurrent ? '#1c1917'
+                : isComplete   ? '#57534e'
+                : isLocked     ? '#c0bbb6'
+                : '#57534e';
+
+              // Progress subtitle — always present so row height is deterministic
+              const subtitleText = sagaProgress === null
+                ? ' '
+                : isComplete
+                  ? `Complete · ${state!.total} books`
+                  : isInProg
+                    ? `${state!.maxRead} of ${state!.total} read`
+                    : isLocked
+                      ? 'Complete earlier series first'
+                      : 'Not yet started';
+
+              return (
+                <TouchableOpacity
+                  key={sKey}
+                  disabled={isCurrent}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    if (!targetBook) return;
+                    router.push({
+                      pathname: '/book/[id]',
+                      params: {
+                        id:             encodeURIComponent(targetBook.title),
+                        title:          targetBook.title,
+                        author:         targetBook.author,
+                        seriesName:     sKey,
+                        seriesPosition: String(targetPos),
+                        coverUrl:       '',
+                      },
+                    });
+                  }}
+                  style={{
+                    flexDirection:   'row',
+                    alignItems:      'center',
+                    paddingVertical: 10,
+                    borderTopWidth:  i > 0 ? 1 : 0,
+                    borderTopColor:  '#f5f4f2',
+                  }}
+                >
+                  {/* Left: status icon — 28px wide, always present */}
+                  <View style={{ width: 28, alignItems: 'center', justifyContent: 'center' }}>
+                    {isCurrent ? (
+                      <View style={{
+                        width: 8, height: 8, borderRadius: 4,
+                        backgroundColor: '#1c1917',
+                      }} />
+                    ) : isComplete ? (
+                      <Text style={{ fontSize: 13, color: '#15803d', lineHeight: 18 }}>✓</Text>
+                    ) : isLocked ? (
+                      <Text style={{ fontSize: 12, color: '#d6d3d1', lineHeight: 18 }}>○</Text>
+                    ) : (
+                      <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>○</Text>
+                    )}
+                  </View>
+
+                  {/* Center: series name + progress subtitle */}
+                  <View style={{ flex: 1 }}>
+                    <Text style={{
+                      fontSize:   14,
+                      fontWeight: isCurrent ? '700' : '400',
+                      color:      nameColor,
+                    }} numberOfLines={1}>
+                      {cat.displayName}
+                    </Text>
+                    <Text style={{
+                      fontSize:   11,
+                      color:      isLocked ? '#d6d3d1' : '#a8a29e',
+                      marginTop:  2,
+                      lineHeight: 15,
+                    }}>
+                      {subtitleText}
+                    </Text>
+                  </View>
+
+                  {/* Right: chevron — hidden for current series */}
+                  {!isCurrent && (
+                    <Text style={{
+                      fontSize:   16,
+                      color:      isLocked ? '#d6d3d1' : '#c0bbb6',
+                      marginLeft: 8,
+                    }}>›</Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
 
         {/* ── Series section ──
              Rendered on first paint when seriesName + seriesPosition params
