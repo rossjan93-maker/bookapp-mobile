@@ -43,7 +43,7 @@ import { getEntitlement } from '../../lib/recEntitlement';
 import type { RecEntitlement } from '../../lib/recEntitlement';
 import type { ReaderThesis } from '../../lib/expertRec';
 import { getSeriesCatalog } from '../../lib/seriesCatalog';
-import { loadRecPayload, saveRecPayload } from '../../lib/recPayloadCache';
+import { loadRecPayload, saveRecPayload, computeRecFingerprint } from '../../lib/recPayloadCache';
 import { triggerRecPrewarm } from '../../lib/recPrewarm';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1794,6 +1794,32 @@ export default function RecommendationsScreen() {
     const signalUnchanged = cached && currentSignal === cached.signalCount;
     const sessionFresh    = sessionAge < REC_SESSION_TTL_MS;
 
+    // ── Persisted-cache compatibility log ─────────────────────────────────
+    // Now that Phase 1 has given us signal count + entitlement we can check
+    // whether the restored payload is still aligned with current state.
+    // We always proceed with a background refresh if anything differs;
+    // this block is purely observability for the trace.
+    if (__DEV__ && cached) {
+      const expectedMode   = ent?.expert_recs_enabled ? 'expert' : 'deterministic';
+      const expectedIntent = isIntentActive(nextReadIntent) ? intentSummaryLabel(nextReadIntent) : null;
+      const signalDelta    = currentSignal - (cached.signalCount ?? 0);
+      const modeMatch      = cached.recMode === expectedMode;
+      const intentMatch    = (cached.intentTag ?? null) === expectedIntent;
+      if (signalDelta !== 0 || !modeMatch || !intentMatch) {
+        console.log('[PERSIST_CACHE] compatibility_check',
+          `| signal_delta=${signalDelta}`,
+          `| mode: stored=${cached.recMode ?? '?'} expected=${expectedMode} match=${modeMatch}`,
+          `| intent: stored=${cached.intentTag ?? 'none'} expected=${expectedIntent ?? 'none'} match=${intentMatch}`,
+          `| action=${modeMatch && intentMatch ? 'background_refresh' : 'background_refresh_mode_drift'}`,
+        );
+      } else {
+        console.log('[PERSIST_CACHE] compatibility_check — aligned',
+          `| signal=${currentSignal}`,
+          `| mode=${expectedMode}`,
+        );
+      }
+    }
+
     if (cached && signalUnchanged && sessionFresh) {
       if (__DEV__) console.log('[PERF] phase2_skipped — session_fresh',
         `| age_ms=${sessionAge}`,
@@ -1917,6 +1943,7 @@ export default function RecommendationsScreen() {
           `| total_ms=${Date.now() - _mountMs}`,
         );
         // Persist to AsyncStorage so next cold start (app restart) is instant too
+        const _persistIntentTag = isIntentActive(nextReadIntent) ? intentSummaryLabel(nextReadIntent) : null;
         saveRecPayload(user.id, {
           recs:          _sessionPayload.recs,
           continuations: _sessionPayload.continuations,
@@ -1927,7 +1954,13 @@ export default function RecommendationsScreen() {
           qualityGate:   _sessionPayload.qualityGate,
           isFreePreview: _sessionPayload.isFreePreview,
           signalCount:   _sessionPayload.signalCount,
-          intentTag:     isIntentActive(nextReadIntent) ? intentSummaryLabel(nextReadIntent) : null,
+          intentTag:     _persistIntentTag,
+          fingerprint:   computeRecFingerprint(
+            _sessionPayload.signalCount,
+            _sessionPayload.recMode,
+            _sessionPayload.isFreePreview,
+            _persistIntentTag,
+          ),
           loadedAt:      _sessionPayload.loadedAt,
         }).catch(() => {});
       }

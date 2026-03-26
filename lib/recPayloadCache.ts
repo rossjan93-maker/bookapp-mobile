@@ -4,19 +4,50 @@ import type { ReaderThesis } from './expertRec';
 
 // ── Persistent rec payload cache ──────────────────────────────────────────────
 //
-// Survives app restarts (AsyncStorage). Keyed per-user. One slot per user —
-// overwritten on every successful Phase 2 commit.
+// Survives app restarts (AsyncStorage). One slot per user — overwritten on every
+// successful Phase 2 commit and on every background prewarm.
 //
 // TTL: 2 hours. After expiry the payload is discarded and a skeleton is shown
-// while Phase 2 runs. Within TTL the payload is restored immediately on mount
-// (before any skeleton) and Phase 2 runs in background with isBackgroundRefreshing.
+// while Phase 2 runs fresh. Within TTL the payload is restored immediately on
+// mount (before Phase 1 skeleton) and Phase 2 runs in background.
 //
-// Signal count is stored in the payload but does NOT invalidate restoration.
-// If signals have changed, Phase 2 background refresh handles it; the user
-// always sees the last known recs immediately rather than a skeleton.
+// Signal count is stored but does NOT block restoration. If signals changed,
+// Phase 2 background refresh handles it; the user always sees the last known
+// recs rather than a blank skeleton.
+//
+// Fingerprint: a string capturing all state that drives which recs are produced.
+// Used by:
+//   - Prewarm dedup (skip if same fingerprint warmed within cooldown window)
+//   - Restore compatibility log (compare stored vs expected after Phase 1)
+// It does NOT gate restore — fingerprint mismatch always allows restore with
+// background refresh.
 
 const KEY_PREFIX = 'readstack_rec_v1_';
 const TTL_MS     = 2 * 60 * 60 * 1000; // 2 hours
+
+// ── Fingerprint ───────────────────────────────────────────────────────────────
+//
+// v1:<signalCount>:<recMode>:<fp|nfp>:<intentTag>
+//
+// Examples:
+//   v1:154:deterministic:nfp:none           ← no intent, deterministic mode
+//   v1:154:expert:nfp:none                  ← expert mode
+//   v1:162:deterministic:nfp:light & quick  ← after 8 more ratings, with intent
+
+export function computeRecFingerprint(
+  signalCount:   number,
+  recMode:       'deterministic' | 'expert',
+  isFreePreview: boolean,
+  intentTag:     string | null,
+): string {
+  return [
+    'v1',
+    signalCount,
+    recMode,
+    isFreePreview ? 'fp' : 'nfp',
+    intentTag ?? 'none',
+  ].join(':');
+}
 
 export type PersistedRecPayload = {
   recs:          ScoredBook[];
@@ -29,6 +60,7 @@ export type PersistedRecPayload = {
   isFreePreview: boolean;
   signalCount:   number;
   intentTag:     string | null;
+  fingerprint:   string;
   loadedAt:      number;
 };
 
@@ -38,23 +70,71 @@ export async function saveRecPayload(
 ): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_PREFIX + userId, JSON.stringify(payload));
-    if (__DEV__) console.log('[PERSIST_CACHE] saved', `| recs=${payload.recs.length}`, `| signal=${payload.signalCount}`);
+    if (__DEV__) console.log('[PERSIST_CACHE] saved',
+      `| recs=${payload.recs.length}`,
+      `| signal=${payload.signalCount}`,
+      `| fingerprint=${payload.fingerprint}`,
+    );
   } catch (e) {
     if (__DEV__) console.warn('[PERSIST_CACHE] save failed', e);
   }
 }
 
+// ── Load + structural validation ──────────────────────────────────────────────
+//
+// Rejects on:
+//   - TTL expired (>2h)
+//   - recs field absent or not an array (corrupt / incompatible format)
+//   - no recs and no continuations (empty payload, nothing to show)
+//
+// Does NOT reject on:
+//   - signal count mismatch (Phase 2 background refresh corrects it)
+//   - recMode mismatch (Phase 2 background refresh corrects it)
+//   - isFreePreview mismatch (same)
+//   - missing fingerprint field (pre-v2 payload — accepted, logged as legacy)
+
 export async function loadRecPayload(userId: string): Promise<PersistedRecPayload | null> {
   try {
     const raw = await AsyncStorage.getItem(KEY_PREFIX + userId);
     if (!raw) return null;
-    const p = JSON.parse(raw) as PersistedRecPayload;
-    const age = Date.now() - p.loadedAt;
-    if (age > TTL_MS) {
-      if (__DEV__) console.log('[PERSIST_CACHE] expired', `| age_ms=${age}`);
+
+    let p: PersistedRecPayload;
+    try {
+      p = JSON.parse(raw);
+    } catch {
+      if (__DEV__) console.warn('[PERSIST_CACHE] corrupt JSON — discarding');
       return null;
     }
-    if (__DEV__) console.log('[PERSIST_CACHE] hit', `| age_ms=${age}`, `| recs=${p.recs?.length ?? 0}`, `| signal=${p.signalCount}`);
+
+    // Structural guard: recs must be a real array
+    if (!Array.isArray(p?.recs)) {
+      if (__DEV__) console.warn('[PERSIST_CACHE] missing recs array — discarding (old format?)');
+      return null;
+    }
+
+    // TTL check
+    const age = Date.now() - (p.loadedAt ?? 0);
+    if (age > TTL_MS) {
+      if (__DEV__) console.log('[PERSIST_CACHE] expired',
+        `| age_ms=${age}`,
+        `| fingerprint=${p.fingerprint ?? 'legacy'}`,
+      );
+      return null;
+    }
+
+    // Empty guard
+    if (p.recs.length === 0 && (p.continuations?.length ?? 0) === 0) {
+      if (__DEV__) console.log('[PERSIST_CACHE] empty payload — discarding');
+      return null;
+    }
+
+    if (__DEV__) console.log('[PERSIST_CACHE] hit',
+      `| age_ms=${age}`,
+      `| recs=${p.recs.length}`,
+      `| signal=${p.signalCount}`,
+      `| fingerprint=${p.fingerprint ?? 'legacy'}`,
+      `| mode=${p.recMode ?? 'unknown'}`,
+    );
     return p;
   } catch (e) {
     if (__DEV__) console.warn('[PERSIST_CACHE] load failed', e);
