@@ -1643,6 +1643,20 @@ export function getRankedRecs(
     };
   };
 
+  if (__DEV__) {
+    const seedCount    = candidates.filter(b =>
+      typeof b._retrieval_reason === 'string' &&
+      b._retrieval_reason.startsWith('exact_series_seed:')
+    ).length;
+    const preSeedPool  = poolSize - seedCount;
+    console.log('[POOL_CHECK]',
+      `pre_seed_pool=${preSeedPool}`,
+      `| post_seed_pool=${poolSize}`,
+      `| threshold=${MIN_CANDIDATES}`,
+      `| decision=${poolSize >= MIN_CANDIDATES ? 'pass' : 'gate_fires'}`,
+    );
+  }
+
   if (poolSize < MIN_CANDIDATES) {
     return { recs: [], continuations: [], discoveries: [], meta: buildMeta('insufficient_pool') };
   }
@@ -2321,29 +2335,30 @@ export async function getCandidateBooks(
   }
 
   // ── Merge exact-series seeds (await the parallel fetch started above) ────────
-  // Deduplicate against what OL / cache already returned so we don't double-count.
-  // Exact seeds are NOT excluded by the OL exclude set (readExternalIds) because
-  // we know they are unread — that check is by external_id and these books simply
-  // weren't in the user's library.  The safety-net layer below still catches any
-  // edge-case where a seed somehow matches finishedDnfNormalized.
+  // Seeds are deduplicated against OL/cache results here, then held in
+  // exactSeedsNew.  They are NOT merged into externalCandidates at this point
+  // so they bypass the main hygiene pass.  Hygiene filters OL metadata quality
+  // (missing subjects, PD authors, etc.) — curated series seeds are validated
+  // by getEligibleSeriesSeeds and must survive the quality gate even when
+  // fetchOLByTitle returns a low-metadata edition (ol_no_subjects check would
+  // otherwise evict them on cold start).  Safety-net (already-read exclusion)
+  // is still applied to seeds below, after the main hygiene pass.
   const exactSeedsRaw = await exactSeedsFetchP;
   const _t4 = Date.now(); // seeds latency (parallel with OL/cache — may be ≈0 on cache hit)
+  let exactSeedsNew: CandidateBook[] = [];
   if (exactSeedsRaw.length > 0) {
     const existingExtIds = new Set(
       externalCandidates.map(b => b.external_id).filter((x): x is string => !!x)
     );
-    const newSeeds = exactSeedsRaw.filter(
+    exactSeedsNew = exactSeedsRaw.filter(
       b => b.external_id == null || !existingExtIds.has(b.external_id)
     );
-    if (newSeeds.length > 0) {
-      externalCandidates = [...externalCandidates, ...newSeeds];
-      if (__DEV__) {
-        console.log(
-          `[EXACT_SEEDS] added ${newSeeds.length} exact-series book(s) to pool: [` +
-          newSeeds.map(b => `"${b.title}" [${b._retrieval_reason}]`).join(', ') +
-          `]`,
-        );
-      }
+    if (exactSeedsNew.length > 0 && __DEV__) {
+      console.log(
+        `[EXACT_SEEDS] added ${exactSeedsNew.length} exact-series book(s) to pool: [` +
+        exactSeedsNew.map(b => `"${b.title}" [${b._retrieval_reason}]`).join(', ') +
+        `]`,
+      );
     }
   }
 
@@ -2411,6 +2426,37 @@ export async function getCandidateBooks(
       if (b._source === 'catalog' && feedback.dismissedIds.has(b.id))  return false;
       return true;
     });
+  }
+
+  // ── Append exact-series seeds post-hygiene ────────────────────────────────
+  // Seeds held in exactSeedsNew bypassed the main hygiene pass (see comment
+  // above) so they are always counted in the pool before the quality gate
+  // fires.  Safety-net (already-read by normalized title+author) is still
+  // applied here.  Dedup against filtered prevents double-counting seeds
+  // that already survived hygiene (e.g. an OL edition with full subjects).
+  const preSeedPool = filtered.length;
+  if (exactSeedsNew.length > 0) {
+    const safeSeeds = exactSeedsNew.filter(b => {
+      if (!b.title || !b.author) return true;
+      return !local.finishedDnfNormalized.has(normBookKey(b.title, b.author));
+    });
+    if (safeSeeds.length > 0) {
+      const filteredExtIds = new Set(filtered.map(b => b.external_id).filter((x): x is string => !!x));
+      const filteredIds    = new Set(filtered.map(b => b.id));
+      const seedsToAdd     = safeSeeds.filter(b =>
+        !filteredIds.has(b.id) &&
+        (b.external_id == null || !filteredExtIds.has(b.external_id))
+      );
+      if (seedsToAdd.length > 0) {
+        filtered = [...filtered, ...seedsToAdd];
+        if (__DEV__) {
+          console.log(
+            `[SEEDS_POSTGATING] appended ${seedsToAdd.length} seed(s) post-hygiene` +
+            ` (pre_seed_pool=${preSeedPool} → post_seed_pool=${filtered.length})`,
+          );
+        }
+      }
+    }
   }
 
   const det = profile.det_lanes;
