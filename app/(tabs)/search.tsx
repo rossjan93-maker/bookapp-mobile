@@ -1554,12 +1554,18 @@ export default function RecommendationsScreen() {
     setCurrentUserId(user.id);
     setHubLoading(true);
     setRecsLoading(false);
-    setRecommendations([]);
+    // NOTE: intentionally NOT clearing recommendations here so the previous set
+    // remains visible while the new pipeline runs (last-known-good pattern).
+    // Freshness rule: recs from the same session are always replaced on completion.
+    // Recs from prior sessions (state persists across focus events) are shown
+    // briefly and replaced the moment the new pipeline resolves (~1–4s).
 
     // ── Phase 1: core hub data (all DB queries run concurrently) ─────────────
     // Hub becomes visible as soon as this resolves, without waiting for OL API.
+    // feedbackContext is loaded here (parallel with hub queries) rather than
+    // serially at the start of Phase 2, saving ~50–100 ms off Phase 2 start.
 
-    const [rateRes, tagRes, incomingRes, sentRes, tp, ent] = await Promise.all([
+    const [rateRes, tagRes, incomingRes, sentRes, tp, ent, fbCtxPhase1] = await Promise.all([
       // Finished books with no rating
       supabase
         .from('user_books')
@@ -1605,6 +1611,10 @@ export default function RecommendationsScreen() {
 
       // Entitlement — determines whether expert rec mode is available
       getEntitlement(supabase!, user.id).catch(() => null),
+
+      // Feedback context — loaded in parallel here to avoid a serial round-trip
+      // at Phase 2 start (saves ~50–100 ms off the time-to-first-rec).
+      loadFeedbackContext(supabase!, user.id).catch(() => emptyContext()),
     ]);
 
     // ── Supabase many-to-one join note: returns single object, not array ─────
@@ -1658,18 +1668,22 @@ export default function RecommendationsScreen() {
     setRecMode(null);
     setIsFreePreview(false);
     try {
-      // Load feedback context first (fast DB query) — drives candidate exclusion + boosts
-      const fbCtx = await loadFeedbackContext(supabase!, user.id);
+      // feedbackContext was loaded in Phase 1 (parallel with hub queries) — use it directly.
+      const fbCtx = fbCtxPhase1;
       setFeedbackCtx(fbCtx);
 
       // Run the unified pipeline (deterministic + optional expert layer)
       // Uses expert layer if entitlement allows + signal is sufficient
       const activeEntitlement = ent ?? { plan: 'free' as const, expert_recs_enabled: false, expert_refreshes_remaining_this_period: 0, has_used_free_import_analysis: false, next_refresh_available_at: null, _raw: { free_expert_used: false, expert_refreshes_this_period: 0, period_start_at: new Date().toISOString(), last_expert_refresh_at: null } };
 
+      const _pipelineStart = Date.now();
       const recResult = await getPersonalizedRecsWithExpert(
         supabase!, user.id, tp, activeEntitlement, 5, fbCtx,
         isIntentActive(nextReadIntent) ? nextReadIntent : undefined,
       );
+      if (__DEV__) {
+        console.log('[REC_TIMING] total_pipeline_ms=' + (Date.now() - _pipelineStart));
+      }
       const { recs, meta } = recResult;
 
       setRecommendations(recs);
@@ -1778,64 +1792,63 @@ export default function RecommendationsScreen() {
 
   // ── Recommendation feedback handlers ─────────────────────────────────────
 
-  async function handleRecSave(book: ScoredBook) {
+  function handleRecSave(book: ScoredBook) {
     if (!supabase || !currentUserId) return;
 
-    // For OL-sourced books: find or create the book record in the DB first
-    // so we have a stable book_db_id for the user_books insert.
-    let bookDbId: string | null = null;
-    if (book._source === 'catalog') {
-      bookDbId = book.id;
-    } else if (book.external_id) {
-      const { data: existing } = await supabase
-        .from('books')
-        .select('id')
-        .eq('external_id', book.external_id)
-        .maybeSingle();
-
-      if (existing) {
-        bookDbId = existing.id;
-      } else {
-        const { data: created } = await supabase
-          .from('books')
-          .insert({
-            title:       book.title,
-            author:      book.author,
-            external_id: book.external_id,
-            cover_url:   book.cover_url,
-            subjects:    book.subjects,
-            page_count:  book.page_count,
-          })
-          .select('id')
-          .single();
-        bookDbId = created?.id ?? null;
-      }
-    }
-
-    if (bookDbId) {
-      // Add to library if not already there
-      await supabase
-        .from('user_books')
-        .upsert(
-          { user_id: currentUserId, book_id: bookDbId, status: 'want_to_read' },
-          { onConflict: 'user_id,book_id', ignoreDuplicates: true },
-        );
-    }
-
-    // Persist feedback (best-effort)
-    persistFeedback(supabase, currentUserId, book, 'saved', {
-      book_db_id: bookDbId ?? undefined,
-    }).catch(() => {});
-
-    // Optimistic UI: remove from all buckets
+    // ── Optimistic UI: remove card + show toast instantly ────────────────────
+    // DB writes fire in background; the user sees the action complete immediately.
     const bookFilter = (b: ScoredBook) => b.id !== book.id;
     setRecommendations(prev => prev.filter(bookFilter));
     setContinuations(prev   => prev.filter(bookFilter));
     setDiscoveries(prev     => prev.filter(bookFilter));
-
-    // Toast
     setSaveToast(`"${book.title}" added to your library`);
     setTimeout(() => setSaveToast(null), 2800);
+
+    // ── Background: upsert book record + add to library + persist feedback ───
+    // Fire-and-forget — UI is already updated above.
+    (async () => {
+      let bookDbId: string | null = null;
+      if (book._source === 'catalog') {
+        bookDbId = book.id;
+      } else if (book.external_id) {
+        const { data: existing } = await supabase!
+          .from('books')
+          .select('id')
+          .eq('external_id', book.external_id)
+          .maybeSingle();
+
+        if (existing) {
+          bookDbId = existing.id;
+        } else {
+          const { data: created } = await supabase!
+            .from('books')
+            .insert({
+              title:       book.title,
+              author:      book.author,
+              external_id: book.external_id,
+              cover_url:   book.cover_url,
+              subjects:    book.subjects,
+              page_count:  book.page_count,
+            })
+            .select('id')
+            .single();
+          bookDbId = created?.id ?? null;
+        }
+      }
+
+      if (bookDbId) {
+        await supabase!
+          .from('user_books')
+          .upsert(
+            { user_id: currentUserId, book_id: bookDbId, status: 'want_to_read' },
+            { onConflict: 'user_id,book_id', ignoreDuplicates: true },
+          );
+      }
+
+      persistFeedback(supabase!, currentUserId!, book, 'saved', {
+        book_db_id: bookDbId ?? undefined,
+      }).catch(() => {});
+    })().catch(() => {});
   }
 
   async function handleRecDismiss(book: ScoredBook) {

@@ -353,9 +353,22 @@ async function persistEnrichmentBatch(
 }
 
 // ── Main: get enrichment for a batch of candidates ────────────────────────────
-// Checks cache first.  For uncached candidates (up to MAX_ENRICH total),
-// fetches from Google Books and persists.  Always returns a map (may be empty
-// if the table doesn't exist yet or all fetches fail).
+// Checks cache first.  For uncached candidates, builds a profile immediately
+// using subject-based inference (no network call) so the caller is never
+// blocked on the Google Books API.  GB API calls run in the background and
+// persist richer profiles to the cache for the next pipeline run.
+//
+// ── Why non-blocking GB calls ────────────────────────────────────────────────
+//  On first visit (empty enrichment cache) the old approach blocked the full
+//  pipeline while up to MAX_ENRICH GB requests completed (~500–2000 ms).
+//  DB-cached enrichment (return visits) is unchanged: one batch read, fast.
+//  Subject-based inference (inferConsensusTraits) covers the hygiene and
+//  scoring signals most relevant to first-visit quality:
+//    • consensus_traits     — from book.subjects (no GB needed)
+//    • audience_signals     — from book.subjects (no GB needed)
+//    • language             — unknown without GB; hygiene keeps the book (safe)
+//    • popularity_signals   — unknown without GB; enrichment_bonus = 0 (safe)
+//  GB API enriches language + popularity for the NEXT visit — zero latency cost.
 
 export async function getEnrichmentForCandidates(
   client:     SupabaseClient,
@@ -367,7 +380,7 @@ export async function getEnrichmentForCandidates(
 
   const allExternalIds = withKey.map(c => c.external_id!);
 
-  // Step 1: batch cache read
+  // Step 1: batch cache read (single DB query — fast on every visit)
   const cached = await loadEnrichmentBatch(client, allExternalIds);
 
   // Step 2: identify uncached candidates (up to MAX_ENRICH)
@@ -377,22 +390,32 @@ export async function getEnrichmentForCandidates(
 
   if (uncached.length === 0) return cached;
 
-  // Step 3: fetch from Google Books for uncached candidates (parallel, capped)
-  const freshProfiles = await Promise.all(
+  // Step 3: build local-inference profiles immediately for uncached candidates.
+  // Uses inferConsensusTraits (subjects-only) — no network call, returns instantly.
+  // Language and popularity are unknown at this stage; both degrade safely:
+  //   language = undefined  → hygiene keeps the book (conservative, not exclusionary)
+  //   popularity = {}       → enrichment_bonus uses 0 (no inflation, no penalty)
+  const localProfiles = uncached.map(
+    book => buildEnrichmentProfile(book.external_id!, book, null)
+  );
+
+  // Step 4: merge DB-cached + local-inference into result (ready immediately)
+  const result = new Map(cached);
+  for (const p of localProfiles) {
+    result.set(p.external_id, p);
+  }
+
+  // Step 5: kick off Google Books enrichment in the background (cache warming).
+  // This does NOT block the return above. On the next pipeline run for the same
+  // candidates, Step 1 will find them in the DB cache and return full profiles.
+  Promise.all(
     uncached.map(async (book): Promise<BookEnrichmentProfile> => {
       const gb = await fetchGBEnrichmentData(book.title, book.author);
       return buildEnrichmentProfile(book.external_id!, book, gb);
     })
-  );
-
-  // Step 4: persist (best-effort, async)
-  persistEnrichmentBatch(client, freshProfiles).catch(() => {});
-
-  // Step 5: merge into result map
-  const result = new Map(cached);
-  for (const p of freshProfiles) {
-    result.set(p.external_id, p);
-  }
+  ).then(freshProfiles => {
+    persistEnrichmentBatch(client, freshProfiles).catch(() => {});
+  }).catch(() => {});
 
   return result;
 }

@@ -2164,8 +2164,12 @@ export async function getCandidateBooks(
   profile:   TasteProfile,
   feedback?: FeedbackContext,
 ): Promise<CandidateResult> {
+  // ── Stage timing — [REC_TIMING] log emitted at the end of this function ───
+  const _t0 = Date.now();
+
   // ── Source A: catalog ─────────────────────────────────────────────────────
   const local = await getLocalCandidates(client, userId);
+  const _t1 = Date.now();
 
   // ── seriesReadSet — built deterministically from user library ─────────────
   // Must happen BEFORE any OL fetch so Continue Reading routing is stable
@@ -2229,7 +2233,9 @@ export async function getCandidateBooks(
     userId,
     new Set([...local.readExternalIds, ...catalogExternalIds]),
   );
+  const _t2 = Date.now();
 
+  let _t3 = _t2; // set inside each branch below
   let externalCandidates: CandidateBook[];
   let olResult: OLResult = {
     candidates:           [],
@@ -2273,6 +2279,7 @@ export async function getCandidateBooks(
     olResult.top_genres_used      = [...genresSet];
     olResult.liked_subjects_used  = [...subjSet];
     olResult.liked_authors_used   = [...authorsSet];
+    _t3 = Date.now(); // cache_hit path — no OL latency
   } else {
     // ── Source C: live OL multi-anchor fetch ──────────────────────────────
     const excludeForOL = new Set([
@@ -2292,6 +2299,7 @@ export async function getCandidateBooks(
 
     // Persist OL results (best-effort, async)
     persistOLCandidates(client, userId, olResult.candidates).catch(() => {});
+    _t3 = Date.now(); // live_ol path — includes full OL fetch latency
   }
 
   // ── Merge exact-series seeds (await the parallel fetch started above) ────────
@@ -2301,6 +2309,7 @@ export async function getCandidateBooks(
   // weren't in the user's library.  The safety-net layer below still catches any
   // edge-case where a seed somehow matches finishedDnfNormalized.
   const exactSeedsRaw = await exactSeedsFetchP;
+  const _t4 = Date.now(); // seeds latency (parallel with OL/cache — may be ≈0 on cache hit)
   if (exactSeedsRaw.length > 0) {
     const existingExtIds = new Set(
       externalCandidates.map(b => b.external_id).filter((x): x is string => !!x)
@@ -2364,8 +2373,9 @@ export async function getCandidateBooks(
     }
   }
 
-  // ── Enrichment (cache-first; fetch uncached for top candidates) ────────────
+  // ── Enrichment (cache-first; GB calls are non-blocking background) ───────────
   const enrichmentMap = await getEnrichmentForCandidates(client, safeAll);
+  const _t5 = Date.now(); // enrichment_ms (DB batch read only; GB calls are background)
 
   // ── Hygiene filter ─────────────────────────────────────────────────────────
   const hygiene = applyHygiene(
@@ -2414,6 +2424,22 @@ export async function getCandidateBooks(
     if (__DEV__ && olSupp.size > 0) {
       console.log(`[SERIES_RS_OL] fallback added ${olSupp.size} series from OL-excluded: [${[...olSupp].join(', ')}] → total=${seriesReadSet.size}`);
     }
+  }
+
+  const _t6 = Date.now();
+  if (__DEV__) {
+    const cacheHit = cacheResult?.isFresh ?? false;
+    console.log(
+      '[REC_TIMING]',
+      `retrieval_local_ms=${_t1 - _t0}`,
+      `| cache_check_ms=${_t2 - _t1}`,
+      `| ol_ms=${_t3 - _t2} (${cacheHit ? 'cache_hit' : 'live_ol'})`,
+      `| seeds_ms=${_t4 - _t3}`,
+      `| enrichment_ms=${_t5 - _t4}`,
+      `| filter_hygiene_ms=${_t6 - _t5}`,
+      `| total_candidate_ms=${_t6 - _t0}`,
+      `| candidates_out=${filtered.length}`,
+    );
   }
 
   return { candidates: filtered, enrichmentMap, retrieval_trace, seriesReadSet, seriesProgress, seriesPositionsRead, authorReadCounts };
