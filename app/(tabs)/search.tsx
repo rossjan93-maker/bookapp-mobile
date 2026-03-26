@@ -25,8 +25,8 @@ import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computeTasteProfile } from '../../lib/tasteProfile';
 import type { TasteProfile } from '../../lib/tasteProfile';
-import { getCandidateBooks, getRankedRecs, fitLabel, fitColor, getPersonalizedRecsWithExpert } from '../../lib/recommender';
-import type { ScoredBook, QualityGate, RankedRecsResult } from '../../lib/recommender';
+import { getCandidateBooks, getRankedRecs, fitLabel, fitColor, getPersonalizedRecsWithExpert, __devTimingsRef } from '../../lib/recommender';
+import type { ScoredBook, QualityGate, RankedRecsResult, DevTimings } from '../../lib/recommender';
 import {
   emptyIntent as emptyNextReadIntent,
   isIntentActive,
@@ -1494,6 +1494,9 @@ export default function RecommendationsScreen() {
   const [continuations,   setContinuations]   = useState<ScoredBook[]>([]);
   const [discoveries,     setDiscoveries]     = useState<ScoredBook[]>([]);
 
+  // ── Dev-only performance overlay state ────────────────────────────────────
+  const [recTiming, setRecTiming]             = useState<DevTimings | null>(null);
+
   // ── Entitlement + expert mode state ───────────────────────────────────────
   const [entitlement, setEntitlement]         = useState<RecEntitlement | null>(null);
   const [recMode, setRecMode]                 = useState<'deterministic' | 'expert' | null>(null);
@@ -1681,8 +1684,14 @@ export default function RecommendationsScreen() {
         supabase!, user.id, tp, activeEntitlement, 5, fbCtx,
         isIntentActive(nextReadIntent) ? nextReadIntent : undefined,
       );
+      const _pipelineMs = Date.now() - _pipelineStart;
       if (__DEV__) {
-        console.log('[REC_TIMING] total_pipeline_ms=' + (Date.now() - _pipelineStart));
+        console.log('[REC_TIMING] total_pipeline_ms=' + _pipelineMs);
+        // Backfill total_pipeline_ms into the module-level store and push to UI overlay.
+        if (__devTimingsRef.current) {
+          __devTimingsRef.current.total_pipeline_ms = _pipelineMs;
+          setRecTiming({ ...__devTimingsRef.current });
+        }
       }
       const { recs, meta } = recResult;
 
@@ -2037,6 +2046,7 @@ export default function RecommendationsScreen() {
     const hasRecs         = recommendations.length > 0 || continuations.length > 0;
 
     return (
+      <View style={{ flex: 1 }}>
       <ScrollView
         style={{ flex: 1, backgroundColor: '#faf9f7' }}
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 48 }}
@@ -2616,6 +2626,47 @@ export default function RecommendationsScreen() {
 
 
       </ScrollView>
+
+      {/* ── Dev-only performance overlay ───────────────────────────────── */}
+      {__DEV__ && recTiming && (
+        <View style={{
+          position: 'absolute',
+          bottom: 16,
+          left: 12,
+          right: 12,
+          backgroundColor: 'rgba(0,0,0,0.82)',
+          borderRadius: 10,
+          padding: 10,
+          zIndex: 9999,
+        }}>
+          <Text style={{ color: '#facc15', fontWeight: '700', fontSize: 11, marginBottom: 5, letterSpacing: 0.4 }}>
+            ⏱ REC_TIMING ({recTiming.ol_source})
+          </Text>
+          {([
+            ['retrieval_local', recTiming.retrieval_local_ms],
+            ['cache_check',     recTiming.cache_check_ms],
+            [`ol (${recTiming.ol_source})`, recTiming.ol_ms],
+            ['seeds',           recTiming.seeds_ms],
+            ['enrichment',      recTiming.enrichment_ms],
+            ['filter_hygiene',  recTiming.filter_hygiene_ms],
+            ['total_candidate', recTiming.total_candidate_ms],
+            ['TOTAL_PIPELINE',  recTiming.total_pipeline_ms],
+          ] as [string, number][]).map(([label, ms]) => {
+            const isSlow = ms > 400;
+            const isHot  = ms > 1000;
+            return (
+              <View key={label} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
+                <Text style={{ color: '#d6d3d1', fontSize: 10 }}>{label}</Text>
+                <Text style={{ color: isHot ? '#f87171' : isSlow ? '#fb923c' : '#86efac', fontSize: 10, fontWeight: '600' }}>
+                  {ms} ms
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
+
+      </View>
     );
   }
 

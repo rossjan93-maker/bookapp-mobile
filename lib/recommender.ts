@@ -2154,6 +2154,24 @@ export function getRankedRecs(
   };
 }
 
+// ── Dev-only timing store (populated by getCandidateBooks, read by UI overlay) ─
+// Only written when __DEV__ is true; production builds never touch this object.
+export type DevTimings = {
+  retrieval_local_ms:  number;
+  cache_check_ms:      number;
+  ol_ms:               number;
+  ol_source:           'cache_hit' | 'live_ol';
+  seeds_ms:            number;
+  enrichment_ms:       number;
+  filter_hygiene_ms:   number;
+  total_candidate_ms:  number;
+  total_pipeline_ms:   number;
+  timestamp:           number;
+};
+// Stable object reference — `.current` is mutated in-place so the same import
+// always reflects the latest values regardless of module system (CJS/ESM).
+export const __devTimingsRef: { current: DevTimings | null } = { current: null };
+
 // ── Combined retrieval ────────────────────────────────────────────────────────
 // Returns CandidateResult: candidates + enrichmentMap + retrieval_trace.
 // replaces the old plain CandidateBook[] return type.
@@ -2440,6 +2458,20 @@ export async function getCandidateBooks(
       `| total_candidate_ms=${_t6 - _t0}`,
       `| candidates_out=${filtered.length}`,
     );
+    // Write to module-level store so UI overlay can display without DevTools.
+    // total_pipeline_ms is filled in by the search.tsx caller after ranking.
+    __devTimingsRef.current = {
+      retrieval_local_ms:  _t1 - _t0,
+      cache_check_ms:      _t2 - _t1,
+      ol_ms:               _t3 - _t2,
+      ol_source:           cacheHit ? 'cache_hit' : 'live_ol',
+      seeds_ms:            _t4 - _t3,
+      enrichment_ms:       _t5 - _t4,
+      filter_hygiene_ms:   _t6 - _t5,
+      total_candidate_ms:  _t6 - _t0,
+      total_pipeline_ms:   0,   // filled by caller
+      timestamp:           _t6,
+    };
   }
 
   return { candidates: filtered, enrichmentMap, retrieval_trace, seriesReadSet, seriesProgress, seriesPositionsRead, authorReadCounts };
