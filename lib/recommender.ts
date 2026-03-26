@@ -675,10 +675,20 @@ async function getLocalCandidates(
   client: SupabaseClient,
   userId: string,
 ): Promise<LocalResult> {
-  const { data: userBooks } = await client
-    .from('user_books')
-    .select('book_id, status, finished_at, book:books(external_id, title, author)')
-    .eq('user_id', userId);
+  // ── Two independent DB queries run in parallel ────────────────────────────
+  // user_books has no query-time dependency on books and vice versa.
+  // Client-side filtering (readIds.has) is applied after both resolve.
+  const [{ data: userBooks }, { data: dbBooks }] = await Promise.all([
+    client
+      .from('user_books')
+      .select('book_id, status, finished_at, book:books(external_id, title, author)')
+      .eq('user_id', userId),
+    client
+      .from('books')
+      .select('id, title, author, cover_url, external_id, subjects, page_count, description, isbn')
+      .or('subjects.not.is.null,description.not.is.null,isbn.not.is.null')
+      .limit(120),
+  ]);
 
   type UBRow = {
     book_id:     string;
@@ -745,12 +755,7 @@ async function getLocalCandidates(
   );
   const finishedDnfCount = finishedDnfRows.length;
 
-  const { data: dbBooks } = await client
-    .from('books')
-    .select('id, title, author, cover_url, external_id, subjects, page_count, description, isbn')
-    .or('subjects.not.is.null,description.not.is.null,isbn.not.is.null')
-    .limit(120);
-
+  // dbBooks arrived from the parallel Promise.all above — no additional await needed.
   type DBBook = {
     id: string; title: string; author: string; cover_url: string | null;
     external_id: string | null; subjects: string[] | null; page_count: number | null;
@@ -883,6 +888,23 @@ type OLResult = {
   liked_authors_used:   string[];
   excluded_read_books:  Array<{ title: string; author: string }>;
 };
+
+// ── Session-level OL candidate cache ─────────────────────────────────────────
+// Memoises live OL fetch results for the lifetime of an app session (10 min).
+// Serves two populations:
+//   1. Non-forensic users: rec_candidate_cache (DB, 24h) already handles warm
+//      revisits; this adds a faster fallback when the DB cache is race-missed.
+//   2. Forensic user: DB cache is always bypassed; this module-level cache is
+//      the ONLY fast-path for warm background refreshes in that mode.
+// Invalidated when strongSignalCount changes (user rated/tagged new books).
+type OLSessionCache = {
+  userId:      string;
+  result:      OLResult;
+  signalCount: number;
+  loadedAt:    number;
+};
+let _olCandidateSession: OLSessionCache | null = null;
+const OL_SESSION_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 async function getOLCandidates(
   profile:              TasteProfile,
@@ -2198,6 +2220,7 @@ export async function getCandidateBooks(
 ): Promise<CandidateResult> {
   // ── Stage timing — [REC_TIMING] log emitted at the end of this function ───
   const _t0 = Date.now();
+  if (__DEV__) console.log('[PERF] phase2_candidate_generation_start');
 
   // ── Source A: catalog ─────────────────────────────────────────────────────
   const local = await getLocalCandidates(client, userId);
@@ -2313,25 +2336,58 @@ export async function getCandidateBooks(
     olResult.liked_authors_used   = [...authorsSet];
     _t3 = Date.now(); // cache_hit path — no OL latency
   } else {
-    // ── Source C: live OL multi-anchor fetch ──────────────────────────────
+    // ── Source C: live OL or session cache ───────────────────────────────
     const excludeForOL = new Set([
       ...local.readExternalIds,
       ...catalogExternalIds,
       ...(cacheResult?.candidates.map(c => c.external_id).filter((x): x is string => !!x) ?? []),
     ]);
 
-    olResult = await getOLCandidates(profile, local.readExternalIds, excludeForOL, local.trueReadExternalIds);
+    // ── Session-level OL candidate cache (module-level, survives tab switches) ─
+    // Checked BEFORE the forensic bypass so it serves the dev user too.
+    // Reuse when: same user, same signal count, cache younger than OL_SESSION_TTL_MS.
+    // Re-apply current exclusion set so newly-finished books are always excluded.
+    const currentSignal = profile.strongSignalCount ?? 0;
+    const olSessionValid =
+      _olCandidateSession !== null &&
+      _olCandidateSession.userId      === userId &&
+      _olCandidateSession.signalCount === currentSignal &&
+      (Date.now() - _olCandidateSession.loadedAt) < OL_SESSION_TTL_MS;
 
-    // Merge fresh OL on top of any stale cache rows for breadth
-    const stale       = cacheResult?.candidates ?? [];
-    const olExtIds    = new Set(olResult.candidates.map(b => b.external_id).filter((x): x is string => !!x));
-    const nonDupStale = stale.filter(b => !olExtIds.has(b.external_id ?? ''));
+    if (olSessionValid) {
+      if (__DEV__) console.log(
+        '[PERF] phase2_external_fetch_start — ol_session_cache_hit',
+        `| age_ms=${Date.now() - _olCandidateSession!.loadedAt}`,
+        `| signal=${currentSignal}`,
+      );
+      olResult = _olCandidateSession!.result;
+      // Re-apply current exclusion in case user's read set changed since cache was built
+      const reincluded = olResult.candidates.filter(
+        b => !b.external_id || !excludeForOL.has(b.external_id)
+      );
+      externalCandidates = reincluded;
+      if (__DEV__) console.log('[PERF] phase2_external_fetch_end — ol_session_cache_hit', `| candidates=${reincluded.length}`);
+      _t3 = Date.now();
+    } else {
+      // ── Live OL multi-anchor fetch ─────────────────────────────────────
+      if (__DEV__) console.log('[PERF] phase2_external_fetch_start — live_ol');
+      olResult = await getOLCandidates(profile, local.readExternalIds, excludeForOL, local.trueReadExternalIds);
+      if (__DEV__) console.log('[PERF] phase2_external_fetch_end — live_ol', `| ms=${Date.now() - _t2}`, `| candidates=${olResult.candidates.length}`);
 
-    externalCandidates = [...olResult.candidates, ...nonDupStale];
+      // Save to session cache for background refreshes within this session
+      _olCandidateSession = { userId, result: { ...olResult }, signalCount: currentSignal, loadedAt: Date.now() };
 
-    // Persist OL results (best-effort, async)
-    persistOLCandidates(client, userId, olResult.candidates).catch(() => {});
-    _t3 = Date.now(); // live_ol path — includes full OL fetch latency
+      // Merge fresh OL on top of any stale cache rows for breadth
+      const stale       = cacheResult?.candidates ?? [];
+      const olExtIds    = new Set(olResult.candidates.map(b => b.external_id).filter((x): x is string => !!x));
+      const nonDupStale = stale.filter(b => !olExtIds.has(b.external_id ?? ''));
+
+      externalCandidates = [...olResult.candidates, ...nonDupStale];
+
+      // Persist OL results (best-effort, async)
+      persistOLCandidates(client, userId, olResult.candidates).catch(() => {});
+      _t3 = Date.now(); // live_ol path — includes full OL fetch latency
+    }
   }
 
   // ── Merge exact-series seeds (await the parallel fetch started above) ────────
@@ -2407,8 +2463,10 @@ export async function getCandidateBooks(
   }
 
   // ── Enrichment (cache-first; GB calls are non-blocking background) ───────────
+  if (__DEV__) console.log('[PERF] phase2_metadata_hydration_start', `| candidates=${safeAll.length}`);
   const enrichmentMap = await getEnrichmentForCandidates(client, safeAll);
   const _t5 = Date.now(); // enrichment_ms (DB batch read only; GB calls are background)
+  if (__DEV__) console.log('[PERF] phase2_metadata_hydration_end', `| ms=${_t5 - _t4}`, `| enriched=${enrichmentMap.size}`);
 
   // ── Hygiene filter ─────────────────────────────────────────────────────────
   const hygiene = applyHygiene(
@@ -2520,6 +2578,7 @@ export async function getCandidateBooks(
     };
   }
 
+  if (__DEV__) console.log('[PERF] phase2_candidate_generation_end', `| ms=${Date.now() - _t0}`, `| pool=${filtered.length}`);
   return { candidates: filtered, enrichmentMap, retrieval_trace, seriesReadSet, seriesProgress, seriesPositionsRead, authorReadCounts };
 }
 
@@ -2563,7 +2622,10 @@ export async function getPersonalizedRecsWithExpert(
   // ── Step 1: Deterministic pipeline (always runs) ──────────────────────────
   const { candidates, enrichmentMap, retrieval_trace, seriesReadSet, seriesProgress, seriesPositionsRead, authorReadCounts } =
     await getCandidateBooks(client, userId, profile, feedback);
+  if (__DEV__) console.log('[PERF] phase2_scoring_start', `| candidates=${candidates.length}`);
+  const _scoreStart = Date.now();
   const baseResult = getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet, seriesProgress, authorReadCounts, seriesPositionsRead);
+  if (__DEV__) console.log('[PERF] phase2_scoring_end', `| ms=${Date.now() - _scoreStart}`);
 
   // ── Forensic audit log (forensic user only, dev mode) ────────────────────
   if (__DEV__ && userId === FORENSIC_USER_ID) {

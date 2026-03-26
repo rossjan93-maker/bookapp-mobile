@@ -1854,6 +1854,7 @@ export default function RecommendationsScreen() {
         return;
       }
 
+      if (__DEV__) console.log('[PERF] phase2_commit', `| recs=${recs.length}`);
       setRecommendations(recs);
       setContinuations(recResult.continuations ?? []);
       setDiscoveries(recResult.discoveries ?? recs);
