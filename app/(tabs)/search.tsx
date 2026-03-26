@@ -1014,6 +1014,19 @@ function TagCard({ book, onComplete }: TagCardProps) {
   );
 }
 
+// ─── VariantBadge ─────────────────────────────────────────────────────────────
+function VariantBadge({ label, bg, color }: { label: string; bg: string; color: string }) {
+  return (
+    <View style={{
+      alignSelf: 'flex-start', marginBottom: 6,
+      paddingHorizontal: 7, paddingVertical: 3,
+      borderRadius: 6, backgroundColor: bg,
+    }}>
+      <Text style={{ fontSize: 10, fontWeight: '700', color, letterSpacing: 0.3 }}>{label}</Text>
+    </View>
+  );
+}
+
 // ─── RecCard ──────────────────────────────────────────────────────────────────
 // Shows a single personalised book recommendation with fit label, reasons, risk.
 
@@ -1113,6 +1126,7 @@ type SeriesCover = { olKey: string; coverId: number | null; title: string };
 function RecCard({
   book,
   isExpert         = false,
+  featured         = false,
   onSave           = () => {},
   onDismiss        = () => {},
   onMoreLikeThis   = () => {},
@@ -1121,6 +1135,7 @@ function RecCard({
 }: {
   book:              ScoredBook;
   isExpert?:         boolean;
+  featured?:         boolean;
   onSave?:           () => void;
   onDismiss?:        () => void;
   onMoreLikeThis?:   () => void;
@@ -1278,12 +1293,17 @@ function RecCard({
       borderRadius: 14,
       marginBottom: 8,
       shadowColor: '#000',
-      shadowOpacity: 0.04,
-      shadowRadius: 6,
-      shadowOffset: { width: 0, height: 1 },
-      elevation: 1,
+      shadowOpacity: featured ? 0.07 : 0.04,
+      shadowRadius: featured ? 10 : 6,
+      shadowOffset: { width: 0, height: featured ? 2 : 1 },
+      elevation: featured ? 2 : 1,
       overflow: 'hidden',
+      ...(featured ? { borderWidth: 1, borderColor: '#e7e5e4' } : {}),
     }}>
+      {/* Featured top accent bar */}
+      {featured && (
+        <View style={{ height: 3, backgroundColor: '#1c1917' }} />
+      )}
       {/* ── Main content row — full area is tappable to open Book Detail ── */}
       <TouchableOpacity
         onPress={handleCardPress}
@@ -1294,8 +1314,8 @@ function RecCard({
           url={book.cover_url}
           externalId={book.external_id}
           title={book.title}
-          width={44}
-          height={64}
+          width={featured ? 52 : 44}
+          height={featured ? 76 : 64}
         />
         <View style={{ flex: 1, marginLeft: 12 }}>
           {/* Title */}
@@ -1379,42 +1399,29 @@ function RecCard({
             </View>
           )}
 
-          {/* ── Series badge ────────────────────────────────────────────────────
-               Rendered immediately from props — series_label, series_position,
-               and series_total are all set by RIL before the card is rendered.
-               Does not depend on the async cover fetch. */}
-          {hasSeriesMeta && (
-            <View style={{
-              alignSelf:        'flex-start',
-              flexDirection:    'row',
-              alignItems:       'center',
-              gap:              4,
-              marginBottom:     6,
-              paddingHorizontal:7,
-              paddingVertical:  3,
-              borderRadius:     6,
-              backgroundColor:  book._score_breakdown.series_label === 'series_starter'
-                ? '#fef3c7'
-                : '#f0fdf4',
-            }}>
-              <Text style={{
-                fontSize:     10,
-                fontWeight:   '600',
-                color:        book._score_breakdown.series_label === 'series_starter'
-                  ? '#92400e'
-                  : '#166534',
-                letterSpacing: 0.2,
-              }}>
-                {book._score_breakdown.series_label === 'series_starter'
-                  ? 'Start here'
-                  : 'Continue the series'}
-              </Text>
-            </View>
-          )}
+          {/* ── Variant badge ─────────────────────────────────────────────────
+               Unified: series (start/continue), saga, author affinity.
+               Rendered from score_breakdown props — no async dependency. */}
+          {(() => {
+            const bd = book._score_breakdown;
+            const isStarter = bd.series_label === 'series_starter' || bd.saga_label === 'saga_entry';
+            const isContinuation =
+              bd.series_label === 'series_continuation' ||
+              bd.saga_label   === 'saga_continuation'   ||
+              bd.saga_label   === 'saga_next_series';
+            const isAuthorMatch = !isStarter && !isContinuation && (bd.author_books_read ?? 0) >= 2;
+            if (isStarter)       return <VariantBadge label="Start here"       bg="#fef3c7" color="#92400e" />;
+            if (isContinuation)  return <VariantBadge label="Continue series"  bg="#f0fdf4" color="#166534" />;
+            if (isAuthorMatch)   return <VariantBadge label="Author match"     bg="#f5f3ff" color="#5b21b6" />;
+            return null;
+          })()}
 
-          {/* Collapsed: 1 short reason (author prefix stripped) */}
+          {/* Reason — prominent proof statement, not buried body copy */}
           {collapsedReason && (
-            <Text style={{ fontSize: 12, color: '#57534e', lineHeight: 17 }} numberOfLines={2}>
+            <Text
+              style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', lineHeight: 18, marginBottom: 2 }}
+              numberOfLines={2}
+            >
               {collapsedReason}
             </Text>
           )}
@@ -1423,48 +1430,55 @@ function RecCard({
       </TouchableOpacity>
 
       {/* ── Action bar ── */}
+      {/* Save is the primary action — visually dominant.                  */}
+      {/* Not for me + More like this are secondary — smaller, lighter.    */}
       <View style={{
         borderTopWidth: 1,
-        borderTopColor: '#f5f5f4',
+        borderTopColor: '#f0eeeb',
         flexDirection: 'row',
+        alignItems: 'stretch',
       }}>
+        {/* Primary */}
         <TouchableOpacity
           onPress={handleSavePress}
           disabled={pendingAction}
           style={{
-            flex: 1,
-            paddingVertical: 10,
-            alignItems: 'center',
+            flex: 1.5,
+            paddingVertical: 11,
+            paddingHorizontal: 14,
+            justifyContent: 'center',
             borderRightWidth: 1,
-            borderRightColor: '#f5f5f4',
+            borderRightColor: '#f0eeeb',
           }}
         >
-          <Text style={{ fontSize: 12, color: '#57534e', fontWeight: '500' }}>
-            🔖 Save
+          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917' }}>
+            Save to list
           </Text>
         </TouchableOpacity>
 
+        {/* Secondary group */}
         <TouchableOpacity
           onPress={handleDismissPress}
           disabled={pendingAction}
           style={{
             flex: 1,
-            paddingVertical: 10,
+            paddingVertical: 11,
             alignItems: 'center',
+            justifyContent: 'center',
             borderRightWidth: 1,
-            borderRightColor: '#f5f5f4',
+            borderRightColor: '#f0eeeb',
           }}
         >
-          <Text style={{ fontSize: 12, color: '#a8a29e' }}>✕ Not for me</Text>
+          <Text style={{ fontSize: 11, color: '#a8a29e' }}>Not for me</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           onPress={handleMoreLikeThisPress}
           disabled={pendingAction}
-          style={{ flex: 1, paddingVertical: 10, alignItems: 'center' }}
+          style={{ flex: 1, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' }}
         >
-          <Text style={{ fontSize: 12, color: moreDone ? '#16a34a' : '#a8a29e' }}>
-            {moreDone ? '✓ Got it' : '↑ More like this'}
+          <Text style={{ fontSize: 11, color: moreDone ? '#15803d' : '#a8a29e' }}>
+            {moreDone ? '✓ Noted' : 'More like this'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -2501,19 +2515,36 @@ export default function RecommendationsScreen() {
                     </View>
                   )}
 
-                  {/* ── Coming soon teaser ── */}
-                  <View style={{
-                    backgroundColor: '#fafaf9', borderRadius: 10,
-                    padding: 14, marginBottom: 12,
-                    borderWidth: 1, borderColor: '#e7e5e4',
-                  }}>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', marginBottom: 4 }}>
-                      Coming soon
-                    </Text>
-                    <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
-                      Deeper, more personalized recommendations based on your reading patterns.
-                    </Text>
-                  </View>
+                  {/* ── Compact refine-taste prompt ─────────────────────────────
+                      Appears near the top when recs are visible AND the user
+                      has books pending rating/tagging.  Keeps the signal-loop
+                      visible without burying it at the bottom.             */}
+                  {hasRecs && hasAnyTask && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        const el = document?.getElementById?.('refine-section');
+                        // On native: scroll down; on web: scroll to element
+                        // For now, navigate to library where rating lives
+                        router.push('/(tabs)/library');
+                      }}
+                      style={{
+                        flexDirection: 'row', alignItems: 'center',
+                        backgroundColor: '#faf9f7',
+                        borderRadius: 8, borderWidth: 1, borderColor: '#e7e5e4',
+                        paddingVertical: 9, paddingHorizontal: 12,
+                        marginBottom: 16, gap: 8,
+                      }}
+                    >
+                      <View style={{
+                        width: 6, height: 6, borderRadius: 3,
+                        backgroundColor: '#f59e0b',
+                      }} />
+                      <Text style={{ flex: 1, fontSize: 12, color: '#57534e', fontWeight: '500' }}>
+                        {booksToRate.length + booksToTag.length} book{booksToRate.length + booksToTag.length !== 1 ? 's' : ''} to rate or tag — helps sharpen your picks
+                      </Text>
+                      <Text style={{ fontSize: 12, color: '#a8a29e' }}>›</Text>
+                    </TouchableOpacity>
+                  )}
 
                   {/* Save toast */}
                   {saveToast && (
@@ -2534,24 +2565,32 @@ export default function RecommendationsScreen() {
                   )}
 
                   {/* ── Currently Reading bucket ── */}
-                  {continuations.length > 0 ? (
+                  {/* Only rendered when there are active continuations.        */}
+                  {/* Empty state removed — "no series" is not actionable here. */}
+                  {continuations.length > 0 && (
                     <>
-                      <View style={{ marginBottom: 10, marginTop: 6 }}>
-                        <Text style={{
-                          fontSize: 16, fontWeight: '700',
-                          color: '#1c1917', letterSpacing: -0.2,
-                        }}>
-                          Currently Reading
-                        </Text>
-                        <Text style={{ fontSize: 12, color: '#78716c', marginTop: 2 }}>
-                          Pick up where you left off
-                        </Text>
+                      {/* Green-accented section header — visually distinct from Discover Next */}
+                      <View style={{
+                        flexDirection: 'row', alignItems: 'center',
+                        marginBottom: 10, marginTop: 6,
+                        paddingLeft: 10,
+                        borderLeftWidth: 3, borderLeftColor: '#15803d',
+                      }}>
+                        <View>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', letterSpacing: -0.1 }}>
+                            Currently Reading
+                          </Text>
+                          <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>
+                            Pick up where you left off
+                          </Text>
+                        </View>
                       </View>
 
-                      {continuations.map(rec => (
+                      {continuations.map((rec, idx) => (
                         <RecCard
                           key={rec.id}
                           book={rec}
+                          featured={idx === 0}
                           isExpert={recMode === 'expert'}
                           onSave={() => handleRecSave(rec)}
                           onDismiss={() => handleRecDismiss(rec)}
@@ -2562,50 +2601,36 @@ export default function RecommendationsScreen() {
                       ))}
 
                       {discoveries.length > 0 && (
-                        <View style={{
-                          height: 1, backgroundColor: '#e7e5e4',
-                          marginTop: 8, marginBottom: 20,
-                        }} />
+                        <View style={{ height: 1, backgroundColor: '#e7e5e4', marginTop: 8, marginBottom: 20 }} />
                       )}
                     </>
-                  ) : (
-                    <View style={{
-                      backgroundColor: '#faf9f7',
-                      borderRadius: 10,
-                      paddingVertical: 16,
-                      paddingHorizontal: 14,
-                      marginBottom: 20,
-                      borderWidth: 1,
-                      borderColor: '#e7e5e4',
-                    }}>
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', marginBottom: 3 }}>
-                        Currently Reading
-                      </Text>
-                      <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>
-                        No active series yet — start one below.
-                      </Text>
-                    </View>
                   )}
 
                   {/* ── Discover Next bucket ── */}
                   {discoveries.length > 0 && (
                     <>
-                      <View style={{ marginBottom: 10, marginTop: continuations.length === 0 ? 0 : 2 }}>
-                        <Text style={{
-                          fontSize: 16, fontWeight: '700',
-                          color: '#1c1917', letterSpacing: -0.2,
-                        }}>
-                          Discover Next
-                        </Text>
-                        <Text style={{ fontSize: 12, color: '#78716c', marginTop: 2 }}>
-                          New books aligned to your taste
-                        </Text>
+                      {/* Neutral section header — distinct from Currently Reading green accent */}
+                      <View style={{
+                        flexDirection: 'row', alignItems: 'center',
+                        marginBottom: 10, marginTop: continuations.length === 0 ? 0 : 2,
+                        paddingLeft: 10,
+                        borderLeftWidth: 3, borderLeftColor: '#d6d3d1',
+                      }}>
+                        <View>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', letterSpacing: -0.1 }}>
+                            Discover Next
+                          </Text>
+                          <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>
+                            Books aligned to your taste
+                          </Text>
+                        </View>
                       </View>
 
-                      {discoveries.map(rec => (
+                      {discoveries.map((rec, idx) => (
                         <RecCard
                           key={rec.id}
                           book={rec}
+                          featured={idx === 0 && continuations.length === 0}
                           isExpert={recMode === 'expert'}
                           onSave={() => handleRecSave(rec)}
                           onDismiss={() => handleRecDismiss(rec)}
@@ -2697,33 +2722,106 @@ export default function RecommendationsScreen() {
             </View>
 
             {/* ════════════════════════════════════════════════════════
-                Section 2 — Shared Books (From Friends + Sent)
+                Section 2 — Refine Your Taste (promoted above Social)
+            ════════════════════════════════════════════════════════ */}
+            {hasAnyTask && (
+              <View style={{ marginBottom: 32 }}>
+                {/* ── Refine your taste ── */}
+                {(hasRateTasks || hasTagTasks) && (
+                  <View style={{ marginBottom: 16 }}>
+                    <View style={{
+                      flexDirection: 'row', alignItems: 'center',
+                      marginBottom: 6, paddingLeft: 10,
+                      borderLeftWidth: 3, borderLeftColor: '#f59e0b',
+                    }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917' }}>
+                          Refine your taste
+                        </Text>
+                        <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>
+                          Ratings are our strongest signal
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: 11, color: '#a8a29e' }}>
+                        {booksToRate.length + booksToTag.length} book{booksToRate.length + booksToTag.length !== 1 ? 's' : ''}
+                      </Text>
+                    </View>
+                    <View style={{ gap: 8 }}>
+                      {booksToRate.slice(0, 3).map(b => (
+                        <RateCard key={b.id} book={b} onComplete={handleRateComplete} />
+                      ))}
+                      {booksToTag.slice(0, Math.max(0, 3 - booksToRate.length)).map(b => (
+                        <TagCard key={b.id} book={b} onComplete={handleTagComplete} />
+                      ))}
+                      {(booksToRate.length + booksToTag.length) > 3 && (
+                        <TouchableOpacity onPress={() => router.push('/(tabs)/library')}>
+                          <Text style={{ fontSize: 13, color: '#78716c', paddingVertical: 6 }}>
+                            +{booksToRate.length + booksToTag.length - 3} more in Library →
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                )}
+
+                {hasAnalyseTask && (
+                  <TouchableOpacity
+                    onPress={() => router.push('/import/diagnosis')}
+                    style={{
+                      backgroundColor: '#fff',
+                      borderRadius: 12,
+                      padding: 14,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      shadowColor: '#000',
+                      shadowOpacity: 0.04,
+                      shadowRadius: 4,
+                      shadowOffset: { width: 0, height: 1 },
+                      elevation: 1,
+                    }}
+                  >
+                    <View style={{
+                      width: 36, height: 36, borderRadius: 18,
+                      backgroundColor: '#f5f5f4',
+                      alignItems: 'center', justifyContent: 'center', marginRight: 12,
+                    }}>
+                      <Text style={{ fontSize: 18 }}>⟲</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>
+                        Analyse imported history
+                      </Text>
+                      <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 2 }}>
+                        Answer 5 questions to sharpen your profile
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 16, color: '#d6d3d1' }}>›</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            {/* ════════════════════════════════════════════════════════
+                Section 3 — Shared Books (From Friends + Sent)
             ════════════════════════════════════════════════════════ */}
             <View style={{ marginBottom: 36 }}>
-              <SectionLabel>Shared Books</SectionLabel>
+              {/* Shared Books header — only show label if there's real content */}
+              {(incomingRecs.length > 0 || sentRecs.length > 0) && (
+                <SectionLabel>Shared Books</SectionLabel>
+              )}
 
               {/* ── From friends sub-section ── */}
-              <Text style={{ fontSize: 12, fontWeight: '600', color: '#78716c', marginBottom: 10, letterSpacing: 0.3 }}>
-                FROM FRIENDS
-              </Text>
+              {incomingRecs.length > 0 && (
+                <Text style={{ fontSize: 12, fontWeight: '600', color: '#78716c', marginBottom: 10, letterSpacing: 0.3 }}>
+                  FROM FRIENDS
+                </Text>
+              )}
 
               {incomingRecs.length === 0 ? (
-                <View style={{
-                  backgroundColor: '#fff',
-                  borderRadius: 14,
-                  padding: 20,
-                  alignItems: 'center',
-                  shadowColor: '#000',
-                  shadowOpacity: 0.04,
-                  shadowRadius: 6,
-                  shadowOffset: { width: 0, height: 1 },
-                  elevation: 1,
-                  marginBottom: 24,
-                }}>
-                  <Text style={{ fontSize: 14, color: '#a8a29e', textAlign: 'center', lineHeight: 20 }}>
-                    No recommendations from friends yet.
-                  </Text>
-                </View>
+                // Compressed empty state — single line, no heavy card
+                <Text style={{ fontSize: 12, color: '#a8a29e', marginBottom: 16 }}>
+                  No recommendations from friends yet.
+                </Text>
               ) : (
                 <View style={{
                   backgroundColor: '#fff',
@@ -2778,9 +2876,11 @@ export default function RecommendationsScreen() {
               )}
 
               {/* ── You sent sub-section ── */}
-              <Text style={{ fontSize: 12, fontWeight: '600', color: '#78716c', marginBottom: 10, letterSpacing: 0.3 }}>
-                YOU SENT
-              </Text>
+              {sentRecs.length > 0 && (
+                <Text style={{ fontSize: 12, fontWeight: '600', color: '#78716c', marginBottom: 10, letterSpacing: 0.3 }}>
+                  YOU SENT
+                </Text>
+              )}
 
               <TouchableOpacity
                 onPress={() => setStep('search')}
@@ -2797,11 +2897,7 @@ export default function RecommendationsScreen() {
                 </Text>
               </TouchableOpacity>
 
-              {sentRecs.length === 0 ? (
-                <Text style={{ fontSize: 13, color: '#a8a29e', textAlign: 'center', marginTop: 8 }}>
-                  No recommendations sent yet.
-                </Text>
-              ) : (
+              {sentRecs.length === 0 ? null : (
                 <View style={{
                   backgroundColor: '#fff',
                   borderRadius: 14,
@@ -2845,81 +2941,6 @@ export default function RecommendationsScreen() {
               )}
             </View>
 
-            {/* ════════════════════════════════════════════════════════
-                Section 3 — Refine your taste (tasks)
-            ════════════════════════════════════════════════════════ */}
-            {hasAnyTask && (
-              <View style={{ marginBottom: 16 }}>
-                {/* ── Refine your taste ── */}
-                {(hasRateTasks || hasTagTasks) && (
-                  <View style={{ marginBottom: 16 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', flex: 1 }}>
-                        Refine your taste
-                      </Text>
-                      <Text style={{ fontSize: 12, color: '#a8a29e' }}>
-                        {booksToRate.length + booksToTag.length} book{booksToRate.length + booksToTag.length !== 1 ? 's' : ''}
-                      </Text>
-                    </View>
-                    <Text style={{ fontSize: 12, color: '#78716c', marginBottom: 12 }}>
-                      Ratings and tags are our strongest signals for learning your taste.
-                    </Text>
-                    <View style={{ gap: 8 }}>
-                      {booksToRate.slice(0, 3).map(b => (
-                        <RateCard key={b.id} book={b} onComplete={handleRateComplete} />
-                      ))}
-                      {booksToTag.slice(0, Math.max(0, 3 - booksToRate.length)).map(b => (
-                        <TagCard key={b.id} book={b} onComplete={handleTagComplete} />
-                      ))}
-                      {(booksToRate.length + booksToTag.length) > 3 && (
-                        <TouchableOpacity onPress={() => router.push('/(tabs)/library')}>
-                          <Text style={{ fontSize: 13, color: '#78716c', paddingVertical: 6 }}>
-                            +{booksToRate.length + booksToTag.length - 3} more in Library →
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
-                )}
-
-                {/* Analyse imports — shown only if user has imports but not yet diagnosed */}
-                {hasAnalyseTask && (
-                  <TouchableOpacity
-                    onPress={() => router.push('/import/diagnosis')}
-                    style={{
-                      backgroundColor: '#fff',
-                      borderRadius: 12,
-                      padding: 14,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      shadowColor: '#000',
-                      shadowOpacity: 0.04,
-                      shadowRadius: 4,
-                      shadowOffset: { width: 0, height: 1 },
-                      elevation: 1,
-                      marginBottom: 8,
-                    }}
-                  >
-                    <View style={{
-                      width: 36, height: 36, borderRadius: 18,
-                      backgroundColor: '#f5f5f4',
-                      alignItems: 'center', justifyContent: 'center', marginRight: 12,
-                    }}>
-                      <Text style={{ fontSize: 18 }}>⟲</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>
-                        Analyse imported history
-                      </Text>
-                      <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 2 }}>
-                        Answer 5 questions to sharpen your profile
-                      </Text>
-                    </View>
-                    <Text style={{ fontSize: 16, color: '#d6d3d1' }}>›</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
           </>
         )}
 
