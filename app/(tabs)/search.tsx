@@ -1057,10 +1057,16 @@ function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | n
       return `Book 1 \u2014 a great place to start`;
     }
 
-    // Continuation: use ACTUAL highest position user has read (never overclaim)
-    const maxRead = bd.series_max_read ?? null;
+    // Continuation: only make a specific claim when history is confirmed contiguous.
+    // If series_is_contiguous is false (gaps detected), fall back to the neutral
+    // "Next in the series" — never overstate what the user has actually read.
+    const maxRead     = bd.series_max_read     ?? null;
+    const contiguous  = bd.series_is_contiguous ?? null;
     if (maxRead != null && maxRead > 0) {
-      return `You\u2019ve read through Book ${maxRead} \u2014 this is next`;
+      if (contiguous === true) {
+        return `You\u2019ve read through Book ${maxRead} \u2014 this is next`;
+      }
+      return `Next in the series`;
     }
   }
 

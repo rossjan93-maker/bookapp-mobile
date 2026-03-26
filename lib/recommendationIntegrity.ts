@@ -96,6 +96,41 @@ export function buildSeriesProgress(
   return progress;
 }
 
+// ── Series positions read (all individual positions, not just max) ────────────
+//
+// Returns a map from normalized series key → Set of positions the user has
+// completed.  Unlike buildSeriesProgress (which stores only the maximum), this
+// preserves the full set so callers can detect gaps.
+//
+// Example:
+//   User read Book 1 and Book 3 (skipped 2) → Set{1, 3}   non-contiguous
+//   User read Books 1, 2, 3                  → Set{1,2,3}  contiguous
+export function buildSeriesPositionsRead(
+  readBooks: Array<{ title: string; author: string }>,
+): Map<string, Set<number>> {
+  const positions = new Map<string, Set<number>>();
+  for (const book of readBooks) {
+    const entry = lookupCurated(book.author, book.title);
+    if (entry) {
+      const sKey = normKey(entry.series);
+      if (!positions.has(sKey)) positions.set(sKey, new Set());
+      positions.get(sKey)!.add(entry.position);
+    }
+  }
+  return positions;
+}
+
+// Returns true iff the user has read every book from position 1 through maxRead
+// with no gaps — i.e. {1, 2, ..., maxRead} ⊆ positionsRead.
+// Safe when positionsRead is empty or maxRead is 0 → returns false.
+export function isContiguousFrom1(positionsRead: Set<number>, maxRead: number): boolean {
+  if (maxRead <= 0 || positionsRead.size === 0) return false;
+  for (let i = 1; i <= maxRead; i++) {
+    if (!positionsRead.has(i)) return false;
+  }
+  return true;
+}
+
 // ── Exact-series retrieval seeds ─────────────────────────────────────────────
 //
 // Returns the canonical "next book to read" for every series that is:
@@ -687,9 +722,10 @@ export function deriveSeriesLabel(
 // ── Main integrity pass ───────────────────────────────────────────────────────
 
 export function applyIntegrityLayer(
-  books:          ScoredBook[],
-  seriesReadSet:  Set<string>         = new Set(),
-  seriesProgress: Map<string, number> = new Map(),
+  books:               ScoredBook[],
+  seriesReadSet:       Set<string>              = new Set(),
+  seriesProgress:      Map<string, number>      = new Map(),
+  seriesPositionsRead: Map<string, Set<number>> = new Map(),
 ): IntegrityLayerResult {
 
   type Annotated = { book: ScoredBook; series: SeriesPosition | null; label: SeriesLabel | null };
@@ -707,16 +743,23 @@ export function applyIntegrityLayer(
     // series_max_read: the actual highest series position the user has already
     // completed, sourced directly from seriesProgress.  Used by the explanation
     // layer so it can say "You've read through Book N" without overclaiming.
-    const maxReadForSeries = series
-      ? (seriesProgress.get(normKey(series.series_name)) ?? null)
+    const seriesNormKey    = series ? normKey(series.series_name) : null;
+    const maxReadForSeries = seriesNormKey ? (seriesProgress.get(seriesNormKey) ?? null) : null;
+    // series_is_contiguous: true iff the user has read every position from 1
+    // through maxRead with no gaps.  Non-contiguous history (e.g. read 1 and 3
+    // but not 2) means we cannot safely say "You've read through Book N".
+    const positionsForSeries = seriesNormKey ? (seriesPositionsRead.get(seriesNormKey) ?? new Set<number>()) : new Set<number>();
+    const isContiguous = (maxReadForSeries != null && maxReadForSeries > 0)
+      ? isContiguousFrom1(positionsForSeries, maxReadForSeries)
       : null;
-    (book._score_breakdown as Record<string, unknown>)['series_name']      = series?.series_name      ?? null;
-    (book._score_breakdown as Record<string, unknown>)['series_position']  = series?.series_position  ?? null;
-    (book._score_breakdown as Record<string, unknown>)['series_total']     = catalogEntry?.total      ?? null;
-    (book._score_breakdown as Record<string, unknown>)['series_label']     = label;
-    (book._score_breakdown as Record<string, unknown>)['series_confidence']= series?.confidence       ?? null;
-    (book._score_breakdown as Record<string, unknown>)['series_method']    = series?.detection_method ?? null;
-    (book._score_breakdown as Record<string, unknown>)['series_max_read']  = maxReadForSeries;
+    (book._score_breakdown as Record<string, unknown>)['series_name']          = series?.series_name      ?? null;
+    (book._score_breakdown as Record<string, unknown>)['series_position']      = series?.series_position  ?? null;
+    (book._score_breakdown as Record<string, unknown>)['series_total']         = catalogEntry?.total      ?? null;
+    (book._score_breakdown as Record<string, unknown>)['series_label']         = label;
+    (book._score_breakdown as Record<string, unknown>)['series_confidence']    = series?.confidence       ?? null;
+    (book._score_breakdown as Record<string, unknown>)['series_method']        = series?.detection_method ?? null;
+    (book._score_breakdown as Record<string, unknown>)['series_max_read']      = maxReadForSeries;
+    (book._score_breakdown as Record<string, unknown>)['series_is_contiguous'] = isContiguous;
 
     return { book, series, label };
   });
