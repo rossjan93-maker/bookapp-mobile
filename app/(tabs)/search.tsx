@@ -1523,6 +1523,13 @@ export default function RecommendationsScreen() {
   // Shows a subtle "Refreshing…" badge instead of the full skeleton.
   const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
 
+  // ── Stale-request guard ────────────────────────────────────────────────────
+  // Monotonically incremented at the start of every loadHub() and reloadRecs()
+  // call.  Before any setState that follows an await, the handler checks that
+  // it still holds the latest request ID.  If not, a newer call has superseded
+  // it and the stale result is discarded without touching state.
+  const latestHubLoadRef = useRef(0);
+
   // ── Dev-only performance overlay state ────────────────────────────────────
   const [recTiming, setRecTiming]             = useState<DevTimings | null>(null);
 
@@ -1611,8 +1618,9 @@ export default function RecommendationsScreen() {
   async function loadHub() {
     if (!supabase) { setHubLoading(false); setRecsLoading(false); return; }
 
-    const _mountMs = Date.now();
-    if (__DEV__) console.log('[PERF] recommendations_screen_mount');
+    const requestId = ++latestHubLoadRef.current;
+    const _mountMs  = Date.now();
+    if (__DEV__) console.log('[PERF] recommendations_screen_mount', `| requestId=${requestId}`);
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setHubLoading(false); setRecsLoading(false); return; }
@@ -1731,6 +1739,13 @@ export default function RecommendationsScreen() {
         subjects:    r.book?.subjects    ?? null,
       }));
 
+    // Stale-request guard: a newer loadHub() superseded this one while Phase 1
+    // was in flight.  Discard results — the newer call will commit its own.
+    if (requestId !== latestHubLoadRef.current) {
+      if (__DEV__) console.log('[PERF] phase1_stale_discarded', `| requestId=${requestId}`);
+      return;
+    }
+
     // Commit Phase 1 state
     setBooksToRate(toRate);
     setBooksToTag(toTag);
@@ -1832,6 +1847,13 @@ export default function RecommendationsScreen() {
         );
       }
 
+      // Stale-request guard: a newer loadHub() superseded this one while Phase 2
+      // was in flight.  Discard results — the newer call will commit its own.
+      if (requestId !== latestHubLoadRef.current) {
+        if (__DEV__) console.log('[PERF] phase2_stale_discarded', `| requestId=${requestId}`);
+        return;
+      }
+
       setRecommendations(recs);
       setContinuations(recResult.continuations ?? []);
       setDiscoveries(recResult.discoveries ?? recs);
@@ -1898,8 +1920,9 @@ export default function RecommendationsScreen() {
           risks:     r.risks,
         })));
       }
-    } catch {
+    } catch (error) {
       // Recommendations fail silently — hub content is already visible.
+      if (__DEV__) console.log('[PERF] phase2_error', error);
     } finally {
       setRecsLoading(false);
       setIsBackgroundRefreshing(false);
@@ -1913,6 +1936,7 @@ export default function RecommendationsScreen() {
 
   async function reloadRecs(intent: NextReadIntent) {
     if (!supabase || !currentUserId || !tasteProfile || tasteProfile.tier < 1) return;
+    const requestId = ++latestHubLoadRef.current;
     setNextReadIntent(intent);
     setRecsLoading(true);
     setRecsQualityGate(null);
@@ -1936,6 +1960,12 @@ export default function RecommendationsScreen() {
         activeIntent,
       );
       const { recs, meta } = intentResult;
+      // Stale-request guard: a newer call (loadHub or reloadRecs) superseded this
+      // intent reload while the pipeline was in flight.  Discard stale results.
+      if (requestId !== latestHubLoadRef.current) {
+        if (__DEV__) console.log('[PERF] reloadRecs_stale_discarded', `| requestId=${requestId}`);
+        return;
+      }
       setRecommendations(recs);
       setContinuations(intentResult.continuations ?? []);
       setDiscoveries(intentResult.discoveries ?? recs);
