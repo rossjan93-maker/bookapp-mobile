@@ -1512,6 +1512,23 @@ export default function RecommendationsScreen() {
   const [intentPanelOpen, setIntentPanelOpen] = useState(false);
   const intentPanelHeight                     = useRef(new Animated.Value(0)).current;
 
+  // ── Dev-only render guard observer ───────────────────────────────────────
+  // Fires after every state change that affects rec visibility in the hub.
+  // Logs [REC_RENDER] so you can see the exact guard values without DevTools.
+  useEffect(() => {
+    if (!__DEV__) return;
+    const hasR = recommendations.length > 0 || continuations.length > 0;
+    console.log('[REC_RENDER]',
+      `loading=${recsLoading}`,
+      `| recommendations_length=${recommendations.length}`,
+      `| continuations_length=${continuations.length}`,
+      `| discoveries_length=${discoveries.length}`,
+      `| hasRecs=${hasR}`,
+      `| quality_gate=${recsQualityGate ?? 'null'}`,
+      `| showing_empty_state=${!hasR && !recsQualityGate && !recsLoading}`,
+    );
+  }, [recsLoading, recommendations.length, continuations.length, discoveries.length, recsQualityGate]);
+
   // ── Search/send flow state ────────────────────────────────────────────────
   const [query, setQuery]               = useState('');
   const [bookResults, setBookResults]   = useState<BookResult[]>([]);
@@ -1694,6 +1711,28 @@ export default function RecommendationsScreen() {
         }
       }
       const { recs, meta } = recResult;
+
+      if (__DEV__) {
+        console.log('[REC_RESULT]',
+          `recs_count=${recs.length}`,
+          `| continuations_count=${(recResult.continuations ?? []).length}`,
+          `| discoveries_count=${(recResult.discoveries ?? recs).length}`,
+          `| quality_gate=${meta.quality_gate}`,
+          `| pool_size=${meta.pool_size}`,
+          `| from_cache=${meta.is_from_cache}`,
+          `| decision=${meta.expert_decision?.reason ?? 'n/a'}`,
+          `| mode=${meta.mode ?? 'deterministic'}`,
+          `| first_titles=[${recs.slice(0, 3).map(r => `"${r.title}"`).join(', ')}]`,
+        );
+        console.log('[REC_STATE_COMMIT]',
+          `incoming_recs=${recs.length}`,
+          `| incoming_continuations=${(recResult.continuations ?? []).length}`,
+          `| incoming_discoveries=${(recResult.discoveries ?? recs).length}`,
+          `| loading_before=true`,
+          `| loading_after=false`,
+          `| hasRecs_after=${recs.length > 0 || (recResult.continuations ?? []).length > 0}`,
+        );
+      }
 
       setRecommendations(recs);
       setContinuations(recResult.continuations ?? []);

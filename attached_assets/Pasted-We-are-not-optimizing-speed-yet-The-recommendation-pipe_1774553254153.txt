@@ -1,0 +1,87 @@
+We are not optimizing speed yet.
+
+The recommendation pipeline completes for the Goodreads-dense user, but recommendations are not populating in the UI.
+
+This is now a payload / render-state debugging pass only.
+
+Do NOT change recommendation logic broadly.
+Do NOT change UI design.
+Do NOT optimize performance yet.
+We need to find why a completed pipeline is yielding no visible recommendations.
+
+Known timing result for the dense user:
+- retrieval_local: 496 ms
+- cache_check: 1 ms
+- ol (live_ol): 3502 ms
+- seeds: 500 ms
+- enrichment: 166 ms
+- total_candidate: 4665 ms
+- total_pipeline: 4666 ms
+
+This proves the pipeline is finishing.
+
+Goal
+Find exactly where recommendations disappear between pipeline completion and visible UI.
+
+Part 1 — Add payload logs after pipeline resolution
+Immediately after getPersonalizedRecsWithExpert resolves, log:
+
+[REC_RESULT]
+recs_count=...
+continuations_count=...
+discoveries_count=...
+quality_gate=...
+pool_size=...
+from_cache=...
+decision=...
+mode=...
+first_titles=[...]
+
+Use real returned fields from the result object.
+
+Part 2 — Add UI state commit logs
+Log right before and after recommendation state is committed in search.tsx:
+
+[REC_STATE_COMMIT]
+incoming_recs=...
+incoming_continuations=...
+incoming_discoveries=...
+loading_before=...
+loading_after=...
+hasRecs_after=...
+
+Part 3 — Add render guard logs
+Log the key render guards that determine whether the UI shows recommendations vs empty state:
+
+[REC_RENDER]
+loading=...
+recommendations_length=...
+continuations_length=...
+discoveries_length=...
+hasRecs=...
+quality_gate=...
+showing_empty_state=...
+
+Part 4 — Identify the exact failure point
+I need you to determine which of these is true:
+1. pipeline returns no recs
+2. pipeline returns recs but quality gate suppresses them
+3. pipeline returns recs but state is not committed correctly
+4. state is committed correctly but render guard/section logic hides them
+
+Part 5 — Output
+Return:
+1. root cause
+2. files changed
+3. exact logs captured
+4. where recommendations are being lost
+5. the smallest fix needed next
+
+Constraints
+- Do NOT optimize OL yet
+- Do NOT redesign cards
+- Do NOT broaden scope
+- This is a diagnosis pass only
+
+Success condition
+We know exactly why a completed 4.6s pipeline is producing no visible recommendations for the Goodreads-dense user.
