@@ -43,6 +43,8 @@ import { getEntitlement } from '../../lib/recEntitlement';
 import type { RecEntitlement } from '../../lib/recEntitlement';
 import type { ReaderThesis } from '../../lib/expertRec';
 import { getSeriesCatalog } from '../../lib/seriesCatalog';
+import { loadRecPayload, saveRecPayload } from '../../lib/recPayloadCache';
+import { triggerRecPrewarm } from '../../lib/recPrewarm';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1626,8 +1628,37 @@ export default function RecommendationsScreen() {
     if (!user) { setHubLoading(false); setRecsLoading(false); return; }
     setCurrentUserId(user.id);
 
-    // ── Fast-path: restore from in-memory session cache ───────────────────
-    const cached = _recSession && _recSession.userId === user.id ? _recSession : null;
+    // ── Fast-path 1: restore from in-memory session cache (0ms) ──────────
+    let cached = _recSession && _recSession.userId === user.id ? _recSession : null;
+
+    // ── Fast-path 2: restore from persistent AsyncStorage cache (~30ms) ───
+    // Only reached on cold start (app restart) when _recSession is empty.
+    if (!cached) {
+      const persisted = await loadRecPayload(user.id);
+      if (persisted && (persisted.recs.length > 0 || persisted.continuations.length > 0)) {
+        if (__DEV__) console.log('[PERF] cache_hit — restoring PERSISTED recs instantly',
+          `| age_ms=${Date.now() - persisted.loadedAt}`,
+          `| recs=${persisted.recs.length}`,
+          `| signal=${persisted.signalCount}`,
+        );
+        // Promote to in-memory session so next tab revisit is instant too
+        _recSession = {
+          userId:        user.id,
+          recs:          persisted.recs,
+          continuations: persisted.continuations,
+          discoveries:   persisted.discoveries,
+          meta:          persisted.meta,
+          recMode:       persisted.recMode,
+          readerThesis:  persisted.readerThesis,
+          qualityGate:   persisted.qualityGate,
+          isFreePreview: persisted.isFreePreview,
+          signalCount:   persisted.signalCount,
+          loadedAt:      persisted.loadedAt,
+        };
+        cached = _recSession;
+      }
+    }
+
     if (cached) {
       if (__DEV__) console.log('[PERF] cache_hit — restoring session recs instantly',
         `| age_ms=${Date.now() - cached.loadedAt}`,
@@ -1864,9 +1895,9 @@ export default function RecommendationsScreen() {
       setReaderThesis(meta.reader_thesis ?? null);
       setIsFreePreview(meta.expert_decision?.is_free_preview ?? false);
 
-      // ── Save to session cache so next revisit is instant ─────────────
+      // ── Save to session + persistent cache so next revisit is instant ───
       if (recs.length > 0 || (recResult.continuations ?? []).length > 0) {
-        _recSession = {
+        const _sessionPayload = {
           userId:        user.id,
           recs,
           continuations: recResult.continuations ?? [],
@@ -1879,11 +1910,26 @@ export default function RecommendationsScreen() {
           signalCount:   currentSignal,
           loadedAt:      Date.now(),
         };
+        _recSession = _sessionPayload;
         if (__DEV__) console.log('[PERF] session_cache_saved',
           `| recs=${recs.length}`,
           `| signal=${currentSignal}`,
           `| total_ms=${Date.now() - _mountMs}`,
         );
+        // Persist to AsyncStorage so next cold start (app restart) is instant too
+        saveRecPayload(user.id, {
+          recs:          _sessionPayload.recs,
+          continuations: _sessionPayload.continuations,
+          discoveries:   _sessionPayload.discoveries,
+          meta:          _sessionPayload.meta,
+          recMode:       _sessionPayload.recMode,
+          readerThesis:  _sessionPayload.readerThesis,
+          qualityGate:   _sessionPayload.qualityGate,
+          isFreePreview: _sessionPayload.isFreePreview,
+          signalCount:   _sessionPayload.signalCount,
+          intentTag:     isIntentActive(nextReadIntent) ? intentSummaryLabel(nextReadIntent) : null,
+          loadedAt:      _sessionPayload.loadedAt,
+        }).catch(() => {});
       }
 
       if (__DEV__) {

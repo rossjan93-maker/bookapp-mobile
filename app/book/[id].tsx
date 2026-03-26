@@ -15,6 +15,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { getSeriesCatalog, getSagaForSeries, getAllSagaCatalog, findSeriesForBook } from '../../lib/seriesCatalog';
+import { triggerRecPrewarm } from '../../lib/recPrewarm';
 import { computeDatePacing, computePagePacing, estimatePaceFinish, formatLastUpdated, shortDate, computeBookPace, computeUserAvgPace } from '../../lib/pacing';
 import { fetchGoogleBooksMetadata } from '../../lib/googleBooks';
 import { fetchOLMeta, searchOLWork, isOLId } from '../../lib/openLibrary';
@@ -729,6 +730,7 @@ export default function BookDetailScreen() {
 
     if (newStatus === 'finished' || newStatus === 'dnf') {
       setPendingDetailRating({ completionEventId: data?.completionEventId ?? null });
+      if (newStatus === 'finished') triggerRecPrewarm(supabase, uid);
     }
   }
 
@@ -751,6 +753,7 @@ export default function BookDetailScreen() {
     setSavingDetailRating(false);
     setPendingDetailRating(null);
     setDetailRating(null);
+    if (userId) triggerRecPrewarm(supabase, userId);
     router.back();
   }
 

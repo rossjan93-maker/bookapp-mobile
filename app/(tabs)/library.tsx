@@ -8,6 +8,7 @@ import { CoverThumb } from '../../components/CoverThumb';
 import { computePagePacing, computeDatePacing, formatLastUpdated, computeBookPace, formatPaceChip, computeUserAvgPace } from '../../lib/pacing';
 import { transitionStatus, saveCurrentPage } from '../../lib/userBookActions';
 import { findSeriesForBook } from '../../lib/seriesCatalog';
+import { triggerRecPrewarm } from '../../lib/recPrewarm';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -251,6 +252,7 @@ export default function LibraryScreen() {
         rating,
       }).then(() => {});
     }
+    if (currentUserId) triggerRecPrewarm(supabase, currentUserId);
     // Only offer taste capture for the finish flow — not DNF, want-to-read, or reading
     if (wasFinish) {
       setLikedTags([]);
@@ -291,6 +293,9 @@ export default function LibraryScreen() {
       console.log('[taste_tags] saved successfully');
     }
 
+    if (!error && currentUserId) {
+      triggerRecPrewarm(supabase, currentUserId);
+    }
     // Reset state only AFTER the write completes
     setSavingTaste(false);
     setPendingTasteUserBookId(null);
@@ -333,6 +338,7 @@ export default function LibraryScreen() {
         status:         newStatus,
         pendingEventId: data?.completionEventId ?? null,
       });
+      if (newStatus === 'finished' && currentUserId) triggerRecPrewarm(supabase, currentUserId);
     }
     setUpdatingId(null);
   }

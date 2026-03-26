@@ -2263,7 +2263,9 @@ export async function getCandidateBooks(
   // title+author OL lookup.  These are launched here — BEFORE the cache check
   // and OL fetch below — so the latency is fully absorbed in parallel.
   // Results are merged into externalCandidates after the OL fetch resolves.
+  if (__DEV__) console.log('[PERF] seed_resolution_start');
   const exactSeriesSeeds = getEligibleSeriesSeeds(seriesProgress, seriesReadSet);
+  if (__DEV__) console.log('[PERF] seed_resolution_end', `| seeds_to_fetch=${exactSeriesSeeds.length}`);
   if (__DEV__) {
     console.log(
       `[EXACT_SEEDS] seeding ${exactSeriesSeeds.length} series book(s): [` +
@@ -2271,6 +2273,8 @@ export async function getCandidateBooks(
       `]`,
     );
   }
+  if (__DEV__) console.log('[PERF] seed_fetch_start', `| count=${exactSeriesSeeds.length} (parallel with OL/cache fetch)`);
+  const _seedFetchStartMs = Date.now();
   const exactSeedsFetchP: Promise<CandidateBook[]> =
     exactSeriesSeeds.length === 0
       ? Promise.resolve([])
@@ -2399,8 +2403,10 @@ export async function getCandidateBooks(
   // fetchOLByTitle returns a low-metadata edition (ol_no_subjects check would
   // otherwise evict them on cold start).  Safety-net (already-read exclusion)
   // is still applied to seeds below, after the main hygiene pass.
+  if (__DEV__) console.log('[PERF] seed_lookup_start', `| elapsed_since_fetch_start_ms=${Date.now() - _seedFetchStartMs}`);
   const exactSeedsRaw = await exactSeedsFetchP;
   const _t4 = Date.now(); // seeds latency (parallel with OL/cache — may be ≈0 on cache hit)
+  if (__DEV__) console.log('[PERF] seed_lookup_end', `| wait_ms=${Date.now() - _seedFetchStartMs}`, `| raw_count=${exactSeedsRaw.length}`);
   let exactSeedsNew: CandidateBook[] = [];
   if (exactSeedsRaw.length > 0) {
     const existingExtIds = new Set(
@@ -2493,6 +2499,7 @@ export async function getCandidateBooks(
   // applied here.  Dedup against filtered prevents double-counting seeds
   // that already survived hygiene (e.g. an OL edition with full subjects).
   const preSeedPool = filtered.length;
+  if (__DEV__) console.log('[PERF] seed_merge_start', `| pool_before=${preSeedPool}`, `| seeds_available=${exactSeedsNew.length}`);
   if (exactSeedsNew.length > 0) {
     const safeSeeds = exactSeedsNew.filter(b => {
       if (!b.title || !b.author) return true;
@@ -2516,6 +2523,7 @@ export async function getCandidateBooks(
       }
     }
   }
+  if (__DEV__) console.log('[PERF] seed_merge_end', `| pool_after=${filtered.length}`, `| seeds_added=${filtered.length - preSeedPool}`);
 
   const det = profile.det_lanes;
   // Consistent with getOLCandidates: pattern evidence, not import flag
