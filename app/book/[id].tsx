@@ -149,6 +149,9 @@ export default function BookDetailScreen() {
     status:  'complete' | 'in_progress' | 'not_started';
   };
   const [sagaProgress, setSagaProgress] = useState<Map<string, SagaSeriesState> | null>(null);
+  // Collapsed by default — user taps header to reveal full structure.
+  // Persists for the lifetime of this screen instance (no session storage needed).
+  const [sagaExpanded, setSagaExpanded] = useState(false);
 
   // Local status — tracks post-transition status independently from route params
   const [localStatus, setLocalStatus]     = useState<string | undefined>(statusParam);
@@ -859,147 +862,181 @@ export default function BookDetailScreen() {
         {!badge && hasSagaMeta && !hasSeriesMeta && <View style={{ marginBottom: 12 }} />}
 
         {/* ── Saga Journey Section ─────────────────────────────────────────────
-             Shows the user's macro position in a multi-series universe.
-             Structure is synchronous from SAGA_CATALOG (static).
-             Visual states (complete/in_progress/not_started/locked) update
-             once after the user_books fetch completes — no layout changes.  */}
+             Collapsed by default — shows saga name + current series + tap hint.
+             Tapping the header expands to reveal full sub-series structure.
+             Structure rows are synchronous from SAGA_CATALOG (static).
+             Visual states (complete/in_progress/locked) update once after the
+             user_books fetch — no layout change, only color/text swap.       */}
         {hasSagaMeta && sagaCatalogEntry && (
           <View style={{
             backgroundColor: '#fff',
             borderRadius: 14,
-            padding: 16,
             marginBottom: 16,
             borderWidth: 1,
             borderColor: '#e7e5e4',
+            overflow: 'hidden',
           }}>
-            {/* Header */}
-            <Text style={{
-              fontSize: 11,
-              fontWeight: '700',
-              color: '#a8a29e',
-              letterSpacing: 0.9,
-              textTransform: 'uppercase',
-              marginBottom: 2,
-            }}>
-              {sagaInfo!.sagaName}
-            </Text>
-            <Text style={{
-              fontSize: 13,
-              color: '#78716c',
-              marginBottom: 14,
-            }}>
-              Your reading journey
-            </Text>
 
-            {/* Sub-series rows — one per entry in saga.series_order */}
-            {sagaCatalogEntry.series_order.map((sKey, i) => {
-              const cat         = getSeriesCatalog(sKey);
-              if (!cat) return null;
+            {/* ── Collapsed header — always visible, always tappable ── */}
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() => setSagaExpanded(prev => !prev)}
+              style={{
+                flexDirection: 'row',
+                alignItems:    'center',
+                padding:       16,
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={{
+                  fontSize:      10,
+                  fontWeight:    '700',
+                  color:         '#a8a29e',
+                  letterSpacing: 0.9,
+                  textTransform: 'uppercase',
+                  marginBottom:  3,
+                }}>
+                  {sagaInfo!.sagaName}
+                </Text>
+                <Text style={{
+                  fontSize:   13,
+                  fontWeight: '500',
+                  color:      '#1c1917',
+                }}>
+                  {'Continue your journey'}
+                  {seriesMeta ? ` · ${seriesMeta.displayName}` : ''}
+                </Text>
+              </View>
+              {/* Chevron — down when collapsed, up when expanded */}
+              <Text style={{ fontSize: 14, color: '#a8a29e', marginLeft: 12 }}>
+                {sagaExpanded ? '∧' : '›'}
+              </Text>
+            </TouchableOpacity>
 
-              const state       = sagaProgress?.get(sKey);
-              const isCurrent   = sKey === seriesName;
-              const isComplete  = state?.status === 'complete';
-              const isInProg    = state?.status === 'in_progress';
-              // Locked = beyond sagaNextAllowed, only after progress loads
-              const isLocked    = sagaProgress !== null && i > sagaNextAllowed && !isCurrent;
+            {/* ── Expanded: full sub-series rows ──────────────────────────── */}
+            {sagaExpanded && (
+              <View style={{ borderTopWidth: 1, borderTopColor: '#f0ede8' }}>
+                {sagaCatalogEntry.series_order.map((sKey, i) => {
+                  const cat        = getSeriesCatalog(sKey);
+                  if (!cat) return null;
 
-              // Navigation target: next unread book, or Book 1 for locked/complete/not-started
-              const targetPos   = isInProg
-                ? Math.min(state!.maxRead + 1, cat.orderedBooks.length)
-                : 1;
-              const targetIdx   = targetPos - 1;
-              const targetBook  = cat.orderedBooks[targetIdx] ?? cat.orderedBooks[0];
+                  const state      = sagaProgress?.get(sKey);
+                  const hasLoaded  = sagaProgress !== null;
+                  const isCurrent  = sKey === seriesName;
+                  const isComplete = state?.status === 'complete';
+                  const isInProg   = state?.status === 'in_progress';
+                  const isLocked   = hasLoaded && i > sagaNextAllowed && !isCurrent;
+                  // Green outline = next allowed, not started, not current
+                  const isNextAvail = hasLoaded && i === sagaNextAllowed
+                    && !isComplete && !isCurrent && !isInProg;
 
-              // Colors derived from state — only opacity/color changes after load
-              const nameColor  = isCurrent ? '#1c1917'
-                : isComplete   ? '#57534e'
-                : isLocked     ? '#c0bbb6'
-                : '#57534e';
+                  // Navigate to the most relevant book in this sub-series
+                  const targetPos  = isInProg
+                    ? Math.min(state!.maxRead + 1, cat.orderedBooks.length)
+                    : 1;
+                  const targetBook = cat.orderedBooks[targetPos - 1] ?? cat.orderedBooks[0];
 
-              // Progress subtitle — always present so row height is deterministic
-              const subtitleText = sagaProgress === null
-                ? ' '
-                : isComplete
-                  ? `Complete · ${state!.total} books`
-                  : isInProg
-                    ? `${state!.maxRead} of ${state!.total} read`
-                    : isLocked
-                      ? 'Complete earlier series first'
-                      : 'Not yet started';
+                  // Name color — locked is muted, current is dark, else medium
+                  const nameColor = isLocked ? '#c0bbb6' : isCurrent ? '#1c1917' : '#57534e';
 
-              return (
-                <TouchableOpacity
-                  key={sKey}
-                  disabled={isCurrent}
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    if (!targetBook) return;
-                    router.push({
-                      pathname: '/book/[id]',
-                      params: {
-                        id:             encodeURIComponent(targetBook.title),
-                        title:          targetBook.title,
-                        author:         targetBook.author,
-                        seriesName:     sKey,
-                        seriesPosition: String(targetPos),
-                        coverUrl:       '',
-                      },
-                    });
-                  }}
-                  style={{
-                    flexDirection:   'row',
-                    alignItems:      'center',
-                    paddingVertical: 10,
-                    borderTopWidth:  i > 0 ? 1 : 0,
-                    borderTopColor:  '#f5f4f2',
-                  }}
-                >
-                  {/* Left: status icon — 28px wide, always present */}
-                  <View style={{ width: 28, alignItems: 'center', justifyContent: 'center' }}>
-                    {isCurrent ? (
-                      <View style={{
-                        width: 8, height: 8, borderRadius: 4,
-                        backgroundColor: '#1c1917',
-                      }} />
-                    ) : isComplete ? (
-                      <Text style={{ fontSize: 13, color: '#15803d', lineHeight: 18 }}>✓</Text>
-                    ) : isLocked ? (
-                      <Text style={{ fontSize: 12, color: '#d6d3d1', lineHeight: 18 }}>○</Text>
-                    ) : (
-                      <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>○</Text>
-                    )}
-                  </View>
+                  // Subtitle — always rendered so row height is deterministic
+                  const subtitleText = !hasLoaded
+                    ? ' '
+                    : isComplete
+                      ? `Complete · ${state!.total} books`
+                      : isInProg
+                        ? `${state!.maxRead} of ${state!.total} read`
+                        : isLocked
+                          ? 'Complete earlier series first'
+                          : 'Not yet started';
 
-                  {/* Center: series name + progress subtitle */}
-                  <View style={{ flex: 1 }}>
-                    <Text style={{
-                      fontSize:   14,
-                      fontWeight: isCurrent ? '700' : '400',
-                      color:      nameColor,
-                    }} numberOfLines={1}>
-                      {cat.displayName}
-                    </Text>
-                    <Text style={{
-                      fontSize:   11,
-                      color:      isLocked ? '#d6d3d1' : '#a8a29e',
-                      marginTop:  2,
-                      lineHeight: 15,
-                    }}>
-                      {subtitleText}
-                    </Text>
-                  </View>
+                  return (
+                    <TouchableOpacity
+                      key={sKey}
+                      disabled={isCurrent}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        if (!targetBook) return;
+                        router.push({
+                          pathname: '/book/[id]',
+                          params: {
+                            id:             encodeURIComponent(targetBook.title),
+                            title:          targetBook.title,
+                            author:         targetBook.author,
+                            seriesName:     sKey,
+                            seriesPosition: String(targetPos),
+                            coverUrl:       '',
+                          },
+                        });
+                      }}
+                      style={{
+                        flexDirection:    'row',
+                        alignItems:       'center',
+                        paddingVertical:  10,
+                        paddingHorizontal: 16,
+                        borderTopWidth:   i > 0 ? 1 : 0,
+                        borderTopColor:   '#f5f4f2',
+                      }}
+                    >
+                      {/* ── Left: status icon ───────────────────────────── */}
+                      {/* green = progress/available  |  gray = locked/pre-load */}
+                      <View style={{ width: 24, alignItems: 'center', justifyContent: 'center' }}>
+                        {isComplete ? (
+                          // Completed — green checkmark
+                          <Text style={{ fontSize: 13, color: '#15803d', lineHeight: 18 }}>✓</Text>
+                        ) : (isCurrent || isInProg) ? (
+                          // Current view or in-progress — green filled dot
+                          <View style={{
+                            width: 8, height: 8, borderRadius: 4,
+                            backgroundColor: '#15803d',
+                          }} />
+                        ) : isNextAvail ? (
+                          // Next allowed, not started — green ring
+                          <View style={{
+                            width: 8, height: 8, borderRadius: 4,
+                            borderWidth: 1.5, borderColor: '#15803d',
+                          }} />
+                        ) : (
+                          // Locked or pre-load — gray ring
+                          <View style={{
+                            width: 8, height: 8, borderRadius: 4,
+                            borderWidth: 1.5, borderColor: '#d6d3d1',
+                          }} />
+                        )}
+                      </View>
 
-                  {/* Right: chevron — hidden for current series */}
-                  {!isCurrent && (
-                    <Text style={{
-                      fontSize:   16,
-                      color:      isLocked ? '#d6d3d1' : '#c0bbb6',
-                      marginLeft: 8,
-                    }}>›</Text>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
+                      {/* ── Center: series name + progress subtitle ─────── */}
+                      <View style={{ flex: 1 }}>
+                        <Text style={{
+                          fontSize:   14,
+                          fontWeight: isCurrent ? '700' : '400',
+                          color:      nameColor,
+                        }} numberOfLines={1}>
+                          {cat.displayName}
+                        </Text>
+                        <Text style={{
+                          fontSize:  11,
+                          color:     isLocked ? '#d6d3d1' : '#a8a29e',
+                          marginTop: 2,
+                          lineHeight: 15,
+                        }}>
+                          {subtitleText}
+                        </Text>
+                      </View>
+
+                      {/* ── Right: chevron — hidden for current series ──── */}
+                      {!isCurrent && (
+                        <Text style={{
+                          fontSize:   16,
+                          color:      isLocked ? '#d6d3d1' : '#c0bbb6',
+                          marginLeft: 8,
+                        }}>›</Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
           </View>
         )}
 
