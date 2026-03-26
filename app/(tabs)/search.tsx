@@ -1471,6 +1471,30 @@ function RecCard({
   );
 }
 
+// ─── In-memory recommendation session cache ───────────────────────────────────
+// Survives tab switches and React re-renders; cleared only on page reload or
+// user change.  Prevents the 4–5 s OL pipeline from re-running on every focus
+// event when signal has not changed since the last build.
+
+type RecSessionCache = {
+  userId:        string;
+  recs:          ScoredBook[];
+  continuations: ScoredBook[];
+  discoveries:   ScoredBook[];
+  meta:          RankedRecsResult['meta'];
+  recMode:       'deterministic' | 'expert';
+  readerThesis:  ReaderThesis | null;
+  qualityGate:   QualityGate | null;
+  isFreePreview: boolean;
+  signalCount:   number;
+  loadedAt:      number;
+};
+
+let _recSession: RecSessionCache | null = null;
+
+// Revisit skips Phase 2 when session is this fresh AND signal unchanged.
+const REC_SESSION_TTL_MS = 4 * 60 * 1000; // 4 minutes
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function RecommendationsScreen() {
@@ -1493,6 +1517,11 @@ export default function RecommendationsScreen() {
   const [recommendations, setRecommendations] = useState<ScoredBook[]>([]);
   const [continuations,   setContinuations]   = useState<ScoredBook[]>([]);
   const [discoveries,     setDiscoveries]     = useState<ScoredBook[]>([]);
+
+  // ── Background-refresh indicator (stale-while-revalidate) ─────────────────
+  // True while Phase 2 is running with cached recs already showing.
+  // Shows a subtle "Refreshing…" badge instead of the full skeleton.
+  const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
 
   // ── Dev-only performance overlay state ────────────────────────────────────
   const [recTiming, setRecTiming]             = useState<DevTimings | null>(null);
@@ -1566,24 +1595,55 @@ export default function RecommendationsScreen() {
   }, [query, step]);
 
   // ── Hub data loader ───────────────────────────────────────────────────────
+  //
+  // Fast-path (revisit with session cache):
+  //   1. Restore recs from _recSession immediately — no loading flash.
+  //   2. Run Phase 1 (DB queries) in background; commit task data in-place.
+  //   3. After Phase 1, check signal delta.
+  //      • Unchanged + session fresh → skip Phase 2 entirely (instant revisit).
+  //      • Changed or stale         → run Phase 2 in background with
+  //                                    isBackgroundRefreshing=true so the
+  //                                    existing recs stay visible.
+  //
+  // Cold-path (first load or user change):
+  //   Phase 1 → hubLoading skeleton → Phase 2 → recsLoading skeleton.
 
   async function loadHub() {
     if (!supabase) { setHubLoading(false); setRecsLoading(false); return; }
+
+    const _mountMs = Date.now();
+    if (__DEV__) console.log('[PERF] recommendations_screen_mount');
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setHubLoading(false); setRecsLoading(false); return; }
     setCurrentUserId(user.id);
-    setHubLoading(true);
-    setRecsLoading(false);
-    // NOTE: intentionally NOT clearing recommendations here so the previous set
-    // remains visible while the new pipeline runs (last-known-good pattern).
-    // Freshness rule: recs from the same session are always replaced on completion.
-    // Recs from prior sessions (state persists across focus events) are shown
-    // briefly and replaced the moment the new pipeline resolves (~1–4s).
 
-    // ── Phase 1: core hub data (all DB queries run concurrently) ─────────────
-    // Hub becomes visible as soon as this resolves, without waiting for OL API.
-    // feedbackContext is loaded here (parallel with hub queries) rather than
-    // serially at the start of Phase 2, saving ~50–100 ms off Phase 2 start.
+    // ── Fast-path: restore from in-memory session cache ───────────────────
+    const cached = _recSession && _recSession.userId === user.id ? _recSession : null;
+    if (cached) {
+      if (__DEV__) console.log('[PERF] cache_hit — restoring session recs instantly',
+        `| age_ms=${Date.now() - cached.loadedAt}`,
+        `| recs=${cached.recs.length}`,
+      );
+      setRecommendations(cached.recs);
+      setContinuations(cached.continuations);
+      setDiscoveries(cached.discoveries);
+      setRecsMeta(cached.meta);
+      setRecsQualityGate(cached.qualityGate);
+      setRecMode(cached.recMode);
+      setReaderThesis(cached.readerThesis);
+      setIsFreePreview(cached.isFreePreview);
+      setRecsLoading(false);
+      setIsBackgroundRefreshing(false);
+    }
+
+    // ── Phase 1: core hub data (all DB queries run concurrently) ─────────
+    // When cached recs exist: no skeleton, hub data updates in-place after load.
+    // When cold start: shows skeleton until this resolves.
+    if (!cached) setHubLoading(true);
+
+    const _phase1Start = Date.now();
+    if (__DEV__) console.log('[PERF] phase1_start');
 
     const [rateRes, tagRes, incomingRes, sentRes, tp, ent, fbCtxPhase1] = await Promise.all([
       // Finished books with no rating
@@ -1632,10 +1692,12 @@ export default function RecommendationsScreen() {
       // Entitlement — determines whether expert rec mode is available
       getEntitlement(supabase!, user.id).catch(() => null),
 
-      // Feedback context — loaded in parallel here to avoid a serial round-trip
+      // Feedback context — loaded in parallel to avoid a serial round-trip
       // at Phase 2 start (saves ~50–100 ms off the time-to-first-rec).
       loadFeedbackContext(supabase!, user.id).catch(() => emptyContext()),
     ]);
+
+    if (__DEV__) console.log('[PERF] phase1_end — ms=' + (Date.now() - _phase1Start));
 
     // ── Supabase many-to-one join note: returns single object, not array ─────
     type BookJoin = { title: string; author: string; cover_url: string | null; external_id: string | null; subjects: string[] | null };
@@ -1669,42 +1731,78 @@ export default function RecommendationsScreen() {
         subjects:    r.book?.subjects    ?? null,
       }));
 
-    // Commit Phase 1 state — hub is now visible
+    // Commit Phase 1 state
     setBooksToRate(toRate);
     setBooksToTag(toTag);
     setIncomingRecs((incomingRes.data as unknown as IncomingRec[]) ?? []);
     setSentRecs((sentRes.data as unknown as SentRec[]) ?? []);
     setTasteProfile(tp);
     setEntitlement(ent);
-    setHubLoading(false);
+    setHubLoading(false);   // clear skeleton (cold path) or no-op (warm path)
 
-    // ── Phase 2: recommendation retrieval (profile-guided, includes OL calls) ─
-    // Runs after Phase 1 state is committed so the hub is already visible.
-    // Only fires when the user has enough signal for tier-1+ recommendations.
+    // ── Phase 2 gate: minimum tier, and skip-if-fresh check ──────────────
     if (!tp || tp.tier < 1) return;
 
-    setRecsLoading(true);
+    const currentSignal = tp.strongSignalCount ?? 0;
+    const sessionAge    = cached ? Date.now() - cached.loadedAt : Infinity;
+    const signalUnchanged = cached && currentSignal === cached.signalCount;
+    const sessionFresh    = sessionAge < REC_SESSION_TTL_MS;
+
+    if (cached && signalUnchanged && sessionFresh) {
+      if (__DEV__) console.log('[PERF] phase2_skipped — session_fresh',
+        `| age_ms=${sessionAge}`,
+        `| signal=${currentSignal}`,
+        `| total_ms=${Date.now() - _mountMs}`,
+      );
+      return; // ← instant revisit: skip the 4–5 s pipeline entirely
+    }
+
+    // ── Phase 2: recommendation pipeline (includes OL calls, ~4–5 s) ─────
+    // Use isBackgroundRefreshing (subtle badge) when cached recs are visible;
+    // use recsLoading (full skeleton) only on first cold start.
+    const hasCachedRecs = cached && cached.recs.length > 0;
+    if (hasCachedRecs) {
+      setIsBackgroundRefreshing(true);
+    } else {
+      setRecsLoading(true);
+    }
     setRecsQualityGate(null);
     setRecMode(null);
     setIsFreePreview(false);
+
     try {
-      // feedbackContext was loaded in Phase 1 (parallel with hub queries) — use it directly.
       const fbCtx = fbCtxPhase1;
       setFeedbackCtx(fbCtx);
 
-      // Run the unified pipeline (deterministic + optional expert layer)
-      // Uses expert layer if entitlement allows + signal is sufficient
-      const activeEntitlement = ent ?? { plan: 'free' as const, expert_recs_enabled: false, expert_refreshes_remaining_this_period: 0, has_used_free_import_analysis: false, next_refresh_available_at: null, _raw: { free_expert_used: false, expert_refreshes_this_period: 0, period_start_at: new Date().toISOString(), last_expert_refresh_at: null } };
+      const activeEntitlement = ent ?? {
+        plan: 'free' as const,
+        expert_recs_enabled: false,
+        expert_refreshes_remaining_this_period: 0,
+        has_used_free_import_analysis: false,
+        next_refresh_available_at: null,
+        _raw: {
+          free_expert_used: false,
+          expert_refreshes_this_period: 0,
+          period_start_at: new Date().toISOString(),
+          last_expert_refresh_at: null,
+        },
+      };
 
-      const _pipelineStart = Date.now();
+      const _phase2Start = Date.now();
+      if (__DEV__) console.log('[PERF] phase2_start',
+        `| mode=${hasCachedRecs ? 'background_refresh' : 'cold_start'}`,
+        `| signal_delta=${currentSignal - (cached?.signalCount ?? 0)}`,
+      );
+
       const recResult = await getPersonalizedRecsWithExpert(
         supabase!, user.id, tp, activeEntitlement, 5, fbCtx,
         isIntentActive(nextReadIntent) ? nextReadIntent : undefined,
       );
-      const _pipelineMs = Date.now() - _pipelineStart;
+
+      const _pipelineMs = Date.now() - _phase2Start;
       if (__DEV__) {
+        console.log('[PERF] phase2_end — pipeline_ms=' + _pipelineMs);
         console.log('[REC_TIMING] total_pipeline_ms=' + _pipelineMs);
-        // Backfill total_pipeline_ms into the module-level store and push to UI overlay.
         if (__devTimingsRef.current) {
           __devTimingsRef.current.total_pipeline_ms = _pipelineMs;
           setRecTiming({ ...__devTimingsRef.current });
@@ -1728,7 +1826,7 @@ export default function RecommendationsScreen() {
           `incoming_recs=${recs.length}`,
           `| incoming_continuations=${(recResult.continuations ?? []).length}`,
           `| incoming_discoveries=${(recResult.discoveries ?? recs).length}`,
-          `| loading_before=true`,
+          `| loading_before=${!hasCachedRecs}`,
           `| loading_after=false`,
           `| hasRecs_after=${recs.length > 0 || (recResult.continuations ?? []).length > 0}`,
         );
@@ -1742,6 +1840,28 @@ export default function RecommendationsScreen() {
       setRecMode(meta.mode ?? 'deterministic');
       setReaderThesis(meta.reader_thesis ?? null);
       setIsFreePreview(meta.expert_decision?.is_free_preview ?? false);
+
+      // ── Save to session cache so next revisit is instant ─────────────
+      if (recs.length > 0 || (recResult.continuations ?? []).length > 0) {
+        _recSession = {
+          userId:        user.id,
+          recs,
+          continuations: recResult.continuations ?? [],
+          discoveries:   recResult.discoveries   ?? recs,
+          meta,
+          recMode:       meta.mode ?? 'deterministic',
+          readerThesis:  meta.reader_thesis ?? null,
+          qualityGate:   meta.quality_gate !== 'passed' ? meta.quality_gate : null,
+          isFreePreview: meta.expert_decision?.is_free_preview ?? false,
+          signalCount:   currentSignal,
+          loadedAt:      Date.now(),
+        };
+        if (__DEV__) console.log('[PERF] session_cache_saved',
+          `| recs=${recs.length}`,
+          `| signal=${currentSignal}`,
+          `| total_ms=${Date.now() - _mountMs}`,
+        );
+      }
 
       if (__DEV__) {
         console.log('[REC TRACE] mode:', meta.mode ?? 'deterministic', '| decision:', meta.expert_decision?.reason);
@@ -1762,26 +1882,27 @@ export default function RecommendationsScreen() {
         });
         if (meta.mode === 'expert' && meta.reader_thesis) {
           console.log('[EXPERT THESIS]', {
-            dominant_lanes:   meta.reader_thesis.dominant_lanes.map(l => `${l.label} (${l.strength.toFixed(2)})`),
+            dominant_lanes:    meta.reader_thesis.dominant_lanes.map(l => `${l.label} (${l.strength.toFixed(2)})`),
             center_of_gravity: meta.reader_thesis.center_of_gravity,
-            guardrails:       meta.reader_thesis.recommendation_guardrails.length,
+            guardrails:        meta.reader_thesis.recommendation_guardrails.length,
           });
         }
         console.log('[REC TRACE] top-10 scored:', recs.slice(0, 10).map(r => ({
-          title:    r.title,
-          author:   r.author,
-          score:    r.score,
-          source:   r._source,
-          reason:   r._retrieval_reason,
+          title:     r.title,
+          author:    r.author,
+          score:     r.score,
+          source:    r._source,
+          reason:    r._retrieval_reason,
           breakdown: r._score_breakdown,
-          fit:      r.reasons,
-          risks:    r.risks,
+          fit:       r.reasons,
+          risks:     r.risks,
         })));
       }
     } catch {
-      // Recommendations fail silently — hub content is already visible
+      // Recommendations fail silently — hub content is already visible.
     } finally {
       setRecsLoading(false);
+      setIsBackgroundRefreshing(false);
     }
   }
 
@@ -2119,7 +2240,24 @@ export default function RecommendationsScreen() {
                 Section 1 — For You
             ════════════════════════════════════════════════════════ */}
             <View style={{ marginBottom: 36 }}>
-              <SectionLabel>For You</SectionLabel>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                <Text style={{
+                  fontSize: 11, fontWeight: '700', color: '#a8a29e',
+                  letterSpacing: 0.9, textTransform: 'uppercase',
+                }}>
+                  For You
+                </Text>
+                {isBackgroundRefreshing && (
+                  <View style={{
+                    flexDirection: 'row', alignItems: 'center',
+                    marginLeft: 8, paddingHorizontal: 7, paddingVertical: 2,
+                    backgroundColor: '#f5f5f4', borderRadius: 10,
+                  }}>
+                    <ActivityIndicator size={10} color="#a8a29e" style={{ marginRight: 4 }} />
+                    <Text style={{ fontSize: 11, color: '#a8a29e' }}>Refreshing</Text>
+                  </View>
+                )}
+              </View>
 
               {/* ── Personalised picks loading skeleton ── */}
               {recsLoading && (

@@ -1,0 +1,58 @@
+The recommendations screen is still too slow and is visibly reloading when revisiting the tab.
+
+Observed behavior from recording:
+- First open of Recommendations takes about 6–8 seconds before meaningful content appears.
+- Leaving the tab and returning in the same session triggers another full skeleton/loading state for about 4–6 seconds.
+- Content seems to populate progressively, suggesting a waterfall rather than a tight single response.
+
+Goal:
+Make recommendation revisits feel instant and reduce perceived wait dramatically.
+
+Implement the following:
+
+1. Retain previous successful recommendations in screen state.
+- Do NOT clear the screen to empty/skeleton on tab refocus or remount if we already have a valid payload.
+- Only show full skeletons if this is the user’s first-ever load and there is no cached data.
+
+2. Add stale-while-revalidate behavior.
+- On screen open, immediately render cached/in-memory recommendations if present.
+- Kick off a background refresh.
+- When fresh results arrive, replace the old payload smoothly without blanking the UI.
+
+3. Prevent unnecessary refetch on tab revisit.
+- Only refetch if:
+  a) no cached recommendations exist
+  b) the user’s reading/rating state changed
+  c) cache is older than a reasonable threshold
+- Otherwise reuse the existing payload.
+
+4. Add performance instrumentation with console timing for:
+- recommendations_screen_mount
+- recommendations_fetch_start / end
+- candidate_generation_start / end
+- ranking_start / end
+- metadata_hydration_start / end
+- image_load_start / end
+- total_time_to_first_meaningful_cards
+
+5. Separate above-the-fold from below-the-fold content.
+- Render top recommendation cards first.
+- Defer lower sections like friend modules / secondary modules until after first paint.
+
+6. Do a quick audit for waterfalls.
+- Check whether user profile, reading history, recommendation ranking, and metadata enrichment are happening sequentially.
+- Parallelize independent fetches where possible.
+
+7. Improve loading UX.
+- If cached data exists, keep the existing cards visible and show only a subtle “Refreshing recommendations…” indicator.
+- Avoid full-page skeleton reset on revisit.
+
+Success criteria:
+- Returning to the Recommendations tab in the same session should feel instant.
+- First meaningful recommendation cards should render much faster.
+- Logs should clearly show where time is being spent if backend latency still remains.
+
+After changes, summarize:
+- what was causing repeated slow loads
+- which fetches were being retriggered unnecessarily
+- updated timing breakdown before vs after
