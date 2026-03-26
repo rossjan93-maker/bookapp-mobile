@@ -1,0 +1,142 @@
+We are solving recommendation coherence for multi-series universes (e.g. Robin Hobb, Sanderson, Maas).
+
+Do NOT change:
+- exclusion logic
+- contiguous logic
+- recommendation scoring weights broadly
+- UI layout yet
+
+We are introducing a new concept:
+SAGA GROUPING
+
+Goal
+Treat multiple related series as a single coherent reading journey.
+
+Example:
+Realm of the Elderlings is not 5 independent series.
+It is one saga with ordered sub-series.
+
+The system must:
+- understand this structure
+- recommend appropriately within it
+- explain it clearly
+
+---
+
+Part 1 — Define saga registry
+
+Extend seriesCatalog.ts with a new structure:
+
+Each saga must include:
+- saga_name
+- ordered list of series (not books)
+- each series already maps to ordered books (already exists)
+
+Example structure:
+
+Realm of the Elderlings:
+  [
+    Farseer Trilogy,
+    Liveship Traders,
+    Tawny Man,
+    Rain Wild Chronicles,
+    Fitz and the Fool
+  ]
+
+Mistborn:
+  [
+    Era 1,
+    Era 2
+  ]
+
+Do NOT infer this dynamically.
+This must be explicit, curated, and deterministic.
+
+---
+
+Part 2 — Compute saga progress
+
+For each user:
+- determine which series in the saga are:
+  - completed
+  - in progress
+  - not started
+
+Produce:
+- saga_max_series_index
+- saga_next_series
+- saga_is_sequential (similar concept to contiguous, but at series level)
+
+---
+
+Part 3 — Recommendation gating
+
+Update recommendation behavior:
+
+Rule A — If user is mid-saga:
+- only recommend:
+  - next book in current series
+  - OR first book of next series (if current series complete)
+
+Rule B — Do NOT recommend:
+- books from later series in the saga (skip-ahead at saga level)
+
+Rule C — If user has not started saga:
+- only recommend first entry point of saga (Book 1 of Series 1)
+
+---
+
+Part 4 — Explanation update
+
+When a book is part of a saga:
+
+Replace current series explanation with:
+
+If continuing:
+  "Continue your journey in [Saga Name]"
+
+If next series:
+  "Start the next chapter of [Saga Name]"
+
+If entry point:
+  "[Saga Name] begins here"
+
+Do NOT mention internal series names unless necessary.
+
+---
+
+Part 5 — Do NOT change UI yet
+
+No visual changes.
+No new components.
+Only:
+- data model
+- recommendation eligibility
+- explanation layer
+
+---
+
+Part 6 — Output
+
+Return:
+
+1. Objective
+2. Root cause
+3. Files changed
+4. Saga contract definition (exact structure)
+5. Recommendation rules (explicit logic)
+6. Before vs after examples (use Robin Hobb specifically)
+7. Live proof (show what is now suppressed vs allowed)
+8. Remaining limitations
+9. Validation result
+10. Next step
+11. Regression guard
+
+---
+
+Success condition
+
+For a user like the Goodreads tester:
+- The app never recommends Book 14 of a saga without context
+- Recommendations feel like a guided journey, not random entries
+- Robin Hobb recommendations become intuitive and explainable

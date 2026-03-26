@@ -409,6 +409,82 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
   },
 };
 
+// ── Saga catalog ──────────────────────────────────────────────────────────────
+//
+// A "saga" is a set of multiple related series that form a single coherent
+// reading journey with a strongly recommended reading order.  Unlike the
+// per-series prereqs (which gate individual series), the saga registry defines
+// the FULL top-level journey so the system can:
+//   • Never recommend a later saga entry before earlier ones are complete
+//   • Explain recommendations with saga-level language, not just series-level
+//
+// CONTRACT:
+//   saga_name        — human-readable name shown in explanations
+//   series_order     — ordered list of SERIES_CATALOG keys (exact match required)
+//
+// DO NOT add a saga unless the reading order is unambiguous and curated.
+// Conservative inclusion: if order is debated, exclude from saga registry.
+//
+// Current sagas:
+//   Realm of the Elderlings (Robin Hobb) — 5 sub-series, strictly ordered
+//   Mistborn Saga (Brandon Sanderson)    — Era 1 → Era 2
+
+export type SagaCatalogEntry = {
+  saga_name:    string;
+  series_order: string[];  // ordered series keys, index 0 = read first
+};
+
+const SAGA_CATALOG: Record<string, SagaCatalogEntry> = {
+
+  // ── Robin Hobb — Realm of the Elderlings ─────────────────────────────────
+  // Canonical reading order: Farseer → Liveship → Tawny Man → Rain Wilds → FatF.
+  // All five sub-series are deeply interconnected; skipping ahead breaks story
+  // continuity and major character revelations.
+  'Realm of the Elderlings': {
+    saga_name:    'Realm of the Elderlings',
+    series_order: [
+      'Farseer Trilogy',
+      'Liveship Traders',
+      'Tawny Man Trilogy',
+      'Rain Wilds Chronicles',
+      'Fitz and the Fool',
+    ],
+  },
+
+  // ── Brandon Sanderson — Mistborn Saga ────────────────────────────────────
+  // Era 1 (original trilogy) must be complete before Era 2 (Wax and Wayne).
+  // Era 2 is set ~300 years later; reading order is mandatory for full context.
+  'Mistborn Saga': {
+    saga_name:    'Mistborn Saga',
+    series_order: [
+      'Mistborn',
+      'Wax and Wayne',
+    ],
+  },
+
+};
+
+// Given a series catalog key (e.g. 'Tawny Man Trilogy'), returns:
+//   - sagaKey:      SAGA_CATALOG key (e.g. 'Realm of the Elderlings')
+//   - sagaName:     human-readable name
+//   - seriesIndex:  0-based position of this series in the saga's series_order
+// Returns null if the series does not belong to any saga.
+export function getSagaForSeries(
+  seriesKey: string,
+): { sagaKey: string; sagaName: string; seriesIndex: number } | null {
+  for (const [sagaKey, sagaEntry] of Object.entries(SAGA_CATALOG)) {
+    const idx = sagaEntry.series_order.indexOf(seriesKey);
+    if (idx !== -1) {
+      return { sagaKey, sagaName: sagaEntry.saga_name, seriesIndex: idx };
+    }
+  }
+  return null;
+}
+
+export function getAllSagaCatalog(): Readonly<Record<string, SagaCatalogEntry>> {
+  return SAGA_CATALOG;
+}
+
 export function getSeriesCatalog(seriesName: string): SeriesCatalogEntry | null {
   return SERIES_CATALOG[seriesName] ?? null;
 }

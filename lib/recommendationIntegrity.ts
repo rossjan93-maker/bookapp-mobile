@@ -36,7 +36,7 @@
 //   of its series in the pool — the most common real-world case.
 
 import type { ScoredBook, ScoreBreakdown } from './recommender';
-import { getSeriesCatalog, getAllSeriesCatalog } from './seriesCatalog';
+import { getSeriesCatalog, getAllSeriesCatalog, getSagaForSeries, getAllSagaCatalog } from './seriesCatalog';
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
@@ -730,6 +730,32 @@ export function applyIntegrityLayer(
 
   type Annotated = { book: ScoredBook; series: SeriesPosition | null; label: SeriesLabel | null };
 
+  // ── Saga progress pre-computation ─────────────────────────────────────────
+  //
+  // For each saga, determine the index of the first sub-series that is NOT
+  // yet fully completed.  Books whose saga_series_index exceeds this are
+  // saga skip-aheads and will be suppressed.
+  //
+  // saga_next_allowed_index:
+  //   0             → user hasn't completed anything in the saga (or not started)
+  //   1             → first sub-series fully done, second is now allowed
+  //   saga.length   → all sub-series complete, no more saga recommendations needed
+  const sagaCatalog = getAllSagaCatalog();
+  const sagaNextAllowedIndex = new Map<string, number>(); // sagaKey → 0-based index
+
+  for (const [sagaKey, saga] of Object.entries(sagaCatalog)) {
+    let nextAllowed = 0;
+    for (let i = 0; i < saga.series_order.length; i++) {
+      const seriesKey = saga.series_order[i];
+      const cat = getSeriesCatalog(seriesKey);
+      if (!cat) { nextAllowed = i; break; }
+      const maxRead = seriesProgress.get(normKey(seriesKey)) ?? 0;
+      if (maxRead < cat.total) { nextAllowed = i; break; }
+      nextAllowed = i + 1; // this series fully complete — advance pointer
+    }
+    sagaNextAllowedIndex.set(sagaKey, nextAllowed);
+  }
+
   // ── Step 1: Annotate ──────────────────────────────────────────────────────
   const annotated: Annotated[] = books.map(book => {
     const series = detectSeriesPosition(book);
@@ -760,6 +786,50 @@ export function applyIntegrityLayer(
     (book._score_breakdown as Record<string, unknown>)['series_method']        = series?.detection_method ?? null;
     (book._score_breakdown as Record<string, unknown>)['series_max_read']      = maxReadForSeries;
     (book._score_breakdown as Record<string, unknown>)['series_is_contiguous'] = isContiguous;
+
+    // ── Saga annotation ─────────────────────────────────────────────────────
+    // Annotate saga_name, saga_series_index, and saga_label for UI explanations
+    // and for Rule D suppression below.
+    //
+    // saga_label meanings:
+    //   saga_entry        → first series in saga, user hasn't started it
+    //   saga_continuation → user is currently reading this series
+    //   saga_next_series  → user just completed the preceding series
+    //   saga_skip_ahead   → this series is beyond the user's allowed next — suppressed
+    if (series) {
+      const sagaInfo = getSagaForSeries(series.series_name);
+      if (sagaInfo) {
+        const nextAllowed      = sagaNextAllowedIndex.get(sagaInfo.sagaKey) ?? 0;
+        const sagaSeriesIndex  = sagaInfo.seriesIndex;
+        const maxInThisSeries  = seriesProgress.get(normKey(series.series_name)) ?? 0;
+
+        let sagaLabel: string;
+        if (sagaSeriesIndex > nextAllowed) {
+          sagaLabel = 'saga_skip_ahead';
+        } else if (maxInThisSeries > 0) {
+          // User has read at least one book in this series
+          sagaLabel = 'saga_continuation';
+        } else if (sagaSeriesIndex === 0) {
+          // First series, not yet started
+          sagaLabel = 'saga_entry';
+        } else {
+          // Previous series is complete; this one not yet started
+          sagaLabel = 'saga_next_series';
+        }
+
+        (book._score_breakdown as Record<string, unknown>)['saga_name']         = sagaInfo.sagaName;
+        (book._score_breakdown as Record<string, unknown>)['saga_series_index'] = sagaSeriesIndex;
+        (book._score_breakdown as Record<string, unknown>)['saga_label']        = sagaLabel;
+      } else {
+        (book._score_breakdown as Record<string, unknown>)['saga_name']         = null;
+        (book._score_breakdown as Record<string, unknown>)['saga_series_index'] = null;
+        (book._score_breakdown as Record<string, unknown>)['saga_label']        = null;
+      }
+    } else {
+      (book._score_breakdown as Record<string, unknown>)['saga_name']         = null;
+      (book._score_breakdown as Record<string, unknown>)['saga_series_index'] = null;
+      (book._score_breakdown as Record<string, unknown>)['saga_label']        = null;
+    }
 
     return { book, series, label };
   });
@@ -913,6 +983,34 @@ export function applyIntegrityLayer(
         );
         suppressBook(best, `series_skip_ahead: #${bestPos} suppressed; user needs #${needed} in ${seriesName} ${detectInfo}`);
       }
+    }
+  }
+
+  // ── Rule D — Saga-level skip-ahead suppression ────────────────────────────
+  //
+  // Suppresses any book that belongs to a saga but is in a sub-series beyond
+  // the user's currently allowed next sub-series.
+  //
+  // Example: user has completed Farseer but not Liveship Traders.
+  //   saga_next_allowed = 1 (Liveship, index 1)
+  //   → Tawny Man (index 2), Rain Wilds (index 3), FatF (index 4) are all suppressed
+  //   → Liveship #1 is allowed (saga_next_series or saga_entry)
+  //
+  // This runs AFTER the series-level loop so per-series decisions are already
+  // applied.  A book that was already suppressed in Step 3 is skipped here.
+  for (const item of annotated) {
+    if (suppressedIds.has(rilId(item.book))) continue;
+    const bd            = item.book._score_breakdown as Record<string, unknown>;
+    const sagaLabel     = bd['saga_label'] as string | null;
+    const sagaName      = bd['saga_name']  as string | null;
+    const sagaIdx       = bd['saga_series_index'] as number | null;
+
+    if (sagaLabel === 'saga_skip_ahead') {
+      suppressBook(item, `saga_skip_ahead: sub-series index ${sagaIdx} in "${sagaName ?? 'saga'}" is beyond the user's current position; complete preceding sub-series first`);
+      if (__DEV__) console.log(
+        `[SAGA_DECISION] candidate="${item.book.title}" saga="${sagaName}" ` +
+        `saga_series_index=${sagaIdx} decision="REJECT_SAGA_SKIP_AHEAD"`,
+      );
     }
   }
 

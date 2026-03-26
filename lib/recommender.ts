@@ -165,7 +165,11 @@ export type ScoreBreakdown = {
   // ── Presentation-only annotations (no scoring impact) ────────────────────
   series_max_read?:     number | null;  // actual highest series position the user has completed (from seriesProgress)
   series_is_contiguous?: boolean | null; // true = user read 1..maxRead with no gaps; false = gaps detected
-  author_books_read?:   number;          // finished books by this author — for explanation strings only
+  // ── Saga-level annotations (no scoring impact) ────────────────────────────
+  saga_name?:         string | null;   // the saga this series belongs to (null = not part of a saga)
+  saga_series_index?: number | null;   // 0-based index of this series in the saga's ordered list
+  saga_label?:        'saga_entry' | 'saga_continuation' | 'saga_next_series' | 'saga_skip_ahead' | null;
+  author_books_read?: number;          // finished books by this author — for explanation strings only
 };
 
 export type ScoredBook = CandidateBook & {

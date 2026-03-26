@@ -1029,23 +1029,45 @@ function capitalize(s: string): string {
 }
 
 // Build a single behavior-driven explanation anchored to ONE concrete user signal.
-// Priority: series continuity > author affinity > existing reason fallback.
+//
+// Priority (highest → lowest):
+//   0. Saga label    — journey-level framing for multi-series universes
+//   1. Series label  — per-series framing for books not in a tracked saga
+//   2. Author affinity — finished-book count ≥ 2
+//   3. Generic fallback — scorer reason string
 //
 // Precision rules:
-//   Series starter (pos 1):
-//     - With known total → "Book 1 of N — a great place to start"
-//     - Without total   → "Book 1 — a great place to start"
-//   Series continuation (pos > 1):
-//     - Uses series_max_read (actual progress from seriesProgress map) not pos-1
-//     - Only fires when series_max_read > 0 (confirmed user history exists)
+//   Saga:
+//     saga_entry        → "[Saga Name] begins here"
+//     saga_continuation → "Continue your journey in [Saga Name]"
+//     saga_next_series  → "Start the next chapter of [Saga Name]"
+//     (saga_skip_ahead books are already suppressed by the RIL — never shown)
+//   Series (non-saga):
+//     pos 1  with total  → "Book 1 of N — a great place to start"
+//     pos 1  no total    → "Book 1 — a great place to start"
+//     pos > 1 contiguous → "You've read through Book N — this is next"
+//     pos > 1 gaps       → "Next in the series"
 //   Author affinity:
-//     - Uses author_books_read (finished-only count, never includes in-progress)
-//     - Threshold ≥ 2 to avoid "You've read 1 book by X" (too thin)
+//     Uses finished-only count; threshold ≥ 2
 function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | null {
   const bd = book._score_breakdown;
 
-  // 1. Series continuity — fires when series position is detected (pos 1 allowed
-  //    without total; continuation requires confirmed progress via series_max_read).
+  // 0. Saga — highest priority.
+  // saga_skip_ahead books are suppressed by RIL and never reach here, so we
+  // only need to handle the three user-facing labels.
+  if (bd.saga_label && bd.saga_name) {
+    switch (bd.saga_label) {
+      case 'saga_entry':
+        return `${bd.saga_name} begins here`;
+      case 'saga_continuation':
+        return `Continue your journey in ${bd.saga_name}`;
+      case 'saga_next_series':
+        return `Start the next chapter of ${bd.saga_name}`;
+    }
+  }
+
+  // 1. Series (for books not in a tracked saga, or as fallback if saga label
+  //    is absent for any reason).
   if (bd.series_position != null && bd.series_name) {
     const pos = bd.series_position;
 
@@ -1060,8 +1082,8 @@ function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | n
     // Continuation: only make a specific claim when history is confirmed contiguous.
     // If series_is_contiguous is false (gaps detected), fall back to the neutral
     // "Next in the series" — never overstate what the user has actually read.
-    const maxRead     = bd.series_max_read     ?? null;
-    const contiguous  = bd.series_is_contiguous ?? null;
+    const maxRead    = bd.series_max_read     ?? null;
+    const contiguous = bd.series_is_contiguous ?? null;
     if (maxRead != null && maxRead > 0) {
       if (contiguous === true) {
         return `You\u2019ve read through Book ${maxRead} \u2014 this is next`;
