@@ -1794,23 +1794,33 @@ export default function RecommendationsScreen() {
     const signalUnchanged = cached && currentSignal === cached.signalCount;
     const sessionFresh    = sessionAge < REC_SESSION_TTL_MS;
 
-    // ── Persisted-cache compatibility log ─────────────────────────────────
-    // Now that Phase 1 has given us signal count + entitlement we can check
-    // whether the restored payload is still aligned with current state.
-    // We always proceed with a background refresh if anything differs;
-    // this block is purely observability for the trace.
+    // ── Persisted-cache compatibility gate ────────────────────────────────
+    // Now that Phase 1 has resolved, we know current signal, entitlement,
+    // and active intent. Compute compatibility signals outside __DEV__ so
+    // they drive the skip gate, not just the log.
+    //
+    // What must match to skip Phase 2:
+    //   signal    — signalUnchanged (taste profile hasn't changed)
+    //   mode      — deterministic vs expert (entitlement must agree with stored mode)
+    //   intent    — active intent tag must match what recs were produced for
+    //   freshness — payload age must be within session TTL
+    //
+    // isFreePreview is NOT a separate gate: if entitlement changed enough to
+    // alter isFreePreview, the recMode will also differ, so modeMatch catches it.
+    const expectedMode      = ent?.expert_recs_enabled ? 'expert' : 'deterministic';
+    const expectedIntent    = isIntentActive(nextReadIntent) ? intentSummaryLabel(nextReadIntent) : null;
+    const modeMatch         = !cached || cached.recMode    === expectedMode;
+    const intentMatch       = !cached || (cached.intentTag ?? null) === expectedIntent;
+    const payloadCompatible = modeMatch && intentMatch;
+
     if (__DEV__ && cached) {
-      const expectedMode   = ent?.expert_recs_enabled ? 'expert' : 'deterministic';
-      const expectedIntent = isIntentActive(nextReadIntent) ? intentSummaryLabel(nextReadIntent) : null;
-      const signalDelta    = currentSignal - (cached.signalCount ?? 0);
-      const modeMatch      = cached.recMode === expectedMode;
-      const intentMatch    = (cached.intentTag ?? null) === expectedIntent;
+      const signalDelta = currentSignal - (cached.signalCount ?? 0);
       if (signalDelta !== 0 || !modeMatch || !intentMatch) {
         console.log('[PERSIST_CACHE] compatibility_check',
           `| signal_delta=${signalDelta}`,
           `| mode: stored=${cached.recMode ?? '?'} expected=${expectedMode} match=${modeMatch}`,
           `| intent: stored=${cached.intentTag ?? 'none'} expected=${expectedIntent ?? 'none'} match=${intentMatch}`,
-          `| action=${modeMatch && intentMatch ? 'background_refresh' : 'background_refresh_mode_drift'}`,
+          `| action=${payloadCompatible ? 'background_refresh' : 'background_refresh_mode_drift'}`,
         );
       } else {
         console.log('[PERSIST_CACHE] compatibility_check — aligned',
@@ -1820,10 +1830,12 @@ export default function RecommendationsScreen() {
       }
     }
 
-    if (cached && signalUnchanged && sessionFresh) {
-      if (__DEV__) console.log('[PERF] phase2_skipped — session_fresh',
+    if (cached && signalUnchanged && sessionFresh && payloadCompatible) {
+      if (__DEV__) console.log('[PERF] phase2_skipped — fully_compatible',
         `| age_ms=${sessionAge}`,
         `| signal=${currentSignal}`,
+        `| mode=${expectedMode}`,
+        `| intent=${expectedIntent ?? 'none'}`,
         `| total_ms=${Date.now() - _mountMs}`,
       );
       return; // ← instant revisit: skip the 4–5 s pipeline entirely
