@@ -646,22 +646,24 @@ function TagPanel({
 
 // ─── Shared card header row ───────────────────────────────────────────────────
 
-function BookRow({ book, rating }: { book: BookToRate | BookToTag; rating?: number }) {
+function BookRow({ book, rating, small }: { book: BookToRate | BookToTag; rating?: number; small?: boolean }) {
+  const cW = small ? 28 : 36;
+  const cH = small ? 40 : 52;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-      <CoverThumb url={book.cover_url} externalId={book.external_id} title={book.title} width={36} height={52} />
-      <View style={{ flex: 1, marginLeft: 12 }}>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }} numberOfLines={1}>
+      <CoverThumb url={book.cover_url} externalId={book.external_id} title={book.title} width={cW} height={cH} />
+      <View style={{ flex: 1, marginLeft: 10 }}>
+        <Text style={{ fontSize: small ? 13 : 14, fontWeight: '600', color: '#1c1917', lineHeight: small ? 18 : 20 }} numberOfLines={1}>
           {book.title}
         </Text>
-        <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 2 }} numberOfLines={1}>
+        <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 1 }} numberOfLines={1}>
           {book.author}
         </Text>
       </View>
       {rating != null && rating > 0 && (
         <View style={{ flexDirection: 'row', gap: 1 }}>
           {[1, 2, 3, 4, 5].map(s => (
-            <Text key={s} style={{ fontSize: 13, color: s <= rating ? '#f59e0b' : '#e7e5e4' }}>★</Text>
+            <Text key={s} style={{ fontSize: 11, color: s <= rating ? '#f59e0b' : '#e7e5e4' }}>★</Text>
           ))}
         </View>
       )}
@@ -799,24 +801,24 @@ function RateCard({ book, onComplete }: RateCardProps) {
     <Animated.View style={[CARD_STYLE, { opacity: cardOpacity, transform: [{ scale: cardScale }] }]}>
       {/* ── Persistent header ── */}
       <View style={{
-        padding: 12,
+        paddingVertical: 9, paddingHorizontal: 12,
         borderBottomWidth: mode !== 'rate' ? 1 : 0,
         borderBottomColor: '#f5f5f4',
       }}>
-        <BookRow book={book} rating={mode !== 'rate' ? rating : undefined} />
+        <BookRow book={book} rating={mode !== 'rate' ? rating : undefined} small />
 
         {mode === 'rate' && (
-          <View style={{ flexDirection: 'row', gap: 3, marginTop: 10, paddingLeft: 48 }}>
+          <View style={{ flexDirection: 'row', gap: 2, marginTop: 7, paddingLeft: 38 }}>
             {[1, 2, 3, 4, 5].map(star => (
               <TouchableOpacity
                 key={star}
                 activeOpacity={0.7}
                 onPress={() => handleRate(star)}
                 disabled={saving}
-                hitSlop={{ top: 10, bottom: 10, left: 5, right: 5 }}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               >
                 <Text style={{
-                  fontSize: 28,
+                  fontSize: 22,
                   color: star <= (pendingRating || rating) ? '#f59e0b' : '#d6d3d1',
                 }}>★</Text>
               </TouchableOpacity>
@@ -825,7 +827,7 @@ function RateCard({ book, onComplete }: RateCardProps) {
               <ActivityIndicator
                 size="small"
                 color="#a8a29e"
-                style={{ marginLeft: 10, alignSelf: 'center' }}
+                style={{ marginLeft: 8, alignSelf: 'center' }}
               />
             )}
           </View>
@@ -968,9 +970,9 @@ function TagCard({ book, onComplete }: TagCardProps) {
           borderBottomColor: '#f5f5f4',
         }}
       >
-        <BookRow book={book} />
+        <BookRow book={book} small />
         {!expanded && (
-          <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 6, paddingLeft: 48 }}>
+          <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 5, paddingLeft: 38 }}>
             Tap to add reactions ›
           </Text>
         )}
@@ -1430,20 +1432,20 @@ function RecCard({
       </TouchableOpacity>
 
       {/* ── Action bar ── */}
-      {/* Save is the primary action — visually dominant.                  */}
-      {/* Not for me + More like this are secondary — smaller, lighter.    */}
+      {/* Save is the sole text action.                                          */}
+      {/* Dismiss + More like this are compact symbol buttons — no repeated text */}
       <View style={{
         borderTopWidth: 1,
         borderTopColor: '#f0eeeb',
         flexDirection: 'row',
         alignItems: 'stretch',
       }}>
-        {/* Primary */}
+        {/* Primary text action */}
         <TouchableOpacity
           onPress={handleSavePress}
           disabled={pendingAction}
           style={{
-            flex: 1.5,
+            flex: 1,
             paddingVertical: 11,
             paddingHorizontal: 14,
             justifyContent: 'center',
@@ -1456,29 +1458,29 @@ function RecCard({
           </Text>
         </TouchableOpacity>
 
-        {/* Secondary group */}
+        {/* Dismiss icon — compact, fixed width */}
         <TouchableOpacity
           onPress={handleDismissPress}
           disabled={pendingAction}
           style={{
-            flex: 1,
-            paddingVertical: 11,
-            alignItems: 'center',
+            width: 48,
             justifyContent: 'center',
+            alignItems: 'center',
             borderRightWidth: 1,
             borderRightColor: '#f0eeeb',
           }}
         >
-          <Text style={{ fontSize: 11, color: '#a8a29e' }}>Not for me</Text>
+          <Text style={{ fontSize: 15, color: '#c4b5a5', lineHeight: 20 }}>✕</Text>
         </TouchableOpacity>
 
+        {/* More like this icon */}
         <TouchableOpacity
           onPress={handleMoreLikeThisPress}
           disabled={pendingAction}
-          style={{ flex: 1, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' }}
+          style={{ width: 48, justifyContent: 'center', alignItems: 'center' }}
         >
-          <Text style={{ fontSize: 11, color: moreDone ? '#15803d' : '#a8a29e' }}>
-            {moreDone ? '✓ Noted' : 'More like this'}
+          <Text style={{ fontSize: 15, color: moreDone ? '#15803d' : '#c4b5a5', lineHeight: 20 }}>
+            {moreDone ? '✓' : '↑'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -2515,37 +2517,6 @@ export default function RecommendationsScreen() {
                     </View>
                   )}
 
-                  {/* ── Compact refine-taste prompt ─────────────────────────────
-                      Appears near the top when recs are visible AND the user
-                      has books pending rating/tagging.  Keeps the signal-loop
-                      visible without burying it at the bottom.             */}
-                  {hasRecs && hasAnyTask && (
-                    <TouchableOpacity
-                      onPress={() => {
-                        const el = document?.getElementById?.('refine-section');
-                        // On native: scroll down; on web: scroll to element
-                        // For now, navigate to library where rating lives
-                        router.push('/(tabs)/library');
-                      }}
-                      style={{
-                        flexDirection: 'row', alignItems: 'center',
-                        backgroundColor: '#faf9f7',
-                        borderRadius: 8, borderWidth: 1, borderColor: '#e7e5e4',
-                        paddingVertical: 9, paddingHorizontal: 12,
-                        marginBottom: 16, gap: 8,
-                      }}
-                    >
-                      <View style={{
-                        width: 6, height: 6, borderRadius: 3,
-                        backgroundColor: '#f59e0b',
-                      }} />
-                      <Text style={{ flex: 1, fontSize: 12, color: '#57534e', fontWeight: '500' }}>
-                        {booksToRate.length + booksToTag.length} book{booksToRate.length + booksToTag.length !== 1 ? 's' : ''} to rate or tag — helps sharpen your picks
-                      </Text>
-                      <Text style={{ fontSize: 12, color: '#a8a29e' }}>›</Text>
-                    </TouchableOpacity>
-                  )}
-
                   {/* Save toast */}
                   {saveToast && (
                     <View style={{
@@ -2805,139 +2776,112 @@ export default function RecommendationsScreen() {
                 Section 3 — Shared Books (From Friends + Sent)
             ════════════════════════════════════════════════════════ */}
             <View style={{ marginBottom: 36 }}>
-              {/* Shared Books header — only show label if there's real content */}
-              {(incomingRecs.length > 0 || sentRecs.length > 0) && (
-                <SectionLabel>Shared Books</SectionLabel>
-              )}
+              <SectionLabel>Shared Books</SectionLabel>
 
-              {/* ── From friends sub-section ── */}
-              {incomingRecs.length > 0 && (
-                <Text style={{ fontSize: 12, fontWeight: '600', color: '#78716c', marginBottom: 10, letterSpacing: 0.3 }}>
-                  FROM FRIENDS
-                </Text>
-              )}
-
-              {incomingRecs.length === 0 ? (
-                // Compressed empty state — single line, no heavy card
-                <Text style={{ fontSize: 12, color: '#a8a29e', marginBottom: 16 }}>
-                  No recommendations from friends yet.
-                </Text>
-              ) : (
+              {/* ── Both empty: unified card with prompt + CTA ── */}
+              {incomingRecs.length === 0 && sentRecs.length === 0 && (
                 <View style={{
                   backgroundColor: '#fff',
-                  borderRadius: 14,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: '#e7e5e4',
                   overflow: 'hidden',
-                  shadowColor: '#000',
-                  shadowOpacity: 0.04,
-                  shadowRadius: 6,
-                  shadowOffset: { width: 0, height: 1 },
-                  elevation: 1,
-                  marginBottom: 24,
                 }}>
-                  {incomingRecs.map((rec, idx) => (
-                    <TouchableOpacity
-                      key={rec.id}
-                      onPress={() => router.push('/(tabs)/notes')}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        padding: 13,
-                        borderBottomWidth: idx < incomingRecs.length - 1 ? 1 : 0,
-                        borderBottomColor: '#f5f5f4',
-                      }}
-                    >
-                      <CoverThumb
-                        url={rec.book?.cover_url}
-                        externalId={rec.book?.external_id}
-                        title={rec.book?.title ?? ''}
-                        width={34}
-                        height={50}
-                      />
-                      <View style={{ flex: 1, marginLeft: 12 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }} numberOfLines={1}>
-                          {rec.book?.title ?? ''}
-                        </Text>
-                        <Text style={{ fontSize: 12, color: '#78716c', marginTop: 2 }} numberOfLines={1}>
-                          from {getFirstName(rec.sender)}
-                        </Text>
-                      </View>
-                      <StatusPill status={rec.status} />
-                    </TouchableOpacity>
-                  ))}
-                  <TouchableOpacity
-                    onPress={() => router.push('/(tabs)/notes')}
-                    style={{ padding: 14, alignItems: 'center', borderTopWidth: 1, borderTopColor: '#f5f5f4' }}
-                  >
-                    <Text style={{ fontSize: 13, color: '#78716c', fontWeight: '500' }}>
-                      See all in inbox →
+                  <View style={{ padding: 14 }}>
+                    <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 19, marginBottom: 12 }}>
+                      Share a book with a friend to get started.
                     </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* ── You sent sub-section ── */}
-              {sentRecs.length > 0 && (
-                <Text style={{ fontSize: 12, fontWeight: '600', color: '#78716c', marginBottom: 10, letterSpacing: 0.3 }}>
-                  YOU SENT
-                </Text>
-              )}
-
-              <TouchableOpacity
-                onPress={() => setStep('search')}
-                style={{
-                  backgroundColor: '#1c1917',
-                  borderRadius: 14,
-                  paddingVertical: 15,
-                  alignItems: 'center',
-                  marginBottom: 16,
-                }}
-              >
-                <Text style={{ fontSize: 15, fontWeight: '600', color: '#fff' }}>
-                  Recommend a book
-                </Text>
-              </TouchableOpacity>
-
-              {sentRecs.length === 0 ? null : (
-                <View style={{
-                  backgroundColor: '#fff',
-                  borderRadius: 14,
-                  overflow: 'hidden',
-                  shadowColor: '#000',
-                  shadowOpacity: 0.04,
-                  shadowRadius: 6,
-                  shadowOffset: { width: 0, height: 1 },
-                  elevation: 1,
-                }}>
-                  {sentRecs.map((rec, idx) => (
-                    <View
-                      key={rec.id}
+                    <TouchableOpacity
+                      onPress={() => setStep('search')}
                       style={{
-                        flexDirection: 'row',
+                        backgroundColor: '#1c1917',
+                        borderRadius: 10,
+                        paddingVertical: 11,
                         alignItems: 'center',
-                        padding: 13,
-                        borderBottomWidth: idx < sentRecs.length - 1 ? 1 : 0,
-                        borderBottomColor: '#f5f5f4',
                       }}
                     >
-                      <CoverThumb
-                        url={rec.book?.cover_url}
-                        externalId={rec.book?.external_id}
-                        title={rec.book?.title ?? ''}
-                        width={34}
-                        height={50}
-                      />
-                      <View style={{ flex: 1, marginLeft: 12 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }} numberOfLines={1}>
-                          {rec.book?.title ?? ''}
-                        </Text>
-                        <Text style={{ fontSize: 12, color: '#78716c', marginTop: 2 }} numberOfLines={1}>
-                          to {getFirstName(rec.to_user)}
-                        </Text>
-                      </View>
-                      <StatusPill status={rec.status} />
-                    </View>
-                  ))}
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#fff' }}>
+                        Recommend a book
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
+              )}
+
+              {/* ── From friends ── */}
+              {incomingRecs.length > 0 && (
+                <>
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: '#78716c', marginBottom: 10, letterSpacing: 0.3 }}>
+                    FROM FRIENDS
+                  </Text>
+                  <View style={{
+                    backgroundColor: '#fff', borderRadius: 14, overflow: 'hidden',
+                    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6,
+                    shadowOffset: { width: 0, height: 1 }, elevation: 1, marginBottom: 20,
+                  }}>
+                    {incomingRecs.map((rec, idx) => (
+                      <TouchableOpacity
+                        key={rec.id}
+                        onPress={() => router.push('/(tabs)/notes')}
+                        style={{
+                          flexDirection: 'row', alignItems: 'center', padding: 13,
+                          borderBottomWidth: idx < incomingRecs.length - 1 ? 1 : 0,
+                          borderBottomColor: '#f5f5f4',
+                        }}
+                      >
+                        <CoverThumb url={rec.book?.cover_url} externalId={rec.book?.external_id} title={rec.book?.title ?? ''} width={34} height={50} />
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                          <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }} numberOfLines={1}>{rec.book?.title ?? ''}</Text>
+                          <Text style={{ fontSize: 12, color: '#78716c', marginTop: 2 }} numberOfLines={1}>from {getFirstName(rec.sender)}</Text>
+                        </View>
+                        <StatusPill status={rec.status} />
+                      </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity
+                      onPress={() => router.push('/(tabs)/notes')}
+                      style={{ padding: 13, alignItems: 'center', borderTopWidth: 1, borderTopColor: '#f5f5f4' }}
+                    >
+                      <Text style={{ fontSize: 13, color: '#78716c', fontWeight: '500' }}>See all in inbox →</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+
+              {/* ── Sent ── */}
+              {sentRecs.length > 0 && (
+                <>
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: '#78716c', marginBottom: 10, letterSpacing: 0.3 }}>
+                    YOU SENT
+                  </Text>
+                  <View style={{
+                    backgroundColor: '#fff', borderRadius: 14, overflow: 'hidden',
+                    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6,
+                    shadowOffset: { width: 0, height: 1 }, elevation: 1, marginBottom: 16,
+                  }}>
+                    {sentRecs.map((rec, idx) => (
+                      <View key={rec.id} style={{ flexDirection: 'row', alignItems: 'center', padding: 13, borderBottomWidth: idx < sentRecs.length - 1 ? 1 : 0, borderBottomColor: '#f5f5f4' }}>
+                        <CoverThumb url={rec.book?.cover_url} externalId={rec.book?.external_id} title={rec.book?.title ?? ''} width={34} height={50} />
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                          <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }} numberOfLines={1}>{rec.book?.title ?? ''}</Text>
+                          <Text style={{ fontSize: 12, color: '#78716c', marginTop: 2 }} numberOfLines={1}>to {getFirstName(rec.to_user)}</Text>
+                        </View>
+                        <StatusPill status={rec.status} />
+                      </View>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {/* ── CTA when content exists (not floating alone) ── */}
+              {(incomingRecs.length > 0 || sentRecs.length > 0) && (
+                <TouchableOpacity
+                  onPress={() => setStep('search')}
+                  style={{ paddingVertical: 12, alignItems: 'center' }}
+                >
+                  <Text style={{ fontSize: 13, color: '#78716c', fontWeight: '500' }}>
+                    + Recommend a book
+                  </Text>
+                </TouchableOpacity>
               )}
             </View>
 
