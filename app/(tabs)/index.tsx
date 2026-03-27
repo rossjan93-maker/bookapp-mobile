@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  RefreshControl,
   ScrollView,
   Text,
   TextInput,
@@ -182,42 +183,44 @@ export default function HomeScreen() {
   const [addingId, setAddingId] = useState<string | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useFocusEffect(useCallback(() => {
-    async function init() {
-      if (!supabase) {
-        setFeedLoading(false);
-        setLoadingFriendships(false);
-        return;
-      }
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setFeedLoading(false);
-        setLoadingFriendships(false);
-        return;
-      }
-      setUserId(user.id);
-
-      const meta = user.user_metadata as { first_name?: string } | undefined;
-      if (meta?.first_name) setGreeting(meta.first_name);
-
-      // Friendships must resolve first so we can scope the feed to accepted friends only.
-      const rows = await loadFriendships(user.id);
-      const acceptedFriendIds = rows
-        .filter(f => f.status === 'accepted')
-        .map(f => (f.requester_id === user.id ? f.addressee_id : f.requester_id));
-
-      await Promise.all([
-        loadFeed([user.id, ...acceptedFriendIds]),
-        loadCurrentRead(user.id),
-        loadPendingRecs(user.id),
-        loadBooksThisYear(user.id),
-        computeTasteProfile(supabase!, user.id).then(setTasteProfile).catch(() => {}),
-      ]);
+  async function loadAll() {
+    if (!supabase) {
       setFeedLoading(false);
       setLoadingFriendships(false);
+      return;
     }
-    init();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setFeedLoading(false);
+      setLoadingFriendships(false);
+      return;
+    }
+    setUserId(user.id);
+
+    const meta = user.user_metadata as { first_name?: string } | undefined;
+    if (meta?.first_name) setGreeting(meta.first_name);
+
+    // Friendships must resolve first so we can scope the feed to accepted friends only.
+    const rows = await loadFriendships(user.id);
+    const acceptedFriendIds = rows
+      .filter(f => f.status === 'accepted')
+      .map(f => (f.requester_id === user.id ? f.addressee_id : f.requester_id));
+
+    await Promise.all([
+      loadFeed([user.id, ...acceptedFriendIds]),
+      loadCurrentRead(user.id),
+      loadPendingRecs(user.id),
+      loadBooksThisYear(user.id),
+      computeTasteProfile(supabase!, user.id).then(setTasteProfile).catch(() => {}),
+    ]);
+    setFeedLoading(false);
+    setLoadingFriendships(false);
+  }
+
+  useFocusEffect(useCallback(() => {
+    loadAll();
   }, []));
 
   // ── Data loaders ─────────────────────────────────────────────────────────────
@@ -476,10 +479,19 @@ export default function HomeScreen() {
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 
+  async function handleRefresh() {
+    setRefreshing(true);
+    await loadAll();
+    setRefreshing(false);
+  }
+
   return (
     <ScrollView
       style={{ backgroundColor: '#faf9f7' }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
+      }
     >
       {/* ── Hero heading ── */}
       <View style={{ marginBottom: 28 }}>

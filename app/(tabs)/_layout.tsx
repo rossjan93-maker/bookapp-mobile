@@ -1,6 +1,6 @@
 import { createContext, useEffect, useRef, useState } from 'react';
-import { Animated } from 'react-native';
-import { Tabs } from 'expo-router';
+import { Animated, PanResponder, View } from 'react-native';
+import { Tabs, useRouter, useSegments } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import {
@@ -62,6 +62,20 @@ function PulsingDot() {
   );
 }
 
+// ─── Tab ordering (matches Tabs.Screen declaration order) ─────────────────────
+
+const TAB_ROUTES = ['index', 'search', 'library', 'notes', 'profile'] as const;
+
+// Typed route paths for each tab.
+// The index tab's canonical pathname is '/' (not '/(tabs)/index') in Expo Router.
+const TAB_PATHS = {
+  index:   '/'               as const,
+  search:  '/(tabs)/search'  as const,
+  library: '/(tabs)/library' as const,
+  notes:   '/(tabs)/notes'   as const,
+  profile: '/(tabs)/profile' as const,
+} satisfies Record<typeof TAB_ROUTES[number], string>;
+
 // ─── Layout ───────────────────────────────────────────────────────────────────
 
 export default function TabsLayout() {
@@ -69,6 +83,12 @@ export default function TabsLayout() {
   const [guidedStep,  setGuidedStep]  = useState<GuidedStep>(99);
   const [showNoted,   setShowNoted]   = useState(false);
   const notedShown = useRef(false);
+  const router        = useRouter();
+  const segments      = useSegments();
+  const routerRef     = useRef(router);
+  const segmentsRef   = useRef(segments);
+  useEffect(() => { routerRef.current   = router;   }, [router]);
+  useEffect(() => { segmentsRef.current = segments; }, [segments]);
 
   // Load guided step from storage on mount
   useEffect(() => {
@@ -107,9 +127,69 @@ export default function TabsLayout() {
     fetchCount();
   }, []);
 
+  // Keep a ref to guidedStep so the panResponder closure always sees latest value
+  const guidedStepRef = useRef<GuidedStep>(guidedStep);
+  useEffect(() => {
+    guidedStepRef.current = guidedStep;
+  }, [guidedStep]);
+
+  // ── Swipe-to-switch-tabs gesture ──────────────────────────────────────────
+  // Detects a horizontal swipe (≥ 50px, horizontal-dominant) and navigates
+  // to the adjacent tab. Suppressed on 'search' tab (card swipe conflicts)
+  // and while any onboarding walkthrough overlay is active (guidedStep < 99).
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        const { dx, dy } = gestureState;
+
+        // Suppress capture during any active onboarding walkthrough step
+        if (guidedStepRef.current < 99) return false;
+
+        // Determine current route (using ref to avoid stale closure)
+        const segs = segmentsRef.current;
+        const lastSeg = segs[segs.length - 1] ?? 'index';
+        const currentRoute = lastSeg === '(tabs)' ? 'index' : lastSeg;
+
+        // Suppress capture on search tab — card swipe interactions must take priority
+        if (currentRoute === 'search') return false;
+
+        // Only capture if the swipe is clearly horizontal-dominant
+        return Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 10;
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        const { dx, dy } = gestureState;
+        // Must be horizontal-dominant and exceed minimum swipe distance
+        if (Math.abs(dx) < 50 || Math.abs(dx) <= Math.abs(dy) * 1.5) return;
+
+        // Determine current tab from segments (using ref to always read latest)
+        const segs = segmentsRef.current;
+        const lastSeg = segs[segs.length - 1] ?? 'index';
+        const currentRoute = lastSeg === '(tabs)' ? 'index' : lastSeg;
+
+        const currentIdx = TAB_ROUTES.indexOf(currentRoute as typeof TAB_ROUTES[number]);
+        if (currentIdx === -1) return;
+
+        if (dx < 0) {
+          // Swipe left → navigate to next tab
+          const nextIdx = currentIdx + 1;
+          if (nextIdx < TAB_ROUTES.length) {
+            routerRef.current.navigate({ pathname: TAB_PATHS[TAB_ROUTES[nextIdx]] });
+          }
+        } else {
+          // Swipe right → navigate to previous tab
+          const prevIdx = currentIdx - 1;
+          if (prevIdx >= 0) {
+            routerRef.current.navigate({ pathname: TAB_PATHS[TAB_ROUTES[prevIdx]] });
+          }
+        }
+      },
+    })
+  ).current;
+
   return (
     <BadgeContext.Provider value={{ newRecCount, setNewRecCount }}>
       <GuidedTourContext.Provider value={{ step: guidedStep, advance: advanceGuided }}>
+        <View style={{ flex: 1 }} {...panResponder.panHandlers}>
         <Tabs
           screenOptions={{
             tabBarActiveTintColor:   '#1c1917',
@@ -212,6 +292,7 @@ export default function TabsLayout() {
         {guidedStep === 2 && (
           <GuidedLibraryBanner onDismiss={() => advanceGuided(2)} />
         )}
+        </View>
       </GuidedTourContext.Provider>
     </BadgeContext.Provider>
   );

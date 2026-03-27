@@ -1,5 +1,5 @@
 import { useCallback, useContext, useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { BadgeContext } from './_layout';
@@ -61,43 +61,45 @@ export default function InboxScreen() {
   const [loading, setLoading]             = useState(true);
   const [error, setError]                 = useState<string | null>(null);
   const [savingId, setSavingId]           = useState<string | null>(null);
+  const [refreshing, setRefreshing]       = useState(false);
 
   useEffect(() => {
     const count = items.filter(r => r.status === 'sent').length;
     setNewRecCount(count);
   }, [items]);
 
-  useFocusEffect(useCallback(() => {
-    async function load() {
-      if (!supabase) {
-        setError('Supabase not configured.');
-        setLoading(false);
-        return;
-      }
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setError('No signed-in user.');
-        setLoading(false);
-        return;
-      }
-      setCurrentUserId(user.id);
-
-      const { data, error: dbError } = await supabase
-        .from('recommendations')
-        .select(
-          'id, status, book_id, note, sender:profiles!recommendations_from_user_id_fkey(username, first_name, last_name), book:books(title, author, cover_url, external_id)'
-        )
-        .eq('to_user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (dbError) {
-        setError('Could not load inbox.');
-      } else {
-        setItems((data as InboxItem[]) ?? []);
-      }
+  async function loadNotes() {
+    if (!supabase) {
+      setError('Supabase not configured.');
       setLoading(false);
+      return;
     }
-    load();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setError('No signed-in user.');
+      setLoading(false);
+      return;
+    }
+    setCurrentUserId(user.id);
+
+    const { data, error: dbError } = await supabase
+      .from('recommendations')
+      .select(
+        'id, status, book_id, note, sender:profiles!recommendations_from_user_id_fkey(username, first_name, last_name), book:books(title, author, cover_url, external_id)'
+      )
+      .eq('to_user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (dbError) {
+      setError('Could not load inbox.');
+    } else {
+      setItems((data as InboxItem[]) ?? []);
+    }
+    setLoading(false);
+  }
+
+  useFocusEffect(useCallback(() => {
+    loadNotes();
   }, []));
 
   // ── Save handler (logic unchanged) ────────────────────────────────────────
@@ -214,31 +216,10 @@ export default function InboxScreen() {
 
   // ── Empty state ───────────────────────────────────────────────────────────
 
-  if (items.length === 0) {
-    return (
-      <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
-        <View style={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 0 }}>
-          <Text style={{
-            fontSize: 28,
-            fontWeight: '800',
-            color: '#1c1917',
-            letterSpacing: -0.5,
-            marginBottom: 5,
-          }}>
-            Inbox
-          </Text>
-          <Text style={{ fontSize: 14, color: '#a8a29e' }}>Your recommendations from friends</Text>
-        </View>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
-          <Text style={{ fontSize: 17, fontWeight: '700', color: '#1c1917', marginBottom: 8, textAlign: 'center' }}>
-            Nothing here yet
-          </Text>
-          <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
-            When a friend recommends a book,{'\n'}it will show up here.
-          </Text>
-        </View>
-      </View>
-    );
+  async function handleRefresh() {
+    setRefreshing(true);
+    await loadNotes();
+    setRefreshing(false);
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -246,9 +227,43 @@ export default function InboxScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: '#faf9f7' }}
-      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }}
+      contentContainerStyle={
+        items.length === 0
+          ? { flex: 1, paddingHorizontal: 20, paddingTop: 24 }
+          : { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }
+      }
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
+      }
     >
+      {/* ── Empty state ── */}
+      {items.length === 0 && (
+        <>
+          <View style={{ paddingBottom: 0 }}>
+            <Text style={{
+              fontSize: 28,
+              fontWeight: '800',
+              color: '#1c1917',
+              letterSpacing: -0.5,
+              marginBottom: 5,
+            }}>
+              Inbox
+            </Text>
+            <Text style={{ fontSize: 14, color: '#a8a29e' }}>Your recommendations from friends</Text>
+          </View>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: '#1c1917', marginBottom: 8, textAlign: 'center' }}>
+              Nothing here yet
+            </Text>
+            <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
+              When a friend recommends a book,{'\n'}it will show up here.
+            </Text>
+          </View>
+        </>
+      )}
+
       {/* ── Header ── */}
+      {items.length > 0 && (
       <View style={{ marginBottom: 24 }}>
         <Text style={{
           fontSize: 28,
@@ -265,6 +280,7 @@ export default function InboxScreen() {
             : 'All caught up'}
         </Text>
       </View>
+      )}
 
       {/* ── New ── */}
       {newItems.length > 0 && (

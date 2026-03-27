@@ -8,6 +8,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   Text,
   TextInput,
@@ -1852,11 +1853,19 @@ export default function RecommendationsScreen() {
   const [loadingFriends, setLoadingFriends] = useState(false);
   const [sendingTo, setSendingTo]       = useState<string | null>(null);
   const [sendResult, setSendResult]     = useState<{ ok: boolean; message: string } | null>(null);
+  const [refreshing, setRefreshing]     = useState(false);
 
   // Reload hub whenever screen comes into focus
   useFocusEffect(useCallback(() => {
     if (step === 'hub') loadHub();
   }, [step]));
+
+  async function handleRefresh() {
+    if (step !== 'hub') return;
+    setRefreshing(true);
+    await loadHub();
+    setRefreshing(false);
+  }
 
   // ── Deck replenishment ────────────────────────────────────────────────────
   // When the visible deck empties entirely after user actions (save/dismiss/
@@ -2925,6 +2934,9 @@ export default function RecommendationsScreen() {
       <ScrollView
         style={{ flex: 1, backgroundColor: '#faf9f7' }}
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 48 }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
+        }
       >
         {/* ── Header ── */}
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 28 }}>

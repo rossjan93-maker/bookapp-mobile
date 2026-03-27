@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  RefreshControl,
   ScrollView,
   Text,
   TouchableOpacity,
@@ -121,10 +122,9 @@ export default function ProfileScreen() {
   const [acceptedFriends, setAcceptedFriends]   = useState<AcceptedFriend[]>([]);
   const [booksThisYear, setBooksThisYear]       = useState<YearBook[]>([]);
   const [goalExpanded, setGoalExpanded]         = useState(false);
+  const [refreshing, setRefreshing]             = useState(false);
 
-
-  useFocusEffect(useCallback(() => {
-    async function load() {
+  async function loadProfile() {
       if (!supabase) { setError('Supabase not configured.'); setLoading(false); return; }
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setError('No signed-in user.'); setLoading(false); return; }
@@ -351,8 +351,10 @@ export default function ProfileScreen() {
       ));
 
       setLoading(false);
-    }
-    load();
+  }
+
+  useFocusEffect(useCallback(() => {
+    loadProfile();
   }, []));
 
   async function handleAccept(friendshipId: string) {
@@ -396,11 +398,20 @@ export default function ProfileScreen() {
     !!prefs.favorite_authors
   );
 
+  async function handleRefresh() {
+    setRefreshing(true);
+    await loadProfile();
+    setRefreshing(false);
+  }
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: '#faf9f7' }}
       contentContainerStyle={{ paddingBottom: 48 }}
       keyboardShouldPersistTaps="handled"
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
+      }
     >
       {/* ── Profile header ── */}
       <View style={{

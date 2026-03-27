@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { fetchGoogleBooksCoverUrl } from '../../lib/googleBooks';
 import { repairBooksMetadata } from '../../lib/metadataRepair';
-import { ActivityIndicator, FlatList, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, Modal, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
@@ -131,102 +131,102 @@ export default function LibraryScreen() {
   // Starts empty (all years collapsed). User taps a year row to expand/collapse it.
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
   const [hasGoodreadsImport, setHasGoodreadsImport] = useState<boolean | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useFocusEffect(useCallback(() => {
-    // Background cover enrichment for any book in this library load with no
-    // cover_url. Covers matched books that were pre-existing at import time and
-    // thus skipped by the post-import enrichMissingCovers pass (which only runs
-    // on newBookIds). Fails quietly; updates local state as each cover resolves.
-    async function backfillCovers(bookIds: string[]) {
-      if (!supabase || bookIds.length === 0) return;
-      const { data: books } = await supabase
-        .from('books')
-        .select('id, isbn13, isbn, title, author')
-        .in('id', bookIds.slice(0, 30))
-        .is('cover_url', null);
-      for (const book of (books ?? [])) {
-        try {
-          const url = await fetchGoogleBooksCoverUrl({
-            isbn13: (book as { isbn13?: string | null }).isbn13,
-            isbn:   (book as { isbn?:   string | null }).isbn,
-            title:  book.title  ?? '',
-            author: book.author ?? '',
-          });
-          if (url) {
-            await supabase.from('books').update({ cover_url: url }).eq('id', book.id);
-            setItems(prev => prev.map(it =>
-              it.book_id === book.id && it.book
-                ? { ...it, book: { ...it.book, cover_url: url } }
-                : it,
-            ));
-          }
-        } catch {
-          // fail quietly — a missing cover is never a blocker
+  // Background cover enrichment for any book in this library load with no
+  // cover_url. Fails quietly; updates local state as each cover resolves.
+  async function backfillCovers(bookIds: string[]) {
+    if (!supabase || bookIds.length === 0) return;
+    const { data: books } = await supabase
+      .from('books')
+      .select('id, isbn13, isbn, title, author')
+      .in('id', bookIds.slice(0, 30))
+      .is('cover_url', null);
+    for (const book of (books ?? [])) {
+      try {
+        const url = await fetchGoogleBooksCoverUrl({
+          isbn13: (book as { isbn13?: string | null }).isbn13,
+          isbn:   (book as { isbn?:   string | null }).isbn,
+          title:  book.title  ?? '',
+          author: book.author ?? '',
+        });
+        if (url) {
+          await supabase.from('books').update({ cover_url: url }).eq('id', book.id);
+          setItems(prev => prev.map(it =>
+            it.book_id === book.id && it.book
+              ? { ...it, book: { ...it.book, cover_url: url } }
+              : it,
+          ));
         }
+      } catch {
+        // fail quietly — a missing cover is never a blocker
       }
     }
+  }
 
-    async function load() {
-      if (!supabase) { setError('Supabase not configured.'); setLoading(false); return; }
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setError('No signed-in user.'); setLoading(false); return; }
-      setCurrentUserId(user.id);
+  async function loadBooks() {
+    if (!supabase) { setError('Supabase not configured.'); setLoading(false); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setError('No signed-in user.'); setLoading(false); return; }
+    setCurrentUserId(user.id);
 
-      // Load yearly goal for pacing-state card colors
-      const profileRes = await supabase
-        .from('profiles')
-        .select('yearly_reading_goal')
-        .eq('id', user.id)
-        .single();
-      setYearlyGoal(profileRes.data?.yearly_reading_goal ?? null);
+    // Load yearly goal for pacing-state card colors
+    const profileRes = await supabase
+      .from('profiles')
+      .select('yearly_reading_goal')
+      .eq('id', user.id)
+      .single();
+    setYearlyGoal(profileRes.data?.yearly_reading_goal ?? null);
 
-      // Try with progress columns; fall back gracefully if migration not yet applied.
-      let result = await supabase
+    // Try with progress columns; fall back gracefully if migration not yet applied.
+    let result = await supabase
+      .from('user_books')
+      .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, book:books(title, author, cover_url, external_id, page_count)')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (result.error) {
+      result = await supabase
         .from('user_books')
-        .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, book:books(title, author, cover_url, external_id, page_count)')
+        .select('id, book_id, status, started_at, finished_at, progress_updated_at, book:books(title, author, cover_url, external_id)')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
-
-      if (result.error) {
-        result = await supabase
-          .from('user_books')
-          .select('id, book_id, status, started_at, finished_at, progress_updated_at, book:books(title, author, cover_url, external_id)')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
-      }
-
-      if (result.error) {
-        setError('Could not load library.');
-      } else {
-        const loadedItems = (result.data as unknown as UserBook[]) ?? [];
-        setItems(loadedItems);
-        // Fire-and-forget: backfill missing covers for any book in this load.
-        // Updates local state immediately so covers appear without a reload.
-        const missingCoverIds = [...new Set(
-          loadedItems.filter(it => it.book && !it.book.cover_url).map(it => it.book_id),
-        )];
-        backfillCovers(missingCoverIds).catch(() => {});
-
-        // Fire-and-forget: full metadata repair (description, subjects, page_count,
-        // plus cover as a secondary path) for any book missing any field.
-        // Persists to the books table; visible on next Book Detail open.
-        // Subjects (via Open Library) are now included in the repair model.
-        const allLibraryBookIds = [...new Set(
-          loadedItems.filter(it => it.book_id).map(it => it.book_id),
-        )];
-        repairBooksMetadata(allLibraryBookIds, { cap: 30 }).catch(() => {});
-
-        // Check whether user has any Goodreads-imported books
-        const { count: importedCount } = await supabase
-          .from('user_books')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .eq('import_source', 'goodreads');
-        setHasGoodreadsImport((importedCount ?? 0) > 0);
-      }
-      setLoading(false);
     }
-    load();
+
+    if (result.error) {
+      setError('Could not load library.');
+    } else {
+      const loadedItems = (result.data as unknown as UserBook[]) ?? [];
+      setItems(loadedItems);
+      // Fire-and-forget: backfill missing covers for any book in this load.
+      // Updates local state immediately so covers appear without a reload.
+      const missingCoverIds = [...new Set(
+        loadedItems.filter(it => it.book && !it.book.cover_url).map(it => it.book_id),
+      )];
+      backfillCovers(missingCoverIds).catch(() => {});
+
+      // Fire-and-forget: full metadata repair (description, subjects, page_count,
+      // plus cover as a secondary path) for any book missing any field.
+      // Persists to the books table; visible on next Book Detail open.
+      // Subjects (via Open Library) are now included in the repair model.
+      const allLibraryBookIds = [...new Set(
+        loadedItems.filter(it => it.book_id).map(it => it.book_id),
+      )];
+      repairBooksMetadata(allLibraryBookIds, { cap: 30 }).catch(() => {});
+
+      // Check whether user has any Goodreads-imported books
+      const { count: importedCount } = await supabase
+        .from('user_books')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('import_source', 'goodreads');
+      setHasGoodreadsImport((importedCount ?? 0) > 0);
+    }
+    setLoading(false);
+  }
+
+  useFocusEffect(useCallback(() => {
+    loadBooks();
   }, []));
 
   // ── Business logic (unchanged) ────────────────────────────────────────────
@@ -480,6 +480,12 @@ export default function LibraryScreen() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
+  async function handleRefresh() {
+    setRefreshing(true);
+    await loadBooks();
+    setRefreshing(false);
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
     <FlatList
@@ -487,6 +493,9 @@ export default function LibraryScreen() {
       keyExtractor={item => isYearSeparator(item) ? item.key : item.id}
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 0, paddingBottom: 40 }}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
+      }
       ListHeaderComponent={
         <View>
           {/* ── Editorial header ── */}
