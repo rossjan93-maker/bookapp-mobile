@@ -1,0 +1,45 @@
+We have identified the two real state-authority bugs in recommendation engagement. Fix these before any further UX polish.
+
+Bugs:
+1. Dismiss is not authoritative during the 4-second undo window.
+   - If the user dismisses a card and switches tabs before the timer expires, the card can reappear because _trackActedOn() is delayed and _recSession still contains it.
+
+2. Fresh recommendation commits do not consistently filter acted-on IDs.
+   - reloadRecs() and background refresh can reintroduce cards that were Saved or marked More like this because filterActedOn is not applied before commit.
+
+Required changes:
+
+1. Immediate acted-on exclusion for all three actions
+- Save, Dismiss, More like this should all add the card to the local acted-on exclusion set immediately.
+- The card should be excluded from visible deck, cache restore, replenishment, and background refresh immediately.
+
+2. Undo model for dismiss
+- Introduce a local pending-dismiss state:
+  - dismissed_pending_undo: excluded immediately from all deck/render/cache-replay paths
+  - if Undo tapped: remove from pending exclusion and reinsert into original bucket
+  - if timer expires: persist dismissal to backend / feedback store as committed
+- Do NOT wait until timer expiry to mark the card as excluded in client state.
+
+3. Apply filterActedOn on every inbound recommendation commit
+- cache restore
+- reloadRecs() result commit
+- background refresh commit
+- any other setRecommendations / setContinuations / setDiscoveries commit path
+
+4. Replenishment must honor acted-on IDs
+- Fresh replenishment results must be filtered before commit
+- Saved / dismissed / more-like-this cards must not re-enter through replenishment
+
+5. Add logging for validation
+- [REC_FILTER_APPLIED] source=cache_restore|reload_recs|background_refresh before_count= after_count=
+- [REC_ACTION_STATE] action=save|dismiss|more_like_this status=pending|committed|undone book_id=
+
+Return:
+- exact files changed
+- exact diff for immediate exclusion + undo model
+- exact diff for filterActedOn on all commit paths
+- one behavior trace for:
+  a) dismiss + tab switch before undo expiry
+  b) save + replenishment
+  c) more-like-this + background refresh
+showing the card does not reappear

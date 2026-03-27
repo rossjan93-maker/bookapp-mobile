@@ -1509,14 +1509,40 @@ type RecSessionCache = {
 let _recSession: RecSessionCache | null = null;
 
 // ── Acted-on ID tracking ───────────────────────────────────────────────────────
-// Module-level set of recommendation IDs (external_id or catalog UUID) the
-// current user has saved, dismissed, or "more like this'd".  Used to filter
-// cached recs on tab revisit so acted-on cards never reappear.
-// Cleared when user ID changes; populated from AsyncStorage on cold start
-// and updated synchronously on every action.
+//
+// Two sets manage card exclusion:
+//
+//   _actedOnIds     — permanently acted-on (save, more-like-this, dismiss after
+//                     undo window expires).  Persisted to AsyncStorage.
+//   _pendingUndoIds — dismissed but undo window still live.  Never persisted —
+//                     if undo fires, the entry is removed cleanly with no
+//                     AsyncStorage rewrite needed.
+//
+// filterActedOn checks BOTH sets, so a pending-undo card is excluded from every
+// commit path (cache restore, background refresh, reloadRecs) even before the
+// 4-second timer fires.  This fixes the "dismiss + tab switch" regression.
+//
+// Cleared when user ID changes; _actedOnIds populated from AsyncStorage on
+// cold start; _pendingUndoIds starts empty on each app launch (cold starts
+// cannot be mid-undo-window).
+
 let _actedOnIds:    Set<string> = new Set();
+let _pendingUndoIds: Set<string> = new Set();
 let _actedOnUserId: string | null = null;
 
+// Excludes a book that has been permanently acted on OR is pending dismiss-undo.
+// Module-level so it can be called from reloadRecs and background refresh
+// commit paths, not only inside loadHub.
+function filterActedOn(b: ScoredBook): boolean {
+  return (
+    !_actedOnIds.has(b.id) &&
+    !(b.external_id && _actedOnIds.has(b.external_id)) &&
+    !_pendingUndoIds.has(b.id) &&
+    !(b.external_id && _pendingUndoIds.has(b.external_id))
+  );
+}
+
+// Permanently marks a book as acted on (save / more-like-this / dismiss-commit).
 function _trackActedOn(userId: string, book: ScoredBook): void {
   if (_actedOnUserId !== userId) {
     _actedOnIds    = new Set();
@@ -1526,6 +1552,26 @@ function _trackActedOn(userId: string, book: ScoredBook): void {
   _actedOnIds.add(book.id);
   const ids = [book.external_id, book.id].filter(Boolean) as string[];
   addActedOnIds(userId, ids).catch(() => {});
+}
+
+// Immediately marks a dismiss as pending-undo.  Card is excluded from all
+// commit paths at once, but no AsyncStorage write yet (undo is still possible).
+function _trackActedOnPending(book: ScoredBook): void {
+  if (book.external_id) _pendingUndoIds.add(book.external_id);
+  _pendingUndoIds.add(book.id);
+}
+
+// Called when the undo window expires — promotes pending → permanent.
+function _commitPendingToActedOn(userId: string, book: ScoredBook): void {
+  if (book.external_id) _pendingUndoIds.delete(book.external_id);
+  _pendingUndoIds.delete(book.id);
+  _trackActedOn(userId, book);
+}
+
+// Called when the user taps Undo — removes from pending without any writes.
+function _cancelPendingUndo(book: ScoredBook): void {
+  if (book.external_id) _pendingUndoIds.delete(book.external_id);
+  _pendingUndoIds.delete(book.id);
 }
 
 // Dismiss undo state type
@@ -1697,19 +1743,17 @@ export default function RecommendationsScreen() {
     let cached = _recSession && _recSession.userId === user.id ? _recSession : null;
 
     // ── Acted-on ID sync ──────────────────────────────────────────────────
-    // Ensure the module-level set is scoped to the current user.
-    // On user change, reset and reload from AsyncStorage so acted-on IDs
-    // from a previous session survive an app restart (cold start path).
+    // Ensure the module-level sets are scoped to the current user.
+    // On user change, reset both sets and reload persisted IDs from
+    // AsyncStorage so acted-on cards are excluded even on cold start.
+    // _pendingUndoIds is always empty at this point (cold starts cannot be
+    // mid-undo-window) so it only needs clearing on user switch.
     if (_actedOnUserId !== user.id) {
       const stored = await loadActedOnIds(user.id);
       _actedOnIds    = stored;
+      _pendingUndoIds = new Set();
       _actedOnUserId = user.id;
     }
-
-    // Helper: exclude any book the user has already acted on (save/dismiss/more)
-    const filterActedOn = (b: ScoredBook) =>
-      !_actedOnIds.has(b.id) &&
-      !(b.external_id && _actedOnIds.has(b.external_id));
 
     // ── Fast-path 2: restore from persistent AsyncStorage cache (~30ms) ───
     // Only reached on cold start (app restart) when _recSession is empty.
@@ -1744,11 +1788,21 @@ export default function RecommendationsScreen() {
         `| age_ms=${Date.now() - cached.loadedAt}`,
         `| recs=${cached.recs.length}`,
       );
-      // Filter out any recs the user has already acted on so they never
-      // reappear on tab revisit due to a stale cache restore.
-      setRecommendations(cached.recs.filter(filterActedOn));
-      setContinuations(cached.continuations.filter(filterActedOn));
-      setDiscoveries(cached.discoveries.filter(filterActedOn));
+      // Filter out any recs the user has already acted on (both permanently
+      // acted-on and pending-undo dismiss) so they never reappear on revisit.
+      const _crRecs   = cached.recs.filter(filterActedOn);
+      const _crConts  = cached.continuations.filter(filterActedOn);
+      const _crDiscs  = cached.discoveries.filter(filterActedOn);
+      if (__DEV__) console.log('[REC_FILTER_APPLIED]',
+        'source=cache_restore',
+        `| before_count=${cached.recs.length + cached.continuations.length + cached.discoveries.length}`,
+        `| after_count=${_crRecs.length + _crConts.length + _crDiscs.length}`,
+        `| acted_on=${_actedOnIds.size}`,
+        `| pending_undo=${_pendingUndoIds.size}`,
+      );
+      setRecommendations(_crRecs);
+      setContinuations(_crConts);
+      setDiscoveries(_crDiscs);
       setRecsMeta(cached.meta);
       setRecsQualityGate(cached.qualityGate);
       setRecMode(cached.recMode);
@@ -2065,9 +2119,19 @@ export default function RecommendationsScreen() {
       );
 
       if (__DEV__) console.log('[PERF] phase2_commit', `| recs=${recs.length}`);
-      setRecommendations(recs);
-      setContinuations(recResult.continuations ?? []);
-      setDiscoveries(recResult.discoveries ?? recs);
+      const _bgRecs  = recs.filter(filterActedOn);
+      const _bgConts = (recResult.continuations ?? []).filter(filterActedOn);
+      const _bgDiscs = (recResult.discoveries   ?? recs).filter(filterActedOn);
+      if (__DEV__) console.log('[REC_FILTER_APPLIED]',
+        'source=background_refresh',
+        `| before_count=${recs.length + (recResult.continuations ?? []).length + (recResult.discoveries ?? recs).length}`,
+        `| after_count=${_bgRecs.length + _bgConts.length + _bgDiscs.length}`,
+        `| acted_on=${_actedOnIds.size}`,
+        `| pending_undo=${_pendingUndoIds.size}`,
+      );
+      setRecommendations(_bgRecs);
+      setContinuations(_bgConts);
+      setDiscoveries(_bgDiscs);
       setRecsMeta(meta);
       setRecsQualityGate(meta.quality_gate !== 'passed' ? meta.quality_gate : null);
       setRecMode(meta.mode ?? 'deterministic');
@@ -2222,9 +2286,19 @@ export default function RecommendationsScreen() {
         `| mode=${meta.mode ?? 'deterministic'}`,
         `| intent=${isIntentActive(intent) ? intent.book_title ?? 'active' : 'none'}`,
       );
-      setRecommendations(recs);
-      setContinuations(intentResult.continuations ?? []);
-      setDiscoveries(intentResult.discoveries ?? recs);
+      const _rrRecs  = recs.filter(filterActedOn);
+      const _rrConts = (intentResult.continuations ?? []).filter(filterActedOn);
+      const _rrDiscs = (intentResult.discoveries   ?? recs).filter(filterActedOn);
+      if (__DEV__) console.log('[REC_FILTER_APPLIED]',
+        'source=reload_recs',
+        `| before_count=${recs.length + (intentResult.continuations ?? []).length + (intentResult.discoveries ?? recs).length}`,
+        `| after_count=${_rrRecs.length + _rrConts.length + _rrDiscs.length}`,
+        `| acted_on=${_actedOnIds.size}`,
+        `| pending_undo=${_pendingUndoIds.size}`,
+      );
+      setRecommendations(_rrRecs);
+      setContinuations(_rrConts);
+      setDiscoveries(_rrDiscs);
       setRecsMeta(meta);
       setRecsQualityGate(meta.quality_gate !== 'passed' ? meta.quality_gate : null);
     } catch {
@@ -2260,6 +2334,7 @@ export default function RecommendationsScreen() {
 
     // Track locally + persist so this card is filtered on next cache restore
     _trackActedOn(currentUserId, book);
+    if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=save', 'status=committed', `| book_id=${book.id}`, `| external_id=${book.external_id ?? 'none'}`);
     setFeedbackCtx(prev => {
       const next = new Set(prev.savedIds);
       if (book.external_id) next.add(book.external_id);
@@ -2324,6 +2399,14 @@ export default function RecommendationsScreen() {
     setContinuations(prev   => prev.filter(bookFilter));
     setDiscoveries(prev     => prev.filter(bookFilter));
 
+    // ── Immediate exclusion (pending-undo state) ───────────────────────────────
+    // Mark the card as pending-undo RIGHT NOW so filterActedOn removes it from
+    // every inbound commit path (cache restore, background refresh, reloadRecs)
+    // even while the undo window is still live.  If the user taps Undo, it is
+    // removed from the pending set cleanly without any AsyncStorage rewrite.
+    _trackActedOnPending(book);
+    if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', 'status=pending', `| book_id=${book.id}`, `| external_id=${book.external_id ?? 'none'}`);
+
     // Determine which bucket this card was in (for undo re-insertion)
     const wasInContinuations = prevContinuations.some(b => b.id === book.id);
     const bucket: DismissUndoState['bucket'] = wasInContinuations
@@ -2337,9 +2420,10 @@ export default function RecommendationsScreen() {
 
     // ── Undo window: 4 seconds ────────────────────────────────────────────────
     const timerId = setTimeout(() => {
-      // Undo window expired — commit the dismissal
+      // Undo window expired — promote pending → committed, persist to backend.
       setDismissUndo(null);
-      _trackActedOn(currentUserId!, book);
+      _commitPendingToActedOn(currentUserId!, book);
+      if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', 'status=committed', `| book_id=${book.id}`, `| external_id=${book.external_id ?? 'none'}`);
       setFeedbackCtx(prev => {
         const next = new Set(prev.dismissedIds);
         if (book.external_id) next.add(book.external_id);
@@ -2357,6 +2441,9 @@ export default function RecommendationsScreen() {
     clearTimeout(dismissUndo.timerId);
     const { book, bucket } = dismissUndo;
     setDismissUndo(null);
+    // Remove from pending-undo set so the card is no longer excluded
+    _cancelPendingUndo(book);
+    if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', 'status=undone', `| book_id=${book.id}`, `| external_id=${book.external_id ?? 'none'}`);
     // Re-insert the book at the top of its original bucket
     if (bucket === 'continuations') {
       setContinuations(prev => [book, ...prev]);
@@ -2381,6 +2468,7 @@ export default function RecommendationsScreen() {
 
     // Track so card doesn't reappear on revisit
     _trackActedOn(currentUserId, book);
+    if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=more_like_this', 'status=committed', `| book_id=${book.id}`, `| external_id=${book.external_id ?? 'none'}`);
 
     // Persist feedback + update genre boost for immediate scoring effect
     persistFeedback(supabase, currentUserId, book, 'more_like_this').catch(() => {});
