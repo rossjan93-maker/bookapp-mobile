@@ -1081,11 +1081,11 @@ function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | n
   if (bd.saga_label && bd.saga_name) {
     switch (bd.saga_label) {
       case 'saga_entry':
-        return `Where the ${bd.saga_name} saga begins`;
+        return `Start at the beginning of the ${bd.saga_name} saga.`;
       case 'saga_continuation':
-        return `Continue the ${bd.saga_name} saga`;
+        return `Continue the ${bd.saga_name} saga.`;
       case 'saga_next_series':
-        return `Next chapter of the ${bd.saga_name} saga`;
+        return `Next chapter of the ${bd.saga_name} saga.`;
     }
   }
 
@@ -1097,10 +1097,7 @@ function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | n
 
     // Starter: book is position 1 in the series
     if (pos === 1) {
-      if (bd.series_total != null && bd.series_total > 1) {
-        return `Start the ${name} series \u2014 ${bd.series_total} books`;
-      }
-      return `The best place to start the ${name} series`;
+      return `Start with book one of the ${name}.`;
     }
 
     // Continuation: only make a specific claim when history is confirmed contiguous.
@@ -1561,7 +1558,7 @@ function RecCard({
             fontWeight: '700',
             color: confirmState === 'save' ? '#15803d' : '#5b21b6',
           }}>
-            {confirmState === 'save' ? '✓  Added to Want to Read' : '✓  Tuned to your taste'}
+            {confirmState === 'save' ? '✓  Added to Want to Read' : "✓  We'll show more like this"}
           </Text>
         </View>
       )}
