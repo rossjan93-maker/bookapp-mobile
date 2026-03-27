@@ -362,7 +362,7 @@ export function computeFitClass(
   if (marketPosition === 'classic_canon' && cog.commercial_bias >= 0.4) {
     return mk('reject', marketPosition, 'none', false, true, format_match,
       `classic_canon blocked: commercial_bias=${cog.commercial_bias.toFixed(2)}`,
-      "This is a classic that sits outside your modern reading center"
+      "You rarely read literary classics like this"
     );
   }
 
@@ -380,7 +380,7 @@ export function computeFitClass(
       && cog.commercial_bias >= 0.7) {
     return mk('reject', marketPosition, 'none', false, true, format_match,
       `literary_prestige blocked: commercial_bias=${cog.commercial_bias.toFixed(2)}, literary_tolerance=${cog.literary_tolerance.toFixed(2)}`,
-      "More literary/prestige than the commercial fiction at the center of your library"
+      "This is more literary and dense than the books you typically finish"
     );
   }
 
@@ -395,7 +395,7 @@ export function computeFitClass(
     if (marketPosition === 'classic_canon' || marketPosition === 'literary_prestige') {
       return mk('stretch_fit', marketPosition, 'none', false, true, format_match,
         'light_user: prestige/canon is stretch by default',
-        "A stretch pick — sits in the literary/classic space"
+        "You don't often read literary or classic fiction like this"
       );
     }
     return mk('adjacent_fit', marketPosition, 'weak', false, false, format_match,
@@ -444,7 +444,7 @@ export function computeFitClass(
         || marketPosition === 'graphic_format') {
       return mk('adjacent_fit', marketPosition, 'strong', repeated_author_match, true, format_match,
         `2-signal but prestige/format cap: signals=${strongSignals}, pos=${marketPosition}`,
-        "Sits near your reading center but leans more literary or prestige"
+        "More literary and prestige-driven than the books you tend to finish"
       );
     }
     // Clean CORE: higher delta when repeated author + lane both fire
@@ -479,7 +479,7 @@ export function computeFitClass(
         || marketPosition === 'graphic_format') {
       return mk('adjacent_fit', marketPosition, 'strong', false, true, format_match,
         `lane_match(${bookLane}) but prestige/format position: ${marketPosition}`,
-        "Sits near your reading center but leans more literary or prestige"
+        "More literary and prestige-driven than the books you tend to finish"
       );
     }
     return mk('adjacent_fit', marketPosition, 'strong', false, false, format_match,
@@ -499,7 +499,7 @@ export function computeFitClass(
         && cog.memoir_tolerance < 0.5) {
       return mk('stretch_fit', marketPosition, 'none', false, true, format_match,
         `memoir_nonfiction: adjacent lane match but memoir_tolerance=${cog.memoir_tolerance.toFixed(2)} < 0.5`,
-        "A stretch pick — memoir/nonfiction sits at the edge of your reading center"
+        "Memoir and nonfiction sit further from the fiction you mostly read"
       );
     }
     return mk('adjacent_fit', marketPosition, 'weak', false, false, format_match,
@@ -519,7 +519,7 @@ export function computeFitClass(
     }
     return mk('stretch_fit', marketPosition, 'none', false, true, format_match,
       `memoir: low tolerance(${cog.memoir_tolerance.toFixed(2)})`,
-      "A stretch pick — memoir/nonfiction is at the edge of your reading center"
+      "Memoir and nonfiction are further from the fiction you typically read"
     );
   }
 
@@ -595,12 +595,12 @@ const LANE_LABELS: Record<DeterministicLane, string> = {
 function buildCoreExplanation(lane: DeterministicLane, _cog: CenterOfGravity): string {
   const CORE_EXPLANATIONS: Partial<Record<DeterministicLane, string>> = {
     romantasy:            "Feels closest to the romantic fantasy series you return to most",
-    scifi_fantasy:        "Fits the fantasy and speculative fiction at the center of your reading history",
+    scifi_fantasy:        "Fits the fantasy and speculative fiction you return to most",
     modern_suspense:      "Matches the twisty, readable suspense you return to most often",
-    romance:              "Aligns with the emotionally driven romance at the core of your library",
+    romance:              "Aligns with the emotionally driven romance you consistently enjoy",
     contemporary_fiction: "Feels close to the contemporary, character-driven fiction you consistently enjoy",
     memoir_nonfiction:    "Sits at the heart of the narrative nonfiction you read most",
-    literary:             "Aligns with the literary fiction and craft-focused reading that defines your library",
+    literary:             "Aligns with the literary fiction you consistently pick up",
     horror:               "Fits the dark, atmospheric fiction you return to consistently",
   };
   return CORE_EXPLANATIONS[lane] ?? "Strongly aligned with your most repeated reading patterns";
@@ -624,16 +624,16 @@ function buildAuthorCoreExplanation(
 
 function buildAdjacentExplanation(pos: MarketPosition, _cog: CenterOfGravity): string {
   const ADJACENT_EXPLANATIONS: Partial<Record<MarketPosition, string>> = {
-    book_club_fiction:  "Sits near the emotionally driven fiction you enjoy — one step from your core lane",
-    domestic_suspense:  "Fits the thriller and suspense territory adjacent to your main reading lane",
-    cozy_detective:     "A lighter, puzzle-focused detective read that sits near your suspense center",
+    book_club_fiction:  "Close to the emotionally driven fiction you enjoy, a step outside your usual lane",
+    domestic_suspense:  "Closer to the thriller and suspense you read most",
+    cozy_detective:     "A lighter, puzzle-focused detective read close to the suspense you enjoy",
     epic_fantasy:       "Sits close to the fantasy you read most, without the romance element",
     science_fiction:    "Adjacent to the speculative and genre fiction in your library",
-    romance:            "Shares the romantic and emotionally charged energy of your core reads",
-    memoir_nonfiction:  "Sits near narrative nonfiction — a step from your fiction center",
+    romance:            "Shares the romantic and emotionally charged energy of your usual reads",
+    memoir_nonfiction:  "A step into narrative nonfiction, slightly away from the fiction you mostly read",
     horror_dark:        "Brings the dark atmosphere adjacent to your thriller and suspense reads",
-    romantasy:          "Shares the romantic fantasy energy close to the center of your reading",
-    literary_prestige:  "Sits near the literary fiction you sometimes pick up, though it leans more prestige",
+    romantasy:          "Shares the romantic fantasy energy of the books you enjoy most",
+    literary_prestige:  "Close to the literary fiction you sometimes read, though it's more prestige-driven",
     general_fiction:    "A reasonable next read that sits near your reading center",
   };
   return ADJACENT_EXPLANATIONS[pos] ?? "A reasonable next read that sits near your reading center";

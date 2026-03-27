@@ -652,7 +652,7 @@ export default function ScanScreen() {
 
   // ── Result screen (and low_signal variant) ────────────────────────────────
   if ((phase === 'result' || phase === 'low_signal') && fitResult) {
-    const { book, verdict, confidence, reasons, caution, score_display, low_signal } = fitResult;
+    const { book, verdict, confidence, reasons, caution, guidance, score_display, low_signal } = fitResult;
     const badge    = VERDICT_BADGE[verdict];
     const headline = VERDICT_HEADLINES[verdict];
 
@@ -756,6 +756,9 @@ export default function ScanScreen() {
               <Text style={s.cautionText}>{caution}</Text>
             </View>
           )}
+
+          {/* ── Decision guidance ─────────────────────────────────────────────── */}
+          <Text style={s.guidanceText}>{guidance}</Text>
 
           {/* ── Scan another ─────────────────────────────────────────────────── */}
           <Pressable style={s.scanAnotherBtn} onPress={handleScanAnother}>
@@ -1185,6 +1188,13 @@ const s = StyleSheet.create({
     flex:      1,
     fontSize:  14,
     color:     '#92400e',
+    lineHeight: 20,
+  },
+  guidanceText: {
+    fontSize:   14,
+    fontStyle:  'italic',
+    color:      '#78716c',
+    marginTop:  20,
     lineHeight: 20,
   },
   actionBtn: {

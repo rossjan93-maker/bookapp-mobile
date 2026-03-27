@@ -70,8 +70,15 @@ export const VERDICT_LABELS: Record<ScanVerdict, string> = {
 export const VERDICT_HEADLINES: Record<ScanVerdict, string> = {
   strong_fit:  'Yes — this looks like your kind of book.',
   likely_fit:  'Probably yes.',
-  mixed_fit:   'Mixed signals.',
+  mixed_fit:   'This could go either way.',
   not_for_you: 'Not a good fit for you.',
+};
+
+export const VERDICT_GUIDANCE: Record<ScanVerdict, string> = {
+  strong_fit:  'Strong chance you\'ll enjoy this.',
+  likely_fit:  'Strong chance you\'ll enjoy this.',
+  mixed_fit:   'This could go either way.',
+  not_for_you: 'You can safely skip this.',
 };
 
 export type ScanFitResult = {
@@ -83,6 +90,7 @@ export type ScanFitResult = {
   confidence:    'high' | 'medium' | 'low';
   reasons:       string[];       // 2–3 user-facing reasons
   caution:       string | null;  // 1 risk/caution if present
+  guidance:      string;         // decision nudge line shown below reasons
   low_signal:    boolean;        // true = tier ≤ 1 (not enough taste data)
   fit_class:     string;         // 'core_fit' | 'adjacent_fit' | 'stretch_fit' | 'reject'
   external_id:   string | null;  // for feedback persistence
@@ -300,7 +308,7 @@ function detectAudienceMismatch(
 
   const isJuvenile = JUVENILE_SUBJECT_SIGS.some(sig => text.includes(sig));
   if (isJuvenile && profile.tier >= 1) {
-    return "Children's book — your library is built around adult fiction";
+    return "This is a children's book, while you mostly read adult fiction";
   }
   return null;
 }
@@ -351,12 +359,12 @@ function buildScanReasons(
     if (reasons.length === 0 && cog.dominant_lanes.length > 0) {
       const bookLabel = bookLane ? laneDisplayLabel(bookLane) : 'this genre';
       const userLabel = cog.dominant_lanes.slice(0, 2).map(laneDisplayLabel).join(' and ');
-      reasons.push(`Genre mismatch — this is ${bookLabel}, but you mainly read ${userLabel}`);
+      reasons.push(`You rarely read ${bookLabel} — your library leans toward ${userLabel}`);
     }
 
     // 5. Absolute last resort.
     if (reasons.length === 0) {
-      reasons.push("The genre and themes don't align with your established reading taste");
+      reasons.push("The genre doesn't match what you typically enjoy");
     }
 
     // Caution: surface one weak positive signal only for adjacent_fit books
@@ -566,6 +574,7 @@ export function evaluateScanFit(
     confidence,
     reasons,
     caution,
+    guidance:      VERDICT_GUIDANCE[verdict],
     low_signal:    profile.tier <= 1,
     fit_class:     fitResult.fit_class,
     external_id:   resolvedBook.externalId,
