@@ -147,3 +147,44 @@ export async function clearRecPayload(userId: string): Promise<void> {
     await AsyncStorage.removeItem(KEY_PREFIX + userId);
   } catch {}
 }
+
+// ── Acted-on recommendation IDs ───────────────────────────────────────────────
+//
+// Persists the set of recommendation external_ids / catalog ids the user has
+// acted on (saved, dismissed, more-like-this).  Stored separately from the
+// payload cache so it can be read at cache-restore time (before Phase 1 loads
+// the full feedback context from Supabase).
+//
+// Each entry is an opaque string: the book's external_id (OL) or catalog UUID.
+// The set is append-only; it is never pruned to avoid re-showing acted-on cards
+// after the 2h payload TTL window.
+
+const ACTED_ON_KEY_PREFIX = 'readstack_rec_acted_v1_';
+
+export async function addActedOnIds(userId: string, ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  try {
+    const key = ACTED_ON_KEY_PREFIX + userId;
+    const raw = await AsyncStorage.getItem(key);
+    const existing: string[] = raw ? JSON.parse(raw) : [];
+    const merged = Array.from(new Set([...existing, ...ids]));
+    await AsyncStorage.setItem(key, JSON.stringify(merged));
+  } catch {}
+}
+
+export async function loadActedOnIds(userId: string): Promise<Set<string>> {
+  try {
+    const raw = await AsyncStorage.getItem(ACTED_ON_KEY_PREFIX + userId);
+    if (!raw) return new Set();
+    const arr: string[] = JSON.parse(raw);
+    return new Set(arr);
+  } catch {
+    return new Set();
+  }
+}
+
+export async function clearActedOnIds(userId: string): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(ACTED_ON_KEY_PREFIX + userId);
+  } catch {}
+}

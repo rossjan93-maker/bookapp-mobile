@@ -31,6 +31,7 @@ export type FeedbackType =
 
 export type FeedbackContext = {
   dismissedIds: Set<string>;        // external_ids + book_db_ids to exclude
+  savedIds:     Set<string>;        // external_ids of books already saved (for cache reconciliation)
   genreBoosts:  Record<string, number>; // genre → cumulative boost (0.12–0.20)
 };
 
@@ -76,7 +77,7 @@ export async function loadFeedbackContext(
       .from('rec_feedback')
       .select('external_id, book_db_id, feedback_type, book_genre')
       .eq('user_id', userId)
-      .in('feedback_type', ['dismissed', 'more_like_this']);
+      .in('feedback_type', ['dismissed', 'more_like_this', 'saved']);
 
     if (error) return emptyContext();
 
@@ -89,12 +90,16 @@ export async function loadFeedbackContext(
 
     const rows          = (data ?? []) as Row[];
     const dismissedIds  = new Set<string>();
+    const savedIds      = new Set<string>();
     const genreCounts:   Record<string, number> = {};
 
     for (const row of rows) {
       if (row.feedback_type === 'dismissed') {
         if (row.external_id) dismissedIds.add(row.external_id);
         if (row.book_db_id)  dismissedIds.add(row.book_db_id);
+      } else if (row.feedback_type === 'saved') {
+        if (row.external_id) savedIds.add(row.external_id);
+        if (row.book_db_id)  savedIds.add(row.book_db_id);
       } else if (row.feedback_type === 'more_like_this' && row.book_genre) {
         genreCounts[row.book_genre] = (genreCounts[row.book_genre] ?? 0) + 1;
       }
@@ -106,7 +111,7 @@ export async function loadFeedbackContext(
       genreBoosts[genre] = +(Math.min(0.20, 0.12 + (count - 1) * 0.06)).toFixed(2);
     }
 
-    return { dismissedIds, genreBoosts };
+    return { dismissedIds, savedIds, genreBoosts };
   } catch {
     return emptyContext();
   }
@@ -115,5 +120,5 @@ export async function loadFeedbackContext(
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 export function emptyContext(): FeedbackContext {
-  return { dismissedIds: new Set(), genreBoosts: {} };
+  return { dismissedIds: new Set(), savedIds: new Set(), genreBoosts: {} };
 }

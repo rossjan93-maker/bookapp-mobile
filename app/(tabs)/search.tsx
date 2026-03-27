@@ -43,7 +43,7 @@ import { getEntitlement } from '../../lib/recEntitlement';
 import type { RecEntitlement } from '../../lib/recEntitlement';
 import type { ReaderThesis } from '../../lib/expertRec';
 import { getSeriesCatalog } from '../../lib/seriesCatalog';
-import { loadRecPayload, saveRecPayload, computeRecFingerprint } from '../../lib/recPayloadCache';
+import { loadRecPayload, saveRecPayload, computeRecFingerprint, addActedOnIds, loadActedOnIds } from '../../lib/recPayloadCache';
 import { triggerRecPrewarm } from '../../lib/recPrewarm';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1051,21 +1051,14 @@ function capitalize(s: string): string {
 //   0. Saga label    — journey-level framing for multi-series universes
 //   1. Series label  — per-series framing for books not in a tracked saga
 //   2. Author affinity — finished-book count ≥ 2
-//   3. Generic fallback — scorer reason string
+//   3. Taste match via score breakdown traits
+//   4. Generic fallback — scorer reason string
 //
-// Precision rules:
-//   Saga:
-//     saga_entry        → "[Saga Name] begins here"
-//     saga_continuation → "Continue your journey in [Saga Name]"
-//     saga_next_series  → "Start the next chapter of [Saga Name]"
-//     (saga_skip_ahead books are already suppressed by the RIL — never shown)
-//   Series (non-saga):
-//     pos 1  with total  → "Book 1 of N — a great place to start"
-//     pos 1  no total    → "Book 1 — a great place to start"
-//     pos > 1 contiguous → "You've read through Book N — this is next"
-//     pos > 1 gaps       → "Next in the series"
-//   Author affinity:
-//     Uses finished-only count; threshold ≥ 2
+// Copy principles:
+//   - Series starter: direct invitation to begin; name the series
+//   - Series continuation: acknowledge what the user has read; name what's next
+//   - Author affinity: peer signal framing, not a book-count recitation
+//   - Taste match: name the traits, not the algorithm
 function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | null {
   const bd = book._score_breakdown;
 
@@ -1075,44 +1068,45 @@ function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | n
   if (bd.saga_label && bd.saga_name) {
     switch (bd.saga_label) {
       case 'saga_entry':
-        return `${bd.saga_name} begins here`;
+        return `Where the ${bd.saga_name} saga begins`;
       case 'saga_continuation':
-        return `Continue your journey in ${bd.saga_name}`;
+        return `Continue the ${bd.saga_name} saga`;
       case 'saga_next_series':
-        return `Start the next chapter of ${bd.saga_name}`;
+        return `Next chapter of the ${bd.saga_name} saga`;
     }
   }
 
   // 1. Series (for books not in a tracked saga, or as fallback if saga label
   //    is absent for any reason).
   if (bd.series_position != null && bd.series_name) {
-    const pos = bd.series_position;
+    const pos  = bd.series_position;
+    const name = bd.series_name;
 
     // Starter: book is position 1 in the series
     if (pos === 1) {
-      if (bd.series_total != null) {
-        return `Book 1 of ${bd.series_total} \u2014 a great place to start`;
+      if (bd.series_total != null && bd.series_total > 1) {
+        return `Start the ${name} series \u2014 ${bd.series_total} books`;
       }
-      return `Book 1 \u2014 a great place to start`;
+      return `The best place to start the ${name} series`;
     }
 
     // Continuation: only make a specific claim when history is confirmed contiguous.
     // If series_is_contiguous is false (gaps detected), fall back to the neutral
-    // "Next in the series" — never overstate what the user has actually read.
+    // "Continue the series" — never overstate what the user has actually read.
     const maxRead    = bd.series_max_read     ?? null;
     const contiguous = bd.series_is_contiguous ?? null;
     if (maxRead != null && maxRead > 0) {
       if (contiguous === true) {
-        return `You\u2019ve read through Book ${maxRead} \u2014 this is next`;
+        return `Continue the ${name} series \u2014 book ${pos}`;
       }
-      return `Next in the series`;
+      return `Continue the ${name} series`;
     }
   }
 
   // 2. Author affinity — finished books only, threshold ≥ 2
   const authorCount = bd.author_books_read ?? 0;
   if (authorCount >= 2) {
-    return `You\u2019ve read ${authorCount} books by ${book.author}`;
+    return `Another strong read from ${book.author}`;
   }
 
   // 3. Fallback — existing reason string (strip author prefix, capitalise)
@@ -1243,9 +1237,9 @@ function RecCard({
 
   function handleMoreLikeThisPress() {
     if (pendingAction || moreDone) return;
+    setPendingAction(true);
     setMoreDone(true);
-    onMoreLikeThis();
-    setTimeout(() => setMoreDone(false), 2200);
+    animateOut(onMoreLikeThis);
   }
 
   function handleCardPress() {
@@ -1432,15 +1426,13 @@ function RecCard({
       </TouchableOpacity>
 
       {/* ── Action bar ── */}
-      {/* Save is the sole text action.                                          */}
-      {/* Dismiss + More like this are compact symbol buttons — no repeated text */}
       <View style={{
         borderTopWidth: 1,
         borderTopColor: '#f0eeeb',
         flexDirection: 'row',
         alignItems: 'stretch',
       }}>
-        {/* Primary text action */}
+        {/* Want to Read — primary save action */}
         <TouchableOpacity
           onPress={handleSavePress}
           disabled={pendingAction}
@@ -1454,33 +1446,39 @@ function RecCard({
           }}
         >
           <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917' }}>
-            Save to list
+            Want to Read
           </Text>
         </TouchableOpacity>
 
-        {/* Dismiss icon — compact, fixed width */}
+        {/* Not for me — dismiss */}
         <TouchableOpacity
           onPress={handleDismissPress}
           disabled={pendingAction}
           style={{
-            width: 48,
+            paddingVertical: 11,
+            paddingHorizontal: 13,
             justifyContent: 'center',
             alignItems: 'center',
             borderRightWidth: 1,
             borderRightColor: '#f0eeeb',
           }}
         >
-          <Text style={{ fontSize: 15, color: '#c4b5a5', lineHeight: 20 }}>✕</Text>
+          <Text style={{ fontSize: 12, color: '#a8a29e', fontWeight: '500' }}>Not for me</Text>
         </TouchableOpacity>
 
-        {/* More like this icon */}
+        {/* More like this */}
         <TouchableOpacity
           onPress={handleMoreLikeThisPress}
           disabled={pendingAction}
-          style={{ width: 48, justifyContent: 'center', alignItems: 'center' }}
+          style={{
+            paddingVertical: 11,
+            paddingHorizontal: 13,
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
         >
-          <Text style={{ fontSize: 15, color: moreDone ? '#15803d' : '#c4b5a5', lineHeight: 20 }}>
-            {moreDone ? '✓' : '↑'}
+          <Text style={{ fontSize: 12, fontWeight: '500', color: '#78716c' }}>
+            More like this
           </Text>
         </TouchableOpacity>
       </View>
@@ -1510,6 +1508,33 @@ type RecSessionCache = {
 
 let _recSession: RecSessionCache | null = null;
 
+// ── Acted-on ID tracking ───────────────────────────────────────────────────────
+// Module-level set of recommendation IDs (external_id or catalog UUID) the
+// current user has saved, dismissed, or "more like this'd".  Used to filter
+// cached recs on tab revisit so acted-on cards never reappear.
+// Cleared when user ID changes; populated from AsyncStorage on cold start
+// and updated synchronously on every action.
+let _actedOnIds:    Set<string> = new Set();
+let _actedOnUserId: string | null = null;
+
+function _trackActedOn(userId: string, book: ScoredBook): void {
+  if (_actedOnUserId !== userId) {
+    _actedOnIds    = new Set();
+    _actedOnUserId = userId;
+  }
+  if (book.external_id) _actedOnIds.add(book.external_id);
+  _actedOnIds.add(book.id);
+  const ids = [book.external_id, book.id].filter(Boolean) as string[];
+  addActedOnIds(userId, ids).catch(() => {});
+}
+
+// Dismiss undo state type
+type DismissUndoState = {
+  book:    ScoredBook;
+  bucket:  'continuations' | 'discoveries' | 'recommendations';
+  timerId: ReturnType<typeof setTimeout>;
+};
+
 // Revisit skips Phase 2 when session is this fresh AND signal unchanged.
 const REC_SESSION_TTL_MS = 4 * 60 * 1000; // 4 minutes
 
@@ -1527,6 +1552,8 @@ export default function RecommendationsScreen() {
   const [recsMeta, setRecsMeta]               = useState<RankedRecsResult['meta'] | null>(null);
   const [feedbackCtx, setFeedbackCtx]         = useState<FeedbackContext>(emptyContext());
   const [saveToast, setSaveToast]             = useState<string | null>(null);
+  const [dismissUndo, setDismissUndo]         = useState<DismissUndoState | null>(null);
+  const [moreLikeToast, setMoreLikeToast]     = useState<string | null>(null);
   const [booksToRate, setBooksToRate]         = useState<BookToRate[]>([]);
   const [booksToTag, setBooksToTag]           = useState<BookToTag[]>([]);
   const [incomingRecs, setIncomingRecs]       = useState<IncomingRec[]>([]);
@@ -1601,6 +1628,26 @@ export default function RecommendationsScreen() {
     if (step === 'hub') loadHub();
   }, [step]));
 
+  // ── Deck replenishment ────────────────────────────────────────────────────
+  // When the visible deck empties entirely after user actions (save/dismiss/
+  // more-like-this), automatically trigger a fresh recommendation run so the
+  // surface never sits permanently blank.  Fires only once per empty event
+  // (guarded by loading flags) and uses the OL session cache so it's fast.
+  useEffect(() => {
+    const total = continuations.length + discoveries.length;
+    if (
+      total === 0 &&
+      !recsLoading &&
+      !isBackgroundRefreshing &&
+      currentUserId &&
+      tasteProfile &&
+      tasteProfile.tier >= 1
+    ) {
+      reloadRecs(nextReadIntent);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [continuations.length, discoveries.length]);
+
   // Book search debounce (only relevant in 'search' step)
   useEffect(() => {
     if (step !== 'search') return;
@@ -1649,6 +1696,21 @@ export default function RecommendationsScreen() {
     // ── Fast-path 1: restore from in-memory session cache (0ms) ──────────
     let cached = _recSession && _recSession.userId === user.id ? _recSession : null;
 
+    // ── Acted-on ID sync ──────────────────────────────────────────────────
+    // Ensure the module-level set is scoped to the current user.
+    // On user change, reset and reload from AsyncStorage so acted-on IDs
+    // from a previous session survive an app restart (cold start path).
+    if (_actedOnUserId !== user.id) {
+      const stored = await loadActedOnIds(user.id);
+      _actedOnIds    = stored;
+      _actedOnUserId = user.id;
+    }
+
+    // Helper: exclude any book the user has already acted on (save/dismiss/more)
+    const filterActedOn = (b: ScoredBook) =>
+      !_actedOnIds.has(b.id) &&
+      !(b.external_id && _actedOnIds.has(b.external_id));
+
     // ── Fast-path 2: restore from persistent AsyncStorage cache (~30ms) ───
     // Only reached on cold start (app restart) when _recSession is empty.
     if (!cached) {
@@ -1682,9 +1744,11 @@ export default function RecommendationsScreen() {
         `| age_ms=${Date.now() - cached.loadedAt}`,
         `| recs=${cached.recs.length}`,
       );
-      setRecommendations(cached.recs);
-      setContinuations(cached.continuations);
-      setDiscoveries(cached.discoveries);
+      // Filter out any recs the user has already acted on so they never
+      // reappear on tab revisit due to a stale cache restore.
+      setRecommendations(cached.recs.filter(filterActedOn));
+      setContinuations(cached.continuations.filter(filterActedOn));
+      setDiscoveries(cached.discoveries.filter(filterActedOn));
       setRecsMeta(cached.meta);
       setRecsQualityGate(cached.qualityGate);
       setRecMode(cached.recMode);
@@ -2187,16 +2251,23 @@ export default function RecommendationsScreen() {
     if (!supabase || !currentUserId) return;
 
     // ── Optimistic UI: remove card + show toast instantly ────────────────────
-    // DB writes fire in background; the user sees the action complete immediately.
     const bookFilter = (b: ScoredBook) => b.id !== book.id;
     setRecommendations(prev => prev.filter(bookFilter));
     setContinuations(prev   => prev.filter(bookFilter));
     setDiscoveries(prev     => prev.filter(bookFilter));
-    setSaveToast(`"${book.title}" added to your library`);
-    setTimeout(() => setSaveToast(null), 2800);
+    setSaveToast(`"${book.title}" saved to Want to Read`);
+    setTimeout(() => setSaveToast(null), 3000);
+
+    // Track locally + persist so this card is filtered on next cache restore
+    _trackActedOn(currentUserId, book);
+    setFeedbackCtx(prev => {
+      const next = new Set(prev.savedIds);
+      if (book.external_id) next.add(book.external_id);
+      if (book._source === 'catalog') next.add(book.id);
+      return { ...prev, savedIds: next };
+    });
 
     // ── Background: upsert book record + add to library + persist feedback ───
-    // Fire-and-forget — UI is already updated above.
     (async () => {
       let bookDbId: string | null = null;
       if (book._source === 'catalog') {
@@ -2242,34 +2313,85 @@ export default function RecommendationsScreen() {
     })().catch(() => {});
   }
 
-  async function handleRecDismiss(book: ScoredBook) {
+  function handleRecDismiss(book: ScoredBook) {
     if (!supabase || !currentUserId) return;
-    persistFeedback(supabase, currentUserId, book, 'dismissed').catch(() => {});
-    // Optimistic UI: remove from all buckets
+
+    // ── Optimistic UI: remove card immediately ────────────────────────────────
+    const bookFilter = (b: ScoredBook) => b.id !== book.id;
+    const prevContinuations = continuations;
+    const prevDiscoveries   = discoveries;
+    setRecommendations(prev => prev.filter(bookFilter));
+    setContinuations(prev   => prev.filter(bookFilter));
+    setDiscoveries(prev     => prev.filter(bookFilter));
+
+    // Determine which bucket this card was in (for undo re-insertion)
+    const wasInContinuations = prevContinuations.some(b => b.id === book.id);
+    const bucket: DismissUndoState['bucket'] = wasInContinuations
+      ? 'continuations'
+      : prevDiscoveries.some(b => b.id === book.id)
+      ? 'discoveries'
+      : 'recommendations';
+
+    // Cancel any existing undo window before starting a new one
+    if (dismissUndo) clearTimeout(dismissUndo.timerId);
+
+    // ── Undo window: 4 seconds ────────────────────────────────────────────────
+    const timerId = setTimeout(() => {
+      // Undo window expired — commit the dismissal
+      setDismissUndo(null);
+      _trackActedOn(currentUserId!, book);
+      setFeedbackCtx(prev => {
+        const next = new Set(prev.dismissedIds);
+        if (book.external_id) next.add(book.external_id);
+        if (book._source === 'catalog') next.add(book.id);
+        return { ...prev, dismissedIds: next };
+      });
+      persistFeedback(supabase!, currentUserId!, book, 'dismissed').catch(() => {});
+    }, 4000);
+
+    setDismissUndo({ book, bucket, timerId });
+  }
+
+  function handleRecDismissUndo() {
+    if (!dismissUndo) return;
+    clearTimeout(dismissUndo.timerId);
+    const { book, bucket } = dismissUndo;
+    setDismissUndo(null);
+    // Re-insert the book at the top of its original bucket
+    if (bucket === 'continuations') {
+      setContinuations(prev => [book, ...prev]);
+    } else if (bucket === 'discoveries') {
+      setDiscoveries(prev => [book, ...prev]);
+    } else {
+      setRecommendations(prev => [book, ...prev]);
+    }
+  }
+
+  function handleRecMoreLikeThis(book: ScoredBook) {
+    if (!supabase || !currentUserId) return;
+
+    // ── Optimistic UI: remove card from deck ──────────────────────────────────
     const bookFilter = (b: ScoredBook) => b.id !== book.id;
     setRecommendations(prev => prev.filter(bookFilter));
     setContinuations(prev   => prev.filter(bookFilter));
     setDiscoveries(prev     => prev.filter(bookFilter));
-    // Update local feedback context so dismissed book is excluded if the list reloads
-    setFeedbackCtx(prev => {
-      const next = new Set(prev.dismissedIds);
-      if (book.external_id) next.add(book.external_id);
-      if (book._source === 'catalog') next.add(book.id);
-      return { ...prev, dismissedIds: next };
-    });
-  }
 
-  async function handleRecMoreLikeThis(book: ScoredBook) {
-    if (!supabase || !currentUserId) return;
+    setMoreLikeToast(`More like "${book.title}" noted`);
+    setTimeout(() => setMoreLikeToast(null), 3000);
+
+    // Track so card doesn't reappear on revisit
+    _trackActedOn(currentUserId, book);
+
+    // Persist feedback + update genre boost for immediate scoring effect
     persistFeedback(supabase, currentUserId, book, 'more_like_this').catch(() => {});
-    // Update local feedback context so subsequent scoring applies boost immediately
     const genre = getBookTraits(book).primaryGenre;
-    if (!genre) return;
-    setFeedbackCtx(prev => {
-      const current = prev.genreBoosts[genre] ?? 0;
-      const next    = Math.min(0.20, current === 0 ? 0.12 : current + 0.06);
-      return { ...prev, genreBoosts: { ...prev.genreBoosts, [genre]: +next.toFixed(2) } };
-    });
+    if (genre) {
+      setFeedbackCtx(prev => {
+        const current = prev.genreBoosts[genre] ?? 0;
+        const next    = Math.min(0.20, current === 0 ? 0.12 : current + 0.06);
+        return { ...prev, genreBoosts: { ...prev.genreBoosts, [genre]: +next.toFixed(2) } };
+      });
+    }
   }
 
   function handleRecImpression(book: ScoredBook) {
@@ -2620,9 +2742,47 @@ export default function RecommendationsScreen() {
                       alignItems: 'center',
                       gap: 6,
                     }}>
-                      <Text style={{ color: '#16a34a', fontSize: 12, flex: 1 }}>
+                      <Text style={{ color: '#16a34a', fontSize: 12, flex: 1, fontWeight: '500' }}>
                         ✓ {saveToast}
                       </Text>
+                    </View>
+                  )}
+
+                  {/* More like this toast */}
+                  {moreLikeToast && (
+                    <View style={{
+                      backgroundColor: '#f5f3ff',
+                      borderRadius: 8,
+                      paddingHorizontal: 12,
+                      paddingVertical: 9,
+                      marginBottom: 8,
+                    }}>
+                      <Text style={{ color: '#5b21b6', fontSize: 12, fontWeight: '500' }}>
+                        ✓ {moreLikeToast}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Dismiss undo toast */}
+                  {dismissUndo && (
+                    <View style={{
+                      backgroundColor: '#fafaf9',
+                      borderRadius: 8,
+                      paddingHorizontal: 12,
+                      paddingVertical: 9,
+                      marginBottom: 8,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 8,
+                      borderWidth: 1,
+                      borderColor: '#e7e5e4',
+                    }}>
+                      <Text style={{ color: '#78716c', fontSize: 12, flex: 1 }}>
+                        Dismissed "{dismissUndo.book.title}"
+                      </Text>
+                      <TouchableOpacity onPress={handleRecDismissUndo}>
+                        <Text style={{ color: '#1c1917', fontSize: 12, fontWeight: '700' }}>Undo</Text>
+                      </TouchableOpacity>
                     </View>
                   )}
 

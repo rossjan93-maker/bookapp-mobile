@@ -1,0 +1,70 @@
+The recommendation engagement model is currently broken. This is not just a visual issue — actions are not behaving like authoritative user inputs.
+
+Problems observed:
+- Tapping “Save to list”, “X”, or the up-arrow either does nothing, or appears to work and then resets on revisit
+- Users get no strong confirmation that an action succeeded
+- The up-arrow meaning is unclear
+- Recommendation cards are not replenished intelligently after engagement
+- Recommendation reason copy is too repetitive and mechanical
+
+Goal:
+Make recommendation engagement feel intelligent, persistent, and reactive.
+
+Implement the following:
+
+1. Redefine actions clearly
+- Replace ambiguous icon-only actions with clear semantics:
+  - Save to Want to Read (or chosen list)
+  - Not for me
+  - More like this
+- If the up-arrow currently means “more like this,” relabel it accordingly in UI or use a more understandable icon + text treatment
+
+2. Optimistic UI for all rec actions
+When any action is tapped:
+- update the card immediately in local state
+- do not wait for background refresh to reflect the action
+- persist the action to storage/backend
+- reconcile cached/persisted recommendation payloads against those actions so the card does not reappear on tab revisit
+
+3. Action-specific confirmation UX
+Save:
+- show a clear confirmation animation/toast: “Saved to Want to Read”
+- make destination explicit
+- visually update card state (saved icon/chip)
+
+Not for me:
+- animate card out immediately
+- show undo affordance for a few seconds
+- persist as dismissal/exclusion signal
+
+More like this:
+- show immediate confirmation: “We’ll show more like this”
+- persist as positive preference signal
+- optionally pulse badge or icon
+
+4. Replenishment / queue behavior
+- After save, dismiss, or more-like-this, backfill the deck with the next best eligible recommendation
+- Keep the recommendation surface feeling deep and alive
+- If low on eligible recs, trigger background prefetch
+
+5. Cache reconciliation
+- On Recommendations load, filter restored cached/persisted payloads against:
+  - dismissed recs
+  - saved recs if they should no longer show in the active deck
+  - recently acted-on recommendation ids
+- Prevent already-acted-on cards from reappearing because of stale cache restore
+
+6. Rewrite reason-copy templates by rec type
+Examples:
+- Series continuation: “Continue the story with the next book in the [Series] series.”
+- Series starter: “Start with the strongest entry point into the [Series] series.”
+- Author affinity: “Another strong fit from an author you already like.”
+- Taste match: “A strong match for your taste in [trait1] and [trait2].”
+Avoid repetitive literal phrasing like “You’ve read through book 1 - this is next.”
+
+Return:
+- exact files changed
+- how actions are persisted
+- how cached recs are reconciled on revisit
+- what UI confirmation appears for each action
+- how deck replenishment works
