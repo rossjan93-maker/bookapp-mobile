@@ -43,6 +43,7 @@ import { getBookTraits, detectBookLane, detectBookMysterySubtype, isPhilosophyOr
 import type { DeterministicLane } from '../../lib/bookTraits';
 import { getEntitlement } from '../../lib/recEntitlement';
 import type { RecEntitlement } from '../../lib/recEntitlement';
+import { useGuidedTour, GuidedActionBanner } from '../../components/OnboardingWalkthrough';
 import type { ReaderThesis } from '../../lib/expertRec';
 import { getSeriesCatalog } from '../../lib/seriesCatalog';
 import { loadRecPayload, saveRecPayload, computeRecFingerprint, addActedOnIds, loadActedOnIds } from '../../lib/recPayloadCache';
@@ -1772,6 +1773,7 @@ const REC_SESSION_TTL_MS = 4 * 60 * 1000; // 4 minutes
 
 export default function RecommendationsScreen() {
   const router = useRouter();
+  const { step: guidedStep, advance: advanceGuided } = useGuidedTour();
   const [step, setStep] = useState<Step>('hub');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
@@ -2572,6 +2574,7 @@ export default function RecommendationsScreen() {
 
   function handleRecSave(book: ScoredBook) {
     if (!supabase || !currentUserId) return;
+    if (guidedStep === 0) advanceGuided(0);
 
     // ── Optimistic UI: remove card + backfill next eligible from session ─────
     const bookFilter    = (b: ScoredBook) => b.id !== book.id;
@@ -2640,6 +2643,7 @@ export default function RecommendationsScreen() {
 
   function handleRecDismiss(book: ScoredBook) {
     if (!supabase || !currentUserId) return;
+    if (guidedStep === 0) advanceGuided(0);
 
     // ── Commit any pre-existing pending dismiss immediately ────────────────────
     // Only one undo window open at a time; opening a new one commits the old one.
@@ -2734,6 +2738,7 @@ export default function RecommendationsScreen() {
 
   function handleRecMoreLikeThis(book: ScoredBook) {
     if (!supabase || !currentUserId) return;
+    if (guidedStep === 0) advanceGuided(0);
 
     // ── Optimistic UI: remove card + backfill next eligible from session ─────
     const bookFilter    = (b: ScoredBook) => b.id !== book.id;
@@ -3192,6 +3197,10 @@ export default function RecommendationsScreen() {
                     </>
                   )}
 
+                  {/* Guided tour step 0: action prompt after first recs */}
+                  {guidedStep === 0 && (recommendations.length > 0 || continuations.length > 0 || discoveries.length > 0) && (
+                    <GuidedActionBanner />
+                  )}
 
                 </View>
               )}

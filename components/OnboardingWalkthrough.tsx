@@ -1,205 +1,187 @@
-import { useEffect, useRef, useState } from 'react';
-import {
-  Animated,
-  Dimensions,
-  Modal,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { createContext, useContext, useEffect, useRef } from 'react';
+import { Animated, Text, TouchableOpacity, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 
-const STORAGE_KEY = 'readstack_walkthrough_v1';
+// ─── Persistent state ────────────────────────────────────────────────────────
+// Written by onboarding.tsx when the flow completes.
+// Values: '0' = waiting for card action | '1' = acted | '2' = library hint | '99' = done
 
-type Step = {
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  body: string;
-  tabIndex?: number;
+export const GUIDED_TOUR_KEY = 'readstack_guided_v1';
+
+export type GuidedStep = 0 | 1 | 2 | 99;
+
+export async function readGuidedStep(): Promise<GuidedStep> {
+  try {
+    const val = await AsyncStorage.getItem(GUIDED_TOUR_KEY);
+    if (val === null) return 99;
+    const n = parseInt(val, 10);
+    if (n === 0 || n === 1 || n === 2) return n;
+    return 99;
+  } catch {
+    return 99;
+  }
+}
+
+export async function writeGuidedStep(step: GuidedStep): Promise<void> {
+  try {
+    await AsyncStorage.setItem(GUIDED_TOUR_KEY, String(step));
+  } catch {}
+}
+
+// ─── Context ─────────────────────────────────────────────────────────────────
+
+export type GuidedTourCtx = {
+  step: GuidedStep;
+  advance: (fromStep: GuidedStep) => void;
 };
 
-const STEPS: Step[] = [
-  {
-    icon: 'book',
-    title: 'Welcome to Readstack',
-    body: "You'll get personalized reading recommendations that get smarter every time you rate a book.",
-  },
-  {
-    icon: 'paper-plane',
-    title: 'Your recommendations',
-    body: "Tap 'Recommend' to see your personalized picks. Save, dismiss, or ask for more like any book.",
-    tabIndex: 1,
-  },
-  {
-    icon: 'library',
-    title: 'Your library',
-    body: "Track every book you've read, are reading, or want to read. Ratings here fuel your recommendations.",
-    tabIndex: 2,
-  },
-  {
-    icon: 'barcode',
-    title: 'Scan any book',
-    body: "From the Recommend screen, tap the barcode icon to instantly see whether a book fits your taste.",
-  },
-];
+export const GuidedTourContext = createContext<GuidedTourCtx>({
+  step: 99,
+  advance: () => {},
+});
 
-type Props = {
-  onDone: () => void;
-};
+export function useGuidedTour(): GuidedTourCtx {
+  return useContext(GuidedTourContext);
+}
 
-export function OnboardingWalkthrough({ onDone }: Props) {
-  const [step, setStep] = useState(0);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-  const { width: W, height: H } = Dimensions.get('window');
+// ─── Step 0 — Action prompt (rendered inside the recs screen) ─────────────────
+// Shows below the first card. Dismissed only by a real card action.
 
-  const TAB_COUNT = 5;
-  const TAB_W = W / TAB_COUNT;
+export function GuidedActionBanner() {
+  const fadeIn = useRef(new Animated.Value(0)).current;
 
-  function nextStep() {
-    Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }).start(() => {
-      if (step < STEPS.length - 1) {
-        setStep(s => s + 1);
-        Animated.timing(fadeAnim, { toValue: 1, duration: 200, useNativeDriver: true }).start();
-      } else {
-        finish();
-      }
-    });
-  }
-
-  function finish() {
-    AsyncStorage.setItem(STORAGE_KEY, '1').catch(() => {});
-    onDone();
-  }
-
-  const current = STEPS[step];
-  const isLast = step === STEPS.length - 1;
-
-  const tabHighlightLeft =
-    current.tabIndex != null ? TAB_W * current.tabIndex : null;
+  useEffect(() => {
+    Animated.timing(fadeIn, {
+      toValue: 1,
+      duration: 500,
+      delay: 400,
+      useNativeDriver: true,
+    }).start();
+  }, []);
 
   return (
-    <Modal transparent animationType="fade" statusBarTranslucent>
-      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.72)' }}>
-
-        <TouchableOpacity
-          onPress={finish}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          style={{ position: 'absolute', top: 52, right: 20, zIndex: 10 }}
-        >
-          <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Skip</Text>
-        </TouchableOpacity>
-
-        {tabHighlightLeft != null && (
-          <View
-            style={{
-              position: 'absolute',
-              bottom: 0,
-              left: tabHighlightLeft,
-              width: TAB_W,
-              height: 62,
-              borderTopWidth: 2,
-              borderTopColor: '#16a34a',
-              backgroundColor: 'rgba(22,163,74,0.12)',
-            }}
-          />
-        )}
-
-        <Animated.View
-          style={{
-            opacity: fadeAnim,
-            position: 'absolute',
-            bottom: 82,
-            left: 20,
-            right: 20,
-          }}
-        >
-          {tabHighlightLeft != null && (
-            <View style={{ alignItems: 'center', marginBottom: 10 }}>
-              <View
-                style={{
-                  width: 2,
-                  height: 28,
-                  backgroundColor: '#16a34a',
-                  borderRadius: 1,
-                }}
-              />
-            </View>
-          )}
-
-          <View
-            style={{
-              backgroundColor: '#fff',
-              borderRadius: 16,
-              padding: 22,
-              shadowColor: '#000',
-              shadowOpacity: 0.18,
-              shadowRadius: 20,
-              shadowOffset: { width: 0, height: 8 },
-              elevation: 12,
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-              <View
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 10,
-                  backgroundColor: '#f5f5f4',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginRight: 12,
-                }}
-              >
-                <Ionicons name={current.icon} size={18} color="#1c1917" />
-              </View>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: '#1c1917', flex: 1 }}>
-                {current.title}
-              </Text>
-            </View>
-
-            <Text style={{ fontSize: 14, color: '#57534e', lineHeight: 21, marginBottom: 20 }}>
-              {current.body}
-            </Text>
-
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <View style={{ flexDirection: 'row', gap: 6 }}>
-                {STEPS.map((_, i) => (
-                  <View
-                    key={i}
-                    style={{
-                      width: i === step ? 20 : 6,
-                      height: 6,
-                      borderRadius: 3,
-                      backgroundColor: i === step ? '#1c1917' : '#e7e5e4',
-                    }}
-                  />
-                ))}
-              </View>
-
-              <TouchableOpacity
-                onPress={nextStep}
-                activeOpacity={0.8}
-                style={{
-                  backgroundColor: '#1c1917',
-                  paddingHorizontal: 20,
-                  paddingVertical: 10,
-                  borderRadius: 10,
-                }}
-              >
-                <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>
-                  {isLast ? 'Get started' : 'Next'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Animated.View>
+    <Animated.View
+      style={{
+        opacity: fadeIn,
+        marginHorizontal: 16,
+        marginBottom: 12,
+        marginTop: 4,
+        backgroundColor: '#1c1917',
+        borderRadius: 12,
+        paddingVertical: 13,
+        paddingHorizontal: 16,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+      }}
+    >
+      <Ionicons name="arrow-up" size={16} color="#a8a29e" />
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: '#faf9f7', fontSize: 13, fontWeight: '600', lineHeight: 18 }}>
+          Save or dismiss one of these
+        </Text>
+        <Text style={{ color: '#a8a29e', fontSize: 12, lineHeight: 17, marginTop: 1 }}>
+          Every choice tunes your picks
+        </Text>
       </View>
-    </Modal>
+    </Animated.View>
   );
 }
 
-export async function shouldShowWalkthrough(): Promise<boolean> {
-  const val = await AsyncStorage.getItem(STORAGE_KEY);
-  return val == null;
+// ─── Step 1 — "Noted" confirmation (rendered by layout overlay) ──────────────
+
+export function GuidedNotedToast({ onDone }: { onDone: () => void }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.sequence([
+      Animated.timing(opacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.delay(1600),
+      Animated.timing(opacity, { toValue: 0, duration: 400, useNativeDriver: true }),
+    ]).start(onDone);
+  }, []);
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        bottom: 90,
+        left: 24,
+        right: 24,
+        opacity,
+        backgroundColor: '#15803d',
+        borderRadius: 12,
+        paddingVertical: 14,
+        paddingHorizontal: 18,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        shadowColor: '#000',
+        shadowOpacity: 0.12,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 2 },
+        elevation: 4,
+      }}
+    >
+      <Ionicons name="checkmark-circle" size={20} color="#fff" />
+      <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>
+        Noted — we're already adjusting
+      </Text>
+    </Animated.View>
+  );
+}
+
+// ─── Step 2 — Library hint banner (rendered by layout at bottom of tabs) ──────
+
+export function GuidedLibraryBanner({ onDismiss }: { onDismiss: () => void }) {
+  const slideIn = useRef(new Animated.Value(80)).current;
+  const opacity  = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(slideIn, { toValue: 0, duration: 350, useNativeDriver: true }),
+      Animated.timing(opacity,  { toValue: 1, duration: 350, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        bottom: 70,
+        left: 0,
+        right: 0,
+        paddingHorizontal: 16,
+        transform: [{ translateY: slideIn }],
+        opacity,
+      }}
+    >
+      <TouchableOpacity
+        onPress={onDismiss}
+        activeOpacity={0.9}
+        style={{
+          backgroundColor: '#1c1917',
+          borderRadius: 12,
+          paddingVertical: 13,
+          paddingHorizontal: 16,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 10,
+        }}
+      >
+        <Ionicons name="library-outline" size={18} color="#a8a29e" />
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: '#faf9f7', fontSize: 13, fontWeight: '600' }}>
+            Your saved books are in Library
+          </Text>
+          <Text style={{ color: '#a8a29e', fontSize: 12, marginTop: 1 }}>
+            Tap Library below to explore
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color="#78716c" />
+      </TouchableOpacity>
+    </Animated.View>
+  );
 }

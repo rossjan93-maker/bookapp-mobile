@@ -1,22 +1,23 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
   FlatList,
   Image,
+  Keyboard,
   Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
   StatusBar,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { computeTasteProfile } from '../lib/tasteProfile';
 import {
   getCandidateBooks,
   getRankedRecs,
@@ -25,886 +26,1184 @@ import {
 } from '../lib/recommender';
 import type { ScoredBook } from '../lib/recommender';
 import { emptyContext } from '../lib/recFeedback';
+import type { TasteProfile } from '../lib/tasteProfile';
 import { CoverThumb } from '../components/CoverThumb';
+import { writeGuidedStep } from '../components/OnboardingWalkthrough';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Palette ──────────────────────────────────────────────────────────────────
 
-type Phase = 'pick' | 'rate' | 'learning' | 'payoff';
+const BG   = '#faf9f7';
+const INK  = '#1c1917';
+const MUTED = '#a8a29e';
+const SUB  = '#78716c';
+const BORD = '#e7e5e4';
 
-type CuratedBook = {
-  slug: string;
+// ─── Genre definitions ────────────────────────────────────────────────────────
+
+type Genre = {
+  label: string;
+  affinityKey: string;   // key for genre_affinities
+  subjects: string[];    // OL subject anchors for retrieval
+};
+
+const GENRES: Genre[] = [
+  {
+    label: 'Literary Fiction',
+    affinityKey: 'literary',
+    subjects: ['literary fiction', 'contemporary fiction'],
+  },
+  {
+    label: 'Fantasy',
+    affinityKey: 'fantasy_scifi',
+    subjects: ['fantasy', 'epic fantasy', 'fantasy fiction'],
+  },
+  {
+    label: 'Sci-Fi',
+    affinityKey: 'fantasy_scifi',
+    subjects: ['science fiction', 'space opera', 'speculative fiction'],
+  },
+  {
+    label: 'Thriller',
+    affinityKey: 'thriller_mystery',
+    subjects: ['thriller', 'psychological thriller', 'suspense fiction'],
+  },
+  {
+    label: 'Mystery',
+    affinityKey: 'thriller_mystery',
+    subjects: ['mystery', 'detective fiction', 'crime fiction'],
+  },
+  {
+    label: 'Romance',
+    affinityKey: 'romance',
+    subjects: ['romance', 'contemporary romance', 'romantic fiction'],
+  },
+  {
+    label: 'Horror',
+    affinityKey: 'horror',
+    subjects: ['horror', 'supernatural fiction', 'gothic fiction'],
+  },
+  {
+    label: 'Historical Fiction',
+    affinityKey: 'literary',
+    subjects: ['historical fiction'],
+  },
+  {
+    label: 'Non-Fiction',
+    affinityKey: 'nonfiction',
+    subjects: ['popular nonfiction', 'popular science'],
+  },
+  {
+    label: 'Biography & Memoir',
+    affinityKey: 'memoir_bio',
+    subjects: ['biography', 'autobiography', 'memoir'],
+  },
+  {
+    label: 'Self-Help',
+    affinityKey: 'nonfiction',
+    subjects: ['self-help', 'personal development'],
+  },
+  {
+    label: 'Young Adult',
+    affinityKey: 'literary',
+    subjects: ['young adult fiction'],
+  },
+  {
+    label: 'Graphic Novel',
+    affinityKey: 'literary',
+    subjects: ['graphic novels', 'comics'],
+  },
+];
+
+// ─── Preference options ───────────────────────────────────────────────────────
+
+type BinaryOption = {
+  key: string;
+  headline: string;
+  sub: string;
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+};
+
+const PACING_OPTIONS: BinaryOption[] = [
+  {
+    key: 'pacing_non_negotiable',
+    headline: 'Momentum matters',
+    sub: 'If the story stalls, I lose interest.',
+    icon: 'flash-outline',
+  },
+  {
+    key: 'ideas_over_pacing',
+    headline: "I'll follow strong ideas anywhere",
+    sub: 'Slow burns are fine when the substance is there.',
+    icon: 'bulb-outline',
+  },
+];
+
+const TONE_OPTIONS: BinaryOption[] = [
+  {
+    key: 'emotion_driven',
+    headline: 'It moves me emotionally',
+    sub: 'The best books leave me feeling something.',
+    icon: 'heart-outline',
+  },
+  {
+    key: 'idea_driven',
+    headline: 'It changes how I think',
+    sub: 'I want to finish with a new perspective.',
+    icon: 'telescope-outline',
+  },
+];
+
+// ─── Synthetic taste profile ──────────────────────────────────────────────────
+// Converts intake selections into a TasteProfile the recommender can use.
+// This runs entirely client-side — no history needed.
+
+function buildSyntheticProfile(
+  likedGenres: Genre[],
+  avoidedGenres: Genre[],
+  diagnosisAnswers: Record<string, string>,
+  extraSubjects: string[],
+): TasteProfile {
+  // Genre affinities
+  const genre_affinities: Record<string, number> = {};
+  for (const g of likedGenres) {
+    genre_affinities[g.affinityKey] = Math.min(
+      1,
+      (genre_affinities[g.affinityKey] ?? 0) + 0.6,
+    );
+  }
+  for (const g of avoidedGenres) {
+    genre_affinities[g.affinityKey] = Math.max(
+      -1,
+      (genre_affinities[g.affinityKey] ?? 0) - 0.6,
+    );
+  }
+
+  // Liked subjects for OL retrieval
+  const subjectSet = new Set<string>();
+  for (const g of likedGenres) {
+    for (const s of g.subjects) subjectSet.add(s);
+  }
+  for (const s of extraSubjects) subjectSet.add(s);
+  const liked_subjects = [...subjectSet].slice(0, 8);
+
+  // Preferred traits from diagnosis answers
+  const preferred_traits: Record<string, number> = {};
+  for (const answer of Object.values(diagnosisAnswers)) {
+    switch (answer) {
+      case 'idea_driven':
+        preferred_traits.Insight   = Math.min(1, (preferred_traits.Insight   ?? 0) + 0.20);
+        preferred_traits.Evidence  = Math.min(1, (preferred_traits.Evidence  ?? 0) + 0.10);
+        break;
+      case 'emotion_driven':
+        preferred_traits.Emotional  = Math.min(1, (preferred_traits.Emotional  ?? 0) + 0.20);
+        preferred_traits.Characters = Math.min(1, (preferred_traits.Characters ?? 0) + 0.10);
+        break;
+      case 'pacing_non_negotiable':
+        preferred_traits.Pacing = Math.min(1, (preferred_traits.Pacing ?? 0) + 0.25);
+        break;
+      case 'ideas_over_pacing':
+        preferred_traits.Pacing = Math.max(0, (preferred_traits.Pacing ?? 0.15) - 0.15);
+        break;
+    }
+  }
+
+  const evidence = {
+    completed_books_count:  0,
+    imported_books_count:   0,
+    rated_books_count:      0,
+    taste_tag_count:        0,
+    review_count:           0,
+    diagnosis_answer_count: Object.keys(diagnosisAnswers).length,
+  };
+
+  return {
+    tier:              0,
+    label:             'Getting started',
+    confidence:        'low',
+    preferred_traits,
+    avoided_traits:    {},
+    genre_affinities,
+    liked_subjects,
+    liked_authors:     [],
+    open_questions:    [],
+    evidence,
+    strongSignalCount: 0,
+    nextTierAt:        5,
+  };
+}
+
+// ─── Google Books search ──────────────────────────────────────────────────────
+
+type GBResult = {
+  id: string;
   title: string;
   author: string;
-  isbn: string;
-  label: string;
+  cover: string | null;
   subjects: string[];
 };
 
-// ─── Curated book list ────────────────────────────────────────────────────────
-// 16 popular books across major genres.  ISBNs drive OL cover images.
-// Subjects are chosen to match bookTraits.ts detection keywords exactly.
+const GB_KEY =
+  typeof process.env?.EXPO_PUBLIC_GOOGLE_BOOKS_API_KEY === 'string' &&
+  process.env.EXPO_PUBLIC_GOOGLE_BOOKS_API_KEY.trim().length > 0
+    ? process.env.EXPO_PUBLIC_GOOGLE_BOOKS_API_KEY.trim()
+    : null;
 
-const CURATED_BOOKS: CuratedBook[] = [
-  {
-    slug: 'gone-girl',
-    title: 'Gone Girl',
-    author: 'Gillian Flynn',
-    isbn: '9780307588371',
-    label: 'Thriller',
-    subjects: ['thriller', 'mystery', 'suspense', 'psychological fiction', 'crime fiction'],
-  },
-  {
-    slug: 'silent-patient',
-    title: 'The Silent Patient',
-    author: 'Alex Michaelides',
-    isbn: '9781250301697',
-    label: 'Thriller',
-    subjects: ['thriller', 'mystery', 'psychological thriller', 'crime fiction', 'suspense'],
-  },
-  {
-    slug: 'seven-husbands',
-    title: 'The Seven Husbands of Evelyn Hugo',
-    author: 'Taylor Jenkins Reid',
-    isbn: '9781501156717',
-    label: 'Fiction',
-    subjects: ['historical fiction', 'romance', 'literary fiction', 'drama'],
-  },
-  {
-    slug: 'crawdads-sing',
-    title: 'Where the Crawdads Sing',
-    author: 'Delia Owens',
-    isbn: '9780735224292',
-    label: 'Literary Fiction',
-    subjects: ['literary fiction', 'mystery', 'coming-of-age', 'historical fiction'],
-  },
-  {
-    slug: 'acotar',
-    title: 'A Court of Thorns and Roses',
-    author: 'Sarah J. Maas',
-    isbn: '9781619634466',
-    label: 'Fantasy',
-    subjects: ['fantasy', 'romance', 'romantasy', 'magic', 'fae'],
-  },
-  {
-    slug: 'fourth-wing',
-    title: 'Fourth Wing',
-    author: 'Rebecca Yarros',
-    isbn: '9781649374042',
-    label: 'Fantasy',
-    subjects: ['fantasy', 'romance', 'dragons', 'romantasy', 'magic'],
-  },
-  {
-    slug: 'midnight-library',
-    title: 'The Midnight Library',
-    author: 'Matt Haig',
-    isbn: '9780525559474',
-    label: 'Fiction',
-    subjects: ['contemporary fiction', 'magical realism', 'philosophical fiction', 'literary fiction'],
-  },
-  {
-    slug: 'beach-read',
-    title: 'Beach Read',
-    author: 'Emily Henry',
-    isbn: '9780451491992',
-    label: 'Romance',
-    subjects: ['romance', 'contemporary romance', 'romantic fiction', 'love story'],
-  },
-  {
-    slug: 'it-ends-with-us',
-    title: 'It Ends With Us',
-    author: 'Colleen Hoover',
-    isbn: '9781501110368',
-    label: 'Romance',
-    subjects: ['romance', 'contemporary fiction', 'love story', 'drama'],
-  },
-  {
-    slug: 'educated',
-    title: 'Educated',
-    author: 'Tara Westover',
-    isbn: '9780399590504',
-    label: 'Memoir',
-    subjects: ['memoir', 'autobiography', 'biography', 'nonfiction'],
-  },
-  {
-    slug: 'atomic-habits',
-    title: 'Atomic Habits',
-    author: 'James Clear',
-    isbn: '9780735211292',
-    label: 'Nonfiction',
-    subjects: ['nonfiction', 'self-help', 'psychology', 'personal development'],
-  },
-  {
-    slug: 'name-of-wind',
-    title: 'The Name of the Wind',
-    author: 'Patrick Rothfuss',
-    isbn: '9780756404741',
-    label: 'Fantasy',
-    subjects: ['fantasy', 'epic fantasy', 'magic', 'adventure', 'high fantasy'],
-  },
-  {
-    slug: 'daisy-jones',
-    title: 'Daisy Jones & The Six',
-    author: 'Taylor Jenkins Reid',
-    isbn: '9781524798642',
-    label: 'Fiction',
-    subjects: ['historical fiction', 'drama', 'literary fiction'],
-  },
-  {
-    slug: 'normal-people',
-    title: 'Normal People',
-    author: 'Sally Rooney',
-    isbn: '9781984822178',
-    label: 'Literary Fiction',
-    subjects: ['literary fiction', 'romance', 'contemporary fiction', 'coming-of-age'],
-  },
-  {
-    slug: 'thursday-murder-club',
-    title: 'The Thursday Murder Club',
-    author: 'Richard Osman',
-    isbn: '9781984880963',
-    label: 'Mystery',
-    subjects: ['mystery', 'cozy mystery', 'detective', 'crime fiction', 'mystery fiction'],
-  },
-  {
-    slug: 'project-hail-mary',
-    title: 'Project Hail Mary',
-    author: 'Andy Weir',
-    isbn: '9780593135204',
-    label: 'Sci-Fi',
-    subjects: ['science fiction', 'sci-fi', 'space', 'adventure', 'speculative fiction'],
-  },
-];
-
-const RATING_OPTIONS = [
-  { label: 'Loved it', value: 5, bg: '#f0fdf4', border: '#16a34a', text: '#15803d' },
-  { label: 'Liked it', value: 4, bg: '#eff6ff', border: '#3b82f6', text: '#2563eb' },
-  { label: 'It was okay', value: 3, bg: '#f5f5f4', border: '#a8a29e', text: '#57534e' },
-  { label: 'Not for me', value: 2, bg: '#fef2f2', border: '#fca5a5', text: '#dc2626' },
-];
-
-const LEARNING_MESSAGES = [
-  'Understanding what you like\u2026',
-  'Finding patterns in your reads\u2026',
-  'Building your taste profile\u2026',
-];
-
-function sleep(ms: number) {
-  return new Promise<void>(r => setTimeout(r, ms));
+async function searchGoogleBooks(query: string): Promise<GBResult[]> {
+  if (!query.trim() || !GB_KEY) return [];
+  const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=5&key=${GB_KEY}`;
+  try {
+    const res  = await fetch(url);
+    const json = await res.json();
+    return (json.items ?? []).map((item: Record<string, unknown>) => {
+      const info = (item.volumeInfo ?? {}) as Record<string, unknown>;
+      const imgs = (info.imageLinks ?? {}) as Record<string, string>;
+      const authors = (info.authors as string[] | undefined) ?? [];
+      const cats    = (info.categories as string[] | undefined) ?? [];
+      return {
+        id:       item.id as string,
+        title:    (info.title as string) ?? 'Unknown',
+        author:   authors[0] ?? '',
+        cover:    imgs.thumbnail ?? imgs.smallThumbnail ?? null,
+        subjects: cats.map((c: string) => c.toLowerCase()),
+      } satisfies GBResult;
+    });
+  } catch {
+    return [];
+  }
 }
 
-function coverUrl(isbn: string) {
-  return `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`;
-}
+// ─── Phase type ───────────────────────────────────────────────────────────────
 
-// ─── Main screen ──────────────────────────────────────────────────────────────
+type Phase = 'genres' | 'avoid' | 'pacing' | 'tone' | 'fav_book' | 'payoff';
 
-export default function OnboardingScreen() {
-  const router = useRouter();
-  const [phase, setPhase] = useState<Phase>('pick');
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [ratings, setRatings] = useState<Record<string, number>>({});
-  const [currentRateIdx, setCurrentRateIdx] = useState(0);
-  const [recs, setRecs] = useState<ScoredBook[]>([]);
-  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
-  const [recError, setRecError] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [phaseAnim] = useState(new Animated.Value(1));
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
-  // Learning animation
-  const dot1 = useRef(new Animated.Value(0.3)).current;
-  const dot2 = useRef(new Animated.Value(0.3)).current;
-  const dot3 = useRef(new Animated.Value(0.3)).current;
-  const [learningMsgIdx, setLearningMsgIdx] = useState(0);
-
-  useEffect(() => {
-    supabase?.auth.getUser().then(({ data }) => {
-      setCurrentUserId(data.user?.id ?? null);
-    });
-  }, []);
-
-  // ── Selection ──────────────────────────────────────────────────────────────
-
-  function toggleBook(slug: string) {
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (next.has(slug)) next.delete(slug);
-      else next.add(slug);
-      return next;
-    });
-  }
-
-  function handleContinueFromPick() {
-    if (selected.size < 3) return;
-    fadeTransition(() => {
-      setCurrentRateIdx(0);
-      setPhase('rate');
-    });
-  }
-
-  // ── Rating ─────────────────────────────────────────────────────────────────
-
-  const selectedBooks = CURATED_BOOKS.filter(b => selected.has(b.slug));
-
-  function handleRate(slug: string, value: number) {
-    const nextRatings = { ...ratings, [slug]: value };
-    setRatings(nextRatings);
-
-    const nextIdx = currentRateIdx + 1;
-    if (nextIdx < selectedBooks.length) {
-      fadeTransition(() => setCurrentRateIdx(nextIdx));
-    } else {
-      fadeTransition(() => startLearning(nextRatings));
-    }
-  }
-
-  // ── Learning ───────────────────────────────────────────────────────────────
-
-  function startDotAnimation() {
-    const pulse = (dot: Animated.Value, delay: number) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(delay),
-          Animated.timing(dot, { toValue: 1, duration: 380, useNativeDriver: true }),
-          Animated.timing(dot, { toValue: 0.3, duration: 380, useNativeDriver: true }),
-        ]),
-      ).start();
-    pulse(dot1, 0);
-    pulse(dot2, 250);
-    pulse(dot3, 500);
-  }
-
-  function startLearning(finalRatings: Record<string, number>) {
-    setPhase('learning');
-    startDotAnimation();
-
-    const msgTimer = setInterval(
-      () => setLearningMsgIdx(i => (i + 1) % LEARNING_MESSAGES.length),
-      900,
-    );
-
-    const t0 = Date.now();
-
-    doSaveAndFetch(finalRatings)
-      .catch(() => setRecError(true))
-      .finally(async () => {
-        clearInterval(msgTimer);
-        const elapsed = Date.now() - t0;
-        if (elapsed < 2300) await sleep(2300 - elapsed);
-        fadeTransition(() => setPhase('payoff'));
-      });
-  }
-
-  async function doSaveAndFetch(finalRatings: Record<string, number>) {
-    if (!supabase || !currentUserId) return;
-    await saveOnboardingBooks(currentUserId, finalRatings);
-    await supabase.from('profiles').update({ onboarding_completed: true }).eq('id', currentUserId);
-
-    const profile = await computeTasteProfile(supabase, currentUserId);
-    const candidateResult = await getCandidateBooks(supabase, currentUserId, profile, emptyContext());
-    const ranked = getRankedRecs(
-      candidateResult.candidates,
-      profile,
-      5,
-      emptyContext(),
-      candidateResult.enrichmentMap,
-      candidateResult.retrieval_trace,
-      undefined,
-      candidateResult.seriesReadSet,
-      candidateResult.seriesProgress,
-      candidateResult.authorReadCounts,
-      candidateResult.seriesPositionsRead,
-    );
-    const pool = [...ranked.recs, ...ranked.discoveries].slice(0, 5);
-    setRecs(pool);
-  }
-
-  async function saveOnboardingBooks(userId: string, finalRatings: Record<string, number>) {
-    if (!supabase) return;
-    const booksToSave = CURATED_BOOKS.filter(b => selected.has(b.slug));
-
-    for (const book of booksToSave) {
-      const externalId = `onboarding_isbn_${book.isbn}`;
-      const url = coverUrl(book.isbn);
-
-      const { data: bookData } = await supabase
-        .from('books')
-        .upsert(
-          {
-            title:       book.title,
-            author:      book.author,
-            cover_url:   url,
-            external_id: externalId,
-            subjects:    book.subjects,
-          },
-          { onConflict: 'external_id' },
-        )
-        .select('id')
-        .single();
-
-      if (!bookData) continue;
-
-      await supabase.from('user_books').upsert(
-        {
-          user_id:     userId,
-          book_id:     bookData.id,
-          status:      'finished',
-          rating:      finalRatings[book.slug] ?? 3,
-          finished_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,book_id' },
-      );
-    }
-  }
-
-  // ── Payoff actions ─────────────────────────────────────────────────────────
-
-  async function handleWantToRead(book: ScoredBook) {
-    if (!supabase || !currentUserId) return;
-    setSavedIds(prev => new Set([...prev, book.id]));
-
-    (async () => {
-      let bookDbId: string | null = null;
-
-      if (book._source === 'catalog') {
-        bookDbId = book.id;
-      } else if (book.external_id) {
-        const { data: existing } = await supabase!
-          .from('books')
-          .select('id')
-          .eq('external_id', book.external_id)
-          .maybeSingle();
-
-        if (existing) {
-          bookDbId = existing.id;
-        } else {
-          const { data: created } = await supabase!
-            .from('books')
-            .insert({
-              title:       book.title,
-              author:      book.author,
-              external_id: book.external_id,
-              cover_url:   book.cover_url,
-              subjects:    book.subjects,
-            })
-            .select('id')
-            .single();
-          bookDbId = created?.id ?? null;
-        }
-      }
-
-      if (bookDbId) {
-        await supabase!.from('user_books').upsert(
-          { user_id: currentUserId, book_id: bookDbId, status: 'want_to_read' },
-          { onConflict: 'user_id,book_id', ignoreDuplicates: true },
-        );
-      }
-    })().catch(() => {});
-  }
-
-  function handleFinish() {
-    router.replace('/');
-  }
-
-  // ── Animation helpers ──────────────────────────────────────────────────────
-
-  function fadeTransition(callback: () => void) {
-    Animated.timing(phaseAnim, { toValue: 0, duration: 160, useNativeDriver: true }).start(() => {
-      callback();
-      Animated.timing(phaseAnim, { toValue: 1, duration: 220, useNativeDriver: true }).start();
-    });
-  }
-
-  // ── Render ─────────────────────────────────────────────────────────────────
-
+function ProgressDots({ phase }: { phase: Phase }) {
+  const steps: Phase[] = ['genres', 'pacing', 'tone', 'payoff'];
+  const idx = steps.indexOf(phase);
+  const active = idx >= 0 ? idx : (phase === 'avoid' ? 0 : phase === 'fav_book' ? 2 : 3);
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#faf9f7' }}>
-      <StatusBar barStyle="dark-content" />
-      <Animated.View style={{ flex: 1, opacity: phaseAnim }}>
-        {phase === 'pick'     && <PickPhase selected={selected} onToggle={toggleBook} onContinue={handleContinueFromPick} />}
-        {phase === 'rate'     && <RatePhase book={selectedBooks[currentRateIdx]} idx={currentRateIdx} total={selectedBooks.length} onRate={handleRate} />}
-        {phase === 'learning' && <LearningPhase dot1={dot1} dot2={dot2} dot3={dot3} msgIdx={learningMsgIdx} />}
-        {phase === 'payoff'   && <PayoffPhase recs={recs} savedIds={savedIds} recError={recError} onWantToRead={handleWantToRead} onFinish={handleFinish} />}
-      </Animated.View>
-    </SafeAreaView>
-  );
-}
-
-// ─── Phase: Pick ──────────────────────────────────────────────────────────────
-
-function PickPhase({
-  selected,
-  onToggle,
-  onContinue,
-}: {
-  selected: Set<string>;
-  onToggle: (slug: string) => void;
-  onContinue: () => void;
-}) {
-  const canContinue = selected.size >= 3;
-
-  return (
-    <View style={{ flex: 1 }}>
-      <View style={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 12 }}>
-        <Text style={{ fontSize: 22, fontWeight: '700', color: '#1c1917', marginBottom: 4 }}>
-          Pick books you've read
-        </Text>
-        <Text style={{ fontSize: 14, color: '#78716c', lineHeight: 20 }}>
-          Select at least 3 — we'll use these to calibrate your taste.
-        </Text>
-      </View>
-
-      <FlatList
-        data={CURATED_BOOKS}
-        keyExtractor={b => b.slug}
-        numColumns={2}
-        contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 100 }}
-        columnWrapperStyle={{ gap: 10, marginBottom: 10 }}
-        renderItem={({ item }) => (
-          <BookPickCard
-            book={item}
-            selected={selected.has(item.slug)}
-            onPress={() => onToggle(item.slug)}
-          />
-        )}
-      />
-
-      <View
-        style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          backgroundColor: '#faf9f7',
-          borderTopWidth: 1,
-          borderTopColor: '#e7e5e4',
-          paddingHorizontal: 20,
-          paddingVertical: 14,
-        }}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <Text style={{ fontSize: 13, color: '#78716c' }}>
-            {selected.size === 0
-              ? 'Select at least 3 books'
-              : `${selected.size} selected${selected.size < 3 ? ` · ${3 - selected.size} more needed` : ''}`}
-          </Text>
-          {selected.size >= 3 && (
-            <Text style={{ fontSize: 13, color: '#15803d', fontWeight: '600' }}>Ready ✓</Text>
-          )}
-        </View>
-        <TouchableOpacity
-          onPress={onContinue}
-          disabled={!canContinue}
-          activeOpacity={0.8}
+    <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+      {steps.map((_, i) => (
+        <View
+          key={i}
           style={{
-            backgroundColor: canContinue ? '#1c1917' : '#d6d3d1',
-            paddingVertical: 14,
-            borderRadius: 12,
-            alignItems: 'center',
+            width: i === active ? 20 : 6,
+            height: 6,
+            borderRadius: 3,
+            backgroundColor: i <= active ? INK : BORD,
           }}
-        >
-          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Continue</Text>
-        </TouchableOpacity>
-      </View>
+        />
+      ))}
     </View>
   );
 }
 
-function BookPickCard({
-  book,
-  selected,
+function GenreChip({
+  label,
+  active,
   onPress,
+  accentColor = INK,
 }: {
-  book: CuratedBook;
-  selected: boolean;
+  label: string;
+  active: boolean;
   onPress: () => void;
+  accentColor?: string;
 }) {
   return (
-    <Pressable
+    <TouchableOpacity
       onPress={onPress}
+      activeOpacity={0.75}
       style={{
-        flex: 1,
-        borderRadius: 12,
-        overflow: 'hidden',
-        borderWidth: 2,
-        borderColor: selected ? '#1c1917' : '#e7e5e4',
-        backgroundColor: '#fff',
+        paddingHorizontal: 14,
+        paddingVertical: 9,
+        borderRadius: 22,
+        borderWidth: 1.5,
+        borderColor: active ? accentColor : BORD,
+        backgroundColor: active ? accentColor + '18' : '#fff',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
       }}
     >
-      <Image
-        source={{ uri: coverUrl(book.isbn) }}
-        style={{ width: '100%', aspectRatio: 2 / 3, backgroundColor: '#f5f5f4' }}
-        resizeMode="cover"
-      />
-      <View style={{ padding: 8 }}>
-        <Text style={{ fontSize: 12, fontWeight: '600', color: '#1c1917', lineHeight: 16 }} numberOfLines={2}>
-          {book.title}
-        </Text>
-        <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 2 }} numberOfLines={1}>
-          {book.author}
-        </Text>
-        <View style={{
-          marginTop: 5,
-          alignSelf: 'flex-start',
-          backgroundColor: '#f5f5f4',
-          paddingHorizontal: 6,
-          paddingVertical: 2,
-          borderRadius: 6,
-        }}>
-          <Text style={{ fontSize: 10, color: '#78716c', fontWeight: '500' }}>{book.label}</Text>
-        </View>
-      </View>
-
-      {selected && (
-        <View
-          style={{
-            position: 'absolute',
-            top: 8,
-            right: 8,
-            width: 22,
-            height: 22,
-            borderRadius: 11,
-            backgroundColor: '#1c1917',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Ionicons name="checkmark" size={13} color="#fff" />
-        </View>
-      )}
-    </Pressable>
-  );
-}
-
-// ─── Phase: Rate ──────────────────────────────────────────────────────────────
-
-function RatePhase({
-  book,
-  idx,
-  total,
-  onRate,
-}: {
-  book: CuratedBook;
-  idx: number;
-  total: number;
-  onRate: (slug: string, value: number) => void;
-}) {
-  if (!book) return null;
-
-  return (
-    <View style={{ flex: 1, paddingHorizontal: 20 }}>
-      <View style={{ paddingTop: 24, marginBottom: 32 }}>
-        <Text style={{ fontSize: 22, fontWeight: '700', color: '#1c1917', marginBottom: 4 }}>
-          How did it land?
-        </Text>
-        <Text style={{ fontSize: 14, color: '#78716c' }}>
-          Book {idx + 1} of {total}
-        </Text>
-        <View style={{ flexDirection: 'row', gap: 5, marginTop: 10 }}>
-          {Array.from({ length: total }).map((_, i) => (
-            <View
-              key={i}
-              style={{
-                flex: 1,
-                height: 3,
-                borderRadius: 2,
-                backgroundColor: i <= idx ? '#1c1917' : '#e7e5e4',
-              }}
-            />
-          ))}
-        </View>
-      </View>
-
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 32, gap: 16 }}>
-        <Image
-          source={{ uri: coverUrl(book.isbn) }}
-          style={{
-            width: 72,
-            height: 108,
-            borderRadius: 6,
-            backgroundColor: '#f5f5f4',
-          }}
-          resizeMode="cover"
-        />
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 18, fontWeight: '700', color: '#1c1917', lineHeight: 24 }}>
-            {book.title}
-          </Text>
-          <Text style={{ fontSize: 13, color: '#78716c', marginTop: 3 }}>{book.author}</Text>
-          <View style={{
-            marginTop: 8,
-            alignSelf: 'flex-start',
-            backgroundColor: '#f5f5f4',
-            paddingHorizontal: 8,
-            paddingVertical: 3,
-            borderRadius: 6,
-          }}>
-            <Text style={{ fontSize: 11, color: '#57534e', fontWeight: '500' }}>{book.label}</Text>
-          </View>
-        </View>
-      </View>
-
-      <Text style={{ fontSize: 13, color: '#a8a29e', fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 12 }}>
-        Your reaction
-      </Text>
-
-      <View style={{ gap: 10 }}>
-        {RATING_OPTIONS.map(opt => (
-          <TouchableOpacity
-            key={opt.value}
-            activeOpacity={0.75}
-            onPress={() => onRate(book.slug, opt.value)}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              paddingVertical: 14,
-              paddingHorizontal: 16,
-              borderRadius: 12,
-              borderWidth: 1.5,
-              borderColor: opt.border,
-              backgroundColor: opt.bg,
-            }}
-          >
-            <Text style={{ fontSize: 15, fontWeight: '600', color: opt.text, flex: 1 }}>
-              {opt.label}
-            </Text>
-            <Ionicons name="chevron-forward" size={16} color={opt.text} />
-          </TouchableOpacity>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-// ─── Phase: Learning ──────────────────────────────────────────────────────────
-
-function LearningPhase({
-  dot1,
-  dot2,
-  dot3,
-  msgIdx,
-}: {
-  dot1: Animated.Value;
-  dot2: Animated.Value;
-  dot3: Animated.Value;
-  msgIdx: number;
-}) {
-  return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
-      <View style={{ marginBottom: 36 }}>
-        <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center', justifyContent: 'center' }}>
-          {[dot1, dot2, dot3].map((dot, i) => (
-            <Animated.View
-              key={i}
-              style={{
-                width: 10,
-                height: 10,
-                borderRadius: 5,
-                backgroundColor: '#1c1917',
-                opacity: dot,
-              }}
-            />
-          ))}
-        </View>
-      </View>
-
+      {active && <Ionicons name="checkmark" size={12} color={accentColor} />}
       <Text
         style={{
-          fontSize: 20,
-          fontWeight: '700',
-          color: '#1c1917',
-          textAlign: 'center',
-          lineHeight: 28,
-          marginBottom: 12,
+          fontSize: 13,
+          fontWeight: active ? '600' : '400',
+          color: active ? accentColor : SUB,
         }}
       >
-        {LEARNING_MESSAGES[msgIdx]}
+        {label}
       </Text>
-
-      <Text style={{ fontSize: 14, color: '#a8a29e', textAlign: 'center', lineHeight: 20 }}>
-        Finding books that match how you actually read.
-      </Text>
-    </View>
+    </TouchableOpacity>
   );
 }
 
-// ─── Phase: Payoff ────────────────────────────────────────────────────────────
-
-function PayoffPhase({
-  recs,
-  savedIds,
-  recError,
-  onWantToRead,
-  onFinish,
+function BinaryOptionCard({
+  option,
+  onSelect,
 }: {
-  recs: ScoredBook[];
-  savedIds: Set<string>;
-  recError: boolean;
-  onWantToRead: (book: ScoredBook) => void;
-  onFinish: () => void;
+  option: BinaryOption;
+  onSelect: () => void;
 }) {
   return (
-    <View style={{ flex: 1 }}>
-      <View style={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 4 }}>
-        <Text style={{ fontSize: 22, fontWeight: '700', color: '#1c1917', marginBottom: 4 }}>
-          Your first picks
-        </Text>
-        <Text style={{ fontSize: 14, color: '#78716c', lineHeight: 20 }}>
-          Based on what you just told us.
-        </Text>
-      </View>
-
-      {recError || recs.length === 0 ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
-          <Ionicons name="library-outline" size={40} color="#d6d3d1" style={{ marginBottom: 16 }} />
-          <Text style={{ fontSize: 16, fontWeight: '600', color: '#1c1917', textAlign: 'center', marginBottom: 8 }}>
-            Your picks are warming up
-          </Text>
-          <Text style={{ fontSize: 14, color: '#78716c', textAlign: 'center', lineHeight: 20 }}>
-            Rate a few more books to get sharper recommendations.
-          </Text>
-        </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 120 }}
-          showsVerticalScrollIndicator={false}
-        >
-          {recs.map(book => (
-            <PayoffRecCard
-              key={book.id}
-              book={book}
-              saved={savedIds.has(book.id)}
-              onWantToRead={() => onWantToRead(book)}
-            />
-          ))}
-        </ScrollView>
-      )}
-
+    <TouchableOpacity
+      onPress={onSelect}
+      activeOpacity={0.75}
+      style={{
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        borderWidth: 1.5,
+        borderColor: BORD,
+        padding: 20,
+        marginBottom: 12,
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 14,
+      }}
+    >
       <View
         style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          backgroundColor: '#faf9f7',
-          borderTopWidth: 1,
-          borderTopColor: '#e7e5e4',
-          paddingHorizontal: 20,
-          paddingVertical: 14,
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          backgroundColor: '#f5f5f4',
+          alignItems: 'center',
+          justifyContent: 'center',
         }}
       >
-        <TouchableOpacity
-          onPress={onFinish}
-          activeOpacity={0.8}
-          style={{
-            backgroundColor: '#1c1917',
-            paddingVertical: 14,
-            borderRadius: 12,
-            alignItems: 'center',
-            flexDirection: 'row',
-            justifyContent: 'center',
-            gap: 8,
-          }}
-        >
-          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Start exploring</Text>
-          <Ionicons name="arrow-forward" size={16} color="#fff" />
-        </TouchableOpacity>
+        <Ionicons name={option.icon} size={20} color={INK} />
       </View>
-    </View>
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 16, fontWeight: '700', color: INK, lineHeight: 22 }}>
+          {option.headline}
+        </Text>
+        <Text style={{ fontSize: 13, color: SUB, lineHeight: 18, marginTop: 3 }}>
+          {option.sub}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={MUTED} style={{ marginTop: 10 }} />
+    </TouchableOpacity>
+  );
+}
+
+function SkeletonCard() {
+  const shimmer = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmer, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(shimmer, { toValue: 0, duration: 800, useNativeDriver: true }),
+      ]),
+    ).start();
+  }, []);
+  const opacity = shimmer.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] });
+  return (
+    <Animated.View
+      style={{
+        opacity,
+        backgroundColor: '#fff',
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: BORD,
+        padding: 14,
+        marginBottom: 12,
+        flexDirection: 'row',
+        gap: 12,
+      }}
+    >
+      <View style={{ width: 56, height: 84, borderRadius: 6, backgroundColor: '#f5f5f4' }} />
+      <View style={{ flex: 1, gap: 8 }}>
+        <View style={{ height: 14, width: '70%', borderRadius: 4, backgroundColor: '#f5f5f4' }} />
+        <View style={{ height: 12, width: '45%', borderRadius: 4, backgroundColor: '#f5f5f4' }} />
+        <View style={{ height: 10, width: '90%', borderRadius: 4, backgroundColor: '#f5f5f4' }} />
+        <View style={{ height: 10, width: '80%', borderRadius: 4, backgroundColor: '#f5f5f4' }} />
+      </View>
+    </Animated.View>
   );
 }
 
 function PayoffRecCard({
   book,
   saved,
-  onWantToRead,
+  onSave,
 }: {
   book: ScoredBook;
   saved: boolean;
-  onWantToRead: () => void;
+  onSave: () => void;
 }) {
-  const color = fitColor(book.score);
-  const label = fitLabel(book.score);
-  const reasons = book.reasons.slice(0, 2);
-
   return (
     <View
       style={{
         backgroundColor: '#fff',
         borderRadius: 14,
-        marginBottom: 12,
-        padding: 14,
         borderWidth: 1,
-        borderColor: '#f0eeec',
-        shadowColor: '#1c1917',
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 2 },
-        elevation: 2,
+        borderColor: BORD,
+        padding: 14,
+        marginBottom: 12,
+        flexDirection: 'row',
+        gap: 12,
       }}
     >
-      <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
-        <CoverThumb
-          url={book.cover_url}
-          externalId={book.external_id}
-          title={book.title}
-          width={52}
-          height={78}
-        />
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 15, fontWeight: '700', color: '#1c1917', lineHeight: 20 }} numberOfLines={2}>
-            {book.title}
+      <CoverThumb
+        url={book.cover_url}
+        externalId={book.external_id}
+        title={book.title}
+        width={56}
+        height={84}
+      />
+
+      <View style={{ flex: 1 }}>
+        <Text
+          numberOfLines={2}
+          style={{ fontSize: 15, fontWeight: '700', color: INK, lineHeight: 20 }}
+        >
+          {book.title}
+        </Text>
+        <Text style={{ fontSize: 12, color: SUB, marginTop: 2 }}>{book.author}</Text>
+
+        {book.description ? (
+          <Text
+            numberOfLines={2}
+            style={{ fontSize: 12, color: MUTED, lineHeight: 17, marginTop: 6 }}
+          >
+            {book.description}
           </Text>
-          <Text style={{ fontSize: 12, color: '#78716c', marginTop: 3 }} numberOfLines={1}>
-            {book.author}
-          </Text>
-          <View
+        ) : null}
+
+        <View style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {book.score > 0 && (
+            <View
+              style={{
+                backgroundColor: fitColor(book.score) + '22',
+                paddingHorizontal: 8,
+                paddingVertical: 3,
+                borderRadius: 6,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: '600',
+                  color: fitColor(book.score),
+                }}
+              >
+                {fitLabel(book.score)}
+              </Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            onPress={onSave}
+            activeOpacity={0.75}
             style={{
-              marginTop: 7,
-              alignSelf: 'flex-start',
-              paddingHorizontal: 8,
-              paddingVertical: 3,
-              borderRadius: 6,
-              backgroundColor: color + '18',
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 4,
+              paddingHorizontal: 10,
+              paddingVertical: 5,
+              borderRadius: 8,
+              backgroundColor: saved ? '#15803d' + '22' : INK,
             }}
           >
-            <Text style={{ fontSize: 11, fontWeight: '600', color }}>{label}</Text>
-          </View>
+            <Ionicons
+              name={saved ? 'checkmark' : 'bookmark-outline'}
+              size={13}
+              color={saved ? '#15803d' : '#fff'}
+            />
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: '600',
+                color: saved ? '#15803d' : '#fff',
+              }}
+            >
+              {saved ? 'Saved' : 'Save'}
+            </Text>
+          </TouchableOpacity>
         </View>
-      </View>
-
-      {reasons.length > 0 && (
-        <View style={{ marginBottom: 12 }}>
-          {reasons.map((r, i) => (
-            <View key={i} style={{ flexDirection: 'row', gap: 7, marginBottom: 4, alignItems: 'flex-start' }}>
-              <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: '#d6d3d1', marginTop: 6 }} />
-              <Text style={{ flex: 1, fontSize: 13, color: '#57534e', lineHeight: 19 }}>{r}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <TouchableOpacity
-          onPress={onWantToRead}
-          disabled={saved}
-          activeOpacity={0.75}
-          style={{
-            flex: 2,
-            paddingVertical: 9,
-            borderRadius: 8,
-            backgroundColor: saved ? '#f0fdf4' : '#1c1917',
-            alignItems: 'center',
-            flexDirection: 'row',
-            justifyContent: 'center',
-            gap: 5,
-          }}
-        >
-          <Ionicons name={saved ? 'checkmark-circle' : 'bookmark-outline'} size={15} color={saved ? '#16a34a' : '#fff'} />
-          <Text style={{ fontSize: 13, fontWeight: '600', color: saved ? '#16a34a' : '#fff' }}>
-            {saved ? 'Saved' : 'Want to read'}
-          </Text>
-        </TouchableOpacity>
       </View>
     </View>
+  );
+}
+
+// ─── Book upsert helper ───────────────────────────────────────────────────────
+
+async function upsertBook(
+  client: NonNullable<typeof supabase>,
+  userId: string,
+  book: ScoredBook,
+): Promise<void> {
+  const bookData = {
+    external_id:  book.external_id,
+    title:        book.title,
+    author:       book.author,
+    cover_url:    book.cover_url,
+    description:  book.description,
+    subjects:     book.subjects ?? [],
+    source:       'onboarding',
+  };
+
+  const { data: existing } = await client
+    .from('books')
+    .select('id')
+    .eq('external_id', book.external_id)
+    .maybeSingle();
+
+  let bookId = existing?.id as string | undefined;
+
+  if (!bookId) {
+    const { data: inserted } = await client
+      .from('books')
+      .insert(bookData)
+      .select('id')
+      .single();
+    bookId = inserted?.id;
+  }
+
+  if (!bookId) return;
+
+  await client
+    .from('user_books')
+    .upsert(
+      {
+        user_id:    userId,
+        book_id:    bookId,
+        status:     'want_to_read',
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id,book_id', ignoreDuplicates: false },
+    );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+export default function OnboardingScreen() {
+  const router = useRouter();
+
+  const [phase,        setPhase]        = useState<Phase>('genres');
+  const [likedLabels,  setLikedLabels]  = useState<string[]>([]);
+  const [avoidedLabels, setAvoidedLabels] = useState<string[]>([]);
+  const [pacingKey,    setPacingKey]    = useState<string | null>(null);
+  const [toneKey,      setToneKey]      = useState<string | null>(null);
+
+  // Fav book phase
+  const [favQuery,     setFavQuery]     = useState('');
+  const [favResults,   setFavResults]   = useState<GBResult[]>([]);
+  const [favLoading,   setFavLoading]   = useState(false);
+  const [favSelected,  setFavSelected]  = useState<GBResult | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Recs
+  const [recs,         setRecs]         = useState<ScoredBook[] | null>(null);
+  const [savedIds,     setSavedIds]     = useState<Set<string>>(new Set());
+  const [recError,     setRecError]     = useState(false);
+  const fetchStarted = useRef(false);
+
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  function likedGenreObjects() {
+    return GENRES.filter(g => likedLabels.includes(g.label));
+  }
+
+  function avoidedGenreObjects() {
+    return GENRES.filter(g => avoidedLabels.includes(g.label));
+  }
+
+  function diagnosisAnswers(): Record<string, string> {
+    const ans: Record<string, string> = {};
+    if (pacingKey) ans.q_pacing = pacingKey;
+    if (toneKey)   ans.q_tone   = toneKey;
+    return ans;
+  }
+
+  // ── Phase transition ──────────────────────────────────────────────────────
+
+  function goTo(next: Phase) {
+    Animated.timing(fadeAnim, { toValue: 0, duration: 120, useNativeDriver: true }).start(() => {
+      setPhase(next);
+      Animated.timing(fadeAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+    });
+  }
+
+  // ── Pre-fetch recs (starts when pacing is chosen) ─────────────────────────
+
+  async function startRecFetch(pacing: string, tone?: string) {
+    if (!supabase || fetchStarted.current) return;
+    fetchStarted.current = true;
+
+    const answers: Record<string, string> = { q_pacing: pacing };
+    if (tone) answers.q_tone = tone;
+
+    const liked   = likedGenreObjects();
+    const avoided = avoidedGenreObjects();
+    const extra   = favSelected?.subjects ?? [];
+    const profile = buildSyntheticProfile(liked, avoided, answers, extra);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setRecError(true); return; }
+
+      const candidateResult = await getCandidateBooks(supabase, user.id, profile, emptyContext());
+      const rankedResult    = getRankedRecs(
+        candidateResult.candidates,
+        profile,
+        5,
+        emptyContext(),
+        candidateResult.enrichmentMap,
+        candidateResult.retrieval_trace,
+      );
+      // Merge all buckets into a flat list capped at 5
+      const merged = [
+        ...rankedResult.recs,
+        ...rankedResult.continuations,
+        ...rankedResult.discoveries,
+      ].slice(0, 5);
+      setRecs(merged);
+    } catch {
+      setRecError(true);
+    }
+  }
+
+  // ── Handle pacing selection ───────────────────────────────────────────────
+
+  function onPacingSelect(key: string) {
+    setPacingKey(key);
+    startRecFetch(key);
+    goTo('tone');
+  }
+
+  // ── Handle tone selection ─────────────────────────────────────────────────
+
+  function onToneSelect(key: string) {
+    setToneKey(key);
+    goTo('fav_book');
+  }
+
+  // ── Fav book search ───────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!favQuery.trim()) { setFavResults([]); return; }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setFavLoading(true);
+      const results = await searchGoogleBooks(favQuery);
+      setFavResults(results);
+      setFavLoading(false);
+    }, 400);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [favQuery]);
+
+  // ── Save preferences to Supabase ──────────────────────────────────────────
+
+  async function savePreferences(userId: string) {
+    if (!supabase) return;
+    const answers = diagnosisAnswers();
+
+    await supabase
+      .from('reader_preferences')
+      .upsert(
+        {
+          user_id:          userId,
+          favorite_genres:  likedLabels,
+          avoid_genres:     avoidedLabels,
+          diagnosis_answers: answers,
+          updated_at:       new Date().toISOString(),
+        },
+        { onConflict: 'user_id' },
+      );
+
+    // Save fav book as finished + loved signal
+    if (favSelected && supabase) {
+      // Minimal book record from GB result
+      const gbBook = {
+        id:          `gb_${favSelected.id}`,
+        external_id: `gb_${favSelected.id}`,
+        title:       favSelected.title,
+        author:      favSelected.author,
+        cover_url:   favSelected.cover,
+        isbn:        null,
+        description: null,
+        subjects:    favSelected.subjects,
+        fit_class:   undefined,
+      } as unknown as ScoredBook;
+      await upsertBook(supabase, userId, gbBook);
+      // Upgrade to finished + rating
+      const { data: bookRow } = await supabase
+        .from('books')
+        .select('id')
+        .eq('external_id', gbBook.external_id)
+        .maybeSingle();
+      if (bookRow?.id) {
+        await supabase
+          .from('user_books')
+          .upsert(
+            { user_id: userId, book_id: bookRow.id, status: 'finished', rating: 5 },
+            { onConflict: 'user_id,book_id' },
+          );
+      }
+    }
+  }
+
+  // ── Complete onboarding ───────────────────────────────────────────────────
+
+  async function finishOnboarding() {
+    if (!supabase) { router.replace('/'); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { router.replace('/'); return; }
+
+    // Run saves in parallel with routing
+    await Promise.allSettled([
+      savePreferences(user.id),
+      supabase.from('profiles').update({ onboarding_completed: true }).eq('id', user.id),
+      writeGuidedStep(0),
+    ]);
+
+    router.replace('/');
+  }
+
+  // ── Save a rec card ───────────────────────────────────────────────────────
+
+  async function onSaveRec(book: ScoredBook) {
+    setSavedIds(prev => new Set([...prev, book.id]));
+    if (!supabase) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await upsertBook(supabase, user.id, book);
+  }
+
+  // ── Genres phase ──────────────────────────────────────────────────────────
+
+  function toggleLiked(label: string) {
+    setLikedLabels(prev =>
+      prev.includes(label) ? prev.filter(l => l !== label) : [...prev, label],
+    );
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: BG }}>
+      <StatusBar barStyle="dark-content" />
+
+      {/* Header */}
+      <View
+        style={{
+          paddingHorizontal: 20,
+          paddingTop: Platform.OS === 'android' ? 16 : 8,
+          paddingBottom: 12,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <ProgressDots phase={phase} />
+
+        {/* Skip label for genre/avoid/fav_book phases */}
+        {(phase === 'genres' || phase === 'avoid' || phase === 'fav_book') && (
+          <TouchableOpacity
+            onPress={() => {
+              if (phase === 'genres') goTo('avoid');
+              else if (phase === 'avoid') goTo('pacing');
+              else if (phase === 'fav_book') goTo('payoff');
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={{ fontSize: 14, color: MUTED, fontWeight: '500' }}>Skip</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+
+        {/* ── Phase: Genres ─────────────────────────────────────────── */}
+        {phase === 'genres' && (
+          <View style={{ flex: 1 }}>
+            <View style={{ paddingHorizontal: 20, paddingBottom: 16 }}>
+              <Text style={{ fontSize: 26, fontWeight: '800', color: INK, lineHeight: 32 }}>
+                What do you love to read?
+              </Text>
+              <Text style={{ fontSize: 14, color: SUB, marginTop: 6 }}>
+                Pick as many as you'd like.
+              </Text>
+            </View>
+
+            <ScrollView
+              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {GENRES.map(g => (
+                  <GenreChip
+                    key={g.label}
+                    label={g.label}
+                    active={likedLabels.includes(g.label)}
+                    onPress={() => toggleLiked(g.label)}
+                  />
+                ))}
+              </View>
+            </ScrollView>
+
+            <View
+              style={{
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                backgroundColor: BG,
+                borderTopWidth: 1,
+                borderTopColor: BORD,
+                paddingHorizontal: 20,
+                paddingVertical: 14,
+              }}
+            >
+              <TouchableOpacity
+                onPress={() => goTo('avoid')}
+                activeOpacity={0.8}
+                style={{
+                  backgroundColor: INK,
+                  borderRadius: 14,
+                  paddingVertical: 15,
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
+                  {likedLabels.length > 0 ? 'Continue →' : 'Skip for now →'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* ── Phase: Avoid ──────────────────────────────────────────── */}
+        {phase === 'avoid' && (
+          <View style={{ flex: 1 }}>
+            <View style={{ paddingHorizontal: 20, paddingBottom: 16 }}>
+              <Text style={{ fontSize: 26, fontWeight: '800', color: INK, lineHeight: 32 }}>
+                Anything you'd rather skip?
+              </Text>
+              <Text style={{ fontSize: 14, color: SUB, marginTop: 6 }}>
+                We'll keep these out of your picks.
+              </Text>
+            </View>
+
+            <ScrollView
+              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {GENRES.filter(g => !likedLabels.includes(g.label)).map(g => (
+                  <GenreChip
+                    key={g.label}
+                    label={g.label}
+                    active={avoidedLabels.includes(g.label)}
+                    onPress={() =>
+                      setAvoidedLabels(prev =>
+                        prev.includes(g.label) ? prev.filter(l => l !== g.label) : [...prev, g.label],
+                      )
+                    }
+                    accentColor="#dc2626"
+                  />
+                ))}
+              </View>
+            </ScrollView>
+
+            <View
+              style={{
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                backgroundColor: BG,
+                borderTopWidth: 1,
+                borderTopColor: BORD,
+                paddingHorizontal: 20,
+                paddingVertical: 14,
+              }}
+            >
+              <TouchableOpacity
+                onPress={() => goTo('pacing')}
+                activeOpacity={0.8}
+                style={{
+                  backgroundColor: INK,
+                  borderRadius: 14,
+                  paddingVertical: 15,
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
+                  Continue →
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* ── Phase: Pacing ─────────────────────────────────────────── */}
+        {phase === 'pacing' && (
+          <View style={{ flex: 1, paddingHorizontal: 20 }}>
+            <Text style={{ fontSize: 26, fontWeight: '800', color: INK, lineHeight: 32, marginBottom: 6 }}>
+              How important is pacing?
+            </Text>
+            <Text style={{ fontSize: 14, color: SUB, marginBottom: 28 }}>
+              Tap to pick — no right answer.
+            </Text>
+            {PACING_OPTIONS.map(opt => (
+              <BinaryOptionCard key={opt.key} option={opt} onSelect={() => onPacingSelect(opt.key)} />
+            ))}
+          </View>
+        )}
+
+        {/* ── Phase: Tone ───────────────────────────────────────────── */}
+        {phase === 'tone' && (
+          <View style={{ flex: 1, paddingHorizontal: 20 }}>
+            <Text style={{ fontSize: 26, fontWeight: '800', color: INK, lineHeight: 32, marginBottom: 6 }}>
+              When a book really lands...
+            </Text>
+            <Text style={{ fontSize: 14, color: SUB, marginBottom: 28 }}>
+              What's usually behind it?
+            </Text>
+            {TONE_OPTIONS.map(opt => (
+              <BinaryOptionCard key={opt.key} option={opt} onSelect={() => onToneSelect(opt.key)} />
+            ))}
+          </View>
+        )}
+
+        {/* ── Phase: Fav Book ───────────────────────────────────────── */}
+        {phase === 'fav_book' && (
+          <View style={{ flex: 1 }}>
+            <View style={{ paddingHorizontal: 20, paddingBottom: 16 }}>
+              <Text style={{ fontSize: 26, fontWeight: '800', color: INK, lineHeight: 32 }}>
+                Any book that's stayed with you?
+              </Text>
+              <Text style={{ fontSize: 14, color: SUB, marginTop: 6 }}>
+                Optional — helps us calibrate from the start.
+              </Text>
+            </View>
+
+            <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: '#fff',
+                  borderRadius: 12,
+                  borderWidth: 1.5,
+                  borderColor: BORD,
+                  paddingHorizontal: 12,
+                  gap: 8,
+                }}
+              >
+                <Ionicons name="search" size={18} color={MUTED} />
+                <TextInput
+                  value={favQuery}
+                  onChangeText={q => { setFavQuery(q); setFavSelected(null); }}
+                  placeholder="Search by title or author..."
+                  placeholderTextColor={MUTED}
+                  style={{ flex: 1, fontSize: 14, paddingVertical: 13, color: INK }}
+                  autoFocus
+                />
+                {favQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => { setFavQuery(''); setFavResults([]); setFavSelected(null); }}>
+                    <Ionicons name="close-circle" size={18} color={MUTED} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
+            {/* Selected book confirmation */}
+            {favSelected && (
+              <View
+                style={{
+                  marginHorizontal: 20,
+                  marginBottom: 12,
+                  backgroundColor: '#15803d' + '14',
+                  borderRadius: 12,
+                  borderWidth: 1.5,
+                  borderColor: '#15803d' + '44',
+                  padding: 14,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 12,
+                }}
+              >
+                {favSelected.cover ? (
+                  <Image
+                    source={{ uri: favSelected.cover }}
+                    style={{ width: 40, height: 60, borderRadius: 4 }}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={{ width: 40, height: 60, borderRadius: 4, backgroundColor: '#f5f5f4' }} />
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: INK }}>{favSelected.title}</Text>
+                  <Text style={{ fontSize: 12, color: SUB, marginTop: 2 }}>{favSelected.author}</Text>
+                </View>
+                <Ionicons name="checkmark-circle" size={22} color="#15803d" />
+              </View>
+            )}
+
+            {/* Search results */}
+            {!favSelected && (
+              <FlatList
+                data={favResults}
+                keyExtractor={i => i.id}
+                keyboardShouldPersistTaps="handled"
+                ListEmptyComponent={
+                  favLoading ? (
+                    <View style={{ padding: 20, alignItems: 'center' }}>
+                      <ActivityIndicator size="small" color={MUTED} />
+                    </View>
+                  ) : null
+                }
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    onPress={() => { setFavSelected(item); Keyboard.dismiss(); }}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingHorizontal: 20,
+                      paddingVertical: 12,
+                      borderBottomWidth: 1,
+                      borderBottomColor: BORD,
+                      gap: 12,
+                    }}
+                  >
+                    {item.cover ? (
+                      <Image
+                        source={{ uri: item.cover }}
+                        style={{ width: 36, height: 52, borderRadius: 4 }}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={{ width: 36, height: 52, borderRadius: 4, backgroundColor: '#f5f5f4' }} />
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: '600', color: INK }}>
+                        {item.title}
+                      </Text>
+                      <Text numberOfLines={1} style={{ fontSize: 12, color: SUB, marginTop: 2 }}>
+                        {item.author}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+              />
+            )}
+
+            {/* CTA */}
+            <View
+              style={{
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                backgroundColor: BG,
+                borderTopWidth: 1,
+                borderTopColor: BORD,
+                paddingHorizontal: 20,
+                paddingVertical: 14,
+              }}
+            >
+              <TouchableOpacity
+                onPress={() => goTo('payoff')}
+                activeOpacity={0.8}
+                style={{
+                  backgroundColor: INK,
+                  borderRadius: 14,
+                  paddingVertical: 15,
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
+                  {favSelected ? 'See my picks →' : 'Skip — show my picks →'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* ── Phase: Payoff ─────────────────────────────────────────── */}
+        {phase === 'payoff' && (
+          <View style={{ flex: 1 }}>
+            <View style={{ paddingHorizontal: 20, paddingBottom: 4 }}>
+              <Text style={{ fontSize: 26, fontWeight: '800', color: INK, lineHeight: 32 }}>
+                Here's our first read on your taste
+              </Text>
+              <Text style={{ fontSize: 14, color: SUB, marginTop: 6 }}>
+                Save any that catch your eye. Each one trains the engine.
+              </Text>
+            </View>
+
+            <ScrollView
+              contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 120 }}
+              showsVerticalScrollIndicator={false}
+            >
+              {!recs && !recError ? (
+                // Skeleton state — never shows "warming up" text
+                <>
+                  <SkeletonCard />
+                  <SkeletonCard />
+                  <SkeletonCard />
+                </>
+              ) : recError || (recs && recs.length === 0) ? (
+                // Graceful fallback — still outcome-driven
+                <View style={{ paddingTop: 32, paddingHorizontal: 16, alignItems: 'center' }}>
+                  <Ionicons name="library-outline" size={44} color="#d6d3d1" style={{ marginBottom: 16 }} />
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: INK, textAlign: 'center', marginBottom: 8 }}>
+                    Rate a book or two first
+                  </Text>
+                  <Text style={{ fontSize: 14, color: SUB, textAlign: 'center', lineHeight: 20 }}>
+                    Head to your recs and give the engine a signal — picks will appear quickly.
+                  </Text>
+                </View>
+              ) : (
+                recs!.map(book => (
+                  <PayoffRecCard
+                    key={book.id}
+                    book={book}
+                    saved={savedIds.has(book.id)}
+                    onSave={() => onSaveRec(book)}
+                  />
+                ))
+              )}
+            </ScrollView>
+
+            <View
+              style={{
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                backgroundColor: BG,
+                borderTopWidth: 1,
+                borderTopColor: BORD,
+                paddingHorizontal: 20,
+                paddingVertical: 14,
+              }}
+            >
+              <TouchableOpacity
+                onPress={finishOnboarding}
+                activeOpacity={0.8}
+                style={{
+                  backgroundColor: INK,
+                  borderRadius: 14,
+                  paddingVertical: 15,
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
+                  Take me to my picks →
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </Animated.View>
+    </SafeAreaView>
   );
 }
