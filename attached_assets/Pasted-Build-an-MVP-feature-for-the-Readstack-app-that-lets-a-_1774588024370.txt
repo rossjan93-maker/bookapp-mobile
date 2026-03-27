@@ -1,0 +1,304 @@
+Build an MVP feature for the Readstack app that lets a user scan a physical book in the real world and instantly answer the question:
+
+“Will I like this?”
+
+This is not just a scanner. It is a personalized taste-fit decision feature that should help a user standing in a bookstore decide whether to buy, save, or skip a book.
+
+Important context
+- This app already has a recommendation engine, recommendation explanations, acted-on filtering, cache/session/persisted rec behavior, deck replenishment, and recommendation feedback actions.
+- Do not build a parallel recommendation system from scratch.
+- Reuse existing recommendation/taste signals, scoring inputs, explanation patterns, and feedback persistence wherever possible.
+- Follow the repo’s existing build rules / definition of done / migration discipline.
+- Do not change folder structure unless necessary.
+- Do not make broad speculative refactors.
+- If you need schema changes, create explicit migrations and explain them clearly.
+- If you touch more than 5 files, explain why.
+
+Goal
+Implement an MVP “physical book scan → will I like this?” flow that feels fast, credible, and useful in a real-world browsing situation.
+
+Core product promise
+A user scans a physical book and gets:
+1. a fit verdict
+2. a fit score
+3. a confidence level
+4. 2–3 reasons grounded in their actual taste
+5. a caution when relevant
+6. immediate actions: Want to Read / Not for me / More like this
+
+Primary user story
+As a reader in a bookstore, library, airport, or friend’s house, I want to scan a book and instantly know whether it fits my taste so I can decide whether to buy it, save it, or skip it.
+
+MVP scope
+Build the first version with:
+- barcode / ISBN scanning as the primary path
+- manual fallback if scanning fails or metadata is weak
+- personalized fit result based on existing reading history / ratings / tags / rec signals
+- result screen with explanation + actions
+- scan history persistence
+- low-signal fallback for new users
+
+Do not try to solve everything at once.
+For MVP, do NOT prioritize:
+- full OCR cover parsing as the primary path
+- bookstore inventory integrations
+- price comparison
+- deep conversational AI analysis
+- social overlays on scan result
+- multi-book compare mode
+
+Execution approach
+Before changing code:
+1. Inspect the current app architecture, recommendation pipeline, book metadata flow, Supabase schema, feedback/action model, and existing explanation logic.
+2. Identify the smallest clean integration path.
+3. Then implement in a disciplined way.
+
+I want you to both plan and build.
+Do not stop at a vague plan unless something is truly blocked.
+
+What to build
+
+1. Entry point
+Add a clear entry point for scanning physical books.
+This can be:
+- a button on Home / Search / Recommendations
+- or a dedicated screen route such as Scan
+
+The entry point should feel like a core product feature, not a buried utility.
+
+2. Scanner flow
+Implement a camera-based scan flow that supports barcode / ISBN scanning first.
+
+Requirements:
+- Use an Expo-compatible scanning package that matches the repo’s current SDK and dependencies.
+- Inspect the installed Expo version first and choose the correct compatible approach.
+- Ask for camera permission cleanly.
+- Show a simple scanning UI with helpful copy.
+- On successful scan, resolve the book by ISBN if possible.
+- If the scan fails or metadata cannot be resolved, provide a manual fallback:
+  - enter ISBN
+  - or search by title/author
+
+For MVP, barcode/ISBN should be the main path.
+Manual fallback is required.
+OCR-first is not required.
+
+3. Book resolution
+When a code is scanned:
+- first check whether the book already exists in the app / existing DB
+- if not, use the existing external metadata pathway if one already exists
+- if there is no clean reusable path, create the smallest clean metadata lookup layer needed for MVP
+
+Do not duplicate metadata systems if the app already has one.
+
+Need a resolved book object with enough data to support:
+- title
+- author
+- cover
+- description / blurb if available
+- genre / subgenre / themes if available
+- series context if available
+- page count / length if available
+
+If some metadata is missing, still return the best possible result and lower confidence appropriately.
+
+4. Fit evaluation
+This is the core of the feature.
+
+When a book is resolved, compute a personalized fit evaluation using the app’s existing taste and recommendation logic as much as possible.
+
+Do NOT invent a disconnected scoring engine.
+
+Use existing signals where possible:
+- finished books
+- ratings
+- taste tags
+- liked/disliked rec actions
+- authors repeatedly liked
+- genre/subgenre affinity
+- lane / fit classifier if already available
+- pacing / tone / theme patterns if already modeled
+- series awareness where relevant
+
+Output should include:
+- fit score, for example 0–100
+- verdict bucket:
+  - Strong fit
+  - Likely fit
+  - Mixed fit
+  - Probably not for you
+- confidence bucket:
+  - High
+  - Medium
+  - Low
+
+This should not be popularity-based.
+It must be personalized.
+
+5. Explanation layer
+The result must answer “why?” in a concise and believable way.
+
+Show:
+- 2–3 reasons grounded in actual user taste
+- 1 caution if relevant
+
+Examples of good reasoning:
+- “You tend to respond well to character-driven literary fiction, and this looks strongest on voice and emotional depth.”
+- “This matches books you rated highly for atmosphere and slower pacing.”
+- “This appears quieter and less plot-driven than the books you finish fastest.”
+
+Examples of bad reasoning:
+- “This is in a genre you like.”
+- “Readers enjoyed this.”
+- “This may or may not appeal to you.”
+
+Use existing explanation patterns / fit lanes / recommendation reason infrastructure where possible, but adapt them to a scan-result format.
+
+6. Result screen
+Build a result view that feels like a decision surface, not just metadata display.
+
+Required result elements:
+- cover
+- title / author
+- “Will I like this?” headline
+- fit score
+- verdict
+- confidence
+- concise explanation
+- caution / watch-out if relevant
+- actions:
+  - Want to Read
+  - Not for me
+  - More like this
+
+The result should feel opinionated and useful.
+
+Suggested example:
+- “Likely yes — 82/100”
+- “High confidence”
+- “You tend to like emotionally driven literary fiction with strong character work. This matches several books you rated highly.”
+- “Watch-out: this one looks quieter and less plot-driven than your fastest-finished reads.”
+
+7. Action behavior
+Use the app’s current action semantics where appropriate.
+
+These actions should work cleanly from the scan result:
+- Want to Read
+- Not for me
+- More like this
+
+Requirements:
+- persist actions correctly
+- use immediate local feedback
+- avoid stale restore/reappearance issues already solved on the recommendations surface
+- if the app already has a robust feedback/action system, reuse it
+
+8. Low-signal / new-user state
+If the user does not yet have enough taste data for a credible answer, do not fake confidence.
+
+Instead show something like:
+- “We need a little more from your reading taste before we can answer confidently.”
+
+Then route them toward lightweight onboarding / signal gathering.
+
+This should connect to the app’s future onboarding direction rather than being a dead end.
+
+For MVP, a simple low-signal state + CTA is enough.
+If needed, create a small placeholder onboarding prompt or route for future expansion.
+
+9. Scan history
+Persist scan events so the app can learn and the user can revisit results.
+
+At minimum:
+- book scanned
+- timestamp
+- scan source
+- fit result / verdict
+- confidence
+- any action taken afterward
+
+Create the smallest clean schema needed if nothing appropriate exists.
+If a new table is needed, add a migration.
+
+10. UX states
+Handle these explicitly:
+- camera permission denied
+- scan failed
+- book not found
+- weak metadata
+- low-confidence verdict
+- low-signal user
+- loading / processing
+- retry path
+
+Technical constraints
+- Inspect current code first and reuse existing recommendation + explanation systems wherever feasible.
+- Do not invent a second “taste engine.”
+- Keep the implementation minimal and coherent.
+- Maintain existing app architecture and action semantics.
+- Any new persistence must be explicit and migration-backed if required.
+- If external API logic is needed, keep it thin and documented.
+- Avoid breaking existing recommendation tab behavior.
+
+Acceptance criteria
+The MVP is successful if all of the below are true:
+
+Functional
+- user can open scanner
+- scan ISBN/barcode
+- resolve a book or use manual fallback
+- receive a personalized fit result
+- take an action from the result
+- revisit prior scans via stored history or stored result state
+- low-signal users get an honest fallback, not fake confidence
+
+Product feel
+- the result feels personalized, not generic
+- the verdict is opinionated enough to guide a decision
+- the explanation is grounded in real taste signals
+- the scan flow feels fast enough for in-store use
+
+Engineering
+- uses existing recommendation/taste logic where possible
+- does not break existing recommendation interactions
+- schema changes are migration-backed
+- files changed are clearly explained
+- no unexplained architecture sprawl
+
+Suggested implementation order
+1. Inspect current architecture and identify reuse path
+2. Add scan entry point + scanner screen
+3. Resolve scanned book metadata
+4. Build fit-evaluation adapter using existing recommendation/taste logic
+5. Build result screen
+6. Wire actions
+7. Add low-signal fallback
+8. Add scan history persistence
+9. Test edge cases
+
+Deliverables I want back
+After implementation, return:
+1. what you found in the existing architecture
+2. exact files changed
+3. any migrations added
+4. what existing scoring / explanation logic was reused
+5. how book resolution works
+6. how low-signal users are handled
+7. how scan history is stored
+8. screenshots or a clear description of the user flow
+9. any known limitations of the MVP
+
+Important product note
+Do not frame the output as certainty.
+The tone should be:
+“Here’s our best read on your fit, based on what you actually respond to.”
+
+Not:
+“You will definitely love this.”
+
+If you need to make a scope call, prioritize:
+1. credibility
+2. speed
+3. reuse of existing recommendation intelligence
+4. clear user decision support
+over visual flourishes.

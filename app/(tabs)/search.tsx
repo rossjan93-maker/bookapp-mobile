@@ -1045,6 +1045,19 @@ function capitalize(s: string): string {
   return s.length > 0 ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
+// Returns a naturally articled reference to a series/saga name for inline use.
+// Prevents double-articles ("the The Stormlight Archive") and awkward constructions
+// ("the A Song of Ice and Fire").
+//   "The Stormlight Archive" → "the Stormlight Archive"
+//   "A Song of Ice and Fire" → "A Song of Ice and Fire"
+//   "An Ember in the Ashes"  → "An Ember in the Ashes"
+//   "Tawny Man Trilogy"      → "the Tawny Man Trilogy"
+function naturalArticle(name: string): string {
+  if (/^(a|an)\s+/i.test(name)) return name;
+  if (/^the\s+/i.test(name))    return `the ${name.replace(/^the\s+/i, '')}`;
+  return `the ${name}`;
+}
+
 // Human-readable labels for each detected reading lane — used to name the genre
 // in explanation copy rather than leaving it as a vague "a genre you enjoy".
 const EXPLANATION_LANE_LABELS: Record<DeterministicLane, string> = {
@@ -1081,11 +1094,11 @@ function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | n
   if (bd.saga_label && bd.saga_name) {
     switch (bd.saga_label) {
       case 'saga_entry':
-        return `Start at the beginning of the ${bd.saga_name} saga.`;
+        return `Start at the beginning of ${naturalArticle(bd.saga_name)} saga.`;
       case 'saga_continuation':
-        return `Continue the ${bd.saga_name} saga.`;
+        return `Continue ${naturalArticle(bd.saga_name)} saga.`;
       case 'saga_next_series':
-        return `Next chapter of the ${bd.saga_name} saga.`;
+        return `Next chapter of ${naturalArticle(bd.saga_name)} saga.`;
     }
   }
 
@@ -1097,7 +1110,7 @@ function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | n
 
     // Starter: book is position 1 in the series
     if (pos === 1) {
-      return `Start with book one of the ${name}.`;
+      return `Start with book one of ${naturalArticle(name)}.`;
     }
 
     // Continuation: only make a specific claim when history is confirmed contiguous.
@@ -1107,9 +1120,9 @@ function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | n
     const contiguous = bd.series_is_contiguous ?? null;
     if (maxRead != null && maxRead > 0) {
       if (contiguous === true) {
-        return `Continue the ${name} series \u2014 book ${pos}`;
+        return `Continue ${naturalArticle(name)} series \u2014 book ${pos}`;
       }
-      return `Continue the ${name} series`;
+      return `Continue ${naturalArticle(name)} series`;
     }
   }
 
