@@ -94,6 +94,14 @@ export default function ScanScreen() {
   const [scanHistoryId, setScanHistoryId] = useState<string | null>(null);
   const [actionState, setActionState]   = useState<ActionState>('idle');
 
+  // ── Scanning hint cycle ───────────────────────────────────────────────────
+  const [hintIdx, setHintIdx] = useState(0);
+  useEffect(() => {
+    if (phase !== 'scanning') return;
+    const id = setInterval(() => setHintIdx(i => (i + 1) % SCAN_HINTS.length), 3500);
+    return () => clearInterval(id);
+  }, [phase]);
+
   // ── On mount: request camera permission on all platforms ─────────────────
   // On web this triggers the browser's camera permission dialog.
   useEffect(() => {
@@ -321,8 +329,102 @@ export default function ScanScreen() {
     setManualAuthor('');
     setManualError(null);
     setErrorMsg(null);
+    setHintIdx(0);
     setPhase('scanning');
   }
+
+  // ── Camera-ready: upgrade resolution + apply focus on web ────────────────
+  //
+  // expo-camera's getUserMedia call passes only { facingMode: 'environment' }
+  // with no width/height, so browsers default to 640×480 — far too low for
+  // reliable barcode decoding. Once the stream is live we grab the raw video
+  // track from the DOM and apply constraints to request 1920×1080 + continuous
+  // autofocus. Browsers that don't support applyConstraints for a given field
+  // silently ignore it (OverconstrainedError is caught).
+  //
+  // We also log getCapabilities() / getSettings() to the console so that actual
+  // device support for focusMode / zoom / torch can be inspected per-platform.
+  const handleCameraReady = useCallback(async () => {
+    if (Platform.OS !== 'web') return;
+
+    // Brief delay — srcObject is set inside a requestAnimationFrame in
+    // expo-camera's useLoadedVideo, so we wait one extra frame.
+    await new Promise(r => setTimeout(r, 350));
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const videoEl = (document as any).querySelector('video') as HTMLVideoElement | null;
+    if (!videoEl || !(videoEl.srcObject instanceof MediaStream)) {
+      console.log('[SCAN_CAM] video element not ready');
+      return;
+    }
+
+    const track = videoEl.srcObject.getVideoTracks()[0];
+    if (!track) return;
+
+    const initialSettings = track.getSettings();
+    console.log('[SCAN_CAM] initial settings:', {
+      width:       initialSettings.width,
+      height:      initialSettings.height,
+      facingMode:  initialSettings.facingMode,
+      deviceId:    initialSettings.deviceId,
+    });
+
+    // Build advanced constraints — only include fields the track actually supports
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const advanced: any[] = [{ width: { ideal: 1920 }, height: { ideal: 1080 } }];
+
+    if (typeof track.getCapabilities === 'function') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cap = track.getCapabilities() as any;
+      console.log('[SCAN_CAM] capabilities:', {
+        width:       cap.width,
+        height:      cap.height,
+        facingMode:  cap.facingMode,
+        focusMode:   cap.focusMode,
+        zoom:        cap.zoom,
+        torch:       cap.torch,
+      });
+
+      if (Array.isArray(cap.focusMode)) {
+        const mode = cap.focusMode.includes('continuous') ? 'continuous'
+          : cap.focusMode.includes('auto') ? 'auto'
+          : null;
+        if (mode) advanced.push({ focusMode: mode });
+        console.log('[SCAN_CAM] requesting focusMode:', mode ?? 'none (not supported)');
+      } else {
+        console.log('[SCAN_CAM] focusMode: not supported on this device/browser');
+      }
+
+      if (cap.zoom) {
+        console.log('[SCAN_CAM] zoom supported — range:', cap.zoom);
+      }
+      if (cap.torch !== undefined) {
+        console.log('[SCAN_CAM] torch supported:', cap.torch);
+      }
+    } else {
+      console.log('[SCAN_CAM] getCapabilities() not supported (likely Safari)');
+    }
+
+    try {
+      await track.applyConstraints({ advanced });
+      const after = track.getSettings();
+      console.log('[SCAN_CAM] post-apply settings:', {
+        width:      after.width,
+        height:     after.height,
+        facingMode: after.facingMode,
+      });
+    } catch (err) {
+      console.log('[SCAN_CAM] applyConstraints failed (non-fatal):', err);
+      // Fallback: try without advanced wrapper (wider browser support)
+      try {
+        await track.applyConstraints({ width: { ideal: 1920 }, height: { ideal: 1080 } });
+        const after = track.getSettings();
+        console.log('[SCAN_CAM] fallback apply succeeded:', { width: after.width, height: after.height });
+      } catch {
+        console.log('[SCAN_CAM] fallback apply also failed — staying at default resolution');
+      }
+    }
+  }, []);
 
   // ── Header ─────────────────────────────────────────────────────────────────
   const header = (
@@ -375,6 +477,7 @@ export default function ScanScreen() {
         <CameraView
           style={StyleSheet.absoluteFill}
           facing="back"
+          onCameraReady={handleCameraReady}
           onBarcodeScanned={handleBarcodeScan}
           barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8'] }}
         />
@@ -398,8 +501,9 @@ export default function ScanScreen() {
           </View>
 
           {/* Bottom band + instructions */}
-          <View style={[s.overlayBand, { paddingTop: 28 }]}>
-            <Text style={s.scanHint}>Point at the book's barcode</Text>
+          <View style={[s.overlayBand, { paddingTop: 24, gap: 6 }]}>
+            <Text style={s.scanHintPrimary}>Hold 4–8 inches from the barcode</Text>
+            <Text style={s.scanHintSecondary}>{SCAN_HINTS[hintIdx]}</Text>
             <Pressable style={s.manualFallback} onPress={() => setPhase('manual')}>
               <Text style={s.manualFallbackText}>Enter ISBN manually</Text>
             </Pressable>
@@ -693,7 +797,15 @@ export default function ScanScreen() {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const SCAN_WINDOW_W = 280;
-const SCAN_WINDOW_H = 120;
+const SCAN_WINDOW_H = 150;
+
+// Cycling hints shown beneath the scan window
+const SCAN_HINTS: string[] = [
+  'Point the back camera at the barcode',
+  'Hold 4–8 inches away for best focus',
+  'Move slowly until the lines look sharp',
+  'Keep the barcode level in the window',
+];
 
 const s = StyleSheet.create({
   root: {
@@ -781,12 +893,17 @@ const s = StyleSheet.create({
   cornerTR: { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0 },
   cornerBL: { bottom: 0, left: 0, borderRightWidth: 0, borderTopWidth: 0 },
   cornerBR: { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0 },
-  scanHint: {
+  scanHintPrimary: {
     color:      '#fff',
     fontSize:   15,
-    fontWeight: '500',
+    fontWeight: '600',
     textAlign:  'center',
-    marginTop:  2,
+  },
+  scanHintSecondary: {
+    color:      'rgba(255,255,255,0.72)',
+    fontSize:   13,
+    fontWeight: '400',
+    textAlign:  'center',
   },
   manualFallback: {
     marginTop:     18,
