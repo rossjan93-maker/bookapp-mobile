@@ -1,0 +1,62 @@
+Before further QA or polish, change the recommendation action feedback model.
+
+Problem:
+The current confirmation pattern uses feedback away from the card. That feels disconnected. These actions should animate and react within the container of the whole recommendation card itself.
+
+Goal:
+Make “Want to Read”, “Not for me”, and “More like this” feel alive and reactive at the point of selection, inside the card, not elsewhere on the screen.
+
+Requirements:
+
+1. Remove top-of-screen success confirmations for rec actions
+- Do not use a global toast/banner for normal success states on:
+  - Want to Read
+  - Not for me
+  - More like this
+- Keep global messaging only for error/failure states if needed
+
+2. Add in-card action-state animation and confirmation
+
+Want to Read:
+- On tap, the action should visibly confirm inside the card
+- Example behavior:
+  - button/bookmark fills immediately
+  - inline chip or state label appears inside the card: “Saved to Want to Read”
+  - card briefly settles/compresses as if filed into a list
+  - then card exits or deprioritizes cleanly and deck backfills
+
+Not for me:
+- On tap, the card should react as rejected/removed
+- Example behavior:
+  - brief tilt/shift or shrink response
+  - inline chip inside card: “Not for me”
+  - card collapses/fades/slides out
+  - Undo appears in the card footprint, not as a distant toast
+
+More like this:
+- On tap, the card should react as a positive tuning signal
+- Example behavior:
+  - icon fills/pulses
+  - reason badge or explanation briefly highlights
+  - inline chip inside card: “We’ll show more like this”
+  - card then rotates out or settles into updated state while deck continues
+
+3. Keep feedback local to the card
+- All confirmation UI should be rendered inside the recommendation card or immediate card footprint
+- The user should never have to look to the top of the screen to understand what happened
+
+4. Preserve state-authority behavior already implemented
+- acted-on cards should still be excluded immediately
+- undo logic for dismiss should still work
+- cache restore / background refresh / reloadRecs filtering must remain intact
+
+5. Deck behavior
+- After the brief in-card confirmation, replenish the deck with the next eligible card
+- The surface should feel alive, not depleted
+
+6. Return:
+- exact files changed
+- how each action now animates
+- whether the card exits vs stays
+- how undo is rendered in-card
+- how replenishment is coordinated with the animation timing

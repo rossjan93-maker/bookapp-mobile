@@ -1121,22 +1121,26 @@ type SeriesCover = { olKey: string; coverId: number | null; title: string };
 
 function RecCard({
   book,
-  isExpert         = false,
-  featured         = false,
-  onSave           = () => {},
-  onDismiss        = () => {},
-  onMoreLikeThis   = () => {},
-  onImpression     = () => {},
-  onExplanationOpen= () => {},
+  isExpert          = false,
+  featured          = false,
+  isPendingDismiss  = false,
+  onSave            = () => {},
+  onDismiss         = () => {},
+  onDismissUndo     = () => {},
+  onMoreLikeThis    = () => {},
+  onImpression      = () => {},
+  onExplanationOpen = () => {},
 }: {
-  book:              ScoredBook;
-  isExpert?:         boolean;
-  featured?:         boolean;
-  onSave?:           () => void;
-  onDismiss?:        () => void;
-  onMoreLikeThis?:   () => void;
-  onImpression?:     () => void;
-  onExplanationOpen?:() => void;
+  book:               ScoredBook;
+  isExpert?:          boolean;
+  featured?:          boolean;
+  isPendingDismiss?:  boolean;
+  onSave?:            () => void;
+  onDismiss?:         () => void;
+  onDismissUndo?:     () => void;
+  onMoreLikeThis?:    () => void;
+  onImpression?:      () => void;
+  onExplanationOpen?: () => void;
 }) {
   const router = useRouter();
 
@@ -1146,6 +1150,7 @@ function RecCard({
   // Local state
   const [moreDone, setMoreDone]           = useState(false);
   const [pendingAction, setPendingAction] = useState(false);
+  const [confirmState, setConfirmState]   = useState<'save' | 'more' | null>(null);
   const [seriesCovers, setSeriesCovers]   = useState<SeriesCover[]>([]);
   const impressionFired  = useRef(false);
 
@@ -1226,20 +1231,22 @@ function RecCard({
   function handleSavePress() {
     if (pendingAction) return;
     setPendingAction(true);
-    animateOut(onSave);
+    setConfirmState('save');
+    setTimeout(() => animateOut(onSave), 600);
   }
 
   function handleDismissPress() {
     if (pendingAction) return;
     setPendingAction(true);
-    animateOut(onDismiss);
+    onDismiss();
   }
 
   function handleMoreLikeThisPress() {
     if (pendingAction || moreDone) return;
     setPendingAction(true);
     setMoreDone(true);
-    animateOut(onMoreLikeThis);
+    setConfirmState('more');
+    setTimeout(() => animateOut(onMoreLikeThis), 600);
   }
 
   function handleCardPress() {
@@ -1281,6 +1288,34 @@ function RecCard({
 
   // Behavior-driven explanation — series > author affinity > generic fallback
   const collapsedReason = buildExplanation(book, hasSeriesMeta);
+
+  // ── In-card undo row — card stays in its list position during the undo window ──
+  if (isPendingDismiss) {
+    return (
+      <View style={{
+        backgroundColor: '#fafaf9',
+        borderRadius: 14,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: '#e7e5e4',
+        paddingHorizontal: 14,
+        paddingVertical: 13,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+      }}>
+        <Text style={{ flex: 1, fontSize: 13, color: '#78716c' }} numberOfLines={1}>
+          Not for me — "{book.title}"
+        </Text>
+        <TouchableOpacity
+          onPress={onDismissUndo}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917' }}>Undo</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <Animated.View style={{
@@ -1483,6 +1518,27 @@ function RecCard({
         </TouchableOpacity>
       </View>
 
+      {/* ── In-card action confirmation overlay ──────────────────────────────── */}
+      {/* Shown for 600ms on save/more-like-this before the card fades out.      */}
+      {confirmState && (
+        <View style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: confirmState === 'save' ? '#f0fdf4' : '#f5f3ff',
+          borderRadius: 14,
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 20,
+        }}>
+          <Text style={{
+            fontSize: 14,
+            fontWeight: '700',
+            color: confirmState === 'save' ? '#15803d' : '#5b21b6',
+          }}>
+            {confirmState === 'save' ? '✓  Saved to Want to Read' : '✓  We\'ll show more like this'}
+          </Text>
+        </View>
+      )}
+
     </Animated.View>
   );
 }
@@ -1574,10 +1630,10 @@ function _cancelPendingUndo(book: ScoredBook): void {
   _pendingUndoIds.delete(book.id);
 }
 
-// Dismiss undo state type
-type DismissUndoState = {
+// Dismiss pending state — card stays in its array during the 4-second undo window.
+// Removed from arrays only when timer fires (commit) or undo is tapped (cancel).
+type DismissPendingState = {
   book:    ScoredBook;
-  bucket:  'continuations' | 'discoveries' | 'recommendations';
   timerId: ReturnType<typeof setTimeout>;
 };
 
@@ -1597,9 +1653,7 @@ export default function RecommendationsScreen() {
   const [recsQualityGate, setRecsQualityGate] = useState<QualityGate | null>(null);
   const [recsMeta, setRecsMeta]               = useState<RankedRecsResult['meta'] | null>(null);
   const [feedbackCtx, setFeedbackCtx]         = useState<FeedbackContext>(emptyContext());
-  const [saveToast, setSaveToast]             = useState<string | null>(null);
-  const [dismissUndo, setDismissUndo]         = useState<DismissUndoState | null>(null);
-  const [moreLikeToast, setMoreLikeToast]     = useState<string | null>(null);
+  const [dismissPending, setDismissPending]   = useState<DismissPendingState | null>(null);
   const [booksToRate, setBooksToRate]         = useState<BookToRate[]>([]);
   const [booksToTag, setBooksToTag]           = useState<BookToTag[]>([]);
   const [incomingRecs, setIncomingRecs]       = useState<IncomingRec[]>([]);
@@ -2324,13 +2378,11 @@ export default function RecommendationsScreen() {
   function handleRecSave(book: ScoredBook) {
     if (!supabase || !currentUserId) return;
 
-    // ── Optimistic UI: remove card + show toast instantly ────────────────────
+    // ── Optimistic UI: remove card (confirmation shown in-card before animateOut) ─
     const bookFilter = (b: ScoredBook) => b.id !== book.id;
     setRecommendations(prev => prev.filter(bookFilter));
     setContinuations(prev   => prev.filter(bookFilter));
     setDiscoveries(prev     => prev.filter(bookFilter));
-    setSaveToast(`"${book.title}" saved to Want to Read`);
-    setTimeout(() => setSaveToast(null), 3000);
 
     // Track locally + persist so this card is filtered on next cache restore
     _trackActedOn(currentUserId, book);
@@ -2391,37 +2443,39 @@ export default function RecommendationsScreen() {
   function handleRecDismiss(book: ScoredBook) {
     if (!supabase || !currentUserId) return;
 
-    // ── Optimistic UI: remove card immediately ────────────────────────────────
-    const bookFilter = (b: ScoredBook) => b.id !== book.id;
-    const prevContinuations = continuations;
-    const prevDiscoveries   = discoveries;
-    setRecommendations(prev => prev.filter(bookFilter));
-    setContinuations(prev   => prev.filter(bookFilter));
-    setDiscoveries(prev     => prev.filter(bookFilter));
-
     // ── Immediate exclusion (pending-undo state) ───────────────────────────────
-    // Mark the card as pending-undo RIGHT NOW so filterActedOn removes it from
-    // every inbound commit path (cache restore, background refresh, reloadRecs)
-    // even while the undo window is still live.  If the user taps Undo, it is
-    // removed from the pending set cleanly without any AsyncStorage rewrite.
+    // Card stays in its array — rendered as in-card undo row via isPendingDismiss.
+    // filterActedOn prevents it re-appearing via cache restore / background refresh.
     _trackActedOnPending(book);
     if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', 'status=pending', `| book_id=${book.id}`, `| external_id=${book.external_id ?? 'none'}`);
 
-    // Determine which bucket this card was in (for undo re-insertion)
-    const wasInContinuations = prevContinuations.some(b => b.id === book.id);
-    const bucket: DismissUndoState['bucket'] = wasInContinuations
-      ? 'continuations'
-      : prevDiscoveries.some(b => b.id === book.id)
-      ? 'discoveries'
-      : 'recommendations';
-
-    // Cancel any existing undo window before starting a new one
-    if (dismissUndo) clearTimeout(dismissUndo.timerId);
+    // Commit any pre-existing pending dismiss before opening a new undo window
+    if (dismissPending) {
+      clearTimeout(dismissPending.timerId);
+      const prevBook   = dismissPending.book;
+      const prevFilter = (b: ScoredBook) => b.id !== prevBook.id;
+      setRecommendations(p => p.filter(prevFilter));
+      setContinuations(p   => p.filter(prevFilter));
+      setDiscoveries(p     => p.filter(prevFilter));
+      _commitPendingToActedOn(currentUserId!, prevBook);
+      if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', 'status=committed', `| book_id=${prevBook.id}`, `| external_id=${prevBook.external_id ?? 'none'}`);
+      setFeedbackCtx(prev => {
+        const next = new Set(prev.dismissedIds);
+        if (prevBook.external_id) next.add(prevBook.external_id);
+        if (prevBook._source === 'catalog') next.add(prevBook.id);
+        return { ...prev, dismissedIds: next };
+      });
+      persistFeedback(supabase!, currentUserId!, prevBook, 'dismissed').catch(() => {});
+    }
 
     // ── Undo window: 4 seconds ────────────────────────────────────────────────
+    // Timer fires → remove card from arrays and promote pending → committed.
     const timerId = setTimeout(() => {
-      // Undo window expired — promote pending → committed, persist to backend.
-      setDismissUndo(null);
+      const bookFilter = (b: ScoredBook) => b.id !== book.id;
+      setRecommendations(p => p.filter(bookFilter));
+      setContinuations(p   => p.filter(bookFilter));
+      setDiscoveries(p     => p.filter(bookFilter));
+      setDismissPending(null);
       _commitPendingToActedOn(currentUserId!, book);
       if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', 'status=committed', `| book_id=${book.id}`, `| external_id=${book.external_id ?? 'none'}`);
       setFeedbackCtx(prev => {
@@ -2433,25 +2487,18 @@ export default function RecommendationsScreen() {
       persistFeedback(supabase!, currentUserId!, book, 'dismissed').catch(() => {});
     }, 4000);
 
-    setDismissUndo({ book, bucket, timerId });
+    setDismissPending({ book, timerId });
   }
 
   function handleRecDismissUndo() {
-    if (!dismissUndo) return;
-    clearTimeout(dismissUndo.timerId);
-    const { book, bucket } = dismissUndo;
-    setDismissUndo(null);
-    // Remove from pending-undo set so the card is no longer excluded
+    if (!dismissPending) return;
+    clearTimeout(dismissPending.timerId);
+    const { book } = dismissPending;
+    setDismissPending(null);
+    // Remove from pending-undo set — card was never removed from its array
     _cancelPendingUndo(book);
     if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', 'status=undone', `| book_id=${book.id}`, `| external_id=${book.external_id ?? 'none'}`);
-    // Re-insert the book at the top of its original bucket
-    if (bucket === 'continuations') {
-      setContinuations(prev => [book, ...prev]);
-    } else if (bucket === 'discoveries') {
-      setDiscoveries(prev => [book, ...prev]);
-    } else {
-      setRecommendations(prev => [book, ...prev]);
-    }
+    // No re-insert needed: card stays in its list, isPendingDismiss reverts to false
   }
 
   function handleRecMoreLikeThis(book: ScoredBook) {
@@ -2462,9 +2509,6 @@ export default function RecommendationsScreen() {
     setRecommendations(prev => prev.filter(bookFilter));
     setContinuations(prev   => prev.filter(bookFilter));
     setDiscoveries(prev     => prev.filter(bookFilter));
-
-    setMoreLikeToast(`More like "${book.title}" noted`);
-    setTimeout(() => setMoreLikeToast(null), 3000);
 
     // Track so card doesn't reappear on revisit
     _trackActedOn(currentUserId, book);
@@ -2818,62 +2862,6 @@ export default function RecommendationsScreen() {
                     </View>
                   )}
 
-                  {/* Save toast */}
-                  {saveToast && (
-                    <View style={{
-                      backgroundColor: '#f0fdf4',
-                      borderRadius: 8,
-                      paddingHorizontal: 12,
-                      paddingVertical: 9,
-                      marginBottom: 8,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 6,
-                    }}>
-                      <Text style={{ color: '#16a34a', fontSize: 12, flex: 1, fontWeight: '500' }}>
-                        ✓ {saveToast}
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* More like this toast */}
-                  {moreLikeToast && (
-                    <View style={{
-                      backgroundColor: '#f5f3ff',
-                      borderRadius: 8,
-                      paddingHorizontal: 12,
-                      paddingVertical: 9,
-                      marginBottom: 8,
-                    }}>
-                      <Text style={{ color: '#5b21b6', fontSize: 12, fontWeight: '500' }}>
-                        ✓ {moreLikeToast}
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* Dismiss undo toast */}
-                  {dismissUndo && (
-                    <View style={{
-                      backgroundColor: '#fafaf9',
-                      borderRadius: 8,
-                      paddingHorizontal: 12,
-                      paddingVertical: 9,
-                      marginBottom: 8,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 8,
-                      borderWidth: 1,
-                      borderColor: '#e7e5e4',
-                    }}>
-                      <Text style={{ color: '#78716c', fontSize: 12, flex: 1 }}>
-                        Dismissed "{dismissUndo.book.title}"
-                      </Text>
-                      <TouchableOpacity onPress={handleRecDismissUndo}>
-                        <Text style={{ color: '#1c1917', fontSize: 12, fontWeight: '700' }}>Undo</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-
                   {/* ── Currently Reading bucket ── */}
                   {/* Only rendered when there are active continuations.        */}
                   {/* Empty state removed — "no series" is not actionable here. */}
@@ -2902,8 +2890,10 @@ export default function RecommendationsScreen() {
                           book={rec}
                           featured={idx === 0}
                           isExpert={recMode === 'expert'}
+                          isPendingDismiss={dismissPending?.book.id === rec.id}
                           onSave={() => handleRecSave(rec)}
                           onDismiss={() => handleRecDismiss(rec)}
+                          onDismissUndo={dismissPending?.book.id === rec.id ? handleRecDismissUndo : undefined}
                           onMoreLikeThis={() => handleRecMoreLikeThis(rec)}
                           onImpression={() => handleRecImpression(rec)}
                           onExplanationOpen={() => handleRecExplanationOpen(rec)}
@@ -2942,8 +2932,10 @@ export default function RecommendationsScreen() {
                           book={rec}
                           featured={idx === 0 && continuations.length === 0}
                           isExpert={recMode === 'expert'}
+                          isPendingDismiss={dismissPending?.book.id === rec.id}
                           onSave={() => handleRecSave(rec)}
                           onDismiss={() => handleRecDismiss(rec)}
+                          onDismissUndo={dismissPending?.book.id === rec.id ? handleRecDismissUndo : undefined}
                           onMoreLikeThis={() => handleRecMoreLikeThis(rec)}
                           onImpression={() => handleRecImpression(rec)}
                           onExplanationOpen={() => handleRecExplanationOpen(rec)}
