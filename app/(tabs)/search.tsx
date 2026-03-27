@@ -1630,11 +1630,100 @@ function _cancelPendingUndo(book: ScoredBook): void {
   _pendingUndoIds.delete(book.id);
 }
 
-// Dismiss pending state — card stays in its array during the 4-second undo window.
-// Removed from arrays only when timer fires (commit) or undo is tapped (cancel).
+// ── Pending dismiss record (cross-session persistent) ─────────────────────────
+//
+// Module-level so it survives tab switches.  When loadHub re-runs on revisit,
+// filterActedOn removes the book from inbound arrays (via _pendingUndoIds), then
+// rehydratePendingDismiss re-injects it so the in-card undo row keeps rendering.
+// reapplyPendingDismiss (inside the screen component) restarts the countdown timer
+// for the remaining window and returns the DismissPendingState for setDismissPending.
+type PendingDismissRecord = {
+  book:      ScoredBook;
+  bucket:    'continuations' | 'discoveries';
+  expiresAt: number;   // Date.now() + DISMISS_UNDO_MS at dismiss time
+  timerId:   ReturnType<typeof setTimeout> | null;
+};
+let _pendingDismissRecord: PendingDismissRecord | null = null;
+
+// ── Deck paging ────────────────────────────────────────────────────────────────
+//
+// Each commit path shows at most DECK_PAGE_SIZE cards.  Remaining eligible
+// session books are promoted one-by-one after each user action so the deck
+// stays at depth without waiting for it to empty before the next pipeline run.
+const DECK_PAGE_SIZE  = 4;
+const DISMISS_UNDO_MS = 4000;
+
+// Finds the next eligible book from the session cache that isn't already shown.
+function nextEligibleFromSession(shown: ReadonlySet<string>): ScoredBook | null {
+  if (!_recSession) return null;
+  const all = [..._recSession.continuations, ..._recSession.discoveries];
+  return all.find(b => {
+    if (!filterActedOn(b)) return false;
+    if (shown.has(b.id)) return false;
+    if (b.external_id && shown.has(b.external_id)) return false;
+    return true;
+  }) ?? null;
+}
+
+// Whether a session book belongs to the continuations or discoveries bucket.
+function bucketForBook(book: ScoredBook): 'continuations' | 'discoveries' {
+  if (!_recSession) return 'discoveries';
+  return _recSession.continuations.some(b => b.id === book.id)
+    ? 'continuations'
+    : 'discoveries';
+}
+
+// Appends one next-eligible book from session to the visible deck.
+// Pure — does not mutate state; caller passes filtered arrays and calls setState.
+function appendNextEligible(
+  conts: ScoredBook[],
+  discs: ScoredBook[],
+): { conts: ScoredBook[]; discs: ScoredBook[] } {
+  const shown = new Set<string>();
+  for (const b of [...conts, ...discs]) {
+    shown.add(b.id);
+    if (b.external_id) shown.add(b.external_id);
+  }
+  const next = nextEligibleFromSession(shown);
+  if (!next) return { conts, discs };
+  return bucketForBook(next) === 'continuations'
+    ? { conts: [...conts, next], discs }
+    : { conts, discs: [...discs, next] };
+}
+
+// Limits the initial visible deck to DECK_PAGE_SIZE (continuations have priority).
+function applyPageSize(
+  conts: ScoredBook[],
+  discs: ScoredBook[],
+): { conts: ScoredBook[]; discs: ScoredBook[] } {
+  const maxConts = Math.min(conts.length, DECK_PAGE_SIZE);
+  return {
+    conts: conts.slice(0, maxConts),
+    discs: discs.slice(0, Math.max(0, DECK_PAGE_SIZE - maxConts)),
+  };
+}
+
+// Re-injects the pending-dismiss book into arrays after filterActedOn removed it.
+// Pure — caller applies page size and timer restart separately.
+function rehydratePendingDismiss(
+  conts: ScoredBook[],
+  discs: ScoredBook[],
+): { conts: ScoredBook[]; discs: ScoredBook[] } {
+  if (!_pendingDismissRecord) return { conts, discs };
+  if (Date.now() >= _pendingDismissRecord.expiresAt) return { conts, discs };
+  const { book, bucket } = _pendingDismissRecord;
+  if (conts.some(b => b.id === book.id) || discs.some(b => b.id === book.id)) {
+    return { conts, discs };
+  }
+  return bucket === 'continuations'
+    ? { conts: [book, ...conts], discs }
+    : { conts, discs: [book, ...discs] };
+}
+
+// React state — which card currently shows the in-card undo row.
+// Timer ownership lives in _pendingDismissRecord (persists across tab switches).
 type DismissPendingState = {
-  book:    ScoredBook;
-  timerId: ReturnType<typeof setTimeout>;
+  book: ScoredBook;
 };
 
 // Revisit skips Phase 2 when session is this fresh AND signal unchanged.
@@ -1736,7 +1825,7 @@ export default function RecommendationsScreen() {
   useEffect(() => {
     const total = continuations.length + discoveries.length;
     if (
-      total === 0 &&
+      total <= 1 &&
       !recsLoading &&
       !isBackgroundRefreshing &&
       currentUserId &&
@@ -1767,6 +1856,58 @@ export default function RecommendationsScreen() {
     }, 400);
     return () => clearTimeout(timer);
   }, [query, step]);
+
+  // ── Pending dismiss timer restart ─────────────────────────────────────────
+  // Called at every load commit path (cache_restore / background_refresh /
+  // reload_recs) to re-establish the dismiss countdown after a tab switch.
+  // Returns the new DismissPendingState for setDismissPending(), or null when
+  // the record has expired while the user was away (triggers an immediate commit).
+  function reapplyPendingDismiss(uid: string): DismissPendingState | null {
+    if (!_pendingDismissRecord || !supabase) return null;
+    const now = Date.now();
+    const { book, expiresAt } = _pendingDismissRecord;
+
+    if (now >= expiresAt) {
+      // Expired while away — commit immediately, no undo row shown
+      _pendingDismissRecord = null;
+      _commitPendingToActedOn(uid, book);
+      setFeedbackCtx(prev => {
+        const next = new Set(prev.dismissedIds);
+        if (book.external_id) next.add(book.external_id);
+        if (book._source === 'catalog') next.add(book.id);
+        return { ...prev, dismissedIds: next };
+      });
+      persistFeedback(supabase, uid, book, 'dismissed').catch(() => {});
+      if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', 'status=committed_on_revisit', `| book_id=${book.id}`);
+      return null;
+    }
+
+    // Cancel the stale timer; start a fresh one for the remaining window
+    if (_pendingDismissRecord.timerId) clearTimeout(_pendingDismissRecord.timerId);
+    const remaining = expiresAt - now;
+    const _sb = supabase;
+    const timerId = setTimeout(() => {
+      if (!_pendingDismissRecord || _pendingDismissRecord.book.id !== book.id) return;
+      _pendingDismissRecord = null;
+      const bookFilter = (b: ScoredBook) => b.id !== book.id;
+      setRecommendations(p => p.filter(bookFilter));
+      setContinuations(p   => p.filter(bookFilter));
+      setDiscoveries(p     => p.filter(bookFilter));
+      setDismissPending(null);
+      _commitPendingToActedOn(uid, book);
+      if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', 'status=committed', `| book_id=${book.id}`, `| external_id=${book.external_id ?? 'none'}`);
+      setFeedbackCtx(prev => {
+        const next = new Set(prev.dismissedIds);
+        if (book.external_id) next.add(book.external_id);
+        if (book._source === 'catalog') next.add(book.id);
+        return { ...prev, dismissedIds: next };
+      });
+      persistFeedback(_sb, uid, book, 'dismissed').catch(() => {});
+    }, remaining);
+    _pendingDismissRecord.timerId = timerId;
+    if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', 'status=pending_rehydrated', `| book_id=${book.id}`, `| remaining_ms=${remaining}`);
+    return { book };
+  }
 
   // ── Hub data loader ───────────────────────────────────────────────────────
   //
@@ -1804,9 +1945,10 @@ export default function RecommendationsScreen() {
     // mid-undo-window) so it only needs clearing on user switch.
     if (_actedOnUserId !== user.id) {
       const stored = await loadActedOnIds(user.id);
-      _actedOnIds    = stored;
-      _pendingUndoIds = new Set();
-      _actedOnUserId = user.id;
+      _actedOnIds          = stored;
+      _pendingUndoIds      = new Set();
+      _pendingDismissRecord = null;  // cross-session dismiss belongs to previous user
+      _actedOnUserId       = user.id;
     }
 
     // ── Fast-path 2: restore from persistent AsyncStorage cache (~30ms) ───
@@ -1854,9 +1996,13 @@ export default function RecommendationsScreen() {
         `| acted_on=${_actedOnIds.size}`,
         `| pending_undo=${_pendingUndoIds.size}`,
       );
+      // Re-inject pending-dismiss book if still within undo window (Issue 1)
+      const { conts: _crPDConts, discs: _crPDDiscs } = rehydratePendingDismiss(_crConts, _crDiscs);
+      // Limit initial display to DECK_PAGE_SIZE (Issue 2)
+      const { conts: _crPSConts, discs: _crPSDiscs } = applyPageSize(_crPDConts, _crPDDiscs);
       setRecommendations(_crRecs);
-      setContinuations(_crConts);
-      setDiscoveries(_crDiscs);
+      setContinuations(_crPSConts);
+      setDiscoveries(_crPSDiscs);
       setRecsMeta(cached.meta);
       setRecsQualityGate(cached.qualityGate);
       setRecMode(cached.recMode);
@@ -1864,6 +2010,8 @@ export default function RecommendationsScreen() {
       setIsFreePreview(cached.isFreePreview);
       setRecsLoading(false);
       setIsBackgroundRefreshing(false);
+      // Restore dismiss undo row + restart timer for remaining window
+      setDismissPending(reapplyPendingDismiss(user.id));
     }
 
     // ── Phase 1: core hub data (all DB queries run concurrently) ─────────
@@ -2183,9 +2331,13 @@ export default function RecommendationsScreen() {
         `| acted_on=${_actedOnIds.size}`,
         `| pending_undo=${_pendingUndoIds.size}`,
       );
+      // Re-inject pending-dismiss book (Issue 1) + apply page size (Issue 2)
+      const { conts: _bgPDConts, discs: _bgPDDiscs } = rehydratePendingDismiss(_bgConts, _bgDiscs);
+      const { conts: _bgPSConts, discs: _bgPSDiscs } = applyPageSize(_bgPDConts, _bgPDDiscs);
       setRecommendations(_bgRecs);
-      setContinuations(_bgConts);
-      setDiscoveries(_bgDiscs);
+      setContinuations(_bgPSConts);
+      setDiscoveries(_bgPSDiscs);
+      setDismissPending(reapplyPendingDismiss(user.id));
       setRecsMeta(meta);
       setRecsQualityGate(meta.quality_gate !== 'passed' ? meta.quality_gate : null);
       setRecMode(meta.mode ?? 'deterministic');
@@ -2350,9 +2502,13 @@ export default function RecommendationsScreen() {
         `| acted_on=${_actedOnIds.size}`,
         `| pending_undo=${_pendingUndoIds.size}`,
       );
+      // Re-inject pending-dismiss book (Issue 1) + apply page size (Issue 2)
+      const { conts: _rrPDConts, discs: _rrPDDiscs } = rehydratePendingDismiss(_rrConts, _rrDiscs);
+      const { conts: _rrPSConts, discs: _rrPSDiscs } = applyPageSize(_rrPDConts, _rrPDDiscs);
       setRecommendations(_rrRecs);
-      setContinuations(_rrConts);
-      setDiscoveries(_rrDiscs);
+      setContinuations(_rrPSConts);
+      setDiscoveries(_rrPSDiscs);
+      if (currentUserId) setDismissPending(reapplyPendingDismiss(currentUserId));
       setRecsMeta(meta);
       setRecsQualityGate(meta.quality_gate !== 'passed' ? meta.quality_gate : null);
     } catch {
@@ -2378,11 +2534,14 @@ export default function RecommendationsScreen() {
   function handleRecSave(book: ScoredBook) {
     if (!supabase || !currentUserId) return;
 
-    // ── Optimistic UI: remove card (confirmation shown in-card before animateOut) ─
-    const bookFilter = (b: ScoredBook) => b.id !== book.id;
+    // ── Optimistic UI: remove card + backfill next eligible from session ─────
+    const bookFilter    = (b: ScoredBook) => b.id !== book.id;
+    const filteredConts = continuations.filter(bookFilter);
+    const filteredDiscs = discoveries.filter(bookFilter);
+    const { conts: newConts, discs: newDiscs } = appendNextEligible(filteredConts, filteredDiscs);
     setRecommendations(prev => prev.filter(bookFilter));
-    setContinuations(prev   => prev.filter(bookFilter));
-    setDiscoveries(prev     => prev.filter(bookFilter));
+    setContinuations(newConts);
+    setDiscoveries(newDiscs);
 
     // Track locally + persist so this card is filtered on next cache restore
     _trackActedOn(currentUserId, book);
@@ -2443,16 +2602,11 @@ export default function RecommendationsScreen() {
   function handleRecDismiss(book: ScoredBook) {
     if (!supabase || !currentUserId) return;
 
-    // ── Immediate exclusion (pending-undo state) ───────────────────────────────
-    // Card stays in its array — rendered as in-card undo row via isPendingDismiss.
-    // filterActedOn prevents it re-appearing via cache restore / background refresh.
-    _trackActedOnPending(book);
-    if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', 'status=pending', `| book_id=${book.id}`, `| external_id=${book.external_id ?? 'none'}`);
-
-    // Commit any pre-existing pending dismiss before opening a new undo window
-    if (dismissPending) {
-      clearTimeout(dismissPending.timerId);
-      const prevBook   = dismissPending.book;
+    // ── Commit any pre-existing pending dismiss immediately ────────────────────
+    // Only one undo window open at a time; opening a new one commits the old one.
+    if (_pendingDismissRecord) {
+      if (_pendingDismissRecord.timerId) clearTimeout(_pendingDismissRecord.timerId);
+      const prevBook   = _pendingDismissRecord.book;
       const prevFilter = (b: ScoredBook) => b.id !== prevBook.id;
       setRecommendations(p => p.filter(prevFilter));
       setContinuations(p   => p.filter(prevFilter));
@@ -2466,17 +2620,34 @@ export default function RecommendationsScreen() {
         return { ...prev, dismissedIds: next };
       });
       persistFeedback(supabase!, currentUserId!, prevBook, 'dismissed').catch(() => {});
+      _pendingDismissRecord = null;
     }
 
-    // ── Undo window: 4 seconds ────────────────────────────────────────────────
+    // ── Determine bucket before pending state changes the arrays ─────────────
+    const bucket: PendingDismissRecord['bucket'] =
+      continuations.some(b => b.id === book.id) ? 'continuations' : 'discoveries';
+
+    // ── Mark as pending-undo (immediate exclusion from inbound refresh paths) ─
+    _trackActedOnPending(book);
+    if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', 'status=pending', `| book_id=${book.id}`, `| external_id=${book.external_id ?? 'none'}`);
+
+    // ── Create module-level record (survives tab switches) ────────────────────
+    const expiresAt = Date.now() + DISMISS_UNDO_MS;
+    _pendingDismissRecord = { book, bucket, expiresAt, timerId: null };
+
+    // ── Undo window timer ─────────────────────────────────────────────────────
     // Timer fires → remove card from arrays and promote pending → committed.
+    const _sb  = supabase!;
+    const _uid = currentUserId!;
     const timerId = setTimeout(() => {
+      if (!_pendingDismissRecord || _pendingDismissRecord.book.id !== book.id) return;
+      _pendingDismissRecord = null;
       const bookFilter = (b: ScoredBook) => b.id !== book.id;
       setRecommendations(p => p.filter(bookFilter));
       setContinuations(p   => p.filter(bookFilter));
       setDiscoveries(p     => p.filter(bookFilter));
       setDismissPending(null);
-      _commitPendingToActedOn(currentUserId!, book);
+      _commitPendingToActedOn(_uid, book);
       if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', 'status=committed', `| book_id=${book.id}`, `| external_id=${book.external_id ?? 'none'}`);
       setFeedbackCtx(prev => {
         const next = new Set(prev.dismissedIds);
@@ -2484,31 +2655,55 @@ export default function RecommendationsScreen() {
         if (book._source === 'catalog') next.add(book.id);
         return { ...prev, dismissedIds: next };
       });
-      persistFeedback(supabase!, currentUserId!, book, 'dismissed').catch(() => {});
-    }, 4000);
+      persistFeedback(_sb, _uid, book, 'dismissed').catch(() => {});
+    }, DISMISS_UNDO_MS);
 
-    setDismissPending({ book, timerId });
+    _pendingDismissRecord.timerId = timerId;
+
+    // ── Backfill: promote one next-eligible book so deck depth is maintained ──
+    // Compute shown set: all current cards except the dismissed one (which becomes
+    // the undo row and shouldn't be its own replacement).
+    const shown = new Set<string>();
+    for (const b of continuations) {
+      if (b.id !== book.id) { shown.add(b.id); if (b.external_id) shown.add(b.external_id); }
+    }
+    for (const b of discoveries) {
+      if (b.id !== book.id) { shown.add(b.id); if (b.external_id) shown.add(b.external_id); }
+    }
+    shown.add(book.id);
+    if (book.external_id) shown.add(book.external_id);
+    const next = nextEligibleFromSession(shown);
+    if (next) {
+      if (bucketForBook(next) === 'continuations') setContinuations(prev => [...prev, next]);
+      else                                          setDiscoveries(prev   => [...prev, next]);
+    }
+
+    setDismissPending({ book });
   }
 
   function handleRecDismissUndo() {
-    if (!dismissPending) return;
-    clearTimeout(dismissPending.timerId);
-    const { book } = dismissPending;
+    if (!_pendingDismissRecord) return;
+    if (_pendingDismissRecord.timerId) clearTimeout(_pendingDismissRecord.timerId);
+    const { book } = _pendingDismissRecord;
+    _pendingDismissRecord = null;
     setDismissPending(null);
-    // Remove from pending-undo set — card was never removed from its array
+    // Remove from pending-undo set so filterActedOn no longer excludes the card
     _cancelPendingUndo(book);
     if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', 'status=undone', `| book_id=${book.id}`, `| external_id=${book.external_id ?? 'none'}`);
-    // No re-insert needed: card stays in its list, isPendingDismiss reverts to false
+    // No re-insert needed: card was never removed from its array
   }
 
   function handleRecMoreLikeThis(book: ScoredBook) {
     if (!supabase || !currentUserId) return;
 
-    // ── Optimistic UI: remove card from deck ──────────────────────────────────
-    const bookFilter = (b: ScoredBook) => b.id !== book.id;
+    // ── Optimistic UI: remove card + backfill next eligible from session ─────
+    const bookFilter    = (b: ScoredBook) => b.id !== book.id;
+    const filteredConts = continuations.filter(bookFilter);
+    const filteredDiscs = discoveries.filter(bookFilter);
+    const { conts: newConts, discs: newDiscs } = appendNextEligible(filteredConts, filteredDiscs);
     setRecommendations(prev => prev.filter(bookFilter));
-    setContinuations(prev   => prev.filter(bookFilter));
-    setDiscoveries(prev     => prev.filter(bookFilter));
+    setContinuations(newConts);
+    setDiscoveries(newDiscs);
 
     // Track so card doesn't reappear on revisit
     _trackActedOn(currentUserId, book);
