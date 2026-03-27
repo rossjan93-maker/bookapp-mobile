@@ -636,55 +636,53 @@ export default function ScanScreen() {
             </View>
           )}
 
-          <View style={s.divider} />
-
-          {/* ── Actions ──────────────────────────────────────────────────────── */}
-          <View style={s.actionsSection}>
-            {actionState === 'idle' ? (
-              <>
-                <Pressable
-                  style={[s.actionBtn, s.actionBtnPrimary]}
-                  onPress={handleSave}
-                >
-                  <Ionicons name="bookmark-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
-                  <Text style={s.actionBtnPrimaryText}>Want to Read</Text>
-                </Pressable>
-
-                <View style={s.actionRowSecondary}>
-                  <Pressable
-                    style={[s.actionBtnSecondary, { flex: 1, marginRight: 8 }]}
-                    onPress={handleDismiss}
-                  >
-                    <Text style={s.actionBtnSecondaryText}>Not for me</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[s.actionBtnSecondary, { flex: 1 }]}
-                    onPress={handleMoreLikeThis}
-                  >
-                    <Text style={s.actionBtnSecondaryText}>More like this</Text>
-                  </Pressable>
-                </View>
-              </>
-            ) : (
-              <View style={s.actionConfirm}>
-                <Ionicons name="checkmark-circle" size={22} color="#15803d" style={{ marginRight: 8 }} />
-                <Text style={s.actionConfirmText}>
-                  {actionState === 'saved'
-                    ? 'Added to your Want to Read list'
-                    : actionState === 'dismissed'
-                    ? "Noted — we'll recommend fewer like this"
-                    : "Got it — we'll show more like this"}
-                </Text>
-              </View>
-            )}
-          </View>
-
           {/* ── Scan another ─────────────────────────────────────────────────── */}
           <Pressable style={s.scanAnotherBtn} onPress={handleScanAnother}>
             <Ionicons name="barcode-outline" size={16} color="#78716c" style={{ marginRight: 6 }} />
             <Text style={s.scanAnotherText}>Scan another book</Text>
           </Pressable>
         </ScrollView>
+
+        {/* ── Sticky action footer — always in thumb zone ──────────────────── */}
+        <View style={s.stickyActionFooter}>
+          {actionState === 'idle' ? (
+            <>
+              <Pressable
+                style={[s.actionBtn, s.actionBtnPrimary]}
+                onPress={handleSave}
+              >
+                <Ionicons name="bookmark-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+                <Text style={s.actionBtnPrimaryText}>Want to Read</Text>
+              </Pressable>
+
+              <View style={s.actionRowSecondary}>
+                <Pressable
+                  style={[s.actionBtnSecondary, { flex: 1, marginRight: 8 }]}
+                  onPress={handleDismiss}
+                >
+                  <Text style={s.actionBtnSecondaryText}>Not for me</Text>
+                </Pressable>
+                <Pressable
+                  style={[s.actionBtnSecondary, { flex: 1 }]}
+                  onPress={handleMoreLikeThis}
+                >
+                  <Text style={s.actionBtnSecondaryText}>More like this</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <View style={s.actionConfirm}>
+              <Ionicons name="checkmark-circle" size={22} color="#15803d" style={{ marginRight: 8 }} />
+              <Text style={s.actionConfirmText}>
+                {actionState === 'saved'
+                  ? 'Added to your Want to Read list'
+                  : actionState === 'dismissed'
+                  ? "Noted — we'll recommend fewer like this"
+                  : "Got it — we'll show more like this"}
+              </Text>
+            </View>
+          )}
+        </View>
       </SafeAreaView>
     );
   }
@@ -880,8 +878,17 @@ const s = StyleSheet.create({
 
   // ── Result screen ────────────────────────────────────────────────────────────
   resultContainer: {
-    padding:    20,
-    paddingBottom: 40,
+    padding:       20,
+    paddingBottom: 160,
+  },
+  stickyActionFooter: {
+    paddingHorizontal: 20,
+    paddingTop:        16,
+    paddingBottom:     12,
+    gap:               10,
+    borderTopWidth:    1,
+    borderTopColor:    '#e7e5e4',
+    backgroundColor:   '#faf9f7',
   },
   bookCard: {
     flexDirection: 'row',
@@ -1030,9 +1037,6 @@ const s = StyleSheet.create({
     fontSize:  14,
     color:     '#92400e',
     lineHeight: 20,
-  },
-  actionsSection: {
-    gap: 10,
   },
   actionBtn: {
     flexDirection:   'row',

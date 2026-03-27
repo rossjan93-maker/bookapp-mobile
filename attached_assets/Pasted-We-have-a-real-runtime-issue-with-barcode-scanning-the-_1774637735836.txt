@@ -1,0 +1,59 @@
+We have a real runtime issue with barcode scanning: the camera feed is blurry and does not focus reliably enough to scan book barcodes.
+
+Treat this as a camera-stream/focus problem, not a barcode-detector problem.
+
+What I need:
+1. Diagnose the current camera setup in app/scan.tsx for both native and web.
+2. Improve the scan camera so the barcode can be focused and detected reliably.
+3. Keep manual ISBN entry as a strong fallback.
+
+Implement the following:
+
+1. Force the correct camera first
+- Prefer the rear/environment camera on mobile
+- Verify we are not accidentally using the front/user camera
+- On web, request video constraints that strongly prefer the environment-facing camera
+
+2. Request a better video stream
+- Increase requested resolution for barcode scanning
+- Use constraints appropriate for scanning rather than generic preview
+- Inspect and log actual track settings/capabilities on web:
+  - facingMode
+  - width / height
+  - focusMode
+  - torch
+  - zoom
+  - any other supported camera capabilities
+
+3. Apply focus-related constraints where supported
+- On web, after obtaining the MediaStreamTrack, check getCapabilities()/getSettings()/getSupportedConstraints()
+- If focusMode is supported, try continuous/auto focus via applyConstraints
+- If zoom is supported, consider a modest default zoom or a user-controlled zoom for close barcode work
+- Do not assume every browser/device supports this; degrade gracefully
+
+4. Improve the scan UX for close-range barcodes
+- Add tighter in-view guidance such as:
+  - “Use the back camera”
+  - “Hold the barcode 4–6 inches away”
+  - “Move slowly until the bars look sharp”
+- Add a scan box sized for barcodes, not book covers
+- Consider pausing decode attempts until the barcode area is reasonably large/stable in frame
+
+5. Add a “camera not focusing?” fallback path
+- Keep “Enter ISBN manually” obvious
+- If the camera remains unusable, the user should not get stuck
+
+6. Verify platform behavior explicitly
+Test and report behavior for:
+- iPhone Safari
+- Android Chrome
+- desktop Chrome
+- native Expo/dev build if available
+
+Return:
+- exact files changed
+- what camera constraints are now requested
+- what capabilities were actually available on test devices/browsers
+- whether focusMode / zoom / torch were supported
+- whether barcode scanning became reliably usable
+- any platform where web scanning is still too unreliable and should remain secondary to native/manual entry

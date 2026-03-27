@@ -1512,7 +1512,7 @@ function RecCard({
           disabled={pendingAction}
           style={{
             flex: 1,
-            paddingVertical: 11,
+            paddingVertical: 14,
             paddingHorizontal: 14,
             justifyContent: 'center',
             borderRightWidth: 1,
@@ -1529,7 +1529,7 @@ function RecCard({
           onPress={handleDismissPress}
           disabled={pendingAction}
           style={{
-            paddingVertical: 11,
+            paddingVertical: 14,
             paddingHorizontal: 13,
             justifyContent: 'center',
             alignItems: 'center',
@@ -1545,7 +1545,7 @@ function RecCard({
           onPress={handleMoreLikeThisPress}
           disabled={pendingAction}
           style={{
-            paddingVertical: 11,
+            paddingVertical: 14,
             paddingHorizontal: 13,
             justifyContent: 'center',
             alignItems: 'center',
