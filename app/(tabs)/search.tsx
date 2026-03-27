@@ -1944,21 +1944,43 @@ export default function RecommendationsScreen() {
       // ── Downgrade protection ──────────────────────────────────────────────
       // If Phase 2 ran as a background refresh (cached recs were already shown)
       // and the fresh result would replace them with an empty / quality-gated
-      // state, suppress the commit and keep the existing cards visible.
-      // This prevents the "cached recs disappear after 4-5s" regression.
+      // state, suppress the commit AND the cache writes.
+      // This prevents the "cached recs disappear after 4-5s" regression AND
+      // ensures the next tab open replays the last good payload, not this one.
       const _isBgRefresh   = hasCachedRecs;
       const _freshIsEmpty  = recs.length === 0 && (recResult.continuations ?? []).length === 0;
       const _freshIsGated  = meta.quality_gate != null && meta.quality_gate !== 'passed';
+
+      // Classify the degradation reason for logging.
+      // dependency_degraded: OL returned 0 AND pool is still insufficient —
+      // this is an external fetch outage, not a taste-fit or data quality issue.
+      const _isDependencyDegraded =
+        meta.live_ol_count === 0 &&
+        (_freshIsEmpty || _freshIsGated);
+      const _derivedGate: string = _isDependencyDegraded
+        ? 'dependency_degraded'
+        : (meta.quality_gate ?? 'passed');
 
       if (_isBgRefresh && (_freshIsEmpty || _freshIsGated)) {
         if (__DEV__) console.log('[REC_DOWNGRADE_SUPPRESSED]',
           `prev_recs=${recommendations.length}`,
           `| next_recs=${recs.length}`,
-          `| quality_gate=${meta.quality_gate ?? 'passed'}`,
+          `| quality_gate=${_derivedGate}`,
           `| pool_size=${meta.pool_size}`,
           `| mode=${meta.mode ?? 'deterministic'}`,
           `| intent=${expectedIntent ?? 'none'}`,
           `| fingerprint=v1:${currentSignal}:${expectedMode}:nfp:${expectedIntent ?? 'none'}`,
+        );
+        // Explicit cache-write suppression log — both session and persisted
+        // cache are left untouched so the next open restores the last good payload.
+        if (__DEV__) console.log('[REC_CACHE_WRITE]',
+          `allowed=false`,
+          `| reason=${_isDependencyDegraded ? 'dependency_degraded' : _freshIsEmpty ? 'result_empty' : 'quality_gated'}`,
+          `| prev_cached_recs=${cached?.recs.length ?? 0}`,
+          `| next_recs=${recs.length}`,
+          `| quality_gate=${_derivedGate}`,
+          `| live_ol_candidates=${meta.live_ol_count}`,
+          `| sources_used=${JSON.stringify({ catalog: meta.catalog_count, live_ol: meta.live_ol_count, cached_ext: meta.cached_external_count })}`,
         );
         // Keep current recs visible; only clear the refreshing indicator
         setIsBackgroundRefreshing(false);
@@ -1988,8 +2010,21 @@ export default function RecommendationsScreen() {
       setReaderThesis(meta.reader_thesis ?? null);
       setIsFreePreview(meta.expert_decision?.is_free_preview ?? false);
 
-      // ── Save to session + persistent cache so next revisit is instant ───
-      if (recs.length > 0 || (recResult.continuations ?? []).length > 0) {
+      // ── Cache write (session + persisted) ────────────────────────────────
+      // Guard: only write when the result has actual recommendations.
+      // Defence-in-depth against any future path that reaches here with a
+      // degraded result that was not caught by the downgrade-suppression block.
+      const _allowCacheWrite = recs.length > 0 || (recResult.continuations ?? []).length > 0;
+      if (__DEV__) console.log('[REC_CACHE_WRITE]',
+        `allowed=${_allowCacheWrite}`,
+        `| reason=${_allowCacheWrite ? 'ok' : _isDependencyDegraded ? 'dependency_degraded' : 'result_empty'}`,
+        `| prev_cached_recs=${cached?.recs.length ?? 0}`,
+        `| next_recs=${recs.length}`,
+        `| quality_gate=${_derivedGate}`,
+        `| live_ol_candidates=${meta.live_ol_count}`,
+        `| sources_used=${JSON.stringify({ catalog: meta.catalog_count, live_ol: meta.live_ol_count, cached_ext: meta.cached_external_count })}`,
+      );
+      if (_allowCacheWrite) {
         const _sessionPayload = {
           userId:        user.id,
           recs,
