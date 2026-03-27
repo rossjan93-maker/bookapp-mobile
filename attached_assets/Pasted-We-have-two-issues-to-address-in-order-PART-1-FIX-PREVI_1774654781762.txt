@@ -1,0 +1,114 @@
+We have two issues to address in order:
+
+-----------------------------------
+PART 1 — FIX PREVIEW NOT LOADING
+-----------------------------------
+
+The app preview is not populating. Diagnose this first before making any product changes.
+
+Steps:
+1. Check Metro / bundler logs for runtime errors
+2. Check for:
+   - undefined values in onboarding.tsx
+   - null access on recs / continuations / discoveries
+   - AsyncStorage reads causing blocking state
+   - Supabase calls hanging or throwing
+3. Confirm:
+   - root layout renders
+   - tabs layout mounts
+   - onboarding route does not block render
+4. Add temporary logs to:
+   - app/_layout.tsx
+   - app/(tabs)/_layout.tsx
+   - onboarding.tsx
+   to trace where rendering stops
+5. If onboarding gating is blocking:
+   - temporarily bypass onboarding_completed check
+   - confirm app renders
+   - then re-enable with safe guards
+
+Goal:
+→ app loads reliably in preview and on device
+
+Return:
+- root cause of preview failure
+- exact fix applied
+- files changed
+
+-----------------------------------
+PART 2 — ONBOARDING PRODUCT FIXES
+-----------------------------------
+
+Once preview is working, implement these improvements:
+
+1. REMOVE WEAK EMPTY STATE
+Current:
+“Rate a book or two first”
+
+Replace with:
+“We’re still learning your taste — here’s a first pass”
+
+Never show an empty or apologetic state.
+
+-----------------------------------
+
+2. FIX POST-ONBOARDING ROUTING (CRITICAL)
+
+Current behavior:
+User lands on Home after onboarding
+
+Fix:
+Route directly to Recommendations tab after onboarding completion
+
+Example:
+router.replace('/(tabs)/search')
+
+Reason:
+Guided action flow depends on user seeing recommendations immediately
+
+-----------------------------------
+
+3. STRENGTHEN COLD-START RECS
+
+For tier 0 users:
+- Increase weight of selected genres
+- Increase penalty for avoided genres
+- Ensure first 3–5 recs clearly reflect selections
+
+Do NOT change core recommender — adjust weighting only
+
+-----------------------------------
+
+4. ADD POST-PAYOFF NUDGE
+
+After showing first recommendations:
+Add subtle inline prompt:
+
+“Want better picks? Add a book you loved”
+
+This should:
+- NOT block progress
+- NOT be required
+- improve signal quality
+
+-----------------------------------
+
+5. SAFETY CHECK
+
+Ensure:
+- no screen blocks rendering
+- onboarding cannot deadlock app
+- recommendations always render something
+
+-----------------------------------
+
+RETURN:
+
+1. preview issue root cause + fix
+2. files changed
+3. confirmation:
+   - app loads
+   - onboarding completes
+   - user lands on recommendations
+   - recommendations always show (no empty state)
+4. before/after description of first-time user experience

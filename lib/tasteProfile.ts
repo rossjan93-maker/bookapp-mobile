@@ -559,7 +559,7 @@ export async function computeTasteProfile(
   // ── Onboarding genre prior — blend for tier 0-1 users ────────────────────
   // Maps genre labels (from onboarding chips) to the same affinity keys used
   // by buildGenreAffinities so they flow through scoring identically.
-  // Weight fades as real book history accumulates: 0.35 at tier 0 → 0.20 at tier 1
+  // Weight fades as real book history accumulates: 0.50 at tier 0 → 0.25 at tier 1
   // → not applied at tier 2+ (history is reliable enough to override).
   const GENRE_AFFINITY_MAP: Record<string, string> = {
     'Literary Fiction':   'literary',
@@ -600,8 +600,8 @@ export async function computeTasteProfile(
   const avoidGenres = (prefsData?.avoid_genres    ?? []) as string[];
 
   if (tier <= 1 && (prefGenres.length > 0 || avoidGenres.length > 0)) {
-    const prefWeight  =  0.35 - tier * 0.15;  // 0.35 at tier 0, 0.20 at tier 1
-    const avoidWeight = -(0.35 - tier * 0.15);
+    const prefWeight  =  0.50 - tier * 0.25;  // 0.50 at tier 0, 0.25 at tier 1
+    const avoidWeight = -(0.50 - tier * 0.25);
     blendedGenreAffinities = { ...genre_affinities };
 
     for (const label of prefGenres) {

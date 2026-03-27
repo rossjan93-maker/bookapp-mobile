@@ -168,13 +168,13 @@ function buildSyntheticProfile(
   for (const g of likedGenres) {
     genre_affinities[g.affinityKey] = Math.min(
       1,
-      (genre_affinities[g.affinityKey] ?? 0) + 0.6,
+      (genre_affinities[g.affinityKey] ?? 0) + 0.80,
     );
   }
   for (const g of avoidedGenres) {
     genre_affinities[g.affinityKey] = Math.max(
       -1,
-      (genre_affinities[g.affinityKey] ?? 0) - 0.6,
+      (genre_affinities[g.affinityKey] ?? 0) - 0.80,
     );
   }
 
@@ -761,7 +761,7 @@ export default function OnboardingScreen() {
       writeGuidedStep(0),
     ]);
 
-    router.replace('/');
+    router.replace('/(tabs)/search');
   }
 
   // ── Save a rec card ───────────────────────────────────────────────────────
@@ -1156,25 +1156,46 @@ export default function OnboardingScreen() {
                   <SkeletonCard />
                 </>
               ) : recError || (recs && recs.length === 0) ? (
-                // Graceful fallback — still outcome-driven
+                // Graceful fallback — never empty or apologetic
                 <View style={{ paddingTop: 32, paddingHorizontal: 16, alignItems: 'center' }}>
-                  <Ionicons name="library-outline" size={44} color="#d6d3d1" style={{ marginBottom: 16 }} />
+                  <Ionicons name="sparkles-outline" size={44} color="#d6d3d1" style={{ marginBottom: 16 }} />
                   <Text style={{ fontSize: 16, fontWeight: '700', color: INK, textAlign: 'center', marginBottom: 8 }}>
-                    Rate a book or two first
+                    We're still learning your taste — here's a first pass
                   </Text>
                   <Text style={{ fontSize: 14, color: SUB, textAlign: 'center', lineHeight: 20 }}>
-                    Head to your recs and give the engine a signal — picks will appear quickly.
+                    Head to your Recommend tab and interact with a few cards to help the engine dial in faster.
                   </Text>
                 </View>
               ) : (
-                recs!.map(book => (
-                  <PayoffRecCard
-                    key={book.id}
-                    book={book}
-                    saved={savedIds.has(book.id)}
-                    onSave={() => onSaveRec(book)}
-                  />
-                ))
+                <>
+                  {recs!.map(book => (
+                    <PayoffRecCard
+                      key={book.id}
+                      book={book}
+                      saved={savedIds.has(book.id)}
+                      onSave={() => onSaveRec(book)}
+                    />
+                  ))}
+                  {/* Post-payoff nudge — non-blocking, improves signal */}
+                  <View
+                    style={{
+                      backgroundColor: '#15803d' + '10',
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: '#15803d' + '30',
+                      padding: 14,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 10,
+                      marginTop: 4,
+                    }}
+                  >
+                    <Ionicons name="bulb-outline" size={18} color="#15803d" />
+                    <Text style={{ flex: 1, fontSize: 13, color: '#15803d', lineHeight: 18, fontWeight: '500' }}>
+                      Want better picks? Add a book you loved above or in the search tab.
+                    </Text>
+                  </View>
+                </>
               )}
             </ScrollView>
 
