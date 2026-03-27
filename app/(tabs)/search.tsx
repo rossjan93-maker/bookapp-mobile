@@ -1550,6 +1550,8 @@ export default function RecommendationsScreen() {
 
   // ── Dev-only performance overlay state ────────────────────────────────────
   const [recTiming, setRecTiming]             = useState<DevTimings | null>(null);
+  // Off by default — long-press the "Recommendations" title to toggle in dev builds
+  const [showTimingOverlay, setShowTimingOverlay] = useState(false);
 
   // ── Entitlement + expert mode state ───────────────────────────────────────
   const [entitlement, setEntitlement]         = useState<RecEntitlement | null>(null);
@@ -1939,6 +1941,43 @@ export default function RecommendationsScreen() {
         return;
       }
 
+      // ── Downgrade protection ──────────────────────────────────────────────
+      // If Phase 2 ran as a background refresh (cached recs were already shown)
+      // and the fresh result would replace them with an empty / quality-gated
+      // state, suppress the commit and keep the existing cards visible.
+      // This prevents the "cached recs disappear after 4-5s" regression.
+      const _isBgRefresh   = hasCachedRecs;
+      const _freshIsEmpty  = recs.length === 0 && (recResult.continuations ?? []).length === 0;
+      const _freshIsGated  = meta.quality_gate != null && meta.quality_gate !== 'passed';
+
+      if (_isBgRefresh && (_freshIsEmpty || _freshIsGated)) {
+        if (__DEV__) console.log('[REC_DOWNGRADE_SUPPRESSED]',
+          `prev_recs=${recommendations.length}`,
+          `| next_recs=${recs.length}`,
+          `| quality_gate=${meta.quality_gate ?? 'passed'}`,
+          `| pool_size=${meta.pool_size}`,
+          `| mode=${meta.mode ?? 'deterministic'}`,
+          `| intent=${expectedIntent ?? 'none'}`,
+          `| fingerprint=v1:${currentSignal}:${expectedMode}:nfp:${expectedIntent ?? 'none'}`,
+        );
+        // Keep current recs visible; only clear the refreshing indicator
+        setIsBackgroundRefreshing(false);
+        return;
+      }
+
+      // ── Commit logging ────────────────────────────────────────────────────
+      const _commitType = _isBgRefresh ? 'background_refresh' : 'cold_start';
+      if (__DEV__) console.log('[REC_COMMIT]',
+        `commit_type=${_commitType}`,
+        `| prev_visible_recs=${recommendations.length}`,
+        `| next_recs=${recs.length}`,
+        `| continuations=${(recResult.continuations ?? []).length}`,
+        `| quality_gate=${meta.quality_gate ?? 'passed'}`,
+        `| pool_size=${meta.pool_size}`,
+        `| mode=${meta.mode ?? 'deterministic'}`,
+        `| intent=${expectedIntent ?? 'none'}`,
+      );
+
       if (__DEV__) console.log('[PERF] phase2_commit', `| recs=${recs.length}`);
       setRecommendations(recs);
       setContinuations(recResult.continuations ?? []);
@@ -2074,6 +2113,16 @@ export default function RecommendationsScreen() {
         if (__DEV__) console.log('[PERF] reloadRecs_stale_discarded', `| requestId=${requestId}`);
         return;
       }
+      if (__DEV__) console.log('[REC_COMMIT]',
+        `commit_type=reload_recs`,
+        `| prev_visible_recs=${recommendations.length}`,
+        `| next_recs=${recs.length}`,
+        `| continuations=${(intentResult.continuations ?? []).length}`,
+        `| quality_gate=${meta.quality_gate ?? 'passed'}`,
+        `| pool_size=${meta.pool_size}`,
+        `| mode=${meta.mode ?? 'deterministic'}`,
+        `| intent=${isIntentActive(intent) ? intent.book_title ?? 'active' : 'none'}`,
+      );
       setRecommendations(recs);
       setContinuations(intentResult.continuations ?? []);
       setDiscoveries(intentResult.discoveries ?? recs);
@@ -2350,16 +2399,23 @@ export default function RecommendationsScreen() {
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 48 }}
       >
         {/* ── Header ── */}
-        <Text style={{
-          fontSize: 28,
-          fontWeight: '800',
-          color: '#1c1917',
-          letterSpacing: -0.5,
-          lineHeight: 34,
-          marginBottom: 28,
-        }}>
-          Recommendations
-        </Text>
+        {/* In __DEV__ builds, long-press the title to toggle the timing overlay */}
+        <TouchableOpacity
+          activeOpacity={1}
+          onLongPress={__DEV__ ? () => setShowTimingOverlay(v => !v) : undefined}
+          delayLongPress={600}
+        >
+          <Text style={{
+            fontSize: 28,
+            fontWeight: '800',
+            color: '#1c1917',
+            letterSpacing: -0.5,
+            lineHeight: 34,
+            marginBottom: 28,
+          }}>
+            Recommendations
+          </Text>
+        </TouchableOpacity>
 
         {hubLoading ? (
           <View style={{ gap: 8 }}>
@@ -2892,7 +2948,8 @@ export default function RecommendationsScreen() {
       </ScrollView>
 
       {/* ── Dev-only performance overlay ───────────────────────────────── */}
-      {__DEV__ && recTiming && (
+      {/* Hidden by default — long-press the screen title to toggle       */}
+      {__DEV__ && showTimingOverlay && recTiming && (
         <View style={{
           position: 'absolute',
           bottom: 16,
