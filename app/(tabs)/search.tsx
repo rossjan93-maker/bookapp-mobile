@@ -7,6 +7,7 @@ import {
   LayoutAnimation,
   Modal,
   Platform,
+  Pressable,
   ScrollView,
   Text,
   TextInput,
@@ -20,6 +21,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 import { useFocusEffect, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
@@ -2920,23 +2922,37 @@ export default function RecommendationsScreen() {
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 48 }}
       >
         {/* ── Header ── */}
-        {/* In __DEV__ builds, long-press the title to toggle the timing overlay */}
-        <TouchableOpacity
-          activeOpacity={1}
-          onLongPress={__DEV__ ? () => setShowTimingOverlay(v => !v) : undefined}
-          delayLongPress={600}
-        >
-          <Text style={{
-            fontSize: 28,
-            fontWeight: '800',
-            color: '#1c1917',
-            letterSpacing: -0.5,
-            lineHeight: 34,
-            marginBottom: 28,
-          }}>
-            Recommendations
-          </Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 28 }}>
+          {/* In __DEV__ builds, long-press the title to toggle the timing overlay */}
+          <TouchableOpacity
+            style={{ flex: 1 }}
+            activeOpacity={1}
+            onLongPress={__DEV__ ? () => setShowTimingOverlay(v => !v) : undefined}
+            delayLongPress={600}
+          >
+            <Text style={{
+              fontSize: 28,
+              fontWeight: '800',
+              color: '#1c1917',
+              letterSpacing: -0.5,
+              lineHeight: 34,
+            }}>
+              Recommendations
+            </Text>
+          </TouchableOpacity>
+          <Pressable
+            onPress={() => router.push('/scan' as any)}
+            hitSlop={12}
+            style={{
+              backgroundColor: '#f5f5f4',
+              borderRadius:    22,
+              padding:         10,
+              marginTop:       4,
+            }}
+          >
+            <Ionicons name="barcode-outline" size={22} color="#1c1917" />
+          </Pressable>
+        </View>
 
         {hubLoading ? (
           <View style={{ gap: 8 }}>

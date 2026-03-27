@@ -115,7 +115,7 @@ const TRAIT_SIGNAL_MAP: Array<[keyof ConsensusTraits, string[]]> = [
                          'passion', 'falling in love', 'relationship', 'romantic tension']],
 ];
 
-function inferConsensusTraits(
+export function inferConsensusTraits(
   subjects:    string[],
   categories:  string[],
   description: string,

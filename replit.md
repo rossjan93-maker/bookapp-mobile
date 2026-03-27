@@ -20,6 +20,16 @@ The application is built with React Native using Expo Router for navigation and 
     - **Center-of-Gravity Fit Classifier:** `lib/fitClassifier.ts` classifies book fit (core, adjacent, stretch, reject) based on multiple signals like author matches, dominant lanes, and market position, providing nuanced explanations for recommendations.
     - **Set Composition Engine:** In `lib/recommender.ts`, a 3-phase engine seeds recommendations by lane, fills with CORE books, and then ADJACENT books, applying continuation discounts and author/lane caps to ensure diverse and relevant sets.
     - **Expert Reasoning Layer:** `lib/expertRec.ts` implements a heuristic-based expert system that builds a `ReaderThesis` and `CandidateJudgment` to compose recommendation sets, structured for potential future LLM integration.
+- **Barcode Scan / "Will I like this?" Feature:**
+    - Entry point: barcode icon button in the top-right of the Recommendations tab header.
+    - Screen: `app/scan.tsx` — full scan + result screen (Expo Router stack route `/scan`).
+    - On native: `expo-camera` `CameraView` scans EAN-13 / ISBN barcodes. On web: direct manual entry form.
+    - Resolution pipeline: Google Books `isbn:` query (primary) + Open Library ISBN search (OL work key + subjects).
+    - Manual fallback: title + author search via Google Books.
+    - Fit evaluation: `lib/scanFitEval.ts` — reuses `scoreBookForUser`, `computeFitClass`, `computeCenterOfGravity`, `inferConsensusTraits` exactly as the recommendation engine does. Returns a `ScanFitResult` with verdict, 0–100 score, confidence, reasons, and caution.
+    - Scan history: `lib/scanHistory.ts` persists every verdict to `scan_history` table (migration `20260327000000_scan_history.sql`).
+    - Actions: "Want to Read" upserts to `books` + `user_books` + `persistFeedback('saved')`; "Not for me" and "More like this" persist feedback and update scan history.
+    - Low-signal handling: honest low-confidence state shown for tier ≤ 1 users without suppressing the result.
 - **UI/UX:**
     - **Color Scheme:** `#faf9f7` for background, `#1c1917` for headings, `#a8a29e` for muted text, and `#57534e` for secondary elements.
     - **CoverThumb Component:** Dynamically displays book covers, falling back to Open Library covers if a direct URL is unavailable.
