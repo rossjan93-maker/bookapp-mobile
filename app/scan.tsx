@@ -74,10 +74,11 @@ export default function ScanScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const scanLock = useRef(false); // prevent double-scan
 
-  // Phase state machine
-  const [phase, setPhase] = useState<Phase>(
-    Platform.OS === 'web' ? 'manual' : 'scanning',
-  );
+  // Phase state machine — all platforms start at 'scanning'.
+  // On web, expo-camera uses getUserMedia + BarcodeDetector (polyfill included).
+  // If the browser blocks camera (e.g. iframe without allow="camera"), the
+  // permission-denied screen is shown and the user falls through to manual entry.
+  const [phase, setPhase] = useState<Phase>('scanning');
 
   // Manual entry
   const [manualIsbn, setManualIsbn]   = useState('');
@@ -93,9 +94,10 @@ export default function ScanScreen() {
   const [scanHistoryId, setScanHistoryId] = useState<string | null>(null);
   const [actionState, setActionState]   = useState<ActionState>('idle');
 
-  // ── On mount: request camera permission (native only) ─────────────────────
+  // ── On mount: request camera permission on all platforms ─────────────────
+  // On web this triggers the browser's camera permission dialog.
   useEffect(() => {
-    if (Platform.OS !== 'web' && !permission?.granted) {
+    if (!permission?.granted) {
       requestPermission();
     }
   }, []);
@@ -319,7 +321,7 @@ export default function ScanScreen() {
     setManualAuthor('');
     setManualError(null);
     setErrorMsg(null);
-    setPhase(Platform.OS === 'web' ? 'manual' : 'scanning');
+    setPhase('scanning');
   }
 
   // ── Header ─────────────────────────────────────────────────────────────────
@@ -445,11 +447,9 @@ export default function ScanScreen() {
           <Pressable style={s.primaryBtn} onPress={() => { setManualIsbn(scannedISBN ?? ''); setPhase('manual'); }}>
             <Text style={s.primaryBtnText}>Enter details manually</Text>
           </Pressable>
-          {Platform.OS !== 'web' && (
-            <Pressable style={s.ghostBtn} onPress={handleScanAnother}>
-              <Text style={s.ghostBtnText}>Scan again</Text>
-            </Pressable>
-          )}
+          <Pressable style={s.ghostBtn} onPress={handleScanAnother}>
+            <Text style={s.ghostBtnText}>Scan again</Text>
+          </Pressable>
         </View>
       </SafeAreaView>
     );
@@ -533,15 +533,13 @@ export default function ScanScreen() {
               <Text style={s.primaryBtnText}>Get fit verdict</Text>
             </Pressable>
 
-            {Platform.OS !== 'web' && (
-              <Pressable
-                style={s.ghostBtn}
-                onPress={() => { setManualError(null); setPhase('scanning'); }}
-              >
-                <Ionicons name="barcode-outline" size={16} color="#78716c" style={{ marginRight: 6 }} />
-                <Text style={s.ghostBtnText}>Scan barcode instead</Text>
-              </Pressable>
-            )}
+            <Pressable
+              style={s.ghostBtn}
+              onPress={() => { setManualError(null); setPhase('scanning'); }}
+            >
+              <Ionicons name="barcode-outline" size={16} color="#78716c" style={{ marginRight: 6 }} />
+              <Text style={s.ghostBtnText}>Scan barcode instead</Text>
+            </Pressable>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -683,15 +681,8 @@ export default function ScanScreen() {
 
           {/* ── Scan another ─────────────────────────────────────────────────── */}
           <Pressable style={s.scanAnotherBtn} onPress={handleScanAnother}>
-            <Ionicons
-              name={Platform.OS === 'web' ? 'search-outline' : 'barcode-outline'}
-              size={16}
-              color="#78716c"
-              style={{ marginRight: 6 }}
-            />
-            <Text style={s.scanAnotherText}>
-              {Platform.OS === 'web' ? 'Look up another book' : 'Scan another book'}
-            </Text>
+            <Ionicons name="barcode-outline" size={16} color="#78716c" style={{ marginRight: 6 }} />
+            <Text style={s.scanAnotherText}>Scan another book</Text>
           </Pressable>
         </ScrollView>
       </SafeAreaView>
