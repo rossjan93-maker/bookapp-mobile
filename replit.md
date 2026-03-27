@@ -20,6 +20,14 @@ The application is built with React Native using Expo Router for navigation and 
     - **Center-of-Gravity Fit Classifier:** `lib/fitClassifier.ts` classifies book fit (core, adjacent, stretch, reject) based on multiple signals like author matches, dominant lanes, and market position, providing nuanced explanations for recommendations.
     - **Set Composition Engine:** In `lib/recommender.ts`, a 3-phase engine seeds recommendations by lane, fills with CORE books, and then ADJACENT books, applying continuation discounts and author/lane caps to ensure diverse and relevant sets.
     - **Expert Reasoning Layer:** `lib/expertRec.ts` implements a heuristic-based expert system that builds a `ReaderThesis` and `CandidateJudgment` to compose recommendation sets, structured for potential future LLM integration.
+- **Onboarding System (5-phase):**
+    - Phase 1 (Walkthrough): `components/OnboardingWalkthrough.tsx` — 4-step Modal overlay with spotlight highlighting each key tab. Fires on first visit to the `(tabs)` layout. Completion stored in AsyncStorage (`readstack_walkthrough_v1`).
+    - Phase 2 (Signal collection): `app/onboarding.tsx` — curated grid of 16 popular books across genres; user selects ≥3 they've read, then rates each (Loved/Liked/Okay/Not for me → star ratings 5/4/3/2).
+    - Phase 3 (Learning): Animated "Building your taste profile…" screen with pulsing dots and cycling messages; minimum 2.3s; concurrently saves rated books to Supabase and computes recommendation pipeline.
+    - Phase 4 (Payoff): Shows 3–5 recommendations from the real `getCandidateBooks` + `getRankedRecs` pipeline with "Based on what you just told us" header and "Want to Read" action.
+    - Phase 5 (Contextual tooltips): `components/OnboardingTooltip.tsx` — reusable wrapper component; first-use scan tip in `app/scan.tsx` shows above action buttons on first result.
+    - State storage: `profiles.onboarding_completed` (Supabase; migration `20260327000001_onboarding.sql`) determines routing; walkthrough/tooltip state uses AsyncStorage keys.
+    - Routing: `app/_layout.tsx` checks `onboarding_completed` after auth; new users → `/onboarding`; existing users → `/`. Defensive error fallback prevents blocking existing users before migration is applied.
 - **Barcode Scan / "Will I like this?" Feature:**
     - Entry point: barcode icon button in the top-right of the Recommendations tab header.
     - Screen: `app/scan.tsx` — full scan + result screen (Expo Router stack route `/scan`).

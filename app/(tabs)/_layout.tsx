@@ -2,6 +2,7 @@ import { createContext, useEffect, useState } from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import { OnboardingWalkthrough, shouldShowWalkthrough } from '../../components/OnboardingWalkthrough';
 
 type BadgeContextType = {
   newRecCount: number;
@@ -14,7 +15,8 @@ export const BadgeContext = createContext<BadgeContextType>({
 });
 
 export default function TabsLayout() {
-  const [newRecCount, setNewRecCount] = useState(0);
+  const [newRecCount, setNewRecCount]         = useState(0);
+  const [showWalkthrough, setShowWalkthrough] = useState(false);
 
   useEffect(() => {
     async function fetchCount() {
@@ -29,6 +31,15 @@ export default function TabsLayout() {
       setNewRecCount(count ?? 0);
     }
     fetchCount();
+  }, []);
+
+  useEffect(() => {
+    shouldShowWalkthrough().then(show => {
+      if (show) {
+        const t = setTimeout(() => setShowWalkthrough(true), 600);
+        return () => clearTimeout(t);
+      }
+    });
   }, []);
 
   return (
@@ -100,6 +111,10 @@ export default function TabsLayout() {
           }}
         />
       </Tabs>
+
+      {showWalkthrough && (
+        <OnboardingWalkthrough onDone={() => setShowWalkthrough(false)} />
+      )}
     </BadgeContext.Provider>
   );
 }

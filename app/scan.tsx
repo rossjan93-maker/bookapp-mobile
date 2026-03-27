@@ -35,6 +35,7 @@ import {
   type ResolvedBook, type ScanFitResult, type ScanVerdict,
 } from '../lib/scanFitEval';
 import { persistScan, updateScanAction } from '../lib/scanHistory';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -93,6 +94,20 @@ export default function ScanScreen() {
   const [errorMsg, setErrorMsg]         = useState<string | null>(null);
   const [scanHistoryId, setScanHistoryId] = useState<string | null>(null);
   const [actionState, setActionState]   = useState<ActionState>('idle');
+  const [showScanTip, setShowScanTip]   = useState(false);
+
+  useEffect(() => {
+    if (phase === 'result') {
+      AsyncStorage.getItem('readstack_tooltip_v1_scan_result').then(val => {
+        if (!val) setShowScanTip(true);
+      });
+    }
+  }, [phase]);
+
+  function dismissScanTip() {
+    setShowScanTip(false);
+    AsyncStorage.setItem('readstack_tooltip_v1_scan_result', '1').catch(() => {});
+  }
 
   // ── Scanning hint cycle ───────────────────────────────────────────────────
   const [hintIdx, setHintIdx] = useState(0);
@@ -766,6 +781,30 @@ export default function ScanScreen() {
             <Text style={s.scanAnotherText}>Scan another book</Text>
           </Pressable>
         </ScrollView>
+
+        {/* ── First-use scan tip ───────────────────────────────────────────── */}
+        {showScanTip && actionState === 'idle' && (
+          <Pressable
+            onPress={dismissScanTip}
+            style={{
+              marginHorizontal: 20,
+              marginBottom: 8,
+              backgroundColor: '#1c1917',
+              borderRadius: 10,
+              paddingHorizontal: 14,
+              paddingVertical: 10,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+            }}
+          >
+            <Ionicons name="information-circle" size={16} color="#a8a29e" />
+            <Text style={{ flex: 1, fontSize: 13, color: '#e7e5e4', lineHeight: 18 }}>
+              Save books you want to read, or tap "More like this" to refine your taste profile.
+            </Text>
+            <Ionicons name="close" size={14} color="#78716c" />
+          </Pressable>
+        )}
 
         {/* ── Sticky action footer — always in thumb zone ──────────────────── */}
         <View style={s.stickyActionFooter}>
