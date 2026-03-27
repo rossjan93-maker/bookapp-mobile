@@ -672,7 +672,6 @@ export default function OnboardingScreen() {
 
   function onPacingSelect(key: string) {
     setPacingKey(key);
-    startRecFetch(key);
     goTo('tone');
   }
 
@@ -808,7 +807,10 @@ export default function OnboardingScreen() {
             onPress={() => {
               if (phase === 'genres') goTo('avoid');
               else if (phase === 'avoid') goTo('pacing');
-              else if (phase === 'fav_book') goTo('payoff');
+              else if (phase === 'fav_book') {
+                startRecFetch(pacingKey!, toneKey ?? undefined);
+                goTo('payoff');
+              }
             }}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
@@ -1110,7 +1112,10 @@ export default function OnboardingScreen() {
               }}
             >
               <TouchableOpacity
-                onPress={() => goTo('payoff')}
+                onPress={() => {
+                  startRecFetch(pacingKey!, toneKey ?? undefined);
+                  goTo('payoff');
+                }}
                 activeOpacity={0.8}
                 style={{
                   backgroundColor: INK,

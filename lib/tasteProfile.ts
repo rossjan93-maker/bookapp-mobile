@@ -485,10 +485,10 @@ export async function computeTasteProfile(
       .eq('status', 'finished')
       .not('rating', 'is', null),
 
-    // Diagnosis answers from reader_preferences
+    // Diagnosis answers + genre preferences from reader_preferences
     client
       .from('reader_preferences')
-      .select('diagnosis_answers')
+      .select('diagnosis_answers, favorite_genres, avoid_genres')
       .eq('user_id', userId)
       .maybeSingle(),
   ]);
@@ -496,8 +496,14 @@ export async function computeTasteProfile(
   const rows: RawUserBook[] = (booksRes.data ?? []) as RawUserBook[];
   const finished = rows.filter(r => r.status === 'finished');
 
-  const diagnosisAnswers = ((prefsRes.data as { diagnosis_answers?: Record<string, string> } | null)
-    ?.diagnosis_answers ?? {}) as Record<string, string>;
+  type PrefsRow = {
+    diagnosis_answers?: Record<string, string>;
+    favorite_genres?:   string[];
+    avoid_genres?:      string[];
+  };
+  const prefsData = (prefsRes.data ?? null) as PrefsRow | null;
+
+  const diagnosisAnswers = (prefsData?.diagnosis_answers ?? {}) as Record<string, string>;
 
   // Helper: recognise a Goodreads-imported row regardless of which column was set.
   // goodreadsStager sets source='goodreads'; goodreadsExecutor sets import_source='goodreads'.
@@ -550,14 +556,81 @@ export async function computeTasteProfile(
 
   const open_questions = deriveOpenQuestions(evidence, preferred_traits);
 
+  // ── Onboarding genre prior — blend for tier 0-1 users ────────────────────
+  // Maps genre labels (from onboarding chips) to the same affinity keys used
+  // by buildGenreAffinities so they flow through scoring identically.
+  // Weight fades as real book history accumulates: 0.35 at tier 0 → 0.20 at tier 1
+  // → not applied at tier 2+ (history is reliable enough to override).
+  const GENRE_AFFINITY_MAP: Record<string, string> = {
+    'Literary Fiction':   'literary',
+    'Fantasy':            'fantasy_scifi',
+    'Sci-Fi':             'fantasy_scifi',
+    'Thriller':           'thriller_mystery',
+    'Mystery':            'thriller_mystery',
+    'Romance':            'romance',
+    'Horror':             'horror',
+    'Historical Fiction': 'literary',
+    'Non-Fiction':        'nonfiction',
+    'Biography & Memoir': 'memoir_bio',
+    'Self-Help':          'nonfiction',
+    'Young Adult':        'literary',
+    'Graphic Novel':      'literary',
+  };
+
+  const GENRE_SUBJECTS_MAP: Record<string, string[]> = {
+    'Literary Fiction':   ['literary fiction', 'contemporary fiction'],
+    'Fantasy':            ['fantasy', 'epic fantasy', 'fantasy fiction'],
+    'Sci-Fi':             ['science fiction', 'space opera', 'speculative fiction'],
+    'Thriller':           ['thriller', 'psychological thriller', 'suspense fiction'],
+    'Mystery':            ['mystery', 'detective fiction', 'crime fiction'],
+    'Romance':            ['romance', 'contemporary romance', 'romantic fiction'],
+    'Horror':             ['horror', 'supernatural fiction', 'gothic fiction'],
+    'Historical Fiction': ['historical fiction'],
+    'Non-Fiction':        ['popular nonfiction', 'popular science'],
+    'Biography & Memoir': ['biography', 'autobiography', 'memoir'],
+    'Self-Help':          ['self-help', 'personal development'],
+    'Young Adult':        ['young adult fiction'],
+    'Graphic Novel':      ['graphic novels', 'comics'],
+  };
+
+  let blendedGenreAffinities = genre_affinities;
+  let blendedLikedSubjects   = liked_subjects;
+
+  const prefGenres  = (prefsData?.favorite_genres ?? []) as string[];
+  const avoidGenres = (prefsData?.avoid_genres    ?? []) as string[];
+
+  if (tier <= 1 && (prefGenres.length > 0 || avoidGenres.length > 0)) {
+    const prefWeight  =  0.35 - tier * 0.15;  // 0.35 at tier 0, 0.20 at tier 1
+    const avoidWeight = -(0.35 - tier * 0.15);
+    blendedGenreAffinities = { ...genre_affinities };
+
+    for (const label of prefGenres) {
+      const key = GENRE_AFFINITY_MAP[label];
+      if (key) blendedGenreAffinities[key] = Math.min(1, (blendedGenreAffinities[key] ?? 0) + prefWeight);
+    }
+    for (const label of avoidGenres) {
+      const key = GENRE_AFFINITY_MAP[label];
+      if (key) blendedGenreAffinities[key] = Math.max(-1, (blendedGenreAffinities[key] ?? 0) + avoidWeight);
+    }
+
+    // For tier 0 with no book anchors yet, derive liked_subjects from preferred genres
+    if (tier === 0 && liked_subjects.length === 0 && prefGenres.length > 0) {
+      const subjectSet = new Set<string>();
+      for (const label of prefGenres) {
+        for (const s of (GENRE_SUBJECTS_MAP[label] ?? [])) subjectSet.add(s);
+      }
+      blendedLikedSubjects = [...subjectSet].slice(0, 8);
+    }
+  }
+
   return {
     tier,
     label,
     confidence,
     preferred_traits,
     avoided_traits,
-    genre_affinities,
-    liked_subjects,
+    genre_affinities:  blendedGenreAffinities,
+    liked_subjects:    blendedLikedSubjects,
     liked_authors,
     open_questions,
     evidence,

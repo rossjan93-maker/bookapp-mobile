@@ -1,0 +1,65 @@
+I want the app navigation to feel more mobile-native through gestures.
+
+Implement two things:
+
+1. Horizontal swipe navigation between the main tabs
+2. Pull-to-refresh on each top-level tab screen
+
+Goals:
+- Make the app easier to use one-handed
+- Make switching tabs feel fluid
+- Let users refresh current screen content with a natural pull-down gesture
+
+Requirements
+
+1. Swipe between tabs
+- Users should be able to move left/right between the main tabs by swiping horizontally
+- This should work across the primary tab screens only:
+  - Home
+  - Recommend
+  - Library
+  - Inbox
+  - Profile
+- Preserve the existing bottom tab bar
+- Swiping should update the active tab correctly and keep tab state coherent
+
+2. Pull-to-refresh
+- On each main tab screen, pulling down from the top should refresh that screen’s data
+- Use native-feeling refresh controls
+- Refresh should be screen-specific, not a full app reset
+
+3. Gesture conflict rules
+Do not introduce gesture behavior that fights with:
+- vertical scrolling
+- camera scanning screen
+- onboarding walkthrough overlays
+- text inputs
+- recommendation card interactions
+- any other existing high-priority gestures
+
+If needed:
+- disable tab swipe on specific screens
+- require a meaningful horizontal threshold before tab switching
+- keep pull-to-refresh only when the scroll position is at the top
+
+4. Refresh behavior by screen
+Wire pull-to-refresh to the real data loaders for each tab:
+- Home: reload home/timeline/friends summary content
+- Recommend: refresh recommendation hub appropriately
+- Library: reload books/statuses
+- Inbox: reload incoming/outgoing recommendation data
+- Profile: reload profile/friends content
+
+5. UX expectations
+- Swiping tabs should feel smooth, not overly sensitive
+- Pull-to-refresh should show a clear spinner/loading state
+- Existing screen state should remain stable unless the refresh returns new data
+- Do not regress recommendation cache behavior or onboarding behavior
+
+6. Deliverables
+Return:
+- exact files changed
+- how tab swipe was implemented
+- how pull-to-refresh was implemented on each screen
+- what gesture-conflict protections were added
+- any screens where swipe was intentionally disabled
