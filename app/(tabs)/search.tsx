@@ -1094,7 +1094,7 @@ function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | n
   if (bd.saga_label && bd.saga_name) {
     switch (bd.saga_label) {
       case 'saga_entry':
-        return `Start at the beginning of ${naturalArticle(bd.saga_name)} saga.`;
+        return `Begin where ${naturalArticle(bd.saga_name)} saga starts.`;
       case 'saga_continuation':
         return `Continue ${naturalArticle(bd.saga_name)} saga.`;
       case 'saga_next_series':
