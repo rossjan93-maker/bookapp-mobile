@@ -690,22 +690,27 @@ export default function ScanScreen() {
             <Text style={s.verdictQuestion}>Will I like this?</Text>
             <Text style={s.verdictHeadline}>{headline}</Text>
 
-            {/* Badge + score row */}
+            {/* Badge row */}
             <View style={s.verdictRow}>
               <View style={[s.verdictBadge, { backgroundColor: badge.bg }]}>
                 <Text style={[s.verdictBadgeText, { color: badge.text }]}>
                   {VERDICT_LABELS[verdict]}
                 </Text>
               </View>
-              {!low_signal && (
-                <View style={s.scoreChip}>
-                  <Text style={s.scoreNumber}>{score_display}</Text>
-                  <Text style={s.scoreSlash}> / 100</Text>
-                </View>
-              )}
             </View>
 
-            <Text style={s.confidenceText}>{CONFIDENCE_LABEL[confidence]}</Text>
+            {/* Score + confidence on one line */}
+            {!low_signal && (
+              <Text style={s.scoreConfidenceLine}>
+                <Text style={s.scoreNumber}>{score_display}</Text>
+                <Text style={s.scoreSlash}> / 100</Text>
+                <Text style={s.confidenceSep}>{' · '}</Text>
+                <Text style={s.confidenceBit}>{CONFIDENCE_LABEL[confidence]}</Text>
+              </Text>
+            )}
+            {low_signal && (
+              <Text style={s.confidenceText}>{CONFIDENCE_LABEL[confidence]}</Text>
+            )}
           </View>
 
           <View style={s.divider} />
@@ -722,13 +727,25 @@ export default function ScanScreen() {
 
           {/* ── Reasons ──────────────────────────────────────────────────────── */}
           {reasons.length > 0 && (
-            <View style={s.reasonsSection}>
-              {reasons.map((r, i) => (
-                <View key={i} style={s.reasonRow}>
-                  <View style={s.reasonDot} />
-                  <Text style={s.reasonText}>{r}</Text>
-                </View>
-              ))}
+            <View>
+              <Text style={s.whySectionLabel}>
+                {verdict === 'not_for_you'
+                  ? 'Why not'
+                  : verdict === 'mixed_fit'
+                  ? 'The picture'
+                  : 'Why it fits'}
+              </Text>
+              <View style={s.reasonsSection}>
+                {reasons.map((r, i) => (
+                  <View key={i} style={s.reasonRow}>
+                    <View style={[
+                      s.reasonDot,
+                      verdict === 'not_for_you' && { backgroundColor: '#b91c1c' },
+                    ]} />
+                    <Text style={s.reasonText}>{r}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
           )}
 
@@ -1080,9 +1097,8 @@ const s = StyleSheet.create({
     fontSize:   13,
     fontWeight: '600',
   },
-  scoreChip: {
-    flexDirection: 'row',
-    alignItems:    'baseline',
+  scoreConfidenceLine: {
+    marginTop: 4,
   },
   scoreNumber: {
     fontSize:   22,
@@ -1093,10 +1109,26 @@ const s = StyleSheet.create({
     fontSize: 15,
     color:    '#a8a29e',
   },
+  confidenceSep: {
+    fontSize: 13,
+    color:    '#a8a29e',
+  },
+  confidenceBit: {
+    fontSize: 13,
+    color:    '#78716c',
+  },
   confidenceText: {
     fontSize:  13,
     color:     '#78716c',
-    marginTop: 2,
+    marginTop: 4,
+  },
+  whySectionLabel: {
+    fontSize:      12,
+    fontWeight:    '600',
+    color:         '#a8a29e',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+    marginBottom:  10,
   },
   divider: {
     height:          1,
