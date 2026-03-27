@@ -1045,20 +1045,33 @@ function capitalize(s: string): string {
   return s.length > 0 ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
+// Human-readable labels for each detected reading lane — used to name the genre
+// in explanation copy rather than leaving it as a vague "a genre you enjoy".
+const EXPLANATION_LANE_LABELS: Record<DeterministicLane, string> = {
+  romantasy:            'romantic fantasy',
+  scifi_fantasy:        'fantasy and speculative fiction',
+  modern_suspense:      'psychological suspense',
+  romance:              'emotionally driven romance',
+  contemporary_fiction: 'contemporary fiction',
+  memoir_nonfiction:    'narrative nonfiction',
+  literary:             'literary fiction',
+  horror:               'dark atmospheric fiction',
+};
+
 // Build a single behavior-driven explanation anchored to ONE concrete user signal.
 //
 // Priority (highest → lowest):
 //   0. Saga label    — journey-level framing for multi-series universes
 //   1. Series label  — per-series framing for books not in a tracked saga
 //   2. Author affinity — finished-book count ≥ 2
-//   3. Taste match via score breakdown traits
-//   4. Generic fallback — scorer reason string
+//   3. Named genre fit — core_fit with a known reading lane
+//   4. Generic fallback — scorer reason string (with lane name substituted when available)
 //
 // Copy principles:
 //   - Series starter: direct invitation to begin; name the series
 //   - Series continuation: acknowledge what the user has read; name what's next
 //   - Author affinity: peer signal framing, not a book-count recitation
-//   - Taste match: name the traits, not the algorithm
+//   - Taste match: name the genre or traits, not the algorithm
 function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | null {
   const bd = book._score_breakdown;
 
@@ -1109,9 +1122,23 @@ function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | n
     return `Another strong read from ${book.author}`;
   }
 
-  // 3. Fallback — existing reason string (strip author prefix, capitalise)
+  // 3. Named genre fit — core_fit in a known reading lane gives a specific sentence
+  const laneLabel = bd.book_lane
+    ? (EXPLANATION_LANE_LABELS[bd.book_lane as DeterministicLane] ?? null)
+    : null;
+  if (bd.fit_class === 'core_fit' && laneLabel) {
+    return `A strong fit for your taste in ${laneLabel}.`;
+  }
+
+  // 4. Fallback — scorer reason string.
+  // Replace the generic "Fits a genre you consistently enjoy" with a named variant
+  // when a reading lane is available; otherwise pass the string through as-is.
   if (book.reasons.length > 0) {
-    return capitalize(stripAuthorPrefix(book.reasons[0], book.author));
+    const raw = capitalize(stripAuthorPrefix(book.reasons[0], book.author));
+    if (raw === 'Fits a genre you consistently enjoy' && laneLabel) {
+      return `A consistent pick for your taste in ${laneLabel}.`;
+    }
+    return raw;
   }
 
   return null;
@@ -1223,7 +1250,7 @@ function RecCard({
   function animateOut(cb: () => void) {
     Animated.timing(opacity, {
       toValue:  0,
-      duration: 180,
+      duration: 150,
       useNativeDriver: false,
     }).start(cb);
   }
@@ -1232,7 +1259,7 @@ function RecCard({
     if (pendingAction) return;
     setPendingAction(true);
     setConfirmState('save');
-    setTimeout(() => animateOut(onSave), 600);
+    setTimeout(() => animateOut(onSave), 400);
   }
 
   function handleDismissPress() {
@@ -1246,7 +1273,7 @@ function RecCard({
     setPendingAction(true);
     setMoreDone(true);
     setConfirmState('more');
-    setTimeout(() => animateOut(onMoreLikeThis), 600);
+    setTimeout(() => animateOut(onMoreLikeThis), 400);
   }
 
   function handleCardPress() {
@@ -1295,7 +1322,7 @@ function RecCard({
       <View style={{
         backgroundColor: '#fafaf9',
         borderRadius: 14,
-        marginBottom: 8,
+        marginBottom: 6,
         borderWidth: 1,
         borderColor: '#e7e5e4',
         paddingHorizontal: 14,
@@ -1498,7 +1525,7 @@ function RecCard({
             borderRightColor: '#f0eeeb',
           }}
         >
-          <Text style={{ fontSize: 12, color: '#a8a29e', fontWeight: '500' }}>Not for me</Text>
+          <Text style={{ fontSize: 12, color: '#78716c', fontWeight: '500' }}>Not for me</Text>
         </TouchableOpacity>
 
         {/* More like this */}
@@ -1534,7 +1561,7 @@ function RecCard({
             fontWeight: '700',
             color: confirmState === 'save' ? '#15803d' : '#5b21b6',
           }}>
-            {confirmState === 'save' ? '✓  Saved to Want to Read' : '✓  We\'ll show more like this'}
+            {confirmState === 'save' ? '✓  Added to Want to Read' : '✓  Tuned to your taste'}
           </Text>
         </View>
       )}
