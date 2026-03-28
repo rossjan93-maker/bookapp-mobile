@@ -1888,34 +1888,74 @@ export default function RecommendationsScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [continuations.length, discoveries.length]);
 
+  // Monotonically-increasing counter. Each search request stamps itself; only
+  // the response whose stamp matches the current value may commit to state.
+  // This prevents a slow earlier response from overwriting a faster later one.
+  const searchSeqRef = useRef(0);
+
   // Book search debounce (only relevant in 'search' step)
   useEffect(() => {
     if (step !== 'search') return;
-    if (query.length < 2) { setBookResults([]); return; }
+    if (query.length < 2) {
+      searchSeqRef.current += 1;   // invalidate any in-flight request
+      setBookResults([]);
+      return;
+    }
+
     const timer = setTimeout(async () => {
+      // Stamp this request. If a newer request starts before this one resolves,
+      // its stamp will be higher and our response will be discarded.
+      searchSeqRef.current += 1;
+      const mySeq = searchSeqRef.current;
+      const reqId = `${Date.now()}-${mySeq}`;
+
       setSearching(true);
+      setBookResults([]);  // clear stale results immediately so old data never lingers
+
       try {
-        // Short single-token queries (≤5 chars, e.g. "acotar", "lotr", "tbr")
+        // Short single-token queries (≤6 chars, e.g. "acotar", "lotr", "tbr")
         // are typically abbreviations or fandom tags. OL's q= search knows these
         // as community terms and returns the right books in the right order.
         // Local re-ranking would demote the real books (whose titles don't contain
         // the abbreviation) in favour of coloring books / secondary merchandise,
         // so we trust OL's raw order for these queries.
         //
-        // Longer or multi-token queries use title= for title-scoped precision,
+        // Longer or multi-word queries use title= for title-scoped precision,
         // then apply the local re-ranking layer to promote strong title matches.
         const tokens = query.trim().split(/\s+/);
         const isAbbrevQuery = tokens.length === 1 && query.trim().length <= 6;
         const olParam = isAbbrevQuery ? 'q' : 'title';
-        const res = await fetch(
-          `https://openlibrary.org/search.json?${olParam}=${encodeURIComponent(query)}&fields=key,title,author_name,cover_i,cover_edition_key,number_of_pages_median&limit=20`
-        );
+        const url = `https://openlibrary.org/search.json?${olParam}=${encodeURIComponent(query)}&fields=key,title,author_name,cover_i,cover_edition_key,number_of_pages_median&limit=20`;
+
+        if (__DEV__) {
+          console.log('[SEARCH_REQ]', `reqId=${reqId}`, `query="${query}"`, `param=${olParam}=`, `url=${url}`);
+        }
+
+        const res  = await fetch(url);
         const json = await res.json();
+        const raw: BookResult[] = json.docs ?? [];
+
+        // Discard if a newer search has already committed or is in flight.
+        if (searchSeqRef.current !== mySeq) {
+          if (__DEV__) console.log('[SEARCH_STALE]', `reqId=${reqId}`, `discarded — newer seq=${searchSeqRef.current}`);
+          return;
+        }
+
         const ranked = isAbbrevQuery
-          ? (json.docs ?? [])
-          : rankBookResults(query, json.docs ?? []);
+          ? raw
+          : rankBookResults(query, raw);
+
+        if (__DEV__) {
+          const rawTop5    = raw.slice(0, 5).map((b, i) => `${i+1}. "${b.title}"`).join(' | ');
+          const rankedTop5 = ranked.slice(0, 5).map((b, i) => `${i+1}. "${b.title}"`).join(' | ');
+          console.log('[SEARCH_RAW]',    `reqId=${reqId}`, `count=${raw.length}`, `top5=[${rawTop5}]`);
+          console.log('[SEARCH_RANKED]', `reqId=${reqId}`, `isAbbrev=${isAbbrevQuery}`, `top5=[${rankedTop5}]`);
+        }
+
         setBookResults(ranked);
-      } catch {
+      } catch (err) {
+        if (searchSeqRef.current !== mySeq) return;
+        if (__DEV__) console.log('[SEARCH_ERR]', `reqId=${reqId}`, String(err));
         setBookResults([]);
       }
       setSearching(false);
