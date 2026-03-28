@@ -682,7 +682,8 @@ async function getLocalCandidates(
     client
       .from('user_books')
       .select('book_id, status, finished_at, book:books(external_id, title, author)')
-      .eq('user_id', userId),
+      .eq('user_id', userId)
+      .is('deleted_at', null),
     client
       .from('books')
       .select('id, title, author, cover_url, external_id, subjects, page_count, description, isbn')

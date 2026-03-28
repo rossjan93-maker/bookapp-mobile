@@ -1,14 +1,20 @@
 /**
  * Canonical user-book action utilities.
  *
- * Single source of truth for status transitions and page-progress saves so
- * that Library, Book Detail, and any future caller share identical DB logic.
+ * Single source of truth for status transitions, edits, page-progress saves,
+ * soft-deletes, and restores.  Every mutation first snapshots the current row
+ * into user_book_history so all changes are auditable and undoable.
  *
- * Each function is pure async — it owns only DB side-effects and returns a
- * result.  Callers own their own React state updates and post-finish flows.
+ * Rules enforced here (never break these):
+ *  - Never auto-overwrite an existing finished_at with now() unless the caller
+ *    explicitly provides a new date.
+ *  - Never fabricate dates — unknown/unset dates are represented as null.
+ *  - Soft-delete only: deleted_at = now() on remove; null on restore.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 export type UserBookStatus = 'want_to_read' | 'reading' | 'finished' | 'dnf';
 
@@ -17,6 +23,114 @@ export type TransitionResult = {
   finishedAt:        string | null;
   completionEventId: string | null;
 };
+
+/** Snapshot of a user_books row used for undo. */
+export type BookSnapshot = {
+  status:       UserBookStatus;
+  startedAt:    string | null;
+  finishedAt:   string | null;
+  finishedYear: number | null;
+  deletedAt:    string | null;
+};
+
+/**
+ * How to express the finished date in an edit:
+ *  - exact   – a known calendar date (YYYY-MM-DD or ISO string)
+ *  - year    – year-only resolution (finished_at set to Dec-31 of that year,
+ *               finished_year stored as metadata so UI knows it's year-only)
+ *  - unknown – date is not known; finished_at + finished_year both null
+ *  - keep    – do not modify the existing value
+ */
+export type FinishedDateInput =
+  | { kind: 'exact';    date: string  }
+  | { kind: 'year';     year: number  }
+  | { kind: 'unknown'                 }
+  | { kind: 'keep'                    };
+
+export type StartedDateInput =
+  | { kind: 'date';    date: string  }
+  | { kind: 'unknown'                }
+  | { kind: 'keep'                   };
+
+export type EditBookParams = {
+  userBookId:   string;
+  userId:       string;
+  newStatus?:   UserBookStatus;
+  startedAt?:   StartedDateInput;
+  finishedAt?:  FinishedDateInput;
+};
+
+export type EditBookResult = {
+  snapshot:  BookSnapshot;           // previous state — pass to undo
+  updatedAt: string;
+};
+
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+/** Insert a history row capturing the state BEFORE a mutation. */
+async function insertHistory(
+  supabase: SupabaseClient,
+  userBookId: string,
+  snapshot: BookSnapshot,
+  action: 'status_change' | 'date_edit' | 'delete' | 'restore',
+): Promise<void> {
+  await supabase.from('user_book_history').insert({
+    user_book_id:      userBookId,
+    prev_status:       snapshot.status,
+    prev_started_at:   snapshot.startedAt,
+    prev_finished_at:  snapshot.finishedAt,
+    prev_finished_year: snapshot.finishedYear,
+    prev_deleted_at:   snapshot.deletedAt,
+    action,
+  });
+}
+
+/** Fetch the current row and return it as a BookSnapshot. */
+async function fetchSnapshot(
+  supabase: SupabaseClient,
+  userBookId: string,
+): Promise<BookSnapshot | null> {
+  const { data } = await supabase
+    .from('user_books')
+    .select('status, started_at, finished_at, finished_year, deleted_at')
+    .eq('id', userBookId)
+    .single();
+
+  if (!data) return null;
+  return {
+    status:       data.status,
+    startedAt:    data.started_at   ?? null,
+    finishedAt:   data.finished_at  ?? null,
+    finishedYear: data.finished_year ?? null,
+    deletedAt:    data.deleted_at   ?? null,
+  };
+}
+
+/** Resolve a FinishedDateInput into { finished_at, finished_year } DB values. */
+function resolveFinishedDate(input: FinishedDateInput): {
+  finished_at?:   string | null;
+  finished_year?: number | null;
+} {
+  switch (input.kind) {
+    case 'exact': {
+      // Parse to a full ISO timestamp; derive year from the date.
+      const d     = new Date(input.date.includes('T') ? input.date : `${input.date}T00:00:00.000Z`);
+      const year  = d.getUTCFullYear();
+      return { finished_at: d.toISOString(), finished_year: null };
+    }
+    case 'year': {
+      // Use Dec-31 as the proxy date so yearly-goal queries still count it.
+      const proxy = `${input.year}-12-31T00:00:00.000Z`;
+      return { finished_at: proxy, finished_year: input.year };
+    }
+    case 'unknown':
+      return { finished_at: null, finished_year: null };
+    case 'keep':
+      return {};                                 // omit keys → no update
+  }
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
 
 /**
  * Full canonical status transition for a user_books row.
@@ -27,23 +141,30 @@ export type TransitionResult = {
  *  - credibility_events insert on recommendation finish
  *  - activity_events for recommendation_started / recommendation_finished /
  *    book_finished
+ *  - history row insert (action = 'status_change')
  *
  * Callers are responsible for:
- *  - local React state updates (items, currentStatus, etc.)
+ *  - local React state updates
  *  - post-finish rating / taste-tag flows
  */
 export async function transitionStatus(
   supabase: SupabaseClient,
   params: {
-    userBookId:         string;
-    bookId:             string;
-    userId:             string;
-    newStatus:          UserBookStatus;
+    userBookId:          string;
+    bookId:              string;
+    userId:              string;
+    newStatus:           UserBookStatus;
     existingFinishedAt?: string | null;
   },
-): Promise<{ data: TransitionResult | null; error: string | null }> {
+): Promise<{ data: TransitionResult | null; error: string | null; snapshot: BookSnapshot | null }> {
   const { userBookId, bookId, userId, newStatus, existingFinishedAt } = params;
   const now = new Date().toISOString();
+
+  // Snapshot current state before mutating.
+  const snapshot = await fetchSnapshot(supabase, userBookId);
+  if (snapshot) {
+    await insertHistory(supabase, userBookId, snapshot, 'status_change');
+  }
 
   const userBookUpdate: Record<string, unknown> = { status: newStatus };
   if (newStatus === 'reading') userBookUpdate.started_at = now;
@@ -52,6 +173,8 @@ export async function transitionStatus(
     // than overwriting it with today's date.  Only assign now() when there is
     // no prior date recorded.
     userBookUpdate.finished_at = existingFinishedAt ?? now;
+    // Clear finished_year when transitioning via status (exact time is known).
+    userBookUpdate.finished_year = null;
   }
 
   const { error: updateError } = await supabase
@@ -60,7 +183,7 @@ export async function transitionStatus(
     .eq('id', userBookId);
 
   if (updateError) {
-    return { data: null, error: 'Could not update status. Please try again.' };
+    return { data: null, error: 'Could not update status. Please try again.', snapshot };
   }
 
   let completionEventId: string | null = null;
@@ -144,8 +267,127 @@ export async function transitionStatus(
       finishedAt:        writtenFinishedAt,
       completionEventId,
     },
-    error: null,
+    error:    null,
+    snapshot,
   };
+}
+
+/**
+ * Edit a user_books row (status and/or dates) non-destructively.
+ *
+ * Always:
+ *  1. Fetches the current snapshot.
+ *  2. Writes a history row.
+ *  3. Applies only the fields explicitly passed (fields with 'keep' are skipped).
+ *
+ * Never fabricates dates.  If the caller does not pass a finishedAt input the
+ * existing value is preserved regardless of status change.
+ */
+export async function editUserBook(
+  supabase: SupabaseClient,
+  params: EditBookParams,
+): Promise<{ result: EditBookResult | null; error: string | null }> {
+  const { userBookId, newStatus, startedAt, finishedAt } = params;
+
+  const snapshot = await fetchSnapshot(supabase, userBookId);
+  if (!snapshot) return { result: null, error: 'Book not found.' };
+
+  const action = finishedAt && finishedAt.kind !== 'keep' && finishedAt.kind !== 'unknown'
+    ? 'date_edit'
+    : newStatus && newStatus !== snapshot.status
+      ? 'status_change'
+      : 'date_edit';
+
+  await insertHistory(supabase, userBookId, snapshot, action as any);
+
+  const patch: Record<string, unknown> = {};
+
+  if (newStatus) patch.status = newStatus;
+
+  if (startedAt) {
+    if (startedAt.kind === 'date')    patch.started_at = new Date(startedAt.date).toISOString();
+    if (startedAt.kind === 'unknown') patch.started_at = null;
+    // 'keep' → no patch
+  }
+
+  if (finishedAt) {
+    const resolved = resolveFinishedDate(finishedAt);
+    if ('finished_at'   in resolved) patch.finished_at   = resolved.finished_at;
+    if ('finished_year' in resolved) patch.finished_year = resolved.finished_year;
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return { result: { snapshot, updatedAt: new Date().toISOString() }, error: null };
+  }
+
+  const { error } = await supabase.from('user_books').update(patch).eq('id', userBookId);
+  if (error) return { result: null, error: 'Could not save changes.' };
+
+  return { result: { snapshot, updatedAt: new Date().toISOString() }, error: null };
+}
+
+/**
+ * Restore a user_books row to a previous snapshot.
+ * Used by the undo system after editUserBook or transitionStatus.
+ */
+export async function restoreSnapshot(
+  supabase: SupabaseClient,
+  params: { userBookId: string; snapshot: BookSnapshot },
+): Promise<{ error: string | null }> {
+  const { userBookId, snapshot } = params;
+
+  const { error } = await supabase.from('user_books').update({
+    status:       snapshot.status,
+    started_at:   snapshot.startedAt,
+    finished_at:  snapshot.finishedAt,
+    finished_year: snapshot.finishedYear,
+    deleted_at:   snapshot.deletedAt,
+  }).eq('id', userBookId);
+
+  return { error: error ? 'Could not undo. Please try again.' : null };
+}
+
+/**
+ * Soft-delete a user_books row (sets deleted_at = now()).
+ * The row is preserved; all queries must filter `deleted_at IS NULL`.
+ */
+export async function softDeleteBook(
+  supabase: SupabaseClient,
+  params: { userBookId: string },
+): Promise<{ snapshot: BookSnapshot | null; error: string | null }> {
+  const { userBookId } = params;
+
+  const snapshot = await fetchSnapshot(supabase, userBookId);
+  if (!snapshot) return { snapshot: null, error: 'Book not found.' };
+
+  await insertHistory(supabase, userBookId, snapshot, 'delete');
+
+  const { error } = await supabase
+    .from('user_books')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', userBookId);
+
+  return { snapshot, error: error ? 'Could not remove book.' : null };
+}
+
+/**
+ * Restore a soft-deleted book (sets deleted_at = null).
+ */
+export async function restoreBook(
+  supabase: SupabaseClient,
+  params: { userBookId: string },
+): Promise<{ error: string | null }> {
+  const { userBookId } = params;
+
+  const snapshot = await fetchSnapshot(supabase, userBookId);
+  if (snapshot) await insertHistory(supabase, userBookId, snapshot, 'restore');
+
+  const { error } = await supabase
+    .from('user_books')
+    .update({ deleted_at: null })
+    .eq('id', userBookId);
+
+  return { error: error ? 'Could not restore book.' : null };
 }
 
 /**

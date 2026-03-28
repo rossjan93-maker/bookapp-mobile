@@ -282,6 +282,7 @@ export default function HomeScreen() {
       .select('id, book_id, started_at, current_page, book:books(title, author, cover_url, external_id, page_count)')
       .eq('user_id', uid)
       .eq('status', 'reading')
+      .is('deleted_at', null)
       .order('progress_updated_at', { ascending: false, nullsFirst: false });
 
     if (res.error) {
@@ -290,6 +291,7 @@ export default function HomeScreen() {
         .select('id, book_id, started_at, book:books(title, author, cover_url, external_id)')
         .eq('user_id', uid)
         .eq('status', 'reading')
+        .is('deleted_at', null)
         .order('created_at', { ascending: false });
     }
 
@@ -328,6 +330,7 @@ export default function HomeScreen() {
       .select('id, book_id, started_at, finished_at, book:books(title, author, cover_url, external_id, page_count)')
       .eq('user_id', uid)
       .eq('status', 'finished')
+      .is('deleted_at', null)
       .gte('finished_at', yearStart)
       .order('finished_at', { ascending: false });
     const rows = (data as any[]) ?? [];

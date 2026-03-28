@@ -104,6 +104,7 @@ export async function buildEvidencePack(
     `)
     .eq('user_id', userId)
     .eq('status', 'finished')
+    .is('deleted_at', null)
     .not('rating', 'is', null);
 
   type FinishedRow = {
@@ -120,7 +121,8 @@ export async function buildEvidencePack(
   const { data: readRaw } = await client
     .from('user_books')
     .select('book:books(external_id)')
-    .eq('user_id', userId);
+    .eq('user_id', userId)
+    .is('deleted_at', null);
 
   type ReadRow = { book: { external_id: string | null } | null };
   const already_read_ids = new Set<string>(

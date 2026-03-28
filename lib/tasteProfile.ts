@@ -473,7 +473,8 @@ export async function computeTasteProfile(
     client
       .from('user_books')
       .select('status, rating, taste_tags, review_body, source, import_source')
-      .eq('user_id', userId),
+      .eq('user_id', userId)
+      .is('deleted_at', null),
 
     // For genre affinity: finished books with rating + book subjects.
     // raw_shelves (Goodreads shelf names) supplements subjects for imported
@@ -483,6 +484,7 @@ export async function computeTasteProfile(
       .select('rating, raw_shelves, book:books(subjects, title, author)')
       .eq('user_id', userId)
       .eq('status', 'finished')
+      .is('deleted_at', null)
       .not('rating', 'is', null),
 
     // Diagnosis answers + genre preferences from reader_preferences

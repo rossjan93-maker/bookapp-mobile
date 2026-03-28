@@ -20,8 +20,9 @@ import { computeDatePacing, computePagePacing, estimatePaceFinish, formatLastUpd
 import { fetchGoogleBooksMetadata } from '../../lib/googleBooks';
 import { fetchOLMeta, searchOLWork, isOLId } from '../../lib/openLibrary';
 import type { OLMeta } from '../../lib/openLibrary';
-import { transitionStatus } from '../../lib/userBookActions';
-import type { UserBookStatus } from '../../lib/userBookActions';
+import { transitionStatus, editUserBook, softDeleteBook, restoreSnapshot } from '../../lib/userBookActions';
+import type { UserBookStatus, BookSnapshot, FinishedDateInput, StartedDateInput } from '../../lib/userBookActions';
+import { useUndoBar } from '../../lib/useUndoBar';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -169,6 +170,31 @@ export default function BookDetailScreen() {
 
   const pageInputRef      = useRef<TextInput>(null);
   const pageCountInputRef = useRef<TextInput>(null);
+
+  // ── Undo bar ───────────────────────────────────────────────────────────────
+  const undoBar = useUndoBar();
+
+  // ── Comprehensive Book Edit Sheet ──────────────────────────────────────────
+  const [showBookEditSheet, setShowBookEditSheet] = useState(false);
+  const [editSheetStatus,   setEditSheetStatus]   = useState<UserBookStatus | null>(null);
+
+  // Date modes for the edit sheet
+  type FinishedMode = 'exact' | 'year' | 'unknown';
+  const [editSheetFinishedMode,  setEditSheetFinishedMode]  = useState<FinishedMode>('unknown');
+  const [editSheetFinishedExact, setEditSheetFinishedExact] = useState('');
+  const [editSheetFinishedYear,  setEditSheetFinishedYear]  = useState(new Date().getFullYear());
+
+  type StartedMode = 'date' | 'unknown';
+  const [editSheetStartedMode, setEditSheetStartedMode] = useState<StartedMode>('unknown');
+  const [editSheetStartedExact, setEditSheetStartedExact] = useState('');
+
+  const [savingBookEdit,        setSavingBookEdit]        = useState(false);
+  const [bookEditError,         setBookEditError]          = useState<string | null>(null);
+  const [deleteConfirmVisible,  setDeleteConfirmVisible]  = useState(false);
+  const [deletingBook,          setDeletingBook]          = useState(false);
+
+  // Snapshot stored for undo after any transition/edit
+  const lastSnapshotRef = useRef<BookSnapshot | null>(null);
 
   // ── Fetch user reading history (rating, finished date, review, note) ────────
   // Runs for every book regardless of status so the "Your History" section
@@ -712,7 +738,7 @@ export default function BookDetailScreen() {
     setTransitionError(null);
     setTransitioning(true);
 
-    const { data, error } = await transitionStatus(supabase, {
+    const { data, error, snapshot } = await transitionStatus(supabase, {
       userBookId,
       bookId,
       userId:             uid,
@@ -726,13 +752,168 @@ export default function BookDetailScreen() {
       return;
     }
 
+    if (snapshot) lastSnapshotRef.current = snapshot;
     setLocalStatus(newStatus);
-    if (data?.startedAt)  setLocalStartedAt(data.startedAt);
+    if (data?.startedAt) setLocalStartedAt(data.startedAt);
+
+    // Undo bar for status change (only for non-finish transitions — finish has its own rating modal)
+    if (newStatus !== 'finished' && newStatus !== 'dnf' && snapshot) {
+      undoBar.trigger(
+        `Status changed to ${STATUS_META[newStatus]?.label ?? newStatus}`,
+        async () => {
+          if (!supabase || !userBookId || !snapshot) return;
+          await restoreSnapshot(supabase, { userBookId, snapshot });
+          setLocalStatus(snapshot.status);
+          setLocalStartedAt(snapshot.startedAt ?? undefined);
+        },
+      );
+    }
 
     if (newStatus === 'finished' || newStatus === 'dnf') {
       setPendingDetailRating({ completionEventId: data?.completionEventId ?? null });
       if (newStatus === 'finished') triggerRecPrewarm(supabase, uid);
     }
+  }
+
+  // ── Open the comprehensive book edit sheet ────────────────────────────────
+
+  function openBookEditSheet() {
+    // Pre-populate edit sheet from current state.
+    const status = (localStatus as UserBookStatus) ?? 'want_to_read';
+    setEditSheetStatus(status);
+
+    // Finished date
+    const curFinishedAt = userHistory?.finishedAt ?? null;
+    if (curFinishedAt) {
+      const d = new Date(curFinishedAt);
+      const yyyy = d.getUTCFullYear();
+      const mm   = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const dd   = String(d.getUTCDate()).padStart(2, '0');
+      setEditSheetFinishedExact(`${yyyy}-${mm}-${dd}`);
+      setEditSheetFinishedYear(yyyy);
+      setEditSheetFinishedMode('exact');
+    } else {
+      setEditSheetFinishedExact('');
+      setEditSheetFinishedYear(new Date().getFullYear());
+      setEditSheetFinishedMode('unknown');
+    }
+
+    // Started date
+    const curStartedAt = localStartedAt ?? null;
+    if (curStartedAt) {
+      const d2   = new Date(curStartedAt);
+      const yyyy = d2.getUTCFullYear();
+      const mm   = String(d2.getUTCMonth() + 1).padStart(2, '0');
+      const dd   = String(d2.getUTCDate()).padStart(2, '0');
+      setEditSheetStartedExact(`${yyyy}-${mm}-${dd}`);
+      setEditSheetStartedMode('date');
+    } else {
+      setEditSheetStartedExact('');
+      setEditSheetStartedMode('unknown');
+    }
+
+    setBookEditError(null);
+    setDeleteConfirmVisible(false);
+    setShowBookEditSheet(true);
+  }
+
+  // ── Save from the book edit sheet ─────────────────────────────────────────
+
+  async function handleBookEditSave() {
+    if (!supabase || !userBookId) return;
+    setSavingBookEdit(true);
+    setBookEditError(null);
+
+    const finishedInput: FinishedDateInput = (() => {
+      if (editSheetFinishedMode === 'exact' && editSheetFinishedExact.trim()) {
+        return { kind: 'exact', date: editSheetFinishedExact.trim() } as const;
+      }
+      if (editSheetFinishedMode === 'year') {
+        return { kind: 'year', year: editSheetFinishedYear } as const;
+      }
+      return { kind: 'unknown' } as const;
+    })();
+
+    const startedInput: StartedDateInput = (() => {
+      if (editSheetStartedMode === 'date' && editSheetStartedExact.trim()) {
+        return { kind: 'date', date: editSheetStartedExact.trim() } as const;
+      }
+      return { kind: 'unknown' } as const;
+    })();
+
+    const uid = userId ?? (await supabase.auth.getUser()).data.user?.id ?? null;
+    if (!uid) { setSavingBookEdit(false); return; }
+
+    const { result, error } = await editUserBook(supabase, {
+      userBookId,
+      userId: uid,
+      newStatus:  editSheetStatus ?? undefined,
+      startedAt:  startedInput,
+      finishedAt: finishedInput,
+    });
+
+    setSavingBookEdit(false);
+
+    if (error) {
+      setBookEditError(error);
+      return;
+    }
+
+    // Store snapshot for undo
+    if (result?.snapshot) lastSnapshotRef.current = result.snapshot;
+
+    // Update local display state
+    if (editSheetStatus) setLocalStatus(editSheetStatus);
+    if (startedInput.kind === 'date') setLocalStartedAt(startedInput.date);
+    if (startedInput.kind === 'unknown') setLocalStartedAt(undefined);
+
+    const newFinishedAt =
+      finishedInput.kind === 'exact'   ? new Date(finishedInput.date).toISOString()
+      : finishedInput.kind === 'year'  ? `${finishedInput.year}-12-31T00:00:00.000Z`
+      : null;
+
+    setUserHistory(prev => prev
+      ? { ...prev, finishedAt: newFinishedAt }
+      : { rating: null, finishedAt: newFinishedAt, reviewBody: null, privateNote: null }
+    );
+
+    setShowBookEditSheet(false);
+
+    const snap = result?.snapshot;
+    undoBar.trigger('Book updated', async () => {
+      if (!supabase || !userBookId || !snap) return;
+      await restoreSnapshot(supabase, { userBookId, snapshot: snap });
+      setLocalStatus(snap.status);
+      setLocalStartedAt(snap.startedAt ?? undefined);
+      setUserHistory(prev => prev
+        ? { ...prev, finishedAt: snap.finishedAt }
+        : { rating: null, finishedAt: snap.finishedAt, reviewBody: null, privateNote: null }
+      );
+    });
+  }
+
+  // ── Soft delete (Remove from library) ────────────────────────────────────
+
+  async function handleSoftDelete() {
+    if (!supabase || !userBookId) return;
+    setDeletingBook(true);
+
+    const { snapshot, error } = await softDeleteBook(supabase, { userBookId });
+    setDeletingBook(false);
+    setShowBookEditSheet(false);
+    setDeleteConfirmVisible(false);
+
+    if (error) return;
+
+    if (snapshot) lastSnapshotRef.current = snapshot;
+
+    undoBar.trigger('Removed from library', async () => {
+      if (!supabase || !userBookId || !snapshot) return;
+      await restoreSnapshot(supabase, { userBookId, snapshot });
+    });
+
+    // Navigate back — the book is now soft-deleted and won't show in library
+    router.back();
   }
 
   async function handleDetailRating(rating: number) {
@@ -849,7 +1030,7 @@ export default function BookDetailScreen() {
           {author ?? '—'}
         </Text>
         {badge && (
-          <View style={{ flexDirection: 'row', marginBottom: 28 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
             <View style={{
               backgroundColor: badge.bg,
               borderRadius: 8,
@@ -860,6 +1041,14 @@ export default function BookDetailScreen() {
                 {badge.label}
               </Text>
             </View>
+            {userBookId && (
+              <TouchableOpacity
+                onPress={openBookEditSheet}
+                hitSlop={{ top: 10, bottom: 10, left: 12, right: 0 }}
+              >
+                <Text style={{ fontSize: 13, color: '#a8a29e', fontWeight: '500' }}>Edit</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
         {!badge && !hasSeriesMeta && !hasSagaMeta && <View style={{ marginBottom: 28 }} />}
@@ -1759,6 +1948,286 @@ export default function BookDetailScreen() {
 
       </View>
     </ScrollView>
+
+    {/* ── Undo Bar ── */}
+    {undoBar.visible && (
+      <View style={{
+        position:        'absolute',
+        bottom:          24,
+        left:            20,
+        right:           20,
+        backgroundColor: '#1c1917',
+        borderRadius:    14,
+        paddingVertical: 14,
+        paddingHorizontal: 18,
+        flexDirection:   'row',
+        alignItems:      'center',
+        shadowColor:     '#000',
+        shadowOffset:    { width: 0, height: 4 },
+        shadowOpacity:   0.18,
+        shadowRadius:    10,
+        elevation:       8,
+        zIndex:          9999,
+      }}>
+        <Text style={{ flex: 1, fontSize: 14, color: '#faf9f7', fontWeight: '500' }}>
+          {undoBar.message}
+        </Text>
+        <TouchableOpacity
+          onPress={undoBar.onUndo}
+          hitSlop={{ top: 8, bottom: 8, left: 12, right: 0 }}
+        >
+          <Text style={{ fontSize: 14, fontWeight: '700', color: '#a3e635' }}>Undo</Text>
+        </TouchableOpacity>
+      </View>
+    )}
+
+    {/* ── Book Edit Sheet ── */}
+    <Modal
+      visible={showBookEditSheet}
+      transparent
+      animationType="slide"
+      onRequestClose={() => setShowBookEditSheet(false)}
+    >
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
+        <View style={{
+          backgroundColor: '#faf9f7',
+          borderTopLeftRadius:  22,
+          borderTopRightRadius: 22,
+          paddingTop:    8,
+          paddingBottom: 48,
+        }}>
+          {/* Handle */}
+          <View style={{ alignItems: 'center', marginBottom: 18 }}>
+            <View style={{ width: 36, height: 4, backgroundColor: '#d6d3d1', borderRadius: 2 }} />
+          </View>
+
+          <View style={{ paddingHorizontal: 24 }}>
+
+            {/* ── Header ── */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 26 }}>
+              <Text style={{ flex: 1, fontSize: 18, fontWeight: '800', color: '#1c1917', letterSpacing: -0.3 }}>
+                Edit book
+              </Text>
+              <TouchableOpacity onPress={() => setShowBookEditSheet(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 0 }}>
+                <Text style={{ fontSize: 14, color: '#a8a29e' }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* ── Status ── */}
+            <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 }}>
+              Status
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
+              {(['want_to_read', 'reading', 'finished', 'dnf'] as UserBookStatus[]).map(s => {
+                const m = STATUS_META[s];
+                const selected = editSheetStatus === s;
+                return (
+                  <TouchableOpacity
+                    key={s}
+                    onPress={() => setEditSheetStatus(s)}
+                    style={{
+                      backgroundColor: selected ? m.bg : '#f0ede8',
+                      borderRadius: 8,
+                      paddingHorizontal: 14,
+                      paddingVertical: 8,
+                      borderWidth: selected ? 1.5 : 0,
+                      borderColor: selected ? m.text : 'transparent',
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: selected ? m.text : '#78716c' }}>
+                      {m.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* ── Finished date ── */}
+            {(editSheetStatus === 'finished' || editSheetStatus === 'dnf') && (
+              <>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 }}>
+                  Finished date
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                  {(['exact', 'year', 'unknown'] as const).map(mode => (
+                    <TouchableOpacity
+                      key={mode}
+                      onPress={() => setEditSheetFinishedMode(mode)}
+                      style={{
+                        backgroundColor: editSheetFinishedMode === mode ? '#1c1917' : '#f0ede8',
+                        borderRadius: 8,
+                        paddingHorizontal: 14,
+                        paddingVertical: 8,
+                      }}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: editSheetFinishedMode === mode ? '#fff' : '#78716c' }}>
+                        {mode === 'exact' ? 'Exact date' : mode === 'year' ? 'Year only' : 'Unknown'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {editSheetFinishedMode === 'exact' && (
+                  <TextInput
+                    value={editSheetFinishedExact}
+                    onChangeText={setEditSheetFinishedExact}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor="#c4b5a5"
+                    keyboardType="numeric"
+                    style={{
+                      borderWidth: 1,
+                      borderColor: '#e7e5e4',
+                      borderRadius: 10,
+                      padding: 12,
+                      fontSize: 15,
+                      color: '#1c1917',
+                      backgroundColor: '#fff',
+                      marginBottom: 12,
+                    }}
+                  />
+                )}
+
+                {editSheetFinishedMode === 'year' && (
+                  <View style={{ marginBottom: 12 }}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4 }}>
+                      {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map(yr => (
+                        <TouchableOpacity
+                          key={yr}
+                          onPress={() => setEditSheetFinishedYear(yr)}
+                          style={{
+                            backgroundColor: editSheetFinishedYear === yr ? '#1c1917' : '#f0ede8',
+                            borderRadius: 8,
+                            paddingHorizontal: 16,
+                            paddingVertical: 9,
+                            marginHorizontal: 4,
+                          }}
+                        >
+                          <Text style={{ fontSize: 14, fontWeight: '600', color: editSheetFinishedYear === yr ? '#fff' : '#78716c' }}>
+                            {yr}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+              </>
+            )}
+
+            {/* ── Started date ── */}
+            {(editSheetStatus === 'reading' || editSheetStatus === 'finished') && (
+              <>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 }}>
+                  Started date <Text style={{ fontWeight: '400', color: '#c4b5a5' }}>(optional)</Text>
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                  {(['date', 'unknown'] as const).map(mode => (
+                    <TouchableOpacity
+                      key={mode}
+                      onPress={() => setEditSheetStartedMode(mode)}
+                      style={{
+                        backgroundColor: editSheetStartedMode === mode ? '#1c1917' : '#f0ede8',
+                        borderRadius: 8,
+                        paddingHorizontal: 14,
+                        paddingVertical: 8,
+                      }}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: editSheetStartedMode === mode ? '#fff' : '#78716c' }}>
+                        {mode === 'date' ? 'Set date' : 'Unknown'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {editSheetStartedMode === 'date' && (
+                  <TextInput
+                    value={editSheetStartedExact}
+                    onChangeText={setEditSheetStartedExact}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor="#c4b5a5"
+                    keyboardType="numeric"
+                    style={{
+                      borderWidth: 1,
+                      borderColor: '#e7e5e4',
+                      borderRadius: 10,
+                      padding: 12,
+                      fontSize: 15,
+                      color: '#1c1917',
+                      backgroundColor: '#fff',
+                      marginBottom: 12,
+                    }}
+                  />
+                )}
+              </>
+            )}
+
+            {bookEditError && (
+              <Text style={{ fontSize: 13, color: '#b91c1c', marginBottom: 12 }}>{bookEditError}</Text>
+            )}
+
+            {/* ── Save ── */}
+            <TouchableOpacity
+              onPress={handleBookEditSave}
+              disabled={savingBookEdit}
+              style={{
+                backgroundColor: savingBookEdit ? '#d6d3d1' : '#1c1917',
+                borderRadius: 12,
+                paddingVertical: 15,
+                alignItems: 'center',
+                marginBottom: 16,
+              }}
+            >
+              {savingBookEdit
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>Save changes</Text>
+              }
+            </TouchableOpacity>
+
+            {/* ── Remove from library ── */}
+            {!deleteConfirmVisible ? (
+              <TouchableOpacity
+                onPress={() => setDeleteConfirmVisible(true)}
+                style={{ alignItems: 'center', paddingVertical: 10 }}
+              >
+                <Text style={{ fontSize: 14, color: '#b91c1c' }}>Remove from library</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={{
+                backgroundColor: '#fff1f2',
+                borderRadius: 12,
+                padding: 16,
+                borderWidth: 1,
+                borderColor: '#fecdd3',
+              }}>
+                <Text style={{ fontSize: 14, color: '#1c1917', fontWeight: '600', marginBottom: 6 }}>
+                  Remove from library?
+                </Text>
+                <Text style={{ fontSize: 13, color: '#78716c', marginBottom: 14, lineHeight: 20 }}>
+                  The book will be hidden. You can undo this immediately after.
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity
+                    onPress={() => setDeleteConfirmVisible(false)}
+                    style={{ flex: 1, borderWidth: 1, borderColor: '#e7e5e4', borderRadius: 9, paddingVertical: 11, alignItems: 'center', backgroundColor: '#fff' }}
+                  >
+                    <Text style={{ fontSize: 14, color: '#78716c' }}>Keep</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleSoftDelete}
+                    disabled={deletingBook}
+                    style={{ flex: 1, backgroundColor: '#b91c1c', borderRadius: 9, paddingVertical: 11, alignItems: 'center', opacity: deletingBook ? 0.6 : 1 }}
+                  >
+                    {deletingBook
+                      ? <ActivityIndicator color="#fff" size="small" />
+                      : <Text style={{ fontSize: 14, fontWeight: '600', color: '#fff' }}>Remove</Text>
+                    }
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+          </View>
+        </View>
+      </View>
+    </Modal>
 
     {/* ── Edit History Modal ── */}
     <Modal

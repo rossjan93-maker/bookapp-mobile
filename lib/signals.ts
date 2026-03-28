@@ -54,12 +54,14 @@ export async function computeReadingSignals(
       .from('user_books')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', userId)
-      .eq('status', 'finished'),
+      .eq('status', 'finished')
+      .is('deleted_at', null),
     client
       .from('user_books')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', userId)
-      .eq('status', 'dnf'),
+      .eq('status', 'dnf')
+      .is('deleted_at', null),
     client
       .from('reading_progress_events')
       .select('user_book_id, page, created_at')
@@ -171,6 +173,7 @@ export async function computeRatingSignals(
     .from('user_books')
     .select('rating')
     .eq('user_id', userId)
+    .is('deleted_at', null)
     .not('rating', 'is', null);
 
   const ratings = (data ?? []).map((r: { rating: number }) => r.rating);

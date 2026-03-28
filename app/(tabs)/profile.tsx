@@ -189,12 +189,14 @@ export default function ProfileScreen() {
           .from('user_books')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id)
-          .eq('status', 'finished'),
+          .eq('status', 'finished')
+          .is('deleted_at', null),
         supabase
           .from('user_books')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id)
           .eq('status', 'finished')
+          .is('deleted_at', null)
           .gte('finished_at', yearStart),
         supabase
           .from('recommendations')
@@ -216,7 +218,8 @@ export default function ProfileScreen() {
           .from('user_books')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id)
-          .eq('status', 'dnf'),
+          .eq('status', 'dnf')
+          .is('deleted_at', null),
         supabase
           .from('recommendations')
           .select('*', { count: 'exact', head: true })
@@ -236,42 +239,49 @@ export default function ProfileScreen() {
           .from('user_books')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id)
-          .eq('source', 'self_added'),
+          .eq('source', 'self_added')
+          .is('deleted_at', null),
         supabase
           .from('user_books')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id)
-          .eq('source', 'recommendation'),
+          .eq('source', 'recommendation')
+          .is('deleted_at', null),
         // ── Source-completion queries ──
         supabase
           .from('user_books')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id)
           .eq('source', 'self_added')
-          .eq('status', 'finished'),
+          .eq('status', 'finished')
+          .is('deleted_at', null),
         supabase
           .from('user_books')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id)
           .eq('source', 'self_added')
-          .eq('status', 'dnf'),
+          .eq('status', 'dnf')
+          .is('deleted_at', null),
         supabase
           .from('user_books')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id)
           .eq('source', 'recommendation')
-          .eq('status', 'finished'),
+          .eq('status', 'finished')
+          .is('deleted_at', null),
         supabase
           .from('user_books')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id)
           .eq('source', 'recommendation')
-          .eq('status', 'dnf'),
+          .eq('status', 'dnf')
+          .is('deleted_at', null),
         supabase
           .from('user_books')
           .select('id, book_id, finished_at, book:books(title, author, cover_url, external_id)')
           .eq('user_id', user.id)
           .eq('status', 'finished')
+          .is('deleted_at', null)
           .gte('finished_at', yearStart)
           .order('finished_at', { ascending: false })
           .limit(50),

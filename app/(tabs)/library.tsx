@@ -183,6 +183,7 @@ export default function LibraryScreen() {
       .from('user_books')
       .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, book:books(title, author, cover_url, external_id, page_count)')
       .eq('user_id', user.id)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false });
 
     if (result.error) {
@@ -190,6 +191,7 @@ export default function LibraryScreen() {
         .from('user_books')
         .select('id, book_id, status, started_at, finished_at, progress_updated_at, book:books(title, author, cover_url, external_id)')
         .eq('user_id', user.id)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false });
     }
 
