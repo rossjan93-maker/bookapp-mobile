@@ -715,8 +715,9 @@ export default function BookDetailScreen() {
     const { data, error } = await transitionStatus(supabase, {
       userBookId,
       bookId,
-      userId: uid,
+      userId:             uid,
       newStatus,
+      existingFinishedAt: userHistory?.finishedAt ?? null,
     });
 
     setTransitioning(false);

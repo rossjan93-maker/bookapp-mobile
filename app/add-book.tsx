@@ -39,6 +39,17 @@ type BookStatus = 'want_to_read' | 'reading' | 'finished' | 'dnf';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+const CURRENT_YEAR = new Date().getFullYear();
+
+const FINISH_YEAR_OPTIONS: { label: string; value: number | null }[] = [
+  { label: `This year (${CURRENT_YEAR})`, value: CURRENT_YEAR },
+  ...Array.from({ length: 9 }, (_, i) => ({
+    label: `${CURRENT_YEAR - 1 - i}`,
+    value: CURRENT_YEAR - 1 - i,
+  })),
+  { label: "I'm not sure", value: null },
+];
+
 const STATUS_OPTIONS: { value: BookStatus; label: string; desc: string; activeBg: string; activeText: string }[] = [
   { value: 'want_to_read', label: 'Want to Read', desc: 'Saving it for later',   activeBg: '#f1f5f9', activeText: '#475569' },
   { value: 'reading',      label: 'Reading',      desc: 'Currently in progress', activeBg: '#dbeafe', activeText: '#1d4ed8' },
@@ -67,6 +78,8 @@ export default function AddBookScreen() {
 
   const [selectedBook, setSelectedBook] = useState<SelectedBook | null>(null);
   const [chosenStatus, setChosenStatus] = useState<BookStatus>('want_to_read');
+
+  const [finishYear, setFinishYear] = useState<number | null>(CURRENT_YEAR);
 
   const [saving, setSaving] = useState(false);
   const [doneMessage, setDoneMessage] = useState('');
@@ -220,7 +233,21 @@ export default function AddBookScreen() {
     if (chosenStatus === 'reading') userBookData.started_at = now;
     if (chosenStatus === 'finished' || chosenStatus === 'dnf') {
       userBookData.started_at = now;
-      userBookData.finished_at = now;
+      if (chosenStatus === 'dnf') {
+        userBookData.finished_at = now;
+      } else {
+        // 'finished': use the year the user selected.
+        // null ("I'm not sure") → omit finished_at so the book is excluded from
+        // the yearly reading goal rather than falsely credited to this year.
+        // Prior year → Dec 31 of that year (best-effort proxy).
+        if (finishYear === null) {
+          // No finished_at — unknown read date
+        } else if (finishYear === CURRENT_YEAR) {
+          userBookData.finished_at = now;
+        } else {
+          userBookData.finished_at = `${finishYear}-12-31T00:00:00.000Z`;
+        }
+      }
     }
 
     const { error: ubError } = await supabase.from('user_books').insert(userBookData);
@@ -254,6 +281,7 @@ export default function AddBookScreen() {
     setManualTitle('');
     setManualAuthor('');
     setChosenStatus('want_to_read');
+    setFinishYear(CURRENT_YEAR);
     setSelectedBook(null);
   }
 
@@ -598,7 +626,7 @@ export default function AddBookScreen() {
           Reading Status
         </Text>
 
-        <View style={{ gap: 10, marginBottom: 40 }}>
+        <View style={{ gap: 10, marginBottom: chosenStatus === 'finished' ? 24 : 40 }}>
           {STATUS_OPTIONS.map(opt => {
             const active = chosenStatus === opt.value;
             return (
@@ -650,6 +678,63 @@ export default function AddBookScreen() {
             );
           })}
         </View>
+
+        {/* ── Finish year selector (only when status = finished) ─── */}
+        {chosenStatus === 'finished' && (
+          <View style={{ marginBottom: 32 }}>
+            <Text style={{
+              fontSize: 11,
+              fontWeight: '700',
+              color: '#a8a29e',
+              letterSpacing: 0.9,
+              textTransform: 'uppercase',
+              marginBottom: 12,
+            }}>
+              When did you finish it?
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 8, paddingRight: 4 }}
+            >
+              {FINISH_YEAR_OPTIONS.map(opt => {
+                const active = finishYear === opt.value;
+                return (
+                  <TouchableOpacity
+                    key={String(opt.value)}
+                    onPress={() => setFinishYear(opt.value)}
+                    style={{
+                      paddingHorizontal: 14,
+                      paddingVertical: 9,
+                      borderRadius: 10,
+                      backgroundColor: active ? '#1c1917' : '#fff',
+                      borderWidth: 1,
+                      borderColor: active ? '#1c1917' : '#e7e5e4',
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 14,
+                      fontWeight: active ? '700' : '400',
+                      color: active ? '#fff' : '#78716c',
+                    }}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            {finishYear === null && (
+              <Text style={{
+                fontSize: 12,
+                color: '#a8a29e',
+                marginTop: 8,
+                lineHeight: 18,
+              }}>
+                This book won't count toward your yearly reading goal.
+              </Text>
+            )}
+          </View>
+        )}
 
         <TouchableOpacity
           onPress={handleSave}

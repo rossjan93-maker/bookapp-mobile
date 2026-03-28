@@ -308,10 +308,11 @@ export default function LibraryScreen() {
     setUpdatingId(userBook.id);
 
     const { data, error: transErr } = await transitionStatus(supabase, {
-      userBookId: userBook.id,
-      bookId:     userBook.book_id,
-      userId:     currentUserId,
+      userBookId:         userBook.id,
+      bookId:             userBook.book_id,
+      userId:             currentUserId,
       newStatus,
+      existingFinishedAt: userBook.finished_at,
     });
 
     if (transErr) {

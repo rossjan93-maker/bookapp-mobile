@@ -1,0 +1,63 @@
+We have a data integrity bug in reading-goal/yearly completion tracking.
+
+Problem:
+Books are appearing in “completed this year” / yearly goal progress even though the user did NOT finish them this year. Some were completed in prior years.
+
+This is not just a UI issue. Diagnose and fix the underlying date model.
+
+Tasks:
+
+1. Audit the current logic
+Find exactly what field is currently used to determine:
+- “completed this year”
+- yearly goal progress count
+- timeline ordering for completed books
+
+Check whether the app is using any of these incorrectly:
+- updated_at
+- created_at
+- imported_at
+- status_changed_at
+- rating date
+- user_books row creation date
+
+2. Identify the correct source of truth
+We need a true completion date field for finished books.
+If it already exists, standardize on it.
+If it does not exist, add one (for example: finished_at or completed_at).
+
+3. Fix the yearly-completion logic
+The yearly goal and “completed this year” list must only include books whose true completion date is in the current calendar year.
+
+4. Handle legacy/imported data carefully
+If a book is marked finished but the true completion date is unknown:
+- do NOT automatically count it toward this year
+- do NOT silently assume current year
+Prefer exclusion or an “unknown completion date” path over false attribution.
+
+5. Review all entry points that mark a book finished
+Check:
+- library flows
+- book detail flows
+- onboarding/import flows
+- Goodreads/import flows
+- any bulk import path
+
+When a book is marked finished:
+- ensure completion date is set correctly
+- if the user is marking an old book as finished retrospectively, support choosing the real finish date or at least the year
+
+6. Verify UI/output surfaces
+After the data fix, confirm:
+- reading goal count is correct
+- “books completed this year” is correct
+- timeline ordering uses the right date
+- older completed books do not appear under this year unless actually finished this year
+
+Return:
+- root cause
+- exact fields currently used vs corrected fields
+- any migration added
+- any backfill logic added
+- files changed
+- how legacy/imported books with unknown completion date are handled

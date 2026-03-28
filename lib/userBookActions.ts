@@ -35,18 +35,24 @@ export type TransitionResult = {
 export async function transitionStatus(
   supabase: SupabaseClient,
   params: {
-    userBookId: string;
-    bookId:     string;
-    userId:     string;
-    newStatus:  UserBookStatus;
+    userBookId:         string;
+    bookId:             string;
+    userId:             string;
+    newStatus:          UserBookStatus;
+    existingFinishedAt?: string | null;
   },
 ): Promise<{ data: TransitionResult | null; error: string | null }> {
-  const { userBookId, bookId, userId, newStatus } = params;
+  const { userBookId, bookId, userId, newStatus, existingFinishedAt } = params;
   const now = new Date().toISOString();
 
   const userBookUpdate: Record<string, unknown> = { status: newStatus };
-  if (newStatus === 'reading')                          userBookUpdate.started_at  = now;
-  if (newStatus === 'finished' || newStatus === 'dnf') userBookUpdate.finished_at = now;
+  if (newStatus === 'reading') userBookUpdate.started_at = now;
+  if (newStatus === 'finished' || newStatus === 'dnf') {
+    // Preserve an existing finish date (e.g. from a Goodreads import) rather
+    // than overwriting it with today's date.  Only assign now() when there is
+    // no prior date recorded.
+    userBookUpdate.finished_at = existingFinishedAt ?? now;
+  }
 
   const { error: updateError } = await supabase
     .from('user_books')
@@ -127,10 +133,15 @@ export async function transitionStatus(
     completionEventId = evtData?.id ?? null;
   }
 
+  const writtenFinishedAt =
+    (newStatus === 'finished' || newStatus === 'dnf')
+      ? (existingFinishedAt ?? now)
+      : null;
+
   return {
     data: {
       startedAt:         newStatus === 'reading' ? now : null,
-      finishedAt:        (newStatus === 'finished' || newStatus === 'dnf') ? now : null,
+      finishedAt:        writtenFinishedAt,
       completionEventId,
     },
     error: null,
