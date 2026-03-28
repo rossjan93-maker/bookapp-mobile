@@ -177,10 +177,21 @@ export async function transitionStatus(
     userBookUpdate.finished_year = null;
   }
 
-  const { error: updateError } = await supabase
+  let { error: updateError } = await supabase
     .from('user_books')
     .update(userBookUpdate)
     .eq('id', userBookId);
+
+  if (updateError && userBookUpdate.finished_year !== undefined) {
+    // Migration not yet applied — finished_year column doesn't exist.
+    // Retry without it so status transitions still work.
+    const fallbackUpdate = { ...userBookUpdate };
+    delete fallbackUpdate.finished_year;
+    ({ error: updateError } = await supabase
+      .from('user_books')
+      .update(fallbackUpdate)
+      .eq('id', userBookId));
+  }
 
   if (updateError) {
     return { data: null, error: 'Could not update status. Please try again.', snapshot };
