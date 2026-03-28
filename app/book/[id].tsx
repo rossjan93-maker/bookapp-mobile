@@ -907,13 +907,19 @@ export default function BookDetailScreen() {
 
     if (snapshot) lastSnapshotRef.current = snapshot;
 
-    undoBar.trigger('Removed from library', async () => {
-      if (!supabase || !userBookId || !snapshot) return;
-      await restoreSnapshot(supabase, { userBookId, snapshot });
-    });
-
-    // Navigate back — the book is now soft-deleted and won't show in library
-    router.back();
+    undoBar.trigger(
+      'Removed from library',
+      async () => {
+        // Undo: restore the row and stay on this screen.
+        if (!supabase || !userBookId || !snapshot) return;
+        await restoreSnapshot(supabase, { userBookId, snapshot });
+        // Restore local status display so the detail screen looks normal.
+        setLocalStatus(snapshot.status);
+      },
+      // onAfterDismiss: navigate back only after the 6-second window closes
+      // without undo, so the user has the full window to interact with the bar.
+      () => router.back(),
+    );
   }
 
   async function handleDetailRating(rating: number) {
