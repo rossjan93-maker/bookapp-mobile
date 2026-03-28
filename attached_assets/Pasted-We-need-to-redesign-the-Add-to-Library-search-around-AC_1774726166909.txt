@@ -1,0 +1,140 @@
+We need to redesign the Add to Library search around ACCURACY and PREDICTABILITY.
+
+Current issue:
+The system still returns incorrect books for queries like:
+- "fourth wing"
+- "burn the boa"
+
+This means we are allowing weak candidates into the result set and relying on ranking to fix it. That is the wrong model.
+
+New requirement:
+The system must prioritize "correct book or nothing" over "something vaguely related".
+
+Core principle:
+Do not surface low-confidence results.
+
+---
+
+TASKS
+
+1. Introduce a confidence scoring layer (not just ranking)
+
+For each candidate book, compute a confidence score based on:
+- exact title match
+- prefix match
+- token overlap
+- final-token prefix match (for incomplete typing)
+- author match (optional boost)
+
+Define:
+HIGH confidence → safe to show
+MEDIUM confidence → fallback candidates
+LOW confidence → do NOT show
+
+---
+
+2. Add strict filtering before rendering
+
+Only show:
+- HIGH confidence results
+- OR (if none exist) top MEDIUM confidence results
+
+Never show:
+- LOW confidence results (these are causing the garbage results)
+
+---
+
+3. Fix incomplete query handling (critical)
+
+For queries like:
+- "burn the boa"
+- "fourth wi"
+- "lion women of"
+
+Treat the LAST token as a prefix.
+
+Example:
+"burn the boa" should match:
+"burn the boats"
+
+Boost heavily when:
+- all earlier tokens match
+- last token is a prefix of a title word
+
+---
+
+4. Add retrieval fallback ONLY when needed
+
+Flow:
+
+Step 1 → title=<query>
+If no HIGH confidence results:
+  Step 2 → q=<query>
+  Step 3 → merge + dedupe + rerank
+
+Do NOT always run both.
+Only widen when necessary.
+
+---
+
+5. Add minimum quality threshold
+
+If after all retrieval:
+- no HIGH or MEDIUM confidence results exist
+
+Then:
+→ show "No strong matches found"
+→ optionally suggest refining query
+
+Do NOT show irrelevant books.
+
+---
+
+6. Improve scoring model
+
+Update scoring to prioritize:
+
+- exact title match → highest
+- title starts with query → very high
+- all tokens match in title → high
+- last-token prefix match → high
+- partial token overlap → medium
+- author-only match → low
+- metadata-only match → zero (exclude)
+
+---
+
+7. Add diagnostics (dev only)
+
+For each query, log:
+
+- query
+- normalized query
+- which retrieval path used (title vs fallback)
+- top 5 candidates with:
+  - score
+  - confidence level (HIGH/MED/LOW)
+  - match type
+
+---
+
+SUCCESS CRITERIA
+
+These queries must behave correctly:
+
+- "fourth wing" → Rebecca Yarros at #1
+- "burn the boa" → Burn the Boats at #1
+- "lion women of" → Lion Women of Tehran at #1
+- "acotar" → ACOTAR books, not coloring books
+
+And importantly:
+
+If the system is unsure, it must return NOTHING instead of wrong results.
+
+---
+
+Return:
+- updated scoring + confidence model
+- files changed
+- before/after results for the test queries
+- explanation of how LOW-confidence results are now excluded

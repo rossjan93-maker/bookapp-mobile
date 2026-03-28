@@ -24,7 +24,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
-import { rankBookResults } from '../../lib/searchRanking';
+import { scoreAndFilterBooks, mergeBookResults } from '../../lib/searchRanking';
 import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computeTasteProfile } from '../../lib/tasteProfile';
@@ -1848,6 +1848,7 @@ export default function RecommendationsScreen() {
   const [query, setQuery]               = useState('');
   const [bookResults, setBookResults]   = useState<BookResult[]>([]);
   const [searching, setSearching]       = useState(false);
+  const [searchNoResults, setSearchNoResults] = useState(false);
   const [selectedBook, setSelectedBook] = useState<SelectedBook | null>(null);
   const [note, setNote]                 = useState('');
   const [friends, setFriends]           = useState<Friend[]>([]);
@@ -1899,60 +1900,104 @@ export default function RecommendationsScreen() {
     if (query.length < 2) {
       searchSeqRef.current += 1;   // invalidate any in-flight request
       setBookResults([]);
+      setSearchNoResults(false);
       return;
     }
 
     const timer = setTimeout(async () => {
-      // Stamp this request. If a newer request starts before this one resolves,
-      // its stamp will be higher and our response will be discarded.
+      // Stamp this request — if a newer one fires before this resolves, discard.
       searchSeqRef.current += 1;
       const mySeq = searchSeqRef.current;
       const reqId = `${Date.now()}-${mySeq}`;
 
       setSearching(true);
-      setBookResults([]);  // clear stale results immediately so old data never lingers
+      setBookResults([]);          // clear stale results immediately
+      setSearchNoResults(false);
+
+      const FIELDS = 'key,title,author_name,cover_i,cover_edition_key,number_of_pages_median';
 
       try {
-        // Short single-token queries (≤6 chars, e.g. "acotar", "lotr", "tbr")
-        // are typically abbreviations or fandom tags. OL's q= search knows these
-        // as community terms and returns the right books in the right order.
-        // Local re-ranking would demote the real books (whose titles don't contain
-        // the abbreviation) in favour of coloring books / secondary merchandise,
-        // so we trust OL's raw order for these queries.
-        //
-        // Longer or multi-word queries use title= for title-scoped precision,
-        // then apply the local re-ranking layer to promote strong title matches.
-        const tokens = query.trim().split(/\s+/);
+        // Short single-token queries ≤6 chars ("acotar", "lotr", "tbr") are
+        // abbreviations / fandom tags that OL's community index understands
+        // better than any title-scoped search. Trust OL's raw order and skip
+        // confidence filtering (the real books won't have "acotar" in their title).
+        const tokens        = query.trim().split(/\s+/);
         const isAbbrevQuery = tokens.length === 1 && query.trim().length <= 6;
-        const olParam = isAbbrevQuery ? 'q' : 'title';
-        const url = `https://openlibrary.org/search.json?${olParam}=${encodeURIComponent(query)}&fields=key,title,author_name,cover_i,cover_edition_key,number_of_pages_median&limit=20`;
 
-        if (__DEV__) {
-          console.log('[SEARCH_REQ]', `reqId=${reqId}`, `query="${query}"`, `param=${olParam}=`, `url=${url}`);
+        if (isAbbrevQuery) {
+          const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&fields=${FIELDS}&limit=20`;
+          if (__DEV__) console.log('[SEARCH_REQ]', `reqId=${reqId}`, `query="${query}"`, 'path=abbrev', `url=${url}`);
+
+          const res  = await fetch(url);
+          const json = await res.json();
+          if (searchSeqRef.current !== mySeq) {
+            if (__DEV__) console.log('[SEARCH_STALE]', `reqId=${reqId}`, `discarded — newer seq=${searchSeqRef.current}`);
+            return;
+          }
+
+          const raw: BookResult[] = json.docs ?? [];
+          if (__DEV__) console.log('[SEARCH_ABBREV]', `reqId=${reqId}`, `count=${raw.length}`, raw.slice(0, 3).map(b => b.title));
+          setBookResults(raw.slice(0, 15));
+          setSearchNoResults(raw.length === 0);
+        } else {
+          // ── Step 1: title= (precision retrieval) ────────────────────────────
+          const titleUrl = `https://openlibrary.org/search.json?title=${encodeURIComponent(query)}&fields=${FIELDS}&limit=20`;
+          if (__DEV__) console.log('[SEARCH_REQ]', `reqId=${reqId}`, `query="${query}"`, 'path=title', `url=${titleUrl}`);
+
+          const titleRes  = await fetch(titleUrl);
+          const titleJson = await titleRes.json();
+
+          if (searchSeqRef.current !== mySeq) {
+            if (__DEV__) console.log('[SEARCH_STALE]', `reqId=${reqId}`, `discarded — newer seq=${searchSeqRef.current}`);
+            return;
+          }
+
+          const primaryRaw: BookResult[] = titleJson.docs ?? [];
+          const primary = scoreAndFilterBooks(query, primaryRaw);
+
+          if (__DEV__) {
+            console.log('[SEARCH_PRIMARY]', `reqId=${reqId}`, `raw=${primaryRaw.length}`,
+              `hasHigh=${primary.hasHigh}`, `hasMed=${primary.hasMedium}`,
+              primary.topScores.map(s => `"${s.title}" ${s.score} ${s.confidence} ${s.matchType}`));
+          }
+
+          if (primary.hasHigh) {
+            // ── Good results found: no fallback needed ───────────────────────
+            setBookResults(primary.results);
+            setSearchNoResults(false);
+          } else {
+            // ── Step 2: q= fallback (broader recall) ────────────────────────
+            const fallbackUrl = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&fields=${FIELDS}&limit=20`;
+            if (__DEV__) console.log('[SEARCH_FALLBACK]', `reqId=${reqId}`, 'no HIGH from title=, widening to q=');
+
+            const fallbackRes  = await fetch(fallbackUrl);
+            const fallbackJson = await fallbackRes.json();
+
+            if (searchSeqRef.current !== mySeq) {
+              if (__DEV__) console.log('[SEARCH_STALE]', `reqId=${reqId}`, `discarded — newer seq=${searchSeqRef.current}`);
+              return;
+            }
+
+            const fallbackRaw: BookResult[] = fallbackJson.docs ?? [];
+            const merged  = mergeBookResults(primaryRaw, fallbackRaw);
+            const scored  = scoreAndFilterBooks(query, merged);
+
+            if (__DEV__) {
+              console.log('[SEARCH_MERGED]', `reqId=${reqId}`,
+                `primary=${primaryRaw.length} fallback=${fallbackRaw.length} merged=${merged.length}`,
+                `hasHigh=${scored.hasHigh}`, `hasMed=${scored.hasMedium}`,
+                scored.topScores.map(s => `"${s.title}" ${s.score} ${s.confidence} ${s.matchType}`));
+            }
+
+            if (scored.hasHigh || scored.hasMedium) {
+              setBookResults(scored.results);
+              setSearchNoResults(false);
+            } else {
+              setBookResults([]);
+              setSearchNoResults(true);
+            }
+          }
         }
-
-        const res  = await fetch(url);
-        const json = await res.json();
-        const raw: BookResult[] = json.docs ?? [];
-
-        // Discard if a newer search has already committed or is in flight.
-        if (searchSeqRef.current !== mySeq) {
-          if (__DEV__) console.log('[SEARCH_STALE]', `reqId=${reqId}`, `discarded — newer seq=${searchSeqRef.current}`);
-          return;
-        }
-
-        const ranked = isAbbrevQuery
-          ? raw
-          : rankBookResults(query, raw);
-
-        if (__DEV__) {
-          const rawTop5    = raw.slice(0, 5).map((b, i) => `${i+1}. "${b.title}"`).join(' | ');
-          const rankedTop5 = ranked.slice(0, 5).map((b, i) => `${i+1}. "${b.title}"`).join(' | ');
-          console.log('[SEARCH_RAW]',    `reqId=${reqId}`, `count=${raw.length}`, `top5=[${rawTop5}]`);
-          console.log('[SEARCH_RANKED]', `reqId=${reqId}`, `isAbbrev=${isAbbrevQuery}`, `top5=[${rankedTop5}]`);
-        }
-
-        setBookResults(ranked);
       } catch (err) {
         if (searchSeqRef.current !== mySeq) return;
         if (__DEV__) console.log('[SEARCH_ERR]', `reqId=${reqId}`, String(err));
@@ -2969,6 +3014,7 @@ export default function RecommendationsScreen() {
     setStep('hub');
     setQuery('');
     setBookResults([]);
+    setSearchNoResults(false);
     setSelectedBook(null);
     setNote('');
     setFriends([]);
@@ -3672,7 +3718,16 @@ export default function RecommendationsScreen() {
             </TouchableOpacity>
           )}
           ListEmptyComponent={
-            !searching && query.length >= 2 ? (
+            !searching && searchNoResults ? (
+              <View style={{ marginTop: 16 }}>
+                <Text style={{ color: '#1c1917', fontSize: 14, fontWeight: '600' }}>
+                  No strong matches found.
+                </Text>
+                <Text style={{ color: '#a8a29e', fontSize: 13, marginTop: 4 }}>
+                  Try a more specific title or check your spelling.
+                </Text>
+              </View>
+            ) : !searching && query.length >= 2 && bookResults.length === 0 ? (
               <Text style={{ color: '#a8a29e', marginTop: 12, fontSize: 14 }}>
                 No books found for that search.
               </Text>
