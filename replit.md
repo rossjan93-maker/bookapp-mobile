@@ -10,7 +10,7 @@ Not specified.
 The application is built with React Native using Expo Router for navigation and targeting web. Supabase provides the backend, handling authentication, PostgreSQL database management, and Row Level Security (RLS). TypeScript is used for type safety across the application.
 
 **Key Features:**
-- **Book Search & Recommendations:** Users can search for books via the Open Library API and send recommendations with personalized notes to friends.
+- **Book Search & Recommendations:** Users can search for books via the Open Library API and send recommendations with personalized notes to friends. The "Add to Library" search uses a confidence-based two-step retrieval model: `title=` primary → if no HIGH-confidence results, falls back to `q=` + optional head-query (for short last tokens). Results are scored with HIGH/MEDIUM/LOW confidence and only HIGH results are shown (MEDIUM shown only when no HIGH exists; LOW never shown). Implemented in `lib/searchRanking.ts` (`scoreAndFilterBooks`, `mergeBookResults`) and `app/(tabs)/search.tsx`. Short single-token abbreviation queries (≤6 chars, e.g. "acotar") bypass confidence filtering and trust OL's community index order.
 - **Library Management:** Users can track the reading status of books (want_to_read, reading, finished, DNF) and rate books upon completion.
 - **Activity Feed:** Displays friend activities such as sent, saved, started, or finished books.
 - **Profile:** Users can set yearly reading goals, view their taste profile, see currently reading books, and track reading statistics.

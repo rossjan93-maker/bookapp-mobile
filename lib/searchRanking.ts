@@ -122,11 +122,14 @@ export function scoreBookResult(
   // ── 3. Last-token prefix (incomplete typing like "burn the boa" → "burn the boats")
   //       Treat the final query token as a prefix of a title word.
   //       All head tokens (everything before the last) must be in the title.
+  //
+  //       Require lastToken.length >= 3 to avoid stop-words ("of", "in", "to")
+  //       triggering prefix matches on unrelated long titles.
   if (qTokens.length >= 2) {
     const headTokens = qTokens.slice(0, -1);
     const lastToken  = qTokens[qTokens.length - 1];
 
-    if (lastToken.length >= 2) {
+    if (lastToken.length >= 3) {
       const lastPrefixHit = titleTokenArr.some(t => t.startsWith(lastToken));
 
       if (lastPrefixHit) {
@@ -157,7 +160,16 @@ export function scoreBookResult(
   const titleHits    = qTokens.filter(t => titleTokenSet.has(t)).length;
   const titleOverlap = titleHits / qTokens.length;
 
-  if (titleOverlap >= 0.8) return mk(700 + Math.round(titleOverlap * 99), 'strong_token');
+  // Title-length penalty: if the title has >4× more meaningful tokens than the
+  // query (e.g. a 20-token academic title matched against a 3-token query),
+  // the match is coincidental. Cap such matches to upper MEDIUM (649) so they
+  // never surface as HIGH and push the real result off the top spot.
+  const titleTooLong = titleTokenArr.length > qTokens.length * 4;
+
+  if (titleOverlap >= 0.8) {
+    const base = 700 + Math.round(titleOverlap * 99);
+    return titleTooLong ? mk(Math.min(base, 649), 'moderate_token') : mk(base, 'strong_token');
+  }
   if (titleOverlap >= 0.5) return mk(600 + Math.round(titleOverlap * 99), 'moderate_token');
 
   // ── 6. Combined title + author token overlap ───────────────────────────────
@@ -222,8 +234,11 @@ export function scoreAndFilterBooks<T extends BookResultLike>(
   const hasHigh   = high.length > 0;
   const hasMedium = med.length > 0;
 
+  // "HIGH or nothing, then MEDIUM as fallback" — never mix the two tiers.
+  // When HIGH results exist, show only those; MEDIUM results would pad out the
+  // list with near-misses that dilute confidence in the top result.
   const results: T[] = hasHigh
-    ? [...high, ...med].map(s => s.book)
+    ? high.map(s => s.book)
     : hasMedium
       ? med.map(s => s.book)
       : [];

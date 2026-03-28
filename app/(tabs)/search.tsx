@@ -1966,12 +1966,33 @@ export default function RecommendationsScreen() {
             setBookResults(primary.results);
             setSearchNoResults(false);
           } else {
-            // ── Step 2: q= fallback (broader recall) ────────────────────────
-            const fallbackUrl = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&fields=${FIELDS}&limit=20`;
-            if (__DEV__) console.log('[SEARCH_FALLBACK]', `reqId=${reqId}`, 'no HIGH from title=, widening to q=');
+            // ── Step 2: q= fallback + optional head-query ───────────────────
+            // When the last token looks incomplete (≤4 chars, e.g. "boa" in
+            // "burn the boa"), OL's word-boundary index won't find "boats" for
+            // "boa". Fetch title=<head tokens> so that OL gets a complete query
+            // it can match properly, then score all candidates against the
+            // original (full) query — "Burn the Boats" scores 900 (prefix).
+            const lastTok = tokens[tokens.length - 1];
+            const headQuery = lastTok.length <= 4 && tokens.length >= 2
+              ? tokens.slice(0, -1).join(' ')
+              : null;
 
-            const fallbackRes  = await fetch(fallbackUrl);
+            if (__DEV__) console.log('[SEARCH_FALLBACK]', `reqId=${reqId}`,
+              'no HIGH from title=, widening to q=',
+              headQuery ? `+ head-query title="${headQuery}"` : '');
+
+            const fallbackUrl = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&fields=${FIELDS}&limit=20`;
+            const headUrl     = headQuery
+              ? `https://openlibrary.org/search.json?title=${encodeURIComponent(headQuery)}&fields=${FIELDS}&limit=20`
+              : null;
+
+            const [fallbackRes, headRes] = await Promise.all([
+              fetch(fallbackUrl),
+              headUrl ? fetch(headUrl) : Promise.resolve(null),
+            ]);
+
             const fallbackJson = await fallbackRes.json();
+            const headJson     = headRes ? await headRes.json() : { docs: [] };
 
             if (searchSeqRef.current !== mySeq) {
               if (__DEV__) console.log('[SEARCH_STALE]', `reqId=${reqId}`, `discarded — newer seq=${searchSeqRef.current}`);
@@ -1979,7 +2000,8 @@ export default function RecommendationsScreen() {
             }
 
             const fallbackRaw: BookResult[] = fallbackJson.docs ?? [];
-            const merged  = mergeBookResults(primaryRaw, fallbackRaw);
+            const headRaw: BookResult[]     = headJson.docs ?? [];
+            const merged  = mergeBookResults(mergeBookResults(primaryRaw, headRaw), fallbackRaw);
             const scored  = scoreAndFilterBooks(query, merged);
 
             if (__DEV__) {
@@ -1989,7 +2011,13 @@ export default function RecommendationsScreen() {
                 scored.topScores.map(s => `"${s.title}" ${s.score} ${s.confidence} ${s.matchType}`));
             }
 
-            if (scored.hasHigh || scored.hasMedium) {
+            // When the last token is very short (≤3 chars = clearly unfinished
+            // word), MEDIUM fallback results are near-miss noise ("The Burn
+            // Journals" for "burn the boa"). Suppress them — signal the user
+            // to keep typing rather than show misleading partial-word matches.
+            const lastTokenIncomplete = lastTok.length <= 3;
+
+            if (scored.hasHigh || (scored.hasMedium && !lastTokenIncomplete)) {
               setBookResults(scored.results);
               setSearchNoResults(false);
             } else {
