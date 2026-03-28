@@ -24,6 +24,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import { rankBookResults } from '../../lib/searchRanking';
 import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computeTasteProfile } from '../../lib/tasteProfile';
@@ -1895,10 +1896,11 @@ export default function RecommendationsScreen() {
       setSearching(true);
       try {
         const res = await fetch(
-          `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&fields=key,title,author_name,cover_i,cover_edition_key,number_of_pages_median&limit=10`
+          `https://openlibrary.org/search.json?title=${encodeURIComponent(query)}&fields=key,title,author_name,cover_i,cover_edition_key,number_of_pages_median&limit=20`
         );
         const json = await res.json();
-        setBookResults(json.docs ?? []);
+        const ranked = rankBookResults(query, json.docs ?? []);
+        setBookResults(ranked);
       } catch {
         setBookResults([]);
       }
