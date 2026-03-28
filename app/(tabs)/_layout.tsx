@@ -1,5 +1,5 @@
 import { createContext, useEffect, useRef, useState } from 'react';
-import { Animated, PanResponder, View } from 'react-native';
+import { Animated, Dimensions, PanResponder, View } from 'react-native';
 import { Tabs, useRouter, useSegments } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
@@ -66,8 +66,6 @@ function PulsingDot() {
 
 const TAB_ROUTES = ['index', 'search', 'library', 'notes', 'profile'] as const;
 
-// Typed route paths for each tab.
-// The index tab's canonical pathname is '/' (not '/(tabs)/index') in Expo Router.
 const TAB_PATHS = {
   index:   '/'               as const,
   search:  '/(tabs)/search'  as const,
@@ -75,6 +73,24 @@ const TAB_PATHS = {
   notes:   '/(tabs)/notes'   as const,
   profile: '/(tabs)/profile' as const,
 } satisfies Record<typeof TAB_ROUTES[number], string>;
+
+// ─── Swipe tuning constants ────────────────────────────────────────────────────
+//
+// Old values → new values:
+//   Recognition ratio:   1.5 → 1.2   (horizontal intent recognized sooner)
+//   Recognition floor:   10px → 6px   (less movement needed to start capture)
+//   Switch distance:     50px → 28px  (much less drag needed to commit)
+//   Velocity trigger:    none → 0.22  (fast flick always works, regardless of distance)
+//   Resistance:          none → 0.62  (content follows finger at 62% speed, tactile feel)
+//   Snap animation:      none → spring(tension:260, friction:26) on cancel
+//   Commit animation:    none → 140ms timing to edge, then navigate + reset
+
+const SCREEN_WIDTH     = Dimensions.get('window').width;
+const SWIPE_DISTANCE   = 28;   // px to commit to a tab switch
+const SWIPE_VELOCITY   = 0.22; // px/ms — fast flick bypasses distance check
+const GESTURE_RATIO    = 1.2;  // horizontal must be this much bigger than vertical
+const GESTURE_FLOOR    = 6;    // px minimum before we even evaluate the ratio
+const RESISTANCE       = 0.62; // content moves at 62% of finger travel
 
 // ─── Layout ───────────────────────────────────────────────────────────────────
 
@@ -90,12 +106,10 @@ export default function TabsLayout() {
   useEffect(() => { routerRef.current   = router;   }, [router]);
   useEffect(() => { segmentsRef.current = segments; }, [segments]);
 
-  // Load guided step from storage on mount
   useEffect(() => {
     readGuidedStep().then(setGuidedStep);
   }, []);
 
-  // When step advances to 1, show "Noted" toast
   useEffect(() => {
     if (guidedStep === 1 && !notedShown.current) {
       notedShown.current = true;
@@ -127,61 +141,87 @@ export default function TabsLayout() {
     fetchCount();
   }, []);
 
-  // Keep a ref to guidedStep so the panResponder closure always sees latest value
   const guidedStepRef = useRef<GuidedStep>(guidedStep);
-  useEffect(() => {
-    guidedStepRef.current = guidedStep;
-  }, [guidedStep]);
+  useEffect(() => { guidedStepRef.current = guidedStep; }, [guidedStep]);
 
-  // ── Swipe-to-switch-tabs gesture ──────────────────────────────────────────
-  // Detects a horizontal swipe (≥ 50px, horizontal-dominant) and navigates
-  // to the adjacent tab. Suppressed on 'search' tab (card swipe conflicts)
-  // and while any onboarding walkthrough overlay is active (guidedStep < 99).
+  // ── Pager-style swipe gesture ──────────────────────────────────────────────
+  //
+  // Architecture: Animated.Value tracks finger in real time (finger-connected).
+  // On release: if distance OR velocity meets threshold → animate to edge then
+  // navigate + reset; otherwise → spring back to center.
+  // The Animated.View wraps just the Tabs (not the overlays), so guided tour
+  // banners stay fixed while the content slides.
+
+  const panX = useRef(new Animated.Value(0)).current;
+
+  function resolveCurrentRoute(): { route: string; idx: number } {
+    const segs     = segmentsRef.current;
+    const lastSeg  = segs[segs.length - 1] ?? 'index';
+    const route    = lastSeg === '(tabs)' ? 'index' : lastSeg;
+    const idx      = TAB_ROUTES.indexOf(route as typeof TAB_ROUTES[number]);
+    return { route, idx };
+  }
+
+  function springBack() {
+    Animated.spring(panX, {
+      toValue: 0,
+      tension:  260,
+      friction: 26,
+      useNativeDriver: true,
+    }).start();
+  }
+
   const panResponder = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gestureState) => {
-        const { dx, dy } = gestureState;
-
-        // Suppress capture during any active onboarding walkthrough step
+      // Do not steal taps — only evaluate once motion has started
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, { dx, dy }) => {
+        // Never intercept during guided tour or on the Recommend tab
         if (guidedStepRef.current < 99) return false;
+        const { route } = resolveCurrentRoute();
+        if (route === 'search') return false;
 
-        // Determine current route (using ref to avoid stale closure)
-        const segs = segmentsRef.current;
-        const lastSeg = segs[segs.length - 1] ?? 'index';
-        const currentRoute = lastSeg === '(tabs)' ? 'index' : lastSeg;
-
-        // Suppress capture on search tab — card swipe interactions must take priority
-        if (currentRoute === 'search') return false;
-
-        // Only capture if the swipe is clearly horizontal-dominant
-        return Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 10;
+        // Capture when movement is horizontal-dominant and past the noise floor
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(dy);
+        return absDx > GESTURE_FLOOR && absDx > absDy * GESTURE_RATIO;
       },
-      onPanResponderRelease: (_, gestureState) => {
-        const { dx, dy } = gestureState;
-        // Must be horizontal-dominant and exceed minimum swipe distance
-        if (Math.abs(dx) < 50 || Math.abs(dx) <= Math.abs(dy) * 1.5) return;
 
-        // Determine current tab from segments (using ref to always read latest)
-        const segs = segmentsRef.current;
-        const lastSeg = segs[segs.length - 1] ?? 'index';
-        const currentRoute = lastSeg === '(tabs)' ? 'index' : lastSeg;
+      // Content follows finger in real time — tactile connection
+      onPanResponderMove: (_, { dx }) => {
+        panX.setValue(dx * RESISTANCE);
+      },
 
-        const currentIdx = TAB_ROUTES.indexOf(currentRoute as typeof TAB_ROUTES[number]);
-        if (currentIdx === -1) return;
+      onPanResponderRelease: (_, { dx, vx }) => {
+        const { idx } = resolveCurrentRoute();
+        if (idx === -1) { springBack(); return; }
 
-        if (dx < 0) {
-          // Swipe left → navigate to next tab
-          const nextIdx = currentIdx + 1;
-          if (nextIdx < TAB_ROUTES.length) {
-            routerRef.current.navigate({ pathname: TAB_PATHS[TAB_ROUTES[nextIdx]] });
-          }
-        } else {
-          // Swipe right → navigate to previous tab
-          const prevIdx = currentIdx - 1;
-          if (prevIdx >= 0) {
-            routerRef.current.navigate({ pathname: TAB_PATHS[TAB_ROUTES[prevIdx]] });
+        const goLeft  = dx < -SWIPE_DISTANCE || vx < -SWIPE_VELOCITY;
+        const goRight = dx >  SWIPE_DISTANCE  || vx >  SWIPE_VELOCITY;
+
+        if (goLeft || goRight) {
+          const nextIdx = goLeft ? idx + 1 : idx - 1;
+          if (nextIdx >= 0 && nextIdx < TAB_ROUTES.length) {
+            // Snap confidently to edge, then switch + reset (feels decisive)
+            Animated.timing(panX, {
+              toValue:  goLeft ? -SCREEN_WIDTH : SCREEN_WIDTH,
+              duration: 140,
+              useNativeDriver: true,
+            }).start(() => {
+              panX.setValue(0);
+              routerRef.current.navigate({ pathname: TAB_PATHS[TAB_ROUTES[nextIdx]] });
+            });
+            return;
           }
         }
+
+        // Not enough — spring back to rest (bouncy, not sluggish)
+        springBack();
+      },
+
+      // Gesture stolen by a child (e.g. ScrollView lock) → snap back cleanly
+      onPanResponderTerminate: () => {
+        springBack();
       },
     })
   ).current;
@@ -189,109 +229,117 @@ export default function TabsLayout() {
   return (
     <BadgeContext.Provider value={{ newRecCount, setNewRecCount }}>
       <GuidedTourContext.Provider value={{ step: guidedStep, advance: advanceGuided }}>
-        <View style={{ flex: 1 }} {...panResponder.panHandlers}>
-        <Tabs
-          screenOptions={{
-            tabBarActiveTintColor:   '#1c1917',
-            tabBarInactiveTintColor: '#a8a29e',
-            tabBarStyle: {
-              borderTopColor: '#e7e5e4',
-              borderTopWidth: 1,
-              paddingBottom: 8,
-              paddingTop: 4,
-              height: 62,
-            },
-            tabBarLabelStyle: {
-              fontSize: 10,
-              fontWeight: '500',
-              marginTop: 2,
-            },
-            headerShown: false,
-          }}
-        >
-          <Tabs.Screen
-            name="index"
-            options={{
-              title: 'Home',
-              tabBarIcon: ({ focused, color }) => (
-                <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color} />
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="search"
-            options={{
-              title: 'Recommend',
-              tabBarIcon: ({ focused, color }) => (
-                <Ionicons
-                  name={focused ? 'paper-plane' : 'paper-plane-outline'}
-                  size={22}
-                  color={color}
-                />
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="library"
-            listeners={{
-              tabPress: () => {
-                if (guidedStep === 2) advanceGuided(2);
-              },
-            }}
-            options={{
-              title: 'Library',
-              tabBarIcon: ({ focused, color, size }) => (
-                <>
-                  <Ionicons
-                    name={focused ? 'library' : 'library-outline'}
-                    size={size}
-                    color={color}
-                  />
-                  {guidedStep === 2 && <PulsingDot />}
-                </>
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="notes"
-            options={{
-              title: 'Inbox',
-              tabBarBadge: newRecCount > 0 ? newRecCount : undefined,
-              tabBarBadgeStyle: { backgroundColor: '#1c1917', fontSize: 10 },
-              tabBarIcon: ({ focused, color }) => (
-                <Ionicons name={focused ? 'mail' : 'mail-outline'} size={22} color={color} />
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="profile"
-            options={{
-              title: 'Profile',
-              tabBarIcon: ({ focused, color }) => (
-                <Ionicons
-                  name={focused ? 'person-circle' : 'person-circle-outline'}
-                  size={22}
-                  color={color}
-                />
-              ),
-            }}
-          />
-        </Tabs>
 
-        {/* Step 1 — "Noted" toast */}
-        {showNoted && (
-          <GuidedNotedToast
-            onDone={() => {
-              setShowNoted(false);
-              advanceGuided(1);
-            }}
-          />
-        )}
+        {/* Clip so the sliding content never bleeds outside the screen */}
+        <View style={{ flex: 1, overflow: 'hidden' }}>
 
-        {/* Step 2 — Library hint banner */}
-        {guidedStep === 2 && (
-          <GuidedLibraryBanner onDismiss={() => advanceGuided(2)} />
-        )}
+          {/* ── Tabs track the finger ── */}
+          <Animated.View
+            style={{ flex: 1, transform: [{ translateX: panX }] }}
+            {...panResponder.panHandlers}
+          >
+            <Tabs
+              screenOptions={{
+                tabBarActiveTintColor:   '#1c1917',
+                tabBarInactiveTintColor: '#a8a29e',
+                tabBarStyle: {
+                  borderTopColor: '#e7e5e4',
+                  borderTopWidth: 1,
+                  paddingBottom: 8,
+                  paddingTop: 4,
+                  height: 62,
+                },
+                tabBarLabelStyle: {
+                  fontSize: 10,
+                  fontWeight: '500',
+                  marginTop: 2,
+                },
+                headerShown: false,
+              }}
+            >
+              <Tabs.Screen
+                name="index"
+                options={{
+                  title: 'Home',
+                  tabBarIcon: ({ focused, color }) => (
+                    <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color} />
+                  ),
+                }}
+              />
+              <Tabs.Screen
+                name="search"
+                options={{
+                  title: 'Recommend',
+                  tabBarIcon: ({ focused, color }) => (
+                    <Ionicons
+                      name={focused ? 'paper-plane' : 'paper-plane-outline'}
+                      size={22}
+                      color={color}
+                    />
+                  ),
+                }}
+              />
+              <Tabs.Screen
+                name="library"
+                listeners={{
+                  tabPress: () => {
+                    if (guidedStep === 2) advanceGuided(2);
+                  },
+                }}
+                options={{
+                  title: 'Library',
+                  tabBarIcon: ({ focused, color, size }) => (
+                    <>
+                      <Ionicons
+                        name={focused ? 'library' : 'library-outline'}
+                        size={size}
+                        color={color}
+                      />
+                      {guidedStep === 2 && <PulsingDot />}
+                    </>
+                  ),
+                }}
+              />
+              <Tabs.Screen
+                name="notes"
+                options={{
+                  title: 'Inbox',
+                  tabBarBadge: newRecCount > 0 ? newRecCount : undefined,
+                  tabBarBadgeStyle: { backgroundColor: '#1c1917', fontSize: 10 },
+                  tabBarIcon: ({ focused, color }) => (
+                    <Ionicons name={focused ? 'mail' : 'mail-outline'} size={22} color={color} />
+                  ),
+                }}
+              />
+              <Tabs.Screen
+                name="profile"
+                options={{
+                  title: 'Profile',
+                  tabBarIcon: ({ focused, color }) => (
+                    <Ionicons
+                      name={focused ? 'person-circle' : 'person-circle-outline'}
+                      size={22}
+                      color={color}
+                    />
+                  ),
+                }}
+              />
+            </Tabs>
+          </Animated.View>
+
+          {/* ── Guided-tour overlays stay fixed (outside Animated.View) ── */}
+          {showNoted && (
+            <GuidedNotedToast
+              onDone={() => {
+                setShowNoted(false);
+                advanceGuided(1);
+              }}
+            />
+          )}
+          {guidedStep === 2 && (
+            <GuidedLibraryBanner onDismiss={() => advanceGuided(2)} />
+          )}
+
         </View>
       </GuidedTourContext.Provider>
     </BadgeContext.Provider>
