@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import {
   auditFinishedDates,
@@ -97,7 +97,7 @@ function BookRow({
           }}
         >
           <Text style={{ fontSize: 12, fontWeight: '600', color: clearing ? '#a8a29e' : '#92400e' }}>
-            {clearing ? 'Clearing…' : 'Set date to Unknown (exclude from goal)'}
+            {clearing ? 'Excluding…' : 'Exclude from this year (date unknown)'}
           </Text>
         </TouchableOpacity>
       )}
@@ -138,6 +138,13 @@ export default function RepairDatesScreen() {
     setReport(result);
     setLoading(false);
   }
+
+  // Auto-run audit whenever this screen comes into focus (first mount + return)
+  useFocusEffect(
+    useCallback(() => {
+      runAudit();
+    }, []),
+  );
 
   // ── Apply Goodreads repairs ────────────────────────────────────────────────
 
@@ -203,23 +210,12 @@ export default function RepairDatesScreen() {
         has an older completion date, and corrects the mismatch.
       </Text>
 
-      {/* ── Audit button ── */}
-      {!report && (
-        <TouchableOpacity
-          onPress={runAudit}
-          disabled={loading}
-          style={{
-            backgroundColor: loading ? '#d6d3d1' : '#1c1917',
-            borderRadius: 13,
-            paddingVertical: 15,
-            alignItems: 'center',
-          }}
-        >
-          {loading
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Run Audit</Text>
-          }
-        </TouchableOpacity>
+      {/* ── Loading spinner (auto-runs on mount) ── */}
+      {!report && loading && (
+        <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+          <ActivityIndicator color="#1c1917" size="large" />
+          <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 14 }}>Scanning your library…</Text>
+        </View>
       )}
 
       {error && (
