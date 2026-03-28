@@ -178,7 +178,7 @@ export default function LibraryScreen() {
       .single();
     setYearlyGoal(profileRes.data?.yearly_reading_goal ?? null);
 
-    // Attempt 1: full columns + deleted_at filter (post-migration).
+    // Primary query: full columns + deleted_at filter.
     let result = await supabase
       .from('user_books')
       .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, book:books(title, author, cover_url, external_id, page_count)')
@@ -187,23 +187,14 @@ export default function LibraryScreen() {
       .order('created_at', { ascending: false });
 
     if (result.error) {
-      // Attempt 2: drop progress columns, keep deleted_at filter.
+      // Fallback: older schema without current_page / page_count columns.
+      // deleted_at filter is always required — rows without it are excluded
+      // to prevent soft-deleted books from appearing.
       result = await supabase
         .from('user_books')
         .select('id, book_id, status, started_at, finished_at, progress_updated_at, book:books(title, author, cover_url, external_id)')
         .eq('user_id', user.id)
         .is('deleted_at', null)
-        .order('created_at', { ascending: false });
-    }
-
-    if (result.error) {
-      // Attempt 3: migration not yet applied — drop deleted_at filter entirely.
-      // Soft-deleted books will be visible until the migration is run, which is
-      // acceptable; the alternative is showing nothing at all.
-      result = await supabase
-        .from('user_books')
-        .select('id, book_id, status, started_at, finished_at, progress_updated_at, book:books(title, author, cover_url, external_id)')
-        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
     }
 
