@@ -1895,11 +1895,25 @@ export default function RecommendationsScreen() {
     const timer = setTimeout(async () => {
       setSearching(true);
       try {
+        // Short single-token queries (≤5 chars, e.g. "acotar", "lotr", "tbr")
+        // are typically abbreviations or fandom tags. OL's q= search knows these
+        // as community terms and returns the right books in the right order.
+        // Local re-ranking would demote the real books (whose titles don't contain
+        // the abbreviation) in favour of coloring books / secondary merchandise,
+        // so we trust OL's raw order for these queries.
+        //
+        // Longer or multi-token queries use title= for title-scoped precision,
+        // then apply the local re-ranking layer to promote strong title matches.
+        const tokens = query.trim().split(/\s+/);
+        const isAbbrevQuery = tokens.length === 1 && query.trim().length <= 6;
+        const olParam = isAbbrevQuery ? 'q' : 'title';
         const res = await fetch(
-          `https://openlibrary.org/search.json?title=${encodeURIComponent(query)}&fields=key,title,author_name,cover_i,cover_edition_key,number_of_pages_median&limit=20`
+          `https://openlibrary.org/search.json?${olParam}=${encodeURIComponent(query)}&fields=key,title,author_name,cover_i,cover_edition_key,number_of_pages_median&limit=20`
         );
         const json = await res.json();
-        const ranked = rankBookResults(query, json.docs ?? []);
+        const ranked = isAbbrevQuery
+          ? (json.docs ?? [])
+          : rankBookResults(query, json.docs ?? []);
         setBookResults(ranked);
       } catch {
         setBookResults([]);

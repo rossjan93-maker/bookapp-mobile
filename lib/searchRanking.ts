@@ -62,9 +62,19 @@ export function scoreBookResult(
     return { score: 500, matchType: 'fallback', rawRank: 0 };
   }
 
+  // Strip leading articles ("the", "a", "an") from title for near-exact checks.
+  // "The Silent Patient" should score just below "Silent Patient" (exact), not as
+  // a mere substring. Only strip once from the front.
+  const ntitleNoArticle = ntitle.replace(/^(the|an?)\s+/, '');
+
   // ── 1. Exact title match ───────────────────────────────────────────────────
   if (ntitle === nq) {
     return { score: 1000, matchType: 'exact', rawRank: 0 };
+  }
+
+  // ── 1b. Near-exact: title minus leading article equals query ─────────────
+  if (ntitleNoArticle !== ntitle && ntitleNoArticle === nq) {
+    return { score: 990, matchType: 'exact', rawRank: 0 };
   }
 
   // ── 2. Title starts with full query (prefix) ──────────────────────────────
@@ -72,9 +82,19 @@ export function scoreBookResult(
     return { score: 900, matchType: 'prefix', rawRank: 0 };
   }
 
+  // ── 2b. Near-prefix: title minus article starts with query ────────────────
+  if (ntitleNoArticle !== ntitle && ntitleNoArticle.startsWith(nq) && nq.length >= 3) {
+    return { score: 890, matchType: 'prefix', rawRank: 0 };
+  }
+
   // ── 3. Title contains full query as a contiguous substring ────────────────
   if (nq.length >= 4 && ntitle.includes(nq)) {
     return { score: 850, matchType: 'substring', rawRank: 0 };
+  }
+
+  // ── 3b. Title minus article contains query as substring ───────────────────
+  if (nq.length >= 4 && ntitleNoArticle !== ntitle && ntitleNoArticle.includes(nq)) {
+    return { score: 840, matchType: 'substring', rawRank: 0 };
   }
 
   // ── 4 & 5. Token overlap in title ─────────────────────────────────────────
