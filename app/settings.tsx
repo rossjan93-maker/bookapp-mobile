@@ -439,6 +439,24 @@ export default function SettingsScreen() {
             <Text style={{ fontSize: 20, color: '#c4b5a5', marginLeft: 10 }}>›</Text>
           </View>
         </TouchableOpacity>
+        <View style={{ height: 1, backgroundColor: '#f5f5f4', marginHorizontal: 16 }} />
+        <TouchableOpacity
+          onPress={() => router.push('/import/repair-dates')}
+          activeOpacity={0.75}
+          style={{ paddingHorizontal: 16, paddingVertical: 16 }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 3 }}>
+                Repair reading dates
+              </Text>
+              <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>
+                Fix yearly goal count if old books appear as finished this year
+              </Text>
+            </View>
+            <Text style={{ fontSize: 20, color: '#c4b5a5', marginLeft: 10 }}>›</Text>
+          </View>
+        </TouchableOpacity>
       </SettingsCard>
 
       {/* ── Account ──────────────────────────────────────────────────────────── */}

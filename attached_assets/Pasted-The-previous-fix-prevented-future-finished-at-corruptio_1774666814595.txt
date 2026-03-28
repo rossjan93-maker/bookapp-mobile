@@ -1,0 +1,57 @@
+The previous fix prevented future finished_at corruption, but it does NOT repair existing bad data already in the database.
+
+We now need a historical data repair pass.
+
+Evidence from Goodreads export vs current UI:
+- The Silent Patient has Date Read = 2022/01/11 in the Goodreads CSV, but is currently showing as completed this year in the app.
+- The Thursday Murder Club has Date Read = 2022/12/31 in the Goodreads CSV, but is currently showing as completed this year.
+- Glow (The Plated Prisoner, #4) has Date Read = 2026/03/14, so that one is correct for this year.
+- Some books shown in the app (e.g. Where the Crawdads Sing, Gone Girl, Beach Read) do not appear in the attached Goodreads export, which means they need separate handling.
+
+Task:
+Build a repair/backfill path for historical completion dates.
+
+Requirements:
+
+1. Audit current DB rows
+Find all current user_books rows for this user where:
+- status = 'finished'
+- finished_at is in the current year
+- but a Goodreads-imported date exists that is older
+
+2. Backfill Goodreads-truth into user_books.finished_at
+Where there is a reliable match between existing app books and Goodreads CSV rows:
+- update finished_at to the Goodreads Date Read
+- do not overwrite with now
+- do not change rows where Goodreads date is null/unknown unless explicitly intended
+
+3. Matching strategy
+Use a conservative matching approach:
+- prefer external IDs / ISBN if available
+- otherwise title + author normalized match
+- log ambiguous matches rather than guessing
+
+4. Handle books not in Goodreads export
+For books currently counted this year but not found in Goodreads export:
+- identify which creation path they came from if possible
+- if they have no trustworthy finished date, do not silently keep them in this year
+- recommend either:
+  a) set finished_at = null (unknown, excluded from yearly goal), or
+  b) flag them for user review
+
+5. Check for duplicate rows
+Audit whether the same user/book has multiple user_books rows that could be inflating or confusing the yearly completed list.
+
+6. Fix the reading-goal surface
+After backfill:
+- yearly goal count must reflect repaired dates
+- “completed this year” list must update accordingly
+- books with unknown finish date must not count toward this year
+
+Return:
+- exact root cause of the currently incorrect rows
+- exact rows/books repaired
+- matching logic used
+- any ambiguous rows needing manual review
+- whether duplicates were found
+- files changed / scripts added
