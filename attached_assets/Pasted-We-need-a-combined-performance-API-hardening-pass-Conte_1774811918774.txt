@@ -1,0 +1,173 @@
+We need a combined performance + API hardening pass.
+
+Context:
+The app still feels too slow and unstable to be viable as a product.
+The biggest issue is not just raw backend/API latency — it is that the app is still doing too much meaningful work after navigation, and it is expressing that work badly in the UI.
+
+We need to address BOTH:
+1. app-side performance architecture
+2. API-side efficiency and hardening
+
+This is not a feature task.
+This is a product viability task.
+
+==================================================
+PART 1 — PERFORMANCE ARCHITECTURE
+==================================================
+
+Core rule:
+Screens should open from local/persisted state and refine quietly in the background.
+They should not navigate first and then visibly compute core content in front of the user.
+
+Define and work toward these budgets:
+- warm tab switch: <150ms to meaningful content
+- return to previously seen screen: <100ms
+- first meaningful recommendation deck: <700ms
+- above-the-fold cover art visible: <300ms
+- no full-screen placeholder on revisit
+- no visible multi-phase churn after first paint
+
+Audit and report the true critical path for:
+1. Recommendations
+2. Library
+3. Book Detail
+
+For each, identify:
+- what is still happening after navigation
+- what data is critical to first paint
+- what data can arrive later
+- what content must never blank once shown
+
+Focus specifically on these systems:
+
+A. Recommendation deck architecture
+Goal:
+Move from compute-on-navigation to precomputed/persisted deck behavior.
+
+Requirements:
+- open Recommend from stored/local deck instantly when possible
+- refresh next deck in the background after actions
+- do not rebuild the visible deck in public
+- no visible section teardown after meaningful content is shown
+
+B. Cover artwork pipeline
+Goal:
+Cover art must stop feeling like an afterthought.
+
+Requirements:
+- normalize/store thumbnail URLs where possible
+- cache locally
+- prefetch above-the-fold covers for likely-next screens
+- reserve exact image space before paint
+- reduce visible one-by-one cover settling
+
+C. Library snapshot architecture
+Goal:
+Library should open from a persisted/local snapshot, not behave like a live DB screen every time.
+
+Requirements:
+- instant open from local/persisted snapshot once seen before
+- silent background reconciliation
+- no full-page loading state on revisit if prior content exists
+
+D. Critical path split
+For each major surface, classify:
+- must be visible immediately
+- may arrive later
+- must never blank once shown
+
+==================================================
+PART 2 — API-SIDE HARDENING AND REQUEST EFFICIENCY
+==================================================
+
+The Google Books API itself does not appear to be the main bottleneck, but we still need to harden and optimize our API usage.
+
+Audit and improve the Google Books integration with these priorities:
+
+1. KEY HYGIENE / ENVIRONMENT SPLIT
+- confirm whether dev/staging/prod are using distinct keys
+- confirm whether the current key is restricted properly
+- recommend the right restriction model for:
+  - web
+  - iOS
+  - Android
+- ensure we are not relying on one overly broad unrestricted key
+
+2. PAYLOAD REDUCTION
+Audit current Google Books requests and reduce payload size aggressively.
+
+I want you to evaluate and, where appropriate, apply:
+- projection=lite
+- fields=... partial response selection
+- keeping only fields needed for first paint / result list
+- deferring non-critical fields until after selection if needed
+
+3. REQUEST SHAPE
+Audit whether our query parameters are disciplined.
+
+Check and recommend:
+- maxResults
+- printType=books
+- orderBy
+- langRestrict
+- filter
+- whether we are over-fetching on each search input change
+
+4. API CALL STRATEGY
+Determine whether:
+- we are making too many calls per query
+- we should debounce differently
+- we should avoid repeated identical requests
+- we should cache recent query results locally/session-side
+
+5. WHAT API WORK SHOULD HAPPEN AFTER NAVIGATION?
+I want a clear boundary between:
+- API work that must happen before meaningful first paint
+- API work that should happen after the screen is already usable
+
+==================================================
+PART 3 — DELIVERABLES
+==================================================
+
+Return this in 4 sections:
+
+SECTION A — ROOT CAUSES
+What are the true top causes of the app feeling slow and clunky right now?
+Separate:
+- app architecture causes
+- API/request causes
+- image/cover causes
+- late enrichment causes
+
+SECTION B — TOP 3 HIGHEST-IMPACT FIXES
+What are the top 3 changes that would most improve viability?
+Rank them.
+
+SECTION C — EXACT FILES / SYSTEMS INVOLVED
+Name the files/modules likely involved for:
+- recommendation deck performance
+- library snapshot behavior
+- cover art pipeline
+- Google Books request efficiency / key handling
+
+SECTION D — PHASED IMPLEMENTATION PLAN
+Give me:
+- P0 = must do now
+- P1 = next
+- P2 = later
+
+==================================================
+IMPORTANT CONSTRAINTS
+==================================================
+
+- Do not give me another broad “performance summary” without a specific implementation path
+- Do not assume API latency is the main issue unless proven
+- Do not redesign UX cosmetically without fixing the critical path
+- Optimize for:
+  - stability
+  - continuity
+  - predictability
+  - calmness
+  - perceived speed
+
+The app should reveal, not compute in public.
