@@ -57,6 +57,7 @@ import { useGuidedTour, GuidedActionBanner } from '../../components/OnboardingWa
 import type { ReaderThesis } from '../../lib/expertRec';
 import { getSeriesCatalog } from '../../lib/seriesCatalog';
 import { loadRecPayload, saveRecPayload, computeRecFingerprint, addActedOnIds, loadActedOnIds } from '../../lib/recPayloadCache';
+import { type RecSessionCache, getRecSession, setRecSession, clearRecSession } from '../../lib/recSession';
 import { triggerRecPrewarm } from '../../lib/recPrewarm';
 import { registerCacheClearer } from '../../lib/tabCache';
 
@@ -1621,22 +1622,6 @@ function RecCard({
 // user change.  Prevents the 4–5 s OL pipeline from re-running on every focus
 // event when signal has not changed since the last build.
 
-type RecSessionCache = {
-  userId:        string;
-  recs:          ScoredBook[];
-  continuations: ScoredBook[];
-  discoveries:   ScoredBook[];
-  meta:          RankedRecsResult['meta'];
-  recMode:       'deterministic' | 'expert';
-  readerThesis:  ReaderThesis | null;
-  qualityGate:   QualityGate | null;
-  isFreePreview: boolean;
-  signalCount:   number;
-  loadedAt:      number;
-};
-
-let _recSession: RecSessionCache | null = null;
-
 // ─── Module-level hub cache ───────────────────────────────────────────────────
 // Mirrors the pattern used by Home / Library / Inbox.  Stores Phase-1 data so
 // the hub sections (books to rate, incoming recs, sent recs) render immediately
@@ -1656,7 +1641,7 @@ let _hubCache: HubSnapshot | null = null;
 const HUB_STALE_MS = 30_000; // matches inbox — incoming recs can arrive at any time
 
 // Clear both caches on sign-out so the next user never sees previous user's data
-registerCacheClearer(() => { _recSession = null; _hubCache = null; });
+registerCacheClearer(() => { clearRecSession(); _hubCache = null; });
 
 // ── Acted-on ID tracking ───────────────────────────────────────────────────────
 //
@@ -1749,6 +1734,7 @@ const DISMISS_UNDO_MS = 4000;
 
 // Finds the next eligible book from the session cache that isn't already shown.
 function nextEligibleFromSession(shown: ReadonlySet<string>): ScoredBook | null {
+  const _recSession = getRecSession();
   if (!_recSession) return null;
   const all = [..._recSession.continuations, ..._recSession.discoveries];
   return all.find(b => {
@@ -1761,6 +1747,7 @@ function nextEligibleFromSession(shown: ReadonlySet<string>): ScoredBook | null 
 
 // Whether a session book belongs to the continuations or discoveries bucket.
 function bucketForBook(book: ScoredBook): 'continuations' | 'discoveries' {
+  const _recSession = getRecSession();
   if (!_recSession) return 'discoveries';
   return _recSession.continuations.some(b => b.id === book.id)
     ? 'continuations'
@@ -1834,10 +1821,10 @@ export default function RecommendationsScreen() {
   // ── Hub state ──────────────────────────────────────────────────────────────
   // hubLoading is true only on a cold start with no rec session cache.
   // On return visits, hub sections render immediately from _hubCache.
-  const [hubLoading, setHubLoading]           = useState<boolean>(() => !_recSession);
+  const [hubLoading, setHubLoading]           = useState<boolean>(() => !getRecSession());
   // Cold start (_recSession null): show a loading indicator rather than an empty-state flash.
   // Warm revisit (_recSession populated): start false so the card deck is visible immediately.
-  const [recsLoading, setRecsLoading]         = useState<boolean>(() => !_recSession);
+  const [recsLoading, setRecsLoading]         = useState<boolean>(() => !getRecSession());
   const [recsQualityGate, setRecsQualityGate] = useState<QualityGate | null>(null);
   const [recsMeta, setRecsMeta]               = useState<RankedRecsResult['meta'] | null>(null);
   const [feedbackCtx, setFeedbackCtx]         = useState<FeedbackContext>(emptyContext());
@@ -1851,22 +1838,25 @@ export default function RecommendationsScreen() {
   // first render has cards and never shows the empty-state flash on warm revisits.
   // The useFocusEffect will re-apply filterActedOn + applyPageSize within ~200ms.
   const [recommendations, setRecommendations] = useState<ScoredBook[]>(() => {
-    if (!_recSession) return [];
-    return _recSession.recs.filter(filterActedOn);
+    const s = getRecSession();
+    if (!s) return [];
+    return s.recs.filter(filterActedOn);
   });
   const [continuations,   setContinuations]   = useState<ScoredBook[]>(() => {
-    if (!_recSession) return [];
+    const s = getRecSession();
+    if (!s) return [];
     const { conts } = applyPageSize(
-      _recSession.continuations.filter(filterActedOn),
-      _recSession.discoveries.filter(filterActedOn),
+      s.continuations.filter(filterActedOn),
+      s.discoveries.filter(filterActedOn),
     );
     return conts;
   });
   const [discoveries,     setDiscoveries]     = useState<ScoredBook[]>(() => {
-    if (!_recSession) return [];
+    const s = getRecSession();
+    if (!s) return [];
     const { discs } = applyPageSize(
-      _recSession.continuations.filter(filterActedOn),
-      _recSession.discoveries.filter(filterActedOn),
+      s.continuations.filter(filterActedOn),
+      s.discoveries.filter(filterActedOn),
     );
     return discs;
   });
@@ -2298,12 +2288,12 @@ export default function RecommendationsScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setHubLoading(false); setRecsLoading(false); return; }
     // Belt-and-suspenders: clear stale caches if the user switched accounts
-    if (_recSession && _recSession.userId !== user.id) _recSession = null;
-    if (_hubCache   && _hubCache.userId   !== user.id) _hubCache   = null;
+    if (getRecSession()?.userId !== user.id) clearRecSession();
+    if (_hubCache && _hubCache.userId !== user.id) _hubCache = null;
     setCurrentUserId(user.id);
 
     // ── Fast-path 1: restore from in-memory session cache (0ms) ──────────
-    let cached = _recSession && _recSession.userId === user.id ? _recSession : null;
+    let cached: RecSessionCache | null = getRecSession()?.userId === user.id ? getRecSession() : null;
 
     // ── Acted-on ID sync ──────────────────────────────────────────────────
     // Ensure the module-level sets are scoped to the current user.
@@ -2330,7 +2320,7 @@ export default function RecommendationsScreen() {
           `| signal=${persisted.signalCount}`,
         );
         // Promote to in-memory session so next tab revisit is instant too
-        _recSession = {
+        setRecSession({
           userId:        user.id,
           recs:          persisted.recs,
           continuations: persisted.continuations,
@@ -2342,8 +2332,8 @@ export default function RecommendationsScreen() {
           isFreePreview: persisted.isFreePreview,
           signalCount:   persisted.signalCount,
           loadedAt:      persisted.loadedAt,
-        };
-        cached = _recSession;
+        });
+        cached = getRecSession();
       }
     }
 
@@ -2755,7 +2745,7 @@ export default function RecommendationsScreen() {
           signalCount:   currentSignal,
           loadedAt:      Date.now(),
         };
-        _recSession = _sessionPayload;
+        setRecSession(_sessionPayload);
         if (__DEV__) console.log('[PERF] session_cache_saved',
           `| recs=${recs.length}`,
           `| signal=${currentSignal}`,

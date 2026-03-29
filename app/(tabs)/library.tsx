@@ -200,19 +200,18 @@ export default function LibraryScreen() {
 
   async function loadBooks() {
     // Prevent concurrent fetches — rapid tab switches can trigger multiple mounts
-    // before the first async load completes. Without this guard each mount fires a
-    // separate 16-26s query and the last one wins, wasting bandwidth and causing jank.
+    // before the first async load completes.
     if (_libLoading) return;
     _libLoading = true;
     const t0 = Date.now();
     if (!supabase) { setError('Supabase not configured.'); setLoading(false); _libLoading = false; return; }
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setError('No signed-in user.'); setLoading(false); _libLoading = false; return; }
-    // Belt-and-suspenders: clear stale cache if the user switched accounts
     if (_libCache && _libCache.userId !== user.id) { _libCache = null; _libItems = null; }
     setCurrentUserId(user.id);
 
-    // Fetch yearly goal and user_books in parallel — previously two sequential calls
+    // ── Phase 1: first 50 books + profile in parallel ─────────────────────────
+    // Paint immediately — user sees content in <2s regardless of library size.
     const [profileRes, primaryResult] = await Promise.all([
       supabase
         .from('profiles')
@@ -224,62 +223,122 @@ export default function LibraryScreen() {
         .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, book:books(title, author, cover_url, external_id, page_count)')
         .eq('user_id', user.id)
         .is('deleted_at', null)
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false })
+        .range(0, 49),
     ]);
 
     setYearlyGoal(profileRes.data?.yearly_reading_goal ?? null);
 
     // Fallback: older schema without current_page / page_count columns
-    let result = primaryResult;
-    if (result.error) {
-      result = await supabase
+    let p1Result = primaryResult;
+    let usedFallback = false;
+    if (p1Result.error) {
+      usedFallback = true;
+      p1Result = await supabase
         .from('user_books')
         .select('id, book_id, status, started_at, finished_at, progress_updated_at, book:books(title, author, cover_url, external_id)')
         .eq('user_id', user.id)
         .is('deleted_at', null)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(0, 49);
     }
 
-    if (result.error) {
+    if (p1Result.error) {
       setError('Could not load library.');
-    } else {
-      const loadedItems = (result.data as unknown as UserBook[]) ?? [];
-      setItems(loadedItems);
-
-      // Goodreads count + background enrichment in parallel — previously sequential
-      const missingCoverIds = [...new Set(
-        loadedItems.filter(it => it.book && !it.book.cover_url).map(it => it.book_id),
-      )];
-      const allLibraryBookIds = [...new Set(
-        loadedItems.filter(it => it.book_id).map(it => it.book_id),
-      )];
-      const [importedRes] = await Promise.all([
-        supabase
-          .from('user_books')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .eq('import_source', 'goodreads'),
-        backfillCovers(missingCoverIds),
-        repairBooksMetadata(allLibraryBookIds, { cap: 30 }),
-      ]);
-
-      const goodreadsFlag = (importedRes.count ?? 0) > 0;
-      setHasGoodreadsImport(goodreadsFlag);
-
-      // Persist snapshot — _libItems for content continuity, _libCache for fetch timing
-      _libItems = loadedItems;
-      _libCache = {
-        userId:             user.id,
-        items:              loadedItems,
-        yearlyGoal:         profileRes.data?.yearly_reading_goal ?? null,
-        hasGoodreadsImport: goodreadsFlag,
-        fetchedAt:          Date.now(),
-      };
-
-      if (__DEV__) console.log(`[PERF] Library loaded ${loadedItems.length} books in ${Date.now() - t0}ms`);
+      setLoading(false);
+      _libLoading = false;
+      return;
     }
+
+    const firstBatch = (p1Result.data as unknown as UserBook[]) ?? [];
+    setItems(firstBatch);
+    _libItems = firstBatch;
+    _libCache = {
+      userId:             user.id,
+      items:              firstBatch,
+      yearlyGoal:         profileRes.data?.yearly_reading_goal ?? null,
+      hasGoodreadsImport: null,
+      fetchedAt:          Date.now(),
+    };
     setLoading(false);
     _libLoading = false;
+
+    if (__DEV__) console.log(`[PERF] Library Phase 1: ${firstBatch.length} books in ${Date.now() - t0}ms`);
+
+    // ── Phase 2: background — fetch remainder + enrichment ────────────────────
+    // Runs silently after Phase 1 paints. Does NOT change loading state.
+    // capturedFirst guards against a concurrent loadBooks call (e.g. pull-to-refresh)
+    // overwriting a fresh first batch with stale remainder data.
+    (async () => {
+      try {
+        const capturedFirst = firstBatch;
+        let allItems = firstBatch;
+
+        if (firstBatch.length === 50) {
+          // May have more — fetch from offset 50 onwards
+          let remResult = await supabase!
+            .from('user_books')
+            .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, book:books(title, author, cover_url, external_id, page_count)')
+            .eq('user_id', user.id)
+            .is('deleted_at', null)
+            .order('created_at', { ascending: false })
+            .range(50, 99999);
+
+          if (remResult.error && !usedFallback) {
+            remResult = await supabase!
+              .from('user_books')
+              .select('id, book_id, status, started_at, finished_at, progress_updated_at, book:books(title, author, cover_url, external_id)')
+              .eq('user_id', user.id)
+              .is('deleted_at', null)
+              .order('created_at', { ascending: false })
+              .range(50, 99999);
+          }
+
+          if (!remResult.error && remResult.data?.length) {
+            // Guard: abort if a newer loadBooks superseded this one
+            if (_libItems !== capturedFirst) return;
+            const remainder = remResult.data as unknown as UserBook[];
+            allItems = [...firstBatch, ...remainder];
+            setItems(allItems);
+            _libItems = allItems;
+            if (__DEV__) console.log(`[PERF] Library Phase 2: ${allItems.length} total books in ${Date.now() - t0}ms`);
+          }
+        }
+
+        // Guard: if a newer loadBooks ran and replaced _libItems, abort enrichment
+        if (_libItems !== allItems) return;
+
+        const missingCoverIds = [...new Set(
+          allItems.filter(it => it.book && !it.book.cover_url).map(it => it.book_id),
+        )];
+        const allLibraryBookIds = [...new Set(
+          allItems.filter(it => it.book_id).map(it => it.book_id),
+        )];
+
+        const [importedRes] = await Promise.all([
+          supabase!
+            .from('user_books')
+            .select('id', { count: 'exact', head: true })
+            .eq('user_id', user.id)
+            .eq('import_source', 'goodreads'),
+          backfillCovers(missingCoverIds),
+          repairBooksMetadata(allLibraryBookIds, { cap: 30 }),
+        ]);
+
+        const goodreadsFlag = (importedRes.count ?? 0) > 0;
+        setHasGoodreadsImport(goodreadsFlag);
+
+        _libCache = {
+          userId:             user.id,
+          items:              allItems,
+          yearlyGoal:         profileRes.data?.yearly_reading_goal ?? null,
+          hasGoodreadsImport: goodreadsFlag,
+          fetchedAt:          _libCache?.fetchedAt ?? Date.now(),
+        };
+      } catch {
+        // Phase 2 fails silently — first batch is already visible
+      }
+    })();
   }
 
   useFocusEffect(useCallback(() => {

@@ -115,7 +115,7 @@ export async function fetchGoogleBooksPageCount(
       if (!skipAuthor) qParts.push(`inauthor:${authorTrimmed}`);
       const url =
         `https://www.googleapis.com/books/v1/volumes` +
-        `?q=${encodeURIComponent(qParts.join(' '))}&maxResults=5&langRestrict=en&printType=books${keyParam}`;
+        `?q=${encodeURIComponent(qParts.join(' '))}&maxResults=3&langRestrict=en&printType=books&fields=items(volumeInfo(title%2CpageCount))${keyParam}`;
 
       const res = await gbFetch(url);
       if (res.rateLimited) break; // quota exhausted — stop all strategies
@@ -174,7 +174,7 @@ export async function fetchGoogleBooksCoverUrl(opts: {
   for (const { q, skipTitleCheck } of strategies) {
     const url =
       `https://www.googleapis.com/books/v1/volumes` +
-      `?q=${encodeURIComponent(q)}&maxResults=3&langRestrict=en&printType=books${keyParam}`;
+      `?q=${encodeURIComponent(q)}&maxResults=3&langRestrict=en&printType=books&fields=items(volumeInfo(title%2CimageLinks(thumbnail%2CsmallThumbnail)))${keyParam}`;
     const res = await gbFetch(url);
     if (res.rateLimited) break; // quota exhausted — stop all strategies
     if (!res.ok) continue;
@@ -239,7 +239,7 @@ export async function fetchGoogleBooksMetadata(opts: {
   for (const { q, skipTitleCheck } of strategies) {
     const url =
       `https://www.googleapis.com/books/v1/volumes` +
-      `?q=${encodeURIComponent(q)}&maxResults=5&langRestrict=en&printType=books${keyParam}`;
+      `?q=${encodeURIComponent(q)}&maxResults=3&langRestrict=en&printType=books&fields=items(volumeInfo(title%2CimageLinks(thumbnail%2CsmallThumbnail)%2Cdescription%2CpageCount))${keyParam}`;
     const res = await gbFetch(url);
     if (res.rateLimited) break; // quota exhausted — stop all strategies
     if (!res.ok) continue;

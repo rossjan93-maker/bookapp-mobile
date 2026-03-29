@@ -49,7 +49,8 @@ const STOP = new Set([
 export async function fetchGoogleBooks(q: string): Promise<BookResult[]> {
   if (!GB_API_KEY) return [];
   try {
-    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&key=${GB_API_KEY}&maxResults=20&printType=books`;
+    const fields = 'fields=items(id%2CvolumeInfo(title%2Cauthors%2CimageLinks(thumbnail%2CsmallThumbnail)%2CindustryIdentifiers%2CpageCount))';
+    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&key=${GB_API_KEY}&maxResults=10&printType=books&${fields}`;
     const res  = await fetch(url);
     if (!res.ok) return [];
     const json = await res.json();

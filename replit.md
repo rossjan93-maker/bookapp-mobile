@@ -201,4 +201,28 @@ Evaluate in this order:
 2. Does it improve continuity?
 3. Does it reduce user effort?
 4. Does it preserve correctness without exposing machinery?
-5. Does it belong in a shared system instead of a single screen?
+
+---
+
+## P0 Performance Fixes (implemented March 2026)
+
+### Fix 1 — Library pagination (`app/(tabs)/library.tsx`)
+- `loadBooks()` now fetches first 50 books in Phase 1 (`.range(0, 49)`), paints immediately (< 2s), then silently appends the remainder in a background IIFE (Phase 2: `.range(50, 99999)`).
+- `_libLoading` guard is released after Phase 1. Phase 2 uses a `capturedFirst` reference equality guard to abort if a concurrent `loadBooks` call (e.g. pull-to-refresh) has replaced `_libItems`.
+- Goodreads flag + cover backfill + metadata repair run in Phase 2 on the full dataset.
+- Primary query: includes `current_page`/`page_count`. Fallback query: older schema without those columns. Both used in Phase 1 and Phase 2.
+- Target: 16-38 s blank screen → < 2 s first paint regardless of library size.
+
+### Fix 2 — Synchronous volatile rec restore (`lib/recSession.ts`, `app/(tabs)/search.tsx`, `app/(tabs)/_layout.tsx`)
+- `RecSessionCache` type and `_recSession` module-level variable moved from `search.tsx` to new `lib/recSession.ts` with `getRecSession()`, `setRecSession()`, `clearRecSession()` exports.
+- `app/(tabs)/_layout.tsx` (tab layout) pre-warms `_recSession` from AsyncStorage on mount via a `prewarmRecs()` effect. This runs while the user is on the Home screen, so by the time they tap Recommend, `getRecSession()` returns the cached payload synchronously.
+- `useState(() => !getRecSession())` in `search.tsx` initializes `recsLoading=false` when the session is already hot, eliminating the blank window on cold start.
+- User-safety: keyed by `userId`, second guard check before `setRecSession` prevents overwriting a session filled by another path. Sign-out clears via `registerCacheClearer`.
+
+### Fix 3 — Google Books fields projection (`lib/bookSearch.ts`, `lib/googleBooks.ts`)
+- All Google Books API calls now include a `fields=` query parameter limiting the response to only needed fields (title, authors, imageLinks, industryIdentifiers, pageCount, description where applicable).
+- `fetchGoogleBooks` (bookSearch.ts): `fields=items(id,volumeInfo(title,authors,imageLinks,industryIdentifiers,pageCount))`, `maxResults` reduced from 20 → 10.
+- `fetchGoogleBooksPageCount` (googleBooks.ts): `fields=items(volumeInfo(title,pageCount))`, `maxResults` reduced from 5 → 3.
+- `fetchGoogleBooksCoverUrl` (googleBooks.ts): `fields=items(volumeInfo(title,imageLinks))`, `maxResults` stays at 3.
+- `fetchGoogleBooksMetadata` (googleBooks.ts): `fields=items(volumeInfo(title,imageLinks,description,pageCount))`, `maxResults` reduced from 5 → 3.
+- Target: 60-80% payload reduction per API call.

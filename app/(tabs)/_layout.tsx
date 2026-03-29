@@ -3,6 +3,8 @@ import { Animated, Dimensions, PanResponder, View } from 'react-native';
 import { Tabs, useRouter, useSegments } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
+import { loadRecPayload } from '../../lib/recPayloadCache';
+import { getRecSession, setRecSession } from '../../lib/recSession';
 import {
   type GuidedStep,
   readGuidedStep,
@@ -139,6 +141,36 @@ export default function TabsLayout() {
       setNewRecCount(count ?? 0);
     }
     fetchCount();
+  }, []);
+
+  // Pre-warm the rec session from AsyncStorage so the Recommend tab renders
+  // instantly on cold start (app restart) without a loading flash.
+  // Runs silently in the background while the user is on the Home screen.
+  useEffect(() => {
+    async function prewarmRecs() {
+      if (!supabase) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      if (getRecSession()?.userId === user.id) return; // already warm
+      const persisted = await loadRecPayload(user.id);
+      if (!persisted) return;
+      if (persisted.recs.length === 0 && persisted.continuations.length === 0) return;
+      if (getRecSession()?.userId === user.id) return; // filled by another path
+      setRecSession({
+        userId:        user.id,
+        recs:          persisted.recs,
+        continuations: persisted.continuations,
+        discoveries:   persisted.discoveries,
+        meta:          persisted.meta,
+        recMode:       persisted.recMode,
+        readerThesis:  persisted.readerThesis,
+        qualityGate:   persisted.qualityGate,
+        isFreePreview: persisted.isFreePreview,
+        signalCount:   persisted.signalCount,
+        loadedAt:      persisted.loadedAt,
+      });
+    }
+    prewarmRecs();
   }, []);
 
   const guidedStepRef = useRef<GuidedStep>(guidedStep);
