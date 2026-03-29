@@ -1850,6 +1850,10 @@ export default function RecommendationsScreen() {
   const [bookResults, setBookResults]   = useState<BookResult[]>([]);
   const [searching, setSearching]       = useState(false);
   const [searchNoResults, setSearchNoResults] = useState(false);
+  // True when the query has been typed but is too weak/short to fire retrieval.
+  // Distinct from searchNoResults: "weak" = we didn't even search yet;
+  // "no results" = we searched and found nothing confident.
+  const [searchWeakQuery, setSearchWeakQuery] = useState(false);
   const [selectedBook, setSelectedBook] = useState<SelectedBook | null>(null);
   const [note, setNote]                 = useState('');
   const [friends, setFriends]           = useState<Friend[]>([]);
@@ -1902,6 +1906,7 @@ export default function RecommendationsScreen() {
       searchSeqRef.current += 1;   // invalidate any in-flight request
       setBookResults([]);
       setSearchNoResults(false);
+      setSearchWeakQuery(false);
       return;
     }
 
@@ -1911,6 +1916,45 @@ export default function RecommendationsScreen() {
       const mySeq = searchSeqRef.current;
       const reqId = `${Date.now()}-${mySeq}`;
 
+      // ── Alias expansion (before quality gate and spinner) ──────────────────
+      // Resolve fandom shorthand BEFORE the quality gate so that 2-char aliases
+      // like "hp" (which expand to multi-word queries) are never blocked.
+      const aliasExpansion = expandAlias(query);
+      const searchQuery    = aliasExpansion ?? query;
+
+      if (__DEV__ && aliasExpansion) {
+        console.log('[SEARCH_ALIAS]', `reqId=${reqId}`, `"${query}" → "${aliasExpansion}"`);
+      }
+
+      const tokens = searchQuery.trim().split(/\s+/);
+
+      // ── Quality gate (before spinner) ─────────────────────────────────────
+      // Do not fire OL retrieval — and do not show a spinner or "No results" —
+      // for queries that are too vague to return useful results.
+      //
+      // Rules:
+      //   • Alias-expanded queries always pass (expansion guarantees a real title).
+      //   • Multi-token (2+ words): at least one token must be ≥ 4 chars.
+      //     → blocks "car i", "car in", "car in the" (max token = 3).
+      //   • Single-token (no alias): require ≥ 4 chars.
+      //     → blocks "car" (3), "ya" (2), "the" (3).
+      //     4-char single tokens like "book", "life" can still trigger abbrev
+      //     path so real standalone words like "dune" (4) work.
+      const longestToken  = tokens.reduce((m, t) => Math.max(m, t.length), 0);
+      const isAliasQuery  = !!aliasExpansion;
+      const queryTooWeak  = !isAliasQuery && longestToken < 4;
+
+      if (queryTooWeak) {
+        // Clear any lingering spinner / results from a prior strong query that
+        // got stale-cancelled but left searching=true.
+        setSearching(false);
+        setBookResults([]);
+        setSearchNoResults(false);
+        setSearchWeakQuery(true);
+        return;
+      }
+
+      setSearchWeakQuery(false);
       setSearching(true);
       setBookResults([]);          // clear stale results immediately
       setSearchNoResults(false);
@@ -1918,25 +1962,11 @@ export default function RecommendationsScreen() {
       const FIELDS = 'key,title,author_name,cover_i,cover_edition_key,number_of_pages_median';
 
       try {
-        // ── Alias expansion ────────────────────────────────────────────────
-        // Resolve known fandom shorthand BEFORE anything hits OL.
-        // "acotar" → "a court of thorns and roses" → scores exact-match (1000
-        // HIGH) against OL's title= result, filtering out coloring books.
-        // The typed text in the search bar (query) stays unchanged; only the
-        // string sent to OL and the scorer (searchQuery) is expanded.
-        const aliasExpansion = expandAlias(query);
-        const searchQuery    = aliasExpansion ?? query;
-
-        if (__DEV__ && aliasExpansion) {
-          console.log('[SEARCH_ALIAS]', `reqId=${reqId}`, `"${query}" → "${aliasExpansion}"`);
-        }
-
         // Abbreviation path: short single-token queries NOT in the alias table
-        // (e.g. "tbr", "dnf", "ya") that OL's community tag index handles better
-        // than title=. Alias-expanded queries are always multi-word so they
-        // never enter this branch.
-        const tokens        = searchQuery.trim().split(/\s+/);
-        const isAbbrevQuery = !aliasExpansion && tokens.length === 1 && searchQuery.trim().length <= 6;
+        // (e.g. "scifi", "ya") that OL's community tag index handles well.
+        // Threshold is ≤ 5 chars (not 6) so that 6-char real words like "fourth"
+        // use the title= confidence path instead of raw q= ordering.
+        const isAbbrevQuery = !aliasExpansion && tokens.length === 1 && searchQuery.trim().length <= 5;
 
         if (isAbbrevQuery) {
           const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(searchQuery)}&fields=${FIELDS}&limit=20`;
@@ -2035,7 +2065,20 @@ export default function RecommendationsScreen() {
               setSearchNoResults(false);
             } else {
               setBookResults([]);
-              setSearchNoResults(true);
+              // Only show "No strong matches found" when the query is definitive
+              // enough that the user likely isn't still mid-word:
+              //   • Multi-token queries (user has typed 2+ words) — OR
+              //   • Single token ≥ 8 chars (long enough to be a complete word)
+              // For shorter single-token queries ("mocking", "sixth") the user
+              // is probably still typing. Show nothing instead of a discouraging
+              // "No strong matches" that makes the search feel broken.
+              const isDefinitiveQuery =
+                tokens.length >= 2 || searchQuery.trim().length >= 8;
+              if (isDefinitiveQuery) {
+                setSearchNoResults(true);
+              } else {
+                setSearchWeakQuery(true);  // "keep typing" placeholder
+              }
             }
           }
         }
@@ -3056,6 +3099,7 @@ export default function RecommendationsScreen() {
     setQuery('');
     setBookResults([]);
     setSearchNoResults(false);
+    setSearchWeakQuery(false);
     setSelectedBook(null);
     setNote('');
     setFriends([]);
@@ -3760,6 +3804,7 @@ export default function RecommendationsScreen() {
           )}
           ListEmptyComponent={
             !searching && searchNoResults ? (
+              // Query was strong enough to fire; retrieval found nothing confident.
               <View style={{ marginTop: 16 }}>
                 <Text style={{ color: '#1c1917', fontSize: 14, fontWeight: '600' }}>
                   No strong matches found.
@@ -3768,9 +3813,10 @@ export default function RecommendationsScreen() {
                   Try a more specific title or check your spelling.
                 </Text>
               </View>
-            ) : !searching && query.length >= 2 && bookResults.length === 0 ? (
+            ) : !searching && searchWeakQuery ? (
+              // Query typed but too weak / mid-word — don't alarm the user.
               <Text style={{ color: '#a8a29e', marginTop: 12, fontSize: 14 }}>
-                No books found for that search.
+                Keep typing…
               </Text>
             ) : query.length === 0 ? (
               <View style={{ paddingTop: 32, paddingHorizontal: 16, alignItems: 'center' }}>

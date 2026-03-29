@@ -123,13 +123,15 @@ export function scoreBookResult(
   //       Treat the final query token as a prefix of a title word.
   //       All head tokens (everything before the last) must be in the title.
   //
-  //       Require lastToken.length >= 3 to avoid stop-words ("of", "in", "to")
-  //       triggering prefix matches on unrelated long titles.
+  //       Require lastToken.length >= 4 to exclude 3-char stop-words ("the",
+  //       "and", "for", "but") which appear in virtually every title and create
+  //       massive false-positive prefix matches ("car in the" → fires on every
+  //       title containing "the").
   if (qTokens.length >= 2) {
     const headTokens = qTokens.slice(0, -1);
     const lastToken  = qTokens[qTokens.length - 1];
 
-    if (lastToken.length >= 3) {
+    if (lastToken.length >= 4) {
       const lastPrefixHit = titleTokenArr.some(t => t.startsWith(lastToken));
 
       if (lastPrefixHit) {
