@@ -2078,9 +2078,16 @@ export default function RecommendationsScreen() {
           const STOP = new Set(['the','a','an','of','in','to','for','and','or','but','by','at','as','on','its','is','it','be','my','we','us','if','up','so']);
 
           const sigTokens  = tokens.filter(t => t.length >= 3 && !STOP.has(t));
-          const reduced    = sigTokens.join(' ');
-          const coreTwo    = sigTokens.slice(0, 2).join(' ');
           const lastTok    = tokens[tokens.length - 1];
+          // When the last typed token is short (< 4 chars) it's almost certainly
+          // an incomplete partial word (e.g. "boa" for "boats"). Exclude it from
+          // the reduced OL variant so we don't fire a 0-result word-indexed query
+          // like title="burn boa" — OL requires exact word boundaries.
+          const sigForReduced = (lastTok.length < 4 && sigTokens.length > 1)
+            ? sigTokens.filter(t => t !== lastTok)
+            : sigTokens;
+          const reduced    = sigForReduced.join(' ');
+          const coreTwo    = sigForReduced.slice(0, 2).join(' ');
           const headTokens = lastTok.length <= 4 && tokens.length >= 2
             ? tokens.slice(0, -1).join(' ')
             : null;

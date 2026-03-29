@@ -1,0 +1,87 @@
+We need to stop tweaking search and fully understand the live search pipeline before changing anything else.
+
+The current search is still clearly broken in the actual app.
+Examples from live use:
+- "the lion women of" returns irrelevant classics
+- "fourth w" returns irrelevant books
+- "burn the boa" returns irrelevant books
+
+I need a deep, end-to-end diagnostic of the REAL search process used by the app, with runtime evidence, not theory.
+
+Deliver this in 5 sections:
+
+SECTION 1 — SEARCH ARCHITECTURE MAP
+Document the full live search pipeline in order, step by step.
+
+For a query typed into Add to Library, show:
+1. debounce timing
+2. normalization step
+3. alias expansion step
+4. quality gate step
+5. retrieval variant generation
+6. which sources are queried:
+   - Google Books
+   - Open Library title=
+   - Open Library q=
+   - reduced-token variants
+   - head-token variants
+7. merge / dedupe logic
+8. scoring logic
+9. confidence filtering
+10. final state commit to UI
+
+I want this written as a numbered sequence with exact function names and file names.
+
+SECTION 2 — RUNTIME TRACE FOR SPECIFIC FAILING QUERIES
+Run and capture the REAL runtime path for these exact queries in the live app code path:
+- the lion women of
+- fourth w
+- burn the boa
+
+For each query, show:
+1. normalized query
+2. alias expansion result (if any)
+3. quality gate result
+4. all retrieval variants generated
+5. exact request URLs sent upstream
+6. raw top 10 results from each source
+7. merged candidate list after dedupe
+8. local score + confidence for top 10 merged candidates
+9. final visible results committed to UI
+
+SECTION 3 — IDENTIFY THE TRUE FAILURE POINT
+For each failing query above, explicitly answer:
+- Did the intended book ever enter the candidate pool?
+- If yes, why did it not surface?
+- If no, which retrieval path failed to retrieve it?
+- Is the problem:
+  1. source retrieval
+  2. dedupe
+  3. ranking
+  4. confidence gating
+  5. stale response overwrite
+  6. wrong live code path
+
+I need one clear diagnosis per query.
+
+SECTION 4 — LIVE PATH VS EXPECTED PATH
+Explain whether the actual running UI path is definitely the same code path Replit has been reasoning about.
+Check for:
+- old bundle risk
+- stale request overwrite
+- multiple search implementations
+- state reset / race conditions
+- results committed from an older request
+
+SECTION 5 — MINIMAL FIX PLAN
+After the diagnosis, recommend the smallest correct fix.
+Do NOT redesign search broadly again.
+I want:
+- root cause
+- exact file(s) at fault
+- minimal fix
+- why it solves the real issue
+
+Important:
+Do not give me another “should now work” answer.
+I want actual traced evidence for the failing queries.
