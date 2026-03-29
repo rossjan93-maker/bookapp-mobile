@@ -1,0 +1,72 @@
+We need an interaction-quality pass focused on two problems:
+1. recommendation card compaction/reflow after actions
+2. side-swipe tab navigation reliability, especially from Recommendations
+
+Do NOT add new features.
+This is a motion/layout/gesture refinement pass.
+
+PART 1 — RECOMMENDATION DECK FLUIDITY
+
+Problem:
+When a user acts on a recommendation card, lag and spacing develop.
+The deck temporarily shows holes / awkward gaps before collapsing and backfilling.
+It feels clunky instead of fluid.
+
+Goal:
+Make the recommendation stack feel continuous, sleek, and tightly packed.
+
+Audit and fix:
+- how cards are removed after:
+  - Want to Read
+  - Not for me
+  - More like this
+- when the list state updates relative to the exit animation
+- how the next card is promoted into place
+- whether there is a visible empty gap during fade/removal
+- whether card height/layout is stable before and after action
+
+What I want:
+- local confirmation remains in-card
+- card exits cleanly
+- surrounding space collapses immediately and smoothly
+- next eligible card rises into place with no awkward blank zone
+- no janky spacing during backfill
+- no “list is re-rendering in chunks” feeling
+
+Implementation direction:
+- audit whether state removal happens too early or too late
+- use built-in React Native layout animation / layout transition approach if appropriate
+- ensure final layout space is reclaimed smoothly
+- keep card dimensions stable so the list can animate reflow cleanly
+- make backfill feel like continuation, not replacement
+
+PART 2 — SIDE-SWIPE TAB NAVIGATION
+
+Problem:
+Side swipe movement does not reliably work when moving from Recommendations to another tab.
+
+Audit:
+- where the swipe gesture is attached
+- whether Recommendations’ ScrollView / FlatList is swallowing the horizontal gesture
+- thresholds / velocity / direction locking
+- whether the PanResponder logic is too strict or mounted too low in the tree
+
+Goal:
+A horizontal swipe from Recommendations should reliably switch tabs when the user clearly intends it.
+
+Requirements:
+- horizontal intent should trigger tab move
+- vertical scrolling should still work naturally
+- no broken/disabled swipe behavior on Recommendations
+- keep it tactile and low-effort
+
+Return:
+1. root cause of deck spacing / lag during card actions
+2. root cause of swipe unreliability on Recommendations
+3. exact files changed
+4. before/after behavior for:
+   - Save
+   - Not for me
+   - More like this
+   - swipe from Recommendations to adjacent tab
+5. what animation/layout approach was used

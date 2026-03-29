@@ -1284,7 +1284,7 @@ function RecCard({
     Animated.timing(opacity, {
       toValue:  0,
       duration: 150,
-      useNativeDriver: false,
+      useNativeDriver: true,
     }).start(cb);
   }
 
@@ -2254,6 +2254,7 @@ export default function RecommendationsScreen() {
       if (!_pendingDismissRecord || _pendingDismissRecord.book.id !== book.id) return;
       _pendingDismissRecord = null;
       const bookFilter = (b: ScoredBook) => b.id !== book.id;
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setRecommendations(p => p.filter(bookFilter));
       setContinuations(p   => p.filter(bookFilter));
       setDiscoveries(p     => p.filter(bookFilter));
@@ -2971,6 +2972,7 @@ export default function RecommendationsScreen() {
     const filteredConts = continuations.filter(bookFilter);
     const filteredDiscs = discoveries.filter(bookFilter);
     const { conts: newConts, discs: newDiscs } = appendNextEligible(filteredConts, filteredDiscs);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setRecommendations(prev => prev.filter(bookFilter));
     setContinuations(newConts);
     setDiscoveries(newDiscs);
@@ -3082,6 +3084,7 @@ export default function RecommendationsScreen() {
       if (!_pendingDismissRecord || _pendingDismissRecord.book.id !== book.id) return;
       _pendingDismissRecord = null;
       const bookFilter = (b: ScoredBook) => b.id !== book.id;
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setRecommendations(p => p.filter(bookFilter));
       setContinuations(p   => p.filter(bookFilter));
       setDiscoveries(p     => p.filter(bookFilter));
@@ -3112,6 +3115,7 @@ export default function RecommendationsScreen() {
     shown.add(book.id);
     if (book.external_id) shown.add(book.external_id);
     const next = nextEligibleFromSession(shown);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     if (next) {
       if (bucketForBook(next) === 'continuations') setContinuations(prev => [...prev, next]);
       else                                          setDiscoveries(prev   => [...prev, next]);
@@ -3140,6 +3144,7 @@ export default function RecommendationsScreen() {
     const filteredConts = continuations.filter(bookFilter);
     const filteredDiscs = discoveries.filter(bookFilter);
     const { conts: newConts, discs: newDiscs } = appendNextEligible(filteredConts, filteredDiscs);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setRecommendations(prev => prev.filter(bookFilter));
     setContinuations(newConts);
     setDiscoveries(newDiscs);

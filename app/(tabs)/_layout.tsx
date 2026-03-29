@@ -176,10 +176,8 @@ export default function TabsLayout() {
       // Do not steal taps — only evaluate once motion has started
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, { dx, dy }) => {
-        // Never intercept during guided tour or on the Recommend tab
+        // Never intercept during guided tour
         if (guidedStepRef.current < 99) return false;
-        const { route } = resolveCurrentRoute();
-        if (route === 'search') return false;
 
         // Capture when movement is horizontal-dominant and past the noise floor
         const absDx = Math.abs(dx);
