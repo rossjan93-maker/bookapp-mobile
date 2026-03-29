@@ -65,3 +65,140 @@ The application is built with React Native using Expo Router for navigation and 
 - **Open Library API:** Primary source for book search functionality and metadata.
 - **Google Books API:** Used for enriching book data with information like language, categories, and ratings.
 - **AsyncStorage:** Used for persistent local caching of recommendation payloads.
+
+---
+
+## Readstack Systems Contract v1
+
+This is the operating contract for all product and engineering work. It governs all future changes. Read this before designing, patching, or reviewing any feature.
+
+### 1. Core Product Principle
+
+Readstack should feel like a calm, stateful reading app that already understands the user's world and updates quietly in response to their actions. The app should not expose its internal machinery. Users should not watch the system think.
+
+### 2. Global Rules
+
+**2.1 One capability, one implementation**
+
+Any core capability must have one shared implementation, not multiple screen-local versions. This applies to: search, auth/account lifecycle, onboarding step logic, loading/placeholder system, book state mutation, recommendation action handling. If the same capability exists in two places, the default assumption is that it should be shared.
+
+**2.2 Never replace meaningful content with a worse intermediate state**
+
+Once a user has seen real content, the app must not replace it with a spinner, full-screen placeholder, partial teardown, or any visibly worse intermediate state.
+
+Allowed: subtle background refresh, local section refresh indicators, a single stable commit when new content is ready.
+
+Not allowed: loaded cards → skeletons, loaded tab → blank shell, visible content → multiple unstable recomputes.
+
+**2.3 Stale but usable beats blank but "fresh"**
+
+Continuity is more important than theoretical purity. A slightly stale but stable surface is better than a blank or jumpy one.
+
+**2.4 Actions must have explicit semantics**
+
+Every important action must answer: What does this do? What immediate feedback does the user get? What happens next? No overloaded labels. No ambiguous outcomes.
+
+**2.5 The UI must not leak internal phases**
+
+Users must not see multi-step recomputation, partial commits, structural churn, or state machine transitions. The app may do phased work internally. It should commit externally in calm, stable states.
+
+### 3. Shared System Ownership
+
+- **Search:** One shared pipeline across all search surfaces. No screen-specific search behavior unless explicitly documented.
+- **Book state:** All status/date/delete/edit behavior through one shared mutation model with history, reversibility, soft delete, and explicit date rules.
+- **Loading:** All major loading states use the shared placeholder system and follow the same behavioral rules.
+- **Auth/account lifecycle:** Signup, sign-in, resend confirmation, reset password, delete account, and dev reset follow one coherent lifecycle model.
+
+### 4. Loading and Refresh Contract
+
+- **4.1 First cold load:** A screen may use a full placeholder only when no meaningful content has ever been shown in that session.
+- **4.2 Warm revisit:** On revisit, the screen should render from cache/snapshot immediately if available.
+- **4.3 Background refresh:** If content is already on screen — keep it visible, refresh quietly, commit once stable.
+- **4.4 Placeholder design:** Loading UI must preserve final layout, avoid visible reflow, resemble final content, and feel calm and premium. Generic circular spinners are not the default on major surfaces.
+- **4.5 No visible churn:** A section must not appear loaded, regress to a skeleton, then reappear differently.
+
+### 5. Navigation Continuity Contract
+
+- **5.1 Tabs should feel persistent:** Switching tabs should feel like moving inside one living app, not re-entering cold screens.
+- **5.2 Back navigation preserves context:** Returning from Book Detail to Library or Recommend should preserve scroll position where reasonable, visible content where possible, and the user's sense of place.
+- **5.3 Gesture behavior:** Horizontal swipe should be reliable where supported. Vertical scroll wins only when clearly intended.
+
+### 6. Action Feedback Contract
+
+- **6.1 Every primary action gets immediate local feedback:** Save → visible confirmation. More like this → distinct tuning confirmation. Dismiss → explicit dismissal/undo state. Delete → reversible state with clear outcome.
+- **6.2 Feedback at the point of interaction:** Do not rely on disconnected global messages when a local, anchored confirmation is possible.
+- **6.3 Failure must be legible:** If an optimistic action fails, the user must know, must have a retry or recovery path, and the app must not silently pretend success.
+
+### 7. Search Contract
+
+- **7.1 Accuracy-first:** Prefer correct result or no confident result. Never: confidently wrong result sets.
+- **7.2 Retrieval before ranking:** If the right candidate is not in the pool, ranking cannot save it.
+- **7.3 One shared pipeline:** All title search surfaces use the same shared engine — normalization, alias expansion, retrieval fan-out, merge/dedupe, scoring, confidence filtering.
+- **7.4 Query behavior:** Weak/incomplete query → "keep typing" behavior. Strong query with no confident results → honest no-results state. No junk surfaced just to fill space.
+
+### 8. Onboarding Contract
+
+- **8.1 Teach through action:** The user learns by doing meaningful things, not by tapping through passive description.
+- **8.2 Exit semantics must be unambiguous:**
+  - "Finish later" exits onboarding now
+  - "Skip question" advances only within onboarding
+  - "Continue" advances with input
+  - These meanings must never overlap.
+- **8.3 Early payoff is mandatory:** The user must reach a plausible "this app might get me" moment quickly. No apologetic "warming up" dead zones.
+
+### 9. Book-State and Data Integrity Contract
+
+- **9.1 Truth over convenience:** Unknown dates remain unknown. Do not fabricate dates for yearly counts or timelines.
+- **9.2 Status changes must preserve history:** Status edits must not silently overwrite trusted dates or state.
+- **9.3 Delete is soft by default:** Removal from library preserves recovery and auditability unless a deliberate hard-delete path exists.
+- **9.4 One source of mutation truth:** All book-state changes go through the shared mutation layer, not screen-local writes.
+
+### 10. Surface Contracts
+
+**Home** — Purpose: orient the user in their reading world. Must feel immediately informative and stable on revisit. Forbidden: full cold-looking reload on normal revisit, empty hero state with weak context.
+
+**Recommend** — Purpose: help the user make fast, confident taste-shaping decisions. Must feel fluid, continuous, locally responsive, never structurally erased during refresh. Forbidden: visible deck teardown after content has been shown, gaps/holes after card action, ambiguous action meaning.
+
+**Library** — Purpose: the user's source of truth for their books. Must feel stable, trustworthy, easy to correct. Forbidden: losing edits on return, full-screen reload on normal tab switch after prior load.
+
+**Book Detail** — Purpose: focused truth and action surface for one book. Must feel immediately alive, complete even if enrichment lags, easy to act from. Forbidden: empty or unfinished feeling hero, late metadata causing large layout shifts.
+
+**Onboarding** — Purpose: create belief and establish the first useful loop. Must feel short, clear, directional, never trapped. Forbidden: skip loops, passive explanation screens with no clear consequence.
+
+**Auth** — Purpose: get in, recover access, or leave safely. Must feel clear, secure, standard. Forbidden: ambiguous duplicate-email behavior without recovery path, destructive account actions without clear confirmation.
+
+### 11. Delivery Process for All Future Work
+
+Every non-trivial change must follow this order:
+1. Define the product contract
+2. Define the specific surface contract
+3. Identify the shared system owner
+4. Trace the exact live runtime path
+5. Patch the smallest correct layer
+6. Validate the full user flow, including return path
+
+No patching from screenshots alone when the live path is unclear.
+
+### 12. QA Gate
+
+Before calling a fix done, validate: fresh entry, warm revisit, action taken, return path, error path if relevant, cross-account/session behavior if cache is involved. Flow-level QA matters more than component-level QA.
+
+### 13. Anti-Patterns (No Longer Allowed)
+
+- Multiple implementations of the same core behavior
+- Screen-local search logic
+- Screen-local mutation logic
+- Loaded content regressing to placeholders
+- Overloaded action labels
+- Hidden failure states
+- Visible internal recomputation
+- Fixing symptoms without tracing the live path first
+
+### 14. Priority Lens for All Future Work
+
+Evaluate in this order:
+1. Does it increase trust?
+2. Does it improve continuity?
+3. Does it reduce user effort?
+4. Does it preserve correctness without exposing machinery?
+5. Does it belong in a shared system instead of a single screen?
