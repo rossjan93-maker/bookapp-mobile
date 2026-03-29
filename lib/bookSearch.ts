@@ -116,6 +116,33 @@ export function hybridMerge(gbBooks: BookResult[], olBooks: BookResult[]): BookR
   return [...gbBooks, ...filtered];
 }
 
+// ─── Word completion via Datamuse ─────────────────────────────────────────────
+// Free, no-auth API for prefix-based word expansion.
+// Returns single-word completions for a given prefix (e.g. "boa" → ["boast","board","boat",...]).
+// Only used as a fallback when the primary pipeline returns no HIGH results.
+
+async function fetchCompletions(prefix: string): Promise<string[]> {
+  try {
+    const res = await fetch(
+      `https://api.datamuse.com/words?sp=${encodeURIComponent(prefix)}*&max=20`
+    );
+    if (!res.ok) return [];
+    const words: { word: string }[] = await res.json();
+    return words
+      .map(w => w.word)
+      .filter(w =>
+        !w.includes(' ') &&             // single word only
+        w.length > prefix.length &&     // must be a genuine completion (longer than prefix)
+        w.length <= prefix.length + 8 &&// not wildly long
+        !STOP.has(w) &&                 // not a function word
+        w !== prefix                    // not the prefix itself
+      )
+      .slice(0, 8);
+  } catch {
+    return [];
+  }
+}
+
 // ─── Return type from searchBooks() ──────────────────────────────────────────
 
 export type SearchBooksResult = {
@@ -232,6 +259,64 @@ export async function searchBooks(rawQuery: string): Promise<SearchBooksResult> 
       noResults: false,
       weakQuery: false,
     };
+  }
+
+  // ── Final-token completion fallback ──────────────────────────────────────────
+  // When the primary pipeline finds no HIGH results AND the last token looks like
+  // an incomplete partial word (2–4 chars), expand it via word completion and
+  // retry OL title queries with each candidate.
+  //
+  // Example: "burn the boa" → Datamuse("boa*") → ["boast","board","boat",...] →
+  //   OL title="burn boat" → "Burn the Boats" → prefix-scores 900 HIGH ✅
+  //
+  // Trigger conditions (narrow, accuracy-safe):
+  //   1. No HIGH results from primary pipeline
+  //   2. lastTok is 2–4 chars (clearly partial)
+  //   3. At least one strong head token exists (sigForReduced ≥ 1)
+  //      so we have a meaningful OL query anchor beyond the partial word
+
+  const canTryCompletion =
+    !scored.hasHigh &&
+    lastTok.length >= 2 &&
+    lastTok.length <= 4 &&
+    sigForReduced.length >= 1;
+
+  if (canTryCompletion) {
+    const completions = await fetchCompletions(lastTok);
+
+    if (completions.length > 0) {
+      const headSig = sigForReduced.join(' ');
+
+      const completionFetches = completions.map(word => {
+        const q = `${headSig} ${word}`;
+        const url = `https://openlibrary.org/search.json?title=${encodeURIComponent(q)}&fields=${OL_FIELDS}&limit=10`;
+        return fetch(url)
+          .then(r => r.json() as Promise<{ docs?: BookResult[] }>)
+          .catch(() => ({ docs: [] as BookResult[] }));
+      });
+
+      const completionResponses = await Promise.all(completionFetches);
+
+      let completionBooks: BookResult[] = [];
+      for (const resp of completionResponses) {
+        completionBooks = mergeBookResults(completionBooks, (resp as { docs?: BookResult[] }).docs ?? []);
+      }
+
+      if (completionBooks.length > 0) {
+        const completionScored = scoreAndFilterBooks(searchQuery, completionBooks);
+
+        if (completionScored.hasHigh) {
+          return {
+            results: completionScored.results,
+            hasHigh: true,
+            hasMedium: completionScored.hasMedium,
+            lastTokenIncomplete,
+            noResults: false,
+            weakQuery: false,
+          };
+        }
+      }
+    }
   }
 
   const isDefinitiveQuery = tokens.length >= 2 || searchQuery.trim().length >= 8;
