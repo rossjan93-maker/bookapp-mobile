@@ -1,0 +1,79 @@
+We need to redesign loading UX across the app. Generic spinners and blank space are not acceptable.
+
+This is now a design/system task, not just a performance task.
+
+Core principle:
+If a section will take a second to load, the UI must still feel intentional, stable, and premium.
+Do not show a generic circle unless there is absolutely no better option.
+
+GOAL
+Replace clunky loading with stateful, branded placeholder UX that:
+- preserves final layout
+- avoids jumps/reflow
+- makes latency feel calm and intentional
+- gives the user a sense of what is coming
+
+PRIORITY SURFACES
+
+1. Recommendations tab
+Current problem:
+- heavy skeleton / visible phased loading / unstable card settlement
+
+Fix:
+- create a recommendation card placeholder that matches final card dimensions
+- include:
+  - cover placeholder
+  - title/reason line placeholders
+  - action row placeholder
+- avoid generic spinner-first loading
+- use one stable layout commit
+
+2. Book Detail
+Current problem:
+- hero content appears, but description/subjects land late and make the screen feel unfinished
+
+Fix:
+- keep title/author/cover/actions live immediately
+- create elegant text placeholders for delayed metadata sections
+- preserve final spacing so content fades in without moving the layout
+- replace generic loader with contextual loading label if needed
+
+3. Home / Library
+Current problem:
+- empty or flat-feeling loading states
+
+Fix:
+- section-aware placeholders:
+  - reading goal card shell
+  - continue reading row shells
+  - library book row shells
+- section headers should appear immediately
+- no large blank areas with a single spinner
+
+4. Transition continuity
+Fix:
+- reduce hard cuts into unfinished screens
+- keep previous visual context briefly while next screen structure appears
+- use subtle continuity, not flashy animation
+
+DESIGN RULES
+- no generic circular loaders on major surfaces
+- loading placeholders must resemble final content
+- no layout jumps when real data arrives
+- use soft shimmer/pulse sparingly
+- loading should feel premium, calm, and intentional
+- prefer contextual copy over abstract loading states
+
+DELIVERABLES
+1. Audit current loading states and identify every generic spinner / blank-state issue
+2. Create a reusable loading placeholder system
+3. Implement first on:
+   - Recommendations
+   - Book Detail
+   - Home
+   - Library
+4. Return:
+   - exact files changed
+   - placeholder system created
+   - what generic loaders were removed
+   - before/after UX behavior by screen

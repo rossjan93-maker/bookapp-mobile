@@ -12,6 +12,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { registerCacheClearer } from '../../lib/tabCache';
 import { CoverThumb } from '../../components/CoverThumb';
+import { HomeScreenSkeleton } from '../../components/Placeholder';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computePagePacing, computeUserAvgPace } from '../../lib/pacing';
 import { computeTasteProfile } from '../../lib/tasteProfile';
@@ -500,11 +501,7 @@ export default function HomeScreen() {
   // ── Loading ───────────────────────────────────────────────────────────────────
 
   if (feedLoading || loadingFriendships) {
-    return (
-      <View style={{ flex: 1, backgroundColor: '#faf9f7', alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color="#78716c" />
-      </View>
-    );
+    return <HomeScreenSkeleton />;
   }
 
   // ── Progress + pacing helpers ─────────────────────────────────────────────────

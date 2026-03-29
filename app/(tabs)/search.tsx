@@ -549,13 +549,13 @@ function NextReadPanel({
 
 // ─── Skeleton loading card ────────────────────────────────────────────────────
 
-function SkeletonCard({ stars = false }: { stars?: boolean }) {
+function SkeletonCard() {
   const pulse = useRef(new Animated.Value(0.55)).current;
   useEffect(() => {
     const anim = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 850, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0.55, duration: 850, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1,    duration: 900, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.55, duration: 900, useNativeDriver: true }),
       ])
     );
     anim.start();
@@ -563,20 +563,25 @@ function SkeletonCard({ stars = false }: { stars?: boolean }) {
   }, []);
 
   return (
-    <Animated.View style={[CARD_STYLE, { opacity: pulse, padding: 12 }]}>
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <View style={{ width: 36, height: 52, borderRadius: 5, backgroundColor: '#e7e5e4' }} />
-        <View style={{ marginLeft: 12, flex: 1 }}>
-          <View style={{ height: 13, width: '58%', backgroundColor: '#e7e5e4', borderRadius: 7, marginBottom: 7 }} />
-          <View style={{ height: 11, width: '38%', backgroundColor: '#f0efed', borderRadius: 6, marginBottom: stars ? 10 : 0 }} />
-          {stars && (
-            <View style={{ flexDirection: 'row', gap: 5 }}>
-              {[0, 1, 2, 3, 4].map(i => (
-                <View key={i} style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#ece9e5' }} />
-              ))}
-            </View>
-          )}
+    <Animated.View style={[CARD_STYLE, { opacity: pulse, overflow: 'hidden' }]}>
+      {/* Content row */}
+      <View style={{ padding: 12, flexDirection: 'row', alignItems: 'flex-start' }}>
+        <View style={{ width: 44, height: 64, borderRadius: 5, backgroundColor: '#e8e5e1' }} />
+        <View style={{ marginLeft: 12, flex: 1, gap: 7 }}>
+          <View style={{ height: 14, width: '65%', backgroundColor: '#e8e5e1', borderRadius: 6 }} />
+          <View style={{ height: 11, width: '42%', backgroundColor: '#f0ede9', borderRadius: 5 }} />
+          <View style={{ height: 11, width: '80%', backgroundColor: '#f0ede9', borderRadius: 5 }} />
         </View>
+      </View>
+      {/* Action bar — matches RecCard's Want to Read / Not for me / More like this row */}
+      <View style={{
+        borderTopWidth: 1, borderTopColor: '#f0ede9',
+        height: 44, flexDirection: 'row', alignItems: 'center',
+        paddingHorizontal: 12, gap: 16,
+      }}>
+        <View style={{ width: 90, height: 11, borderRadius: 5, backgroundColor: '#e8e5e1' }} />
+        <View style={{ width: 60, height: 11, borderRadius: 5, backgroundColor: '#f0ede9' }} />
+        <View style={{ width: 70, height: 11, borderRadius: 5, backgroundColor: '#f0ede9' }} />
       </View>
     </Animated.View>
   );
@@ -3362,8 +3367,8 @@ export default function RecommendationsScreen() {
         {hubLoading ? (
           <View style={{ gap: 8 }}>
             <SectionLabel>For You</SectionLabel>
-            <SkeletonCard stars />
-            <SkeletonCard stars />
+            <SkeletonCard />
+            <SkeletonCard />
             <SkeletonCard />
             <View style={{ height: 28 }} />
             <SectionLabel>Incoming</SectionLabel>
@@ -3398,12 +3403,9 @@ export default function RecommendationsScreen() {
               {/* ── Personalised picks loading skeleton ── */}
               {recsLoading && (
                 <View style={{ marginBottom: 20 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', flex: 1 }}>
-                      Picked for you
-                    </Text>
-                    <ActivityIndicator size="small" color="#a8a29e" />
-                  </View>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 10 }}>
+                    Picked for you
+                  </Text>
                   <SkeletonCard />
                   <SkeletonCard />
                   <SkeletonCard />

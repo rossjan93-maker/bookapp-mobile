@@ -6,6 +6,7 @@ import { ActivityIndicator, FlatList, Modal, RefreshControl, ScrollView, Text, T
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
+import { LibraryScreenSkeleton } from '../../components/Placeholder';
 import { computePagePacing, computeDatePacing, formatLastUpdated, computeBookPace, formatPaceChip, computeUserAvgPace } from '../../lib/pacing';
 import { transitionStatus, saveCurrentPage } from '../../lib/userBookActions';
 import { findSeriesForBook } from '../../lib/seriesCatalog';
@@ -506,11 +507,7 @@ export default function LibraryScreen() {
   // ── Loading / error ───────────────────────────────────────────────────────
 
   if (loading) {
-    return (
-      <View style={{ flex: 1, backgroundColor: '#faf9f7', alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color="#78716c" />
-      </View>
-    );
+    return <LibraryScreenSkeleton />;
   }
 
   if (error) {

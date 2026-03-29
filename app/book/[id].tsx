@@ -14,6 +14,7 @@ import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
+import { DescriptionSkeleton } from '../../components/Placeholder';
 import { getSeriesCatalog, getSagaForSeries, getAllSagaCatalog, findSeriesForBook } from '../../lib/seriesCatalog';
 import { triggerRecPrewarm } from '../../lib/recPrewarm';
 import { computeDatePacing, computePagePacing, estimatePaceFinish, formatLastUpdated, shortDate, computeBookPace, computeUserAvgPace } from '../../lib/pacing';
@@ -1905,7 +1906,7 @@ export default function BookDetailScreen() {
 
         {/* ── About & Subjects — unified quiet section ── */}
         {metaLoading ? (
-          <ActivityIndicator color="#a8a29e" size="small" style={{ marginBottom: 18, alignSelf: 'flex-start' }} />
+          <DescriptionSkeleton />
         ) : (displayDesc || (olMeta && olMeta.subjects.length > 0)) ? (
           <View style={{
             backgroundColor: '#fff',
