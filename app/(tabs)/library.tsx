@@ -122,9 +122,13 @@ let _libCache: LibrarySnapshot | null = null;
 let _libItems: UserBook[] | null = null;
 // Prevents concurrent loadBooks calls when tabs are switched rapidly.
 let _libLoading = false;
+// IDs rendered in Phase 1. Phase 2 items sort within themselves but always land
+// below Phase 1 items so already-visible rows never reshuffle mid-session.
+// Reset at the start of each loadBooks() call and cleared on sign-out.
+let _libPhase1Ids: Set<string> | null = null;
 const LIB_STALE_MS = 60_000;
 // Sign-out: clear everything including retained items
-registerCacheClearer(() => { _libCache = null; _libItems = null; _libLoading = false; });
+registerCacheClearer(() => { _libCache = null; _libItems = null; _libLoading = false; _libPhase1Ids = null; });
 // Book action (status change, page update): invalidate fetch timing only.
 // _libItems is kept so the library never full-page blanks on tab switch after a book action.
 registerCacheClearer(() => { _libCache = null; }, 'bookData');
@@ -203,6 +207,7 @@ export default function LibraryScreen() {
     // before the first async load completes.
     if (_libLoading) return;
     _libLoading = true;
+    _libPhase1Ids = null; // reset partition; Phase 2 of any prior load is now stale
     const t0 = Date.now();
     if (!supabase) { setError('Supabase not configured.'); setLoading(false); _libLoading = false; return; }
     const { data: { user } } = await supabase.auth.getUser();
@@ -252,6 +257,7 @@ export default function LibraryScreen() {
 
     const firstBatch = (p1Result.data as unknown as UserBook[]) ?? [];
     setItems(firstBatch);
+    _libPhase1Ids = new Set(firstBatch.map(i => i.id));
     _libItems = firstBatch;
     _libCache = {
       userId:             user.id,
@@ -507,49 +513,59 @@ export default function LibraryScreen() {
   //   Finished filter + finished_date (default) → sorted by finished_at descending (uses imported dates).
   //   Finished filter + recent → DB insertion order (created_at desc).
   //   All other cases → preserve DB order (created_at desc).
+  //
+  // Phase stability rule: Phase 1 items (IDs in _libPhase1Ids) always occupy the top
+  // of their status group, sorted normally. Phase 2 items are sorted within themselves
+  // but appended below Phase 1 items so no already-visible row reshuffles mid-session.
+  // The boundary is erased on the next pull-to-refresh or cold load (full resort).
   const displayedItems: ListItem[] = (() => {
+    // Partition helpers — only active while a Phase 2 boundary exists.
+    const p1ids = _libPhase1Ids;
+    const p1 = p1ids ? filteredItems.filter(i =>  p1ids.has(i.id)) : filteredItems;
+    const p2 = p1ids ? filteredItems.filter(i => !p1ids.has(i.id)) : [];
+
+    const byRecent   = (arr: UserBook[]) => [...arr].sort((a, b) => {
+      const aDate = a.progress_updated_at ?? a.started_at ?? '';
+      const bDate = b.progress_updated_at ?? b.started_at ?? '';
+      return bDate.localeCompare(aDate);
+    });
+    const byFinished = (arr: UserBook[]) => [...arr].sort((a, b) => {
+      if (a.finished_at && b.finished_at) return b.finished_at.localeCompare(a.finished_at);
+      if (a.finished_at) return -1;
+      if (b.finished_at) return 1;
+      return 0;
+    });
+    const byProgress = (arr: UserBook[]) => [...arr].sort((a, b) => {
+      const pA = a.current_page != null && a.book?.page_count ? a.current_page / a.book.page_count : 0;
+      const pB = b.current_page != null && b.book?.page_count ? b.current_page / b.book.page_count : 0;
+      return pB - pA;
+    });
+
     if (activeFilter === 'all') {
-      // Reading first (operational priority), sorted by most recently updated.
-      // Then finished sorted by most recently finished, then want-to-read, then DNF.
-      const reading    = [...filteredItems.filter(i => i.status === 'reading')].sort((a, b) => {
-        const aDate = a.progress_updated_at ?? a.started_at ?? '';
-        const bDate = b.progress_updated_at ?? b.started_at ?? '';
-        return bDate.localeCompare(aDate);
-      });
-      const finished   = [...filteredItems.filter(i => i.status === 'finished')]
-        .sort((a, b) => {
-          if (a.finished_at && b.finished_at) return b.finished_at.localeCompare(a.finished_at);
-          if (a.finished_at) return -1;
-          if (b.finished_at) return 1;
-          return 0;
-        });
-      const wantToRead = filteredItems.filter(i => i.status === 'want_to_read');
-      const dnf        = filteredItems.filter(i => i.status === 'dnf');
-      return [...reading, ...finished, ...wantToRead, ...dnf];
+      // Reading first (operational priority), then finished, want-to-read, DNF.
+      // Within each group: Phase 1 sorted normally, Phase 2 appended below (sorted within itself).
+      return [
+        ...byRecent(p1.filter(i => i.status === 'reading')),
+        ...byRecent(p2.filter(i => i.status === 'reading')),
+        ...byFinished(p1.filter(i => i.status === 'finished')),
+        ...byFinished(p2.filter(i => i.status === 'finished')),
+        ...p1.filter(i => i.status === 'want_to_read'),
+        ...p2.filter(i => i.status === 'want_to_read'),
+        ...p1.filter(i => i.status === 'dnf'),
+        ...p2.filter(i => i.status === 'dnf'),
+      ];
     }
     if (activeFilter === 'reading' && sort === 'recent') {
-      return [...filteredItems].sort((a, b) => {
-        const aDate = a.progress_updated_at ?? a.started_at ?? '';
-        const bDate = b.progress_updated_at ?? b.started_at ?? '';
-        return bDate.localeCompare(aDate);
-      });
+      return [...byRecent(p1), ...byRecent(p2)];
     }
     if (activeFilter === 'reading' && sort === 'progress') {
-      return [...filteredItems].sort((a, b) => {
-        const pA = a.current_page != null && a.book?.page_count ? a.current_page / a.book.page_count : 0;
-        const pB = b.current_page != null && b.book?.page_count ? b.current_page / b.book.page_count : 0;
-        return pB - pA;
-      });
+      return [...byProgress(p1), ...byProgress(p2)];
     }
     if (activeFilter === 'finished' && sort === 'finished_date') {
-      // Sort by finished_at desc (nulls last), then inject year-header separators.
-      const sorted = [...filteredItems].sort((a, b) => {
-        if (a.finished_at && b.finished_at) return b.finished_at.localeCompare(a.finished_at);
-        if (a.finished_at) return -1;
-        if (b.finished_at) return 1;
-        return 0;
-      });
-      return buildGroupedFinished(sorted, expandedYears);
+      // Full sort here: year-separator groups span both phases, so we need a single
+      // ordered array to avoid duplicate year headers. One-time reorder on Phase 2
+      // append is acceptable for an explicitly-selected filter.
+      return buildGroupedFinished(byFinished(filteredItems), expandedYears);
     }
     return filteredItems;
   })();
