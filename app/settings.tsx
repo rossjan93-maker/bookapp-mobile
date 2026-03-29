@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -148,6 +148,13 @@ export default function SettingsScreen() {
   const [goalSaved, setGoalSaved]   = useState(false);
   const [goalError, setGoalError]   = useState<string | null>(null);
 
+  // ── Delete account state ──────────────────────────────────────────────────
+  const [deleteExpanded, setDeleteExpanded]   = useState(false);
+  const [deleteConfirm, setDeleteConfirm]     = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError]         = useState<string | null>(null);
+  const deleteInputRef = useRef<TextInput>(null);
+
   useEffect(() => {
     async function load() {
       if (!supabase) { setLoading(false); return; }
@@ -244,6 +251,30 @@ export default function SettingsScreen() {
 
   async function handleSignOut() {
     await supabase?.auth.signOut();
+  }
+
+  async function handleDeleteAccount() {
+    if (!supabase) return;
+    if (deleteConfirm.trim().toUpperCase() !== 'DELETE') {
+      setDeleteError('Type DELETE (all caps) to confirm.');
+      return;
+    }
+    setDeletingAccount(true);
+    setDeleteError(null);
+
+    // Call the SECURITY DEFINER SQL function — runs server-side, verifies auth.uid(),
+    // cascades all user data, then deletes the auth.users row.
+    const { data, error } = await supabase.rpc('delete_own_account');
+
+    if (error || !data?.ok) {
+      setDeleteError(error?.message ?? data?.error ?? 'Deletion failed — try again.');
+      setDeletingAccount(false);
+      return;
+    }
+
+    // Clear local session after server-side deletion
+    await supabase.auth.signOut();
+    // Router will redirect to auth screen via _layout.tsx session listener
   }
 
   const hasName = !!(firstName.trim() || lastName.trim());
@@ -462,6 +493,7 @@ export default function SettingsScreen() {
       {/* ── Account ──────────────────────────────────────────────────────────── */}
       <SectionHeader>Account</SectionHeader>
       <SettingsCard>
+        {/* Identity info */}
         <View style={{ paddingHorizontal: 16, paddingVertical: 14 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 5 }}>
             <Text style={{ fontSize: 13, color: '#a8a29e' }}>Username</Text>
@@ -473,17 +505,138 @@ export default function SettingsScreen() {
             <Text style={{ fontSize: 13, color: '#78716c', fontWeight: '500' }}>{email ?? '—'}</Text>
           </View>
         </View>
+
+        {/* Sign out */}
         <View style={{ height: 1, backgroundColor: '#f5f5f4' }} />
         <TouchableOpacity
           onPress={handleSignOut}
-          style={{
-            paddingHorizontal: 16,
-            paddingVertical: 15,
-          }}
+          style={{ paddingHorizontal: 16, paddingVertical: 15 }}
         >
           <Text style={{ fontSize: 14, color: '#b91c1c', fontWeight: '500' }}>Sign Out</Text>
         </TouchableOpacity>
+
+        {/* Delete account — collapsed trigger */}
+        {!deleteExpanded && (
+          <>
+            <View style={{ height: 1, backgroundColor: '#f5f5f4' }} />
+            <TouchableOpacity
+              onPress={() => {
+                setDeleteExpanded(true);
+                setDeleteConfirm('');
+                setDeleteError(null);
+                setTimeout(() => deleteInputRef.current?.focus(), 150);
+              }}
+              style={{ paddingHorizontal: 16, paddingVertical: 15 }}
+            >
+              <Text style={{ fontSize: 14, color: '#a8a29e', fontWeight: '400' }}>Delete Account…</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {/* Delete account — expanded confirmation */}
+        {deleteExpanded && (
+          <>
+            <View style={{ height: 1, backgroundColor: '#f5f5f4' }} />
+            <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 18 }}>
+              <Text style={{
+                fontSize: 13,
+                fontWeight: '700',
+                color: '#b91c1c',
+                marginBottom: 8,
+              }}>
+                Delete your account?
+              </Text>
+              <Text style={{
+                fontSize: 12,
+                color: '#78716c',
+                lineHeight: 18,
+                marginBottom: 14,
+              }}>
+                This permanently removes your library, ratings, recommendations, and all activity.
+                Books in the shared catalog are not affected.{'\n\n'}
+                Type{' '}
+                <Text style={{ fontFamily: 'System', fontWeight: '700', color: '#57534e' }}>DELETE</Text>
+                {' '}to confirm. This cannot be undone.
+              </Text>
+
+              <TextInput
+                ref={deleteInputRef}
+                placeholder="Type DELETE to confirm"
+                value={deleteConfirm}
+                onChangeText={v => { setDeleteConfirm(v); setDeleteError(null); }}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                placeholderTextColor="#c4b5a5"
+                style={{
+                  borderWidth: 1,
+                  borderColor: deleteConfirm.toUpperCase() === 'DELETE' ? '#b91c1c' : '#e7e5e4',
+                  borderRadius: 8,
+                  padding: 11,
+                  fontSize: 15,
+                  color: '#1c1917',
+                  backgroundColor: '#fff',
+                  marginBottom: 4,
+                  letterSpacing: 1,
+                }}
+              />
+
+              {deleteError && (
+                <Text style={{ fontSize: 12, color: '#b91c1c', marginBottom: 10, lineHeight: 17 }}>
+                  {deleteError}
+                </Text>
+              )}
+
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setDeleteExpanded(false);
+                    setDeleteConfirm('');
+                    setDeleteError(null);
+                  }}
+                  disabled={deletingAccount}
+                  style={{
+                    flex: 1,
+                    borderWidth: 1,
+                    borderColor: '#e7e5e4',
+                    borderRadius: 9,
+                    paddingVertical: 11,
+                    alignItems: 'center',
+                    backgroundColor: '#fff',
+                  }}
+                >
+                  <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500' }}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={handleDeleteAccount}
+                  disabled={deletingAccount || deleteConfirm.trim().toUpperCase() !== 'DELETE'}
+                  style={{
+                    flex: 1,
+                    borderRadius: 9,
+                    paddingVertical: 11,
+                    alignItems: 'center',
+                    backgroundColor: deleteConfirm.trim().toUpperCase() === 'DELETE' ? '#b91c1c' : '#e7e5e4',
+                  }}
+                >
+                  {deletingAccount ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={{
+                      fontSize: 13,
+                      fontWeight: '600',
+                      color: deleteConfirm.trim().toUpperCase() === 'DELETE' ? '#fff' : '#a8a29e',
+                    }}>
+                      Delete Account
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        )}
       </SettingsCard>
+
+      <View style={{ height: 40 }} />
     </ScrollView>
   );
 }

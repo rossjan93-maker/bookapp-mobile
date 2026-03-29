@@ -1,0 +1,164 @@
+We need to build the account lifecycle layer properly before moving on to the next product work.
+
+This is now the highest-priority systems task.
+
+Goals:
+1. allow us to repeatedly create and reset test accounts safely
+2. allow real users to delete their account cleanly
+3. fix the signup/recovery UX around duplicate emails, confirmation, and password recovery
+
+This is NOT just auth polish.
+It is a core product and QA infrastructure task.
+
+--------------------------------------------------
+PART 1 — DEV / TEST ACCOUNT RESET
+--------------------------------------------------
+
+Problem:
+We need a repeatable way to create, reset, and remove test accounts without manual DB surgery.
+
+Build:
+- a dev/admin-only account reset path
+- this must be server-side only
+- never expose service_role or admin delete logic in the client
+
+Requirements:
+- input: email
+- behavior:
+  1. find the auth user
+  2. delete the auth user
+  3. clean up dependent app data if needed
+  4. return clear success/failure result
+- gate to:
+  - dev/staging only
+  OR
+  - admin-only access
+
+Preferred implementation:
+- Supabase Edge Function or secure server route
+- only callable from an authenticated admin/dev surface
+
+Return:
+- exact implementation used
+- how it is secured
+- exact files changed
+
+--------------------------------------------------
+PART 2 — USER SELF-SERVE ACCOUNT DELETION
+--------------------------------------------------
+
+Problem:
+Users need to be able to delete their account intentionally and safely.
+
+Build:
+A real Settings → Delete Account flow.
+
+Requirements:
+- add a Delete Account option in Settings
+- include strong confirmation UX
+- make deletion server-side only
+- do not put admin delete logic in the client
+
+Server-side delete flow must:
+1. verify the authenticated user
+2. delete or soft-delete dependent app data intentionally
+3. delete the Supabase auth user via admin API
+4. sign the user out locally
+5. return a clear success/failure outcome
+
+Important:
+If full hard-delete of app data is too risky for first pass, explicitly define what is removed vs retained.
+But user auth deletion must work.
+
+Return:
+- delete flow UX
+- backend delete path
+- what data is deleted vs retained
+- exact files changed
+
+--------------------------------------------------
+PART 3 — DUPLICATE EMAIL / SIGNUP / RECOVERY UX
+--------------------------------------------------
+
+Problem:
+Currently, a user can try to sign up with an existing email and the UX is poor.
+Supabase may not give us a clean “already exists” client-side signal because of anti-enumeration behavior.
+
+We need a secure, standard product flow.
+
+Requirements:
+- audit current signup behavior with duplicate email
+- audit resend confirmation behavior
+- audit forgot password behavior
+- then redesign the UX around a graceful recovery flow
+
+New behavior should:
+- avoid insecure client-side email existence checks unless explicitly justified
+- handle ambiguous signup outcomes gracefully
+- guide users toward the right recovery path
+
+Preferred UX after signup attempt:
+If email is new:
+- standard confirmation flow
+
+If email may already exist / outcome is ambiguous:
+Show neutral recovery-oriented copy, e.g.:
+“If this email is new, we sent a confirmation link. If you already have an account, sign in or reset your password.”
+
+Provide clear actions:
+- Sign in
+- Reset password
+- Resend confirmation email
+
+Also:
+- implement / verify Forgot Password flow
+- implement / verify Resend Confirmation flow
+- ensure these are reachable from signup/signin screens
+
+Return:
+- root cause of current duplicate-email UX
+- how new signup recovery UX behaves
+- how password reset works
+- how resend confirmation works
+- any unavoidable Supabase constraints
+
+--------------------------------------------------
+PART 4 — VALIDATION
+--------------------------------------------------
+
+After implementing, validate these flows:
+
+1. new signup with fresh email
+2. signup attempt with existing email
+3. resend confirmation
+4. forgot password
+5. successful account deletion by user
+6. test account reset by admin/dev
+
+For each:
+- exact runtime behavior
+- any limitations
+- whether behavior is production-safe
+
+--------------------------------------------------
+IMPORTANT CONSTRAINTS
+--------------------------------------------------
+
+- do not expose admin/service-role functionality to the client
+- do not build insecure email enumeration unless you clearly justify the tradeoff
+- prioritize clean UX + safe architecture
+- keep this implementation practical and testable
+- if there are Supabase-specific limitations, state them clearly rather than hand-waving
+
+--------------------------------------------------
+RETURN FORMAT
+--------------------------------------------------
+
+Return:
+1. exact files changed
+2. what backend/admin path was used
+3. how test account reset is secured
+4. how user account deletion works
+5. how duplicate signup is now handled
+6. how password reset / resend confirmation works
+7. what still remains as limitation or backlog
