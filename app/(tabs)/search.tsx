@@ -25,6 +25,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { scoreAndFilterBooks, mergeBookResults } from '../../lib/searchRanking';
+import { expandAlias } from '../../lib/searchAliases';
 import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computeTasteProfile } from '../../lib/tasteProfile';
@@ -1917,16 +1918,29 @@ export default function RecommendationsScreen() {
       const FIELDS = 'key,title,author_name,cover_i,cover_edition_key,number_of_pages_median';
 
       try {
-        // Short single-token queries ≤6 chars ("acotar", "lotr", "tbr") are
-        // abbreviations / fandom tags that OL's community index understands
-        // better than any title-scoped search. Trust OL's raw order and skip
-        // confidence filtering (the real books won't have "acotar" in their title).
-        const tokens        = query.trim().split(/\s+/);
-        const isAbbrevQuery = tokens.length === 1 && query.trim().length <= 6;
+        // ── Alias expansion ────────────────────────────────────────────────
+        // Resolve known fandom shorthand BEFORE anything hits OL.
+        // "acotar" → "a court of thorns and roses" → scores exact-match (1000
+        // HIGH) against OL's title= result, filtering out coloring books.
+        // The typed text in the search bar (query) stays unchanged; only the
+        // string sent to OL and the scorer (searchQuery) is expanded.
+        const aliasExpansion = expandAlias(query);
+        const searchQuery    = aliasExpansion ?? query;
+
+        if (__DEV__ && aliasExpansion) {
+          console.log('[SEARCH_ALIAS]', `reqId=${reqId}`, `"${query}" → "${aliasExpansion}"`);
+        }
+
+        // Abbreviation path: short single-token queries NOT in the alias table
+        // (e.g. "tbr", "dnf", "ya") that OL's community tag index handles better
+        // than title=. Alias-expanded queries are always multi-word so they
+        // never enter this branch.
+        const tokens        = searchQuery.trim().split(/\s+/);
+        const isAbbrevQuery = !aliasExpansion && tokens.length === 1 && searchQuery.trim().length <= 6;
 
         if (isAbbrevQuery) {
-          const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&fields=${FIELDS}&limit=20`;
-          if (__DEV__) console.log('[SEARCH_REQ]', `reqId=${reqId}`, `query="${query}"`, 'path=abbrev', `url=${url}`);
+          const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(searchQuery)}&fields=${FIELDS}&limit=20`;
+          if (__DEV__) console.log('[SEARCH_REQ]', `reqId=${reqId}`, `query="${searchQuery}"`, 'path=abbrev', `url=${url}`);
 
           const res  = await fetch(url);
           const json = await res.json();
@@ -1941,8 +1955,8 @@ export default function RecommendationsScreen() {
           setSearchNoResults(raw.length === 0);
         } else {
           // ── Step 1: title= (precision retrieval) ────────────────────────────
-          const titleUrl = `https://openlibrary.org/search.json?title=${encodeURIComponent(query)}&fields=${FIELDS}&limit=20`;
-          if (__DEV__) console.log('[SEARCH_REQ]', `reqId=${reqId}`, `query="${query}"`, 'path=title', `url=${titleUrl}`);
+          const titleUrl = `https://openlibrary.org/search.json?title=${encodeURIComponent(searchQuery)}&fields=${FIELDS}&limit=20`;
+          if (__DEV__) console.log('[SEARCH_REQ]', `reqId=${reqId}`, `query="${searchQuery}"`, 'path=title', `url=${titleUrl}`);
 
           const titleRes  = await fetch(titleUrl);
           const titleJson = await titleRes.json();
@@ -1953,7 +1967,7 @@ export default function RecommendationsScreen() {
           }
 
           const primaryRaw: BookResult[] = titleJson.docs ?? [];
-          const primary = scoreAndFilterBooks(query, primaryRaw);
+          const primary = scoreAndFilterBooks(searchQuery, primaryRaw);
 
           if (__DEV__) {
             console.log('[SEARCH_PRIMARY]', `reqId=${reqId}`, `raw=${primaryRaw.length}`,
@@ -1972,7 +1986,7 @@ export default function RecommendationsScreen() {
             // "boa". Fetch title=<head tokens> so that OL gets a complete query
             // it can match properly, then score all candidates against the
             // original (full) query — "Burn the Boats" scores 900 (prefix).
-            const lastTok = tokens[tokens.length - 1];
+            const lastTok   = tokens[tokens.length - 1];
             const headQuery = lastTok.length <= 4 && tokens.length >= 2
               ? tokens.slice(0, -1).join(' ')
               : null;
@@ -1981,7 +1995,7 @@ export default function RecommendationsScreen() {
               'no HIGH from title=, widening to q=',
               headQuery ? `+ head-query title="${headQuery}"` : '');
 
-            const fallbackUrl = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&fields=${FIELDS}&limit=20`;
+            const fallbackUrl = `https://openlibrary.org/search.json?q=${encodeURIComponent(searchQuery)}&fields=${FIELDS}&limit=20`;
             const headUrl     = headQuery
               ? `https://openlibrary.org/search.json?title=${encodeURIComponent(headQuery)}&fields=${FIELDS}&limit=20`
               : null;
@@ -2002,7 +2016,7 @@ export default function RecommendationsScreen() {
             const fallbackRaw: BookResult[] = fallbackJson.docs ?? [];
             const headRaw: BookResult[]     = headJson.docs ?? [];
             const merged  = mergeBookResults(mergeBookResults(primaryRaw, headRaw), fallbackRaw);
-            const scored  = scoreAndFilterBooks(query, merged);
+            const scored  = scoreAndFilterBooks(searchQuery, merged);
 
             if (__DEV__) {
               console.log('[SEARCH_MERGED]', `reqId=${reqId}`,
@@ -2012,9 +2026,8 @@ export default function RecommendationsScreen() {
             }
 
             // When the last token is very short (≤3 chars = clearly unfinished
-            // word), MEDIUM fallback results are near-miss noise ("The Burn
-            // Journals" for "burn the boa"). Suppress them — signal the user
-            // to keep typing rather than show misleading partial-word matches.
+            // word), MEDIUM fallback results are near-miss noise. Suppress them
+            // and signal the user to keep typing.
             const lastTokenIncomplete = lastTok.length <= 3;
 
             if (scored.hasHigh || (scored.hasMedium && !lastTokenIncomplete)) {
