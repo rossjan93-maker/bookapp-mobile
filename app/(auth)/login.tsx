@@ -158,9 +158,9 @@ export default function LoginScreen() {
         first_name: firstName.trim(),
         last_name:  lastName.trim(),
       });
-      // Race-condition guard: username claimed between pre-check and insert
+      // Unique constraint violation — username is already taken.
       if (profileError?.code === '23505') {
-        setStatus('That username was just claimed by someone else. Please choose another.');
+        setStatus('That username is already taken. Please choose another.');
         setStatusIsError(true);
         setLoading(false);
         return;
@@ -206,11 +206,24 @@ export default function LoginScreen() {
     setStatus('');
     setStatusIsError(false);
 
-    // We always show the same neutral confirmation message — do not distinguish
-    // between "email found" and "email not found" (anti-enumeration).
-    await supabase!.auth.resetPasswordForEmail(email.trim());
+    const { error } = await supabase!.auth.resetPasswordForEmail(email.trim());
 
     setLoading(false);
+
+    // Supabase does NOT return an error for non-existent emails — it always returns
+    // success for valid addresses to prevent email enumeration. Any error we receive
+    // here is therefore a genuine system failure (rate limit, network error, etc.)
+    // and safe to surface.
+    if (error) {
+      setStatus(
+        error.status === 429
+          ? 'Too many requests — please wait a moment and try again.'
+          : 'Something went wrong. Check your connection and try again.'
+      );
+      setStatusIsError(true);
+      return;
+    }
+
     setEmailSent(true);
     setStatus('If an account exists for that address, we sent a reset link. Check your email (including spam).');
     setStatusIsError(false);
@@ -227,10 +240,20 @@ export default function LoginScreen() {
     setStatus('');
     setStatusIsError(false);
 
-    // Neutral message regardless of outcome (anti-enumeration)
-    await supabase!.auth.resend({ type: 'signup', email: email.trim() });
+    const { error } = await supabase!.auth.resend({ type: 'signup', email: email.trim() });
 
     setLoading(false);
+
+    // For resend, stay neutral on most errors to avoid enumeration — a 404/422
+    // "user not found" from Supabase should not be revealed to the caller.
+    // Rate limit (429) is safe to surface explicitly: it does not reveal whether
+    // the email exists or not.
+    if (error && error.status === 429) {
+      setStatus('Too many requests — please wait a moment and try again.');
+      setStatusIsError(true);
+      return;
+    }
+
     setEmailSent(true);
     setStatus('If that address has an unconfirmed account, we sent a new confirmation link. Check your email.');
     setStatusIsError(false);
