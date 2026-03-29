@@ -1,0 +1,119 @@
+Console Error
+Encountered two children with the same key, `.$1d3d108f-5116-42d9-8f43-b371298608b6`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version.
+app/(tabs)/library.tsx (624:5)
+
+ 
+ 622 |
+return
+ (
+ 
+ 623 |
+  
+<
+View
+ style
+=
+{{ flex
+:
+ 
+1
+,
+ backgroundColor
+:
+ 
+'#faf9f7'
+ }}
+>
+>
+ 624 |
+  
+<
+FlatList
+ 
+     |
+  
+^
+ 
+ 625 |
+    data
+=
+{displayedItems}
+ 
+ 626 |
+    keyExtractor
+=
+{item 
+=>
+ isYearSeparator(item) 
+?
+ item
+.
+key 
+:
+ item
+.
+id}
+ 
+ 627 |
+    style
+=
+{{ flex
+:
+ 
+1
+ }}
+Component Stack
+39
+
+FlatList#render
+node_modules/react-native-web/dist/vendor/react-native/FlatList/index.js:429:13
+LibraryScreen
+app/(tabs)/library.tsx:624:5
+WrappedScreenComponent
+node_modules/expo-router/build/useScreens.js:194:16
+BaseRoute
+node_modules/expo-router/build/useScreens.js:239:13
+Call Stack
+19
+
+Source Map
+
+This call stack is not symbolicated. Some features are unavailable such as viewing the function name or tapping to open files.
+Object.addLog
+https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/node_modules/expo-router/entry.bundle:1086:32
+consoleErrorMiddleware
+https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/node_modules/expo-router/entry.bundle:882:16
+console.error
+https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/node_modules/expo-router/entry.bundle:821:29
+Proxy.<anonymous>
+https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/__replco/static/devtools/injected.js:37:27
+<unknown>
+https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/node_modules/expo-router/entry.bundle:8611:23
+runWithFiberInDEV
+https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/node_modules/expo-router/entry.bundle:5598:70
+warnOnInvalidKey
+https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/node_modules/expo-router/entry.bundle:8610:13
+reconcileChildrenArray
+https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/node_modules/expo-router/entry.bundle:8627:23
+reconcileChildFibersImpl
+https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/node_modules/expo-router/entry.bundle:8743:111
+<unknown>
+https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/node_modules/expo-router/entry.bundle:8770:33
+reconcileChildren
+https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/node_modules/expo-router/entry.bundle:10329:117
+beginWork
+https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/node_modules/expo-router/entry.bundle:11145:1567
+runWithFiberInDEV
+https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/node_modules/expo-router/entry.bundle:5598:70
+performUnitOfWork
+https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/node_modules/expo-router/entry.bundle:13506:95
+workLoopSync
+https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/node_modules/expo-router/entry.bundle:13401:40
+renderRootSync
+https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/node_modules/expo-router/entry.bundle:13386:9
+performWorkOnRoot
+https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/node_modules/expo-router/entry.bundle:13023:184
+performWorkOnRootViaSchedulerTask
+https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/node_modules/expo-router/entry.bundle:14161:7
+MessagePort.performWorkUntilDeadline
+https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/node_modules/expo-router/entry.bundle:20100:48

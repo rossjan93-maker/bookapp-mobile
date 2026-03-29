@@ -229,6 +229,7 @@ export default function LibraryScreen() {
         .eq('user_id', user.id)
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
+        .order('id',         { ascending: false })
         .range(0, 49),
     ]);
 
@@ -245,6 +246,7 @@ export default function LibraryScreen() {
         .eq('user_id', user.id)
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
+        .order('id',         { ascending: false })
         .range(0, 49);
     }
 
@@ -288,6 +290,7 @@ export default function LibraryScreen() {
             .eq('user_id', user.id)
             .is('deleted_at', null)
             .order('created_at', { ascending: false })
+            .order('id',         { ascending: false })
             .range(50, 99999);
 
           if (remResult.error && !usedFallback) {
@@ -297,6 +300,7 @@ export default function LibraryScreen() {
               .eq('user_id', user.id)
               .is('deleted_at', null)
               .order('created_at', { ascending: false })
+              .order('id',         { ascending: false })
               .range(50, 99999);
           }
 
@@ -304,7 +308,11 @@ export default function LibraryScreen() {
             // Guard: abort if a newer loadBooks superseded this one
             if (_libItems !== capturedFirst) return;
             const remainder = remResult.data as unknown as UserBook[];
-            allItems = [...firstBatch, ...remainder];
+            // A book added between Phase 1 and Phase 2 queries can appear in both
+            // batches (offset pagination shifts). Deduplicate so FlatList never
+            // receives two rows with the same key.
+            const phase1Set = new Set(firstBatch.map(i => i.id));
+            allItems = [...firstBatch, ...remainder.filter(i => !phase1Set.has(i.id))];
             setItems(allItems);
             _libItems = allItems;
             if (__DEV__) console.log(`[PERF] Library Phase 2: ${allItems.length} total books in ${Date.now() - t0}ms`);
