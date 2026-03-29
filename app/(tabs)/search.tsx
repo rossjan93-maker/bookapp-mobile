@@ -573,15 +573,23 @@ function SkeletonCard() {
           <View style={{ height: 11, width: '80%', backgroundColor: '#f0ede9', borderRadius: 5 }} />
         </View>
       </View>
-      {/* Action bar — matches RecCard's Want to Read / Not for me / More like this row */}
-      <View style={{
-        borderTopWidth: 1, borderTopColor: '#f0ede9',
-        height: 44, flexDirection: 'row', alignItems: 'center',
-        paddingHorizontal: 12, gap: 16,
-      }}>
-        <View style={{ width: 90, height: 11, borderRadius: 5, backgroundColor: '#e8e5e1' }} />
-        <View style={{ width: 60, height: 11, borderRadius: 5, backgroundColor: '#f0ede9' }} />
-        <View style={{ width: 70, height: 11, borderRadius: 5, backgroundColor: '#f0ede9' }} />
+      {/* Action bar — mirrors RecCard's Want to Read / Not for me / More like this structure */}
+      <View style={{ borderTopWidth: 1, borderTopColor: '#f0ede9', flexDirection: 'row', alignItems: 'stretch' }}>
+        <View style={{
+          flex: 1, paddingVertical: 14, paddingHorizontal: 14, justifyContent: 'center',
+          borderRightWidth: 1, borderRightColor: '#f0ede9',
+        }}>
+          <View style={{ width: '60%', height: 11, borderRadius: 5, backgroundColor: '#e8e5e1' }} />
+        </View>
+        <View style={{
+          paddingVertical: 14, paddingHorizontal: 13, justifyContent: 'center', alignItems: 'center',
+          borderRightWidth: 1, borderRightColor: '#f0ede9',
+        }}>
+          <View style={{ width: 56, height: 11, borderRadius: 5, backgroundColor: '#f0ede9' }} />
+        </View>
+        <View style={{ paddingVertical: 14, paddingHorizontal: 13, justifyContent: 'center', alignItems: 'center' }}>
+          <View style={{ width: 64, height: 11, borderRadius: 5, backgroundColor: '#f0ede9' }} />
+        </View>
       </View>
     </Animated.View>
   );

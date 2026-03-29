@@ -14,7 +14,7 @@ import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
-import { DescriptionSkeleton } from '../../components/Placeholder';
+import { DescriptionSkeleton, ProgressCardSkeleton } from '../../components/Placeholder';
 import { getSeriesCatalog, getSagaForSeries, getAllSagaCatalog, findSeriesForBook } from '../../lib/seriesCatalog';
 import { triggerRecPrewarm } from '../../lib/recPrewarm';
 import { computeDatePacing, computePagePacing, estimatePaceFinish, formatLastUpdated, shortDate, computeBookPace, computeUserAvgPace } from '../../lib/pacing';
@@ -1454,7 +1454,7 @@ export default function BookDetailScreen() {
             <SectionLabel>Reading Progress</SectionLabel>
 
             {progressLoading ? (
-              <ActivityIndicator color="#a8a29e" size="small" />
+              <ProgressCardSkeleton />
             ) : (
               <>
                 {/* ── 1. Primary: % + bar + page position ── */}

@@ -123,6 +123,28 @@ export function DescriptionSkeleton() {
   );
 }
 
+// ── ProgressCardSkeleton ───────────────────────────────────────────────────────
+// Matches Book Detail "Reading Progress" card content area.
+// The card has a big % number (36px), progress bar (8px), and text lines.
+// Shown instead of ActivityIndicator while progressLoading is true.
+
+export function ProgressCardSkeleton() {
+  return (
+    <Pulse>
+      {/* Big percentage placeholder (36px font, weight 800) */}
+      <Box w={80} h={36} r={7} style={{ marginBottom: 8 }} />
+      {/* Progress bar (8px height, full width) */}
+      <Box w="100%" h={8} r={4} style={{ marginBottom: 8 }} />
+      {/* "Page X of Y" caption */}
+      <Box w="55%" h={13} r={5} c={FILL2} style={{ marginBottom: 14 }} />
+      {/* Finish estimate line */}
+      <Box w="72%" h={13} r={5} c={FILL2} style={{ marginBottom: 14 }} />
+      {/* Pacing chip */}
+      <Box w={88} h={28} r={14} c={FILL2} />
+    </Pulse>
+  );
+}
+
 // ── ReadingCardSkeleton ────────────────────────────────────────────────────────
 // Matches the single-book currently-reading card on Home:
 //   cover 56×82, title/author, progress bar + label.
