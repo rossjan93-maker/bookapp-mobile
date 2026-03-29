@@ -282,19 +282,26 @@ function ProgressDots({ phase }: { phase: Phase }) {
   const steps: Phase[] = ['genres', 'pacing', 'tone', 'payoff'];
   const idx = steps.indexOf(phase);
   const active = idx >= 0 ? idx : (phase === 'avoid' ? 0 : phase === 'fav_book' ? 2 : 3);
+  const stepNum   = active + 1;
+  const stepTotal = steps.length;
   return (
-    <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-      {steps.map((_, i) => (
-        <View
-          key={i}
-          style={{
-            width: i === active ? 20 : 6,
-            height: 6,
-            borderRadius: 3,
-            backgroundColor: i <= active ? INK : BORD,
-          }}
-        />
-      ))}
+    <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+      <View style={{ flexDirection: 'row', gap: 5, alignItems: 'center' }}>
+        {steps.map((_, i) => (
+          <View
+            key={i}
+            style={{
+              width: i === active ? 22 : 6,
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: i <= active ? INK : BORD,
+            }}
+          />
+        ))}
+      </View>
+      <Text style={{ fontSize: 12, color: MUTED, fontWeight: '500' }}>
+        {stepNum} of {stepTotal}
+      </Text>
     </View>
   );
 }
@@ -801,20 +808,13 @@ export default function OnboardingScreen() {
       >
         <ProgressDots phase={phase} />
 
-        {/* Skip label for genre/avoid/fav_book phases */}
-        {(phase === 'genres' || phase === 'avoid' || phase === 'fav_book') && (
+        {/* "Finish later" — always visible on question screens, always exits to app */}
+        {phase !== 'payoff' && (
           <TouchableOpacity
-            onPress={() => {
-              if (phase === 'genres') goTo('avoid');
-              else if (phase === 'avoid') goTo('pacing');
-              else if (phase === 'fav_book') {
-                startRecFetch(pacingKey!, toneKey ?? undefined);
-                goTo('payoff');
-              }
-            }}
+            onPress={finishOnboarding}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Text style={{ fontSize: 14, color: MUTED, fontWeight: '500' }}>Skip</Text>
+            <Text style={{ fontSize: 14, color: MUTED, fontWeight: '500' }}>Finish later</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -873,7 +873,7 @@ export default function OnboardingScreen() {
                 }}
               >
                 <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
-                  {likedLabels.length > 0 ? 'Continue →' : 'Skip for now →'}
+                  {likedLabels.length > 0 ? 'Continue →' : 'Skip question →'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -937,7 +937,7 @@ export default function OnboardingScreen() {
                 }}
               >
                 <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
-                  Continue →
+                  {avoidedLabels.length > 0 ? 'Continue →' : 'Skip question →'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -950,12 +950,19 @@ export default function OnboardingScreen() {
             <Text style={{ fontSize: 26, fontWeight: '800', color: INK, lineHeight: 32, marginBottom: 6 }}>
               How important is pacing?
             </Text>
-            <Text style={{ fontSize: 14, color: SUB, marginBottom: 28 }}>
+            <Text style={{ fontSize: 14, color: SUB, marginBottom: 16 }}>
               Tap to pick — no right answer.
             </Text>
             {PACING_OPTIONS.map(opt => (
               <BinaryOptionCard key={opt.key} option={opt} onSelect={() => onPacingSelect(opt.key)} />
             ))}
+            <TouchableOpacity
+              onPress={() => goTo('tone')}
+              activeOpacity={0.7}
+              style={{ marginTop: 12, alignSelf: 'center', paddingVertical: 10, paddingHorizontal: 16 }}
+            >
+              <Text style={{ fontSize: 14, color: MUTED, fontWeight: '500' }}>Skip question →</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -965,12 +972,19 @@ export default function OnboardingScreen() {
             <Text style={{ fontSize: 26, fontWeight: '800', color: INK, lineHeight: 32, marginBottom: 6 }}>
               When a book really lands...
             </Text>
-            <Text style={{ fontSize: 14, color: SUB, marginBottom: 28 }}>
+            <Text style={{ fontSize: 14, color: SUB, marginBottom: 16 }}>
               What's usually behind it?
             </Text>
             {TONE_OPTIONS.map(opt => (
               <BinaryOptionCard key={opt.key} option={opt} onSelect={() => onToneSelect(opt.key)} />
             ))}
+            <TouchableOpacity
+              onPress={() => goTo('fav_book')}
+              activeOpacity={0.7}
+              style={{ marginTop: 12, alignSelf: 'center', paddingVertical: 10, paddingHorizontal: 16 }}
+            >
+              <Text style={{ fontSize: 14, color: MUTED, fontWeight: '500' }}>Skip question →</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -1125,7 +1139,7 @@ export default function OnboardingScreen() {
                 }}
               >
                 <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
-                  {favSelected ? 'See my picks →' : 'Skip — show my picks →'}
+                  {favSelected ? 'Continue →' : 'Skip question →'}
                 </Text>
               </TouchableOpacity>
             </View>
