@@ -46,16 +46,17 @@ export function useGuidedTour(): GuidedTourCtx {
 }
 
 // ─── Step 0 — Action prompt (rendered inside the recs screen) ─────────────────
-// Shows below the first card. Dismissed only by a real card action.
+// Shows below the first card. Dismissed only by explicit "Got it" tap —
+// never dismissed implicitly by a card action so it can always be read.
 
 export function GuidedActionBanner() {
+  const { advance } = useGuidedTour();
   const fadeIn = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(fadeIn, {
       toValue: 1,
-      duration: 500,
-      delay: 400,
+      duration: 220,
       useNativeDriver: true,
     }).start();
   }, []);
@@ -64,7 +65,7 @@ export function GuidedActionBanner() {
     <Animated.View
       style={{
         opacity: fadeIn,
-        marginHorizontal: 16,
+        marginHorizontal: 0,
         marginBottom: 12,
         marginTop: 4,
         backgroundColor: '#1c1917',
@@ -76,15 +77,21 @@ export function GuidedActionBanner() {
         gap: 10,
       }}
     >
-      <Ionicons name="arrow-up" size={16} color="#a8a29e" />
+      <Ionicons name="information-circle-outline" size={18} color="#a8a29e" />
       <View style={{ flex: 1 }}>
         <Text style={{ color: '#faf9f7', fontSize: 13, fontWeight: '600', lineHeight: 18 }}>
-          Save or dismiss one of these
+          Save, dismiss, or tap "More like this"
         </Text>
         <Text style={{ color: '#a8a29e', fontSize: 12, lineHeight: 17, marginTop: 1 }}>
-          Every choice tunes your picks
+          Every choice tunes your future picks
         </Text>
       </View>
+      <TouchableOpacity
+        onPress={() => advance(0)}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <Text style={{ color: '#a3e635', fontSize: 13, fontWeight: '700' }}>Got it</Text>
+      </TouchableOpacity>
     </Animated.View>
   );
 }

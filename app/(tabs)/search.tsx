@@ -1817,6 +1817,18 @@ export default function RecommendationsScreen() {
   // Shows a subtle "Refreshing…" badge instead of the full skeleton.
   const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
 
+  // ── Deck-exhaustion transitional hint ──────────────────────────────────────
+  // Tracks whether the deck has ever had cards (avoids triggering on cold load).
+  // When the deck goes from non-empty → empty, shows a 2.5 s "Refreshing your
+  // picks…" placeholder before the terminal caught-up state appears.
+  const hadDeckRef = useRef(false);
+  const [deckTransitionHint, setDeckTransitionHint] = useState(false);
+
+  // ── Save-failure retry state ───────────────────────────────────────────────
+  // Set when the background DB write in handleRecSave throws. Cleared on retry
+  // or after a 6 s auto-dismiss so it never lingers.
+  const [saveFailure, setSaveFailure] = useState<{ title: string; book: ScoredBook } | null>(null);
+
   // ── Stale-request guard ────────────────────────────────────────────────────
   // Monotonically incremented at the start of every loadHub() and reloadRecs()
   // call.  Before any setState that follows an await, the handler checks that
@@ -1914,6 +1926,22 @@ export default function RecommendationsScreen() {
   // the response whose stamp matches the current value may commit to state.
   // This prevents a slow earlier response from overwriting a faster later one.
   const searchSeqRef = useRef(0);
+
+  // ── Deck-exhaustion transitional hint effect ─────────────────────────────
+  // When the deck transitions from having cards to empty (after user actions),
+  // briefly show "Refreshing your picks…" before the caught-up state appears.
+  useEffect(() => {
+    const deckEmpty = continuations.length === 0 && discoveries.length === 0;
+    if (!deckEmpty) {
+      hadDeckRef.current = true;
+      return;
+    }
+    if (hadDeckRef.current && !recsLoading) {
+      setDeckTransitionHint(true);
+      const t = setTimeout(() => setDeckTransitionHint(false), 2500);
+      return () => clearTimeout(t);
+    }
+  }, [continuations.length, discoveries.length, recsLoading]);
 
   // Book search debounce (only relevant in 'search' step)
   useEffect(() => {
@@ -2806,11 +2834,62 @@ export default function RecommendationsScreen() {
     setBooksToTag(prev => prev.filter(b => b.id !== id));
   }
 
+  // Retry the DB write for a book that failed to save. Card is already removed
+  // from the deck so we only redo the upsert + feedback persist — no UI change.
+  async function handleRetrySave(book: ScoredBook) {
+    if (!supabase || !currentUserId) return;
+    setSaveFailure(null);
+    try {
+      let bookDbId: string | null = null;
+      if (book._source === 'catalog') {
+        bookDbId = book.id;
+      } else if (book.external_id) {
+        const { data: existing } = await supabase
+          .from('books')
+          .select('id')
+          .eq('external_id', book.external_id)
+          .maybeSingle();
+        if (existing) {
+          bookDbId = existing.id;
+        } else {
+          const { data: created } = await supabase
+            .from('books')
+            .insert({
+              title:       book.title,
+              author:      book.author,
+              external_id: book.external_id,
+              cover_url:   book.cover_url,
+              subjects:    book.subjects,
+              page_count:  book.page_count,
+            })
+            .select('id')
+            .single();
+          bookDbId = created?.id ?? null;
+        }
+      }
+      if (bookDbId) {
+        const { error } = await supabase
+          .from('user_books')
+          .upsert(
+            { user_id: currentUserId, book_id: bookDbId, status: 'want_to_read' },
+            { onConflict: 'user_id,book_id', ignoreDuplicates: true },
+          );
+        if (error) throw error;
+      }
+      persistFeedback(supabase, currentUserId, book, 'saved', {
+        book_db_id: bookDbId ?? undefined,
+      }).catch(() => {});
+    } catch {
+      // Show failure again with fresh 6 s timer
+      setSaveFailure({ title: book.title, book });
+      setTimeout(() => setSaveFailure(f => f?.book.id === book.id ? null : f), 6000);
+    }
+  }
+
   // ── Recommendation feedback handlers ─────────────────────────────────────
 
   function handleRecSave(book: ScoredBook) {
     if (!supabase || !currentUserId) return;
-    if (guidedStep === 0) advanceGuided(0);
 
     // ── Optimistic UI: remove card + backfill next eligible from session ─────
     const bookFilter    = (b: ScoredBook) => b.id !== book.id;
@@ -2834,52 +2913,58 @@ export default function RecommendationsScreen() {
     // ── Background: upsert book record + add to library + persist feedback ───
     (async () => {
       let bookDbId: string | null = null;
-      if (book._source === 'catalog') {
-        bookDbId = book.id;
-      } else if (book.external_id) {
-        const { data: existing } = await supabase!
-          .from('books')
-          .select('id')
-          .eq('external_id', book.external_id)
-          .maybeSingle();
-
-        if (existing) {
-          bookDbId = existing.id;
-        } else {
-          const { data: created } = await supabase!
+      try {
+        if (book._source === 'catalog') {
+          bookDbId = book.id;
+        } else if (book.external_id) {
+          const { data: existing } = await supabase!
             .from('books')
-            .insert({
-              title:       book.title,
-              author:      book.author,
-              external_id: book.external_id,
-              cover_url:   book.cover_url,
-              subjects:    book.subjects,
-              page_count:  book.page_count,
-            })
             .select('id')
-            .single();
-          bookDbId = created?.id ?? null;
+            .eq('external_id', book.external_id)
+            .maybeSingle();
+
+          if (existing) {
+            bookDbId = existing.id;
+          } else {
+            const { data: created } = await supabase!
+              .from('books')
+              .insert({
+                title:       book.title,
+                author:      book.author,
+                external_id: book.external_id,
+                cover_url:   book.cover_url,
+                subjects:    book.subjects,
+                page_count:  book.page_count,
+              })
+              .select('id')
+              .single();
+            bookDbId = created?.id ?? null;
+          }
         }
-      }
 
-      if (bookDbId) {
-        await supabase!
-          .from('user_books')
-          .upsert(
-            { user_id: currentUserId, book_id: bookDbId, status: 'want_to_read' },
-            { onConflict: 'user_id,book_id', ignoreDuplicates: true },
-          );
-      }
+        if (bookDbId) {
+          const { error: upsertErr } = await supabase!
+            .from('user_books')
+            .upsert(
+              { user_id: currentUserId, book_id: bookDbId, status: 'want_to_read' },
+              { onConflict: 'user_id,book_id', ignoreDuplicates: true },
+            );
+          if (upsertErr) throw upsertErr;
+        }
 
-      persistFeedback(supabase!, currentUserId!, book, 'saved', {
-        book_db_id: bookDbId ?? undefined,
-      }).catch(() => {});
-    })().catch(() => {});
+        persistFeedback(supabase!, currentUserId!, book, 'saved', {
+          book_db_id: bookDbId ?? undefined,
+        }).catch(() => {});
+      } catch {
+        // Surface a lightweight retry bar — auto-dismisses after 6 s
+        setSaveFailure({ title: book.title, book });
+        setTimeout(() => setSaveFailure(f => f?.book.id === book.id ? null : f), 6000);
+      }
+    })();
   }
 
   function handleRecDismiss(book: ScoredBook) {
     if (!supabase || !currentUserId) return;
-    if (guidedStep === 0) advanceGuided(0);
 
     // ── Commit any pre-existing pending dismiss immediately ────────────────────
     // Only one undo window open at a time; opening a new one commits the old one.
@@ -2974,7 +3059,6 @@ export default function RecommendationsScreen() {
 
   function handleRecMoreLikeThis(book: ScoredBook) {
     if (!supabase || !currentUserId) return;
-    if (guidedStep === 0) advanceGuided(0);
 
     // ── Optimistic UI: remove card + backfill next eligible from session ─────
     const bookFilter    = (b: ScoredBook) => b.id !== book.id;
@@ -3509,8 +3593,32 @@ export default function RecommendationsScreen() {
                 </View>
               )}
 
+              {/* ── Deck just emptied → brief "Refreshing" transitional hint ── */}
+              {deckTransitionHint && !hasRecs && !recsLoading && (
+                <View style={{
+                  backgroundColor: '#fff',
+                  borderRadius: 14,
+                  padding: 20,
+                  alignItems: 'center',
+                  shadowColor: '#000',
+                  shadowOpacity: 0.04,
+                  shadowRadius: 6,
+                  shadowOffset: { width: 0, height: 1 },
+                  elevation: 1,
+                  marginBottom: 12,
+                }}>
+                  <ActivityIndicator size="small" color="#a8a29e" style={{ marginBottom: 10 }} />
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 4 }}>
+                    Refreshing your picks…
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#a8a29e', textAlign: 'center' }}>
+                    Noting your choices and finding what's next
+                  </Text>
+                </View>
+              )}
+
               {/* ── No recs + no tasks → caught up ── */}
-              {!hasRecs && !recsQualityGate && !recsLoading && !hasAnyTask && (
+              {!hasRecs && !recsQualityGate && !recsLoading && !hasAnyTask && !deckTransitionHint && (
                 <View style={{
                   backgroundColor: '#fff',
                   borderRadius: 14,
@@ -3595,10 +3703,10 @@ export default function RecommendationsScreen() {
                       {booksToTag.slice(0, Math.max(0, 3 - booksToRate.length)).map(b => (
                         <TagCard key={b.id} book={b} onComplete={handleTagComplete} />
                       ))}
-                      {(booksToRate.length + booksToTag.length) > 3 && (
+                      {(booksToRate.length + booksToTag.length) > 6 && (
                         <TouchableOpacity onPress={() => router.push('/(tabs)/library')}>
                           <Text style={{ fontSize: 13, color: '#78716c', paddingVertical: 6 }}>
-                            +{booksToRate.length + booksToTag.length - 3} more in Library →
+                            +{booksToRate.length + booksToTag.length - 3} more available in Library
                           </Text>
                         </TouchableOpacity>
                       )}
@@ -3779,6 +3887,48 @@ export default function RecommendationsScreen() {
 
 
       </ScrollView>
+
+      {/* ── Save-failure retry bar ─────────────────────────────────────── */}
+      {/* Appears when the background DB write for a saved book fails.     */}
+      {/* Auto-dismisses after 6 s; tap "Retry" to reattempt the write.   */}
+      {saveFailure && (
+        <View style={{
+          position: 'absolute',
+          bottom: 16,
+          left: 16,
+          right: 16,
+          backgroundColor: '#1c1917',
+          borderRadius: 12,
+          paddingVertical: 12,
+          paddingHorizontal: 14,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 10,
+          shadowColor: '#000',
+          shadowOpacity: 0.15,
+          shadowRadius: 8,
+          shadowOffset: { width: 0, height: 2 },
+          elevation: 5,
+          zIndex: 200,
+        }}>
+          <Ionicons name="warning-outline" size={16} color="#f87171" />
+          <Text style={{ flex: 1, color: '#faf9f7', fontSize: 13, lineHeight: 18 }} numberOfLines={2}>
+            Couldn't save "{saveFailure.title.length > 32 ? saveFailure.title.slice(0, 30) + '…' : saveFailure.title}"
+          </Text>
+          <TouchableOpacity
+            onPress={() => handleRetrySave(saveFailure.book)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={{ color: '#a3e635', fontSize: 13, fontWeight: '700' }}>Retry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setSaveFailure(null)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="close" size={16} color="#78716c" />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* ── Dev-only performance overlay ───────────────────────────────── */}
       {/* Hidden by default — long-press the screen title to toggle       */}
