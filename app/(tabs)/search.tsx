@@ -3453,6 +3453,12 @@ export default function RecommendationsScreen() {
                     </View>
                   )}
 
+                  {/* Guided tour step 0: action prompt — shown ABOVE cards so it's
+                      visible before the first interaction, without scrolling. */}
+                  {guidedStep === 0 && (recommendations.length > 0 || continuations.length > 0 || discoveries.length > 0) && (
+                    <GuidedActionBanner />
+                  )}
+
                   {/* ── Currently Reading bucket ── */}
                   {/* Only rendered when there are active continuations.        */}
                   {/* Empty state removed — "no series" is not actionable here. */}
@@ -3533,11 +3539,6 @@ export default function RecommendationsScreen() {
                         />
                       ))}
                     </>
-                  )}
-
-                  {/* Guided tour step 0: action prompt after first recs */}
-                  {guidedStep === 0 && (recommendations.length > 0 || continuations.length > 0 || discoveries.length > 0) && (
-                    <GuidedActionBanner />
                   )}
 
                 </View>
