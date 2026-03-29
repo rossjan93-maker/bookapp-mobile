@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { registerCacheClearer } from '../../lib/tabCache';
 import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computePagePacing, computeUserAvgPace } from '../../lib/pacing';
@@ -170,6 +171,8 @@ type HomeSnapshot = {
 
 let _homeCache: HomeSnapshot | null = null;
 const HOME_STALE_MS = 60_000;
+// 'bookData' tag: also cleared when Book Detail performs a status/page action
+registerCacheClearer(() => { _homeCache = null; }, 'bookData');
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
@@ -234,6 +237,8 @@ export default function HomeScreen() {
       setLoadingFriendships(false);
       return;
     }
+    // Belt-and-suspenders: clear stale cache if the user switched accounts
+    if (_homeCache && _homeCache.userId !== user.id) _homeCache = null;
     setUserId(user.id);
 
     const meta = user.user_metadata as { first_name?: string } | undefined;

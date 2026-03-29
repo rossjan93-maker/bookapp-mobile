@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { clearAllTabCaches } from '../lib/tabCache';
 
 async function ensureProfile(
   userId: string,
@@ -81,6 +82,7 @@ export default function RootLayout() {
         setNeedsOnboarding(!completed);
       } else if (event === 'SIGNED_OUT') {
         setNeedsOnboarding(false);
+        clearAllTabCaches();
       }
     });
 

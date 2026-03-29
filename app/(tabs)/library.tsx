@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { fetchGoogleBooksCoverUrl } from '../../lib/googleBooks';
 import { repairBooksMetadata } from '../../lib/metadataRepair';
+import { registerCacheClearer } from '../../lib/tabCache';
 import { ActivityIndicator, FlatList, Modal, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
@@ -116,6 +117,8 @@ type LibrarySnapshot = {
 
 let _libCache: LibrarySnapshot | null = null;
 const LIB_STALE_MS = 60_000;
+// 'bookData' tag: also cleared when Book Detail performs a status/page action
+registerCacheClearer(() => { _libCache = null; }, 'bookData');
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
@@ -190,6 +193,8 @@ export default function LibraryScreen() {
     if (!supabase) { setError('Supabase not configured.'); setLoading(false); return; }
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setError('No signed-in user.'); setLoading(false); return; }
+    // Belt-and-suspenders: clear stale cache if the user switched accounts
+    if (_libCache && _libCache.userId !== user.id) _libCache = null;
     setCurrentUserId(user.id);
 
     // Fetch yearly goal and user_books in parallel — previously two sequential calls

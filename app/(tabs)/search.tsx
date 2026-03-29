@@ -58,6 +58,7 @@ import type { ReaderThesis } from '../../lib/expertRec';
 import { getSeriesCatalog } from '../../lib/seriesCatalog';
 import { loadRecPayload, saveRecPayload, computeRecFingerprint, addActedOnIds, loadActedOnIds } from '../../lib/recPayloadCache';
 import { triggerRecPrewarm } from '../../lib/recPrewarm';
+import { registerCacheClearer } from '../../lib/tabCache';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1623,6 +1624,27 @@ type RecSessionCache = {
 
 let _recSession: RecSessionCache | null = null;
 
+// ─── Module-level hub cache ───────────────────────────────────────────────────
+// Mirrors the pattern used by Home / Library / Inbox.  Stores Phase-1 data so
+// the hub sections (books to rate, incoming recs, sent recs) render immediately
+// on return visits instead of showing a skeleton while Phase 1 queries run.
+
+type HubSnapshot = {
+  userId:       string;
+  booksToRate:  BookToRate[];
+  booksToTag:   BookToTag[];
+  incomingRecs: IncomingRec[];
+  sentRecs:     SentRec[];
+  tasteProfile: TasteProfile | null;
+  fetchedAt:    number;
+};
+
+let _hubCache: HubSnapshot | null = null;
+const HUB_STALE_MS = 30_000; // matches inbox — incoming recs can arrive at any time
+
+// Clear both caches on sign-out so the next user never sees previous user's data
+registerCacheClearer(() => { _recSession = null; _hubCache = null; });
+
 // ── Acted-on ID tracking ───────────────────────────────────────────────────────
 //
 // Two sets manage card exclusion:
@@ -1797,17 +1819,19 @@ export default function RecommendationsScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // ── Hub state ──────────────────────────────────────────────────────────────
-  const [hubLoading, setHubLoading]           = useState(true);
+  // hubLoading is true only on a cold start with no rec session cache.
+  // On return visits, hub sections render immediately from _hubCache.
+  const [hubLoading, setHubLoading]           = useState<boolean>(() => !_recSession);
   const [recsLoading, setRecsLoading]         = useState(false);
   const [recsQualityGate, setRecsQualityGate] = useState<QualityGate | null>(null);
   const [recsMeta, setRecsMeta]               = useState<RankedRecsResult['meta'] | null>(null);
   const [feedbackCtx, setFeedbackCtx]         = useState<FeedbackContext>(emptyContext());
   const [dismissPending, setDismissPending]   = useState<DismissPendingState | null>(null);
-  const [booksToRate, setBooksToRate]         = useState<BookToRate[]>([]);
-  const [booksToTag, setBooksToTag]           = useState<BookToTag[]>([]);
-  const [incomingRecs, setIncomingRecs]       = useState<IncomingRec[]>([]);
-  const [sentRecs, setSentRecs]               = useState<SentRec[]>([]);
-  const [tasteProfile, setTasteProfile]       = useState<TasteProfile | null>(null);
+  const [booksToRate, setBooksToRate]         = useState<BookToRate[]>(() => _hubCache?.booksToRate ?? []);
+  const [booksToTag, setBooksToTag]           = useState<BookToTag[]>(() => _hubCache?.booksToTag ?? []);
+  const [incomingRecs, setIncomingRecs]       = useState<IncomingRec[]>(() => _hubCache?.incomingRecs ?? []);
+  const [sentRecs, setSentRecs]               = useState<SentRec[]>(() => _hubCache?.sentRecs ?? []);
+  const [tasteProfile, setTasteProfile]       = useState<TasteProfile | null>(() => _hubCache?.tasteProfile ?? null);
   const [recommendations, setRecommendations] = useState<ScoredBook[]>([]);
   const [continuations,   setContinuations]   = useState<ScoredBook[]>([]);
   const [discoveries,     setDiscoveries]     = useState<ScoredBook[]>([]);
@@ -2237,6 +2261,9 @@ export default function RecommendationsScreen() {
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setHubLoading(false); setRecsLoading(false); return; }
+    // Belt-and-suspenders: clear stale caches if the user switched accounts
+    if (_recSession && _recSession.userId !== user.id) _recSession = null;
+    if (_hubCache   && _hubCache.userId   !== user.id) _hubCache   = null;
     setCurrentUserId(user.id);
 
     // ── Fast-path 1: restore from in-memory session cache (0ms) ──────────
@@ -2421,13 +2448,26 @@ export default function RecommendationsScreen() {
     }
 
     // Commit Phase 1 state
+    const _incomingRows = (incomingRes.data as unknown as IncomingRec[]) ?? [];
+    const _sentRows     = (sentRes.data    as unknown as SentRec[])     ?? [];
     setBooksToRate(toRate);
     setBooksToTag(toTag);
-    setIncomingRecs((incomingRes.data as unknown as IncomingRec[]) ?? []);
-    setSentRecs((sentRes.data as unknown as SentRec[]) ?? []);
+    setIncomingRecs(_incomingRows);
+    setSentRecs(_sentRows);
     setTasteProfile(tp);
     setEntitlement(ent);
     setHubLoading(false);   // clear skeleton (cold path) or no-op (warm path)
+
+    // Persist hub snapshot so next visit renders all sections at frame 0
+    _hubCache = {
+      userId:       user.id,
+      booksToRate:  toRate,
+      booksToTag:   toTag,
+      incomingRecs: _incomingRows,
+      sentRecs:     _sentRows,
+      tasteProfile: tp,
+      fetchedAt:    Date.now(),
+    };
 
     // ── Phase 2 gate: minimum tier, and skip-if-fresh check ──────────────
     if (!tp || tp.tier < 1) return;

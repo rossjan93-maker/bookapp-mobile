@@ -2,6 +2,7 @@ import { useCallback, useContext, useEffect, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { registerCacheClearer } from '../../lib/tabCache';
 import { BadgeContext } from './_layout';
 import { getFirstName } from '../../lib/displayName';
 import { CoverThumb } from '../../components/CoverThumb';
@@ -60,6 +61,7 @@ type InboxSnapshot = {
 
 let _inboxCache: InboxSnapshot | null = null;
 const INBOX_STALE_MS = 30_000; // inbox is more time-sensitive than home/library
+registerCacheClearer(() => { _inboxCache = null; });
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
@@ -92,6 +94,8 @@ export default function InboxScreen() {
       setLoading(false);
       return;
     }
+    // Belt-and-suspenders: clear stale cache if the user switched accounts
+    if (_inboxCache && _inboxCache.userId !== user.id) _inboxCache = null;
     setCurrentUserId(user.id);
 
     const { data, error: dbError } = await supabase

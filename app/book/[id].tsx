@@ -23,6 +23,7 @@ import type { OLMeta } from '../../lib/openLibrary';
 import { transitionStatus, editUserBook, softDeleteBook, restoreSnapshot } from '../../lib/userBookActions';
 import type { UserBookStatus, BookSnapshot, FinishedDateInput, StartedDateInput } from '../../lib/userBookActions';
 import { useUndoBar } from '../../lib/useUndoBar';
+import { invalidateBookDataCaches } from '../../lib/tabCache';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -694,6 +695,8 @@ export default function BookDetailScreen() {
           .then(() => {});
       }
       setCurrentPage(newPage);
+      // Page progress shown on Library and Home cards — invalidate so they re-fetch
+      invalidateBookDataCaches();
       setEditingProgress(false);
       Keyboard.dismiss();
     } else {
@@ -755,6 +758,8 @@ export default function BookDetailScreen() {
     if (snapshot) lastSnapshotRef.current = snapshot;
     setLocalStatus(newStatus);
     if (data?.startedAt) setLocalStartedAt(data.startedAt);
+    // Status changed — Library and Home must re-fetch on next focus
+    invalidateBookDataCaches();
 
     // Undo bar for status change (only for non-finish transitions — finish has its own rating modal)
     if (newStatus !== 'finished' && newStatus !== 'dnf' && snapshot) {
@@ -861,6 +866,8 @@ export default function BookDetailScreen() {
 
     // Store snapshot for undo
     if (result?.snapshot) lastSnapshotRef.current = result.snapshot;
+    // Status / dates changed — Library and Home must re-fetch on next focus
+    invalidateBookDataCaches();
 
     // Update local display state
     if (editSheetStatus) setLocalStatus(editSheetStatus);
@@ -906,6 +913,8 @@ export default function BookDetailScreen() {
     if (error) return;
 
     if (snapshot) lastSnapshotRef.current = snapshot;
+    // Book removed — Library and Home must re-fetch on next focus
+    invalidateBookDataCaches();
 
     undoBar.trigger(
       'Removed from library',
