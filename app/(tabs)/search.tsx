@@ -1969,6 +1969,7 @@ export default function RecommendationsScreen() {
         const isAbbrevQuery = !aliasExpansion && tokens.length === 1 && searchQuery.trim().length <= 5;
 
         if (isAbbrevQuery) {
+          // ── Abbreviation path: single q= fetch, trust OL community ranking ──
           const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(searchQuery)}&fields=${FIELDS}&limit=20`;
           if (__DEV__) console.log('[SEARCH_REQ]', `reqId=${reqId}`, `query="${searchQuery}"`, 'path=abbrev', `url=${url}`);
 
@@ -1984,101 +1985,113 @@ export default function RecommendationsScreen() {
           setBookResults(raw.slice(0, 15));
           setSearchNoResults(raw.length === 0);
         } else {
-          // ── Step 1: title= (precision retrieval) ────────────────────────────
-          const titleUrl = `https://openlibrary.org/search.json?title=${encodeURIComponent(searchQuery)}&fields=${FIELDS}&limit=20`;
-          if (__DEV__) console.log('[SEARCH_REQ]', `reqId=${reqId}`, `query="${searchQuery}"`, 'path=title', `url=${titleUrl}`);
+          // ── Multi-query parallel retrieval ──────────────────────────────────
+          //
+          // A single OL call often fails for long or unusual titles because OL's
+          // title index requires a close match to the indexed form. Example:
+          // "the lion women of tehran" → title= may return 0 results; only
+          // q= or a reduced-form title= actually surfaces the book.
+          //
+          // Strategy: build up to 5 retrieval variants, fire them ALL in
+          // parallel, merge + deduplicate the candidates, then run
+          // scoreAndFilterBooks ONCE on the merged pool. This guarantees the
+          // correct book enters the candidate pool regardless of which OL
+          // index path happens to know about it.
+          //
+          // Variants generated (duplicates are deduplicated before fetching):
+          //   1. title=<full searchQuery>         — always (precision)
+          //   2. q=<full searchQuery>              — always (broad recall)
+          //   3. title=<stop-words removed>        — e.g. "lion women tehran"
+          //   4. title=<first 2 significant words> — e.g. "lion women"
+          //   5. title=<head tokens, drop short last token> — partial-typing
 
-          const titleRes  = await fetch(titleUrl);
-          const titleJson = await titleRes.json();
+          // English stop words to strip for reduced / core queries:
+          const STOP = new Set(['the','a','an','of','in','to','for','and','or','but','by','at','as','on','its','is','it','be','my','we','us','if','up','so']);
+
+          const sigTokens  = tokens.filter(t => t.length >= 3 && !STOP.has(t));
+          const reduced    = sigTokens.join(' ');                 // "lion women tehran"
+          const coreTwo    = sigTokens.slice(0, 2).join(' ');    // "lion women"
+          const lastTok    = tokens[tokens.length - 1];
+          const headTokens = lastTok.length <= 4 && tokens.length >= 2
+            ? tokens.slice(0, -1).join(' ')                       // "burn the" (for "burn the boa")
+            : null;
+
+          // Build variant list: {param: 'title'|'q', query: string}
+          type Variant = { param: 'title' | 'q'; q: string };
+          const variantList: Variant[] = [];
+          variantList.push({ param: 'title', q: searchQuery });        // #1
+          variantList.push({ param: 'q',     q: searchQuery });        // #2
+          if (reduced && reduced !== searchQuery)
+            variantList.push({ param: 'title', q: reduced });          // #3
+          if (coreTwo && coreTwo !== reduced && coreTwo !== searchQuery && sigTokens.length >= 2)
+            variantList.push({ param: 'title', q: coreTwo });          // #4
+          if (headTokens && headTokens !== reduced && headTokens !== coreTwo && headTokens !== searchQuery)
+            variantList.push({ param: 'title', q: headTokens });       // #5
+
+          // Deduplicate by (param, query) key
+          const seen     = new Set<string>();
+          const variants = variantList.filter(v => {
+            const key = `${v.param}:${v.q}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+
+          if (__DEV__) console.log('[SEARCH_VARIANTS]', `reqId=${reqId}`,
+            variants.map(v => `${v.param}="${v.q}"`).join(' | '));
+
+          // Fire all variants in parallel — no sequential dependency
+          const fetches = variants.map(v => {
+            const url = `https://openlibrary.org/search.json?${v.param}=${encodeURIComponent(v.q)}&fields=${FIELDS}&limit=20`;
+            return fetch(url).then(r => r.json() as Promise<{ docs?: BookResult[] }>).catch(() => ({ docs: [] as BookResult[] }));
+          });
+
+          const responses = await Promise.all(fetches);
 
           if (searchSeqRef.current !== mySeq) {
             if (__DEV__) console.log('[SEARCH_STALE]', `reqId=${reqId}`, `discarded — newer seq=${searchSeqRef.current}`);
             return;
           }
 
-          const primaryRaw: BookResult[] = titleJson.docs ?? [];
-          const primary = scoreAndFilterBooks(searchQuery, primaryRaw);
-
-          if (__DEV__) {
-            console.log('[SEARCH_PRIMARY]', `reqId=${reqId}`, `raw=${primaryRaw.length}`,
-              `hasHigh=${primary.hasHigh}`, `hasMed=${primary.hasMedium}`,
-              primary.topScores.map(s => `"${s.title}" ${s.score} ${s.confidence} ${s.matchType}`));
+          // Merge all candidate pools (deduplicated by OL key in mergeBookResults)
+          let merged: BookResult[] = [];
+          for (let vi = 0; vi < responses.length; vi++) {
+            const raw: BookResult[] = responses[vi].docs ?? [];
+            if (__DEV__) console.log('[SEARCH_VARIANT_RESULT]', `reqId=${reqId}`,
+              `[${vi+1}/${variants.length}] ${variants[vi].param}="${variants[vi].q}"`,
+              `count=${raw.length}`, raw.slice(0, 2).map(b => b.title));
+            merged = mergeBookResults(merged, raw);
           }
 
-          if (primary.hasHigh) {
-            // ── Good results found: no fallback needed ───────────────────────
-            setBookResults(primary.results);
+          // Score the merged pool once against the original query
+          const scored = scoreAndFilterBooks(searchQuery, merged);
+
+          if (__DEV__) {
+            console.log('[SEARCH_SCORED]', `reqId=${reqId}`,
+              `variants=${variants.length} merged=${merged.length}`,
+              `hasHigh=${scored.hasHigh}`, `hasMed=${scored.hasMedium}`,
+              scored.topScores.map(s => `"${s.title}" ${s.score} ${s.confidence} ${s.matchType}`));
+          }
+
+          // Commit: suppress MEDIUM when the last token is clearly incomplete
+          // (≤3 chars → user is mid-word and MEDIUM candidates are noise).
+          const lastTokenIncomplete = lastTok.length <= 3;
+
+          if (scored.hasHigh || (scored.hasMedium && !lastTokenIncomplete)) {
+            setBookResults(scored.results);
             setSearchNoResults(false);
           } else {
-            // ── Step 2: q= fallback + optional head-query ───────────────────
-            // When the last token looks incomplete (≤4 chars, e.g. "boa" in
-            // "burn the boa"), OL's word-boundary index won't find "boats" for
-            // "boa". Fetch title=<head tokens> so that OL gets a complete query
-            // it can match properly, then score all candidates against the
-            // original (full) query — "Burn the Boats" scores 900 (prefix).
-            const lastTok   = tokens[tokens.length - 1];
-            const headQuery = lastTok.length <= 4 && tokens.length >= 2
-              ? tokens.slice(0, -1).join(' ')
-              : null;
-
-            if (__DEV__) console.log('[SEARCH_FALLBACK]', `reqId=${reqId}`,
-              'no HIGH from title=, widening to q=',
-              headQuery ? `+ head-query title="${headQuery}"` : '');
-
-            const fallbackUrl = `https://openlibrary.org/search.json?q=${encodeURIComponent(searchQuery)}&fields=${FIELDS}&limit=20`;
-            const headUrl     = headQuery
-              ? `https://openlibrary.org/search.json?title=${encodeURIComponent(headQuery)}&fields=${FIELDS}&limit=20`
-              : null;
-
-            const [fallbackRes, headRes] = await Promise.all([
-              fetch(fallbackUrl),
-              headUrl ? fetch(headUrl) : Promise.resolve(null),
-            ]);
-
-            const fallbackJson = await fallbackRes.json();
-            const headJson     = headRes ? await headRes.json() : { docs: [] };
-
-            if (searchSeqRef.current !== mySeq) {
-              if (__DEV__) console.log('[SEARCH_STALE]', `reqId=${reqId}`, `discarded — newer seq=${searchSeqRef.current}`);
-              return;
-            }
-
-            const fallbackRaw: BookResult[] = fallbackJson.docs ?? [];
-            const headRaw: BookResult[]     = headJson.docs ?? [];
-            const merged  = mergeBookResults(mergeBookResults(primaryRaw, headRaw), fallbackRaw);
-            const scored  = scoreAndFilterBooks(searchQuery, merged);
-
-            if (__DEV__) {
-              console.log('[SEARCH_MERGED]', `reqId=${reqId}`,
-                `primary=${primaryRaw.length} fallback=${fallbackRaw.length} merged=${merged.length}`,
-                `hasHigh=${scored.hasHigh}`, `hasMed=${scored.hasMedium}`,
-                scored.topScores.map(s => `"${s.title}" ${s.score} ${s.confidence} ${s.matchType}`));
-            }
-
-            // When the last token is very short (≤3 chars = clearly unfinished
-            // word), MEDIUM fallback results are near-miss noise. Suppress them
-            // and signal the user to keep typing.
-            const lastTokenIncomplete = lastTok.length <= 3;
-
-            if (scored.hasHigh || (scored.hasMedium && !lastTokenIncomplete)) {
-              setBookResults(scored.results);
-              setSearchNoResults(false);
+            setBookResults([]);
+            // Show "No strong matches found" only when the query is complete
+            // enough to be definitive. Single-token queries shorter than 8
+            // chars are likely still mid-word → show neutral "keep typing"
+            // instead of an alarming failure message.
+            const isDefinitiveQuery =
+              tokens.length >= 2 || searchQuery.trim().length >= 8;
+            if (isDefinitiveQuery) {
+              setSearchNoResults(true);
             } else {
-              setBookResults([]);
-              // Only show "No strong matches found" when the query is definitive
-              // enough that the user likely isn't still mid-word:
-              //   • Multi-token queries (user has typed 2+ words) — OR
-              //   • Single token ≥ 8 chars (long enough to be a complete word)
-              // For shorter single-token queries ("mocking", "sixth") the user
-              // is probably still typing. Show nothing instead of a discouraging
-              // "No strong matches" that makes the search feel broken.
-              const isDefinitiveQuery =
-                tokens.length >= 2 || searchQuery.trim().length >= 8;
-              if (isDefinitiveQuery) {
-                setSearchNoResults(true);
-              } else {
-                setSearchWeakQuery(true);  // "keep typing" placeholder
-              }
+              setSearchWeakQuery(true);
             }
           }
         }
