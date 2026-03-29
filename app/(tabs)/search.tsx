@@ -37,7 +37,7 @@ import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computeTasteProfile } from '../../lib/tasteProfile';
 import type { TasteProfile } from '../../lib/tasteProfile';
-import { getCandidateBooks, getRankedRecs, fitLabel, fitColor, getPersonalizedRecsWithExpert, __devTimingsRef } from '../../lib/recommender';
+import { getCandidateBooks, getRankedRecs, fitLabel, fitColor, getPersonalizedRecsWithExpert, clearOLSessionCache, __devTimingsRef } from '../../lib/recommender';
 import type { ScoredBook, QualityGate, RankedRecsResult, DevTimings } from '../../lib/recommender';
 import {
   emptyIntent as emptyNextReadIntent,
@@ -1892,6 +1892,13 @@ export default function RecommendationsScreen() {
   // it and the stale result is discarded without touching state.
   const latestHubLoadRef = useRef(0);
 
+  // ── Exhaustion-retry guard ─────────────────────────────────────────────────
+  // Tracks how many exhaustion-bypass reload attempts have been made in the
+  // current exhaustion cycle.  Capped at 1: first attempt uses actedOn exclusion
+  // + fresh OL fetch; if it still zeros, mark terminal and stop retrying.
+  // Reset to 0 whenever a commit successfully yields non-zero filtered recs.
+  const exhaustionAttemptRef = useRef(0);
+
   // ── Dev-only performance overlay state ────────────────────────────────────
   const [recTiming, setRecTiming]             = useState<DevTimings | null>(null);
   // Off by default — long-press the "Recommendations" title to toggle in dev builds
@@ -1979,24 +1986,44 @@ export default function RecommendationsScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [continuations.length, discoveries.length]);
 
-  // ── Exhaustion-triggered replenishment ────────────────────────────────────
+  // ── Exhaustion-triggered replenishment (bounded retry) ────────────────────
   // When recsExhausted becomes true (filterActedOn zeroed a healthy result),
-  // trigger reloadRecs so the pipeline tries a fresh pull.  Also fires on
-  // revisits where continuations never changed from 0 (bypassing the effect
-  // above whose dependency on continuations.length produces no state change).
+  // attempt ONE reload with exhaustionBypass=true (actedOn exclusion upstream +
+  // fresh OL session).  If that also yields zero, log terminal and stop —
+  // letting the "caught up" UI render without further looping.
+  //
+  // Retry counter is component-level (exhaustionAttemptRef) and resets to 0
+  // whenever a reload commit returns non-zero filtered recs.
   useEffect(() => {
     if (
-      recsExhausted &&
-      !recsLoading &&
-      !isBackgroundRefreshing &&
-      currentUserId &&
-      tasteProfile &&
-      tasteProfile.tier >= 1
-    ) {
-      reloadRecs(nextReadIntent);
+      !recsExhausted ||
+      recsLoading ||
+      isBackgroundRefreshing ||
+      !currentUserId ||
+      !tasteProfile ||
+      tasteProfile.tier < 1
+    ) return;
+
+    if (exhaustionAttemptRef.current >= 1) {
+      // Terminal: already tried one bypass reload and still empty.
+      if (__DEV__) console.log('[REC_EXHAUSTED_TERMINAL]',
+        'reason=all_acted_on_after_reload',
+        `| attempt=${exhaustionAttemptRef.current}`,
+        `| acted_on=${_actedOnIds.size}`,
+      );
+      return;
     }
+
+    exhaustionAttemptRef.current += 1;
+    if (__DEV__) console.log('[REC_EXHAUSTED_RELOAD]',
+      `attempt=${exhaustionAttemptRef.current}`,
+      `| acted_on_ids=${_actedOnIds.size}`,
+      `| cache_bypassed=true`,
+      `| ol_session_cleared=true`,
+    );
+    reloadRecs(nextReadIntent, { exhaustionBypass: true });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recsExhausted, tasteProfile?.tier]);
+  }, [recsExhausted, tasteProfile?.tier, isBackgroundRefreshing]);
 
   // Monotonically-increasing counter. Each search request stamps itself; only
   // the response whose stamp matches the current value may commit to state.
@@ -2866,7 +2893,7 @@ export default function RecommendationsScreen() {
   // Re-runs the recommendation pipeline using already-loaded state values.
   // OL candidates are cached, so this is fast (DB read + in-memory scoring).
 
-  async function reloadRecs(intent: NextReadIntent) {
+  async function reloadRecs(intent: NextReadIntent, opts?: { exhaustionBypass?: boolean }) {
     if (!supabase || !currentUserId || !tasteProfile || tasteProfile.tier < 1) return;
     const requestId = ++latestHubLoadRef.current;
     setNextReadIntent(intent);
@@ -2893,9 +2920,29 @@ export default function RecommendationsScreen() {
         },
       };
       const activeIntent = isIntentActive(intent) ? intent : undefined;
+
+      // ── Exhaustion-bypass path ──────────────────────────────────────────────
+      // When the deck was emptied by filterActedOn (all pipeline recs acted-on),
+      // pass the acted-on ID set upstream so the candidate retrieval layer
+      // excludes them before ranking.  Also force a fresh OL fetch by clearing
+      // the module-level OL session cache — this prevents the same acted-on pool
+      // from ranking as top-5 again.
+      const reloadOpts = opts?.exhaustionBypass
+        ? { additionalExcludeIds: new Set(_actedOnIds) }
+        : undefined;
+      if (opts?.exhaustionBypass) {
+        clearOLSessionCache();
+        if (__DEV__) console.log('[REC_EXHAUSTED_RELOAD]',
+          `executing`,
+          `| acted_on_excluded=${_actedOnIds.size}`,
+          `| ol_session_cleared=true`,
+        );
+      }
+
       const intentResult = await getPersonalizedRecsWithExpert(
         supabase!, currentUserId, tasteProfile, activeEntitlement, 5, feedbackCtx,
         activeIntent,
+        reloadOpts,
       );
       const { recs, meta } = intentResult;
       // Stale-request guard: a newer call (loadHub or reloadRecs) superseded this
@@ -2923,6 +2970,7 @@ export default function RecommendationsScreen() {
         `| after_count=${_rrRecs.length + _rrConts.length + _rrDiscs.length}`,
         `| acted_on=${_actedOnIds.size}`,
         `| pending_undo=${_pendingUndoIds.size}`,
+        `| exhaustion_bypass=${!!opts?.exhaustionBypass}`,
       );
       // Re-inject pending-dismiss book (Issue 1) + apply page size (Issue 2)
       const { conts: _rrPDConts, discs: _rrPDDiscs } = rehydratePendingDismiss(_rrConts, _rrDiscs);
@@ -2938,8 +2986,20 @@ export default function RecommendationsScreen() {
       const _rrBefore = recs.length + (intentResult.continuations ?? []).length + (intentResult.discoveries ?? recs).length;
       if (_rrTotal > 0) {
         setRecsExhausted(false);
+        exhaustionAttemptRef.current = 0;  // reset for next exhaustion cycle
+        if (__DEV__ && opts?.exhaustionBypass) console.log('[REC_EXHAUSTED_RELOAD]',
+          `result=fresh_recs_found`,
+          `| after_count=${_rrTotal}`,
+          `| candidate_count=${recs.length}`,
+        );
       } else if (_rrTotal === 0 && _rrBefore > 0 && meta.quality_gate === 'passed') {
         setRecsExhausted(true);
+        if (__DEV__ && opts?.exhaustionBypass) console.log('[REC_EXHAUSTED_TERMINAL]',
+          'reason=all_acted_on_after_reload',
+          `| candidate_count_before_filter=${_rrBefore}`,
+          `| acted_on=${_actedOnIds.size}`,
+          `| exhaustion_attempt=${exhaustionAttemptRef.current}`,
+        );
       }
     } catch {
       // silent — recommendations fail gracefully

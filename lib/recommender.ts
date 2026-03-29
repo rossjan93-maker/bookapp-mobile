@@ -795,9 +795,10 @@ type CacheResult = {
 } | null;
 
 async function getCachedExternalCandidates(
-  client:             SupabaseClient,
-  userId:             string,
-  excludeExternalIds: Set<string>,
+  client:                  SupabaseClient,
+  userId:                  string,
+  excludeExternalIds:      Set<string>,
+  additionalExcludeIds?:   Set<string>,
 ): Promise<CacheResult> {
   // Forensic mode: bypass candidate cache entirely, force live OL fetch
   if (__DEV__ && userId === FORENSIC_USER_ID) {
@@ -854,7 +855,10 @@ async function getCachedExternalCandidates(
     const isFresh = validRows.length >= CACHE_MIN_ROWS;
 
     const candidates: CandidateBook[] = validRows
-      .filter(r => !excludeExternalIds.has(r.external_id))
+      .filter(r =>
+        !excludeExternalIds.has(r.external_id) &&
+        !(additionalExcludeIds?.has(r.external_id))
+      )
       .map((r): CandidateBook => ({
         id:                `ol:${r.external_id}`,
         title:             r.title,
@@ -906,6 +910,12 @@ type OLSessionCache = {
 };
 let _olCandidateSession: OLSessionCache | null = null;
 const OL_SESSION_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+// Exported so exhaustion-bypass reload can force a fresh OL fetch instead of
+// re-using the same session cache that produced only acted-on candidates.
+export function clearOLSessionCache(): void {
+  _olCandidateSession = null;
+}
 
 async function getOLCandidates(
   profile:              TasteProfile,
@@ -2214,10 +2224,11 @@ export const __devTimingsRef: { current: DevTimings | null } = { current: null }
 // replaces the old plain CandidateBook[] return type.
 
 export async function getCandidateBooks(
-  client:    SupabaseClient,
-  userId:    string,
-  profile:   TasteProfile,
-  feedback?: FeedbackContext,
+  client:                SupabaseClient,
+  userId:                string,
+  profile:               TasteProfile,
+  feedback?:             FeedbackContext,
+  additionalExcludeIds?: Set<string>,
 ): Promise<CandidateResult> {
   // ── Stage timing — [REC_TIMING] log emitted at the end of this function ───
   const _t0 = Date.now();
@@ -2292,6 +2303,7 @@ export async function getCandidateBooks(
     client,
     userId,
     new Set([...local.readExternalIds, ...catalogExternalIds]),
+    additionalExcludeIds,
   );
   const _t2 = Date.now();
 
@@ -2346,6 +2358,7 @@ export async function getCandidateBooks(
       ...local.readExternalIds,
       ...catalogExternalIds,
       ...(cacheResult?.candidates.map(c => c.external_id).filter((x): x is string => !!x) ?? []),
+      ...(additionalExcludeIds ?? []),
     ]);
 
     // ── Session-level OL candidate cache (module-level, survives tab switches) ─
@@ -2433,7 +2446,16 @@ export async function getCandidateBooks(
     .map(([k]) => k);
 
   // ── Merge all candidates ───────────────────────────────────────────────────
-  const all = [...externalCandidates, ...local.candidates];
+  // When exhaustion-bypass reload passes additionalExcludeIds (acted-on IDs),
+  // filter the local catalog pool too so dismissed books are excluded from all
+  // three candidate sources (external cache, OL live, and catalog).
+  const localCandidates = additionalExcludeIds
+    ? local.candidates.filter(c =>
+        !additionalExcludeIds.has(c.id) &&
+        !(c.external_id && additionalExcludeIds.has(c.external_id))
+      )
+    : local.candidates;
+  const all = [...externalCandidates, ...localCandidates];
 
   // ── Hard finished/DNF exclusion (safety-net layer) ────────────────────────
   // Layer 1: book UUID match (readIds) — already applied in getLocalCandidates
@@ -2594,15 +2616,16 @@ export async function getCandidateBooks(
 // ── Convenience async wrapper ─────────────────────────────────────────────────
 
 export async function getPersonalizedRecs(
-  client:    SupabaseClient,
-  userId:    string,
-  profile:   TasteProfile,
-  limit      = 5,
-  feedback?: FeedbackContext,
-  intent?:   NextReadIntent,
+  client:                SupabaseClient,
+  userId:                string,
+  profile:               TasteProfile,
+  limit                  = 5,
+  feedback?:             FeedbackContext,
+  intent?:               NextReadIntent,
+  additionalExcludeIds?: Set<string>,
 ): Promise<RankedRecsResult> {
   const { candidates, enrichmentMap, retrieval_trace, seriesReadSet, seriesProgress, seriesPositionsRead, authorReadCounts } =
-    await getCandidateBooks(client, userId, profile, feedback);
+    await getCandidateBooks(client, userId, profile, feedback, additionalExcludeIds);
   return getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet, seriesProgress, authorReadCounts, seriesPositionsRead);
 }
 
@@ -2626,11 +2649,11 @@ export async function getPersonalizedRecsWithExpert(
   limit        = 5,
   feedback?:   FeedbackContext,
   intent?:     NextReadIntent,
-  opts?:       { skipCache?: boolean },
+  opts?:       { skipCache?: boolean; additionalExcludeIds?: Set<string> },
 ): Promise<RankedRecsResult> {
   // ── Step 1: Deterministic pipeline (always runs) ──────────────────────────
   const { candidates, enrichmentMap, retrieval_trace, seriesReadSet, seriesProgress, seriesPositionsRead, authorReadCounts } =
-    await getCandidateBooks(client, userId, profile, feedback);
+    await getCandidateBooks(client, userId, profile, feedback, opts?.additionalExcludeIds);
   if (__DEV__) console.log('[PERF] phase2_scoring_start', `| candidates=${candidates.length}`);
   const _scoreStart = Date.now();
   const baseResult = getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet, seriesProgress, authorReadCounts, seriesPositionsRead);
