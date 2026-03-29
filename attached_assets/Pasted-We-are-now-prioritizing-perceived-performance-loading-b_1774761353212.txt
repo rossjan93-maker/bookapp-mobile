@@ -1,0 +1,95 @@
+We are now prioritizing perceived performance, loading behavior, and transition quality across the app.
+
+The current experience feels clunky because screens visibly rebuild in phases:
+- hard skeleton
+- partial content
+- reordered/final content
+This makes the app feel unstable and slow even when data is eventually correct.
+
+I need a focused performance/transition pass, not feature work.
+
+GOAL
+Make the app feel continuous, stable, and responsive.
+Never replace meaningful content with a worse intermediate state unless absolutely necessary.
+
+AUDIT + FIX THESE AREAS
+
+1. Recommendations tab loading
+Current problem:
+- hard skeleton on entry/revisit
+- then partial cards
+- then visible reclassification/reordering
+This feels like multi-phase churn.
+
+Fix:
+- if prior recs exist, keep them on screen
+- background refresh should be subtle
+- do not commit half-built rec states that visibly reorder the deck
+- commit rec sections once when stable, not in multiple visible passes
+
+2. Home tab loading
+Current problem:
+- screen appears but feels visually empty/unfinished for a beat
+- sections don’t feel instantly meaningful
+
+Fix:
+- preserve last known content where possible
+- avoid blank intermediate states
+- use better skeletons only where truly necessary
+- prehydrate visible sections before route paint if possible
+
+3. Tab navigation
+Current problem:
+- tapping between tabs feels like entering a new cold screen each time
+
+Fix:
+- prefetch likely-next tab data on idle/focus
+- preserve tab state across navigation
+- avoid remount-driven loading where possible
+- make tab switches feel like stateful continuity, not reloads
+
+4. Card layout stability
+Current problem:
+- cards visibly shift after paint
+- content appears in stages
+
+Fix:
+- reserve final layout dimensions up front
+- keep image/title/reason/action areas stable
+- avoid layout jumps when enrichment or secondary data arrives
+
+5. Transition continuity
+Fix:
+- add lightweight continuity between tabs/screens
+- not flashy animation
+- just enough to avoid the “hard cut into unfinished screen” feeling
+
+INSTRUMENTATION
+Before changing behavior, instrument and report:
+- tab tap → first paint
+- tab tap → meaningful content visible
+- tab tap → final stable state
+for:
+- Home
+- Recommendations
+- Library
+
+Also log:
+- whether content came from cache/session/persisted state
+- whether a background refresh occurred
+- whether a visible reorder/reclassification happened after first paint
+
+OUTPUT I WANT
+1. root causes of the clunky feel
+2. the top 3 fixes by impact
+3. exact files changed
+4. before/after behavior for Home and Recommendations
+5. measured timing improvement and reduction in visible state churn
+
+IMPORTANT
+Do not add visual flourish for its own sake.
+This is about:
+- stability
+- continuity
+- predictability
+- perceived speed

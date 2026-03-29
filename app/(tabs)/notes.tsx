@@ -50,15 +50,27 @@ function Divider() {
   return <View style={{ height: 1, backgroundColor: '#f0ede8', marginBottom: 24, marginTop: 4 }} />;
 }
 
+// ─── Module-level session cache ───────────────────────────────────────────────
+
+type InboxSnapshot = {
+  userId:    string;
+  items:     InboxItem[];
+  fetchedAt: number;
+};
+
+let _inboxCache: InboxSnapshot | null = null;
+const INBOX_STALE_MS = 30_000; // inbox is more time-sensitive than home/library
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function InboxScreen() {
   const router = useRouter();
   const { setNewRecCount } = useContext(BadgeContext);
 
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [items, setItems]                 = useState<InboxItem[]>([]);
-  const [loading, setLoading]             = useState(true);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(() => _inboxCache?.userId ?? null);
+  const [items, setItems]                 = useState<InboxItem[]>(() => _inboxCache?.items ?? []);
+  // loading is true only on a cold start with no cached data
+  const [loading, setLoading]             = useState<boolean>(() => !_inboxCache);
   const [error, setError]                 = useState<string | null>(null);
   const [savingId, setSavingId]           = useState<string | null>(null);
   const [refreshing, setRefreshing]       = useState(false);
@@ -93,12 +105,16 @@ export default function InboxScreen() {
     if (dbError) {
       setError('Could not load inbox.');
     } else {
-      setItems((data as InboxItem[]) ?? []);
+      const rows = (data as InboxItem[]) ?? [];
+      setItems(rows);
+      _inboxCache = { userId: user.id, items: rows, fetchedAt: Date.now() };
     }
     setLoading(false);
   }
 
   useFocusEffect(useCallback(() => {
+    // Inbox is time-sensitive (new recs arrive): stale window is shorter than home/library
+    if (_inboxCache && Date.now() - _inboxCache.fetchedAt < INBOX_STALE_MS) return;
     loadNotes();
   }, []));
 

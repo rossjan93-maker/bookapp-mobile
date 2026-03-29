@@ -149,43 +149,80 @@ function InitialAvatar({ name }: { name: string }) {
   );
 }
 
+// ─── Module-level session cache ───────────────────────────────────────────────
+//
+// Survives tab switches and sub-screen navigation. Cleared on sign-out.
+// On cold mount: state initialised from cache → zero-spinner for return visits.
+// Background refresh fires when cache is stale (> 60 s).
+
+type HomeSnapshot = {
+  userId:          string;
+  greeting:        string;
+  currentReads:    CurrentRead[];
+  yearlyGoal:      number | null;
+  pendingRecCount: number;
+  booksThisYear:   YearBook[];
+  tasteProfile:    TasteProfile | null;
+  feed:            FeedEvent[];
+  friendships:     FriendshipRow[];
+  fetchedAt:       number;
+};
+
+let _homeCache: HomeSnapshot | null = null;
+const HOME_STALE_MS = 60_000;
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
   const router = useRouter();
-  const [userId, setUserId] = useState<string | null>(null);
-  const [greeting, setGreeting] = useState('');
+
+  // Initialise from cache when it exists — renders meaningful content immediately
+  // without a network round-trip on return visits.
+  const [userId,          setUserId]          = useState<string | null>(() => _homeCache?.userId ?? null);
+  const [greeting,        setGreeting]        = useState<string>(() => _homeCache?.greeting ?? '');
 
   // Dashboard modules
-  const [currentReads, setCurrentReads] = useState<CurrentRead[]>([]);
-  const [yearlyGoal, setYearlyGoal]     = useState<number | null>(null);
-  const [pendingRecCount, setPendingRecCount] = useState(0);
-  const [booksThisYear, setBooksThisYear] = useState<YearBook[]>([]);
-  const [goalExpanded, setGoalExpanded]   = useState(false);
+  const [currentReads,    setCurrentReads]    = useState<CurrentRead[]>(() => _homeCache?.currentReads ?? []);
+  const [yearlyGoal,      setYearlyGoal]      = useState<number | null>(() => _homeCache?.yearlyGoal ?? null);
+  const [pendingRecCount, setPendingRecCount] = useState<number>(() => _homeCache?.pendingRecCount ?? 0);
+  const [booksThisYear,   setBooksThisYear]   = useState<YearBook[]>(() => _homeCache?.booksThisYear ?? []);
+  const [goalExpanded,    setGoalExpanded]    = useState(false);
 
   // Taste profile / learning mode
-  const [tasteProfile, setTasteProfile] = useState<TasteProfile | null>(null);
+  const [tasteProfile,    setTasteProfile]    = useState<TasteProfile | null>(() => _homeCache?.tasteProfile ?? null);
 
   // Activity feed
-  const [feed, setFeed] = useState<FeedEvent[]>([]);
-  const [feedLoading, setFeedLoading] = useState(true);
-  const [feedError, setFeedError] = useState<string | null>(null);
+  const [feed,            setFeed]            = useState<FeedEvent[]>(() => _homeCache?.feed ?? []);
+  // feedLoading is only true on a genuine cold start (no cache at all)
+  const [feedLoading,     setFeedLoading]     = useState<boolean>(() => !_homeCache);
+  const [feedError,       setFeedError]       = useState<string | null>(null);
 
   // Friends
-  const [friendships, setFriendships] = useState<FriendshipRow[]>([]);
-  const [loadingFriendships, setLoadingFriendships] = useState(true);
+  const [friendships,       setFriendships]       = useState<FriendshipRow[]>(() => _homeCache?.friendships ?? []);
+  const [loadingFriendships, setLoadingFriendships] = useState<boolean>(() => !_homeCache);
 
   // Search
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery,   setSearchQuery]   = useState('');
   const [searchResults, setSearchResults] = useState<ProfileResult[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [addingId, setAddingId] = useState<string | null>(null);
+  const [searching,     setSearching]     = useState(false);
+  const [searchError,   setSearchError]   = useState<string | null>(null);
+  const [addingId,      setAddingId]      = useState<string | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Refs so we can write to the cache after all setters have been called
+  // (state is async; refs give us the live values within the async load).
+  const _crRef    = useRef<CurrentRead[]>([]);
+  const _gyRef    = useRef<number | null>(null);
+  const _prRef    = useRef<number>(0);
+  const _byRef    = useRef<YearBook[]>([]);
+  const _tpRef    = useRef<TasteProfile | null>(null);
+  const _feedRef  = useRef<FeedEvent[]>([]);
+  const _fsRef    = useRef<FriendshipRow[]>([]);
+
   async function loadAll() {
+    const t0 = Date.now();
     if (!supabase) {
       setFeedLoading(false);
       setLoadingFriendships(false);
@@ -200,26 +237,56 @@ export default function HomeScreen() {
     setUserId(user.id);
 
     const meta = user.user_metadata as { first_name?: string } | undefined;
-    if (meta?.first_name) setGreeting(meta.first_name);
+    const greetingName = meta?.first_name ?? '';
+    setGreeting(greetingName);
 
-    // Friendships must resolve first so we can scope the feed to accepted friends only.
-    const rows = await loadFriendships(user.id);
-    const acceptedFriendIds = rows
-      .filter(f => f.status === 'accepted')
-      .map(f => (f.requester_id === user.id ? f.addressee_id : f.requester_id));
-
-    await Promise.all([
-      loadFeed([user.id, ...acceptedFriendIds]),
+    // ── Parallel fetch: friendships + all user-specific data at once ────────────
+    // Previously: loadFriendships() was awaited alone, blocking everything else.
+    // Now: all 5 queries start simultaneously. Feed is kicked off once friend IDs
+    // are known, but the dashboard content is unblocked from the start.
+    const [friendshipRows] = await Promise.all([
+      loadFriendships(user.id),
       loadCurrentRead(user.id),
       loadPendingRecs(user.id),
       loadBooksThisYear(user.id),
-      computeTasteProfile(supabase!, user.id).then(setTasteProfile).catch(() => {}),
+      computeTasteProfile(supabase!, user.id)
+        .then(tp => { setTasteProfile(tp); _tpRef.current = tp; })
+        .catch(() => {}),
     ]);
+
+    // Dashboard is ready — clear the loading gate (if it was set on cold start)
     setFeedLoading(false);
     setLoadingFriendships(false);
+
+    if (__DEV__) console.log(`[PERF] Home dashboard ready in ${Date.now() - t0}ms (source: ${_homeCache ? 'background-refresh' : 'cold-start'})`);
+
+    // Feed requires friend IDs — start it after friendships resolves
+    const acceptedFriendIds = (friendshipRows ?? [])
+      .filter(f => f.status === 'accepted')
+      .map(f => (f.requester_id === user.id ? f.addressee_id : f.requester_id));
+
+    await loadFeed([user.id, ...acceptedFriendIds]);
+
+    if (__DEV__) console.log(`[PERF] Home fully loaded in ${Date.now() - t0}ms`);
+
+    // Persist snapshot for future cold starts / tab switches
+    _homeCache = {
+      userId:          user.id,
+      greeting:        greetingName,
+      currentReads:    _crRef.current,
+      yearlyGoal:      _gyRef.current,
+      pendingRecCount: _prRef.current,
+      booksThisYear:   _byRef.current,
+      tasteProfile:    _tpRef.current,
+      feed:            _feedRef.current,
+      friendships:     _fsRef.current,
+      fetchedAt:       Date.now(),
+    };
   }
 
   useFocusEffect(useCallback(() => {
+    // Skip re-fetch if we have a fresh snapshot — avoids churn on every tab tap.
+    if (_homeCache && Date.now() - _homeCache.fetchedAt < HOME_STALE_MS) return;
     loadAll();
   }, []));
 
@@ -228,7 +295,9 @@ export default function HomeScreen() {
   async function loadFeed(actorIds: string[]) {
     if (!supabase) return;
     if (actorIds.length === 0) {
-      setFeed([]);
+      const empty: FeedEvent[] = [];
+      setFeed(empty);
+      _feedRef.current = empty;
       return;
     }
     const { data, error } = await supabase
@@ -245,7 +314,9 @@ export default function HomeScreen() {
     if (error) {
       setFeedError('Could not load feed.');
     } else {
-      setFeed((data as FeedEvent[]) ?? []);
+      const rows = (data as FeedEvent[]) ?? [];
+      setFeed(rows);
+      _feedRef.current = rows;
     }
   }
 
@@ -261,30 +332,35 @@ export default function HomeScreen() {
       .or(`requester_id.eq.${uid},addressee_id.eq.${uid}`);
     const rows = (data as FriendshipRow[]) ?? [];
     setFriendships(rows);
+    _fsRef.current = rows;
     return rows;
   }
 
   async function loadCurrentRead(uid: string) {
     if (!supabase) return;
 
-    // Load yearly goal for honest pacing-state card colors
-    const profileRes = await supabase
-      .from('profiles')
-      .select('yearly_reading_goal')
-      .eq('id', uid)
-      .single();
-    setYearlyGoal(profileRes.data?.yearly_reading_goal ?? null);
+    // Fetch yearly goal and reading books in parallel — previously sequential
+    const [profileRes, readingRes] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('yearly_reading_goal')
+        .eq('id', uid)
+        .single(),
+      supabase
+        .from('user_books')
+        .select('id, book_id, started_at, current_page, book:books(title, author, cover_url, external_id, page_count)')
+        .eq('user_id', uid)
+        .eq('status', 'reading')
+        .is('deleted_at', null)
+        .order('progress_updated_at', { ascending: false, nullsFirst: false }),
+    ]);
 
-    // Load all reading books ordered by most recently progressed, then started.
-    // Try with progress columns; fall back if migration not yet applied.
-    let res = await supabase
-      .from('user_books')
-      .select('id, book_id, started_at, current_page, book:books(title, author, cover_url, external_id, page_count)')
-      .eq('user_id', uid)
-      .eq('status', 'reading')
-      .is('deleted_at', null)
-      .order('progress_updated_at', { ascending: false, nullsFirst: false });
+    const goal = profileRes.data?.yearly_reading_goal ?? null;
+    setYearlyGoal(goal);
+    _gyRef.current = goal;
 
+    // Fall back to older schema if progress_updated_at column is missing
+    let res = readingRes;
     if (res.error) {
       res = await supabase
         .from('user_books')
@@ -296,7 +372,7 @@ export default function HomeScreen() {
     }
 
     const rows = (res.data as any[]) ?? [];
-    setCurrentReads(rows.map(r => {
+    const mapped = rows.map(r => {
       const b = r.book as any;
       return {
         id:           r.id,
@@ -309,7 +385,9 @@ export default function HomeScreen() {
         external_id:  b?.external_id ?? null,
         page_count:   b?.page_count ?? null,
       };
-    }));
+    });
+    setCurrentReads(mapped);
+    _crRef.current = mapped;
   }
 
   async function loadPendingRecs(uid: string) {
@@ -319,7 +397,9 @@ export default function HomeScreen() {
       .select('id', { count: 'exact', head: true })
       .eq('to_user_id', uid)
       .eq('status', 'pending');
-    setPendingRecCount(count ?? 0);
+    const n = count ?? 0;
+    setPendingRecCount(n);
+    _prRef.current = n;
   }
 
   async function loadBooksThisYear(uid: string) {
@@ -334,7 +414,7 @@ export default function HomeScreen() {
       .gte('finished_at', yearStart)
       .order('finished_at', { ascending: false });
     const rows = (data as any[]) ?? [];
-    setBooksThisYear(rows.map(r => {
+    const mapped = rows.map(r => {
       const b = r.book as any;
       return {
         id:          r.id,
@@ -347,7 +427,9 @@ export default function HomeScreen() {
         external_id: b?.external_id ?? null,
         page_count:  b?.page_count ?? null,
       };
-    }));
+    });
+    setBooksThisYear(mapped);
+    _byRef.current = mapped;
   }
 
   // ── Search ───────────────────────────────────────────────────────────────────

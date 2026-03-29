@@ -104,6 +104,19 @@ const FILTER_EMPTY: Record<FilterKey, { title: string; body: string }> = {
   dnf:          { title: 'No abandoned books',     body: 'DNF is always a valid call.' },
 };
 
+// ─── Module-level session cache ───────────────────────────────────────────────
+
+type LibrarySnapshot = {
+  userId:             string;
+  items:              UserBook[];
+  yearlyGoal:         number | null;
+  hasGoodreadsImport: boolean | null;
+  fetchedAt:          number;
+};
+
+let _libCache: LibrarySnapshot | null = null;
+const LIB_STALE_MS = 60_000;
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 const VALID_FILTERS = new Set<FilterKey>(['all', 'want_to_read', 'reading', 'finished', 'dnf']);
@@ -111,10 +124,11 @@ const VALID_FILTERS = new Set<FilterKey>(['all', 'want_to_read', 'reading', 'fin
 export default function LibraryScreen() {
   const router = useRouter();
   const { initialFilter } = useLocalSearchParams<{ initialFilter?: string }>();
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [items, setItems]                 = useState<UserBook[]>([]);
-  const [yearlyGoal, setYearlyGoal]       = useState<number | null>(null);
-  const [loading, setLoading]             = useState(true);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(() => _libCache?.userId ?? null);
+  const [items, setItems]                 = useState<UserBook[]>(() => _libCache?.items ?? []);
+  const [yearlyGoal, setYearlyGoal]       = useState<number | null>(() => _libCache?.yearlyGoal ?? null);
+  // loading is true only on a cold start with no cached data
+  const [loading, setLoading]             = useState<boolean>(() => !_libCache);
   const [error, setError]                 = useState<string | null>(null);
   const [updatingId, setUpdatingId]       = useState<string | null>(null);
   const [pendingFeedback, setPendingFeedback]           = useState<PendingFeedback | null>(null);
@@ -137,7 +151,7 @@ export default function LibraryScreen() {
   // Accordion state for Finished+chronological mode.
   // Starts empty (all years collapsed). User taps a year row to expand/collapse it.
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
-  const [hasGoodreadsImport, setHasGoodreadsImport] = useState<boolean | null>(null);
+  const [hasGoodreadsImport, setHasGoodreadsImport] = useState<boolean | null>(() => _libCache?.hasGoodreadsImport ?? null);
   const [refreshing, setRefreshing] = useState(false);
 
   // Background cover enrichment for any book in this library load with no
@@ -172,31 +186,32 @@ export default function LibraryScreen() {
   }
 
   async function loadBooks() {
+    const t0 = Date.now();
     if (!supabase) { setError('Supabase not configured.'); setLoading(false); return; }
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setError('No signed-in user.'); setLoading(false); return; }
     setCurrentUserId(user.id);
 
-    // Load yearly goal for pacing-state card colors
-    const profileRes = await supabase
-      .from('profiles')
-      .select('yearly_reading_goal')
-      .eq('id', user.id)
-      .single();
+    // Fetch yearly goal and user_books in parallel — previously two sequential calls
+    const [profileRes, primaryResult] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('yearly_reading_goal')
+        .eq('id', user.id)
+        .single(),
+      supabase
+        .from('user_books')
+        .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, book:books(title, author, cover_url, external_id, page_count)')
+        .eq('user_id', user.id)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false }),
+    ]);
+
     setYearlyGoal(profileRes.data?.yearly_reading_goal ?? null);
 
-    // Primary query: full columns + deleted_at filter.
-    let result = await supabase
-      .from('user_books')
-      .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, book:books(title, author, cover_url, external_id, page_count)')
-      .eq('user_id', user.id)
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false });
-
+    // Fallback: older schema without current_page / page_count columns
+    let result = primaryResult;
     if (result.error) {
-      // Fallback: older schema without current_page / page_count columns.
-      // deleted_at filter is always required — rows without it are excluded
-      // to prevent soft-deleted books from appearing.
       result = await supabase
         .from('user_books')
         .select('id, book_id, status, started_at, finished_at, progress_updated_at, book:books(title, author, cover_url, external_id)')
@@ -210,34 +225,44 @@ export default function LibraryScreen() {
     } else {
       const loadedItems = (result.data as unknown as UserBook[]) ?? [];
       setItems(loadedItems);
-      // Fire-and-forget: backfill missing covers for any book in this load.
-      // Updates local state immediately so covers appear without a reload.
+
+      // Goodreads count + background enrichment in parallel — previously sequential
       const missingCoverIds = [...new Set(
         loadedItems.filter(it => it.book && !it.book.cover_url).map(it => it.book_id),
       )];
-      backfillCovers(missingCoverIds).catch(() => {});
-
-      // Fire-and-forget: full metadata repair (description, subjects, page_count,
-      // plus cover as a secondary path) for any book missing any field.
-      // Persists to the books table; visible on next Book Detail open.
-      // Subjects (via Open Library) are now included in the repair model.
       const allLibraryBookIds = [...new Set(
         loadedItems.filter(it => it.book_id).map(it => it.book_id),
       )];
-      repairBooksMetadata(allLibraryBookIds, { cap: 30 }).catch(() => {});
+      const [importedRes] = await Promise.all([
+        supabase
+          .from('user_books')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('import_source', 'goodreads'),
+        backfillCovers(missingCoverIds),
+        repairBooksMetadata(allLibraryBookIds, { cap: 30 }),
+      ]);
 
-      // Check whether user has any Goodreads-imported books
-      const { count: importedCount } = await supabase
-        .from('user_books')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .eq('import_source', 'goodreads');
-      setHasGoodreadsImport((importedCount ?? 0) > 0);
+      const goodreadsFlag = (importedRes.count ?? 0) > 0;
+      setHasGoodreadsImport(goodreadsFlag);
+
+      // Persist snapshot for future cold starts
+      _libCache = {
+        userId:             user.id,
+        items:              loadedItems,
+        yearlyGoal:         profileRes.data?.yearly_reading_goal ?? null,
+        hasGoodreadsImport: goodreadsFlag,
+        fetchedAt:          Date.now(),
+      };
+
+      if (__DEV__) console.log(`[PERF] Library loaded ${loadedItems.length} books in ${Date.now() - t0}ms`);
     }
     setLoading(false);
   }
 
   useFocusEffect(useCallback(() => {
+    // Skip re-fetch when cache is fresh — avoids showing stale-while-loading churn
+    if (_libCache && Date.now() - _libCache.fetchedAt < LIB_STALE_MS) return;
     loadBooks();
   }, []));
 
