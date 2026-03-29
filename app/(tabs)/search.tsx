@@ -1822,7 +1822,9 @@ export default function RecommendationsScreen() {
   // hubLoading is true only on a cold start with no rec session cache.
   // On return visits, hub sections render immediately from _hubCache.
   const [hubLoading, setHubLoading]           = useState<boolean>(() => !_recSession);
-  const [recsLoading, setRecsLoading]         = useState(false);
+  // Cold start (_recSession null): show a loading indicator rather than an empty-state flash.
+  // Warm revisit (_recSession populated): start false so the card deck is visible immediately.
+  const [recsLoading, setRecsLoading]         = useState<boolean>(() => !_recSession);
   const [recsQualityGate, setRecsQualityGate] = useState<QualityGate | null>(null);
   const [recsMeta, setRecsMeta]               = useState<RankedRecsResult['meta'] | null>(null);
   const [feedbackCtx, setFeedbackCtx]         = useState<FeedbackContext>(emptyContext());
@@ -1832,9 +1834,29 @@ export default function RecommendationsScreen() {
   const [incomingRecs, setIncomingRecs]       = useState<IncomingRec[]>(() => _hubCache?.incomingRecs ?? []);
   const [sentRecs, setSentRecs]               = useState<SentRec[]>(() => _hubCache?.sentRecs ?? []);
   const [tasteProfile, setTasteProfile]       = useState<TasteProfile | null>(() => _hubCache?.tasteProfile ?? null);
-  const [recommendations, setRecommendations] = useState<ScoredBook[]>([]);
-  const [continuations,   setContinuations]   = useState<ScoredBook[]>([]);
-  const [discoveries,     setDiscoveries]     = useState<ScoredBook[]>([]);
+  // Pre-populate the card deck from the in-memory session cache synchronously so the
+  // first render has cards and never shows the empty-state flash on warm revisits.
+  // The useFocusEffect will re-apply filterActedOn + applyPageSize within ~200ms.
+  const [recommendations, setRecommendations] = useState<ScoredBook[]>(() => {
+    if (!_recSession) return [];
+    return _recSession.recs.filter(filterActedOn);
+  });
+  const [continuations,   setContinuations]   = useState<ScoredBook[]>(() => {
+    if (!_recSession) return [];
+    const { conts } = applyPageSize(
+      _recSession.continuations.filter(filterActedOn),
+      _recSession.discoveries.filter(filterActedOn),
+    );
+    return conts;
+  });
+  const [discoveries,     setDiscoveries]     = useState<ScoredBook[]>(() => {
+    if (!_recSession) return [];
+    const { discs } = applyPageSize(
+      _recSession.continuations.filter(filterActedOn),
+      _recSession.discoveries.filter(filterActedOn),
+    );
+    return discs;
+  });
 
   // ── Background-refresh indicator (stale-while-revalidate) ─────────────────
   // True while Phase 2 is running with cached recs already showing.

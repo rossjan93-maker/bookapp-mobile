@@ -25,6 +25,30 @@ import type { UserBookStatus, BookSnapshot, FinishedDateInput, StartedDateInput 
 import { useUndoBar } from '../../lib/useUndoBar';
 import { invalidateBookDataCaches } from '../../lib/tabCache';
 
+// ─── Book-level enrichment cache ──────────────────────────────────────────────
+// Module-level Map keyed by book DB id.  Stores the description / subjects /
+// pageCount fields that would otherwise require an OL/Google Books round-trip on
+// every visit.  Max 60 entries to cap memory; LRU-eviction is not needed at this
+// size.  Cleared implicitly on JS context restart (app kill / hard reload).
+
+type BookMetaEntry = {
+  description: string | null;
+  subjects:    string[];
+  pageCount:   number | null;
+};
+
+const _bookMetaCache = new Map<string, BookMetaEntry>();
+const BOOK_META_MAX  = 60;
+
+function _cacheBookMeta(bookId: string, entry: BookMetaEntry): void {
+  if (_bookMetaCache.size >= BOOK_META_MAX) {
+    // Drop the oldest entry (first key in insertion order)
+    const firstKey = _bookMetaCache.keys().next().value;
+    if (firstKey !== undefined) _bookMetaCache.delete(firstKey);
+  }
+  _bookMetaCache.set(bookId, entry);
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const STATUS_META: Record<string, { bg: string; text: string; label: string }> = {
@@ -268,7 +292,19 @@ export default function BookDetailScreen() {
 
   useEffect(() => {
     if (!bookId || !supabase) return;
-    setMetaLoading(true);
+
+    // Pre-populate description/subjects/pageCount from session cache so the UI
+    // shows content immediately on revisit without waiting for the DB query.
+    const _cachedMeta = _bookMetaCache.get(bookId!);
+    if (_cachedMeta) {
+      setOlMeta({
+        description: _cachedMeta.description,
+        subjects:    _cachedMeta.subjects,
+        pageCount:   _cachedMeta.pageCount,
+      });
+    }
+    // Only show the skeleton if there is nothing in the cache yet
+    setMetaLoading(!_cachedMeta);
 
     async function enrich() {
       if (!supabase) return;
@@ -357,9 +393,14 @@ export default function BookDetailScreen() {
 
       // Short-circuit if everything is already rich.
       if (hasCover && hasDesc && hasSubjects && hasPages) {
-        if (dbDesc || dbSubjects.length > 0) {
-          setOlMeta({ description: dbDesc, subjects: dbSubjects, pageCount: dbPages });
-        }
+        const richMeta = { description: dbDesc, subjects: dbSubjects, pageCount: dbPages };
+        if (dbDesc || dbSubjects.length > 0) setOlMeta(richMeta);
+        // Cache so subsequent visits are instant
+        _cacheBookMeta(bookId!, {
+          description: dbDesc,
+          subjects:    dbSubjects,
+          pageCount:   dbPages,
+        });
         setMetaLoading(false);
         return;
       }
@@ -427,6 +468,14 @@ export default function BookDetailScreen() {
       if (Object.keys(patch).length > 0 && supabase) {
         supabase.from('books').update(patch).eq('id', bookId!).then(() => {});
       }
+
+      // Write whatever was discovered to the session cache so the next visit
+      // to this book renders description/subjects immediately with no skeleton.
+      _cacheBookMeta(bookId!, {
+        description: foundDesc ?? row?.description ?? null,
+        subjects:    foundSubjects.length > 0 ? foundSubjects : (row?.subjects ?? []),
+        pageCount:   foundPages  ?? row?.page_count ?? null,
+      });
 
       setMetaLoading(false);
     }

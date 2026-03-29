@@ -14,6 +14,7 @@ import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computeGoalProgress } from '../../lib/pacing';
 import { computeAvgPagesPerDay, computeSourceCompletion } from '../../lib/signals';
 import type { SourceCompletion } from '../../lib/signals';
+import { registerCacheClearer } from '../../lib/tabCache';
 
 type Profile = {
   username: string;
@@ -98,6 +99,19 @@ function SectionLabel({ children }: { children: string }) {
   );
 }
 
+// ─── Module-level profile cache ───────────────────────────────────────────────
+// 60 s staleness — same window as Home / Library.  Profile data (friend count,
+// stats, sent recs) changes infrequently and never from within the Profile tab
+// itself; the user can pull-to-refresh for an immediate update.
+
+const PROFILE_STALE_MS = 60_000;
+
+type ProfileSnapshot = { userId: string; fetchedAt: number };
+
+let _profileCache: ProfileSnapshot | null = null;
+// On sign-out, clear so the next user gets a fresh load
+registerCacheClearer(() => { _profileCache = null; });
+
 export default function ProfileScreen() {
   const router = useRouter();
   const [email, setEmail]               = useState<string | null>(null);
@@ -116,7 +130,8 @@ export default function ProfileScreen() {
   const [signals, setSignals]             = useState<ReaderSignals | null>(null);
   const [patterns, setPatterns]           = useState<ReadingPatterns | null>(null);
   const [sourceCompletion, setSourceCompletion] = useState<SourceCompletion | null>(null);
-  const [loading, setLoading]           = useState(true);
+  // Start false when module cache exists so no full-page spinner on revisit
+  const [loading, setLoading]           = useState(() => !_profileCache);
   const [error, setError]               = useState<string | null>(null);
   const [recsExpanded, setRecsExpanded]         = useState(false);
   const [acceptedFriends, setAcceptedFriends]   = useState<AcceptedFriend[]>([]);
@@ -124,13 +139,21 @@ export default function ProfileScreen() {
   const [goalExpanded, setGoalExpanded]         = useState(false);
   const [refreshing, setRefreshing]             = useState(false);
 
-  async function loadProfile() {
+  async function loadProfile(force = false) {
       if (!supabase) { setError('Supabase not configured.'); setLoading(false); return; }
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setError('No signed-in user.'); setLoading(false); return; }
 
       setEmail(user.email ?? null);
       setUserId(user.id);
+
+      // ── Staleness guard (matches Home / Library 60 s pattern) ────────────
+      // Belt-and-suspenders: clear cache if user changed accounts
+      if (_profileCache && _profileCache.userId !== user.id) _profileCache = null;
+      if (!force && _profileCache && Date.now() - _profileCache.fetchedAt < PROFILE_STALE_MS) {
+        setLoading(false);
+        return;
+      }
 
       const yearStart = `${new Date().getFullYear()}-01-01T00:00:00Z`;
 
@@ -360,6 +383,7 @@ export default function ProfileScreen() {
         recAddedDnfRes.count       ?? 0,
       ));
 
+      _profileCache = { userId: user.id, fetchedAt: Date.now() };
       setLoading(false);
   }
 
@@ -410,7 +434,7 @@ export default function ProfileScreen() {
 
   async function handleRefresh() {
     setRefreshing(true);
-    await loadProfile();
+    await loadProfile(true); // force=true bypasses staleness guard
     setRefreshing(false);
   }
 
