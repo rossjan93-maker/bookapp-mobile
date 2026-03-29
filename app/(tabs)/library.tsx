@@ -117,8 +117,16 @@ type LibrarySnapshot = {
 };
 
 let _libCache: LibrarySnapshot | null = null;
+// _libItems survives bookData clears — keeps content visible during background refresh.
+// Only nulled on sign-out so the user never sees a blank library after a book action.
+let _libItems: UserBook[] | null = null;
+// Prevents concurrent loadBooks calls when tabs are switched rapidly.
+let _libLoading = false;
 const LIB_STALE_MS = 60_000;
-// 'bookData' tag: also cleared when Book Detail performs a status/page action
+// Sign-out: clear everything including retained items
+registerCacheClearer(() => { _libCache = null; _libItems = null; _libLoading = false; });
+// Book action (status change, page update): invalidate fetch timing only.
+// _libItems is kept so the library never full-page blanks on tab switch after a book action.
 registerCacheClearer(() => { _libCache = null; }, 'bookData');
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -129,10 +137,11 @@ export default function LibraryScreen() {
   const router = useRouter();
   const { initialFilter } = useLocalSearchParams<{ initialFilter?: string }>();
   const [currentUserId, setCurrentUserId] = useState<string | null>(() => _libCache?.userId ?? null);
-  const [items, setItems]                 = useState<UserBook[]>(() => _libCache?.items ?? []);
+  // Seed from _libItems first (survives bookData clears), then timing cache, then empty.
+  const [items, setItems]                 = useState<UserBook[]>(() => _libItems ?? _libCache?.items ?? []);
   const [yearlyGoal, setYearlyGoal]       = useState<number | null>(() => _libCache?.yearlyGoal ?? null);
-  // loading is true only on a cold start with no cached data
-  const [loading, setLoading]             = useState<boolean>(() => !_libCache);
+  // Full-page skeleton only when we have never successfully loaded — not on cache-timing invalidation.
+  const [loading, setLoading]             = useState<boolean>(() => _libItems === null && _libCache === null);
   const [error, setError]                 = useState<string | null>(null);
   const [updatingId, setUpdatingId]       = useState<string | null>(null);
   const [pendingFeedback, setPendingFeedback]           = useState<PendingFeedback | null>(null);
@@ -190,12 +199,17 @@ export default function LibraryScreen() {
   }
 
   async function loadBooks() {
+    // Prevent concurrent fetches — rapid tab switches can trigger multiple mounts
+    // before the first async load completes. Without this guard each mount fires a
+    // separate 16-26s query and the last one wins, wasting bandwidth and causing jank.
+    if (_libLoading) return;
+    _libLoading = true;
     const t0 = Date.now();
-    if (!supabase) { setError('Supabase not configured.'); setLoading(false); return; }
+    if (!supabase) { setError('Supabase not configured.'); setLoading(false); _libLoading = false; return; }
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setError('No signed-in user.'); setLoading(false); return; }
+    if (!user) { setError('No signed-in user.'); setLoading(false); _libLoading = false; return; }
     // Belt-and-suspenders: clear stale cache if the user switched accounts
-    if (_libCache && _libCache.userId !== user.id) _libCache = null;
+    if (_libCache && _libCache.userId !== user.id) { _libCache = null; _libItems = null; }
     setCurrentUserId(user.id);
 
     // Fetch yearly goal and user_books in parallel — previously two sequential calls
@@ -252,7 +266,8 @@ export default function LibraryScreen() {
       const goodreadsFlag = (importedRes.count ?? 0) > 0;
       setHasGoodreadsImport(goodreadsFlag);
 
-      // Persist snapshot for future cold starts
+      // Persist snapshot — _libItems for content continuity, _libCache for fetch timing
+      _libItems = loadedItems;
       _libCache = {
         userId:             user.id,
         items:              loadedItems,
@@ -264,9 +279,12 @@ export default function LibraryScreen() {
       if (__DEV__) console.log(`[PERF] Library loaded ${loadedItems.length} books in ${Date.now() - t0}ms`);
     }
     setLoading(false);
+    _libLoading = false;
   }
 
   useFocusEffect(useCallback(() => {
+    // Skip if a fetch is already in progress (rapid tab switches can re-trigger this)
+    if (_libLoading) return;
     // Skip re-fetch when cache is fresh — avoids showing stale-while-loading churn
     if (_libCache && Date.now() - _libCache.fetchedAt < LIB_STALE_MS) return;
     loadBooks();

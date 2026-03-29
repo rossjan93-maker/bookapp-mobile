@@ -1,0 +1,59 @@
+The app still feels bad, especially Recommend -> Library.
+
+This is not a general performance problem anymore.
+It is a specific screen-state / navigation continuity problem.
+
+I need a focused runtime diagnosis of the actual path the user is experiencing:
+Recommendations tab -> tap Library tab
+
+The current behavior in the recording is unacceptable:
+- Recommend still feels unstable
+- Library enters a full-page placeholder state and sits there
+- the app feels like it is rebuilding screens instead of preserving them
+
+Do NOT give me another broad performance summary.
+I need a precise diagnosis and patch for this exact flow.
+
+TASKS
+
+1. TRACE THE RUNTIME PATH
+For this exact user flow:
+- open Recommendations
+- switch to Library
+
+Show:
+- whether Library is mounting cold or from preserved state
+- whether _libCache is present at mount
+- what causes loading=true
+- why the full-page Library skeleton is being shown
+- whether the screen has meaningful prior content that is still being discarded
+
+2. FIX THE LOADING RULES
+For Library and Recommend:
+- if the screen has ever shown meaningful content, do NOT replace the whole screen with a full loading placeholder on tab switch
+- keep prior content visible
+- refresh in background
+- if some sections still need data, load them inside reserved layout without blanking the whole tab
+
+3. IDENTIFY THE EXACT REGRESSION
+I need the root cause of why this still feels so bad despite the previous cache/placeholder work.
+Tell me whether the problem is:
+- stale cache miss
+- mount-time loading state
+- wrong loading gate
+- tab state not being preserved
+- cache invalidation too aggressive
+- placeholder shown on revisit when it should only show on first-ever cold load
+
+4. PATCH ONLY THE HIGH-IMPACT PATH
+Do not redesign all loading again.
+Patch the specific rules for:
+- Recommendations tab stability
+- Library tab continuity on switch
+
+RETURN
+- exact root cause
+- exact files changed
+- what loading rule changed
+- before/after behavior for Recommend -> Library
+- confirmation that Library no longer full-page skeletons on a normal tab switch if content has been seen before
