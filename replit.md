@@ -235,6 +235,13 @@ Evaluate in this order:
   - Adding `id` as a tiebreaker sort column on all four queries (Phase 1 primary, Phase 1 fallback, Phase 2 primary, Phase 2 fallback), making `OFFSET` pagination fully deterministic.
   - Deduplicating `remainder` against `firstBatch` via a `Set` as a safety net.
 
+### Profile tab two-phase load (`app/(tabs)/profile.tsx`)
+- **Problem**: 21 parallel Supabase queries held the entire profile page behind the slowest query (~800–1200ms). No skeleton — page "popped in" fully formed.
+- **Fix**: Split into Phase 1 (6 fast queries: profile row + 5 COUNT heads) and Phase 2 (15 row fetches + signal/pattern counts). `setLoading(false)` fires after Phase 1 (~400–600ms), making the header + stats + goal bar visible immediately. Phase 2 runs right after and populates friends list, sent recs, prefs, and signals silently.
+- **State changes**: `pendingRequests`, `sentRecs`, `acceptedFriends`, `booksThisYear` initialized as `null` (not `[]`) so sections stay hidden while Phase 2 is in flight — prevents premature "No friends yet" / "No recommendations sent yet" flash.
+- **Render guards**: friends section renders nothing when `null`; sent recs renders nothing when `null`; pending requests section only renders when non-null AND length > 0; goal expansion shows "Loading…" when `booksThisYear` is null.
+- **Revisit behavior unchanged**: tabs are not unmounted in Expo Router so component state (including Phase 2 data) persists across tab switches. Staleness guard (60s) prevents re-fetching Phase 1 on quick revisits. Sign-out registered via `registerCacheClearer`.
+
 ### Book Detail enrichment latency (`app/book/[id].tsx`)
 Two changes to reduce perceived metadata latency:
 1. **Fast-path before `searchOLWork`**: if all four fields (cover, description, subjects, page_count) are already in the DB, cache + return before any network calls. Previously this short-circuit fired AFTER `searchOLWork` had already run.

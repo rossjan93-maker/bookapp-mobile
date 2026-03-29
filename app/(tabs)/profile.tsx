@@ -117,8 +117,8 @@ export default function ProfileScreen() {
   const [email, setEmail]               = useState<string | null>(null);
   const [userId, setUserId]             = useState<string | null>(null);
   const [profile, setProfile]           = useState<Profile | null>(null);
-  const [pendingRequests, setPendingRequests]    = useState<PendingRequest[]>([]);
-  const [sentRecs, setSentRecs]         = useState<SentRecommendation[]>([]);
+  const [pendingRequests, setPendingRequests]    = useState<PendingRequest[] | null>(null);
+  const [sentRecs, setSentRecs]         = useState<SentRecommendation[] | null>(null);
   const [prefs, setPrefs]               = useState<ReaderPrefs | null>(null);
   const [stats, setStats]               = useState<{
     friendsCount: number;
@@ -134,257 +134,191 @@ export default function ProfileScreen() {
   const [loading, setLoading]           = useState(() => !_profileCache);
   const [error, setError]               = useState<string | null>(null);
   const [recsExpanded, setRecsExpanded]         = useState(false);
-  const [acceptedFriends, setAcceptedFriends]   = useState<AcceptedFriend[]>([]);
-  const [booksThisYear, setBooksThisYear]       = useState<YearBook[]>([]);
+  const [acceptedFriends, setAcceptedFriends]   = useState<AcceptedFriend[] | null>(null);
+  const [booksThisYear, setBooksThisYear]       = useState<YearBook[] | null>(null);
   const [goalExpanded, setGoalExpanded]         = useState(false);
   const [refreshing, setRefreshing]             = useState(false);
 
   async function loadProfile(force = false) {
-      if (!supabase) { setError('Supabase not configured.'); setLoading(false); return; }
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setError('No signed-in user.'); setLoading(false); return; }
+    if (!supabase) { setError('Supabase not configured.'); setLoading(false); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setError('No signed-in user.'); setLoading(false); return; }
 
-      setEmail(user.email ?? null);
-      setUserId(user.id);
+    setEmail(user.email ?? null);
+    setUserId(user.id);
 
-      // ── Staleness guard (matches Home / Library 60 s pattern) ────────────
-      // Belt-and-suspenders: clear cache if user changed accounts
-      if (_profileCache && _profileCache.userId !== user.id) _profileCache = null;
-      if (!force && _profileCache && Date.now() - _profileCache.fetchedAt < PROFILE_STALE_MS) {
-        setLoading(false);
-        return;
-      }
-
-      const yearStart = `${new Date().getFullYear()}-01-01T00:00:00Z`;
-
-      const [
-        profileRes,
-        requestsRes,
-        friendsRes,
-        friendsListRes,
-        landedRes,
-        finishedFromRecRes,
-        finishedAllRes,
-        finishedYearRes,
-        sentRecsRes,
-        prefsRes,
-        dnfCountRes,
-        recReceivedTotalRes,
-        recReceivedFinishedRes,
-        progressEventsRes,
-        selfAddedRes,
-        recAddedRes,
-        selfAddedFinishedRes,
-        selfAddedDnfRes,
-        recAddedFinishedRes,
-        recAddedDnfRes,
-        finishedYearBooksRes,
-      ] = await Promise.all([
-        supabase.from('profiles').select('username, first_name, last_name, yearly_reading_goal').eq('id', user.id).single(),
-        supabase
-          .from('friendships')
-          .select('id, requester_id, requester:profiles!friendships_requester_id_fkey(username, first_name, last_name)')
-          .eq('addressee_id', user.id)
-          .eq('status', 'pending'),
-        supabase
-          .from('friendships')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'accepted')
-          .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`),
-        supabase
-          .from('friendships')
-          .select(
-            'id, requester_id, addressee_id, ' +
-            'requester:profiles!friendships_requester_id_fkey(id, username, first_name, last_name), ' +
-            'addressee:profiles!friendships_addressee_id_fkey(id, username, first_name, last_name)'
-          )
-          .eq('status', 'accepted')
-          .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`),
-        supabase
-          .from('credibility_events')
-          .select('*', { count: 'exact', head: true })
-          .eq('from_user_id', user.id),
-        supabase
-          .from('credibility_events')
-          .select('*', { count: 'exact', head: true })
-          .eq('to_user_id', user.id),
-        supabase
-          .from('user_books')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .eq('status', 'finished')
-          .is('deleted_at', null),
-        supabase
-          .from('user_books')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .eq('status', 'finished')
-          .is('deleted_at', null)
-          .gte('finished_at', yearStart),
-        supabase
-          .from('recommendations')
-          .select(
-            'id, book_id, status, created_at, note, ' +
-            'to_user:profiles!recommendations_to_user_id_fkey(username, first_name, last_name), ' +
-            'book:books!recommendations_book_id_fkey(title, author, cover_url, external_id)'
-          )
-          .eq('from_user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(50),
-        supabase
-          .from('reader_preferences')
-          .select('favorite_genres, avoid_genres, reading_styles, favorite_authors')
-          .eq('user_id', user.id)
-          .maybeSingle(),
-        // ── Signal queries ──
-        supabase
-          .from('user_books')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .eq('status', 'dnf')
-          .is('deleted_at', null),
-        supabase
-          .from('recommendations')
-          .select('*', { count: 'exact', head: true })
-          .eq('to_user_id', user.id),
-        supabase
-          .from('recommendations')
-          .select('*', { count: 'exact', head: true })
-          .eq('to_user_id', user.id)
-          .eq('status', 'finished'),
-        supabase
-          .from('reading_progress_events')
-          .select('user_book_id, page, created_at')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: true }),
-        // ── Pattern queries ──
-        supabase
-          .from('user_books')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .eq('source', 'self_added')
-          .is('deleted_at', null),
-        supabase
-          .from('user_books')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .eq('source', 'recommendation')
-          .is('deleted_at', null),
-        // ── Source-completion queries ──
-        supabase
-          .from('user_books')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .eq('source', 'self_added')
-          .eq('status', 'finished')
-          .is('deleted_at', null),
-        supabase
-          .from('user_books')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .eq('source', 'self_added')
-          .eq('status', 'dnf')
-          .is('deleted_at', null),
-        supabase
-          .from('user_books')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .eq('source', 'recommendation')
-          .eq('status', 'finished')
-          .is('deleted_at', null),
-        supabase
-          .from('user_books')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .eq('source', 'recommendation')
-          .eq('status', 'dnf')
-          .is('deleted_at', null),
-        supabase
-          .from('user_books')
-          .select('id, book_id, finished_at, book:books(title, author, cover_url, external_id)')
-          .eq('user_id', user.id)
-          .eq('status', 'finished')
-          .is('deleted_at', null)
-          .gte('finished_at', yearStart)
-          .order('finished_at', { ascending: false })
-          .limit(50),
-      ]);
-
-      if (profileRes.error) {
-        setError('Could not load profile.');
-      } else {
-        setProfile(profileRes.data);
-      }
-
-      setPendingRequests((requestsRes.data as unknown as PendingRequest[]) ?? []);
-      setSentRecs((sentRecsRes.data as unknown as SentRecommendation[]) ?? []);
-      setPrefs(prefsRes.data ?? null);
-
-      // Derive accepted friends list from friendship rows
-      type FriendshipListRow = {
-        requester_id: string;
-        addressee_id: string;
-        requester: AcceptedFriend | null;
-        addressee: AcceptedFriend | null;
-      };
-      const friendsList = ((friendsListRes.data ?? []) as FriendshipListRow[])
-        .map(f => (f.requester_id === user.id ? f.addressee : f.requester))
-        .filter((f): f is AcceptedFriend => f !== null);
-      setAcceptedFriends(friendsList);
-
-      setBooksThisYear(((finishedYearBooksRes.data ?? []) as any[]).map(r => {
-        const b = r.book as any;
-        return {
-          id:          r.id,
-          book_id:     r.book_id,
-          finished_at: r.finished_at ?? null,
-          title:       b?.title ?? '',
-          author:      b?.author ?? '',
-          cover_url:   b?.cover_url ?? null,
-          external_id: b?.external_id ?? null,
-        };
-      }));
-
-      setStats({
-        friendsCount:      friendsRes.count ?? 0,
-        recsLanded:        landedRes.count ?? 0,
-        finishedFromRecs:  finishedFromRecRes.count ?? 0,
-        finishedBooks:     finishedAllRes.count ?? 0,
-        finishedThisYear:  finishedYearRes.count ?? 0,
-      });
-
-      // ── Reader signals ──
-      const finished     = finishedAllRes.count ?? 0;
-      const dnf          = dnfCountRes.count ?? 0;
-      const resolved     = finished + dnf;
-      const completionRate = resolved > 0 ? +(finished / resolved).toFixed(2) : null;
-
-      const totalRecsReceived   = recReceivedTotalRes.count ?? 0;
-      const finishedRecsReceived = recReceivedFinishedRes.count ?? 0;
-      const recConversionRate = totalRecsReceived > 0
-        ? +(finishedRecsReceived / totalRecsReceived).toFixed(2)
-        : null;
-
-      type ProgressEventRow = { user_book_id: string; page: number; created_at: string };
-      const progressEvents = (progressEventsRes.data ?? []) as ProgressEventRow[];
-      const avgPagesPerDay = computeAvgPagesPerDay(progressEvents);
-
-      setSignals({ completionRate, avgPagesPerDay, recConversionRate, resolved, totalRecsReceived });
-
-      setPatterns({
-        selfAdded: selfAddedRes.count ?? 0,
-        recAdded:  recAddedRes.count  ?? 0,
-      });
-
-      setSourceCompletion(computeSourceCompletion(
-        selfAddedFinishedRes.count ?? 0,
-        selfAddedDnfRes.count      ?? 0,
-        recAddedFinishedRes.count  ?? 0,
-        recAddedDnfRes.count       ?? 0,
-      ));
-
-      _profileCache = { userId: user.id, fetchedAt: Date.now() };
+    // ── Staleness guard ───────────────────────────────────────────────────────
+    if (_profileCache && _profileCache.userId !== user.id) _profileCache = null;
+    if (!force && _profileCache && Date.now() - _profileCache.fetchedAt < PROFILE_STALE_MS) {
       setLoading(false);
+      return;
+    }
+
+    const yearStart = `${new Date().getFullYear()}-01-01T00:00:00Z`;
+
+    // ── Phase 1: above-the-fold (profile header + stat counts) ───────────────
+    // 6 lightweight queries — profile row + 5 COUNT heads.
+    // setLoading(false) fires here so the header is visible in ~400–600 ms.
+    const [
+      profileRes,
+      friendsRes,
+      finishedAllRes,
+      finishedYearRes,
+      landedRes,
+      finishedFromRecRes,
+    ] = await Promise.all([
+      supabase.from('profiles').select('username, first_name, last_name, yearly_reading_goal').eq('id', user.id).single(),
+      supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('status', 'accepted').or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`),
+      supabase.from('user_books').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'finished').is('deleted_at', null),
+      supabase.from('user_books').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'finished').is('deleted_at', null).gte('finished_at', yearStart),
+      supabase.from('credibility_events').select('*', { count: 'exact', head: true }).eq('from_user_id', user.id),
+      supabase.from('credibility_events').select('*', { count: 'exact', head: true }).eq('to_user_id', user.id),
+    ]);
+
+    if (profileRes.error) {
+      setError('Could not load profile.');
+    } else {
+      setProfile(profileRes.data);
+    }
+
+    setStats({
+      friendsCount:     friendsRes.count ?? 0,
+      recsLanded:       landedRes.count ?? 0,
+      finishedFromRecs: finishedFromRecRes.count ?? 0,
+      finishedBooks:    finishedAllRes.count ?? 0,
+      finishedThisYear: finishedYearRes.count ?? 0,
+    });
+
+    _profileCache = { userId: user.id, fetchedAt: Date.now() };
+    setLoading(false);
+
+    // ── Phase 2: below-the-fold (friends, recs, signals, prefs) ─────────────
+    // Runs immediately after Phase 1 returns. All 15 queries in one Promise.all.
+    // State is set silently; no loading flag changes — page is already visible.
+    const finishedCount = finishedAllRes.count ?? 0;
+
+    const [
+      requestsRes,
+      friendsListRes,
+      sentRecsRes,
+      prefsRes,
+      dnfCountRes,
+      recReceivedTotalRes,
+      recReceivedFinishedRes,
+      progressEventsRes,
+      selfAddedRes,
+      recAddedRes,
+      selfAddedFinishedRes,
+      selfAddedDnfRes,
+      recAddedFinishedRes,
+      recAddedDnfRes,
+      finishedYearBooksRes,
+    ] = await Promise.all([
+      supabase
+        .from('friendships')
+        .select('id, requester_id, requester:profiles!friendships_requester_id_fkey(username, first_name, last_name)')
+        .eq('addressee_id', user.id)
+        .eq('status', 'pending'),
+      supabase
+        .from('friendships')
+        .select(
+          'id, requester_id, addressee_id, ' +
+          'requester:profiles!friendships_requester_id_fkey(id, username, first_name, last_name), ' +
+          'addressee:profiles!friendships_addressee_id_fkey(id, username, first_name, last_name)'
+        )
+        .eq('status', 'accepted')
+        .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`),
+      supabase
+        .from('recommendations')
+        .select(
+          'id, book_id, status, created_at, note, ' +
+          'to_user:profiles!recommendations_to_user_id_fkey(username, first_name, last_name), ' +
+          'book:books!recommendations_book_id_fkey(title, author, cover_url, external_id)'
+        )
+        .eq('from_user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50),
+      supabase
+        .from('reader_preferences')
+        .select('favorite_genres, avoid_genres, reading_styles, favorite_authors')
+        .eq('user_id', user.id)
+        .maybeSingle(),
+      supabase.from('user_books').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'dnf').is('deleted_at', null),
+      supabase.from('recommendations').select('*', { count: 'exact', head: true }).eq('to_user_id', user.id),
+      supabase.from('recommendations').select('*', { count: 'exact', head: true }).eq('to_user_id', user.id).eq('status', 'finished'),
+      supabase.from('reading_progress_events').select('user_book_id, page, created_at').eq('user_id', user.id).order('created_at', { ascending: true }),
+      supabase.from('user_books').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('source', 'self_added').is('deleted_at', null),
+      supabase.from('user_books').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('source', 'recommendation').is('deleted_at', null),
+      supabase.from('user_books').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('source', 'self_added').eq('status', 'finished').is('deleted_at', null),
+      supabase.from('user_books').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('source', 'self_added').eq('status', 'dnf').is('deleted_at', null),
+      supabase.from('user_books').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('source', 'recommendation').eq('status', 'finished').is('deleted_at', null),
+      supabase.from('user_books').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('source', 'recommendation').eq('status', 'dnf').is('deleted_at', null),
+      supabase
+        .from('user_books')
+        .select('id, book_id, finished_at, book:books(title, author, cover_url, external_id)')
+        .eq('user_id', user.id)
+        .eq('status', 'finished')
+        .is('deleted_at', null)
+        .gte('finished_at', yearStart)
+        .order('finished_at', { ascending: false })
+        .limit(50),
+    ]);
+
+    setPendingRequests((requestsRes.data as unknown as PendingRequest[]) ?? []);
+    setSentRecs((sentRecsRes.data as unknown as SentRecommendation[]) ?? []);
+    setPrefs(prefsRes.data ?? null);
+
+    type FriendshipListRow = {
+      requester_id: string;
+      addressee_id: string;
+      requester: AcceptedFriend | null;
+      addressee: AcceptedFriend | null;
+    };
+    const friendsList = ((friendsListRes.data ?? []) as FriendshipListRow[])
+      .map(f => (f.requester_id === user.id ? f.addressee : f.requester))
+      .filter((f): f is AcceptedFriend => f !== null);
+    setAcceptedFriends(friendsList);
+
+    setBooksThisYear(((finishedYearBooksRes.data ?? []) as any[]).map(r => {
+      const b = r.book as any;
+      return {
+        id:          r.id,
+        book_id:     r.book_id,
+        finished_at: r.finished_at ?? null,
+        title:       b?.title ?? '',
+        author:      b?.author ?? '',
+        cover_url:   b?.cover_url ?? null,
+        external_id: b?.external_id ?? null,
+      };
+    }));
+
+    const dnf      = dnfCountRes.count ?? 0;
+    const resolved = finishedCount + dnf;
+    const completionRate = resolved > 0 ? +(finishedCount / resolved).toFixed(2) : null;
+
+    const totalRecsReceived    = recReceivedTotalRes.count ?? 0;
+    const finishedRecsReceived = recReceivedFinishedRes.count ?? 0;
+    const recConversionRate    = totalRecsReceived > 0
+      ? +(finishedRecsReceived / totalRecsReceived).toFixed(2)
+      : null;
+
+    type ProgressEventRow = { user_book_id: string; page: number; created_at: string };
+    const progressEvents = (progressEventsRes.data ?? []) as ProgressEventRow[];
+    const avgPagesPerDay = computeAvgPagesPerDay(progressEvents);
+
+    setSignals({ completionRate, avgPagesPerDay, recConversionRate, resolved, totalRecsReceived });
+
+    setPatterns({
+      selfAdded: selfAddedRes.count ?? 0,
+      recAdded:  recAddedRes.count  ?? 0,
+    });
+
+    setSourceCompletion(computeSourceCompletion(
+      selfAddedFinishedRes.count ?? 0,
+      selfAddedDnfRes.count      ?? 0,
+      recAddedFinishedRes.count  ?? 0,
+      recAddedDnfRes.count       ?? 0,
+    ));
   }
 
   useFocusEffect(useCallback(() => {
@@ -398,7 +332,7 @@ export default function ProfileScreen() {
       .update({ status: 'accepted', updated_at: new Date().toISOString() })
       .eq('id', friendshipId);
     if (!error) {
-      setPendingRequests(prev => prev.filter(r => r.id !== friendshipId));
+      setPendingRequests(prev => prev ? prev.filter(r => r.id !== friendshipId) : prev);
       setStats(prev => prev ? { ...prev, friendsCount: prev.friendsCount + 1 } : prev);
     }
   }
@@ -538,7 +472,9 @@ export default function ProfileScreen() {
             )}
             {goalExpanded && (
               <View style={{ marginTop: 14 }}>
-                {booksThisYear.length === 0 ? (
+                {booksThisYear === null ? (
+                  <Text style={{ fontSize: 13, color: '#d6d3d1', lineHeight: 20 }}>Loading…</Text>
+                ) : booksThisYear.length === 0 ? (
                   <Text style={{ fontSize: 13, color: '#a8a29e', lineHeight: 20 }}>
                     No books finished yet this year.
                   </Text>
@@ -727,8 +663,8 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      {/* ── Friend Requests (only rendered when pending) ── */}
-      {pendingRequests.length > 0 && (
+      {/* ── Friend Requests (only rendered when Phase 2 data has arrived and there are pending requests) ── */}
+      {pendingRequests !== null && pendingRequests.length > 0 && (
         <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
           <SectionLabel>Friend Requests ({pendingRequests.length})</SectionLabel>
           {pendingRequests.map(req => (
@@ -760,7 +696,7 @@ export default function ProfileScreen() {
       {/* ── Friends ── */}
       <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
         <SectionLabel>Friends</SectionLabel>
-        {acceptedFriends.length === 0 ? (
+        {acceptedFriends === null ? null : acceptedFriends.length === 0 ? (
           <Text style={{ color: '#a8a29e', fontSize: 14 }}>No friends yet.</Text>
         ) : (
           <View style={{
@@ -833,7 +769,7 @@ export default function ProfileScreen() {
       {/* ── Sent Recommendations ── */}
       <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
         <SectionLabel>Recommendations Sent</SectionLabel>
-        {sentRecs.length === 0 ? (
+        {sentRecs === null ? null : sentRecs.length === 0 ? (
           <Text style={{ color: '#a8a29e', fontSize: 14 }}>No recommendations sent yet.</Text>
         ) : (
           <>
