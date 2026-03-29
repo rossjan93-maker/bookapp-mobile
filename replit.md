@@ -10,13 +10,16 @@ Not specified.
 The application is built with React Native using Expo Router for navigation and targeting web. Supabase provides the backend, handling authentication, PostgreSQL database management, and Row Level Security (RLS). TypeScript is used for type safety across the application.
 
 **Key Features:**
-- **Book Search & Recommendations:** Users can search for books via the Open Library API and send recommendations with personalized notes to friends. The "Add to Library" search uses a **parallel multi-query retrieval + confidence scoring** architecture:
-  - **Quality gate**: queries with no token ≥ 4 chars show "Keep typing…" without firing any OL request. Single-token non-alias queries need ≥ 4 chars; multi-token need at least one token ≥ 4 chars.
-  - **Retrieval**: up to 5 OL queries fired in parallel per search: `title=<full>`, `q=<full>`, `title=<stop-words removed>`, `title=<first 2 significant tokens>`, `title=<head tokens if last token ≤ 4 chars>`. Deduplicated before fetching.
-  - **Scoring**: all candidate pools merged (deduplicated by OL key) then `scoreAndFilterBooks` runs once. HIGH/MEDIUM/LOW tiers; HIGH only shown when HIGH exists; LOW never shown; MEDIUM suppressed for short incomplete last tokens.
-  - **No-results UX**: "No strong matches found" only for definitive queries (multi-token or single-token ≥ 8 chars); single-token 4-7 chars → "Keep typing…" (neutral mid-word state).
-  - **Alias expansion**: `lib/searchAliases.ts` (~50 fandom abbreviations) expands before retrieval; alias-expanded queries always bypass the quality gate.
-  - Implemented in `lib/searchRanking.ts` (`scoreBookResult`, `scoreAndFilterBooks`, `mergeBookResults`) and `app/(tabs)/search.tsx`.
+- **Book Search & Recommendations:** Users can search for books via a **hybrid Google Books + Open Library** retrieval system and send recommendations to friends. The "Add to Library" search uses:
+  - **Primary source: Google Books** (`EXPO_PUBLIC_GOOGLE_BOOKS_API_KEY`). All user searches fire a Google Books `volumes` query first. GB has significantly better title-search accuracy than OL (e.g., "the lion women of tehran", "fourth win", "silent pati" all return the correct book at position #1).
+  - **Secondary source: Open Library** (same multi-variant fan-out as before: up to 5 OL queries in parallel). OL fills in books not well-covered by GB and provides the canonical work keys used as `external_id` in Supabase.
+  - **`hybridMerge`**: GB results first, then OL results that don't duplicate a GB book by normalized title+author. Result: GB books are preferred when scores are equal.
+  - **Scoring**: `scoreAndFilterBooks` runs once on the merged pool. HIGH/MEDIUM/LOW tiers; HIGH only shown when HIGH exists; LOW never shown; MEDIUM suppressed for short incomplete last tokens.
+  - **OL key resolution**: When a user selects a Google Books result, `resolveOLKeyFromIsbn` fires in parallel with the Supabase friends fetch — zero added latency. If OL key is found via ISBN, it replaces the `gb:${volumeId}` tentative key as `externalId` before `handleSend` is called.
+  - **Quality gate**: queries with no token ≥ 4 chars show "Keep typing…" without firing any request.
+  - **Alias expansion**: `lib/searchAliases.ts` (~50 fandom abbreviations) expands before retrieval; alias-expanded queries bypass the quality gate.
+  - **Covers**: GB thumbnails (`https://` enforced) shown for GB results; OL covers as fallback.
+  - Implemented in `lib/searchRanking.ts` (`scoreBookResult`, `scoreAndFilterBooks`, `mergeBookResults`) and `app/(tabs)/search.tsx` (`fetchGoogleBooks`, `resolveOLKeyFromIsbn`, `hybridMerge`).
 - **Library Management:** Users can track the reading status of books (want_to_read, reading, finished, DNF) and rate books upon completion.
 - **Activity Feed:** Displays friend activities such as sent, saved, started, or finished books.
 - **Profile:** Users can set yearly reading goals, view their taste profile, see currently reading books, and track reading statistics.

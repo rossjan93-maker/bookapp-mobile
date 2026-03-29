@@ -63,6 +63,12 @@ type BookResult = {
   cover_i?: number;
   cover_edition_key?: string;
   number_of_pages_median?: number;
+  // Google Books source fields
+  _source?: 'ol' | 'gb';
+  _gbCoverUrl?: string;
+  _gbId?: string;
+  _isbn13?: string;
+  _isbn10?: string;
 };
 
 type SelectedBook = {
@@ -124,6 +130,74 @@ type SentRec = {
 function olCoverUrl(coverId?: number, size: 'S' | 'M' = 'M'): string | null {
   if (!coverId) return null;
   return `https://covers.openlibrary.org/b/id/${coverId}-${size}.jpg`;
+}
+
+// ── Google Books helpers ───────────────────────────────────────────────────────
+
+const GB_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_BOOKS_API_KEY ?? '';
+
+async function fetchGoogleBooks(q: string): Promise<BookResult[]> {
+  try {
+    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&key=${GB_API_KEY}&maxResults=20&printType=books`;
+    const res  = await fetch(url);
+    if (!res.ok) return [];
+    const json = await res.json();
+    const items: any[] = json.items ?? [];
+    return items.map(item => {
+      const info   = item.volumeInfo ?? {};
+      const isbns: { type: string; identifier: string }[] = info.industryIdentifiers ?? [];
+      const isbn13 = isbns.find(x => x.type === 'ISBN_13')?.identifier;
+      const isbn10 = isbns.find(x => x.type === 'ISBN_10')?.identifier;
+      const thumb  = (info.imageLinks?.thumbnail ?? info.imageLinks?.smallThumbnail ?? '')
+        .replace('http://', 'https://');
+      return {
+        key:                    `gb:${item.id}`,
+        title:                  info.title ?? '',
+        author_name:            info.authors ?? [],
+        number_of_pages_median: typeof info.pageCount === 'number' ? info.pageCount : undefined,
+        _source:                'gb' as const,
+        _gbCoverUrl:            thumb || undefined,
+        _gbId:                  item.id,
+        _isbn13:                isbn13,
+        _isbn10:                isbn10,
+      } satisfies BookResult;
+    }).filter(b => b.title.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+// Attempt to resolve a Google Books entry to an OL work key via ISBN lookup.
+// Fires in parallel with the Supabase friends query so net latency ≈ 0.
+async function resolveOLKeyFromIsbn(book: BookResult): Promise<string> {
+  const isbn = book._isbn13 ?? book._isbn10;
+  if (!isbn) return book.key;
+  try {
+    const res  = await fetch(`https://openlibrary.org/search.json?isbn=${isbn}&fields=key&limit=1`);
+    const json = await res.json();
+    const key  = (json.docs ?? [])[0]?.key as string | undefined;
+    if (key && key.startsWith('/works/')) return key;
+  } catch {}
+  return book.key; // keep gb: key as fallback
+}
+
+// Normalized dedup key for cross-source comparison (title + first-author surname)
+function _dedupKey(title: string, author?: string): string {
+  const t = title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 40);
+  const a = (author ?? '').toLowerCase().split(/\s+/).pop()?.replace(/[^a-z0-9]/g, '') ?? '';
+  return `${t}::${a}`;
+}
+
+// Merge GB (preferred) + OL results, deduplicating cross-source by title+author.
+function hybridMerge(gbBooks: BookResult[], olBooks: BookResult[]): BookResult[] {
+  const seen = new Set(gbBooks.map(b => _dedupKey(b.title, b.author_name?.[0])));
+  const filtered = olBooks.filter(b => {
+    const k = _dedupKey(b.title, b.author_name?.[0]);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  return [...gbBooks, ...filtered];
 }
 
 function SectionLabel({ children }: { children: string }) {
@@ -1985,83 +2059,89 @@ export default function RecommendationsScreen() {
           setBookResults(raw.slice(0, 15));
           setSearchNoResults(raw.length === 0);
         } else {
-          // ── Multi-query parallel retrieval ──────────────────────────────────
+          // ── Hybrid retrieval: Google Books (primary) + OL (secondary/fallback) ─
           //
-          // A single OL call often fails for long or unusual titles because OL's
-          // title index requires a close match to the indexed form. Example:
-          // "the lion women of tehran" → title= may return 0 results; only
-          // q= or a reduced-form title= actually surfaces the book.
+          // Google Books has a far more accurate title search index than OL,
+          // which means it surfaces the right book for queries like:
+          //   "the lion women of tehran", "fourth win", "burn the boa", "silent pati"
           //
-          // Strategy: build up to 5 retrieval variants, fire them ALL in
-          // parallel, merge + deduplicate the candidates, then run
-          // scoreAndFilterBooks ONCE on the merged pool. This guarantees the
-          // correct book enters the candidate pool regardless of which OL
-          // index path happens to know about it.
+          // OL is kept as a secondary source to catch books not in GB's index
+          // and as the authoritative identifier source (OL work keys).
           //
-          // Variants generated (duplicates are deduplicated before fetching):
-          //   1. title=<full searchQuery>         — always (precision)
-          //   2. q=<full searchQuery>              — always (broad recall)
-          //   3. title=<stop-words removed>        — e.g. "lion women tehran"
-          //   4. title=<first 2 significant words> — e.g. "lion women"
-          //   5. title=<head tokens, drop short last token> — partial-typing
+          // Strategy:
+          //   1. Fire Google Books + OL multi-variants simultaneously
+          //   2. hybridMerge: GB results first, OL fills gaps by title+author dedup
+          //   3. scoreAndFilterBooks ONCE on the merged pool
+          //   4. Prefer GB results when scores are equal (they're listed first)
 
-          // English stop words to strip for reduced / core queries:
+          // ── OL variant construction (unchanged from before) ────────────────
           const STOP = new Set(['the','a','an','of','in','to','for','and','or','but','by','at','as','on','its','is','it','be','my','we','us','if','up','so']);
 
           const sigTokens  = tokens.filter(t => t.length >= 3 && !STOP.has(t));
-          const reduced    = sigTokens.join(' ');                 // "lion women tehran"
-          const coreTwo    = sigTokens.slice(0, 2).join(' ');    // "lion women"
+          const reduced    = sigTokens.join(' ');
+          const coreTwo    = sigTokens.slice(0, 2).join(' ');
           const lastTok    = tokens[tokens.length - 1];
           const headTokens = lastTok.length <= 4 && tokens.length >= 2
-            ? tokens.slice(0, -1).join(' ')                       // "burn the" (for "burn the boa")
+            ? tokens.slice(0, -1).join(' ')
             : null;
 
-          // Build variant list: {param: 'title'|'q', query: string}
           type Variant = { param: 'title' | 'q'; q: string };
           const variantList: Variant[] = [];
-          variantList.push({ param: 'title', q: searchQuery });        // #1
-          variantList.push({ param: 'q',     q: searchQuery });        // #2
+          variantList.push({ param: 'title', q: searchQuery });
+          variantList.push({ param: 'q',     q: searchQuery });
           if (reduced && reduced !== searchQuery)
-            variantList.push({ param: 'title', q: reduced });          // #3
+            variantList.push({ param: 'title', q: reduced });
           if (coreTwo && coreTwo !== reduced && coreTwo !== searchQuery && sigTokens.length >= 2)
-            variantList.push({ param: 'title', q: coreTwo });          // #4
+            variantList.push({ param: 'title', q: coreTwo });
           if (headTokens && headTokens !== reduced && headTokens !== coreTwo && headTokens !== searchQuery)
-            variantList.push({ param: 'title', q: headTokens });       // #5
+            variantList.push({ param: 'title', q: headTokens });
 
-          // Deduplicate by (param, query) key
-          const seen     = new Set<string>();
+          const seenV = new Set<string>();
           const variants = variantList.filter(v => {
-            const key = `${v.param}:${v.q}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
+            const k = `${v.param}:${v.q}`;
+            if (seenV.has(k)) return false;
+            seenV.add(k);
             return true;
           });
 
           if (__DEV__) console.log('[SEARCH_VARIANTS]', `reqId=${reqId}`,
+            `gb=1 ol=${variants.length}`,
             variants.map(v => `${v.param}="${v.q}"`).join(' | '));
 
-          // Fire all variants in parallel — no sequential dependency
-          const fetches = variants.map(v => {
+          // ── Fire Google Books + all OL variants in parallel ────────────────
+          const olFetches = variants.map(v => {
             const url = `https://openlibrary.org/search.json?${v.param}=${encodeURIComponent(v.q)}&fields=${FIELDS}&limit=20`;
             return fetch(url).then(r => r.json() as Promise<{ docs?: BookResult[] }>).catch(() => ({ docs: [] as BookResult[] }));
           });
 
-          const responses = await Promise.all(fetches);
+          const [gbBooks, ...olResponses] = await Promise.all([
+            fetchGoogleBooks(searchQuery),
+            ...olFetches,
+          ]);
 
           if (searchSeqRef.current !== mySeq) {
             if (__DEV__) console.log('[SEARCH_STALE]', `reqId=${reqId}`, `discarded — newer seq=${searchSeqRef.current}`);
             return;
           }
 
-          // Merge all candidate pools (deduplicated by OL key in mergeBookResults)
-          let merged: BookResult[] = [];
-          for (let vi = 0; vi < responses.length; vi++) {
-            const raw: BookResult[] = responses[vi].docs ?? [];
-            if (__DEV__) console.log('[SEARCH_VARIANT_RESULT]', `reqId=${reqId}`,
+          if (__DEV__) console.log('[SEARCH_GB]', `reqId=${reqId}`,
+            `count=${gbBooks.length}`, gbBooks.slice(0, 3).map(b => b.title));
+
+          // Merge OL results (deduplicated by OL key within OL pool)
+          let olMerged: BookResult[] = [];
+          for (let vi = 0; vi < olResponses.length; vi++) {
+            const raw: BookResult[] = olResponses[vi].docs ?? [];
+            if (__DEV__) console.log('[SEARCH_OL]', `reqId=${reqId}`,
               `[${vi+1}/${variants.length}] ${variants[vi].param}="${variants[vi].q}"`,
               `count=${raw.length}`, raw.slice(0, 2).map(b => b.title));
-            merged = mergeBookResults(merged, raw);
+            olMerged = mergeBookResults(olMerged, raw);
           }
+
+          // hybridMerge: GB first, then OL books not already represented by GB
+          const merged = hybridMerge(gbBooks, olMerged);
+
+          if (__DEV__) console.log('[SEARCH_MERGED]', `reqId=${reqId}`,
+            `gb=${gbBooks.length} ol=${olMerged.length} merged=${merged.length}`);
 
           // Score the merged pool once against the original query
           const scored = scoreAndFilterBooks(searchQuery, merged);
@@ -2988,12 +3068,16 @@ export default function RecommendationsScreen() {
   async function handleSelectBook(book: BookResult) {
     if (!supabase || !currentUserId) return;
     const editionKey = book.cover_edition_key ?? null;
-    const coverUrl = editionKey
-      ? `https://covers.openlibrary.org/b/olid/${editionKey}-M.jpg`
-      : olCoverUrl(book.cover_i, 'M');
+    // For Google Books results, prefer the GB thumbnail; fall back to OL cover.
+    const coverUrl = book._gbCoverUrl
+      ?? (editionKey ? `https://covers.openlibrary.org/b/olid/${editionKey}-M.jpg` : olCoverUrl(book.cover_i, 'M'));
     const rawPages = book.number_of_pages_median;
     const pageCount = typeof rawPages === 'number' && rawPages >= 30 ? rawPages : null;
-    const selected: SelectedBook = {
+
+    // Show the friends step immediately with a tentative key.
+    // For GB books, attempt OL ISBN resolution in parallel with the Supabase
+    // friends query so there is zero added latency for the user.
+    const tentativeSelected: SelectedBook = {
       externalId: book.key,
       title: book.title,
       author: book.author_name?.[0] ?? 'Unknown author',
@@ -3001,15 +3085,24 @@ export default function RecommendationsScreen() {
       pageCount,
       editionKey,
     };
-    setSelectedBook(selected);
+    setSelectedBook(tentativeSelected);
     setStep('friends');
     setLoadingFriends(true);
 
-    const { data: friendships } = await supabase
-      .from('friendships')
-      .select('requester_id, addressee_id')
-      .eq('status', 'accepted')
-      .or(`requester_id.eq.${currentUserId},addressee_id.eq.${currentUserId}`);
+    // Fire OL key resolution + friends fetch in parallel
+    const [resolvedKey, { data: friendships }] = await Promise.all([
+      book._source === 'gb' ? resolveOLKeyFromIsbn(book) : Promise.resolve(book.key),
+      supabase
+        .from('friendships')
+        .select('requester_id, addressee_id')
+        .eq('status', 'accepted')
+        .or(`requester_id.eq.${currentUserId},addressee_id.eq.${currentUserId}`),
+    ]);
+
+    // Update externalId if OL resolution succeeded
+    if (resolvedKey !== tentativeSelected.externalId) {
+      setSelectedBook(prev => prev ? { ...prev, externalId: resolvedKey } : prev);
+    }
 
     if (!friendships || friendships.length === 0) {
       setFriends([]);
@@ -3803,7 +3896,7 @@ export default function RecommendationsScreen() {
                 alignItems: 'center',
               }}
             >
-              <CoverThumb url={olCoverUrl(item.cover_i, 'S')} title={item.title} width={34} height={50} />
+              <CoverThumb url={item._gbCoverUrl ?? olCoverUrl(item.cover_i, 'S')} title={item.title} width={34} height={50} />
               <View style={{ flex: 1, marginLeft: 12 }}>
                 <Text style={{ fontWeight: '600', fontSize: 15, color: '#1c1917', lineHeight: 21 }}>
                   {item.title}
