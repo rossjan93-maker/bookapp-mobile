@@ -26,6 +26,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { scoreAndFilterBooks, mergeBookResults } from '../../lib/searchRanking';
 import { expandAlias } from '../../lib/searchAliases';
+import {
+  type BookResult,
+  fetchGoogleBooks,
+  resolveOLKeyFromIsbn,
+  _dedupKey,
+  hybridMerge,
+} from '../../lib/bookSearch';
 import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computeTasteProfile } from '../../lib/tasteProfile';
@@ -56,20 +63,7 @@ import { triggerRecPrewarm } from '../../lib/recPrewarm';
 
 type Step = 'hub' | 'search' | 'friends' | 'done';
 
-type BookResult = {
-  key: string;
-  title: string;
-  author_name?: string[];
-  cover_i?: number;
-  cover_edition_key?: string;
-  number_of_pages_median?: number;
-  // Google Books source fields
-  _source?: 'ol' | 'gb';
-  _gbCoverUrl?: string;
-  _gbId?: string;
-  _isbn13?: string;
-  _isbn10?: string;
-};
+// BookResult is imported from lib/bookSearch
 
 type SelectedBook = {
   externalId: string;
@@ -132,73 +126,8 @@ function olCoverUrl(coverId?: number, size: 'S' | 'M' = 'M'): string | null {
   return `https://covers.openlibrary.org/b/id/${coverId}-${size}.jpg`;
 }
 
-// ── Google Books helpers ───────────────────────────────────────────────────────
-
-const GB_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_BOOKS_API_KEY ?? '';
-
-async function fetchGoogleBooks(q: string): Promise<BookResult[]> {
-  try {
-    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&key=${GB_API_KEY}&maxResults=20&printType=books`;
-    const res  = await fetch(url);
-    if (!res.ok) return [];
-    const json = await res.json();
-    const items: any[] = json.items ?? [];
-    return items.map(item => {
-      const info   = item.volumeInfo ?? {};
-      const isbns: { type: string; identifier: string }[] = info.industryIdentifiers ?? [];
-      const isbn13 = isbns.find(x => x.type === 'ISBN_13')?.identifier;
-      const isbn10 = isbns.find(x => x.type === 'ISBN_10')?.identifier;
-      const thumb  = (info.imageLinks?.thumbnail ?? info.imageLinks?.smallThumbnail ?? '')
-        .replace('http://', 'https://');
-      return {
-        key:                    `gb:${item.id}`,
-        title:                  info.title ?? '',
-        author_name:            info.authors ?? [],
-        number_of_pages_median: typeof info.pageCount === 'number' ? info.pageCount : undefined,
-        _source:                'gb' as const,
-        _gbCoverUrl:            thumb || undefined,
-        _gbId:                  item.id,
-        _isbn13:                isbn13,
-        _isbn10:                isbn10,
-      } satisfies BookResult;
-    }).filter(b => b.title.length > 0);
-  } catch {
-    return [];
-  }
-}
-
-// Attempt to resolve a Google Books entry to an OL work key via ISBN lookup.
-// Fires in parallel with the Supabase friends query so net latency ≈ 0.
-async function resolveOLKeyFromIsbn(book: BookResult): Promise<string> {
-  const isbn = book._isbn13 ?? book._isbn10;
-  if (!isbn) return book.key;
-  try {
-    const res  = await fetch(`https://openlibrary.org/search.json?isbn=${isbn}&fields=key&limit=1`);
-    const json = await res.json();
-    const key  = (json.docs ?? [])[0]?.key as string | undefined;
-    if (key && key.startsWith('/works/')) return key;
-  } catch {}
-  return book.key; // keep gb: key as fallback
-}
-
-// Normalized dedup key for cross-source comparison (title + first-author surname)
-function _dedupKey(title: string, author?: string): string {
-  const t = title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 40);
-  const a = (author ?? '').toLowerCase().split(/\s+/).pop()?.replace(/[^a-z0-9]/g, '') ?? '';
-  return `${t}::${a}`;
-}
-
-// Merge GB (preferred) + OL results, deduplicating cross-source by title+author.
-function hybridMerge(gbBooks: BookResult[], olBooks: BookResult[]): BookResult[] {
-  const seen = new Set(gbBooks.map(b => _dedupKey(b.title, b.author_name?.[0])));
-  const filtered = olBooks.filter(b => {
-    const k = _dedupKey(b.title, b.author_name?.[0]);
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
-  return [...gbBooks, ...filtered];
-}
+// fetchGoogleBooks, resolveOLKeyFromIsbn, _dedupKey, hybridMerge
+// are imported from lib/bookSearch (shared with add-book.tsx).
 
 function SectionLabel({ children }: { children: string }) {
   return (

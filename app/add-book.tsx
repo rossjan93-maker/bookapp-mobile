@@ -11,19 +11,15 @@ import {
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { CoverThumb } from '../components/CoverThumb';
+import {
+  type BookResult,
+  searchBooks,
+  resolveOLKeyFromIsbn,
+} from '../lib/bookSearch';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Step = 'search' | 'confirm' | 'done';
-
-type OLBook = {
-  key: string;
-  title: string;
-  author_name?: string[];
-  cover_i?: number;
-  cover_edition_key?: string;
-  number_of_pages_median?: number;
-};
 
 type SelectedBook = {
   externalId: string | null;
@@ -33,6 +29,9 @@ type SelectedBook = {
   isManual: boolean;
   pageCount: number | null;
   editionKey: string | null;
+  _source?: 'ol' | 'gb';
+  _isbn13?: string;
+  _isbn10?: string;
 };
 
 type BookStatus = 'want_to_read' | 'reading' | 'finished' | 'dnf';
@@ -70,8 +69,10 @@ export default function AddBookScreen() {
   const [step, setStep] = useState<Step>('search');
 
   const [query, setQuery] = useState('');
-  const [olResults, setOlResults] = useState<OLBook[]>([]);
+  const [bookResults, setBookResults] = useState<BookResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [noResults, setNoResults] = useState(false);
+  const [weakQuery, setWeakQuery] = useState(false);
   const [showManual, setShowManual] = useState(false);
   const [manualTitle, setManualTitle] = useState('');
   const [manualAuthor, setManualAuthor] = useState('');
@@ -85,39 +86,69 @@ export default function AddBookScreen() {
   const [doneMessage, setDoneMessage] = useState('');
   const [doneIsError, setDoneIsError] = useState(false);
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Stale-request guard: each search increments this; responses only committed
+  // when the seq value at response time still matches the current value.
+  const searchSeqRef = useRef(0);
 
   useEffect(() => {
     supabase?.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
   }, []);
 
+  // ── Hybrid search (debounced) ──────────────────────────────────────────────
   useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
     const trimmed = query.trim();
-    if (trimmed.length < 2) { setOlResults([]); return; }
-    debounceRef.current = setTimeout(async () => {
-      setSearching(true);
+
+    if (trimmed.length < 2) {
+      setBookResults([]);
+      setNoResults(false);
+      setWeakQuery(false);
+      setSearching(false);
+      return;
+    }
+
+    const mySeq = ++searchSeqRef.current;
+    setSearching(true);
+    setBookResults([]);
+    setNoResults(false);
+    setWeakQuery(false);
+
+    const timer = setTimeout(async () => {
       try {
-        const res = await fetch(
-          `https://openlibrary.org/search.json?q=${encodeURIComponent(trimmed)}&fields=key,title,author_name,cover_i,cover_edition_key,number_of_pages_median&limit=15`
-        );
-        const json = await res.json();
-        setOlResults(json.docs ?? []);
+        const result = await searchBooks(trimmed);
+
+        // Discard stale response
+        if (searchSeqRef.current !== mySeq) return;
+
+        if (result.weakQuery) {
+          setBookResults([]);
+          setNoResults(false);
+          setWeakQuery(true);
+        } else if (result.noResults) {
+          setBookResults([]);
+          setNoResults(true);
+          setWeakQuery(false);
+        } else {
+          setBookResults(result.results);
+          setNoResults(false);
+          setWeakQuery(false);
+        }
       } catch {
-        setOlResults([]);
+        if (searchSeqRef.current !== mySeq) return;
+        setBookResults([]);
+        setNoResults(true);
       }
       setSearching(false);
     }, 400);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+
+    return () => clearTimeout(timer);
   }, [query]);
 
-  // ── Handlers (logic unchanged) ────────────────────────────────────────────
+  // ── Handlers ──────────────────────────────────────────────────────────────
 
-  function selectOLBook(book: OLBook) {
+  function selectBook(book: BookResult) {
     const editionKey = book.cover_edition_key ?? null;
-    let coverUrl = editionKey
-      ? `https://covers.openlibrary.org/b/olid/${editionKey}-M.jpg`
-      : olCoverUrl(book.cover_i);
+    const coverUrl = book._gbCoverUrl
+      ?? (editionKey ? `https://covers.openlibrary.org/b/olid/${editionKey}-M.jpg` : olCoverUrl(book.cover_i));
     const rawPages = book.number_of_pages_median;
     const pageCount = typeof rawPages === 'number' && rawPages >= 30 ? rawPages : null;
     setSelectedBook({
@@ -128,6 +159,9 @@ export default function AddBookScreen() {
       isManual: false,
       pageCount,
       editionKey,
+      _source: book._source,
+      _isbn13: book._isbn13,
+      _isbn10: book._isbn10,
     });
     setStep('confirm');
   }
@@ -151,12 +185,25 @@ export default function AddBookScreen() {
     setSaving(true);
 
     let bookId: string;
+    let externalId = selectedBook.externalId;
 
-    if (selectedBook.externalId) {
+    // If the book came from Google Books, attempt OL key resolution before saving.
+    // This ensures the book gets a proper OL work key as its external_id.
+    if (selectedBook._source === 'gb' && externalId?.startsWith('gb:')) {
+      const fakeBookResult: BookResult = {
+        key:     externalId,
+        title:   selectedBook.title,
+        _isbn13: selectedBook._isbn13,
+        _isbn10: selectedBook._isbn10,
+      };
+      externalId = await resolveOLKeyFromIsbn(fakeBookResult);
+    }
+
+    if (externalId) {
       const { data: existing } = await supabase
         .from('books')
         .select('id, cover_url, page_count')
-        .eq('external_id', selectedBook.externalId)
+        .eq('external_id', externalId)
         .maybeSingle();
 
       if (existing) {
@@ -169,10 +216,10 @@ export default function AddBookScreen() {
         }
       } else {
         const insertData: Record<string, unknown> = {
-          title: selectedBook.title,
-          author: selectedBook.author,
-          external_id: selectedBook.externalId,
-          cover_url: selectedBook.coverUrl,
+          title:       selectedBook.title,
+          author:      selectedBook.author,
+          external_id: externalId,
+          cover_url:   selectedBook.coverUrl,
         };
         if (selectedBook.pageCount) insertData.page_count = selectedBook.pageCount;
         const { data: newBook, error } = await supabase
@@ -194,10 +241,10 @@ export default function AddBookScreen() {
       const { data: newBook, error } = await supabase
         .from('books')
         .insert({
-          title: selectedBook.title,
-          author: selectedBook.author,
+          title:       selectedBook.title,
+          author:      selectedBook.author,
           external_id: null,
-          cover_url: null,
+          cover_url:   null,
         })
         .select('id')
         .single();
@@ -236,10 +283,6 @@ export default function AddBookScreen() {
       if (chosenStatus === 'dnf') {
         userBookData.finished_at = now;
       } else {
-        // 'finished': use the year the user selected.
-        // null ("I'm not sure") → omit finished_at so the book is excluded from
-        // the yearly reading goal rather than falsely credited to this year.
-        // Prior year → Dec 31 of that year (best-effort proxy).
         if (finishYear === null) {
           // No finished_at — unknown read date
         } else if (finishYear === CURRENT_YEAR) {
@@ -261,9 +304,9 @@ export default function AddBookScreen() {
 
     if (chosenStatus === 'finished') {
       await supabase.from('activity_events').insert({
-        actor_id: userId,
+        actor_id:   userId,
         event_type: 'book_finished',
-        book_id: bookId,
+        book_id:    bookId,
       });
     }
 
@@ -276,7 +319,9 @@ export default function AddBookScreen() {
   function resetAndAddAnother() {
     setStep('search');
     setQuery('');
-    setOlResults([]);
+    setBookResults([]);
+    setNoResults(false);
+    setWeakQuery(false);
     setShowManual(false);
     setManualTitle('');
     setManualAuthor('');
@@ -285,9 +330,12 @@ export default function AddBookScreen() {
     setSelectedBook(null);
   }
 
-  // ── Step: search ─────────────────────────────────────────────────────────
+  // ── Step: search ───────────────────────────────────────────────────────────
 
   if (step === 'search') {
+    const trimmed = query.trim();
+    const hasQuery = trimmed.length >= 2;
+
     return (
       <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
         {/* ── Header ── */}
@@ -348,39 +396,49 @@ export default function AddBookScreen() {
         )}
 
         <FlatList
-          data={olResults}
+          data={bookResults}
           keyExtractor={item => item.key}
           contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 32 }}
           keyboardShouldPersistTaps="handled"
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              onPress={() => selectOLBook(item)}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingVertical: 11,
-                borderBottomWidth: 1,
-                borderBottomColor: '#f5f5f4',
-              }}
-            >
-              <CoverThumb url={olCoverUrl(item.cover_i)} title={item.title} width={34} height={50} />
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={{ fontSize: 15, fontWeight: '600', color: '#1c1917', lineHeight: 21 }}>
-                  {item.title}
-                </Text>
-                <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 2 }}>
-                  {item.author_name?.[0] ?? 'Unknown author'}
-                </Text>
-              </View>
-              <Text style={{ fontSize: 20, color: '#d6d3d1', marginLeft: 8 }}>›</Text>
-            </TouchableOpacity>
-          )}
+          renderItem={({ item }) => {
+            const coverUrl = item._gbCoverUrl
+              ?? (item.cover_edition_key
+                ? `https://covers.openlibrary.org/b/olid/${item.cover_edition_key}-M.jpg`
+                : olCoverUrl(item.cover_i));
+            return (
+              <TouchableOpacity
+                onPress={() => selectBook(item)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingVertical: 11,
+                  borderBottomWidth: 1,
+                  borderBottomColor: '#f5f5f4',
+                }}
+              >
+                <CoverThumb url={coverUrl} title={item.title} width={34} height={50} />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: '#1c1917', lineHeight: 21 }}>
+                    {item.title}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 2 }}>
+                    {item.author_name?.[0] ?? 'Unknown author'}
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 20, color: '#d6d3d1', marginLeft: 8 }}>›</Text>
+              </TouchableOpacity>
+            );
+          }}
           ListEmptyComponent={
-            !searching && query.trim().length >= 2 ? (
+            !searching && hasQuery && noResults ? (
               <Text style={{ color: '#a8a29e', fontSize: 14, paddingVertical: 10 }}>
                 No results. Try a different title or add manually below.
               </Text>
-            ) : query.trim().length < 2 && !showManual ? (
+            ) : !searching && hasQuery && weakQuery ? (
+              <Text style={{ color: '#a8a29e', fontSize: 14, paddingVertical: 10 }}>
+                Keep typing…
+              </Text>
+            ) : !hasQuery && !showManual ? (
               <View style={{ paddingTop: 16 }}>
                 <View style={{ alignItems: 'center', marginBottom: 20 }}>
                   <Text style={{
@@ -389,7 +447,7 @@ export default function AddBookScreen() {
                     lineHeight: 20,
                     textAlign: 'center',
                   }}>
-                    Search millions of titles from Open Library
+                    Search millions of titles
                   </Text>
                 </View>
 
@@ -448,7 +506,7 @@ export default function AddBookScreen() {
             ) : null
           }
           ListFooterComponent={
-            !searching && query.trim().length >= 2 && olResults.length > 0 ? (
+            !searching && hasQuery && bookResults.length > 0 ? (
               <TouchableOpacity
                 onPress={() => setShowManual(v => !v)}
                 style={{ paddingVertical: 16, alignItems: 'center' }}
@@ -538,7 +596,7 @@ export default function AddBookScreen() {
     );
   }
 
-  // ── Step: confirm ─────────────────────────────────────────────────────────
+  // ── Step: confirm ──────────────────────────────────────────────────────────
 
   if (step === 'confirm') {
     return (
@@ -634,105 +692,79 @@ export default function AddBookScreen() {
                 key={opt.value}
                 onPress={() => setChosenStatus(opt.value)}
                 style={{
-                  paddingHorizontal: 18,
-                  paddingVertical: 14,
-                  borderRadius: 12,
-                  backgroundColor: active ? opt.activeBg : '#fff',
-                  borderWidth: active ? 1.5 : 1,
-                  borderColor: active ? opt.activeText : '#e7e5e4',
                   flexDirection: 'row',
                   alignItems: 'center',
-                  justifyContent: 'space-between',
+                  backgroundColor: active ? opt.activeBg : '#fff',
+                  borderRadius: 12,
+                  paddingVertical: 14,
+                  paddingHorizontal: 16,
+                  borderWidth: 1.5,
+                  borderColor: active ? opt.activeText : '#e7e5e4',
                 }}
               >
-                <View>
+                <View style={{ flex: 1 }}>
                   <Text style={{
                     fontSize: 15,
-                    fontWeight: active ? '700' : '500',
-                    color: active ? opt.activeText : '#78716c',
+                    fontWeight: '600',
+                    color: active ? opt.activeText : '#1c1917',
+                    marginBottom: 2,
                   }}>
                     {opt.label}
                   </Text>
-                  <Text style={{
-                    fontSize: 12,
-                    color: active ? opt.activeText : '#a8a29e',
-                    marginTop: 1,
-                    opacity: 0.8,
-                  }}>
+                  <Text style={{ fontSize: 13, color: active ? opt.activeText : '#a8a29e' }}>
                     {opt.desc}
                   </Text>
                 </View>
                 {active && (
-                  <View style={{
-                    width: 18,
-                    height: 18,
-                    borderRadius: 9,
-                    backgroundColor: opt.activeText,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>✓</Text>
-                  </View>
+                  <Text style={{ fontSize: 18, color: opt.activeText }}>✓</Text>
                 )}
               </TouchableOpacity>
             );
           })}
         </View>
 
-        {/* ── Finish year selector (only when status = finished) ─── */}
+        {/* Finish year picker (finished only) */}
         {chosenStatus === 'finished' && (
-          <View style={{ marginBottom: 32 }}>
+          <View style={{ marginBottom: 40 }}>
             <Text style={{
               fontSize: 11,
               fontWeight: '700',
               color: '#a8a29e',
               letterSpacing: 0.9,
               textTransform: 'uppercase',
-              marginBottom: 12,
+              marginBottom: 14,
             }}>
               When did you finish it?
             </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 8, paddingRight: 4 }}
-            >
-              {FINISH_YEAR_OPTIONS.map(opt => {
-                const active = finishYear === opt.value;
-                return (
-                  <TouchableOpacity
-                    key={String(opt.value)}
-                    onPress={() => setFinishYear(opt.value)}
-                    style={{
-                      paddingHorizontal: 14,
-                      paddingVertical: 9,
-                      borderRadius: 10,
-                      backgroundColor: active ? '#1c1917' : '#fff',
-                      borderWidth: 1,
-                      borderColor: active ? '#1c1917' : '#e7e5e4',
-                    }}
-                  >
-                    <Text style={{
-                      fontSize: 14,
-                      fontWeight: active ? '700' : '400',
-                      color: active ? '#fff' : '#78716c',
-                    }}>
-                      {opt.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {FINISH_YEAR_OPTIONS.map(opt => {
+                  const active = finishYear === opt.value;
+                  return (
+                    <TouchableOpacity
+                      key={String(opt.value)}
+                      onPress={() => setFinishYear(opt.value)}
+                      style={{
+                        paddingVertical: 10,
+                        paddingHorizontal: 16,
+                        borderRadius: 10,
+                        backgroundColor: active ? '#1c1917' : '#fff',
+                        borderWidth: 1,
+                        borderColor: active ? '#1c1917' : '#e7e5e4',
+                      }}
+                    >
+                      <Text style={{
+                        fontSize: 14,
+                        fontWeight: '500',
+                        color: active ? '#fff' : '#78716c',
+                      }}>
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </ScrollView>
-            {finishYear === null && (
-              <Text style={{
-                fontSize: 12,
-                color: '#a8a29e',
-                marginTop: 8,
-                lineHeight: 18,
-              }}>
-                This book won't count toward your yearly reading goal.
-              </Text>
-            )}
           </View>
         )}
 
@@ -740,23 +772,26 @@ export default function AddBookScreen() {
           onPress={handleSave}
           disabled={saving}
           style={{
-            backgroundColor: saving ? '#d6d3d1' : '#1c1917',
-            borderRadius: 13,
+            backgroundColor: saving ? '#e7e5e4' : '#1c1917',
+            borderRadius: 14,
             paddingVertical: 16,
             alignItems: 'center',
           }}
         >
-          {saving ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Add to Library</Text>
-          )}
+          <Text style={{
+            color: saving ? '#a8a29e' : '#fff',
+            fontSize: 16,
+            fontWeight: '700',
+            letterSpacing: 0.2,
+          }}>
+            {saving ? 'Saving…' : 'Add to Library'}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     );
   }
 
-  // ── Step: done ────────────────────────────────────────────────────────────
+  // ── Step: done ─────────────────────────────────────────────────────────────
 
   return (
     <View style={{
@@ -764,59 +799,64 @@ export default function AddBookScreen() {
       backgroundColor: '#faf9f7',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: 32,
+      paddingHorizontal: 32,
     }}>
-      <View style={{
-        backgroundColor: doneIsError ? '#fef2f2' : '#f0fdf4',
-        borderRadius: 16,
-        padding: 28,
-        alignItems: 'center',
-        width: '100%',
-        marginBottom: 24,
+      <Text style={{
+        fontSize: 48,
+        marginBottom: 20,
       }}>
-        {!doneIsError && (
-          <Text style={{
-            fontSize: 11,
-            fontWeight: '700',
-            color: '#15803d',
-            letterSpacing: 1,
-            textTransform: 'uppercase',
-            marginBottom: 10,
-          }}>
-            Added
-          </Text>
-        )}
-        <Text style={{
-          fontSize: 15,
-          color: doneIsError ? '#b91c1c' : '#1c1917',
-          textAlign: 'center',
-          lineHeight: 24,
-          fontWeight: '600',
-        }}>
-          {doneMessage}
-        </Text>
-      </View>
-
-      <TouchableOpacity
-        onPress={() => router.back()}
-        style={{
-          backgroundColor: '#1c1917',
-          borderRadius: 12,
-          paddingVertical: 14,
-          paddingHorizontal: 30,
-          marginBottom: 14,
-        }}
-      >
-        <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Back to Library</Text>
-      </TouchableOpacity>
+        {doneIsError ? '⚠️' : '📚'}
+      </Text>
+      <Text style={{
+        fontSize: 20,
+        fontWeight: '700',
+        color: '#1c1917',
+        textAlign: 'center',
+        marginBottom: 10,
+        letterSpacing: -0.3,
+      }}>
+        {doneIsError ? 'Something went wrong' : 'Added!'}
+      </Text>
+      <Text style={{
+        fontSize: 15,
+        color: '#78716c',
+        textAlign: 'center',
+        marginBottom: 36,
+        lineHeight: 22,
+      }}>
+        {doneMessage}
+      </Text>
 
       {!doneIsError && (
-        <TouchableOpacity onPress={resetAndAddAnother}>
-          <Text style={{ fontSize: 14, color: '#78716c', textDecorationLine: 'underline' }}>
+        <TouchableOpacity
+          onPress={resetAndAddAnother}
+          style={{
+            backgroundColor: '#fff',
+            borderRadius: 12,
+            paddingVertical: 13,
+            paddingHorizontal: 28,
+            borderWidth: 1,
+            borderColor: '#e7e5e4',
+            marginBottom: 16,
+          }}
+        >
+          <Text style={{ fontSize: 15, fontWeight: '600', color: '#1c1917' }}>
             Add another book
           </Text>
         </TouchableOpacity>
       )}
+
+      <TouchableOpacity
+        onPress={() => router.back()}
+        style={{
+          paddingVertical: 13,
+          paddingHorizontal: 28,
+        }}
+      >
+        <Text style={{ fontSize: 15, color: '#78716c' }}>
+          {doneIsError ? 'Go back' : 'Done'}
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 }

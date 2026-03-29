@@ -19,7 +19,8 @@ The application is built with React Native using Expo Router for navigation and 
   - **Quality gate**: queries with no token ≥ 4 chars show "Keep typing…" without firing any request.
   - **Alias expansion**: `lib/searchAliases.ts` (~50 fandom abbreviations) expands before retrieval; alias-expanded queries bypass the quality gate.
   - **Covers**: GB thumbnails (`https://` enforced) shown for GB results; OL covers as fallback.
-  - Implemented in `lib/searchRanking.ts` (`scoreBookResult`, `scoreAndFilterBooks`, `mergeBookResults`) and `app/(tabs)/search.tsx` (`fetchGoogleBooks`, `resolveOLKeyFromIsbn`, `hybridMerge`).
+  - Implemented in `lib/bookSearch.ts` (shared pipeline: `fetchGoogleBooks`, `resolveOLKeyFromIsbn`, `hybridMerge`, `_dedupKey`, `searchBooks`) and `lib/searchRanking.ts` (`scoreBookResult`, `scoreAndFilterBooks`, `mergeBookResults`).
+  - **Both search surfaces** (`app/(tabs)/search.tsx` and `app/add-book.tsx`) use the same `lib/bookSearch.ts` pipeline. There is no separate OL-only search anywhere.
 - **Library Management:** Users can track the reading status of books (want_to_read, reading, finished, DNF) and rate books upon completion.
 - **Activity Feed:** Displays friend activities such as sent, saved, started, or finished books.
 - **Profile:** Users can set yearly reading goals, view their taste profile, see currently reading books, and track reading statistics.
