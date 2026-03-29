@@ -1873,6 +1873,13 @@ export default function RecommendationsScreen() {
   const hadDeckRef = useRef(false);
   const [deckTransitionHint, setDeckTransitionHint] = useState(false);
 
+  // ── Acted-on exhaustion state ───────────────────────────────────────────────
+  // Set when filterActedOn zeros out ALL incoming recs from a healthy pipeline
+  // run (quality_gate=passed). Distinct from quality-gate blocks (insufficient
+  // pool, etc.) — the pipeline succeeded but every result was already seen.
+  // Drives a specific "finding more" UI that is never suppressed by hasAnyTask.
+  const [recsExhausted, setRecsExhausted] = useState(false);
+
   // ── Save-failure retry state ───────────────────────────────────────────────
   // Set when the background DB write in handleRecSave throws. Cleared on retry
   // or after a 6 s auto-dismiss so it never lingers.
@@ -1918,9 +1925,10 @@ export default function RecommendationsScreen() {
       `| discoveries_length=${discoveries.length}`,
       `| hasRecs=${hasR}`,
       `| quality_gate=${recsQualityGate ?? 'null'}`,
+      `| recs_exhausted=${recsExhausted}`,
       `| showing_empty_state=${!hasR && !recsQualityGate && !recsLoading}`,
     );
-  }, [recsLoading, recommendations.length, continuations.length, discoveries.length, recsQualityGate]);
+  }, [recsLoading, recommendations.length, continuations.length, discoveries.length, recsQualityGate, recsExhausted]);
 
   // ── Search/send flow state ────────────────────────────────────────────────
   const [query, setQuery]               = useState('');
@@ -1970,6 +1978,25 @@ export default function RecommendationsScreen() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [continuations.length, discoveries.length]);
+
+  // ── Exhaustion-triggered replenishment ────────────────────────────────────
+  // When recsExhausted becomes true (filterActedOn zeroed a healthy result),
+  // trigger reloadRecs so the pipeline tries a fresh pull.  Also fires on
+  // revisits where continuations never changed from 0 (bypassing the effect
+  // above whose dependency on continuations.length produces no state change).
+  useEffect(() => {
+    if (
+      recsExhausted &&
+      !recsLoading &&
+      !isBackgroundRefreshing &&
+      currentUserId &&
+      tasteProfile &&
+      tasteProfile.tier >= 1
+    ) {
+      reloadRecs(nextReadIntent);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recsExhausted, tasteProfile?.tier]);
 
   // Monotonically-increasing counter. Each search request stamps itself; only
   // the response whose stamp matches the current value may commit to state.
@@ -2370,6 +2397,14 @@ export default function RecommendationsScreen() {
       setIsBackgroundRefreshing(false);
       // Restore dismiss undo row + restart timer for remaining window
       setDismissPending(reapplyPendingDismiss(user.id));
+      // Exhaustion detection: pipeline had recs but filterActedOn zeroed them all.
+      const _crTotal = _crRecs.length + _crPSConts.length + _crPSDiscs.length;
+      const _crBefore = cached.recs.length + cached.continuations.length + cached.discoveries.length;
+      if (_crTotal === 0 && _crBefore > 0 && !cached.qualityGate) {
+        setRecsExhausted(true);
+      } else if (_crTotal > 0) {
+        setRecsExhausted(false);
+      }
     }
 
     // ── Phase 1: core hub data (all DB queries run concurrently) ─────────
@@ -2713,6 +2748,14 @@ export default function RecommendationsScreen() {
       setDismissPending(reapplyPendingDismiss(user.id));
       setRecsMeta(meta);
       setRecsQualityGate(meta.quality_gate !== 'passed' ? meta.quality_gate : null);
+      // Exhaustion detection: pipeline passed but filterActedOn zeroed all results.
+      const _bgTotal  = _bgRecs.length + _bgPSConts.length + _bgPSDiscs.length;
+      const _bgBefore = recs.length + (recResult.continuations ?? []).length + (recResult.discoveries ?? recs).length;
+      if (_bgTotal === 0 && _bgBefore > 0 && meta.quality_gate === 'passed') {
+        setRecsExhausted(true);
+      } else if (_bgTotal > 0) {
+        setRecsExhausted(false);
+      }
       setRecMode(meta.mode ?? 'deterministic');
       setReaderThesis(meta.reader_thesis ?? null);
       setIsFreePreview(meta.expert_decision?.is_free_preview ?? false);
@@ -2890,6 +2933,14 @@ export default function RecommendationsScreen() {
       if (currentUserId) setDismissPending(reapplyPendingDismiss(currentUserId));
       setRecsMeta(meta);
       setRecsQualityGate(meta.quality_gate !== 'passed' ? meta.quality_gate : null);
+      // Exhaustion resolution: clear if new recs survived the filter; keep if still all acted-on.
+      const _rrTotal  = _rrRecs.length + _rrPSConts.length + _rrPSDiscs.length;
+      const _rrBefore = recs.length + (intentResult.continuations ?? []).length + (intentResult.discoveries ?? recs).length;
+      if (_rrTotal > 0) {
+        setRecsExhausted(false);
+      } else if (_rrTotal === 0 && _rrBefore > 0 && meta.quality_gate === 'passed') {
+        setRecsExhausted(true);
+      }
     } catch {
       // silent — recommendations fail gracefully
     } finally {
@@ -3670,6 +3721,67 @@ export default function RecommendationsScreen() {
                 </View>
               )}
 
+              {/* ── All recs acted-on → replenishment running ── */}
+              {recsExhausted && !hasRecs && !recsQualityGate && (isBackgroundRefreshing || recsLoading) && (
+                <View style={{
+                  backgroundColor: '#fff',
+                  borderRadius: 14,
+                  padding: 20,
+                  alignItems: 'center',
+                  shadowColor: '#000',
+                  shadowOpacity: 0.04,
+                  shadowRadius: 6,
+                  shadowOffset: { width: 0, height: 1 },
+                  elevation: 1,
+                  marginBottom: 12,
+                }}>
+                  <ActivityIndicator size="small" color="#a8a29e" style={{ marginBottom: 10 }} />
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 4 }}>
+                    Finding your next picks…
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#a8a29e', textAlign: 'center' }}>
+                    You've seen everything in the current batch — checking for more.
+                  </Text>
+                </View>
+              )}
+
+              {/* ── All recs acted-on → replenishment complete, still empty ── */}
+              {recsExhausted && !hasRecs && !recsQualityGate && !isBackgroundRefreshing && !recsLoading && (
+                <View style={{
+                  backgroundColor: '#fff',
+                  borderRadius: 14,
+                  padding: 20,
+                  alignItems: 'center',
+                  shadowColor: '#000',
+                  shadowOpacity: 0.04,
+                  shadowRadius: 6,
+                  shadowOffset: { width: 0, height: 1 },
+                  elevation: 1,
+                  marginBottom: 12,
+                }}>
+                  <Text style={{ fontSize: 22, marginBottom: 12 }}>✓</Text>
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: '#1c1917', marginBottom: 6 }}>
+                    You're all caught up
+                  </Text>
+                  <Text style={{ fontSize: 13, color: '#a8a29e', textAlign: 'center', lineHeight: 20, marginBottom: 20 }}>
+                    You've seen all the current picks. Rate more books to help us find what's next for you.
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => router.push({ pathname: '/(tabs)/library', params: { initialFilter: 'finished' } })}
+                    style={{
+                      backgroundColor: '#1c1917',
+                      borderRadius: 10,
+                      paddingHorizontal: 16,
+                      paddingVertical: 10,
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#faf9f7' }}>
+                      Rate a book
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
               {/* ── Deck just emptied → brief "Refreshing" transitional hint ── */}
               {deckTransitionHint && !hasRecs && !recsLoading && (
                 <View style={{
@@ -3694,8 +3806,8 @@ export default function RecommendationsScreen() {
                 </View>
               )}
 
-              {/* ── No recs + no tasks → caught up ── */}
-              {!hasRecs && !recsQualityGate && !recsLoading && !hasAnyTask && !deckTransitionHint && (
+              {/* ── No recs + no tasks → caught up (non-exhaustion path) ── */}
+              {!hasRecs && !recsQualityGate && !recsLoading && !hasAnyTask && !deckTransitionHint && !recsExhausted && (
                 <View style={{
                   backgroundColor: '#fff',
                   borderRadius: 14,

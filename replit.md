@@ -242,6 +242,16 @@ Evaluate in this order:
 - **Render guards**: friends section renders nothing when `null`; sent recs renders nothing when `null`; pending requests section only renders when non-null AND length > 0; goal expansion shows "Loading…" when `booksThisYear` is null.
 - **Revisit behavior unchanged**: tabs are not unmounted in Expo Router so component state (including Phase 2 data) persists across tab switches. Staleness guard (60s) prevents re-fetching Phase 1 on quick revisits. Sign-out registered via `registerCacheClearer`.
 
+### Recommendations "For You" silent empty state (`app/(tabs)/search.tsx`)
+- **Root cause**: pipeline returns N recs (quality_gate=passed), but `filterActedOn` removes all of them (user has already dismissed/saved every book in the batch). UI state becomes: `recs=0, recsQualityGate=null, hasRecs=false`. The generic "caught up" card is gated by `!hasAnyTask`, so if any rating/tagging tasks exist the entire For You section renders blank without explanation.
+- **Secondary issue**: the exhaustion-triggered replenishment effect (`continuations.length <= 1`) never re-fires on tab revisits because continuations starts at 0 from initial state — no state change, no effect. `tasteProfile` may also still be null when the effect first runs on cold load, silently skipping `reloadRecs`.
+- **Fix — `recsExhausted` state**: added to `search.tsx`. Set to `true` in all three filterActedOn commit paths (cache_restore, background_refresh, reload_recs) when `after_count=0 AND before_count>0 AND quality_gate=passed`. Cleared to `false` when any path returns non-zero filtered results.
+- **Fix — exhaustion-triggered replenishment effect**: new `useEffect([recsExhausted, tasteProfile?.tier])` calls `reloadRecs` when `recsExhausted=true` and `tasteProfile.tier >= 1`. Fires on exhaustion detection AND when tasteProfile loads after the state is already set — covers both cold-start and revisit cases.
+- **Fix — render**: Two explicit states in the For You section, never suppressed by `hasAnyTask`:
+  1. `recsExhausted && !hasRecs && (isBackgroundRefreshing || recsLoading)` → "Finding your next picks…" spinner card.
+  2. `recsExhausted && !hasRecs && !isBackgroundRefreshing && !recsLoading` → "You're all caught up" card with "Rate a book" CTA.
+- **Fix — original caught-up guard**: `!recsExhausted` added to the pre-existing `!hasRecs && !recsQualityGate && !recsLoading && !hasAnyTask && !deckTransitionHint` condition to prevent double-rendering.
+
 ### Book Detail enrichment latency (`app/book/[id].tsx`)
 Two changes to reduce perceived metadata latency:
 1. **Fast-path before `searchOLWork`**: if all four fields (cover, description, subjects, page_count) are already in the DB, cache + return before any network calls. Previously this short-circuit fired AFTER `searchOLWork` had already run.
