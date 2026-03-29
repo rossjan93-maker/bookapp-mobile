@@ -226,3 +226,16 @@ Evaluate in this order:
 - `fetchGoogleBooksCoverUrl` (googleBooks.ts): `fields=items(volumeInfo(title,imageLinks))`, `maxResults` stays at 3.
 - `fetchGoogleBooksMetadata` (googleBooks.ts): `fields=items(volumeInfo(title,imageLinks,description,pageCount))`, `maxResults` reduced from 5 → 3.
 - Target: 60-80% payload reduction per API call.
+
+### P0.5 — Library Phase 2 stability (`app/(tabs)/library.tsx`)
+- `_libPhase1Ids: Set<string>` stamps the IDs rendered in Phase 1.
+- `displayedItems` partitions into `p1` (sorted normally) and `p2` (sorted within itself, appended below each status group). Phase 2 items can never appear above Phase 1 items mid-session.
+- Boundary is cleared on `loadBooks()` start and on sign-out. Full resort resumes on next pull-to-refresh or cold load.
+- Root cause of duplicate-key error: PostgreSQL non-deterministic offset pagination when multiple rows share the same `created_at` (Goodreads batch imports). Fixed by:
+  - Adding `id` as a tiebreaker sort column on all four queries (Phase 1 primary, Phase 1 fallback, Phase 2 primary, Phase 2 fallback), making `OFFSET` pagination fully deterministic.
+  - Deduplicating `remainder` against `firstBatch` via a `Set` as a safety net.
+
+### Book Detail enrichment latency (`app/book/[id].tsx`)
+Two changes to reduce perceived metadata latency:
+1. **Fast-path before `searchOLWork`**: if all four fields (cover, description, subjects, page_count) are already in the DB, cache + return before any network calls. Previously this short-circuit fired AFTER `searchOLWork` had already run.
+2. **Early skeleton clear**: if the DB has any of description, subjects, or page_count, apply them to `setOlMeta` and call `setMetaLoading(false)` immediately after the DB fetch (one round-trip, ~300ms). OL/GB then run in the background and patch any remaining gaps as silent in-place updates. Previously the skeleton was held until the end of the full OL+GB chain (~1.5–2.5s).

@@ -377,6 +377,24 @@ export default function BookDetailScreen() {
       const hasSubjects = dbSubjects.length > 0;
       const hasPages    = !!dbPages;
 
+      // ── Fast-path: DB already has all four fields — skip every network call. ──
+      // Must come BEFORE searchOLWork so a fully-enriched book pays zero latency.
+      if (hasCover && hasDesc && hasSubjects && hasPages) {
+        const richMeta = { description: dbDesc, subjects: dbSubjects, pageCount: dbPages };
+        setOlMeta(richMeta);
+        _cacheBookMeta(bookId!, { description: dbDesc, subjects: dbSubjects, pageCount: dbPages });
+        setMetaLoading(false);
+        return;
+      }
+
+      // ── Early skeleton clear: paint whatever the DB already has, then let
+      //    OL/GB complete silently in the background.  The skeleton should only
+      //    cover the single DB round-trip (~300 ms), not the full enrichment chain.
+      if (hasDesc || hasSubjects || hasPages) {
+        setOlMeta({ description: dbDesc, subjects: dbSubjects, pageCount: dbPages });
+        setMetaLoading(false); // OL/GB updates arrive as silent in-place patches
+      }
+
       // When external_id is absent (common for Goodreads imports), search OL by
       // title+author to discover the works key so description can be fetched.
       // The discovered key is persisted to the DB in the patch below.
@@ -390,20 +408,6 @@ export default function BookDetailScreen() {
             discoveredExtId   = found;
           }
         }
-      }
-
-      // Short-circuit if everything is already rich.
-      if (hasCover && hasDesc && hasSubjects && hasPages) {
-        const richMeta = { description: dbDesc, subjects: dbSubjects, pageCount: dbPages };
-        if (dbDesc || dbSubjects.length > 0) setOlMeta(richMeta);
-        // Cache so subsequent visits are instant
-        _cacheBookMeta(bookId!, {
-          description: dbDesc,
-          subjects:    dbSubjects,
-          pageCount:   dbPages,
-        });
-        setMetaLoading(false);
-        return;
       }
 
       let foundDesc:     string | null = null;
