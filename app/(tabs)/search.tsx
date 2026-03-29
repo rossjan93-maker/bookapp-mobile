@@ -3530,7 +3530,7 @@ export default function RecommendationsScreen() {
                     We'll keep learning as you finish and rate more books.
                   </Text>
                   <TouchableOpacity
-                    onPress={() => router.push('/(tabs)/library')}
+                    onPress={() => router.push({ pathname: '/(tabs)/library', params: { initialFilter: 'finished' } })}
                     style={{
                       width: '100%',
                       backgroundColor: '#1c1917',
@@ -3545,7 +3545,7 @@ export default function RecommendationsScreen() {
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    onPress={() => router.push('/(tabs)/library')}
+                    onPress={() => router.push({ pathname: '/(tabs)/library', params: { initialFilter: 'want_to_read' } })}
                     style={{
                       width: '100%',
                       backgroundColor: '#f5f5f4',

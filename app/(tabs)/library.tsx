@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { fetchGoogleBooksCoverUrl } from '../../lib/googleBooks';
 import { repairBooksMetadata } from '../../lib/metadataRepair';
 import { ActivityIndicator, FlatList, Modal, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { computePagePacing, computeDatePacing, formatLastUpdated, computeBookPace, formatPaceChip, computeUserAvgPace } from '../../lib/pacing';
@@ -106,8 +106,11 @@ const FILTER_EMPTY: Record<FilterKey, { title: string; body: string }> = {
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
+const VALID_FILTERS = new Set<FilterKey>(['all', 'want_to_read', 'reading', 'finished', 'dnf']);
+
 export default function LibraryScreen() {
   const router = useRouter();
+  const { initialFilter } = useLocalSearchParams<{ initialFilter?: string }>();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [items, setItems]                 = useState<UserBook[]>([]);
   const [yearlyGoal, setYearlyGoal]       = useState<number | null>(null);
@@ -125,7 +128,11 @@ export default function LibraryScreen() {
   const [likedTags, setLikedTags]                       = useState<string[]>([]);
   const [dislikedTags, setDislikedTags]                 = useState<string[]>([]);
   const [savingTaste, setSavingTaste]                   = useState(false);
-  const [activeFilter, setActiveFilter]   = useState<FilterKey>('all');
+  const [activeFilter, setActiveFilter]   = useState<FilterKey>(
+    (initialFilter && VALID_FILTERS.has(initialFilter as FilterKey))
+      ? (initialFilter as FilterKey)
+      : 'all',
+  );
   const [sort, setSort]                   = useState<SortKey>('recent');
   // Accordion state for Finished+chronological mode.
   // Starts empty (all years collapsed). User taps a year row to expand/collapse it.
