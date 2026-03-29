@@ -1278,7 +1278,7 @@ function RecCard({
     if (pendingAction) return;
     setPendingAction(true);
     setConfirmState('save');
-    setTimeout(() => animateOut(onSave), 400);
+    setTimeout(() => animateOut(onSave), 800);
   }
 
   function handleDismissPress() {
@@ -1292,7 +1292,7 @@ function RecCard({
     setPendingAction(true);
     setMoreDone(true);
     setConfirmState('more');
-    setTimeout(() => animateOut(onMoreLikeThis), 400);
+    setTimeout(() => animateOut(onMoreLikeThis), 800);
   }
 
   function handleCardPress() {
@@ -1565,23 +1565,36 @@ function RecCard({
       </View>
 
       {/* ── In-card action confirmation overlay ──────────────────────────────── */}
-      {/* Shown for 600ms on save/more-like-this before the card fades out.      */}
+      {/* Shown for 800ms on save/more-like-this before the card fades out.      */}
       {confirmState && (
         <View style={{
           position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: confirmState === 'save' ? '#f0fdf4' : '#f5f3ff',
+          backgroundColor: confirmState === 'save' ? '#f0fdf4' : '#faf5ff',
           borderRadius: 14,
           justifyContent: 'center',
           alignItems: 'center',
           zIndex: 20,
+          gap: 4,
         }}>
-          <Text style={{
-            fontSize: 14,
-            fontWeight: '700',
-            color: confirmState === 'save' ? '#15803d' : '#5b21b6',
-          }}>
-            {confirmState === 'save' ? '✓  Added to Want to Read' : "✓  We'll show more like this"}
-          </Text>
+          {confirmState === 'save' ? (
+            <>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: '#15803d' }}>
+                ✓  Added to your list
+              </Text>
+              <Text style={{ fontSize: 12, color: '#166534' }}>
+                Saved to Want to Read
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: '#6d28d9' }}>
+                Got it — tuning your picks
+              </Text>
+              <Text style={{ fontSize: 12, color: '#7c3aed' }}>
+                Future recs will reflect this taste
+              </Text>
+            </>
+          )}
         </View>
       )}
 
@@ -3513,9 +3526,38 @@ export default function RecommendationsScreen() {
                   <Text style={{ fontSize: 15, fontWeight: '600', color: '#1c1917', marginBottom: 6 }}>
                     You're caught up
                   </Text>
-                  <Text style={{ fontSize: 13, color: '#a8a29e', textAlign: 'center', lineHeight: 20 }}>
+                  <Text style={{ fontSize: 13, color: '#a8a29e', textAlign: 'center', lineHeight: 20, marginBottom: 20 }}>
                     We'll keep learning as you finish and rate more books.
                   </Text>
+                  <TouchableOpacity
+                    onPress={() => router.push('/(tabs)/library')}
+                    style={{
+                      width: '100%',
+                      backgroundColor: '#1c1917',
+                      borderRadius: 10,
+                      paddingVertical: 12,
+                      alignItems: 'center',
+                      marginBottom: 10,
+                    }}
+                  >
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#faf9f7' }}>
+                      Rate a book from your library
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => router.push('/(tabs)/library')}
+                    style={{
+                      width: '100%',
+                      backgroundColor: '#f5f5f4',
+                      borderRadius: 10,
+                      paddingVertical: 12,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#57534e' }}>
+                      See your reading list
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               )}
 
@@ -3651,7 +3693,25 @@ export default function RecommendationsScreen() {
                     {incomingRecs.map((rec, idx) => (
                       <TouchableOpacity
                         key={rec.id}
-                        onPress={() => router.push('/(tabs)/notes')}
+                        onPress={() => {
+                          if (rec.book) {
+                            router.push({
+                              pathname: '/book/[id]',
+                              params: {
+                                id:         rec.book_id,
+                                title:      rec.book.title,
+                                author:     rec.book.author,
+                                coverUrl:   rec.book.cover_url ?? '',
+                                externalId: rec.book.external_id,
+                                status:     rec.status,
+                                note:       rec.note ?? '',
+                                fromUser:   getFirstName(rec.sender),
+                              },
+                            });
+                          } else {
+                            router.push('/(tabs)/notes');
+                          }
+                        }}
                         style={{
                           flexDirection: 'row', alignItems: 'center', padding: 13,
                           borderBottomWidth: idx < incomingRecs.length - 1 ? 1 : 0,
