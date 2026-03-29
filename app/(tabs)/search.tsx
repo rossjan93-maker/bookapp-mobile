@@ -2561,10 +2561,12 @@ export default function RecommendationsScreen() {
     }
 
     // ── Phase 2: recommendation pipeline (includes OL calls, ~4–5 s) ─────
-    // Use isBackgroundRefreshing (subtle badge) when cached recs are visible;
-    // use recsLoading (full skeleton) only on first cold start.
+    // Use isBackgroundRefreshing (subtle badge) when cached recs are visible
+    // OR when the deck has already been shown to the user (hadDeckRef.current).
+    // NEVER replace a visible deck with skeletons — recsLoading is for true
+    // first-load only (no cards on screen, no deck ever shown).
     const hasCachedRecs = cached && cached.recs.length > 0;
-    if (hasCachedRecs) {
+    if (hasCachedRecs || hadDeckRef.current) {
       setIsBackgroundRefreshing(true);
     } else {
       setRecsLoading(true);
@@ -2835,7 +2837,13 @@ export default function RecommendationsScreen() {
     if (!supabase || !currentUserId || !tasteProfile || tasteProfile.tier < 1) return;
     const requestId = ++latestHubLoadRef.current;
     setNextReadIntent(intent);
-    setRecsLoading(true);
+    // Never replace a visible deck with skeletons. If the deck has ever been
+    // shown (hadDeckRef.current), use the subtle background indicator instead.
+    if (hadDeckRef.current) {
+      setIsBackgroundRefreshing(true);
+    } else {
+      setRecsLoading(true);
+    }
     setRecsQualityGate(null);
     try {
       const activeEntitlement = entitlement ?? {
@@ -2896,6 +2904,7 @@ export default function RecommendationsScreen() {
       // silent — recommendations fail gracefully
     } finally {
       setRecsLoading(false);
+      setIsBackgroundRefreshing(false);
     }
   }
 
