@@ -1,0 +1,102 @@
+We are done micro-patching the current Recommendations UI. The current architecture is the problem.
+
+I want a contained rebuild of the Recommendations surface so it behaves like a continuously stocked queue with silent background replenishment and proper motion choreography.
+
+Do NOT keep layering fixes into the current in-place stack/ghost/refresh pattern.
+Do NOT show visible refresh loading once a usable deck exists.
+Do NOT use an in-stack ghost/undo card.
+Do NOT let tab revisit or background refresh disrupt the visible deck.
+
+What to build
+
+1. Create a dedicated recommendations queue model
+- Build this as a separate abstraction, e.g.:
+  - `useRecommendationsQueue()`
+  - `RecommendationsStack.tsx`
+  - optional `RecommendationCard.tsx`
+- Do not keep all logic tangled in the current search.tsx conditional tree.
+
+2. Queue architecture
+- Maintain a local queue larger than the visible stack:
+  - target queue depth: 8–12
+  - visible stack: top 4
+- On action:
+  - remove top card optimistically
+  - immediately advance the next queued card upward
+  - silently replenish in background when queue depth hits a watermark
+- Replenishment watermark:
+  - when queue depth < 6, append more
+  - do not wait for visible stack depletion
+- Deduplicate against:
+  - acted-on IDs
+  - cards already in queue
+  - exhausted/recently seen cards if applicable
+- Preserve current recommender/exhaustion protections, but keep them behind the queue model.
+
+3. Refresh UX rules
+- If a usable deck/queue exists, never show a full refresh loader.
+- On tab open:
+  - hydrate instantly from local queue/cache
+  - background refresh silently appends only
+- No visible “Finding your next picks…” or “Refreshing your picks…” states once deck exists.
+- Only show a true loader if there is literally no usable queue content.
+
+4. Motion system
+- Replace the current ghost/undo-in-stack pattern.
+- Outgoing card should:
+  - confirm briefly
+  - animate out with real motion
+  - not linger as a dead placeholder
+- Remaining cards should reflow with smooth shared layout motion.
+- Lower modules like “Refine your taste” must be inside the same layout transition system or otherwise remain visually stable.
+- No snapping.
+- Slightly slower and smoother than current build.
+- Use a stronger motion approach than current LayoutAnimation if needed for web quality.
+
+5. Undo pattern
+- Remove undo from inside the card stack.
+- Use a lightweight external undo affordance:
+  - toast/snackbar/pinned bar
+- Undo should not preserve the old card footprint in the deck.
+
+6. Confidence signaling
+- Surface confidence tier from actual recommendation score.
+- Each visible card should carry a subtle tier:
+  - High confidence = Top pick / Best match
+  - Medium confidence = Good fit
+  - Low confidence = Explore
+- Do not hardcode by position only.
+- Make strongest cards appear first, but keep exploratory options in the queue.
+
+7. Rendering rules / invariants
+- The stack should feel continuous.
+- The visible deck should never hard reset during refresh.
+- The user should be able to act on several cards in succession without ever seeing depletion or disruptive loading.
+- Background refresh should only append and reconcile quietly.
+- If no supply remains after bounded retries, show one clean caught-up state only.
+
+8. Logging
+Add logs:
+- [REC_QUEUE] visible_count=... queue_count=... appended=... watermark_hit=true/false
+- [REC_REFRESH] reason=tab_open|watermark|exhaustion_bypass visible_disruption=true/false
+- [REC_MOTION] action=save|dismiss|more phase=confirm|exit|reflow|settled duration_ms=...
+- [REC_CONFIDENCE] card_id=... score=... tier=high|medium|low
+
+Deliverables
+Before coding:
+1. Explain why the current implementation is still batch-based and refresh-disruptive.
+2. Describe the new queue architecture and motion architecture.
+3. Name the exact files/components/hooks you will introduce or replace.
+
+Implementation constraint
+- Prefer a contained rebuild of the Recommendations surface over further edits scattered throughout search.tsx.
+- If needed, build the new stack behind a temporary flag and then switch over once complete.
+
+Success criteria
+- No visible refresh disruption when a deck already exists
+- No in-stack ghost/undo
+- Acting on cards feels smooth and continuous
+- Queue replenishes before visible depletion
+- Lower sections do not jump
+- Confidence tiers are visible
+- Recommendations feel like a living stream, not a 4-card batch
