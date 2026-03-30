@@ -1,0 +1,169 @@
+We need to correct the onboarding flow again. The current experience still feels clunky and overdesigned in the wrong places.
+
+New desired sequence:
+1. Brief welcome
+2. “Let’s show you around” in the live app
+3. Optional prompt to upload/import library when relevant
+4. Lightweight preference setup only if needed
+5. Then normal product usage
+
+This is the shape I want:
+Welcome -> enter app shell -> interactive guided tour with visual hints -> contextual import/setup prompt
+
+Important:
+I do NOT want a long intro deck.
+I do NOT want the app explained mostly through detached slides.
+I want interactive tours and visual hints inside the real product.
+
+What is wrong now:
+- the intro/welcome still feels clunky
+- the user is not being properly brought through the app itself
+- the current guidance is still too detached from the live interface
+- the experience lacks interactive tours, hotspot guidance, and visual hints
+- import/setup is not introduced at the cleanest moment
+
+What I want instead
+
+PHASE 1 — BRIEF WELCOME
+Keep this short.
+One strong welcome screen, maybe two max.
+Its job is:
+- welcome the user
+- set tone
+- establish quality
+- invite them into the app
+
+CTA example:
+“Let’s show you around”
+
+This is not where detailed teaching happens.
+
+PHASE 2 — LIVE APP TOUR
+After the welcome, bring the user into the actual app shell and guide them through the real product with interactive tours and visual hints.
+
+This must include:
+- spotlight / dim-overlay behavior
+- highlighted tabs and live UI regions
+- coach marks anchored to actual product areas
+- pulsing visual hints / hotspots / “hot buttons”
+- progression through real app navigation
+- calm, polished motion
+
+The user should feel like the app is guiding them through itself.
+
+I want:
+- tab-level guidance
+- in-screen region guidance
+- interactive progression
+- contextual explanation
+
+Examples:
+- highlight Home and explain what this surface is for
+- highlight Library and show where reading history/progress lives
+- highlight Recommendations and explain how actions shape picks
+- if relevant, highlight social/friends/feed areas too
+
+Important:
+Do not stop at highlighting only the tab bar.
+I want actual in-screen regions highlighted too.
+
+PHASE 3 — CONTEXTUAL IMPORT / PERSONALIZATION
+Only once the user reaches Recommendations should we prompt setup.
+
+That prompt should offer:
+Option A — Import my library
+- prominent
+- framed as the fastest way to get great recommendations
+- mention Goodreads / StoryGraph / other imports where applicable
+
+Option B — Answer a few questions
+- lightweight
+- short
+- only enough to improve starter picks
+
+Option C — Explore anyway
+- let the user continue if they do not want setup yet
+
+This prompt should feel optional and well-timed, not forced.
+
+Product principle:
+Do not ask for effort before the user understands the product.
+Do not bury import.
+Do not make setup the first thing after signup.
+
+What I want from you before coding:
+1. Diagnose why the current implementation still feels clunky
+2. Propose the correct architecture for:
+   - brief welcome
+   - live app guided tour
+   - contextual recommendations setup/import prompt
+3. Explain the exact files/components/hooks/state you will create or replace
+4. Explain how walkthrough progression will work across tabs and in-screen targets
+5. Explain how the visual hints / hotspots / spotlight system will work
+6. Explain how import/setup will be triggered contextually when the tour reaches Recommendations
+
+Architecture requirements:
+- keep welcome minimal
+- put real guidance in the app shell
+- use a real walkthrough engine / state machine
+- support target registration for live UI anchors
+- support coach-mark positioning
+- support tab-aware progression
+- support skip / resume
+- support persistence
+- support interaction-triggered advancement where appropriate
+- make this robust, not brittle
+
+Design requirements:
+- premium
+- calm
+- intentional
+- visually guided
+- interactive
+- polished
+- not a tooltip mess
+- not a detached slideshow
+
+Instrumentation I want:
+- welcome_started
+- welcome_completed
+- welcome_skipped
+- walkthrough_started
+- walkthrough_step_viewed
+- walkthrough_step_completed
+- walkthrough_skipped
+- walkthrough_finished
+- recommendations_step_reached
+- import_prompt_shown
+- import_cta_clicked
+- import_started
+- import_completed
+- quick_intake_started
+- quick_intake_completed
+- explore_anyway_clicked
+
+Success criteria:
+- welcome is short and strong
+- user enters the real app quickly
+- app walkthrough happens in the live interface
+- real UI regions are highlighted
+- the user is guided through navigation itself
+- recommendations setup/import appears at the right moment
+- import is clearly visible
+- the whole experience feels smooth, interactive, and product-native
+
+What I do NOT want:
+- another detached onboarding deck
+- another passive product tour
+- another patch to the current wrong structure
+- shallow copy/UI changes
+- compile-only validation
+- weak Replit output that misses the actual interaction model
+
+Before implementing:
+Please first read the current intro/onboarding code, tabs layout, walkthrough logic, and recommendations entry logic.
+Then give me:
+1. diagnosis
+2. proposed architecture
+3. implementation plan with exact files/components/state
+Then implement.

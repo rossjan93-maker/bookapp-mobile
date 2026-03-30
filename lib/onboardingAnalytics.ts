@@ -1,14 +1,21 @@
 // ─── Onboarding & rec-entry instrumentation ───────────────────────────────────
 //
 // Two phases:
-//   Phase 1 — Cinematic intro prelude (app/onboarding.tsx)
+//   Phase 1 — Welcome screen (app/onboarding.tsx)
 //   Phase 2 — In-app guided walkthrough (WalkthroughOverlay + _layout.tsx)
 //   Phase 3 — Recommendations entry (first visit to recs tab)
 //
 // Wire to PostHog/Amplitude/etc. by replacing _track() body.
 
 type OnboardingEvent =
-  // ── Phase 1: intro prelude ────────────────────────────────────────────────
+  // ── Phase 1: welcome screen ───────────────────────────────────────────────
+  | 'welcome_started'
+  | 'welcome_completed'
+  | 'welcome_skipped'
+  | 'welcome_handoff_started'
+  | 'welcome_handoff_completed'
+  | 'welcome_handoff_failed'
+  // ── Phase 1 legacy aliases (kept for backward compat) ─────────────────────
   | 'intro_started'
   | 'intro_slide_viewed'
   | 'intro_completed'
@@ -58,7 +65,36 @@ function _track(event: OnboardingEvent, props: EventProps = {}): void {
   console.log(`[ONBOARDING] ${event}`, { ...props, ts: new Date().toISOString() });
 }
 
-// ─── Phase 1: intro prelude ───────────────────────────────────────────────────
+// ─── Phase 1: welcome screen ──────────────────────────────────────────────────
+
+export function welcomeEvt_started(): void {
+  _sessionStart = Date.now();
+  _track('welcome_started');
+}
+
+export function welcomeEvt_completed(): void {
+  const durationMs = _sessionStart !== null ? Date.now() - _sessionStart : -1;
+  _track('welcome_completed', { durationMs });
+}
+
+export function welcomeEvt_skipped(): void {
+  const durationMs = _sessionStart !== null ? Date.now() - _sessionStart : -1;
+  _track('welcome_skipped', { durationMs });
+}
+
+export function welcomeEvt_handoffStarted(): void {
+  _track('welcome_handoff_started');
+}
+
+export function welcomeEvt_handoffCompleted(): void {
+  _track('welcome_handoff_completed');
+}
+
+export function welcomeEvt_handoffFailed(reason: string): void {
+  _track('welcome_handoff_failed', { reason });
+}
+
+// ─── Phase 1: intro prelude (legacy aliases) ──────────────────────────────────
 
 export function introEvt_started(): void {
   _sessionStart = Date.now();

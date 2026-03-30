@@ -1,13 +1,16 @@
-// ─── Cinematic intro prelude ───────────────────────────────────────────────────
+// ─── Welcome screen ────────────────────────────────────────────────────────────
 //
-// 1-screen, full-screen dark composition.
-// Job: welcome the user, establish visual quality, hand off reliably.
+// One full-screen dark composition.
+// Job: welcome, set tone, invite the user into the live app tour.
 //
-// Handoff is IMMEDIATE — no Supabase awaiting.
-// completeOnboarding() updates needsOnboarding in _layout.tsx BEFORE router.replace('/').
-// This prevents the routing guard from redirecting back to onboarding.
+// Animation approach: card springs fire immediately on mount (fire-and-forget).
+// Text + CTA fade in after a fixed 600ms setTimeout — NOT chained to spring
+// completion.  This guarantees the CTA is always visible/touchable within ~1s
+// regardless of spring behaviour on web (where springs can be slow).
 //
-// Supabase profile write and AsyncStorage writes happen in background after navigation.
+// Handoff: completeOnboarding() updates needsOnboarding in _layout.tsx BEFORE
+// router.replace('/'), preventing the routing guard from looping back here.
+// All Supabase/AsyncStorage writes happen in the background after navigation.
 
 import React, { useEffect, useRef } from 'react';
 import {
@@ -25,10 +28,10 @@ import { supabase } from '../lib/supabase';
 import { writeGuidedStep } from '../components/OnboardingWalkthrough';
 import { writeWtStep } from '../lib/walkthroughEngine';
 import {
-  introEvt_started,
-  introEvt_handoffStarted,
-  introEvt_completed,
-  introEvt_skipped,
+  welcomeEvt_started,
+  welcomeEvt_completed,
+  welcomeEvt_skipped,
+  welcomeEvt_handoffStarted,
 } from '../lib/onboardingAnalytics';
 import { useOnboardingBridge } from './_layout';
 
@@ -38,101 +41,70 @@ const { width: SW, height: SH } = Dimensions.get('window');
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
-const BG     = '#1c1917';     // deep dark warm
-const CREAM  = '#faf9f7';     // text / CTA
-const MUTED  = '#78716c';     // skip / subtext
-const ACCENT = '#15803d';     // green card
+const BG     = '#1c1917';
+const CREAM  = '#faf9f7';
+const MUTED  = '#78716c';
+const GREEN  = '#15803d';
 
-// ─── Book-card data ───────────────────────────────────────────────────────────
+// ─── Book-card configurations ─────────────────────────────────────────────────
 
 type CardConfig = {
   w: number; h: number;
   color: string;
   rotate: string;
   offsetX: number; offsetY: number;
-  delay: number;
+  startDelay: number;
 };
 
 const CARDS: CardConfig[] = [
-  // back card — rotated left, peeking behind
-  {
-    w: 110, h: 152, color: '#292219',
-    rotate: '-9deg',
-    offsetX: -28, offsetY: -8,
-    delay: 60,
-  },
-  // middle card — rotated right
-  {
-    w: 118, h: 162, color: '#1a2e1a',
-    rotate: '7deg',
-    offsetX: 26, offsetY: -4,
-    delay: 30,
-  },
-  // front card — upright, darkened green
-  {
-    w: 128, h: 178, color: ACCENT,
-    rotate: '-1deg',
-    offsetX: 0, offsetY: 0,
-    delay: 0,
-  },
+  { w: 108, h: 150, color: '#292219',  rotate: '-9deg', offsetX: -30, offsetY: -6,  startDelay: 80 },
+  { w: 116, h: 160, color: '#1a2e1a',  rotate:  '7deg', offsetX:  28, offsetY: -3,  startDelay: 40 },
+  { w: 126, h: 176, color: GREEN,      rotate: '-1deg', offsetX:   0, offsetY:  0,  startDelay:  0 },
 ];
 
 // ─── Animated book card ───────────────────────────────────────────────────────
 
-function BookCard({ cfg, visible }: { cfg: CardConfig; visible: Animated.Value }) {
+function BookCard({ cfg, anim }: { cfg: CardConfig; anim: Animated.Value }) {
+  const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [60, 0] });
+  const scale      = anim.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] });
+
   return (
     <Animated.View
       style={{
-        position:    'absolute',
-        width:       cfg.w,
-        height:      cfg.h,
-        borderRadius: 8,
-        backgroundColor: cfg.color,
+        position:         'absolute',
+        width:            cfg.w,
+        height:           cfg.h,
+        borderRadius:     8,
+        backgroundColor:  cfg.color,
         transform: [
           { translateX: cfg.offsetX },
           { translateY: cfg.offsetY },
           { rotate: cfg.rotate },
-          {
-            translateY: visible.interpolate({
-              inputRange:  [0, 1],
-              outputRange: [56, 0],
-            }),
-          },
-          {
-            scale: visible.interpolate({
-              inputRange:  [0, 1],
-              outputRange: [0.88, 1],
-            }),
-          },
+          { translateY },
+          { scale },
         ],
-        opacity: visible.interpolate({
-          inputRange:  [0, 1],
-          outputRange: [0, 1],
-        }),
-        // Subtle spine line
+        opacity:          anim,
         borderLeftWidth:  3,
-        borderLeftColor:  'rgba(255,255,255,0.08)',
+        borderLeftColor:  'rgba(255,255,255,0.07)',
         borderRightWidth: 1,
-        borderRightColor: 'rgba(0,0,0,0.25)',
-        // Shadow
-        shadowColor:    '#000',
-        shadowOpacity:  0.55,
-        shadowRadius:   14,
-        shadowOffset:   { width: 0, height: 8 },
-        elevation:      12,
+        borderRightColor: 'rgba(0,0,0,0.28)',
+        shadowColor:      '#000',
+        shadowOpacity:    0.52,
+        shadowRadius:     14,
+        shadowOffset:     { width: 0, height: 8 },
+        elevation:        12,
       }}
     >
-      {/* Subtle texture lines inside card */}
-      <View style={{ position: 'absolute', top: 20, left: 14, right: 14 }}>
-        {[0, 1, 2, 3].map(i => (
+      <View style={{ position: 'absolute', top: 18, left: 14, right: 14 }}>
+        {[0, 1, 2].map(i => (
           <View
             key={i}
             style={{
               height:          2,
               borderRadius:    1,
               backgroundColor: 'rgba(255,255,255,0.07)',
-              marginBottom:    8,
-              width:           i === 0 ? '80%' : i === 1 ? '60%' : i === 2 ? '72%' : '45%',
+              marginBottom:    9,
+              width:           i === 0 ? '78%' : i === 1 ? '55%' : '68%',
             }}
           />
         ))}
@@ -147,85 +119,70 @@ export default function OnboardingScreen() {
   const router             = useRouter();
   const { completeOnboarding } = useOnboardingBridge();
 
-  // Per-card entry animations
-  const cardAnims = useRef(CARDS.map(() => new Animated.Value(0))).current;
-  // Text block fade-in
-  const textFade  = useRef(new Animated.Value(0)).current;
-  const ctaSlide  = useRef(new Animated.Value(24)).current;
-  const ctaFade   = useRef(new Animated.Value(0)).current;
+  const cardAnims  = useRef(CARDS.map(() => new Animated.Value(0))).current;
+  const textFade   = useRef(new Animated.Value(0)).current;
+  const ctaFade    = useRef(new Animated.Value(0)).current;
+  const ctaOffsetY = useRef(new Animated.Value(20)).current;
 
   useEffect(() => {
-    introEvt_started();
+    welcomeEvt_started();
 
-    // Stagger card entries
-    const cardSeqs = CARDS.map((cfg, i) =>
-      Animated.sequence([
-        Animated.delay(cfg.delay),
+    // ── Card springs: fire-and-forget with individual start delays ────────────
+    CARDS.forEach((cfg, i) => {
+      setTimeout(() => {
         Animated.spring(cardAnims[i], {
-          toValue:        1,
+          toValue:         1,
           useNativeDriver: false,
-          tension:         60,
+          tension:         55,
           friction:        9,
-        }),
-      ]),
-    );
+        }).start();
+      }, cfg.startDelay);
+    });
 
-    Animated.sequence([
-      // All cards enter (parallel, staggered via internal delays)
-      Animated.parallel(cardSeqs),
-      // Text fades in
-      Animated.delay(80),
+    // ── Text + CTA: fixed delay, NOT chained to card springs ─────────────────
+    // Fires after 600ms regardless of spring state, so the button is ALWAYS
+    // visible and touchable within ~1s of mount.
+    const t = setTimeout(() => {
       Animated.parallel([
-        Animated.timing(textFade, { toValue: 1, duration: 380, useNativeDriver: false }),
-        Animated.timing(ctaFade,  { toValue: 1, duration: 420, useNativeDriver: false }),
-        Animated.timing(ctaSlide, { toValue: 0, duration: 380, useNativeDriver: false }),
-      ]),
-    ]).start();
+        Animated.timing(textFade,   { toValue: 1, duration: 350, useNativeDriver: false }),
+        Animated.timing(ctaFade,    { toValue: 1, duration: 400, useNativeDriver: false }),
+        Animated.timing(ctaOffsetY, { toValue: 0, duration: 350, useNativeDriver: false }),
+      ]).start();
+    }, 600);
+
+    return () => clearTimeout(t);
   }, []);
 
-  // ── Fail-safe: if somehow we're still here after 8s, navigate anyway ────────
+  // ── Hard fail-safe: navigate after 12s even if nothing else fired ─────────
   useEffect(() => {
-    const t = setTimeout(() => finish('failsafe'), 8000);
+    const t = setTimeout(() => finish('failsafe'), 12000);
     return () => clearTimeout(t);
   }, []);
 
   function finish(source: 'cta' | 'skip' | 'failsafe' = 'cta') {
-    if (source === 'skip') introEvt_skipped();
-    else                   introEvt_completed();
+    if (source === 'skip') welcomeEvt_skipped();
+    else                   welcomeEvt_completed();
+    welcomeEvt_handoffStarted();
 
-    introEvt_handoffStarted();
-
-    // ① Update parent needsOnboarding BEFORE navigating (fixes redirect loop)
+    // ① Update parent state BEFORE navigating — prevents redirect loop
     completeOnboarding();
 
-    // ② Navigate immediately
+    // ② Immediate navigation
     router.replace('/');
 
-    // ③ Background writes — do NOT block navigation on these
-    Promise.allSettled([
-      writeGuidedStep(0),
-      writeWtStep('home'),
-    ]);
+    // ③ Background writes
+    Promise.allSettled([writeGuidedStep(0), writeWtStep('home')]);
     if (supabase) {
       supabase.auth.getUser().then(({ data: { user } }) => {
         if (user) {
-          supabase
-            ?.from('profiles')
-            .update({ onboarding_completed: true })
-            .eq('id', user.id)
-            .then(() => {})
-            .catch(() => {});
+          supabase?.from('profiles').update({ onboarding_completed: true }).eq('id', user.id);
         }
       }).catch(() => {});
     }
   }
 
-  // ── Dimensions ──────────────────────────────────────────────────────────────
-
-  const cardAreaH    = Math.min(SH * 0.34, 260);
+  const cardAreaH    = Math.min(SH * 0.32, 240);
   const topPad       = Platform.OS === 'android' ? 20 : 0;
-  const bottomPad    = SH * 0.06;
-  const textTopSpace = SH * 0.04;
 
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
@@ -233,16 +190,10 @@ export default function OnboardingScreen() {
       <SafeAreaView style={{ flex: 1 }}>
 
         {/* Skip — top right */}
-        <View
-          style={{
-            paddingHorizontal: 22,
-            paddingTop:        topPad + 4,
-            alignItems:        'flex-end',
-          }}
-        >
+        <View style={{ paddingHorizontal: 22, paddingTop: topPad + 4, alignItems: 'flex-end' }}>
           <TouchableOpacity
             onPress={() => finish('skip')}
-            hitSlop={{ top: 12, bottom: 12, left: 16, right: 16 }}
+            hitSlop={{ top: 14, bottom: 14, left: 20, right: 20 }}
           >
             <Text style={{ fontSize: 14, color: MUTED, fontWeight: '500', letterSpacing: 0.3 }}>
               Skip
@@ -250,37 +201,42 @@ export default function OnboardingScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ── Main content area ─────────────────────────────────────────────── */}
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: bottomPad }}>
-
-          {/* Book card stack */}
+        {/* ── Main content ─────────────────────────────────────────────────── */}
+        <View
+          style={{
+            flex:           1,
+            alignItems:     'center',
+            justifyContent: 'center',
+            paddingBottom:  SH * 0.08,
+          }}
+        >
+          {/* Book stack */}
           <View
             style={{
-              width:          180,
+              width:          200,
               height:         cardAreaH,
               alignItems:     'center',
               justifyContent: 'center',
-              marginBottom:   textTopSpace,
+              marginBottom:   SH * 0.04,
             }}
           >
-            {/* Render back to front */}
             {[...CARDS].reverse().map((cfg, ri) => {
               const i = CARDS.length - 1 - ri;
-              return <BookCard key={i} cfg={cfg} visible={cardAnims[i]} />;
+              return <BookCard key={i} cfg={cfg} anim={cardAnims[i]} />;
             })}
           </View>
 
           {/* Wordmark + tagline */}
           <Animated.View
             style={{
-              alignItems: 'center',
-              opacity:    textFade,
-              paddingHorizontal: 36,
+              alignItems:        'center',
+              opacity:           textFade,
+              paddingHorizontal: 40,
             }}
           >
             <Text
               style={{
-                fontSize:      38,
+                fontSize:      36,
                 fontWeight:    '800',
                 color:         CREAM,
                 letterSpacing: -0.5,
@@ -290,30 +246,29 @@ export default function OnboardingScreen() {
             >
               readstack
             </Text>
-
             <Text
               style={{
                 fontSize:   16,
                 color:      '#a8a29e',
-                lineHeight: 24,
+                lineHeight: 25,
                 textAlign:  'center',
-                maxWidth:   280,
+                maxWidth:   270,
               }}
             >
-              Your reading life, organized.{'\n'}
-              Recommendations that get sharper{'\n'}
-              every time you read.
+              Track what you read.{'\n'}
+              Get recommendations that fit.{'\n'}
+              Better with every book.
             </Text>
           </Animated.View>
         </View>
 
-        {/* ── Bottom CTA ─────────────────────────────────────────────────────── */}
+        {/* ── CTA ──────────────────────────────────────────────────────────── */}
         <Animated.View
           style={{
             paddingHorizontal: 22,
-            paddingBottom:     Platform.OS === 'android' ? 24 : 16,
+            paddingBottom:     Platform.OS === 'android' ? 28 : 18,
             opacity:           ctaFade,
-            transform:         [{ translateY: ctaSlide }],
+            transform:         [{ translateY: ctaOffsetY }],
           }}
         >
           <TouchableOpacity
@@ -322,19 +277,12 @@ export default function OnboardingScreen() {
             style={{
               backgroundColor: CREAM,
               borderRadius:    16,
-              paddingVertical: 16,
+              paddingVertical: 17,
               alignItems:      'center',
             }}
           >
-            <Text
-              style={{
-                color:       BG,
-                fontSize:    16,
-                fontWeight:  '800',
-                letterSpacing: 0.2,
-              }}
-            >
-              Get started →
+            <Text style={{ color: BG, fontSize: 16, fontWeight: '800', letterSpacing: 0.2 }}>
+              Let's show you around →
             </Text>
           </TouchableOpacity>
         </Animated.View>

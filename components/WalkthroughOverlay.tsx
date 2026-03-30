@@ -1,14 +1,25 @@
 // ─── In-app walkthrough overlay ───────────────────────────────────────────────
 //
-// Full-screen overlay with:
-//   • 4-panel spotlight aperture — dims everything EXCEPT a rectangular window
-//     on the live UI (the content area of the current step's screen)
-//   • Border glow around the spotlight window
-//   • Pulsing ring on the active tab-bar icon
-//   • Coach-mark card above or below the spotlight
+// Full-screen overlay drawn inside the live app shell.
 //
-// Visible for WT_OVERLAY_STEPS only ('home', 'library').
-// 'recommend' and 'done' show nothing.
+// For each WT_OVERLAY_STEP ('home', 'library') it renders:
+//
+//   1. SpotlightAperture
+//      4 dim panels leave a clear rectangular window on the inset spotlight
+//      rect (horizontal margins, not wall-to-wall).  A glow border frames it.
+//
+//   2. InScreenHotspot
+//      A dual-ring pulsing dot placed at the inScreenHotspot coordinate within
+//      the lit area.  Acts as a visual "look here" indicator AND a tap target
+//      that advances the walkthrough (same as pressing Next).
+//
+//   3. PulsingRing
+//      Pulsing circle over the active tab icon in the tab bar.
+//
+//   4. CoachCard
+//      Translucent white card below the spotlight with step dots, title, body,
+//      and a Next button.  An upward-pointing arrow at the card's top edge
+//      creates a visual connection to the spotlight above.
 
 import React, { useEffect, useRef } from 'react';
 import {
@@ -27,24 +38,26 @@ import {
   getWtTarget,
   wtEvt_stepViewed,
   wtEvt_skipped,
+  wtEvt_hotspotTapped,
 } from '../lib/walkthroughEngine';
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 
-const SCREEN_W   = Dimensions.get('window').width;
-const SCREEN_H   = Dimensions.get('window').height;
+const SW         = Dimensions.get('window').width;
+const SH         = Dimensions.get('window').height;
 const TAB_COUNT  = 5;
 const TAB_BAR_H  = 62;
 const RING_SIZE  = 52;
 const RING_R     = RING_SIZE / 2;
-const DIM_COLOR  = 'rgba(0,0,0,0.65)';
-const GLOW_COLOR = 'rgba(250,249,247,0.18)';
+const DIM_COLOR  = 'rgba(0,0,0,0.62)';
+const GLOW_COLOR = 'rgba(250,249,247,0.22)';
+const CARD_W     = SW - 28;  // card spans left:14, right:14
 
 function tabCenterX(idx: number): number {
-  return (SCREEN_W / TAB_COUNT) * idx + SCREEN_W / TAB_COUNT / 2;
+  return (SW / TAB_COUNT) * idx + SW / TAB_COUNT / 2;
 }
 
-// ─── Pulsing ring ─────────────────────────────────────────────────────────────
+// ─── 1. Pulsing ring on tab icon ──────────────────────────────────────────────
 
 function PulsingRing({ tabIdx }: { tabIdx: number }) {
   const scale   = useRef(new Animated.Value(1)).current;
@@ -54,7 +67,7 @@ function PulsingRing({ tabIdx }: { tabIdx: number }) {
     const loop = Animated.loop(
       Animated.parallel([
         Animated.sequence([
-          Animated.timing(scale,   { toValue: 1.7,  duration: 850, useNativeDriver: false }),
+          Animated.timing(scale,   { toValue: 1.75, duration: 850, useNativeDriver: false }),
           Animated.timing(scale,   { toValue: 1.0,  duration: 500, useNativeDriver: false }),
         ]),
         Animated.sequence([
@@ -88,24 +101,15 @@ function PulsingRing({ tabIdx }: { tabIdx: number }) {
   );
 }
 
-// ─── Spotlight aperture ───────────────────────────────────────────────────────
-// Simulates a transparent cutout by drawing 4 dim panels around the target rect.
-// Optionally draws a glowing border frame around the cutout.
+// ─── 2. Spotlight aperture ────────────────────────────────────────────────────
+// 4 dim panels leave a clear rectangular window.  A glow border frames it.
 
-function SpotlightAperture({
-  rect,
-  fade,
-}: {
-  rect:  TargetRect;
-  fade:  Animated.Value;
-}) {
+function SpotlightAperture({ rect, fade }: { rect: TargetRect; fade: Animated.Value }) {
   const { x, y, width, height } = rect;
-  const rx = x;
-  const ry = y;
-  const rr = SCREEN_W - (x + width);
-  const rb = SCREEN_H - (y + height);
+  const rr = SW - (x + width);
+  const rb = SH - (y + height);
 
-  const panelStyle = {
+  const panel = {
     position:        'absolute' as const,
     backgroundColor: DIM_COLOR,
   };
@@ -113,33 +117,22 @@ function SpotlightAperture({
   return (
     <Animated.View
       pointerEvents="none"
-      style={{
-        position: 'absolute',
-        top: 0, left: 0, right: 0, bottom: 0,
-        opacity: fade,
-      }}
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: fade }}
     >
-      {/* Top panel */}
-      <View style={{ ...panelStyle, top: 0, left: 0, right: 0, height: ry }} />
+      <View style={{ ...panel, top: 0,          left: 0, right: 0,  height: y          }} />
+      <View style={{ ...panel, top: y,          left: 0, width:  x, height             }} />
+      <View style={{ ...panel, top: y,          right: 0, width: rr, height            }} />
+      <View style={{ ...panel, top: y + height, left: 0, right: 0,  bottom: 0          }} />
 
-      {/* Left panel */}
-      <View style={{ ...panelStyle, top: ry, left: 0, width: rx, height }} />
-
-      {/* Right panel */}
-      <View style={{ ...panelStyle, top: ry, right: 0, width: rr, height }} />
-
-      {/* Bottom panel */}
-      <View style={{ ...panelStyle, top: ry + height, left: 0, right: 0, bottom: 0 }} />
-
-      {/* Glow border around the aperture */}
+      {/* Glow border */}
       <View
         style={{
           position:      'absolute',
-          top:           ry - 2,
-          left:          rx - 2,
+          top:           y - 2,
+          left:          x - 2,
           width:         width  + 4,
           height:        height + 4,
-          borderRadius:  6,
+          borderRadius:  10,
           borderWidth:   2,
           borderColor:   GLOW_COLOR,
         }}
@@ -148,7 +141,117 @@ function SpotlightAperture({
   );
 }
 
-// ─── Coach-mark card ──────────────────────────────────────────────────────────
+// ─── 3. In-screen hotspot ─────────────────────────────────────────────────────
+// Dual-ring pulsing dot at a specific point within the spotlight.
+// Rings animate with a 420ms stagger so they pulse in sequence.
+// Tapping advances the walkthrough — same as pressing Next.
+
+function InScreenHotspot({
+  pos,
+  onPress,
+}: {
+  pos:     { x: number; y: number };
+  onPress: () => void;
+}) {
+  const ring1Scale   = useRef(new Animated.Value(1)).current;
+  const ring1Opacity = useRef(new Animated.Value(0.85)).current;
+  const ring2Scale   = useRef(new Animated.Value(1)).current;
+  const ring2Opacity = useRef(new Animated.Value(0.45)).current;
+
+  useEffect(() => {
+    const makeRingLoop = (
+      scale:   Animated.Value,
+      opacity: Animated.Value,
+      delay:   number,
+    ) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.parallel([
+            Animated.timing(scale,   { toValue: 2.4,  duration: 900, useNativeDriver: false }),
+            Animated.timing(opacity, { toValue: 0,    duration: 900, useNativeDriver: false }),
+          ]),
+          Animated.parallel([
+            Animated.timing(scale,   { toValue: 1,    duration: 0,   useNativeDriver: false }),
+            Animated.timing(opacity, { toValue: delay === 0 ? 0.85 : 0.45, duration: 0, useNativeDriver: false }),
+          ]),
+          Animated.delay(900 - delay),
+        ]),
+      );
+
+    const l1 = makeRingLoop(ring1Scale, ring1Opacity, 0);
+    const l2 = makeRingLoop(ring2Scale, ring2Opacity, 420);
+    l1.start();
+    l2.start();
+    return () => { l1.stop(); l2.stop(); };
+  }, []);
+
+  const TOUCH = 52;
+  const RING  = 40;
+  const DOT   = 11;
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.7}
+      style={{
+        position:       'absolute',
+        top:            pos.y - TOUCH / 2,
+        left:           pos.x - TOUCH / 2,
+        width:          TOUCH,
+        height:         TOUCH,
+        alignItems:     'center',
+        justifyContent: 'center',
+      }}
+    >
+      {/* Outer ring */}
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position:     'absolute',
+          width:        RING,
+          height:       RING,
+          borderRadius: RING / 2,
+          borderWidth:  1.5,
+          borderColor:  '#fff',
+          transform:    [{ scale: ring1Scale }],
+          opacity:      ring1Opacity,
+        }}
+      />
+      {/* Inner ring (staggered) */}
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position:     'absolute',
+          width:        RING,
+          height:       RING,
+          borderRadius: RING / 2,
+          borderWidth:  1.5,
+          borderColor:  '#fff',
+          transform:    [{ scale: ring2Scale }],
+          opacity:      ring2Opacity,
+        }}
+      />
+      {/* Solid centre dot */}
+      <View
+        style={{
+          width:           DOT,
+          height:          DOT,
+          borderRadius:    DOT / 2,
+          backgroundColor: '#fff',
+          shadowColor:     '#fff',
+          shadowOpacity:   0.6,
+          shadowRadius:    5,
+          shadowOffset:    { width: 0, height: 0 },
+        }}
+      />
+    </TouchableOpacity>
+  );
+}
+
+// ─── 4. Coach card ────────────────────────────────────────────────────────────
+// Slides up from below the spotlight.
+// An upward-pointing triangle at the top edge points toward the lit area.
 
 function CoachCard({
   step,
@@ -167,39 +270,23 @@ function CoachCard({
   onNext:     () => void;
   onSkip:     () => void;
 }) {
-  const slideIn = useRef(new Animated.Value(28)).current;
+  const slideIn = useRef(new Animated.Value(30)).current;
   const fade    = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    slideIn.setValue(28);
+    slideIn.setValue(30);
     fade.setValue(0);
     Animated.parallel([
-      Animated.timing(slideIn, { toValue: 0,   duration: 360, useNativeDriver: false }),
-      Animated.timing(fade,    { toValue: 1,    duration: 300, useNativeDriver: false }),
+      Animated.timing(slideIn, { toValue: 0, duration: 340, useNativeDriver: false }),
+      Animated.timing(fade,    { toValue: 1, duration: 280, useNativeDriver: false }),
     ]).start();
   }, [step]);
-
-  // Position the card based on where the spotlight is
-  // If spotlight rect bottom is in lower half → card goes above it
-  // Otherwise card goes at bottom (above tab bar)
-  const cardAtTop = spotRect
-    ? (spotRect.y + spotRect.height) > SCREEN_H * 0.55
-    : false;
-
-  const cardBottom = cardAtTop
-    ? undefined
-    : TAB_BAR_H + 14;
-
-  const cardTop = cardAtTop
-    ? (spotRect ? Math.max(spotRect.y - 4 - 220, 60) : 80)
-    : undefined;
 
   return (
     <Animated.View
       style={{
         position:        'absolute',
-        bottom:          cardBottom,
-        top:             cardTop,
+        bottom:          TAB_BAR_H + 12,
         left:            14,
         right:           14,
         backgroundColor: '#faf9f7',
@@ -208,20 +295,37 @@ function CoachCard({
         opacity:         fade,
         transform:       [{ translateY: slideIn }],
         shadowColor:     '#000',
-        shadowOpacity:   0.22,
-        shadowRadius:    20,
+        shadowOpacity:   0.20,
+        shadowRadius:    24,
         shadowOffset:    { width: 0, height: 6 },
-        elevation:       14,
+        elevation:       16,
       }}
     >
-      {/* Step dots + skip */}
+      {/* Upward-pointing arrow — visual connector to spotlight above */}
+      <View
+        style={{
+          position:           'absolute',
+          top:               -10,
+          left:              CARD_W / 2 - 10,  // centered on card
+          width:              0,
+          height:             0,
+          borderLeftWidth:    10,
+          borderRightWidth:   10,
+          borderBottomWidth:  10,
+          borderLeftColor:   'transparent',
+          borderRightColor:  'transparent',
+          borderBottomColor: '#faf9f7',
+        }}
+      />
+
+      {/* Step progress dots + skip */}
       <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
         <View style={{ flex: 1, flexDirection: 'row', gap: 5 }}>
           {Array.from({ length: totalSteps }).map((_, i) => (
             <View
               key={i}
               style={{
-                width:           i === stepIdx ? 22 : 6,
+                width:           i === stepIdx ? 24 : 6,
                 height:          6,
                 borderRadius:    3,
                 backgroundColor: i <= stepIdx ? '#1c1917' : '#e7e5e4',
@@ -231,7 +335,7 @@ function CoachCard({
         </View>
         <TouchableOpacity
           onPress={onSkip}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           <Text style={{ fontSize: 13, color: '#a8a29e', fontWeight: '500' }}>
             Skip tour
@@ -242,11 +346,11 @@ function CoachCard({
       {/* Title */}
       <Text
         style={{
-          fontSize:     23,
+          fontSize:     22,
           fontWeight:   '800',
           color:        '#1c1917',
-          lineHeight:   29,
-          marginBottom: 9,
+          lineHeight:   28,
+          marginBottom: 8,
         }}
       >
         {def.title}
@@ -293,7 +397,6 @@ export function WalkthroughOverlay() {
 
   const isVisible = wtStep !== null && (WT_OVERLAY_STEPS as string[]).includes(wtStep);
 
-  // Fade in/out on step changes
   useEffect(() => {
     if (isVisible && prevStep.current !== wtStep) {
       overlayFade.setValue(0);
@@ -310,7 +413,6 @@ export function WalkthroughOverlay() {
   const def = WT_DEFS[wtStep as keyof typeof WT_DEFS];
   if (!def) return null;
 
-  // Prefer live-registered target; fall back to fixed spotlightRect in def
   const spotRect: TargetRect | null =
     getWtTarget(`${wtStep}_content`) ?? def.spotlightRect;
 
@@ -322,6 +424,11 @@ export function WalkthroughOverlay() {
     skip();
   }
 
+  function handleHotspotTap() {
+    wtEvt_hotspotTapped(wtStep!);
+    advance();
+  }
+
   return (
     <View
       style={{
@@ -330,11 +437,10 @@ export function WalkthroughOverlay() {
         pointerEvents: 'box-none',
       }}
     >
-      {/* Spotlight aperture (4-panel dim around cutout) */}
+      {/* Spotlight aperture */}
       {spotRect ? (
         <SpotlightAperture rect={spotRect} fade={overlayFade} />
       ) : (
-        // Fallback: full-screen dim
         <Animated.View
           pointerEvents="none"
           style={{
@@ -346,8 +452,7 @@ export function WalkthroughOverlay() {
         />
       )}
 
-      {/* Transparent touch-blocker that covers everything except the coach card */}
-      {/* We let pointer events through to tab bar so user can still see it */}
+      {/* Touch blocker — blocks touches on dim area, lets tab bar through */}
       <View
         style={{
           position: 'absolute',
@@ -357,7 +462,15 @@ export function WalkthroughOverlay() {
         pointerEvents="box-only"
       />
 
-      {/* Pulsing ring on the active tab icon */}
+      {/* In-screen hotspot — rendered ABOVE the blocker so it receives touches */}
+      {def.inScreenHotspot && (
+        <InScreenHotspot
+          pos={def.inScreenHotspot}
+          onPress={handleHotspotTap}
+        />
+      )}
+
+      {/* Pulsing ring on tab icon */}
       <PulsingRing tabIdx={def.tabIdx} />
 
       {/* Coach card */}
