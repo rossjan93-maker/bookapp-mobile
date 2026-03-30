@@ -45,13 +45,13 @@ export function WtDemoHome({ greeting }: { greeting: string | null }) {
             borderLeftWidth: 3,
             borderLeftColor: '#d4a574',
             shadowColor: '#1c1917',
-            shadowOpacity: 0.18,
-            shadowRadius: 18,
-            shadowOffset: { width: 0, height: 6 },
-            elevation: 12,
+            shadowOpacity: 0.22,
+            shadowRadius: 22,
+            shadowOffset: { width: 0, height: 8 },
+            elevation: 14,
             transform: [{ scale: 1.02 }],
-            borderWidth: 1,
-            borderColor: 'rgba(212, 165, 116, 0.25)',
+            borderWidth: 1.5,
+            borderColor: 'rgba(212, 165, 116, 0.45)',
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 }}>

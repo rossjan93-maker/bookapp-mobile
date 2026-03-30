@@ -54,11 +54,14 @@ const TAB_COUNT  = 5;
 const TAB_BAR_H  = 62;
 const RING_SIZE  = 52;
 const RING_R     = RING_SIZE / 2;
-const DIM_COLOR  = 'rgba(0,0,0,0.50)';
-// Crisp white frame — visible against dim background; outer glow suggests lift
-const FRAME_COLOR = 'rgba(255,255,255,0.88)';
-const AURA_COLOR  = 'rgba(255,255,255,0.07)';
-const CARD_W      = SW - 28;
+const DIM_COLOR   = 'rgba(0,0,0,0.54)';
+// Warm amber glow — emanates from behind the focal card into the dim field
+const GLOW_A = 'rgba(212,165,116,0.17)';
+const GLOW_B = 'rgba(212,165,116,0.11)';
+const GLOW_C = 'rgba(212,165,116,0.06)';
+const CARD_W  = SW - 28;
+// Estimated coach-card height for dynamic positioning (avoids onLayout complexity)
+const COACH_H_EST = 262;
 
 function tabCenterX(idx: number): number {
   return (SW / TAB_COUNT) * idx + SW / TAB_COUNT / 2;
@@ -110,14 +113,13 @@ function PulsingRing({ tabIdx }: { tabIdx: number }) {
 
 // ─── 2. Spotlight aperture ────────────────────────────────────────────────────
 //
-// 4 dim panels leave a clear rectangular window on the spotlit component.
-// A crisp app-native frame border + soft outer aura give the component
-// a sense of elevation without touching the underlying view.
+// 4 dim panels leave a clear window around the focal card.  No box/frame border —
+// the card's own shadow + scale creates the lift.  A 3-layer warm amber bloom in
+// the dim area gives the "backlight halo emanating from behind the card" effect.
 
 function SpotlightAperture({ rect, fade }: { rect: TargetRect; fade: Animated.Value }) {
   const { x, y, width, height } = rect;
   const rr = SW - (x + width);
-  const rb = SH - (y + height);
 
   const panel = {
     position:        'absolute' as const,
@@ -129,44 +131,47 @@ function SpotlightAperture({ rect, fade }: { rect: TargetRect; fade: Animated.Va
       pointerEvents="none"
       style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: fade }}
     >
-      {/* 4 dim panels */}
+      {/* 4 dim panels — surround the clear card window */}
       <View style={{ ...panel, top: 0,          left: 0, right: 0,  height: y          }} />
       <View style={{ ...panel, top: y,          left: 0, width:  x, height             }} />
       <View style={{ ...panel, top: y,          right: 0, width: rr, height            }} />
       <View style={{ ...panel, top: y + height, left: 0, right: 0,  bottom: 0          }} />
 
-      {/* Outer aura — soft halo suggesting elevation */}
-      <View
-        style={{
-          position:     'absolute',
-          top:          y - 8,
-          left:         x - 8,
-          width:        width  + 16,
-          height:       height + 16,
-          borderRadius: 20,
-          borderWidth:  1,
-          borderColor:  AURA_COLOR,
-        }}
-      />
+      {/* Warm glow bloom — rendered on the dim field, bleeding outward from the card.
+          Three nested layers give the illusion of warm light emanating from behind. */}
 
-      {/* Crisp component frame — white border + shadow gives a lifted-card feel */}
-      <View
-        style={{
-          position:      'absolute',
-          top:           y - 2,
-          left:          x - 2,
-          width:         width  + 4,
-          height:        height + 4,
-          borderRadius:  14,
-          borderWidth:   1.5,
-          borderColor:   FRAME_COLOR,
-          shadowColor:   '#000',
-          shadowOpacity: 0.35,
-          shadowRadius:  20,
-          shadowOffset:  { width: 0, height: 4 },
-          elevation:     10,
-        }}
-      />
+      {/* Outer halo — widest, most diffuse */}
+      <View style={{
+        position:        'absolute',
+        top:             y - 34,
+        left:            x - 38,
+        width:           width  + 76,
+        height:          height + 68,
+        borderRadius:    28,
+        backgroundColor: GLOW_C,
+      }} />
+
+      {/* Middle halo */}
+      <View style={{
+        position:        'absolute',
+        top:             y - 18,
+        left:            x - 20,
+        width:           width  + 40,
+        height:          height + 36,
+        borderRadius:    22,
+        backgroundColor: GLOW_B,
+      }} />
+
+      {/* Inner halo — tightest, warmest */}
+      <View style={{
+        position:        'absolute',
+        top:             y - 7,
+        left:            x - 8,
+        width:           width  + 16,
+        height:          height + 14,
+        borderRadius:    17,
+        backgroundColor: GLOW_A,
+      }} />
     </Animated.View>
   );
 }
@@ -278,12 +283,17 @@ function InScreenHotspot({
 }
 
 // ─── 4. Coach card ────────────────────────────────────────────────────────────
+//
+// Dynamically positioned below (or above, if near screen bottom) the focal card.
+// The connecting arrow always points toward the card, making it feel "attached"
+// to the specific object being explained — not floating generically at the bottom.
 
 function CoachCard({
   step,
   totalSteps,
   stepIdx,
   def,
+  cardRect,
   onNext,
   onSkip,
 }: {
@@ -291,28 +301,59 @@ function CoachCard({
   totalSteps: number;
   stepIdx:    number;
   def:        typeof WT_DEFS[keyof typeof WT_DEFS];
+  cardRect:   TargetRect | null;
   onNext:     () => void;
   onSkip:     () => void;
 }) {
-  const slideIn = useRef(new Animated.Value(30)).current;
+  const slideIn = useRef(new Animated.Value(20)).current;
   const fade    = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    slideIn.setValue(30);
+    slideIn.setValue(20);
     fade.setValue(0);
     Animated.parallel([
-      Animated.timing(slideIn, { toValue: 0, duration: 340, useNativeDriver: false }),
-      Animated.timing(fade,    { toValue: 1, duration: 280, useNativeDriver: false }),
+      Animated.timing(slideIn, { toValue: 0, duration: 320, useNativeDriver: false }),
+      Animated.timing(fade,    { toValue: 1, duration: 260, useNativeDriver: false }),
     ]).start();
   }, [step]);
+
+  // Compute position: prefer just below the card, fall back above if cramped.
+  const GAP       = 14;
+  const SIDE      = 14;
+  const SAFE_BOT  = TAB_BAR_H + 8;
+
+  let positionStyle: object;
+  let arrowAbove: boolean; // true = arrow at top of coach card (pointing up to card above)
+
+  if (cardRect) {
+    const belowTop = cardRect.y + cardRect.height + GAP;
+    const fitsBelow = belowTop + COACH_H_EST < SH - SAFE_BOT;
+
+    if (fitsBelow) {
+      positionStyle = { top: belowTop, left: SIDE, right: SIDE };
+      arrowAbove    = true;   // coach is below the card → arrow points UP toward card
+    } else {
+      // Not enough room below — position coach above the card
+      const aboveBottom = SH - cardRect.y + GAP;
+      positionStyle = { bottom: aboveBottom, left: SIDE, right: SIDE };
+      arrowAbove    = false;  // coach is above the card → arrow points DOWN toward card
+    }
+  } else {
+    // Fallback: no rect yet — anchor at bottom
+    positionStyle = { bottom: SAFE_BOT, left: SIDE, right: SIDE };
+    arrowAbove    = true;
+  }
+
+  // Arrow horizontal position — aim at the card center, clamped inside coach bounds.
+  const arrowLeft = cardRect
+    ? Math.max(20, Math.min(CARD_W - 40, (cardRect.x + cardRect.width / 2) - SIDE - 10))
+    : CARD_W / 2 - 10;
 
   return (
     <Animated.View
       style={{
         position:        'absolute',
-        bottom:          TAB_BAR_H + 12,
-        left:            14,
-        right:           14,
+        ...positionStyle,
         backgroundColor: '#faf9f7',
         borderRadius:    22,
         padding:         22,
@@ -325,22 +366,42 @@ function CoachCard({
         elevation:       16,
       }}
     >
-      {/* Upward-pointing arrow connecting card to spotlight */}
-      <View
-        style={{
-          position:           'absolute',
-          top:               -10,
-          left:              CARD_W / 2 - 10,
-          width:              0,
-          height:             0,
-          borderLeftWidth:    10,
-          borderRightWidth:   10,
-          borderBottomWidth:  10,
-          borderLeftColor:   'transparent',
-          borderRightColor:  'transparent',
-          borderBottomColor: '#faf9f7',
-        }}
-      />
+      {/* Arrow connecting coach card to the focal card */}
+      {arrowAbove ? (
+        // Coach is BELOW the card — upward triangle at top
+        <View
+          style={{
+            position:           'absolute',
+            top:               -10,
+            left:               arrowLeft,
+            width:              0,
+            height:             0,
+            borderLeftWidth:    10,
+            borderRightWidth:   10,
+            borderBottomWidth:  10,
+            borderLeftColor:   'transparent',
+            borderRightColor:  'transparent',
+            borderBottomColor: '#faf9f7',
+          }}
+        />
+      ) : (
+        // Coach is ABOVE the card — downward triangle at bottom
+        <View
+          style={{
+            position:        'absolute',
+            bottom:         -10,
+            left:            arrowLeft,
+            width:           0,
+            height:          0,
+            borderLeftWidth:   10,
+            borderRightWidth:  10,
+            borderTopWidth:    10,
+            borderLeftColor:  'transparent',
+            borderRightColor: 'transparent',
+            borderTopColor:   '#faf9f7',
+          }}
+        />
+      )}
 
       {/* Step progress dots + skip */}
       <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
@@ -542,12 +603,13 @@ export function WalkthroughOverlay() {
           {/* Pulsing ring on the active tab icon */}
           <PulsingRing tabIdx={def.tabIdx} />
 
-          {/* Coach card */}
+          {/* Coach card — positioned attached to the focal card */}
           <CoachCard
             step={wtStep}
             totalSteps={totalSteps}
             stepIdx={stepIdx}
             def={def}
+            cardRect={measuredRect ?? null}
             onNext={advance}
             onSkip={handleSkip}
           />

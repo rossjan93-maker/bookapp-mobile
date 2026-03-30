@@ -48,15 +48,15 @@ export function WtDemoLibrary() {
             borderLeftWidth: 3,
             borderLeftColor: '#3b82f6',
             shadowColor: '#1c1917',
-            shadowOpacity: 0.18,
-            shadowRadius: 18,
-            shadowOffset: { width: 0, height: 6 },
-            elevation: 12,
+            shadowOpacity: 0.22,
+            shadowRadius: 22,
+            shadowOffset: { width: 0, height: 8 },
+            elevation: 14,
             paddingTop: 14, paddingRight: 14,
             paddingBottom: 14, paddingLeft: 14,
             transform: [{ scale: 1.02 }],
-            borderWidth: 1,
-            borderColor: 'rgba(59, 130, 246, 0.18)',
+            borderWidth: 1.5,
+            borderColor: 'rgba(59, 130, 246, 0.40)',
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
