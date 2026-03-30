@@ -1899,6 +1899,16 @@ export default function RecommendationsScreen() {
   // Reset to 0 whenever a commit successfully yields non-zero filtered recs.
   const exhaustionAttemptRef = useRef(0);
 
+  // ── Deck-diff instrumentation ──────────────────────────────────────────────
+  // Stores the raw (pre-filterActedOn) top-10 book IDs from the most recent
+  // non-bypass commit (cache_restore / cold_start / background_refresh).
+  // Used by the exhaustion-bypass path to emit a [REC_DECK_DIFF] log that
+  // proves whether the bypass produced a materially different unseen deck.
+  const _lastNormalDeckRef  = useRef<string[]>([]);
+  // Monotonically increasing pipeline run counter. Each commit path stamps its
+  // result so logs across the two paths can be correlated by runId.
+  const _pipelineRunRef     = useRef(0);
+
   // ── Dev-only performance overlay state ────────────────────────────────────
   const [recTiming, setRecTiming]             = useState<DevTimings | null>(null);
   // Off by default — long-press the "Recommendations" title to toggle in dev builds
@@ -2392,10 +2402,27 @@ export default function RecommendationsScreen() {
     }
 
     if (cached) {
+      const _crRunId = ++_pipelineRunRef.current;
       if (__DEV__) console.log('[PERF] cache_hit — restoring session recs instantly',
         `| age_ms=${Date.now() - cached.loadedAt}`,
         `| recs=${cached.recs.length}`,
+        `| runId=${_crRunId}`,
       );
+      // Capture pre-filter top-10 IDs for deck-diff comparison on bypass reload.
+      if (__DEV__) {
+        _lastNormalDeckRef.current = [
+          ...cached.recs,
+          ...cached.continuations,
+          ...cached.discoveries,
+        ].slice(0, 10).map(r => r.id);
+        console.log('[REC_NORMAL_DECK]',
+          `runId=${_crRunId}`,
+          `| source=cache_restore`,
+          `| candidate_count=${cached.recs.length + cached.continuations.length + cached.discoveries.length}`,
+          `| ranked_count=${cached.recs.length}`,
+          `| top10_ids=${JSON.stringify(_lastNormalDeckRef.current)}`,
+        );
+      }
       // Filter out any recs the user has already acted on (both permanently
       // acted-on and pending-undo dismiss) so they never reappear on revisit.
       const _crRecs   = cached.recs.filter(filterActedOn);
@@ -2743,9 +2770,11 @@ export default function RecommendationsScreen() {
       }
 
       // ── Commit logging ────────────────────────────────────────────────────
+      const _bgRunId    = ++_pipelineRunRef.current;
       const _commitType = _isBgRefresh ? 'background_refresh' : 'cold_start';
       if (__DEV__) console.log('[REC_COMMIT]',
         `commit_type=${_commitType}`,
+        `| runId=${_bgRunId}`,
         `| prev_visible_recs=${recommendations.length}`,
         `| next_recs=${recs.length}`,
         `| continuations=${(recResult.continuations ?? []).length}`,
@@ -2753,7 +2782,24 @@ export default function RecommendationsScreen() {
         `| pool_size=${meta.pool_size}`,
         `| mode=${meta.mode ?? 'deterministic'}`,
         `| intent=${expectedIntent ?? 'none'}`,
+        `| sources=${JSON.stringify({ catalog: meta.catalog_count, cached_ext: meta.cached_external_count, live_ol: meta.live_ol_count })}`,
       );
+      // Capture pre-filter top-10 IDs for deck-diff comparison on bypass reload.
+      if (__DEV__) {
+        _lastNormalDeckRef.current = [
+          ...recs,
+          ...(recResult.continuations ?? []),
+          ...(recResult.discoveries   ?? recs),
+        ].slice(0, 10).map(r => r.id);
+        console.log('[REC_NORMAL_DECK]',
+          `runId=${_bgRunId}`,
+          `| source=${_commitType}`,
+          `| candidate_count=${recs.length + (recResult.continuations ?? []).length + (recResult.discoveries ?? recs).length}`,
+          `| ranked_count=${recs.length}`,
+          `| top10_ids=${JSON.stringify(_lastNormalDeckRef.current)}`,
+          `| sources=${JSON.stringify({ catalog: meta.catalog_count, cached_ext: meta.cached_external_count, live_ol: meta.live_ol_count })}`,
+        );
+      }
 
       if (__DEV__) console.log('[PERF] phase2_commit', `| recs=${recs.length}`);
       const _bgRecs  = recs.filter(filterActedOn);
@@ -2927,14 +2973,19 @@ export default function RecommendationsScreen() {
       // excludes them before ranking.  Also force a fresh OL fetch by clearing
       // the module-level OL session cache — this prevents the same acted-on pool
       // from ranking as top-5 again.
+      // On bypass: pass actedOn IDs upstream + force a live OL fetch (ignores
+      // the module-level OL session cache regardless of concurrent repopulation).
+      // clearOLSessionCache() is belt-and-suspenders so a subsequent normal load
+      // also starts fresh instead of reusing acted-on candidates.
       const reloadOpts = opts?.exhaustionBypass
-        ? { additionalExcludeIds: new Set(_actedOnIds) }
+        ? { additionalExcludeIds: new Set(_actedOnIds), forceNewOL: true }
         : undefined;
       if (opts?.exhaustionBypass) {
         clearOLSessionCache();
         if (__DEV__) console.log('[REC_EXHAUSTED_RELOAD]',
           `executing`,
           `| acted_on_excluded=${_actedOnIds.size}`,
+          `| ol_force_live=true`,
           `| ol_session_cleared=true`,
         );
       }
@@ -2951,8 +3002,11 @@ export default function RecommendationsScreen() {
         if (__DEV__) console.log('[PERF] reloadRecs_stale_discarded', `| requestId=${requestId}`);
         return;
       }
+      const _rrRunId = ++_pipelineRunRef.current;
       if (__DEV__) console.log('[REC_COMMIT]',
         `commit_type=reload_recs`,
+        `| runId=${_rrRunId}`,
+        `| exhaustion_bypass=${!!opts?.exhaustionBypass}`,
         `| prev_visible_recs=${recommendations.length}`,
         `| next_recs=${recs.length}`,
         `| continuations=${(intentResult.continuations ?? []).length}`,
@@ -2960,7 +3014,63 @@ export default function RecommendationsScreen() {
         `| pool_size=${meta.pool_size}`,
         `| mode=${meta.mode ?? 'deterministic'}`,
         `| intent=${isIntentActive(intent) ? intent.book_title ?? 'active' : 'none'}`,
+        `| sources=${JSON.stringify({ catalog: meta.catalog_count, cached_ext: meta.cached_external_count, live_ol: meta.live_ol_count })}`,
       );
+
+      // ── Deck-diff: compare bypass deck vs last normal deck ─────────────────
+      // Emits [REC_DECK_DIFF] with a definitive `different=true/false` answer.
+      // `different=true`  → bypass produced unseen books; supply exists.
+      // `different=false` → same books ranked; supply is genuinely exhausted.
+      // `partial=true`    → some new, some overlap; partial fresh supply.
+      if (__DEV__) {
+        const _bypassTopIds = [
+          ...recs,
+          ...(intentResult.continuations ?? []),
+          ...(intentResult.discoveries   ?? recs),
+        ].slice(0, 10).map(r => r.id);
+        const _prevSet      = new Set(_lastNormalDeckRef.current);
+        const _overlapIds   = _bypassTopIds.filter(id => _prevSet.has(id));
+        const _newIds       = _bypassTopIds.filter(id => !_prevSet.has(id));
+        const _isDifferent  = _newIds.length > 0;
+        const _isPartial    = _newIds.length > 0 && _overlapIds.length > 0;
+        console.log('[REC_DECK_DIFF]',
+          `different=${_isDifferent}`,
+          `| partial=${_isPartial}`,
+          `| overlap=${_overlapIds.length}/${_bypassTopIds.length}`,
+          `| new_ids_count=${_newIds.length}`,
+          `| runId_normal=${_rrRunId - 1}`,
+          `| runId_bypass=${_rrRunId}`,
+          `| normal_top10=${JSON.stringify(_lastNormalDeckRef.current)}`,
+          `| bypass_top10=${JSON.stringify(_bypassTopIds)}`,
+          `| acted_on_excluded=${opts?.exhaustionBypass ? _actedOnIds.size : 'n/a'}`,
+          `| candidate_pool_before_filter=${recs.length}`,
+          `| sources=${JSON.stringify({ catalog: meta.catalog_count, cached_ext: meta.cached_external_count, live_ol: meta.live_ol_count })}`,
+        );
+        // If not different, trace why — each cause points to a specific fix.
+        if (!_isDifferent) {
+          const _isBypass    = !!opts?.exhaustionBypass;
+          const _likelyCause =
+            _isBypass && meta.live_ol_count === 0
+                                        ? 'ol_live_returned_0_supply_exhausted' :
+            !_isBypass && meta.live_ol_count === 0
+                                        ? 'ol_session_cache_still_hot_or_fetch_failed' :
+            meta.cached_external_count === 0 && meta.live_ol_count === 0
+                                        ? 'no_external_candidates' :
+            _actedOnIds.size > (meta.pool_size ?? 0)
+                                        ? 'acted_on_exceeds_entire_pool' :
+                                          'local_catalog_dominates_ranking_even_after_exclusion';
+          console.log('[REC_DECK_DIFF_NO_CHANGE_TRACE]',
+            `likely_cause=${_likelyCause}`,
+            `| bypass=${_isBypass}`,
+            `| ol_count=${meta.live_ol_count}`,
+            `| cached_ext_count=${meta.cached_external_count}`,
+            `| catalog_count=${meta.catalog_count}`,
+            `| pool_size=${meta.pool_size}`,
+            `| acted_on=${_actedOnIds.size}`,
+          );
+        }
+      }
+
       const _rrRecs  = recs.filter(filterActedOn);
       const _rrConts = (intentResult.continuations ?? []).filter(filterActedOn);
       const _rrDiscs = (intentResult.discoveries   ?? recs).filter(filterActedOn);

@@ -2229,6 +2229,7 @@ export async function getCandidateBooks(
   profile:               TasteProfile,
   feedback?:             FeedbackContext,
   additionalExcludeIds?: Set<string>,
+  forceNewOL?:           boolean,
 ): Promise<CandidateResult> {
   // ── Stage timing — [REC_TIMING] log emitted at the end of this function ───
   const _t0 = Date.now();
@@ -2367,6 +2368,7 @@ export async function getCandidateBooks(
     // Re-apply current exclusion set so newly-finished books are always excluded.
     const currentSignal = profile.strongSignalCount ?? 0;
     const olSessionValid =
+      !forceNewOL &&                                                    // bypass: always go live
       _olCandidateSession !== null &&
       _olCandidateSession.userId      === userId &&
       _olCandidateSession.signalCount === currentSignal &&
@@ -2623,9 +2625,10 @@ export async function getPersonalizedRecs(
   feedback?:             FeedbackContext,
   intent?:               NextReadIntent,
   additionalExcludeIds?: Set<string>,
+  forceNewOL?:           boolean,
 ): Promise<RankedRecsResult> {
   const { candidates, enrichmentMap, retrieval_trace, seriesReadSet, seriesProgress, seriesPositionsRead, authorReadCounts } =
-    await getCandidateBooks(client, userId, profile, feedback, additionalExcludeIds);
+    await getCandidateBooks(client, userId, profile, feedback, additionalExcludeIds, forceNewOL);
   return getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet, seriesProgress, authorReadCounts, seriesPositionsRead);
 }
 
@@ -2649,11 +2652,11 @@ export async function getPersonalizedRecsWithExpert(
   limit        = 5,
   feedback?:   FeedbackContext,
   intent?:     NextReadIntent,
-  opts?:       { skipCache?: boolean; additionalExcludeIds?: Set<string> },
+  opts?:       { skipCache?: boolean; additionalExcludeIds?: Set<string>; forceNewOL?: boolean },
 ): Promise<RankedRecsResult> {
   // ── Step 1: Deterministic pipeline (always runs) ──────────────────────────
   const { candidates, enrichmentMap, retrieval_trace, seriesReadSet, seriesProgress, seriesPositionsRead, authorReadCounts } =
-    await getCandidateBooks(client, userId, profile, feedback, opts?.additionalExcludeIds);
+    await getCandidateBooks(client, userId, profile, feedback, opts?.additionalExcludeIds, opts?.forceNewOL);
   if (__DEV__) console.log('[PERF] phase2_scoring_start', `| candidates=${candidates.length}`);
   const _scoreStart = Date.now();
   const baseResult = getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet, seriesProgress, authorReadCounts, seriesPositionsRead);
