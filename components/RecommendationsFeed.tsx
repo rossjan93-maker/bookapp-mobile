@@ -310,6 +310,8 @@ export type RecommendationsFeedProps = {
   setFeedbackCtx:  React.Dispatch<React.SetStateAction<FeedbackContext>>;
   guidedStep:      number;
   onGuidedAdvance: () => void;
+  /** Walkthrough: ref placed on the first visible targetable element (setup card or first rec card). */
+  wtRef?:          React.RefObject<any>;
 };
 
 export function RecommendationsFeed({
@@ -321,6 +323,7 @@ export function RecommendationsFeed({
   setFeedbackCtx,
   guidedStep,
   onGuidedAdvance: _onGuidedAdvance,
+  wtRef,
 }: RecommendationsFeedProps) {
 
   // ── Queue-synced React state ───────────────────────────────────────────────
@@ -823,7 +826,9 @@ export function RecommendationsFeed({
         <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 12 }}>
           For You
         </Text>
-        <View style={{
+        <View
+          ref={wtRef}
+          style={{
           backgroundColor: '#fff', borderRadius: 14, padding: 20, alignItems: 'center',
           shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 1 }, elevation: 1,
         }}>
@@ -958,19 +963,24 @@ export function RecommendationsFeed({
                   <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>Pick up where you left off</Text>
                 </View>
               </View>
-              {visibleConts.map((rec, idx) => (
-                <RecCard
-                  key={rec.id}
-                  book={rec}
-                  featured={idx === 0}
-                  isExpert={recMode === 'expert'}
-                  onSave={() => handleSave(rec)}
-                  onDismiss={() => handleDismiss(rec)}
-                  onMoreLikeThis={() => handleMoreLikeThis(rec)}
-                  onImpression={() => handleImpression(rec)}
-                  onExplanationOpen={() => handleExplanationOpen(rec)}
-                />
-              ))}
+              {visibleConts.map((rec, idx) => {
+                const card = (
+                  <RecCard
+                    key={rec.id}
+                    book={rec}
+                    featured={idx === 0}
+                    isExpert={recMode === 'expert'}
+                    onSave={() => handleSave(rec)}
+                    onDismiss={() => handleDismiss(rec)}
+                    onMoreLikeThis={() => handleMoreLikeThis(rec)}
+                    onImpression={() => handleImpression(rec)}
+                    onExplanationOpen={() => handleExplanationOpen(rec)}
+                  />
+                );
+                return idx === 0 && wtRef
+                  ? <View key={rec.id} ref={wtRef}>{card}</View>
+                  : card;
+              })}
               {visibleDiscs.length > 0 && <View style={{ height: 6 }} />}
             </>
           )}
@@ -984,19 +994,25 @@ export function RecommendationsFeed({
                   <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>Books aligned to your taste</Text>
                 </View>
               </View>
-              {visibleDiscs.map((rec, idx) => (
-                <RecCard
-                  key={rec.id}
-                  book={rec}
-                  featured={idx === 0 && visibleConts.length === 0}
-                  isExpert={recMode === 'expert'}
-                  onSave={() => handleSave(rec)}
-                  onDismiss={() => handleDismiss(rec)}
-                  onMoreLikeThis={() => handleMoreLikeThis(rec)}
-                  onImpression={() => handleImpression(rec)}
-                  onExplanationOpen={() => handleExplanationOpen(rec)}
-                />
-              ))}
+              {visibleDiscs.map((rec, idx) => {
+                const isFirstVisible = idx === 0 && visibleConts.length === 0;
+                const card = (
+                  <RecCard
+                    key={rec.id}
+                    book={rec}
+                    featured={isFirstVisible}
+                    isExpert={recMode === 'expert'}
+                    onSave={() => handleSave(rec)}
+                    onDismiss={() => handleDismiss(rec)}
+                    onMoreLikeThis={() => handleMoreLikeThis(rec)}
+                    onImpression={() => handleImpression(rec)}
+                    onExplanationOpen={() => handleExplanationOpen(rec)}
+                  />
+                );
+                return isFirstVisible && wtRef
+                  ? <View key={rec.id} ref={wtRef}>{card}</View>
+                  : card;
+              })}
             </>
           )}
 

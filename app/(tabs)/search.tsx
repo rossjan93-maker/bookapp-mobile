@@ -784,15 +784,12 @@ export default function RecommendationsScreen() {
   const recommendTargetRef = useRef<any>(null);
 
   function measureRecommendContent() {
+    // recommendTargetRef is passed as wtRef into RecommendationsFeed, which
+    // places it on the exact first targetable element: the setup prompt card
+    // (tier < 1) or the first real rec card (ready state). No clipping needed.
     recommendTargetRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
       if (w > 0 && h > 0) {
-        // Clip height to the first card area only (~145 px).
-        // RecommendationsFeed and RecCard are frozen so we cannot get a ref
-        // to an individual card — instead we clip the feed container's rect
-        // to approximately one card's height, focusing the spotlight on the
-        // first visible item rather than the entire feed.
-        const clippedH = Math.min(h, 145);
-        registerWtTarget('recommend_content', { x, y, width: w, height: clippedH });
+        registerWtTarget('recommend_content', { x, y, width: w, height: h });
       }
     });
   }
@@ -1457,7 +1454,6 @@ export default function RecommendationsScreen() {
             {/* ════════════════════════════════════════════════════════
                 Section 1 — For You
             ════════════════════════════════════════════════════════ */}
-            <View ref={recommendTargetRef}>
             <RecommendationsFeed
               userId={currentUserId}
               supabase={supabase}
@@ -1467,8 +1463,8 @@ export default function RecommendationsScreen() {
               setFeedbackCtx={setFeedbackCtx}
               guidedStep={guidedStep}
               onGuidedAdvance={advanceGuided}
+              wtRef={recommendTargetRef}
             />
-            </View>
             {/* ════════════════════════════════════════════════════════
                 Section 2 — Refine Your Taste (promoted above Social)
             ════════════════════════════════════════════════════════ */}
