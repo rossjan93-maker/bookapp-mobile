@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
@@ -6,6 +6,7 @@ import { registerCacheClearer } from '../../lib/tabCache';
 import { BadgeContext } from './_layout';
 import { getFirstName } from '../../lib/displayName';
 import { CoverThumb } from '../../components/CoverThumb';
+import { registerWtTarget, useWalkthrough } from '../../lib/walkthroughEngine';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,6 +77,26 @@ export default function InboxScreen() {
   const [error, setError]                 = useState<string | null>(null);
   const [savingId, setSavingId]           = useState<string | null>(null);
   const [refreshing, setRefreshing]       = useState(false);
+
+  // ── Walkthrough target measurement ──────────────────────────────────────────
+  // Register the inbox primary content area once loading completes.
+
+  const { wtStep } = useWalkthrough();
+  const inboxTargetRef = useRef<any>(null);
+
+  function measureInboxContent() {
+    inboxTargetRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
+      if (w > 0 && h > 0) {
+        registerWtTarget('inbox_content', { x, y, width: w, height: h });
+      }
+    });
+  }
+
+  useEffect(() => {
+    if (loading || wtStep !== 'inbox') return;
+    const t = setTimeout(measureInboxContent, 120);
+    return () => clearTimeout(t);
+  }, [loading, wtStep]);
 
   useEffect(() => {
     const count = items.filter(r => r.status === 'sent').length;
@@ -271,7 +292,11 @@ export default function InboxScreen() {
             </Text>
             <Text style={{ fontSize: 14, color: '#a8a29e' }}>Your recommendations from friends</Text>
           </View>
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+          <View
+            ref={inboxTargetRef}
+            style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }}
+            onLayout={measureInboxContent}
+          >
             <Text style={{ fontSize: 17, fontWeight: '700', color: '#1c1917', marginBottom: 8, textAlign: 'center' }}>
               Nothing here yet
             </Text>
@@ -304,7 +329,7 @@ export default function InboxScreen() {
 
       {/* ── New ── */}
       {newItems.length > 0 && (
-        <View style={{ marginBottom: 28 }}>
+        <View ref={inboxTargetRef} style={{ marginBottom: 28 }} onLayout={measureInboxContent}>
           <SectionLabel>{`New · ${newItems.length}`}</SectionLabel>
           {newItems.map(item => (
             <View

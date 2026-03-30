@@ -1,0 +1,248 @@
+The walkthrough is still not good enough. I want a correction pass that combines all prior feedback across ALL tabs and fixes the walkthrough at the product level.
+
+This is not a generic polish task.
+I want a real walkthrough spec and implementation correction.
+
+Core issue:
+The walkthrough is still highlighting vague areas, explaining things before the relevant UI is actually ready, and skipping important tabs/surfaces. It does not feel like the app is teaching itself through the real interface.
+
+What must be true after this pass:
+- every walkthrough step is tied to a specific real UI component
+- the highlighted element matches the copy exactly
+- the element being discussed is actually loaded and visible
+- the walkthrough covers the right tabs in the right order
+- Inbox and Profile are handled intentionally, not ignored
+- the visual treatment feels native to the app and not like a random overlay system
+
+==================================================
+PART 1 — CORRECT THE OVERALL FLOW
+==================================================
+
+Desired sequence:
+1. Brief welcome
+2. Enter live app
+3. “Let’s show you around” interactive walkthrough in the real shell
+4. Walk through the actual tabs/surfaces in a coherent order
+5. When reaching Recommendations, introduce import / quick setup contextually
+6. Then normal product use
+
+Do NOT treat onboarding as detached slides.
+Do NOT explain product features before the actual UI exists.
+
+==================================================
+PART 2 — DEFINE THE WALKTHROUGH MAP FIRST
+==================================================
+
+Before coding, inventory the actual user-facing tabs and first-run surfaces and define the correct walkthrough map.
+
+I want a concrete answer for:
+- Home
+- Recommendations
+- Library
+- Inbox
+- Profile
+
+For each one, tell me:
+1. Should it be in the first-run walkthrough? yes/no
+2. If yes, what exact learning objective does it serve?
+3. What exact UI component/target should be highlighted?
+4. If no, why not?
+
+Important:
+The sequence must follow product logic and user understanding, not convenience.
+
+I do NOT want accidental omissions anymore.
+Inbox and Profile must be intentionally handled.
+If they belong in the first-run walkthrough, include them.
+If they do not, justify that clearly.
+
+==================================================
+PART 3 — NO MORE RANDOM HIGHLIGHT REGIONS
+==================================================
+
+The current problem across Home, Recommendations, and Library is the same:
+we are talking about a feature, but the highlight is just a random square or generic area.
+
+This must stop.
+
+NEW RULE:
+Every walkthrough step must bind to a specific, named, real UI component.
+
+No generic section masks.
+No approximate “area of the page.”
+No explanation unless the exact component exists and is measured.
+
+For each walkthrough step:
+- name the exact component being highlighted
+- explain why it is the correct teaching target
+- ensure the copy matches that component specifically
+
+Examples of correct targets:
+- Home: actual reading-goal card or currently-reading card
+- Recommendations: actual first recommendation card OR actual rec setup/import prompt
+- Library: actual first book row / status area
+- Inbox: actual inbox list or empty-state card explaining incoming picks/messages
+- Profile: actual stats/preferences/goals module or whatever is the correct first-run anchor
+
+==================================================
+PART 4 — READINESS GATING
+==================================================
+
+The walkthrough keeps talking about things before they are actually ready.
+This is especially broken on Recommendations, but the same issue exists on Library and Home if only placeholders/skeletons are visible.
+
+NEW RULE:
+No walkthrough step may render until the exact component being discussed:
+1. exists
+2. is visible
+3. is measured
+4. matches the step copy/state
+
+Examples:
+- Do NOT say “Your picks” over skeleton cards
+- Do NOT explain library rows if only loading placeholders are present
+- Do NOT highlight vague empty space and pretend it is a real thing
+
+For Recommendations, your state logic must explicitly support:
+A. real recommendation card exists -> highlight that
+B. setup/import prompt exists -> highlight that instead
+C. neither exists -> delay the step until one is ready
+
+Apply the same principle to Home, Library, Inbox, and Profile.
+
+==================================================
+PART 5 — COMPONENT FOCAL HIGHLIGHT, NOT AREA MASKING
+==================================================
+
+I do not want generic rectangular light windows.
+I want the actual product element to become the focal point.
+
+Switch from “section spotlight” to “component focal highlight.”
+
+What the focal treatment should do:
+- dim the rest of the screen softly
+- elevate the actual component being explained
+- slight scale-up or lift
+- stronger shadow/elevation
+- subtle outline/glow using existing app theme colors only
+- optional soft pulse/breathing motion
+- coach mark visually attached to that component
+
+The highlighted object itself should feel designed and important.
+
+Do NOT:
+- spotlight random blank regions
+- use giant masks with unclear focus
+- use off-brand accent colors
+- create a disconnected overlay aesthetic
+
+==================================================
+PART 6 — INCLUDE INBOX AND PROFILE INTENTIONALLY
+==================================================
+
+Right now Inbox and Profile are not being meaningfully handled.
+
+I want you to decide this explicitly and implement accordingly.
+
+If Inbox belongs in first-run:
+- highlight the real inbox surface or empty-state module
+- explain what arrives there and why it matters
+
+If Profile belongs in first-run:
+- highlight the real module that matters most there
+- explain what lives there (stats, preferences, goals, etc.)
+
+If either one should NOT be a dedicated step:
+- explain why
+- then make sure it is still acknowledged intentionally somewhere else in the walkthrough
+
+I do not want them ignored by accident.
+
+==================================================
+PART 7 — THEME / VISUAL SYSTEM
+==================================================
+
+The walkthrough must feel native to the app’s existing design system.
+
+Requirements:
+- no black + green combo drift
+- no new accent language that is not already part of the app
+- use the app’s actual palette, typography, spacing, radii, and shadows
+- hotspot rings / highlights / coach marks must feel like part of the product
+
+Before coding, tell me:
+- what the current app theme tokens are
+- which walkthrough visuals are currently off-brand
+- what theme tokens the walkthrough will use after correction
+
+==================================================
+PART 8 — RECOMMENDATIONS STEP MUST BE SEMANTICALLY CORRECT
+==================================================
+
+This step has repeatedly failed, so handle it explicitly.
+
+The Recommendations step must only show when the thing being discussed is actually on screen.
+
+Allowed target states:
+1. Real first recommendation card
+2. Real setup/import prompt
+3. Nothing yet -> do not show the step yet
+
+Copy must match state:
+- if real card: explain save / dismiss / more like this
+- if setup/import prompt: explain import / quick setup / explore
+- never say “your picks” over skeletons or placeholders
+
+When Recommendations setup is shown, it should clearly offer:
+- Import my library
+- Answer a few questions
+- Explore anyway
+
+Import must remain prominent.
+
+==================================================
+PART 9 — DELIVERABLES BEFORE CODING
+==================================================
+
+Before you touch code, I want:
+1. Diagnosis of why the current walkthrough still feels arbitrary and wrong
+2. Exact walkthrough map in step order
+3. Exact highlighted target for each step
+4. Readiness gating logic for each step
+5. Explicit decision on Inbox and Profile
+6. Visual system correction plan
+7. Exact files/components/hooks/state you will create or modify
+
+Only then implement.
+
+==================================================
+PART 10 — SUCCESS CRITERIA
+==================================================
+
+This pass is successful only if:
+
+- every walkthrough step highlights a specific real component
+- copy and target always match
+- no step fires before content is ready
+- Home, Recommendations, Library, Inbox, and Profile are all intentionally handled
+- Recommendations step is semantically correct
+- the walkthrough feels native to the app theme
+- the focal point is the component itself, not a random area of light
+- the whole experience feels intentional, trustworthy, and product-native
+
+What I do NOT want:
+- another random-region spotlight implementation
+- another pass that explains unloaded content
+- accidental tab omissions
+- generic overlay polish without product logic
+- compile-only validation
+
+Before implementing:
+Read the current walkthrough engine, overlay, tab shell, and each tab’s key UI.
+Then give me:
+1. diagnosis
+2. walkthrough map
+3. exact targets
+4. readiness logic
+5. theme correction plan
+Then implement.

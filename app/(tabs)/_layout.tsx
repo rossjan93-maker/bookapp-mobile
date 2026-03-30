@@ -210,7 +210,7 @@ export default function TabsLayout() {
         // Never intercept during the legacy guided tour or the new walkthrough overlay
         if (guidedStepRef.current < 99) return false;
         const ws = wtStepRef.current;
-        if (ws === 'home' || ws === 'recommend' || ws === 'library') return false;
+        if (ws === 'home' || ws === 'recommend' || ws === 'library' || ws === 'inbox') return false;
 
         // Capture when movement is horizontal-dominant and past the noise floor
         const absDx = Math.abs(dx);

@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { registerWtTarget, useWalkthrough } from '../../lib/walkthroughEngine';
 import { supabase } from '../../lib/supabase';
 import { registerCacheClearer } from '../../lib/tabCache';
 import { CoverThumb } from '../../components/CoverThumb';
@@ -224,6 +225,28 @@ export default function HomeScreen() {
   const _tpRef    = useRef<TasteProfile | null>(null);
   const _feedRef  = useRef<FeedEvent[]>([]);
   const _fsRef    = useRef<FriendshipRow[]>([]);
+
+  // ── Walkthrough target measurement ──────────────────────────────────────────
+  // Measure the first primary content section once data is loaded.
+  // The overlay polls for this registration before showing the coach card.
+
+  const { wtStep } = useWalkthrough();
+  const homeTargetRef = useRef<any>(null);
+
+  function measureHomeContent() {
+    homeTargetRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
+      if (w > 0 && h > 0) {
+        registerWtTarget('home_content', { x, y, width: w, height: h });
+      }
+    });
+  }
+
+  useEffect(() => {
+    if (feedLoading || wtStep !== 'home') return;
+    // Brief settle time after render before measuring
+    const t = setTimeout(measureHomeContent, 120);
+    return () => clearTimeout(t);
+  }, [feedLoading, wtStep]);
 
   async function loadAll() {
     const t0 = Date.now();
@@ -643,7 +666,7 @@ export default function HomeScreen() {
 
       {/* ── 1. Continue Reading ── */}
       {currentReads.length > 0 && (
-        <View style={{ marginBottom: 32 }}>
+        <View ref={homeTargetRef} style={{ marginBottom: 32 }} onLayout={measureHomeContent}>
           <SectionLabel>Continue Reading</SectionLabel>
 
           {currentReads.length === 1 ? (() => {
@@ -796,7 +819,11 @@ export default function HomeScreen() {
 
       {/* ── Yearly Reading Goal ── */}
       {yearlyGoal && yearlyGoal > 0 && (
-        <View style={{ marginBottom: 32 }}>
+        <View
+          ref={currentReads.length === 0 ? homeTargetRef : undefined}
+          style={{ marginBottom: 32 }}
+          onLayout={currentReads.length === 0 ? measureHomeContent : undefined}
+        >
           <SectionLabel>Reading Goal</SectionLabel>
           <TouchableOpacity activeOpacity={0.8} onPress={() => setGoalExpanded(e => !e)}>
             <View style={{

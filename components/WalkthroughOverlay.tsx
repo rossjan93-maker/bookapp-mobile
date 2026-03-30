@@ -2,26 +2,30 @@
 //
 // Full-screen overlay drawn inside the live app shell.
 //
-// For each WT_OVERLAY_STEP ('home', 'library') it renders:
+// For each WT_OVERLAY_STEP ('home', 'recommend', 'library', 'inbox') it renders:
 //
-//   1. SpotlightAperture
-//      4 dim panels leave a clear rectangular window on the inset spotlight
-//      rect (horizontal margins, not wall-to-wall).  A glow border frames it.
+//   1. SpotlightAperture (immediate)
+//      4 dim panels leave a clear rectangular window.  A crisp border frames it
+//      with a soft outer aura suggesting component elevation.
 //
-//   2. InScreenHotspot
-//      A dual-ring pulsing dot placed at the inScreenHotspot coordinate within
-//      the lit area.  Acts as a visual "look here" indicator AND a tap target
-//      that advances the walkthrough (same as pressing Next).
+//   2. Readiness gate
+//      The overlay polls getWtTarget(`${step}_content`) every 80ms.
+//      For steps where the screen registers a real rect (home, recommend, inbox),
+//      the spotlight appears as soon as the component is measured.
+//      Library is frozen — it falls back to the fixed spotlightRect after minDelay.
+//      Coach card, hotspot, and pulsing ring only render once stepReady=true.
 //
-//   3. PulsingRing
-//      Pulsing circle over the active tab icon in the tab bar.
+//   3. InScreenHotspot (only when stepReady)
+//      Dual-ring pulsing dot.  Position derived from the measured rect + step's
+//      hotspotAnchor, so it lands on an actual product element, not a guess.
 //
-//   4. CoachCard
-//      Translucent white card below the spotlight with step dots, title, body,
-//      and a Next button.  An upward-pointing arrow at the card's top edge
-//      creates a visual connection to the spotlight above.
+//   4. PulsingRing (only when stepReady)
+//      Pulsing circle over the active tab icon.
+//
+//   5. CoachCard (only when stepReady)
+//      Title, body, progress dots, skip, and Next button.
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -36,6 +40,7 @@ import {
   WtStep,
   TargetRect,
   getWtTarget,
+  resolveHotspot,
   wtEvt_stepViewed,
   wtEvt_skipped,
   wtEvt_hotspotTapped,
@@ -49,9 +54,11 @@ const TAB_COUNT  = 5;
 const TAB_BAR_H  = 62;
 const RING_SIZE  = 52;
 const RING_R     = RING_SIZE / 2;
-const DIM_COLOR  = 'rgba(0,0,0,0.62)';
-const GLOW_COLOR = 'rgba(250,249,247,0.22)';
-const CARD_W     = SW - 28;  // card spans left:14, right:14
+const DIM_COLOR  = 'rgba(0,0,0,0.60)';
+// App-native spotlight frame: matches #e7e5e4 border at high opacity on dark
+const FRAME_COLOR = 'rgba(231,229,228,0.82)';
+const AURA_COLOR  = 'rgba(231,229,228,0.18)';
+const CARD_W      = SW - 28;
 
 function tabCenterX(idx: number): number {
   return (SW / TAB_COUNT) * idx + SW / TAB_COUNT / 2;
@@ -102,7 +109,10 @@ function PulsingRing({ tabIdx }: { tabIdx: number }) {
 }
 
 // ─── 2. Spotlight aperture ────────────────────────────────────────────────────
-// 4 dim panels leave a clear rectangular window.  A glow border frames it.
+//
+// 4 dim panels leave a clear rectangular window on the spotlit component.
+// A crisp app-native frame border + soft outer aura give the component
+// a sense of elevation without touching the underlying view.
 
 function SpotlightAperture({ rect, fade }: { rect: TargetRect; fade: Animated.Value }) {
   const { x, y, width, height } = rect;
@@ -119,22 +129,37 @@ function SpotlightAperture({ rect, fade }: { rect: TargetRect; fade: Animated.Va
       pointerEvents="none"
       style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: fade }}
     >
+      {/* 4 dim panels */}
       <View style={{ ...panel, top: 0,          left: 0, right: 0,  height: y          }} />
       <View style={{ ...panel, top: y,          left: 0, width:  x, height             }} />
       <View style={{ ...panel, top: y,          right: 0, width: rr, height            }} />
       <View style={{ ...panel, top: y + height, left: 0, right: 0,  bottom: 0          }} />
 
-      {/* Glow border */}
+      {/* Outer aura — soft halo suggesting elevation */}
       <View
         style={{
-          position:      'absolute',
-          top:           y - 2,
-          left:          x - 2,
-          width:         width  + 4,
-          height:        height + 4,
-          borderRadius:  10,
-          borderWidth:   2,
-          borderColor:   GLOW_COLOR,
+          position:     'absolute',
+          top:          y - 8,
+          left:         x - 8,
+          width:        width  + 16,
+          height:       height + 16,
+          borderRadius: 20,
+          borderWidth:  1,
+          borderColor:  AURA_COLOR,
+        }}
+      />
+
+      {/* Crisp component frame */}
+      <View
+        style={{
+          position:     'absolute',
+          top:          y - 2,
+          left:         x - 2,
+          width:        width  + 4,
+          height:       height + 4,
+          borderRadius: 14,
+          borderWidth:  1.5,
+          borderColor:  FRAME_COLOR,
         }}
       />
     </Animated.View>
@@ -142,8 +167,9 @@ function SpotlightAperture({ rect, fade }: { rect: TargetRect; fade: Animated.Va
 }
 
 // ─── 3. In-screen hotspot ─────────────────────────────────────────────────────
-// Dual-ring pulsing dot at a specific point within the spotlight.
-// Rings animate with a 420ms stagger so they pulse in sequence.
+//
+// Dual-ring pulsing dot.  Position is derived from the measured rect + anchor,
+// so it lands on a real product element (cover thumbnail left-center, or card center).
 // Tapping advances the walkthrough — same as pressing Next.
 
 function InScreenHotspot({
@@ -172,7 +198,7 @@ function InScreenHotspot({
             Animated.timing(opacity, { toValue: 0,    duration: 900, useNativeDriver: false }),
           ]),
           Animated.parallel([
-            Animated.timing(scale,   { toValue: 1,    duration: 0,   useNativeDriver: false }),
+            Animated.timing(scale,   { toValue: 1,    duration: 0, useNativeDriver: false }),
             Animated.timing(opacity, { toValue: delay === 0 ? 0.85 : 0.45, duration: 0, useNativeDriver: false }),
           ]),
           Animated.delay(900 - delay),
@@ -204,7 +230,6 @@ function InScreenHotspot({
         justifyContent: 'center',
       }}
     >
-      {/* Outer ring */}
       <Animated.View
         pointerEvents="none"
         style={{
@@ -218,7 +243,6 @@ function InScreenHotspot({
           opacity:      ring1Opacity,
         }}
       />
-      {/* Inner ring (staggered) */}
       <Animated.View
         pointerEvents="none"
         style={{
@@ -232,7 +256,6 @@ function InScreenHotspot({
           opacity:      ring2Opacity,
         }}
       />
-      {/* Solid centre dot */}
       <View
         style={{
           width:           DOT,
@@ -250,15 +273,12 @@ function InScreenHotspot({
 }
 
 // ─── 4. Coach card ────────────────────────────────────────────────────────────
-// Slides up from below the spotlight.
-// An upward-pointing triangle at the top edge points toward the lit area.
 
 function CoachCard({
   step,
   totalSteps,
   stepIdx,
   def,
-  spotRect,
   onNext,
   onSkip,
 }: {
@@ -266,7 +286,6 @@ function CoachCard({
   totalSteps: number;
   stepIdx:    number;
   def:        typeof WT_DEFS[keyof typeof WT_DEFS];
-  spotRect:   TargetRect | null;
   onNext:     () => void;
   onSkip:     () => void;
 }) {
@@ -301,12 +320,12 @@ function CoachCard({
         elevation:       16,
       }}
     >
-      {/* Upward-pointing arrow — visual connector to spotlight above */}
+      {/* Upward-pointing arrow connecting card to spotlight */}
       <View
         style={{
           position:           'absolute',
           top:               -10,
-          left:              CARD_W / 2 - 10,  // centered on card
+          left:              CARD_W / 2 - 10,
           width:              0,
           height:             0,
           borderLeftWidth:    10,
@@ -392,11 +411,19 @@ function CoachCard({
 export function WalkthroughOverlay() {
   const { wtStep, advance, skip } = useWalkthrough();
 
-  const overlayFade = useRef(new Animated.Value(0)).current;
-  const prevStep    = useRef<WtStep | null>(null);
+  const overlayFade   = useRef(new Animated.Value(0)).current;
+  const prevStep      = useRef<WtStep | null>(null);
+  const stepActiveAt  = useRef<number | null>(null);
+
+  // stepReady gates the coach card, hotspot, and pulsing ring.
+  // The dim aperture shows immediately; the rest waits until:
+  //   (a) the screen has registered a real measured rect, OR
+  //   (b) def.minDelay ms have elapsed (for frozen screens like Library).
+  const [stepReady, setStepReady] = useState(false);
 
   const isVisible = wtStep !== null && (WT_OVERLAY_STEPS as string[]).includes(wtStep);
 
+  // Fade the overlay in/out when step changes
   useEffect(() => {
     if (isVisible && prevStep.current !== wtStep) {
       overlayFade.setValue(0);
@@ -408,13 +435,49 @@ export function WalkthroughOverlay() {
     prevStep.current = wtStep;
   }, [wtStep, isVisible]);
 
+  // Readiness polling — sets stepReady when content is measured or timeout elapses
+  useEffect(() => {
+    if (!isVisible || !wtStep) {
+      setStepReady(false);
+      stepActiveAt.current = null;
+      return;
+    }
+
+    stepActiveAt.current = Date.now();
+    setStepReady(false);
+
+    const def      = WT_DEFS[wtStep as keyof typeof WT_DEFS];
+    const minDelay = def?.minDelay ?? 0;
+
+    // For steps with minDelay=0 and an already-registered rect, resolve immediately
+    if (minDelay === 0 && getWtTarget(`${wtStep}_content`)) {
+      setStepReady(true);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const hasRect  = !!getWtTarget(`${wtStep}_content`);
+      const elapsed  = Date.now() - (stepActiveAt.current ?? 0);
+      if (hasRect || elapsed >= minDelay) {
+        setStepReady(true);
+        clearInterval(interval);
+      }
+    }, 80);
+
+    return () => clearInterval(interval);
+  }, [wtStep, isVisible]);
+
   if (!isVisible || !wtStep) return null;
 
   const def = WT_DEFS[wtStep as keyof typeof WT_DEFS];
   if (!def) return null;
 
-  const spotRect: TargetRect | null =
-    getWtTarget(`${wtStep}_content`) ?? def.spotlightRect;
+  // Use measured rect if available; fallback to static def rect
+  const measuredRect = getWtTarget(`${wtStep}_content`);
+  const spotRect: TargetRect | null = measuredRect ?? def.spotlightRect;
+
+  // Hotspot position from real rect + anchor, or static fallback
+  const hotspot = resolveHotspot(def, measuredRect ?? null);
 
   const stepIdx    = WT_OVERLAY_STEPS.indexOf(wtStep);
   const totalSteps = WT_OVERLAY_STEPS.length;
@@ -437,7 +500,7 @@ export function WalkthroughOverlay() {
         pointerEvents: 'box-none',
       }}
     >
-      {/* Spotlight aperture */}
+      {/* Dim + spotlight aperture — shows immediately */}
       {spotRect ? (
         <SpotlightAperture rect={spotRect} fade={overlayFade} />
       ) : (
@@ -452,7 +515,7 @@ export function WalkthroughOverlay() {
         />
       )}
 
-      {/* Touch blocker — blocks touches on dim area, lets tab bar through */}
+      {/* Touch blocker — blocks all touches in the dim area, lets tab bar through */}
       <View
         style={{
           position: 'absolute',
@@ -462,27 +525,29 @@ export function WalkthroughOverlay() {
         pointerEvents="box-only"
       />
 
-      {/* In-screen hotspot — rendered ABOVE the blocker so it receives touches */}
-      {def.inScreenHotspot && (
-        <InScreenHotspot
-          pos={def.inScreenHotspot}
-          onPress={handleHotspotTap}
-        />
+      {/* Below: only render once content is confirmed ready */}
+      {stepReady && (
+        <>
+          {/* In-screen hotspot — rendered above blocker so it receives touches */}
+          <InScreenHotspot
+            pos={hotspot}
+            onPress={handleHotspotTap}
+          />
+
+          {/* Pulsing ring on the active tab icon */}
+          <PulsingRing tabIdx={def.tabIdx} />
+
+          {/* Coach card */}
+          <CoachCard
+            step={wtStep}
+            totalSteps={totalSteps}
+            stepIdx={stepIdx}
+            def={def}
+            onNext={advance}
+            onSkip={handleSkip}
+          />
+        </>
       )}
-
-      {/* Pulsing ring on tab icon */}
-      <PulsingRing tabIdx={def.tabIdx} />
-
-      {/* Coach card */}
-      <CoachCard
-        step={wtStep}
-        totalSteps={totalSteps}
-        stepIdx={stepIdx}
-        def={def}
-        spotRect={spotRect}
-        onNext={advance}
-        onSkip={handleSkip}
-      />
     </View>
   );
 }

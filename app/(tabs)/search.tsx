@@ -33,7 +33,7 @@ import type { FeedbackContext } from '../../lib/recFeedback';
 import { getEntitlement } from '../../lib/recEntitlement';
 import type { RecEntitlement } from '../../lib/recEntitlement';
 import { useGuidedTour } from '../../components/OnboardingWalkthrough';
-import { useWalkthrough, wtEvt_recStepReached } from '../../lib/walkthroughEngine';
+import { useWalkthrough, registerWtTarget, wtEvt_recStepReached } from '../../lib/walkthroughEngine';
 import { getRecSession, clearRecSession } from '../../lib/recSession';
 import { registerCacheClearer } from '../../lib/tabCache';
 import { RecommendationsFeed } from '../../components/RecommendationsFeed';
@@ -778,6 +778,25 @@ export default function RecommendationsScreen() {
   const [sendResult, setSendResult]     = useState<{ ok: boolean; message: string } | null>(null);
   const [refreshing, setRefreshing]     = useState(false);
 
+  // ── Walkthrough target measurement ──────────────────────────────────────────
+  // Register the rec feed container once loaded; overlay polls for this.
+
+  const recommendTargetRef = useRef<any>(null);
+
+  function measureRecommendContent() {
+    recommendTargetRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
+      if (w > 0 && h > 0) {
+        registerWtTarget('recommend_content', { x, y, width: w, height: h });
+      }
+    });
+  }
+
+  useEffect(() => {
+    if (hubLoading || wtStep !== 'recommend' || step !== 'hub') return;
+    const t = setTimeout(measureRecommendContent, 120);
+    return () => clearTimeout(t);
+  }, [hubLoading, wtStep, step]);
+
   // Reload hub whenever screen comes into focus
   useFocusEffect(useCallback(() => {
     if (step === 'hub') loadHub();
@@ -1428,6 +1447,7 @@ export default function RecommendationsScreen() {
             {/* ════════════════════════════════════════════════════════
                 Section 1 — For You
             ════════════════════════════════════════════════════════ */}
+            <View ref={recommendTargetRef} onLayout={measureRecommendContent}>
             <RecommendationsFeed
               userId={currentUserId}
               supabase={supabase}
@@ -1438,6 +1458,7 @@ export default function RecommendationsScreen() {
               guidedStep={guidedStep}
               onGuidedAdvance={advanceGuided}
             />
+            </View>
             {/* ════════════════════════════════════════════════════════
                 Section 2 — Refine Your Taste (promoted above Social)
             ════════════════════════════════════════════════════════ */}
