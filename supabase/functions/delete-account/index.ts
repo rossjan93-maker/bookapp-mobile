@@ -8,7 +8,8 @@
 //   supabase functions deploy delete-account
 //
 // The primary implementation used by the mobile app is the SQL RPC
-// public.delete_own_account() in supabase/migrations/20260329000000_account_lifecycle.sql.
+// public.delete_own_account() in supabase/migrations/20260329000000_account_lifecycle.sql
+// (fixed in 20260330000000_fix_deletion_and_reset.sql).
 // This Edge Function is a ready-to-deploy alternative/complement.
 //
 // Security: Caller must provide a valid user JWT in the Authorization header.
@@ -26,6 +27,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
+
+// Helper: throw if supabase operation returns an error
+function assertOk(error: unknown, step: string) {
+  if (error && typeof error === 'object' && 'message' in error) {
+    throw new Error(`[${step}] ${(error as { message: string }).message}`);
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -59,17 +67,83 @@ Deno.serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // Cascade delete in dependency order
-    await adminClient.from('credibility_events').delete().or(`from_user_id.eq.${uid},to_user_id.eq.${uid}`);
-    await adminClient.from('activity_events').delete().eq('actor_id', uid);
-    await adminClient.from('recommendations').delete().or(`from_user_id.eq.${uid},to_user_id.eq.${uid}`);
-    await adminClient.from('reader_preferences').delete().eq('user_id', uid);
-    await adminClient.from('user_books').delete().eq('user_id', uid);
-    await adminClient.from('friendships').delete().or(`requester_id.eq.${uid},addressee_id.eq.${uid}`);
-    await adminClient.from('profiles').delete().eq('id', uid);
+    // ── Step 1a: activity_events referencing THIS USER's recommendations ────
+    // Handles cross-user events (actor_id ≠ uid). Must precede recommendations delete.
+    const { data: userRecIds } = await adminClient
+      .from('recommendations')
+      .select('id')
+      .or(`from_user_id.eq.${uid},to_user_id.eq.${uid}`);
 
-    // Delete the auth user — cascades rec_feedback, rec_entitlements, rec_cache,
-    // rec_candidate_cache, scan_history via ON DELETE CASCADE on auth.users(id)
+    if (userRecIds && userRecIds.length > 0) {
+      const ids = userRecIds.map((r: { id: string }) => r.id);
+      const { error: e1a } = await adminClient
+        .from('activity_events')
+        .delete()
+        .in('recommendation_id', ids);
+      assertOk(e1a, 'activity_events_by_rec');
+    }
+
+    // ── Step 1b: remaining activity_events where the user was the actor ─────
+    const { error: e1b } = await adminClient
+      .from('activity_events')
+      .delete()
+      .eq('actor_id', uid);
+    assertOk(e1b, 'activity_events_by_actor');
+
+    // ── Step 2a: credibility_events referencing THIS USER's recommendations ─
+    if (userRecIds && userRecIds.length > 0) {
+      const ids = userRecIds.map((r: { id: string }) => r.id);
+      const { error: e2a } = await adminClient
+        .from('credibility_events')
+        .delete()
+        .in('recommendation_id', ids);
+      assertOk(e2a, 'credibility_events_by_rec');
+    }
+
+    // ── Step 2b: remaining credibility_events involving this user ───────────
+    const { error: e2b } = await adminClient
+      .from('credibility_events')
+      .delete()
+      .or(`from_user_id.eq.${uid},to_user_id.eq.${uid}`);
+    assertOk(e2b, 'credibility_events_by_user');
+
+    // ── Step 3: recommendations (CASCADE handles any remaining ae/ce refs) ──
+    const { error: e3 } = await adminClient
+      .from('recommendations')
+      .delete()
+      .or(`from_user_id.eq.${uid},to_user_id.eq.${uid}`);
+    assertOk(e3, 'recommendations');
+
+    // ── Step 4: reader_preferences ──────────────────────────────────────────
+    const { error: e4 } = await adminClient
+      .from('reader_preferences')
+      .delete()
+      .eq('user_id', uid);
+    assertOk(e4, 'reader_preferences');
+
+    // ── Step 5: user_books (user_book_history cascades automatically) ───────
+    const { error: e5 } = await adminClient
+      .from('user_books')
+      .delete()
+      .eq('user_id', uid);
+    assertOk(e5, 'user_books');
+
+    // ── Step 6: friendships ─────────────────────────────────────────────────
+    const { error: e6 } = await adminClient
+      .from('friendships')
+      .delete()
+      .or(`requester_id.eq.${uid},addressee_id.eq.${uid}`);
+    assertOk(e6, 'friendships');
+
+    // ── Step 7: profiles (cascades reading_progress_events, import_batches) ─
+    const { error: e7 } = await adminClient
+      .from('profiles')
+      .delete()
+      .eq('id', uid);
+    assertOk(e7, 'profiles');
+
+    // ── Step 8: auth user (cascades rec_feedback, rec_entitlements, ─────────
+    //            rec_cache, rec_candidate_cache, scan_history)
     const { error: deleteError } = await adminClient.auth.admin.deleteUser(uid);
     if (deleteError) {
       return Response.json({ ok: false, error: deleteError.message }, { status: 500, headers: corsHeaders });
@@ -79,6 +153,7 @@ Deno.serve(async (req) => {
 
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    console.error('[delete-account] ERROR:', message);
     return Response.json({ ok: false, error: message }, { status: 500, headers: corsHeaders });
   }
 });
