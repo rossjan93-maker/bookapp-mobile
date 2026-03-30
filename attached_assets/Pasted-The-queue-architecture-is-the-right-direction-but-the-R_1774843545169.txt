@@ -1,0 +1,123 @@
+The queue architecture is the right direction, but the Recommendations experience still needs a stronger motion and loading design pass.
+
+At this point, do NOT revisit recommender logic unless you find an actual bug.
+Assume the remaining problem is interaction feel and loading design.
+
+What I want now:
+1. Card transitions that are smoother, slightly slower, and more premium
+2. Loading that feels designed and distinctive, not generic
+3. Background refresh that is effectively invisible when a usable deck already exists
+
+PART 1 — MOTION DESIGN SYSTEM
+
+The current motion is still too snappy / mechanical.
+I want a calmer, more tactile motion language appropriate for a reading product.
+
+Please introduce a coherent motion spec for the Recommendations surface:
+- confirmation phase
+- card exit
+- stack reflow
+- new-card entrance
+- final settle
+
+Strong preference:
+- smoother and slightly slower than current behavior
+- avoid abrupt easing
+- use spring-based or similarly natural interpolation where appropriate
+- no snapping motions
+
+Target feel:
+- card exits feel intentional, not abrupt
+- the next card rises naturally
+- the deck settles softly
+- lower modules move as part of the same visual world
+
+Implementation guidance:
+1. Define motion tokens / constants for the rec surface
+   - durations
+   - spring config / damping
+   - distances
+   - opacity ranges
+2. Use one coordinated motion sequence for actions:
+   - tap
+   - brief confirm
+   - outgoing card exits
+   - stack reflows
+   - new resting state settles
+3. Tune timing so it feels more premium, not hyper-fast
+4. Prevent competing animations from firing at once if they create visual noise
+
+PART 2 — LOADING DESIGN
+
+The loading experience should feel thoughtful and visually satisfying.
+
+Rules:
+1. If a usable deck already exists:
+   - do not show disruptive refresh loaders
+   - no visible reset
+   - no “finding your picks” interruption
+   - background refresh should be silent or nearly silent
+
+2. If there is no usable deck yet:
+   - show a bespoke Recommendations loading state
+   - not generic spinner + plain skeleton
+   - make it feel curated and designed
+
+Loading direction:
+Build a tasteful “deck assembling” experience.
+Examples of the type of feel I want:
+- recommendation cards / book silhouettes softly stacking into place
+- subtle shimmer or glow passes
+- staggered appearance
+- confidence markers / labels easing in
+- a sense that the app is preparing thoughtful suggestions
+
+Important:
+Keep it elegant and restrained.
+No gimmicky over-animation.
+This should communicate attention to detail and design.
+
+PART 3 — LOADING STATE TIERS
+
+Please separate:
+A. First-load / no-deck loading
+B. Silent background refresh when deck exists
+C. Queue watermark replenishment
+
+Desired behavior:
+- A: visible, polished, designed loading state
+- B: essentially invisible, maybe only a subtle header pulse/dot if needed
+- C: invisible append-only behavior, no disruption
+
+PART 4 — WHAT TO INSPECT
+
+Before changing code, inspect:
+1. current animation timings and where they still feel too fast/snappy
+2. where multiple motions are overlapping or fighting each other
+3. how loading is currently presented on:
+   - true empty start
+   - tab revisit
+   - background refresh
+   - queue replenishment
+
+PART 5 — IMPLEMENTATION DELIVERABLES
+
+Please implement:
+1. A motion token system for Recommendations
+2. Slower/smoother card transitions
+3. A bespoke first-load Recommendations loading component
+4. Silent background refresh behavior when a deck exists
+5. Logs for validation:
+   - [REC_MOTION] phase=confirm|exit|reflow|enter|settle duration_ms=...
+   - [REC_LOADING] mode=initial|background|watermark visible=true/false
+
+SUCCESS CRITERIA
+- Card transitions feel smoother and slightly slower
+- No snapping motions
+- Opening Recommendations with an existing deck feels immediate
+- Background refresh does not disrupt the user experience
+- First-load loading feels visually polished and intentional
+- The loading experience communicates care, taste, and design quality
+
+Before coding:
+Explain the exact current timings/motion issues and describe the new motion/loading concept you are going to build.

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  Easing,
   Image,
   Text,
   TouchableOpacity,
@@ -15,6 +16,25 @@ import { getSeriesCatalog } from '../lib/seriesCatalog';
 
 // Suppress unused-import warning (fitLabel / fitColor kept for future use)
 void fitLabel; void fitColor;
+
+// ── Motion Tokens — Recommendations surface ────────────────────────────────
+// All timing constants for the rec surface motion system live here.
+// Changing values here propagates to all card animations uniformly.
+export const REC_MOTION = {
+  // Confirm phase: how long the user sees the confirmation before the card exits
+  CONFIRM_MS:         460,   // save / more-like-this
+  CONFIRM_DISMISS_MS: 260,   // dismiss is faster — user wants to skip
+  // Confirm overlay entrance
+  CONFIRM_FADE_MS:    130,   // overlay fades in from transparent
+  // Card exit
+  EXIT_MS:            300,   // total exit animation duration
+  EXIT_TRANSLATE_Y:   -28,   // px the card lifts upward on exit
+  EXIT_SCALE_END:     0.95,  // card shrinks slightly as it exits
+  // Reflow (LayoutAnimation for stack shift)
+  REFLOW_MS:          380,
+  // Undo toast entrance
+  TOAST_IN_MS:        300,
+} as const;
 
 // ─── Text helpers ─────────────────────────────────────────────────────────────
 
@@ -141,6 +161,8 @@ export function RecCard({
   const opacity        = useRef(new Animated.Value(1)).current;
   const cardTranslateY = useRef(new Animated.Value(0)).current;
   const cardScale      = useRef(new Animated.Value(1)).current;
+  // Confirm overlay fades in instead of snapping — starts at 0 opacity
+  const confirmOpacity = useRef(new Animated.Value(0)).current;
 
   const [moreDone, setMoreDone]           = useState(false);
   const [pendingAction, setPendingAction] = useState(false);
@@ -191,46 +213,82 @@ export function RecCard({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Slower, more intentional exit — cubic ease-out, larger distance
   function animateOut(cb: () => void) {
-    if (__DEV__) console.log('[REC_MOTION]', `book_id=${book.id}`, 'phase=exit', 'duration_ms=220');
+    if (__DEV__) console.log('[REC_MOTION]', `book_id=${book.id}`, 'phase=exit', `duration_ms=${REC_MOTION.EXIT_MS}`);
     Animated.parallel([
-      Animated.timing(opacity,        { toValue: 0,    duration: 220, useNativeDriver: true }),
-      Animated.timing(cardTranslateY, { toValue: -16,  duration: 220, useNativeDriver: true }),
-      Animated.timing(cardScale,      { toValue: 0.96, duration: 220, useNativeDriver: true }),
+      Animated.timing(opacity, {
+        toValue: 0,
+        duration: REC_MOTION.EXIT_MS,
+        easing:   Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(cardTranslateY, {
+        toValue: REC_MOTION.EXIT_TRANSLATE_Y,
+        duration: REC_MOTION.EXIT_MS,
+        easing:   Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(cardScale, {
+        toValue: REC_MOTION.EXIT_SCALE_END,
+        duration: REC_MOTION.EXIT_MS,
+        easing:   Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
     ]).start(() => cb());
+  }
+
+  // Fade-in the confirm overlay smoothly
+  function showConfirm(state: 'save' | 'more' | 'dismiss') {
+    confirmOpacity.setValue(0);
+    setConfirmState(state);
+    Animated.timing(confirmOpacity, {
+      toValue:  1,
+      duration: REC_MOTION.CONFIRM_FADE_MS,
+      easing:   Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
   }
 
   function handleSavePress() {
     if (pendingAction) return;
     setPendingAction(true);
-    setConfirmState('save');
-    if (__DEV__) console.log('[REC_MOTION]', `book_id=${book.id}`, 'action=save', 'phase=confirm');
-    setTimeout(() => animateOut(onSave), 350);
+    showConfirm('save');
+    if (__DEV__) console.log('[REC_MOTION]', `book_id=${book.id}`, 'action=save', 'phase=confirm', `window_ms=${REC_MOTION.CONFIRM_MS}`);
+    setTimeout(() => {
+      if (__DEV__) console.log('[REC_MOTION]', `book_id=${book.id}`, 'action=save', 'phase=exit');
+      animateOut(onSave);
+    }, REC_MOTION.CONFIRM_MS);
   }
 
   function handleDismissPress() {
     if (pendingAction) return;
     setPendingAction(true);
-    setConfirmState('dismiss');
-    if (__DEV__) console.log('[REC_MOTION]', `book_id=${book.id}`, 'action=dismiss', 'phase=confirm');
+    showConfirm('dismiss');
+    if (__DEV__) console.log('[REC_MOTION]', `book_id=${book.id}`, 'action=dismiss', 'phase=confirm', `window_ms=${REC_MOTION.CONFIRM_DISMISS_MS}`);
     setTimeout(() => {
+      if (__DEV__) console.log('[REC_MOTION]', `book_id=${book.id}`, 'action=dismiss', 'phase=exit');
       animateOut(() => {
         opacity.setValue(1);
         cardTranslateY.setValue(0);
         cardScale.setValue(1);
+        confirmOpacity.setValue(0);
         if (__DEV__) console.log('[REC_MOTION]', `book_id=${book.id}`, 'action=dismiss', 'phase=reflow');
         onDismiss();
       });
-    }, 200);
+    }, REC_MOTION.CONFIRM_DISMISS_MS);
   }
 
   function handleMoreLikeThisPress() {
     if (pendingAction || moreDone) return;
     setPendingAction(true);
     setMoreDone(true);
-    setConfirmState('more');
-    if (__DEV__) console.log('[REC_MOTION]', `book_id=${book.id}`, 'action=more', 'phase=confirm');
-    setTimeout(() => animateOut(onMoreLikeThis), 350);
+    showConfirm('more');
+    if (__DEV__) console.log('[REC_MOTION]', `book_id=${book.id}`, 'action=more', 'phase=confirm', `window_ms=${REC_MOTION.CONFIRM_MS}`);
+    setTimeout(() => {
+      if (__DEV__) console.log('[REC_MOTION]', `book_id=${book.id}`, 'action=more', 'phase=exit');
+      animateOut(onMoreLikeThis);
+    }, REC_MOTION.CONFIRM_MS);
   }
 
   function handleCardPress() {
@@ -424,8 +482,9 @@ export function RecCard({
         </TouchableOpacity>
       </View>
 
+      {/* Confirm overlay — fades in via confirmOpacity */}
       {confirmState && (
-        <View style={{
+        <Animated.View style={{
           position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
           backgroundColor: confirmState === 'save' ? '#f0fdf4' : confirmState === 'dismiss' ? '#f5f5f4' : '#faf5ff',
           borderRadius: 14,
@@ -433,6 +492,7 @@ export function RecCard({
           alignItems: 'center',
           zIndex: 20,
           gap: 4,
+          opacity: confirmOpacity,
         }}>
           {confirmState === 'save' ? (
             <>
@@ -450,21 +510,31 @@ export function RecCard({
               <Text style={{ fontSize: 12, color: '#7c3aed' }}>Future recs will reflect this taste</Text>
             </>
           )}
-        </View>
+        </Animated.View>
       )}
     </Animated.View>
   );
 }
 
 // ─── UndoToast ────────────────────────────────────────────────────────────────
-// Floating snackbar shown after a dismiss. Slides up from below.
+// Floating snackbar shown after a dismiss. Spring-based entrance for natural feel.
 export function UndoToast({ book, onUndo }: { book: ScoredBook; onUndo: () => void }) {
-  const translateY = useRef(new Animated.Value(10)).current;
+  const translateY = useRef(new Animated.Value(14)).current;
   const fadeIn     = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(translateY, { toValue: 0, duration: 220, useNativeDriver: true }),
-      Animated.timing(fadeIn,     { toValue: 1, duration: 180, useNativeDriver: true }),
+      Animated.spring(translateY, {
+        toValue:  0,
+        tension:  68,
+        friction: 11,
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeIn, {
+        toValue:  1,
+        duration: REC_MOTION.TOAST_IN_MS,
+        easing:   Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
     ]).start();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -497,6 +567,7 @@ export function UndoToast({ book, onUndo }: { book: ScoredBook; onUndo: () => vo
 }
 
 // ─── RecSkeletonCard ──────────────────────────────────────────────────────────
+// Kept for any external callers — functionality replaced by DeckAssemblingLoader.
 export function RecSkeletonCard() {
   return (
     <View style={{
@@ -514,5 +585,208 @@ export function RecSkeletonCard() {
         </View>
       </View>
     </View>
+  );
+}
+
+// ─── ShimmerBlock ─────────────────────────────────────────────────────────────
+// A placeholder rectangle that breathes (opacity cycles) to signal loading activity.
+function ShimmerBlock({
+  width,
+  height,
+  delay    = 0,
+  radius   = 6,
+}: {
+  width:   number | string;
+  height:  number;
+  delay?:  number;
+  radius?: number;
+}) {
+  const shimmer = useRef(new Animated.Value(0.45)).current;
+
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmer, {
+          toValue:  1,
+          duration: 860,
+          delay,
+          easing:   Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(shimmer, {
+          toValue:  0.45,
+          duration: 860,
+          easing:   Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <Animated.View style={{
+      width,
+      height,
+      borderRadius:    radius,
+      backgroundColor: '#e8e4df',
+      opacity:         shimmer,
+    }} />
+  );
+}
+
+// ─── AssemblingCardSilhouette ─────────────────────────────────────────────────
+// One animated card silhouette used inside DeckAssemblingLoader.
+function AssemblingCardSilhouette({
+  translateY,
+  opacity,
+  shimmerPhase,
+}: {
+  translateY:   Animated.Value;
+  opacity:      Animated.Value;
+  shimmerPhase: number; // ms offset so shimmer phases are different per card
+}) {
+  return (
+    <Animated.View style={{
+      transform:       [{ translateY }],
+      opacity,
+      backgroundColor: '#fff',
+      borderRadius:    14,
+      padding:         12,
+      marginBottom:    8,
+      shadowColor:     '#000',
+      shadowOpacity:   0.04,
+      shadowRadius:    6,
+      shadowOffset:    { width: 0, height: 1 },
+      elevation:       1,
+    }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+        {/* Cover placeholder */}
+        <ShimmerBlock width={44} height={64} delay={shimmerPhase} radius={6} />
+
+        <View style={{ flex: 1, gap: 8, paddingTop: 2 }}>
+          {/* Title line */}
+          <ShimmerBlock width="70%" height={13} delay={shimmerPhase + 60} />
+          {/* Author line */}
+          <ShimmerBlock width="46%" height={10} delay={shimmerPhase + 120} />
+          {/* Reason / explanation line */}
+          <ShimmerBlock width="85%" height={10} delay={shimmerPhase + 180} />
+          {/* Confidence badge silhouette */}
+          <View style={{ flexDirection: 'row', gap: 6, marginTop: 2 }}>
+            <ShimmerBlock width={52} height={16} delay={shimmerPhase + 260} radius={5} />
+          </View>
+        </View>
+      </View>
+    </Animated.View>
+  );
+}
+
+// ─── DeckAssemblingLoader ─────────────────────────────────────────────────────
+// Bespoke first-load experience for Recommendations.
+// Three card silhouettes stagger in from slightly below with breathing shimmer.
+// Replaces the generic skeleton + spinner for the initial-load state.
+export function DeckAssemblingLoader() {
+  // Per-card entrance values
+  const ty1 = useRef(new Animated.Value(16)).current;
+  const ty2 = useRef(new Animated.Value(16)).current;
+  const ty3 = useRef(new Animated.Value(16)).current;
+  const op1 = useRef(new Animated.Value(0)).current;
+  const op2 = useRef(new Animated.Value(0)).current;
+  const op3 = useRef(new Animated.Value(0)).current;
+  // Title entrance
+  const titleOp = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (__DEV__) console.log('[REC_LOADING]', 'mode=initial', 'visible=true');
+
+    // Title fades in first, slightly before cards
+    Animated.timing(titleOp, {
+      toValue:  1,
+      duration: 260,
+      delay:    40,
+      easing:   Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+
+    // Helper: entrance for one card (translateY + opacity)
+    const enter = (ty: Animated.Value, op: Animated.Value, delay: number) =>
+      Animated.parallel([
+        Animated.timing(ty, {
+          toValue:  0,
+          duration: 400,
+          delay,
+          easing:   Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(op, {
+          toValue:  1,
+          duration: 320,
+          delay:    delay + 50,
+          easing:   Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]);
+
+    // Staggered entrances: 0ms, 100ms, 200ms after the initial 80ms settle
+    Animated.parallel([
+      enter(ty1, op1,  80),
+      enter(ty2, op2, 180),
+      enter(ty3, op3, 280),
+    ]).start();
+
+    return () => {
+      if (__DEV__) console.log('[REC_LOADING]', 'mode=initial', 'visible=false');
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <View style={{ marginBottom: 20 }}>
+      <Animated.Text style={{
+        fontSize:    14,
+        fontWeight:  '600',
+        color:       '#1c1917',
+        marginBottom: 14,
+        opacity:     titleOp,
+      }}>
+        Assembling your picks…
+      </Animated.Text>
+
+      <AssemblingCardSilhouette translateY={ty1} opacity={op1} shimmerPhase={0}   />
+      <AssemblingCardSilhouette translateY={ty2} opacity={op2} shimmerPhase={140} />
+      <AssemblingCardSilhouette translateY={ty3} opacity={op3} shimmerPhase={280} />
+    </View>
+  );
+}
+
+// ─── RefreshingDot ────────────────────────────────────────────────────────────
+// Minimal visual for background refresh when a deck already exists.
+// A single breathing dot — almost invisible, communicates activity without noise.
+export function RefreshingDot() {
+  const pulse = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1,   duration: 700, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.3, duration: 700, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <Animated.View style={{
+      width:           6,
+      height:          6,
+      borderRadius:    3,
+      backgroundColor: '#c4bdb7',
+      marginLeft:      8,
+      opacity:         pulse,
+    }} />
   );
 }

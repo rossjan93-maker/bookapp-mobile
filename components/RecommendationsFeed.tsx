@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   LayoutAnimation,
   Platform,
@@ -34,7 +33,7 @@ import { type RecSessionCache, getRecSession, setRecSession } from '../lib/recSe
 import { addActedOnIds, loadActedOnIds } from '../lib/recPayloadCache';
 import { GuidedActionBanner } from './OnboardingWalkthrough';
 
-import { RecCard, UndoToast, RecSkeletonCard } from './RecCard';
+import { RecCard, UndoToast, DeckAssemblingLoader, RefreshingDot } from './RecCard';
 import {
   VISIBLE_STACK_SIZE,
   REPLENISH_WATERMARK,
@@ -66,6 +65,14 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 
 // Session freshness threshold — pipeline skipped on tab revisit when below this age
 const REC_SESSION_TTL_MS = 4 * 60 * 1000; // 4 minutes
+
+// Custom LayoutAnimation config that matches the motion token system (380ms, ease-in-out).
+// Used for all stack reflowing — slower and softer than the 300ms preset.
+const REFLOW_LAYOUT_ANIM = LayoutAnimation.create(
+  380,
+  LayoutAnimation.Types.easeInEaseOut,
+  LayoutAnimation.Properties.opacity,
+);
 
 // ── Intent panel lane options ──────────────────────────────────────────────────
 const LANE_OPTIONS: Array<{ lane: DeterministicLane; label: string }> = [
@@ -498,7 +505,11 @@ export function RecommendationsFeed({
   ) {
     if (!supabase || !userId || !tasteProfile || tasteProfile.tier < 1) return;
 
-    const requestId = ++latestPipelineRef.current;
+    const requestId  = ++latestPipelineRef.current;
+    const loadMode   = opts?.exhaustionBypass ? 'watermark' : opts?.isBgRefresh ? 'background' : 'initial';
+    const hasVisible = getQueueDepth() > 0;
+    if (__DEV__) console.log('[REC_LOADING]', `mode=${loadMode}`, `visible=${hasVisible}`);
+
     const activeEnt = entitlement ?? {
       plan: 'free' as const,
       expert_recs_enabled: false,
@@ -553,7 +564,7 @@ export function RecommendationsFeed({
           exhaustionAttemptRef.current = 0;
         }
 
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        LayoutAnimation.configureNext(REFLOW_LAYOUT_ANIM);
         syncVisible();
 
         const newSession: RecSessionCache = {
@@ -604,7 +615,7 @@ export function RecommendationsFeed({
     removeFromQueue(book.id);
     trackActedOn(userId, book);
     replenishIfNeeded();
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    LayoutAnimation.configureNext(REFLOW_LAYOUT_ANIM);
     syncVisible();
 
     setFeedbackCtx(prev => {
@@ -698,7 +709,7 @@ export function RecommendationsFeed({
     setPendingDismiss(rec);
     setDismissPendingUI({ book });
 
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    LayoutAnimation.configureNext(REFLOW_LAYOUT_ANIM);
     syncVisible();
 
     if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', 'status=pending_undo', `| book_id=${book.id}`);
@@ -712,7 +723,7 @@ export function RecommendationsFeed({
     setPendingDismiss(null);
     setDismissPendingUI(null);
     prependToQueue({ book: rec.book, bucket: rec.bucket });
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    LayoutAnimation.configureNext(REFLOW_LAYOUT_ANIM);
     syncVisible();
     if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', 'status=undone', `| book_id=${rec.book.id}`);
   }
@@ -722,7 +733,7 @@ export function RecommendationsFeed({
     removeFromQueue(book.id);
     trackActedOn(userId, book);
     replenishIfNeeded();
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    LayoutAnimation.configureNext(REFLOW_LAYOUT_ANIM);
     syncVisible();
     persistFeedback(supabase, userId, book, 'more_like_this').catch(() => {});
     const genre = getBookTraits(book).primaryGenre;
@@ -835,25 +846,12 @@ export function RecommendationsFeed({
         <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.9, textTransform: 'uppercase' }}>
           For You
         </Text>
-        {displayState === 'ready_refreshing' && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 8, paddingHorizontal: 7, paddingVertical: 2, backgroundColor: '#f5f5f4', borderRadius: 10 }}>
-            <ActivityIndicator size={10} color="#a8a29e" style={{ marginRight: 4 }} />
-            <Text style={{ fontSize: 11, color: '#a8a29e' }}>Refreshing</Text>
-          </View>
-        )}
+        {/* Background refresh: single breathing dot — nearly invisible, no disruption */}
+        {displayState === 'ready_refreshing' && <RefreshingDot />}
       </View>
 
-      {/* ── Loading skeleton (initial, no cached cards) ── */}
-      {displayState === 'loading_initial' && (
-        <View style={{ marginBottom: 20 }}>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 10 }}>
-            Building your picks…
-          </Text>
-          <RecSkeletonCard />
-          <RecSkeletonCard />
-          <RecSkeletonCard />
-        </View>
-      )}
+      {/* ── First-load: bespoke deck-assembling experience ── */}
+      {displayState === 'loading_initial' && <DeckAssemblingLoader />}
 
       {/* ── Ready state: cards + intent panel + thesis ── */}
       {(displayState === 'ready' || displayState === 'ready_refreshing') && (
@@ -1052,21 +1050,19 @@ export function RecommendationsFeed({
         </View>
       )}
 
-      {/* ── Transitional hint: deck just emptied, refreshing ── */}
+      {/* ── Transitional hint: deck just emptied, next picks loading ── */}
       {displayState === 'transitioning' && (
-        <View style={{ backgroundColor: '#fff', borderRadius: 14, padding: 24, alignItems: 'center', marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 1 }, elevation: 1 }}>
-          <ActivityIndicator color="#a8a29e" style={{ marginBottom: 12 }} />
-          <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 4 }}>Refreshing your picks…</Text>
-          <Text style={{ fontSize: 12, color: '#a8a29e', textAlign: 'center' }}>Noting your choices and finding what's next</Text>
+        <View style={{ backgroundColor: '#fff', borderRadius: 14, padding: 24, alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: '#f0eeeb', shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 }}>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 6 }}>Selecting what's next…</Text>
+          <Text style={{ fontSize: 12, color: '#a8a29e', textAlign: 'center', lineHeight: 18 }}>Noting your choices and preparing more picks</Text>
         </View>
       )}
 
       {/* ── Exhausted refreshing ── */}
       {displayState === 'exhausted_refreshing' && (
-        <View style={{ backgroundColor: '#fff', borderRadius: 14, padding: 24, alignItems: 'center', marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 1 }, elevation: 1 }}>
-          <ActivityIndicator color="#a8a29e" style={{ marginBottom: 12 }} />
-          <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 4 }}>Finding more picks…</Text>
-          <Text style={{ fontSize: 12, color: '#a8a29e', textAlign: 'center' }}>Exploring beyond your acted-on titles</Text>
+        <View style={{ backgroundColor: '#fff', borderRadius: 14, padding: 24, alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: '#f0eeeb', shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 }}>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 6 }}>Looking further for you…</Text>
+          <Text style={{ fontSize: 12, color: '#a8a29e', textAlign: 'center', lineHeight: 18 }}>Exploring beyond your recent picks</Text>
         </View>
       )}
 
