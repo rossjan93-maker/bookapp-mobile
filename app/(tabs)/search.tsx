@@ -1250,6 +1250,14 @@ export default function RecommendationsScreen() {
     }
   }
 
+  function handleRateComplete(id: string) {
+    setBooksToRate(prev => prev.filter(b => b.id !== id));
+  }
+
+  function handleTagComplete(id: string) {
+    setBooksToTag(prev => prev.filter(b => b.id !== id));
+  }
+
   function reset() {
     setStep('hub');
     setQuery('');
