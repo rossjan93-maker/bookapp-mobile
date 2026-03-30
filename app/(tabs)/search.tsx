@@ -5,6 +5,7 @@ import {
   FlatList,
   Pressable,
   RefreshControl,
+  SafeAreaView,
   ScrollView,
   Text,
   TextInput,
@@ -35,10 +36,11 @@ import { useGuidedTour } from '../../components/OnboardingWalkthrough';
 import { getRecSession, clearRecSession } from '../../lib/recSession';
 import { registerCacheClearer } from '../../lib/tabCache';
 import { RecommendationsFeed } from '../../components/RecommendationsFeed';
+import { RecEntryScreen, hasSeenRecEntry } from '../../components/RecEntryScreen';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Step = 'hub' | 'search' | 'friends' | 'done';
+type Step = 'hub' | 'entry' | 'search' | 'friends' | 'done';
 
 // BookResult is imported from lib/bookSearch
 
@@ -702,6 +704,41 @@ let _hubCache: HubSnapshot | null = null;
 
 // Clear both caches on sign-out so the next user never sees previous user's data
 registerCacheClearer(() => { clearRecSession(); _hubCache = null; });
+
+// ─── Entry check helpers ───────────────────────────────────────────────────────
+// Determines whether the Recommendations entry experience should be shown.
+// True = show entry. False = go straight to hub.
+
+async function hasPersonalizationSignal(userId: string): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    // Check reader_preferences for any taste/genre signal
+    const { data: prefs } = await supabase
+      .from('reader_preferences')
+      .select('favorite_genres, diagnosis_answers')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (prefs) {
+      const genres  = (prefs.favorite_genres as string[] | null) ?? [];
+      const answers = (prefs.diagnosis_answers as Record<string, string> | null) ?? {};
+      if (genres.length > 0) return true;
+      // intake_completed flag or any non-behavioral key
+      if (answers.intake_completed === 'true') return true;
+      const tasteKeys = Object.keys(answers).filter(k => !k.startsWith('b_') && k !== 'intake_completed');
+      if (tasteKeys.length > 0) return true;
+    }
+    // Check for any finished books (strongest signal)
+    const { count } = await supabase
+      .from('user_books')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('status', 'finished');
+    return (count ?? 0) > 0;
+  } catch {
+    return false; // on error, don't show entry — assume something exists
+  }
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function RecommendationsScreen() {
@@ -743,6 +780,25 @@ export default function RecommendationsScreen() {
   useFocusEffect(useCallback(() => {
     if (step === 'hub') loadHub();
   }, [step]));
+
+  // ── Recommendations entry check (runs once on first mount) ────────────────
+  // If the user has no personalization signal AND hasn't made a choice yet,
+  // show the entry experience instead of the empty hub.
+  const entryChecked = useRef(false);
+  useEffect(() => {
+    if (entryChecked.current) return;
+    entryChecked.current = true;
+    async function maybeShowEntry() {
+      if (!supabase) return;
+      const seen = await hasSeenRecEntry();
+      if (seen) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const hasSignal = await hasPersonalizationSignal(user.id);
+      if (!hasSignal) setStep('entry');
+    }
+    maybeShowEntry();
+  }, []);
 
   async function handleRefresh() {
     if (step !== 'hub') return;
@@ -1269,6 +1325,21 @@ export default function RecommendationsScreen() {
     setFriends([]);
     setSendResult(null);
     setSendingTo(null);
+  }
+
+  // ── Step: entry ───────────────────────────────────────────────────────────
+
+  if (step === 'entry') {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#faf9f7' }}>
+        <RecEntryScreen
+          onDone={() => {
+            setStep('hub');
+            loadHub();
+          }}
+        />
+      </SafeAreaView>
+    );
   }
 
   // ── Step: hub ─────────────────────────────────────────────────────────────

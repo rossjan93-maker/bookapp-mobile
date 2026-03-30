@@ -1,0 +1,175 @@
+We need to change the onboarding architecture. The current order is wrong.
+
+New principle:
+Welcome the user into the app first.
+Only after they understand the product should we ask for taste context and offer imports.
+
+I want a two-phase onboarding model:
+
+PHASE 1 — POST-SIGNUP APP WALKTHROUGH
+Immediately after account creation, the user should be shown a short guided walkthrough of the app itself:
+- what the core tabs/areas are
+- what each one is for
+- how navigation works
+- where value lives
+- what kinds of actions improve the experience over time
+
+This should orient the user to the product before we ask them to do any intake.
+
+PHASE 2 — RECOMMENDATIONS ENTRY PERSONALIZATION
+Only when the user reaches the Recommendations tab should we ask them to personalize.
+This is where we:
+- encourage them to add context to their taste
+- offer competitor-library imports as a high-visibility option
+- explain that imports are the fastest path to strong recommendations
+- provide a lighter preference intake for users who do not want to import yet
+
+The current flow is doing too much too early and in the wrong order.
+
+Target user journey:
+1. Customer creates account
+2. Customer is welcomed into the app with a short guided walkthrough of key functions and navigation
+3. Customer lands in the app with a clear understanding of what exists
+4. When the customer reaches Recommendations, they are met with:
+   - an invitation to improve picks
+   - a clear import option from Goodreads / StoryGraph / etc.
+   - a lightweight taste intake option
+   - the ability to skip and explore a starter deck if needed
+
+This is the product shape I want:
+Understand the app first.
+Personalize when it becomes relevant.
+
+What I want from you:
+
+Before coding:
+1. Diagnose the current onboarding/order architecture and explain why it is wrong
+2. Propose the new end-to-end flow from signup through first meaningful recommendation interaction
+3. Specify the exact screens/components/hooks/files you will create, replace, or remove
+4. Explain what state should live in:
+   - post-signup walkthrough completion
+   - recommendations entry personalization state
+   - import flow state
+   - lightweight taste intake state
+
+Architectural requirements:
+- Do NOT keep the current “full taste onboarding immediately after signup” model
+- Separate product orientation from recommendation personalization
+- Keep the system modular so the walkthrough and the rec personalization entry can evolve independently
+- Do not bury imports; imports should be a prominent value path, not a side option
+- Keep the recommendations tab as the place where recommendation-specific setup happens
+
+Desired PHASE 1 structure — App walkthrough after signup:
+I want a short, high-quality guided welcome to the app itself.
+This should be brief, useful, and interface-aware.
+
+Potential direction:
+Screen 1:
+- Welcome / what this app helps you do
+- explain the core promise in plain English
+
+Screen 2:
+- Library / tracking / progress / feed
+- how your reading life is captured here
+
+Screen 3:
+- Recommendations / how feedback improves picks
+- save, dismiss, more like this
+
+Screen 4:
+- Friends / shared reading / optional social layer if relevant
+
+Then land the user in the actual app, not into a long survey.
+
+Important:
+- no dead slides
+- no filler
+- no passive tutorial that does not connect to real surfaces
+- this should feel like guided orientation, not marketing copy
+
+Desired PHASE 2 structure — Recommendations entry personalization:
+When the user first lands on Recommendations, or when they have insufficient personalization signal, show a focused entry state.
+
+This Recommendations entry state should clearly offer:
+Option A — Import my library
+- highest-visibility path
+- framed as fastest way to get smarter picks
+- mention Goodreads / StoryGraph / competitor imports where applicable
+
+Option B — Answer a few questions
+- lightweight intake
+- much shorter than current full onboarding
+- just enough to establish starter signal
+
+Option C — Explore anyway
+- allow the user to continue with a starter deck if they do not want to personalize yet
+
+This screen should make the value exchange obvious:
+more signal -> better picks
+
+The lightweight intake in Recommendations should be concise.
+Directionally:
+- fiction / nonfiction / both
+- favorite / avoided genres
+- 3–4 meaningful taste questions
+- optional favorite book
+No long battery.
+No bloated sequence.
+
+I also want heightened awareness of import capability.
+This is important.
+The product should communicate:
+“If you already have a reading history elsewhere, we can use it.”
+
+Implementation goals:
+1. Replace the current onboarding order with the new two-phase model
+2. Keep the app walkthrough short and trustworthy
+3. Move taste intake out of immediate signup onboarding
+4. Build a Recommendations entry experience that is clearly designed for personalization and imports
+5. Make import a prominent first-class option
+6. Ensure the user can still browse if they are not ready to personalize
+7. Instrument all of this so we can measure behavior
+
+Instrumentation I want:
+- walkthrough started
+- walkthrough step viewed
+- walkthrough completed
+- walkthrough skipped
+- first visit to recommendations
+- recommendations entry shown
+- import CTA clicked
+- import started
+- import completed
+- import skipped
+- quick intake started
+- quick intake completed
+- quick intake skipped
+- first rec action taken after walkthrough
+- first rec action taken after import
+- first rec action taken after quick intake
+
+What I do NOT want:
+- another shallow copy pass
+- another patch on top of the wrong order
+- immediate post-signup taste questionnaire as the default path
+- hidden import capability
+- dead product-tour slides
+- weak architecture
+- incremental Replit output that is not strategically correct
+
+Success criteria:
+- new users are first oriented to the app itself
+- the product feels understandable before asking for personalization
+- Recommendations becomes the natural place for taste setup and imports
+- import is clearly visible and compelling
+- the lightweight intake is concise and relevant
+- the architecture is modular and clean
+- runtime behavior is validated, not just compiled
+
+Before implementing:
+Please first read the current signup/onboarding/recommendations entry code and give me:
+1. diagnosis of what is wrong now
+2. proposed new flow
+3. implementation plan with exact files/components/state model
+
+Then implement.
