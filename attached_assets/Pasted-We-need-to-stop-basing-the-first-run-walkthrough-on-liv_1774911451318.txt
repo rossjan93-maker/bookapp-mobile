@@ -1,0 +1,69 @@
+We need to stop basing the first-run walkthrough on live dynamic content states.
+
+The current approach is still brittle because Recommendations and Library are being taught before their live content is reliably ready. This keeps causing bad highlight placement, mismatched copy, and awkward timing.
+
+New direction:
+Use deterministic walkthrough fixtures inside the real app shell.
+
+I do NOT want detached fake onboarding screens.
+I DO want controlled demo states rendered inside the actual tabs during walkthrough mode.
+
+Core principle:
+The user should still feel like they are being guided through the real app, but the walkthrough should not depend on live user data/loading timing.
+
+What to change:
+
+1. Introduce walkthrough demo mode
+When first-run walkthrough is active, render curated demo content for the tabs being taught:
+- Home: stable demo reading/progress card
+- Recommendations: stable demo recommendation card and visible action row
+- Library: stable demo book rows or empty-state teaching card
+- Inbox: stable demo incoming recommendation/message card
+- Profile: either intentionally exclude, or render one stable summary module if truly needed
+
+2. Use actual component emphasis, not generic spotlight boxes
+I want the real card/row/module itself to become the focal point:
+- soft backlight behind the component
+- slight lift/elevation
+- subtle scale-up
+- stronger shadow
+- soft on-brand outline/glow
+- coach mark attached to the component
+
+Do NOT rely on vague rectangular “windows of light.”
+
+3. Recommendations and Library should no longer depend on live load timing during the walkthrough
+The walkthrough should teach a stable example state.
+After the walkthrough is complete, switch back to live data and show the real Recommendations setup/import experience.
+
+4. Keep this inside the real app shell
+I do not want separate tutorial screens.
+The user should still navigate through the actual tabs.
+But the tab content shown during walkthrough can be controlled/seeded.
+
+5. Explain the architecture before coding
+Before implementing, tell me:
+- how walkthrough demo mode will be activated
+- which tabs/surfaces get demo fixtures
+- what exact components will be shown in each tab
+- how the app switches from walkthrough fixtures back to live content
+- how this avoids brittle measurement/loading problems
+
+6. Recommendations-specific requirement
+During walkthrough mode:
+- show a stable demo recommendation card
+- teach the interaction model there
+After walkthrough mode ends:
+- restore real Recommendations behavior
+- then show contextual import / quick setup / explore prompt if needed
+
+7. Success criteria
+- no walkthrough step depends on live rec/library loading
+- the highlighted thing is always a specific visible component
+- the component itself is the focal point
+- the walkthrough feels consistent every time
+- the user is still being guided through the real app shell
+- after the tour, the app returns to real product state cleanly
+
+This is not a small polish pass.
+It is a change in walkthrough strategy from dynamic/live-target teaching to controlled in-shell demo teaching.
