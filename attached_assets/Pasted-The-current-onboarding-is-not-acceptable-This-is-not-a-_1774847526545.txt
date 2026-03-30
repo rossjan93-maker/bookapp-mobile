@@ -1,0 +1,82 @@
+The current onboarding is not acceptable. This is not a polish pass. It needs a structural rebuild around first value and trust.
+
+I want you to treat the screenshots and issues below as a hard diagnosis:
+
+Critical bugs / failures:
+1. "Finish later" does not work
+2. The fiction/nonfiction step has incorrect copy ("Where do you mostly live?")
+3. The anchor-book result appears wrong / untrustworthy (book metadata mismatch)
+4. The "Picks tuned to you" tour slide does nothing useful
+5. The payoff screen shows no actual first picks
+6. The progress model is misleading: "2 of 4" / "3 of 4" while multiple hidden substeps still remain
+
+Core product diagnosis:
+- The onboarding currently captures preferences but fails to deliver first value
+- It relies on passive product-tour slides instead of contextual teaching
+- It overuses repeated full-screen binary cards
+- It promises personalization before proving it
+- It breaks trust at the exact moment trust should increase
+
+I want a rebuild with this product principle:
+Calibrate -> Deliver -> Teach in context
+
+Target flow:
+A. Intake
+- keep the strongest preference questions
+- shorten / tighten the sequence
+- fix wording so it sounds intelligent and editorial, not generic form UX
+- use honest progress that matches the real number of screens
+
+B. Delivery
+- onboarding must end with actual first recommendations shown on-screen
+- do NOT send the user to another tab to maybe see value later
+- the final onboarding screen should contain real recommendation cards
+- include a short "why these showed up" explanation
+
+C. Contextual teaching
+- remove the passive "Picks tuned to you" style walkthrough slides
+- instead, once first picks are visible, teach with lightweight inline guidance:
+  - save what interests you
+  - dismiss what doesn't
+  - ask for more like this
+  - explain that feedback sharpens the engine
+- no dead tutorial slides
+
+Required fixes:
+1. Fix Finish later
+2. Fix anchor-book metadata quality
+3. Fix first-picks generation/rendering so onboarding payoff always shows actual content when available
+4. If picks are not yet ready, show a polished loading state that resolves into actual cards on the same screen
+5. Remove any dead-end walkthrough pages
+
+Design direction:
+- premium reading product
+- editorial, calm, intelligent
+- fewer but stronger screens
+- more trust, less filler
+- less "survey energy"
+- more "this app understands my reading life"
+
+Best-practice direction to follow:
+- progressive disclosure: show only what is needed now
+- contextual guidance instead of long passive tutorials
+- land users in a personalized, useful home state quickly
+
+Concrete implementation ask:
+1. Diagnose the exact code path causing:
+   - Finish later failure
+   - dead walkthrough utility
+   - no first picks on payoff
+   - anchor-book mismatch
+2. Propose a revised onboarding flow with exact screens
+3. Replace the passive walkthrough with contextual guidance on the real picks screen
+4. Implement the new payoff so it contains actual cards, not a redirect CTA
+5. Validate runtime behavior end to end
+
+Success criteria:
+- onboarding ends with real recommendations on-screen
+- finish later works
+- first-picks rendering works
+- progress is honest
+- no passive dead tutorial screens
+- the whole experience feels tighter, smarter, and more trustworthy
