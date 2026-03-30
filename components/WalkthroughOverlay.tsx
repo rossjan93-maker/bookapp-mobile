@@ -55,9 +55,9 @@ const TAB_BAR_H  = 62;
 const RING_SIZE  = 52;
 const RING_R     = RING_SIZE / 2;
 const DIM_COLOR  = 'rgba(0,0,0,0.60)';
-// App-native spotlight frame: matches #e7e5e4 border at high opacity on dark
-const FRAME_COLOR = 'rgba(231,229,228,0.82)';
-const AURA_COLOR  = 'rgba(231,229,228,0.18)';
+// Crisp white frame — visible against dim background; outer glow suggests lift
+const FRAME_COLOR = 'rgba(255,255,255,0.88)';
+const AURA_COLOR  = 'rgba(255,255,255,0.07)';
 const CARD_W      = SW - 28;
 
 function tabCenterX(idx: number): number {
@@ -100,7 +100,7 @@ function PulsingRing({ tabIdx }: { tabIdx: number }) {
         height:       RING_SIZE,
         borderRadius: RING_R,
         borderWidth:  2.5,
-        borderColor:  '#1c1917',
+        borderColor:  'rgba(255,255,255,0.65)',
         transform:    [{ scale }],
         opacity,
       }}
@@ -149,17 +149,22 @@ function SpotlightAperture({ rect, fade }: { rect: TargetRect; fade: Animated.Va
         }}
       />
 
-      {/* Crisp component frame */}
+      {/* Crisp component frame — white border + shadow gives a lifted-card feel */}
       <View
         style={{
-          position:     'absolute',
-          top:          y - 2,
-          left:         x - 2,
-          width:        width  + 4,
-          height:       height + 4,
-          borderRadius: 14,
-          borderWidth:  1.5,
-          borderColor:  FRAME_COLOR,
+          position:      'absolute',
+          top:           y - 2,
+          left:          x - 2,
+          width:         width  + 4,
+          height:        height + 4,
+          borderRadius:  14,
+          borderWidth:   1.5,
+          borderColor:   FRAME_COLOR,
+          shadowColor:   '#000',
+          shadowOpacity: 0.35,
+          shadowRadius:  20,
+          shadowOffset:  { width: 0, height: 4 },
+          elevation:     10,
         }}
       />
     </Animated.View>

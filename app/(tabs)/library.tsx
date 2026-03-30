@@ -179,10 +179,16 @@ export default function LibraryScreen() {
   // Profile was excluded from the walkthrough; library is the last list screen.
 
   const { wtStep } = useWalkthrough();
-  const libTargetRef = useRef<any>(null);
+  const libTargetRef  = useRef<any>(null);
+  const firstRowRef   = useRef<any>(null); // first visible book card/row
+  const libEmptyRef   = useRef<any>(null); // import banner (no-books state)
 
   function measureLibContent() {
-    libTargetRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
+    // Priority 1 — first real book card/row (users who have books)
+    // Priority 2 — import banner or empty CTA (users with no books)
+    // Priority 3 — fallback: ListHeaderComponent wrapper
+    const target = firstRowRef.current ?? libEmptyRef.current ?? libTargetRef.current;
+    target?.measureInWindow((x: number, y: number, w: number, h: number) => {
       if (w > 0 && h > 0) {
         registerWtTarget('library_content', { x, y, width: w, height: h });
       }
@@ -662,7 +668,7 @@ export default function LibraryScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
       }
       ListHeaderComponent={
-        <View ref={libTargetRef} onLayout={measureLibContent}>
+        <View ref={libTargetRef}>
           {/* ── Editorial header ── */}
           <View style={{
             flexDirection: 'row',
@@ -752,6 +758,7 @@ export default function LibraryScreen() {
           {/* ── Goodreads import banner (shown until user imports) ── */}
           {hasGoodreadsImport === false && (
             <TouchableOpacity
+              ref={libEmptyRef}
               onPress={() => router.push('/import/goodreads')}
               style={{
                 flexDirection: 'row',
@@ -938,7 +945,9 @@ export default function LibraryScreen() {
                   Currently Reading
                 </Text>
               )}
-              <View style={{
+              <View
+                ref={wtStep === 'library' && index === 0 ? firstRowRef : undefined}
+                style={{
                 backgroundColor: '#fff',
                 borderRadius: 14,
                 marginVertical: 6,
@@ -1154,7 +1163,9 @@ export default function LibraryScreen() {
                 Library
               </Text>
             )}
-            <View style={{
+            <View
+              ref={wtStep === 'library' && index === 0 ? firstRowRef : undefined}
+              style={{
               paddingTop: 18,
               paddingBottom: hasExtraRow ? 14 : 18,
               borderBottomWidth: 1,

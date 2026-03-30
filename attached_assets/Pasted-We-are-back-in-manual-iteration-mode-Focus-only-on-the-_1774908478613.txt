@@ -1,0 +1,172 @@
+We are back in manual iteration mode. Focus only on the onboarding / walkthrough experience.
+
+The current walkthrough is still not acceptable. It feels arbitrary, visually disconnected from the product, and it explains things before the actual UI is ready.
+
+I want a correction pass with one clear principle:
+
+The app should teach itself through real, loaded, visible components.
+
+That means:
+- no random highlighted regions
+- no generic section masks
+- no copy that describes UI that is not actually there
+- no skeletons/placeholders being treated as real content
+- no accidental omissions across tabs
+
+==================================================
+CORE PRODUCT SHAPE
+==================================================
+
+Desired onboarding order:
+1. Brief welcome
+2. Enter the real app shell
+3. “Let’s show you around” interactive walkthrough inside the live app
+4. Contextual Recommendations setup/import prompt when the user reaches Recommendations
+5. Normal product use
+
+Do NOT redesign this into detached onboarding slides again.
+Do NOT treat overlay polish as the main work.
+The main work is correct product-teaching through live UI.
+
+==================================================
+WALKTHROUGH REQUIREMENTS
+==================================================
+
+Every walkthrough step must:
+1. target a specific real UI component
+2. wait until that component exists, is visible, and is measured
+3. use copy that matches exactly what is on screen
+4. visually focus the actual component, not an arbitrary area around it
+
+I want component focal highlighting, not area masking.
+
+The highlighted component itself should feel like the focal point:
+- slight lift/elevation
+- subtle scale or emphasis
+- stronger shadow
+- soft on-brand outline/glow
+- coach mark visually attached to that component
+
+Do NOT use:
+- vague rectangular light boxes
+- approximate section highlighting
+- off-brand color combinations
+- generic wrappers when a real object can be targeted
+
+==================================================
+TABS / SURFACES TO HANDLE
+==================================================
+
+I want explicit intentional handling of:
+- Home
+- Recommendations
+- Library
+- Inbox
+- Profile
+
+Before coding, decide for each:
+1. Is it in the first-run walkthrough? yes/no
+2. If yes, what exact component is highlighted?
+3. What exact one-sentence learning objective does that step teach?
+4. If no, why is it excluded?
+
+Inbox and Profile cannot be ignored accidentally.
+They must be either intentionally included or intentionally excluded with rationale.
+
+==================================================
+TARGETING RULES BY TAB
+==================================================
+
+Home:
+- target a real first-run meaningful component
+- not a broad region
+- likely the actual reading-life card / timeline card / active reading card depending on state
+
+Recommendations:
+- this has repeatedly failed, so be explicit
+- if a real recommendation card exists, target the first real card
+- if recs are not ready but the import/setup prompt is present, target that prompt instead
+- if neither exists yet, WAIT
+- do not show a Recommendations walkthrough step until one of those is true
+- do not say “Your picks” over skeletons or placeholders
+
+Library:
+- target the first real book row if books exist
+- otherwise target the real empty-state/add/import card
+- not the whole wrapper/header area
+
+Inbox:
+- if first-run inbox is empty, target a real empty-state card that explains what lands there
+- if inbox items exist, target the first meaningful inbox item/list card
+
+Profile:
+- if included, target the actual module that matters most for a new user
+- stats/goals/preferences only if one of those is actually the right first-run anchor
+- if excluded, explain why clearly
+
+==================================================
+VISUAL / THEME REQUIREMENTS
+==================================================
+
+The walkthrough must feel native to the app.
+
+Requirements:
+- use the app’s existing theme tokens
+- no black + green drift
+- no new accent color language unless already part of the product
+- coach marks, hotspot rings, shadows, outlines, CTA styling must all feel like part of the same app
+
+Before coding, identify:
+- which current walkthrough styles are off-brand
+- what theme tokens you will use instead
+
+==================================================
+READINESS GATING
+==================================================
+
+This is critical.
+
+No walkthrough step may render until:
+- the exact target component exists
+- it is visible
+- it is measured
+- it matches the copy for that step
+
+If the target is loading or absent:
+- the walkthrough must wait
+- not guess
+- not approximate
+- not spotlight nearby empty space
+
+I want you to explicitly explain the readiness logic for each walkthrough step before coding.
+
+==================================================
+DELIVERABLES BEFORE CODING
+==================================================
+
+Before you change code, give me:
+
+1. Diagnosis of why the current walkthrough still feels wrong
+2. Exact walkthrough map in step order
+3. Exact target component for each step
+4. Exact learning objective for each step
+5. Readiness gating logic for each step
+6. Inbox/Profile decision with rationale
+7. Theme correction plan
+8. Exact files/components/hooks/state you will change
+
+Then implement.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+This pass is successful only if:
+- each walkthrough step highlights a specific real component
+- the highlighted target and copy always match
+- no step fires over skeletons/placeholders
+- Home, Recommendations, Library, Inbox, and Profile are all intentionally handled
+- the walkthrough feels like the app teaching itself in place
+- the focal point is the actual component, not a random lit area
+- the visual system feels native to the app
+- Recommendations setup/import appears at the correct moment and only when relevant

@@ -666,9 +666,11 @@ export default function HomeScreen() {
 
       {/* ── 1. Continue Reading ── */}
       {currentReads.length > 0 && (
-        <View ref={homeTargetRef} style={{ marginBottom: 32 }} onLayout={measureHomeContent}>
+        <View style={{ marginBottom: 32 }}>
           <SectionLabel>Continue Reading</SectionLabel>
 
+          {/* Walkthrough ref wraps only the card(s), not the section label */}
+          <View ref={homeTargetRef} onLayout={measureHomeContent}>
           {currentReads.length === 1 ? (() => {
             const cr = currentReads[0];
             const accentColor = homeCardBorderColor(cr, yearlyGoal);
@@ -814,17 +816,19 @@ export default function HomeScreen() {
               })}
             </ScrollView>
           )}
+          </View>{/* close homeTargetRef wrapper */}
         </View>
       )}
 
       {/* ── Yearly Reading Goal ── */}
       {yearlyGoal && yearlyGoal > 0 && (
-        <View
-          ref={currentReads.length === 0 ? homeTargetRef : undefined}
-          style={{ marginBottom: 32 }}
-          onLayout={currentReads.length === 0 ? measureHomeContent : undefined}
-        >
+        <View style={{ marginBottom: 32 }}>
           <SectionLabel>Reading Goal</SectionLabel>
+          {/* Walkthrough ref wraps only the goal card, not the section label */}
+          <View
+            ref={currentReads.length === 0 ? homeTargetRef : undefined}
+            onLayout={currentReads.length === 0 ? measureHomeContent : undefined}
+          >
           <TouchableOpacity activeOpacity={0.8} onPress={() => setGoalExpanded(e => !e)}>
             <View style={{
               backgroundColor: '#fff',
@@ -974,17 +978,14 @@ export default function HomeScreen() {
               )}
             </View>
           )}
+          </View>{/* close homeTargetRef wrapper */}
         </View>
       )}
 
       {/* ── 2. Timeline (self + network activity) ── */}
-      {/* Fallback WT ref: new users have no current reads and no yearly goal, so the
-          Timeline section is the first real loaded element on screen for them. */}
-      <View
-        ref={(!currentReads.length && !(yearlyGoal && yearlyGoal > 0)) ? homeTargetRef : undefined}
-        style={{ marginBottom: 32 }}
-        onLayout={(!currentReads.length && !(yearlyGoal && yearlyGoal > 0)) ? measureHomeContent : undefined}
-      >
+      {/* For new users with no reads and no goal, the "Nothing yet" card below
+          is the walkthrough target — a specific bounded white card, not this wrapper. */}
+      <View style={{ marginBottom: 32 }}>
         <SectionLabel>Timeline</SectionLabel>
 
         {/* Pending recs banner — surfaces above the event stream */}
@@ -1033,17 +1034,21 @@ export default function HomeScreen() {
         {feedError ? (
           <Text style={{ color: '#b91c1c', marginBottom: 16, fontSize: 14 }}>{feedError}</Text>
         ) : totalFeedWithVerb === 0 && pendingRecCount === 0 ? (
-          <View style={{
-            backgroundColor: '#fff',
-            borderRadius: 14,
-            padding: 24,
-            alignItems: 'center',
-            shadowColor: '#000',
-            shadowOpacity: 0.04,
-            shadowRadius: 6,
-            shadowOffset: { width: 0, height: 1 },
-            elevation: 1,
-          }}>
+          <View
+            ref={(!currentReads.length && !(yearlyGoal && yearlyGoal > 0)) ? homeTargetRef : undefined}
+            onLayout={(!currentReads.length && !(yearlyGoal && yearlyGoal > 0)) ? measureHomeContent : undefined}
+            style={{
+              backgroundColor: '#fff',
+              borderRadius: 14,
+              padding: 24,
+              alignItems: 'center',
+              shadowColor: '#000',
+              shadowOpacity: 0.04,
+              shadowRadius: 6,
+              shadowOffset: { width: 0, height: 1 },
+              elevation: 1,
+            }}
+          >
             <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
               Nothing yet.{'\n'}Finish or rate a book to get started.
             </Text>

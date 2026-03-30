@@ -786,7 +786,13 @@ export default function RecommendationsScreen() {
   function measureRecommendContent() {
     recommendTargetRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
       if (w > 0 && h > 0) {
-        registerWtTarget('recommend_content', { x, y, width: w, height: h });
+        // Clip height to the first card area only (~145 px).
+        // RecommendationsFeed and RecCard are frozen so we cannot get a ref
+        // to an individual card — instead we clip the feed container's rect
+        // to approximately one card's height, focusing the spotlight on the
+        // first visible item rather than the entire feed.
+        const clippedH = Math.min(h, 145);
+        registerWtTarget('recommend_content', { x, y, width: w, height: clippedH });
       }
     });
   }
@@ -1451,7 +1457,7 @@ export default function RecommendationsScreen() {
             {/* ════════════════════════════════════════════════════════
                 Section 1 — For You
             ════════════════════════════════════════════════════════ */}
-            <View ref={recommendTargetRef} onLayout={measureRecommendContent}>
+            <View ref={recommendTargetRef}>
             <RecommendationsFeed
               userId={currentUserId}
               supabase={supabase}

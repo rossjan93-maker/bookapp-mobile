@@ -1,48 +1,45 @@
-You did not provide acceptable evidence and the walkthrough still fails the product requirements. Revise the walkthrough implementation and return concrete proof.
+You did not provide verifiable implementation evidence. Start over and make the actual code changes, then return proof that matches git. Requirements:
 
-Goal:
-Fix the in-app walkthrough so every step teaches the app using a specific real measured UI component, never a vague region, and never unloaded/skeleton content.
+1) Fix the walkthrough using ONLY real measured UI components.
+- No generic region masks.
+- No step may render until its target exists, is visible, and has a non-zero measured rect.
+- Copy must match the exact visible component.
 
-Non-negotiable requirements:
-- Every walkthrough step must target a specific real rendered component that exists on screen and has measured bounds.
-- Do not show a step until that target is visible and measured.
-- No generic rectangular area highlights when a real element can be targeted.
-- Home, Recommendations, Library, Inbox, and Profile must each be intentionally handled.
-- Recommendations must highlight either:
-  1) a real recommendation card, or
-  2) the real setup/import prompt.
-  If neither exists yet, the Recommendations step must wait and must not show "Your picks" over skeletons/placeholders.
-- Copy must exactly match what is visibly highlighted.
-- Keep overlay styling on-brand with the existing app theme. No off-brand accent colors.
-- Continue / Skip / progression must work with no dead ends.
+2) Handle these tabs intentionally:
+- Home
+- Recommendations
+- Library
+- Inbox
+- Profile
+If you exclude Profile, do it explicitly in code/comments and explain why. If included, target a real Profile component.
 
-Specific issues to fix from current result:
-- Home highlight is still vague: replace it with a specific measured Home UI component.
-- Library step still highlights a generic area: replace with a specific measured Library component.
-- Recommendations currently shows skeletons while copy says "Your picks": fix gating and copy so this never happens.
-- Inbox/Profile are still not intentionally handled: either include real targeted steps for both, or explicitly exclude one/both with product rationale in code comments and in your summary.
+3) Recommendations step rules:
+- Highlight either a real recommendation card OR the real setup/import prompt.
+- If neither exists yet, WAIT. Do not show the walkthrough step over skeletons/placeholders.
+- Remove any 'Your picks' copy if the UI does not literally say that.
 
-Implementation expectations:
-- Use refs / layout measurement / visibility checks so steps only activate when the actual target is mounted, visible, and measured.
-- If a target is not ready, the walkthrough must pause or defer that step instead of highlighting an approximate region.
-- Ensure tab sequencing waits for the destination screen/component to be ready before advancing.
-- If welcome/intro handoff affects correctness, adjust it only as needed.
+4) Produce real code changes in the repo, not just a narrative.
+Expected changed files should likely include the walkthrough engine/overlay and relevant tab screens. After editing, run git diff --name-only and include the actual changed file list.
 
-Return all of the following in your response:
-1) Changed files summary with exact files modified.
-2) For each walkthrough step (Home, Recommendations, Library, Inbox, Profile), specify:
-   - exact component highlighted
-   - exact copy shown
-   - how readiness gating works
-   - what happens if the target is absent/loading
-3) Build/runtime evidence:
-   - the correct validation command(s) for this repo and their output
-   - if `npm run build` is not valid for this project, identify the proper command and run it
-   - include any runtime/test output relevant to walkthrough flow
-4) Screenshot or video notes for each step proving:
-   - the visible real component being highlighted
-   - no skeleton/placeholder mismatch
-   - overlay styling remains native to the app
-5) Brief note confirming Continue / Skip / progression behavior and that there are no dead-end states.
+5) Prove the UX with runtime evidence:
+- For each walkthrough step, provide:
+  a) exact component being highlighted
+  b) where its ref is attached
+  c) when measurement runs
+  d) the readiness condition that blocks the step until real content is present
+  e) screenshot note showing the visible component and matching copy
+- Explicitly confirm no skeleton/placeholder is ever described as real content.
 
-Do not claim success from compilation alone. Do not return until the evidence demonstrates the above requirements are actually met.
+6) Verify progression:
+- Continue works
+- Skip works
+- Final step exits cleanly
+- No dead-end states
+
+7) Build/checks:
+- Do not claim success from Metro logs alone.
+- If there is no build script, say that clearly and run the appropriate validation commands that exist for this app (for example typecheck/lint/tests if available). List package scripts first with npm run.
+- Include command outputs.
+
+8) Return only facts that are backed by the repo state.
+Right now git only shows artifacts/replit_output.txt changed, so your previous response is not acceptable. Make the real edits and then report back with exact changed files and concrete evidence.
