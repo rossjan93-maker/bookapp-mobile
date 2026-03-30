@@ -1,0 +1,145 @@
+The Recommendations experience still feels clunky. I want a deeper refactor.
+
+This is no longer just about fixing a few animations. The tab currently behaves like a finite 4-card batch that empties and then refreshes, and the motion still feels like state swaps instead of one continuous flow.
+
+Observed problems from the latest recordings:
+1. Motion is still too abrupt / discrete
+   - actions feel segmented instead of continuous
+   - there is still visible snapping / settling
+   - the page rearranges in chunks instead of gliding
+
+2. The ghost / undo state is part of the clunk
+   - the old card footprint lingers too much
+   - it makes the interaction feel like replacement, not exit
+   - it slows visual flow and makes the stack feel sticky
+
+3. Recommendations appear to replenish too late
+   - it looks like replacement recs only really populate once the visible list is mostly or fully cleared
+   - the tab should not behave like a drained batch of 4
+   - it should feel continuously stocked from the bottom
+
+4. All recommendation cards currently feel too equivalent
+   - I want it to be clear which are high-confidence suggestions, middling suggestions, and low-confidence / exploratory suggestions
+
+I want a combined refactor of:
+A) motion system
+B) recommendation queue/replenishment model
+C) confidence signaling
+
+GOAL
+Make Recommendations feel like a living, continuously replenished feed:
+- top cards exit smoothly
+- next cards rise naturally
+- new cards quietly feed in from the bottom
+- lower modules move as part of the same layout system
+- confidence is visible and easy to understand
+
+PART 1 — RECOMMENDATION ARCHITECTURE
+Please inspect the current data/render model and confirm whether the tab is effectively operating as a finite visible batch.
+
+If so, refactor to a queue model.
+
+Desired queue behavior:
+1. Maintain a recommendation queue larger than the visible stack
+   - for example: keep 8–12 cards loaded locally
+   - only show the top 4 prominently at a time
+
+2. When a user acts on a card:
+   - remove it optimistically from the visible deck
+   - advance the next queued card upward immediately
+   - backfill the queue in the background before the visible deck feels depleted
+
+3. Introduce a replenishment watermark
+   - when queue depth falls below a threshold, fetch/append more recs
+   - do NOT wait until the user clears all 4 visible cards
+
+4. New cards should enter from the bottom quietly
+   - appended to the queue first
+   - then rise into visibility naturally as earlier cards are consumed
+   - no “whole deck replacement” feel
+
+5. Preserve all existing acted-on filtering / exhaustion protections
+   - dedupe against current queue
+   - dedupe against acted-on IDs
+   - keep bounded retry / exhaustion logic intact
+
+PART 2 — MOTION / INTERACTION SYSTEM
+Please replace the current “state swap” feel with a real motion sequence.
+
+Desired action flow:
+1. tap action
+2. short confirmation state
+3. active card exits with real motion
+4. remaining cards reflow upward smoothly
+5. lower modules glide into place as part of the same layout transition
+6. queue settles, then interaction completes
+
+Motion requirements:
+- smoother and slightly slower than current behavior
+- no snapping
+- no abrupt collapse
+- no lingering blank/ghost card footprint
+- no harsh jump in “Refine your taste” or lower sections
+
+Likely implementation direction:
+- outgoing card should animate as a transformed element, not just a re-rendered placeholder
+- use spring or similarly smooth interpolation, not abrupt easing
+- remaining cards and lower modules should be in a shared layout animation system
+- preserve structural stability during exit/reflow
+- avoid making the next card feel fully interactive until the prior card exit has substantially completed
+
+Strong preference:
+If the current approach depends on LayoutAnimation and it is still too weak on web, move to a stronger animation approach suitable for React Native + web. Prioritize actual smoothness over minimal code change.
+
+IMPORTANT:
+Reconsider the in-card ghost/undo pattern.
+If that pattern is causing drag and visual clutter, replace it with something better:
+- a floating snackbar/toast
+- a pinned undo bar
+- or another lightweight undo affordance that does not hold the old card in the stack
+
+PART 3 — CONFIDENCE SIGNALING
+I want the recommendation stack to communicate confidence clearly.
+
+Please inspect the existing recommendation scoring and expose a confidence tier per card.
+
+Desired behavior:
+- top recommendations should clearly read as strongest fit
+- middling recommendations should feel solid but secondary
+- lower-confidence recommendations should feel exploratory, not random
+
+Possible presentation:
+- High confidence: “Best match” / “Top pick”
+- Medium confidence: “Good fit”
+- Low confidence: “Explore” / “Stretch pick”
+
+Requirements:
+1. Confidence should be computed from actual scoring/ranking output, not hardcoded by position alone
+2. The UI should make the tier visible without clutter
+3. The visible stack should ideally be ordered with strongest confidence first
+4. If useful, subtly group or label transitions in the queue so users understand why later cards may be less certain
+
+PART 4 — DEBUG / LOGGING
+Add logs so we can verify this is behaving as intended:
+- [REC_QUEUE] visible_count=... queue_count=... appended=... watermark_hit=true/false
+- [REC_MOTION] action=... phase=confirm|exit|reflow|settled duration_ms=...
+- [REC_CONFIDENCE] card_id=... score=... tier=high|medium|low
+- [REC_REPLENISH] trigger=watermark|tab_open|exhaustion_bypass appended_count=...
+
+SUCCESS CRITERIA
+- Acting on a card feels smooth, slower, and continuous
+- No snapping motions
+- The outgoing card exits cleanly
+- The next card advances naturally
+- Lower modules glide rather than jump
+- Undo/confirmation does not clog the stack
+- New recommendations feed in from the bottom before the visible deck is exhausted
+- The tab no longer feels like a 4-card batch that resets
+- Users can easily tell which suggestions are strongest vs middling vs exploratory
+
+Before changing code:
+Please explain:
+1. whether the current architecture is effectively batch-based
+2. why replacements only feel visible after the stack is mostly cleared
+3. whether the current ghost/undo pattern is contributing to clunk
+Then implement surgically.

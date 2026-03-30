@@ -1184,10 +1184,8 @@ function RecCard({
   book,
   isExpert          = false,
   featured          = false,
-  isPendingDismiss  = false,
   onSave            = () => {},
   onDismiss         = () => {},
-  onDismissUndo     = () => {},
   onMoreLikeThis    = () => {},
   onImpression      = () => {},
   onExplanationOpen = () => {},
@@ -1195,10 +1193,8 @@ function RecCard({
   book:               ScoredBook;
   isExpert?:          boolean;
   featured?:          boolean;
-  isPendingDismiss?:  boolean;
   onSave?:            () => void;
   onDismiss?:         () => void;
-  onDismissUndo?:     () => void;
   onMoreLikeThis?:    () => void;
   onImpression?:      () => void;
   onExplanationOpen?: () => void;
@@ -1222,6 +1218,7 @@ function RecCard({
     if (!impressionFired.current) {
       impressionFired.current = true;
       onImpression();
+      if (__DEV__) console.log('[REC_CONFIDENCE]', `book_id=${book.id}`, `score=${book.score}`, `tier=${book.confidence}`);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1366,69 +1363,6 @@ function RecCard({
   // Behavior-driven explanation — series > author affinity > generic fallback
   const collapsedReason = buildExplanation(book, hasSeriesMeta);
 
-  // ── Undo overlay — card stays full-height during the undo window (no layout jump) ──
-  // The ghost view preserves the natural card height; the overlay sits on top.
-  if (isPendingDismiss) {
-    return (
-      <Animated.View style={{
-        opacity,
-        backgroundColor: '#fafaf9',
-        borderRadius: 14,
-        marginBottom: 8,
-        shadowColor: '#000',
-        shadowOpacity: featured ? 0.07 : 0.04,
-        shadowRadius: featured ? 10 : 6,
-        shadowOffset: { width: 0, height: featured ? 2 : 1 },
-        elevation: featured ? 2 : 1,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: '#e7e5e4',
-      }}>
-        {/* Invisible ghost — preserves exact card height without reflowing siblings */}
-        <View style={{ opacity: 0, padding: 12, flexDirection: 'row', alignItems: 'flex-start' }}>
-          <View style={{
-            width: featured ? 52 : 44,
-            height: featured ? 76 : 64,
-            backgroundColor: '#e7e5e4',
-            borderRadius: 4,
-          }} />
-          <View style={{ flex: 1, marginLeft: 12, height: featured ? 76 : 64 }} />
-        </View>
-        {/* Action bar ghost */}
-        <View style={{ height: 43, opacity: 0, borderTopWidth: 1, borderTopColor: '#f0eeeb' }} />
-
-        {/* Undo overlay — covers the ghost, no height change to surrounding layout */}
-        <View style={{
-          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-          justifyContent: 'center',
-          paddingHorizontal: 16,
-          gap: 6,
-        }}>
-          <Text style={{ fontSize: 13, fontWeight: '600', color: '#57534e' }} numberOfLines={1}>
-            "{book.title}"
-          </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <Text style={{ flex: 1, fontSize: 12, color: '#a8a29e' }}>
-              Skipped
-            </Text>
-            <TouchableOpacity
-              onPress={onDismissUndo}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              style={{
-                backgroundColor: '#f5f5f4',
-                borderRadius: 8,
-                paddingHorizontal: 12,
-                paddingVertical: 6,
-              }}
-            >
-              <Text style={{ fontSize: 12, fontWeight: '700', color: '#1c1917' }}>Undo</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Animated.View>
-    );
-  }
-
   return (
     <Animated.View style={{
       opacity,
@@ -1470,11 +1404,29 @@ function RecCard({
             {book.title}
           </Text>
 
-          {/* Author + expert badge */}
+          {/* Author + confidence badge + expert badge */}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 6 }}>
             <Text style={{ fontSize: 12, color: '#78716c', flex: 1 }} numberOfLines={1}>
               {book.author}
             </Text>
+            {/* Confidence tier pill */}
+            {(() => {
+              const tier  = book.confidence;
+              const label = tier === 'high' ? 'Top pick' : tier === 'medium' ? 'Good fit' : 'Explore';
+              const bg    = tier === 'high' ? '#f0fdf4' : tier === 'medium' ? '#f8f8f7' : '#fafaf9';
+              const col   = tier === 'high' ? '#15803d' : tier === 'medium' ? '#57534e' : '#a8a29e';
+              const bord  = tier === 'high' ? '#bbf7d0' : tier === 'medium' ? '#e7e5e4' : '#e7e5e4';
+              return (
+                <View style={{
+                  backgroundColor: bg, borderWidth: 1, borderColor: bord,
+                  borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2,
+                }}>
+                  <Text style={{ fontSize: 9, fontWeight: '700', color: col, letterSpacing: 0.3 }}>
+                    {label.toUpperCase()}
+                  </Text>
+                </View>
+              );
+            })()}
             {isExpert && (
               <View style={{
                 backgroundColor: '#1c1917', borderRadius: 4,
@@ -1773,8 +1725,7 @@ function _cancelPendingUndo(book: ScoredBook): void {
 // ── Pending dismiss record (cross-session persistent) ─────────────────────────
 //
 // Module-level so it survives tab switches.  When loadHub re-runs on revisit,
-// filterActedOn removes the book from inbound arrays (via _pendingUndoIds), then
-// rehydratePendingDismiss re-injects it so the in-card undo row keeps rendering.
+// filterActedOn removes the dismissed book from inbound arrays (via _pendingUndoIds).
 // reapplyPendingDismiss (inside the screen component) restarts the countdown timer
 // for the remaining window and returns the DismissPendingState for setDismissPending.
 type PendingDismissRecord = {
@@ -1845,24 +1796,53 @@ function applyPageSize(
   };
 }
 
-// Re-injects the pending-dismiss book into arrays after filterActedOn removed it.
-// Pure — caller applies page size and timer restart separately.
-function rehydratePendingDismiss(
-  conts: ScoredBook[],
-  discs: ScoredBook[],
-): { conts: ScoredBook[]; discs: ScoredBook[] } {
-  if (!_pendingDismissRecord) return { conts, discs };
-  if (Date.now() >= _pendingDismissRecord.expiresAt) return { conts, discs };
-  const { book, bucket } = _pendingDismissRecord;
-  if (conts.some(b => b.id === book.id) || discs.some(b => b.id === book.id)) {
-    return { conts, discs };
-  }
-  return bucket === 'continuations'
-    ? { conts: [book, ...conts], discs }
-    : { conts, discs: [book, ...discs] };
+// ── UndoToast ─────────────────────────────────────────────────────────────────
+// Floating snackbar shown after a dismiss. Replaces the in-card ghost row.
+// Slides up from below with a brief fade. Unmounts when dismissPending → null.
+function UndoToast({ book, onUndo }: { book: ScoredBook; onUndo: () => void }) {
+  const translateY = useRef(new Animated.Value(10)).current;
+  const fadeIn     = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(translateY, { toValue: 0, duration: 220, useNativeDriver: true }),
+      Animated.timing(fadeIn,     { toValue: 1, duration: 180, useNativeDriver: true }),
+    ]).start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <Animated.View style={{
+      opacity: fadeIn,
+      transform: [{ translateY }],
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: '#1c1917',
+      borderRadius: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      marginBottom: 8,
+      gap: 8,
+    }}>
+      <Text style={{ flex: 1, fontSize: 12, color: '#a8a29e' }} numberOfLines={1}>
+        Skipped{' '}
+        <Text style={{ color: '#e7e5e4', fontWeight: '600' }}>"{book.title}"</Text>
+      </Text>
+      <TouchableOpacity
+        onPress={onUndo}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        style={{
+          backgroundColor: '#292524',
+          borderRadius: 6,
+          paddingHorizontal: 10,
+          paddingVertical: 5,
+        }}
+      >
+        <Text style={{ fontSize: 12, fontWeight: '700', color: '#faf9f7' }}>Undo</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
 }
 
-// React state — which card currently shows the in-card undo row.
+// React state — which book has an active undo window (drives UndoToast).
 // Timer ownership lives in _pendingDismissRecord (persists across tab switches).
 type DismissPendingState = {
   book: ScoredBook;
@@ -2054,20 +2034,25 @@ export default function RecommendationsScreen() {
   }
 
   // ── Deck replenishment ────────────────────────────────────────────────────
-  // When the visible deck empties entirely after user actions (save/dismiss/
-  // more-like-this), automatically trigger a fresh recommendation run so the
-  // surface never sits permanently blank.  Fires only once per empty event
-  // (guarded by loading flags) and uses the OL session cache so it's fast.
+  // When the visible deck drops to 3 or fewer cards after user actions (save/
+  // dismiss/more-like-this), proactively start a fresh recommendation run in
+  // the background so new cards are ready before the deck runs dry.
+  // Watermark of 3 gives the pipeline ~2–3 actions of lead time.
   useEffect(() => {
     const total = continuations.length + discoveries.length;
     if (
-      total <= 1 &&
+      total <= 3 &&
       !recsLoading &&
       !isBackgroundRefreshing &&
       currentUserId &&
       tasteProfile &&
       tasteProfile.tier >= 1
     ) {
+      if (__DEV__) console.log('[REC_REPLENISH]',
+        `trigger=watermark`,
+        `| visible=${total}`,
+        `| watermark=3`,
+      );
       reloadRecs(nextReadIntent);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2384,11 +2369,7 @@ export default function RecommendationsScreen() {
     const timerId = setTimeout(() => {
       if (!_pendingDismissRecord || _pendingDismissRecord.book.id !== book.id) return;
       _pendingDismissRecord = null;
-      const bookFilter = (b: ScoredBook) => b.id !== book.id;
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setRecommendations(p => p.filter(bookFilter));
-      setContinuations(p   => p.filter(bookFilter));
-      setDiscoveries(p     => p.filter(bookFilter));
+      // Arrays were already updated when the dismiss first fired; just commit.
       setDismissPending(null);
       _commitPendingToActedOn(uid, book);
       if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', 'status=committed', `| book_id=${book.id}`, `| external_id=${book.external_id ?? 'none'}`);
@@ -2512,10 +2493,8 @@ export default function RecommendationsScreen() {
         `| acted_on=${_actedOnIds.size}`,
         `| pending_undo=${_pendingUndoIds.size}`,
       );
-      // Re-inject pending-dismiss book if still within undo window (Issue 1)
-      const { conts: _crPDConts, discs: _crPDDiscs } = rehydratePendingDismiss(_crConts, _crDiscs);
-      // Limit initial display to DECK_PAGE_SIZE (Issue 2)
-      const { conts: _crPSConts, discs: _crPSDiscs } = applyPageSize(_crPDConts, _crPDDiscs);
+      // Limit initial display to DECK_PAGE_SIZE
+      const { conts: _crPSConts, discs: _crPSDiscs } = applyPageSize(_crConts, _crDiscs);
       setRecommendations(_crRecs);
       setContinuations(_crPSConts);
       setDiscoveries(_crPSDiscs);
@@ -2889,9 +2868,8 @@ export default function RecommendationsScreen() {
         `| acted_on=${_actedOnIds.size}`,
         `| pending_undo=${_pendingUndoIds.size}`,
       );
-      // Re-inject pending-dismiss book (Issue 1) + apply page size (Issue 2)
-      const { conts: _bgPDConts, discs: _bgPDDiscs } = rehydratePendingDismiss(_bgConts, _bgDiscs);
-      const { conts: _bgPSConts, discs: _bgPSDiscs } = applyPageSize(_bgPDConts, _bgPDDiscs);
+      // Apply page size cap to background-refresh results
+      const { conts: _bgPSConts, discs: _bgPSDiscs } = applyPageSize(_bgConts, _bgDiscs);
       setRecommendations(_bgRecs);
       setContinuations(_bgPSConts);
       setDiscoveries(_bgPSDiscs);
@@ -3159,9 +3137,8 @@ export default function RecommendationsScreen() {
         `| pending_undo=${_pendingUndoIds.size}`,
         `| exhaustion_bypass=${!!opts?.exhaustionBypass}`,
       );
-      // Re-inject pending-dismiss book (Issue 1) + apply page size (Issue 2)
-      const { conts: _rrPDConts, discs: _rrPDDiscs } = rehydratePendingDismiss(_rrConts, _rrDiscs);
-      const { conts: _rrPSConts, discs: _rrPSDiscs } = applyPageSize(_rrPDConts, _rrPDDiscs);
+      // Apply page size cap to reloaded results
+      const { conts: _rrPSConts, discs: _rrPSDiscs } = applyPageSize(_rrConts, _rrDiscs);
       setRecommendations(_rrRecs);
       setContinuations(_rrPSConts);
       setDiscoveries(_rrPSDiscs);
@@ -3380,23 +3357,12 @@ export default function RecommendationsScreen() {
     _pendingDismissRecord = { book, bucket, expiresAt, timerId: null };
 
     // ── Undo window timer ─────────────────────────────────────────────────────
-    // Timer fires → remove card from arrays and promote pending → committed.
+    // Timer fires → promote pending → committed.  Arrays already updated below.
     const _sb  = supabase!;
     const _uid = currentUserId!;
     const timerId = setTimeout(() => {
       if (!_pendingDismissRecord || _pendingDismissRecord.book.id !== book.id) return;
       _pendingDismissRecord = null;
-      const bookFilter = (b: ScoredBook) => b.id !== book.id;
-      if (__DEV__) console.log('[REC_DECK_TRANSITION]',
-        'action=dismiss',
-        `| before_count=${continuations.length + discoveries.length}`,
-        `| after_count=${continuations.filter(bookFilter).length + discoveries.filter(bookFilter).length}`,
-        '| animated=true',
-      );
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setRecommendations(p => p.filter(bookFilter));
-      setContinuations(p   => p.filter(bookFilter));
-      setDiscoveries(p     => p.filter(bookFilter));
       setDismissPending(null);
       _commitPendingToActedOn(_uid, book);
       if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', 'status=committed', `| book_id=${book.id}`, `| external_id=${book.external_id ?? 'none'}`);
@@ -3411,38 +3377,49 @@ export default function RecommendationsScreen() {
 
     _pendingDismissRecord.timerId = timerId;
 
-    // ── Backfill: promote one next-eligible book so deck depth is maintained ──
-    // Compute shown set: all current cards except the dismissed one (which becomes
-    // the undo row and shouldn't be its own replacement).
-    const shown = new Set<string>();
-    for (const b of continuations) {
-      if (b.id !== book.id) { shown.add(b.id); if (b.external_id) shown.add(b.external_id); }
-    }
-    for (const b of discoveries) {
-      if (b.id !== book.id) { shown.add(b.id); if (b.external_id) shown.add(b.external_id); }
-    }
-    shown.add(book.id);
-    if (book.external_id) shown.add(book.external_id);
-    const next = nextEligibleFromSession(shown);
+    // ── Remove card immediately + backfill (replaces ghost approach) ──────────
+    // Card exits via animation before this runs; remove it from arrays and
+    // promote one next-eligible book so deck depth is maintained.
+    const bookFilter   = (b: ScoredBook) => b.id !== book.id;
+    const filteredConts = continuations.filter(bookFilter);
+    const filteredDiscs = discoveries.filter(bookFilter);
+    const { conts: newConts, discs: newDiscs } = appendNextEligible(filteredConts, filteredDiscs);
+    if (__DEV__) console.log('[REC_DECK_TRANSITION]',
+      'action=dismiss',
+      `| before_count=${continuations.length + discoveries.length}`,
+      `| after_count=${newConts.length + newDiscs.length}`,
+      '| animated=true',
+    );
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    if (next) {
-      if (bucketForBook(next) === 'continuations') setContinuations(prev => [...prev, next]);
-      else                                          setDiscoveries(prev   => [...prev, next]);
-    }
+    setRecommendations(prev => prev.filter(bookFilter));
+    setContinuations(newConts);
+    setDiscoveries(newDiscs);
+    if (__DEV__) console.log('[REC_QUEUE]',
+      `visible_count=${newConts.length + newDiscs.length}`,
+      `| action=dismiss`,
+      `| book_id=${book.id}`,
+    );
 
+    // Show undo toast (replaces in-card ghost row)
     setDismissPending({ book });
   }
 
   function handleRecDismissUndo() {
     if (!_pendingDismissRecord) return;
     if (_pendingDismissRecord.timerId) clearTimeout(_pendingDismissRecord.timerId);
-    const { book } = _pendingDismissRecord;
+    const { book, bucket } = _pendingDismissRecord;
     _pendingDismissRecord = null;
-    setDismissPending(null);
     // Remove from pending-undo set so filterActedOn no longer excludes the card
     _cancelPendingUndo(book);
+    setDismissPending(null);
+    // Re-insert the card into the deck (it was removed immediately on dismiss)
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    if (bucket === 'continuations') {
+      setContinuations(prev => [book, ...prev]);
+    } else {
+      setDiscoveries(prev => [book, ...prev]);
+    }
     if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', 'status=undone', `| book_id=${book.id}`, `| external_id=${book.external_id ?? 'none'}`);
-    // No re-insert needed: card was never removed from its array
   }
 
   function handleRecMoreLikeThis(book: ScoredBook) {
@@ -3895,10 +3872,8 @@ export default function RecommendationsScreen() {
                           book={rec}
                           featured={idx === 0}
                           isExpert={recMode === 'expert'}
-                          isPendingDismiss={dismissPending?.book.id === rec.id}
                           onSave={() => handleRecSave(rec)}
                           onDismiss={() => handleRecDismiss(rec)}
-                          onDismissUndo={dismissPending?.book.id === rec.id ? handleRecDismissUndo : undefined}
                           onMoreLikeThis={() => handleRecMoreLikeThis(rec)}
                           onImpression={() => handleRecImpression(rec)}
                           onExplanationOpen={() => handleRecExplanationOpen(rec)}
@@ -3937,16 +3912,22 @@ export default function RecommendationsScreen() {
                           book={rec}
                           featured={idx === 0 && continuations.length === 0}
                           isExpert={recMode === 'expert'}
-                          isPendingDismiss={dismissPending?.book.id === rec.id}
                           onSave={() => handleRecSave(rec)}
                           onDismiss={() => handleRecDismiss(rec)}
-                          onDismissUndo={dismissPending?.book.id === rec.id ? handleRecDismissUndo : undefined}
                           onMoreLikeThis={() => handleRecMoreLikeThis(rec)}
                           onImpression={() => handleRecImpression(rec)}
                           onExplanationOpen={() => handleRecExplanationOpen(rec)}
                         />
                       ))}
                     </>
+                  )}
+
+                  {/* ── Undo toast — floating snackbar after dismiss ── */}
+                  {dismissPending && (
+                    <UndoToast
+                      book={dismissPending.book}
+                      onUndo={handleRecDismissUndo}
+                    />
                   )}
 
                 </View>
