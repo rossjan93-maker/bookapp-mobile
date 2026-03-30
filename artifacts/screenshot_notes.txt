@@ -1,0 +1,11 @@
+Observed issues:
+- Home highlight is still vague
+- Recommendations step shows skeletons but copy says "Your picks"
+- Library step still highlights a generic area
+- Inbox/Profile are still not intentionally handled
+
+What must be true:
+- highlighted target must be a real measured component
+- copy and target must match
+- no walkthrough step over unloaded content
+- theme must stay native to app

@@ -1,0 +1,25 @@
+{
+  "status": "revise_prompt",
+  "summary": "Walkthrough fixes are not verified and current evidence still shows core UX failures: vague/non-real targets, mismatched copy over skeletons, missing Inbox/Profile handling, and no successful build/runtime proof.",
+  "passed_gates": [],
+  "failing_gates": [
+    "Build gate failed: `npm run build` is missing and no alternative successful build evidence was provided",
+    "Runtime evidence missing: no usable Replit implementation summary, no per-step screenshot/video proof, no readiness-gating explanation",
+    "Home step still highlights a vague region instead of a specific measured component",
+    "Recommendations step is incorrect: skeletons are shown while copy says \"Your picks\"",
+    "Library step still highlights a generic area instead of a real measured component",
+    "Inbox and Profile are not intentionally handled or explicitly excluded with rationale",
+    "Required behavior unmet: walkthrough steps must wait for visible/measured real UI before firing",
+    "UX gate unmet: copy and highlighted target do not reliably match",
+    "UX gate unmet: overlay/targeting still appears generic rather than product-led and native"
+  ],
+  "changed_files_to_review": [
+    ".replit",
+    "artifacts/replit_output.txt",
+    "artifacts/screenshot_notes.txt",
+    "artifacts/extra_context.txt",
+    "TASK.md"
+  ],
+  "confidence": 0.98,
+  "next_prompt": "You did not provide acceptable evidence and the walkthrough still fails the product requirements. Revise the walkthrough implementation and return concrete proof.\n\nGoal:\nFix the in-app walkthrough so every step teaches the app using a specific real measured UI component, never a vague region, and never unloaded/skeleton content.\n\nNon-negotiable requirements:\n- Every walkthrough step must target a specific real rendered component that exists on screen and has measured bounds.\n- Do not show a step until that target is visible and measured.\n- No generic rectangular area highlights when a real element can be targeted.\n- Home, Recommendations, Library, Inbox, and Profile must each be intentionally handled.\n- Recommendations must highlight either:\n  1) a real recommendation card, or\n  2) the real setup/import prompt.\n  If neither exists yet, the Recommendations step must wait and must not show \"Your picks\" over skeletons/placeholders.\n- Copy must exactly match what is visibly highlighted.\n- Keep overlay styling on-brand with the existing app theme. No off-brand accent colors.\n- Continue / Skip / progression must work with no dead ends.\n\nSpecific issues to fix from current result:\n- Home highlight is still vague: replace it with a specific measured Home UI component.\n- Library step still highlights a generic area: replace with a specific measured Library component.\n- Recommendations currently shows skeletons while copy says \"Your picks\": fix gating and copy so this never happens.\n- Inbox/Profile are still not intentionally handled: either include real targeted steps for both, or explicitly exclude one/both with product rationale in code comments and in your summary.\n\nImplementation expectations:\n- Use refs / layout measurement / visibility checks so steps only activate when the actual target is mounted, visible, and measured.\n- If a target is not ready, the walkthrough must pause or defer that step instead of highlighting an approximate region.\n- Ensure tab sequencing waits for the destination screen/component to be ready before advancing.\n- If welcome/intro handoff affects correctness, adjust it only as needed.\n\nReturn all of the following in your response:\n1) Changed files summary with exact files modified.\n2) For each walkthrough step (Home, Recommendations, Library, Inbox, Profile), specify:\n   - exact component highlighted\n   - exact copy shown\n   - how readiness gating works\n   - what happens if the target is absent/loading\n3) Build/runtime evidence:\n   - the correct validation command(s) for this repo and their output\n   - if `npm run build` is not valid for this project, identify the proper command and run it\n   - include any runtime/test output relevant to walkthrough flow\n4) Screenshot or video notes for each step proving:\n   - the visible real component being highlighted\n   - no skeleton/placeholder mismatch\n   - overlay styling remains native to the app\n5) Brief note confirming Continue / Skip / progression behavior and that there are no dead-end states.\n\nDo not claim success from compilation alone. Do not return until the evidence demonstrates the above requirements are actually met."
+}

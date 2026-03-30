@@ -793,7 +793,11 @@ export default function RecommendationsScreen() {
 
   useEffect(() => {
     if (hubLoading || wtStep !== 'recommend' || step !== 'hub') return;
-    const t = setTimeout(measureRecommendContent, 120);
+    // 1 800 ms gives RecommendationsFeed time to finish its own internal data
+    // fetch and show real cards (or the setup/import prompt) instead of skeletons.
+    // hubLoading=false only means hub hub-level data is ready; the rec feed still
+    // needs its own async pass to hydrate from the rec session.
+    const t = setTimeout(measureRecommendContent, 1800);
     return () => clearTimeout(t);
   }, [hubLoading, wtStep, step]);
 
@@ -816,7 +820,7 @@ export default function RecommendationsScreen() {
   const entryChecked = useRef(false);
   useEffect(() => {
     if (wtStep === null) return;             // still loading — wait
-    if (wtStep === 'home' || wtStep === 'recommend' || wtStep === 'library') return; // tour in progress
+    if (wtStep === 'home' || wtStep === 'recommend' || wtStep === 'library' || wtStep === 'inbox') return; // tour in progress
     if (entryChecked.current) return;
     entryChecked.current = true;
 

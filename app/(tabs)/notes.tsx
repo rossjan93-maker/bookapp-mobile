@@ -292,17 +292,36 @@ export default function InboxScreen() {
             </Text>
             <Text style={{ fontSize: 14, color: '#a8a29e' }}>Your recommendations from friends</Text>
           </View>
-          <View
-            ref={inboxTargetRef}
-            style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }}
-            onLayout={measureInboxContent}
-          >
-            <Text style={{ fontSize: 17, fontWeight: '700', color: '#1c1917', marginBottom: 8, textAlign: 'center' }}>
-              Nothing here yet
-            </Text>
-            <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
-              When a friend recommends a book,{'\n'}it will show up here.
-            </Text>
+          {/* Flex wrapper keeps the card vertically centred; the ref is on the
+              specific white card so measureInWindow returns a human-sized rect
+              (not a full-screen flex container that would make the spotlight
+              cover the entire screen). */}
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 0, paddingTop: 40 }}>
+            <View
+              ref={inboxTargetRef}
+              onLayout={measureInboxContent}
+              style={{
+                width: '100%',
+                backgroundColor: '#fff',
+                borderRadius: 16,
+                padding: 28,
+                alignItems: 'center',
+                shadowColor: '#000',
+                shadowOpacity: 0.05,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 2 },
+                elevation: 2,
+                borderWidth: 1,
+                borderColor: '#e7e5e4',
+              }}
+            >
+              <Text style={{ fontSize: 17, fontWeight: '700', color: '#1c1917', marginBottom: 8, textAlign: 'center' }}>
+                Nothing here yet
+              </Text>
+              <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
+                When a friend recommends a book,{'\n'}it will show up here.
+              </Text>
+            </View>
           </View>
         </>
       )}

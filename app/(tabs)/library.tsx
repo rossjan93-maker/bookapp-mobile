@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchGoogleBooksCoverUrl } from '../../lib/googleBooks';
 import { repairBooksMetadata } from '../../lib/metadataRepair';
 import { registerCacheClearer } from '../../lib/tabCache';
@@ -11,6 +11,7 @@ import { computePagePacing, computeDatePacing, formatLastUpdated, computeBookPac
 import { transitionStatus, saveCurrentPage } from '../../lib/userBookActions';
 import { findSeriesForBook } from '../../lib/seriesCatalog';
 import { triggerRecPrewarm } from '../../lib/recPrewarm';
+import { registerWtTarget, useWalkthrough } from '../../lib/walkthroughEngine';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -170,6 +171,29 @@ export default function LibraryScreen() {
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
   const [hasGoodreadsImport, setHasGoodreadsImport] = useState<boolean | null>(() => _libCache?.hasGoodreadsImport ?? null);
   const [refreshing, setRefreshing] = useState(false);
+
+  // ── Walkthrough target measurement ──────────────────────────────────────────
+  // Measures the FlatList header (title + filter bar) once loading completes.
+  // The overlay polls getWtTarget('library_content') and uses this rect to
+  // position the spotlight aperture over the real library UI.
+  // Profile was excluded from the walkthrough; library is the last list screen.
+
+  const { wtStep } = useWalkthrough();
+  const libTargetRef = useRef<any>(null);
+
+  function measureLibContent() {
+    libTargetRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
+      if (w > 0 && h > 0) {
+        registerWtTarget('library_content', { x, y, width: w, height: h });
+      }
+    });
+  }
+
+  useEffect(() => {
+    if (loading || wtStep !== 'library') return;
+    const t = setTimeout(measureLibContent, 120);
+    return () => clearTimeout(t);
+  }, [loading, wtStep]);
 
   // Background cover enrichment for any book in this library load with no
   // cover_url. Fails quietly; updates local state as each cover resolves.
@@ -638,7 +662,7 @@ export default function LibraryScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
       }
       ListHeaderComponent={
-        <View>
+        <View ref={libTargetRef} onLayout={measureLibContent}>
           {/* ── Editorial header ── */}
           <View style={{
             flexDirection: 'row',

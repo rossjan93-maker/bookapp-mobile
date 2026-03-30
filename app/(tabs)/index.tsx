@@ -978,7 +978,13 @@ export default function HomeScreen() {
       )}
 
       {/* ── 2. Timeline (self + network activity) ── */}
-      <View style={{ marginBottom: 32 }}>
+      {/* Fallback WT ref: new users have no current reads and no yearly goal, so the
+          Timeline section is the first real loaded element on screen for them. */}
+      <View
+        ref={(!currentReads.length && !(yearlyGoal && yearlyGoal > 0)) ? homeTargetRef : undefined}
+        style={{ marginBottom: 32 }}
+        onLayout={(!currentReads.length && !(yearlyGoal && yearlyGoal > 0)) ? measureHomeContent : undefined}
+      >
         <SectionLabel>Timeline</SectionLabel>
 
         {/* Pending recs banner — surfaces above the event stream */}
