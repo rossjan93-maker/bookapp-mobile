@@ -33,6 +33,7 @@ import type { FeedbackContext } from '../../lib/recFeedback';
 import { getEntitlement } from '../../lib/recEntitlement';
 import type { RecEntitlement } from '../../lib/recEntitlement';
 import { useGuidedTour } from '../../components/OnboardingWalkthrough';
+import { useWalkthrough, wtEvt_recStepReached } from '../../lib/walkthroughEngine';
 import { getRecSession, clearRecSession } from '../../lib/recSession';
 import { registerCacheClearer } from '../../lib/tabCache';
 import { RecommendationsFeed } from '../../components/RecommendationsFeed';
@@ -744,6 +745,7 @@ async function hasPersonalizationSignal(userId: string): Promise<boolean> {
 export default function RecommendationsScreen() {
   const router = useRouter();
   const { step: guidedStep, advance: advanceGuided } = useGuidedTour();
+  const { wtStep, advance: advanceWt } = useWalkthrough();
   const [step, setStep] = useState<Step>('hub');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
@@ -781,14 +783,25 @@ export default function RecommendationsScreen() {
     if (step === 'hub') loadHub();
   }, [step]));
 
-  // ── Recommendations entry check (runs once on first mount) ────────────────
-  // If the user has no personalization signal AND hasn't made a choice yet,
-  // show the entry experience instead of the empty hub.
+  // ── Recommendations entry check ────────────────────────────────────────────
+  // Shows RecEntryScreen when:
+  //   (a) The user is at the walkthrough 'recommend' step (guided tour routed them here), OR
+  //   (b) The user has no personalization signal and hasn't made a rec-entry choice yet.
+  // Waits for walkthrough state to load (wtStep === null means still loading).
   const entryChecked = useRef(false);
   useEffect(() => {
+    if (wtStep === null) return;             // still loading — wait
     if (entryChecked.current) return;
     entryChecked.current = true;
+
     async function maybeShowEntry() {
+      // Guided walkthrough has navigated the user here contextually
+      if (wtStep === 'recommend') {
+        wtEvt_recStepReached();
+        setStep('entry');
+        return;
+      }
+      // Fallback for existing / non-walkthrough users
       if (!supabase) return;
       const seen = await hasSeenRecEntry();
       if (seen) return;
@@ -798,7 +811,7 @@ export default function RecommendationsScreen() {
       if (!hasSignal) setStep('entry');
     }
     maybeShowEntry();
-  }, []);
+  }, [wtStep]);
 
   async function handleRefresh() {
     if (step !== 'hub') return;
@@ -1334,6 +1347,8 @@ export default function RecommendationsScreen() {
       <SafeAreaView style={{ flex: 1, backgroundColor: '#faf9f7' }}>
         <RecEntryScreen
           onDone={() => {
+            // If the user arrived here via the guided walkthrough, mark it done
+            if (wtStep === 'recommend') advanceWt();
             setStep('hub');
             loadHub();
           }}

@@ -1,0 +1,137 @@
+The current onboarding direction is still wrong.
+
+I do NOT want onboarding to be primarily a sequence of welcome/info screens.
+The welcome screens are fine as a brief intro, but the real guided experience needs to happen inside the actual app shell.
+
+What I want:
+After signup, the user should be brought through the live app itself with highlighted hotspots / coach marks / spotlighted UI regions that explain what each area does and how navigation works.
+
+This needs to operate at the product navigation level, not just as a pre-app slideshow.
+
+Product principle:
+Welcome briefly -> enter the real app -> guided in-app walkthrough -> contextual personalization when relevant
+
+What is wrong with the current implementation:
+- it is still screen-based, not app-shell-based
+- it explains the app without actually guiding the user through the real interface
+- it does not progress through the actual navigation experience I want
+- it still treats onboarding as a detached flow instead of a layer on top of the real product
+
+What I want instead:
+
+PHASE 1 — Brief welcome
+A very short intro is fine.
+This can be 1–2 screens max.
+Its job is only to welcome the user and set expectation.
+Then get them into the actual app.
+
+PHASE 2 — Guided in-app walkthrough
+Once inside the app shell, I want a real guided tour that:
+- highlights actual tabs and regions of the interface
+- uses spotlight / dimmed-overlay / coach-mark patterns
+- explains what each area is for
+- progresses as the user interacts with the real app
+- feels like guided navigation, not passive slides
+
+Examples of what I mean:
+- highlight the Home/Library area and explain what lives there
+- highlight the Recommendations tab and explain how it improves with feedback
+- highlight tracking/progress/feed areas in the live UI
+- optionally highlight social/friends if relevant
+- use “hot button” behavior or guided taps to move the user through the actual app
+
+Critical requirement:
+The user should feel like they are being brought through the product itself.
+
+Recommendations-specific requirement:
+Do NOT force taste intake immediately after signup.
+When the guided walkthrough reaches Recommendations, that is where we introduce:
+- import from Goodreads / StoryGraph / etc.
+- lightweight taste setup
+- explore anyway
+
+So the sequence becomes:
+1. signup
+2. brief welcome
+3. enter real app shell
+4. guided walkthrough across real tabs/features
+5. when arriving at Recommendations, present personalization/import options contextually
+
+What I need from you before coding:
+1. Diagnose why the current implementation fails this requirement
+2. Propose the new architecture for an in-app walkthrough system
+3. Specify exact files/components/hooks/state you will create or replace
+4. Explain how walkthrough progression will work across tabs and live screens
+
+Architecture requirements:
+I want a real walkthrough engine, not ad hoc banners.
+
+Likely pieces:
+- walkthrough state machine / step registry
+- overlay / spotlight component
+- target registration system for UI anchors
+- tab-aware progression
+- step completion persistence
+- ability to programmatically navigate user to the relevant tab when a step advances
+- ability to require either “Next” or an actual tap on the highlighted target
+
+I want you to think through:
+- how targets register themselves
+- how the overlay knows where to point
+- how steps behave if layout isn’t ready yet
+- how to persist completion
+- how to skip / resume
+- how to prevent this from being brittle
+
+Design expectations:
+- premium, calm, polished
+- spotlight the live UI
+- minimal filler
+- not annoying
+- not a tooltip mess
+- should feel like the product is guiding me, not lecturing me
+
+Implementation requirements:
+1. Keep the brief welcome minimal
+2. Move the real guidance into the app shell
+3. Build spotlight/hotspot guidance for the real interface
+4. Make the walkthrough progress through actual app navigation
+5. Introduce recommendation personalization only when the user reaches Recommendations
+6. Keep import highly visible at that moment
+7. Instrument the walkthrough thoroughly
+
+Instrumentation I want:
+- walkthrough started
+- walkthrough step viewed
+- walkthrough step completed
+- walkthrough skipped
+- walkthrough finished
+- recommendations step reached
+- import CTA shown
+- import CTA clicked
+- quick intake started
+- quick intake skipped
+- explore anyway clicked
+
+What I do NOT want:
+- another screen-only onboarding flow
+- passive tutorial slides as the main guidance
+- detached explanation of tabs without using the real app
+- shallow patches to the current approach
+- weak Replit output that does not solve the actual interaction model
+
+Success criteria:
+- user enters the real app quickly
+- walkthrough highlights actual live UI regions
+- user is guided through navigation itself
+- recommendations setup appears contextually when the user reaches that part of the product
+- the whole thing feels like a real product tour, not a slideshow
+
+Before implementing:
+Please first read the current onboarding, tabs layout, guided-tour logic, and recommendations entry logic.
+Then give me:
+1. diagnosis of why current approach fails
+2. proposed new in-app walkthrough architecture
+3. implementation plan with exact components/hooks/state model
+
+Then implement.

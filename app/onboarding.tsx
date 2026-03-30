@@ -1,8 +1,15 @@
-import React, {
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+// ─── Welcome screens (Phase 1 of new-user flow) ───────────────────────────────
+//
+// 2 slides only. Job: welcome the user and set expectation.
+// Does NOT explain the app in detail — that happens via the in-app walkthrough.
+//
+// On completion:
+//   - Sets profiles.onboarding_completed = true
+//   - Writes walkthrough='home' to start the in-app tour
+//   - Arms the rec-feed action banner (guidedStep=0)
+//   - Navigates to '/' (home tab)
+
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Platform,
@@ -16,7 +23,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { writeGuidedStep } from '../components/OnboardingWalkthrough';
-import { wtStart, wtStepView, wtComplete, wtSkip, wtImportTapped } from '../lib/onboardingAnalytics';
+import { writeWtStep, wtEvt_started, wtEvt_stepViewed, wtEvt_stepCompleted, wtEvt_skipped } from '../lib/walkthroughEngine';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
@@ -24,48 +31,29 @@ const BG   = '#faf9f7';
 const INK  = '#1c1917';
 const SUB  = '#78716c';
 const BORD = '#e7e5e4';
-const GRN  = '#15803d';
 
-// ─── Slide definitions ────────────────────────────────────────────────────────
-//
-// 4 slides: what it is → how recs work → library → import.
-// No intake. No survey. Orientation only.
+// ─── Slides ───────────────────────────────────────────────────────────────────
 
 type Slide = {
   icon:     React.ComponentProps<typeof Ionicons>['name'];
   headline: string;
   body:     string;
-  accent:   string;
 };
 
 const SLIDES: Slide[] = [
   {
-    icon:     'sparkles-outline',
-    headline: 'Books that actually fit you',
-    body:     "readstack builds a picture of your taste from everything you read, rate, and react to \u2014 and uses it to surface books you\u2019d genuinely want to read.",
-    accent:   INK,
+    icon:     'book-outline',
+    headline: 'Welcome to readstack',
+    body:     "Your personal book companion. Track your reading, build your library, and get picks that actually match your taste.",
   },
   {
-    icon:     'layers-outline',
-    headline: 'Picks that improve over time',
-    body:     "Every book you save, dismiss, or rate teaches the engine something. Save what interests you. Dismiss what doesn\u2019t. The next batch will be sharper.",
-    accent:   GRN,
-  },
-  {
-    icon:     'library-outline',
-    headline: 'Your reading life, all in one place',
-    body:     "Log what you\u2019re reading now, mark what\u2019s finished, track your progress, write notes. Your library is the foundation the recommendations are built on.",
-    accent:   INK,
-  },
-  {
-    icon:     'cloud-download-outline',
-    headline: 'Already reading elsewhere?',
-    body:     'If you have a reading history on Goodreads or StoryGraph, import it — it\'s the fastest way to get strong recommendations from day one.',
-    accent:   GRN,
+    icon:     'trending-up-outline',
+    headline: 'It gets better as you read',
+    body:     "Every book you save, rate, or dismiss teaches readstack your taste. The more you use it, the sharper your recommendations get.",
   },
 ];
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function OnboardingScreen() {
   const router   = useRouter();
@@ -75,28 +63,25 @@ export default function OnboardingScreen() {
   const slide  = SLIDES[idx];
   const isLast = idx === SLIDES.length - 1;
 
-  useEffect(() => { wtStart(); }, []);
-  useEffect(() => { wtStepView(idx); }, [idx]);
-
-  // ── Animate between slides ─────────────────────────────────────────────────
+  useEffect(() => { wtEvt_started(); }, []);
+  useEffect(() => { wtEvt_stepViewed(`slide_${idx}` as any); }, [idx]);
 
   function goTo(next: number) {
-    Animated.timing(fadeAnim, { toValue: 0, duration: 90, useNativeDriver: true }).start(() => {
+    Animated.timing(fadeAnim, { toValue: 0, duration: 80, useNativeDriver: true }).start(() => {
       setIdx(next);
-      Animated.timing(fadeAnim, { toValue: 1, duration: 160, useNativeDriver: true }).start();
+      Animated.timing(fadeAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
     });
   }
 
-  // ── Complete walkthrough and enter the app ─────────────────────────────────
-
   async function finish() {
-    wtComplete();
+    wtEvt_stepCompleted(`slide_${idx}` as any);
     if (supabase) {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         await Promise.allSettled([
           supabase.from('profiles').update({ onboarding_completed: true }).eq('id', user.id),
-          writeGuidedStep(0), // arm the in-app action-prompt banner
+          writeGuidedStep(0),       // arm rec-feed action banner
+          writeWtStep('home'),      // start the in-app walkthrough at Home
         ]);
       }
     }
@@ -104,7 +89,7 @@ export default function OnboardingScreen() {
   }
 
   function handleSkip() {
-    wtSkip(idx);
+    wtEvt_skipped(`slide_${idx}` as any);
     finish();
   }
 
@@ -116,43 +101,28 @@ export default function OnboardingScreen() {
     }
   }
 
-  function handleImportNow() {
-    wtImportTapped();
-    // Mark walkthrough done first, then push to import
-    if (supabase) {
-      supabase.auth.getUser().then(({ data: { user } }) => {
-        if (user) {
-          supabase!.from('profiles').update({ onboarding_completed: true }).eq('id', user.id);
-          writeGuidedStep(0);
-        }
-      });
-    }
-    router.replace('/import/goodreads');
-  }
-
-  // ── Render ─────────────────────────────────────────────────────────────────
-
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: BG }}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Top bar — progress dots + Skip */}
+      {/* Top bar */}
       <View
         style={{
           paddingHorizontal: 20,
-          paddingTop: Platform.OS === 'android' ? 16 : 8,
-          paddingBottom: 12,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
+          paddingTop:        Platform.OS === 'android' ? 16 : 8,
+          paddingBottom:     12,
+          flexDirection:     'row',
+          alignItems:        'center',
+          justifyContent:    'space-between',
         }}
       >
+        {/* Progress dots */}
         <View style={{ flexDirection: 'row', gap: 6 }}>
           {SLIDES.map((_, i) => (
             <View
               key={i}
               style={{
-                width:           i === idx ? 22 : 6,
+                width:           i === idx ? 20 : 6,
                 height:          6,
                 borderRadius:    3,
                 backgroundColor: i <= idx ? INK : BORD,
@@ -161,77 +131,41 @@ export default function OnboardingScreen() {
           ))}
         </View>
         <TouchableOpacity onPress={handleSkip} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={{ fontSize: 14, color: SUB, fontWeight: '500' }}>Skip →</Text>
+          <Text style={{ fontSize: 14, color: SUB, fontWeight: '500' }}>Skip</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Slide content */}
+      {/* Slide */}
       <Animated.View
         style={{
-          flex: 1,
-          opacity: fadeAnim,
-          paddingHorizontal: 24,
-          justifyContent: 'center',
-          paddingBottom: 120,
+          flex:              1,
+          opacity:           fadeAnim,
+          paddingHorizontal: 26,
+          justifyContent:    'center',
+          paddingBottom:     120,
         }}
       >
-        {/* Icon */}
         <View
           style={{
-            width:           80,
-            height:          80,
-            borderRadius:    40,
-            backgroundColor: slide.accent + '12',
+            width:           72,
+            height:          72,
+            borderRadius:    36,
+            backgroundColor: INK + '10',
             alignItems:      'center',
             justifyContent:  'center',
-            marginBottom:    32,
+            marginBottom:    30,
           }}
         >
-          <Ionicons name={slide.icon} size={38} color={slide.accent} />
+          <Ionicons name={slide.icon} size={34} color={INK} />
         </View>
 
-        {/* Headline */}
-        <Text
-          style={{
-            fontSize:    28,
-            fontWeight:  '800',
-            color:       INK,
-            lineHeight:  34,
-            marginBottom: 16,
-          }}
-        >
+        <Text style={{ fontSize: 30, fontWeight: '800', color: INK, lineHeight: 36, marginBottom: 14 }}>
           {slide.headline}
         </Text>
 
-        {/* Body */}
-        <Text
-          style={{
-            fontSize:   16,
-            color:      SUB,
-            lineHeight: 24,
-          }}
-        >
+        <Text style={{ fontSize: 16, color: SUB, lineHeight: 25 }}>
           {slide.body}
         </Text>
-
-        {/* Import CTA — only on last slide */}
-        {isLast && (
-          <TouchableOpacity
-            onPress={handleImportNow}
-            activeOpacity={0.8}
-            style={{
-              marginTop:       32,
-              backgroundColor: GRN,
-              borderRadius:    14,
-              paddingVertical: 15,
-              alignItems:      'center',
-            }}
-          >
-            <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
-              Import my library →
-            </Text>
-          </TouchableOpacity>
-        )}
       </Animated.View>
 
       {/* Bottom CTA */}
@@ -257,7 +191,7 @@ export default function OnboardingScreen() {
           }}
         >
           <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
-            {isLast ? 'Get started →' : 'Next →'}
+            {isLast ? 'Get started \u2192' : 'Next \u2192'}
           </Text>
         </TouchableOpacity>
       </View>

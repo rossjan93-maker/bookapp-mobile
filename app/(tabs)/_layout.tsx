@@ -9,10 +9,20 @@ import {
   type GuidedStep,
   readGuidedStep,
   writeGuidedStep,
-  GuidedNotedToast,
-  GuidedLibraryBanner,
   GuidedTourContext,
 } from '../../components/OnboardingWalkthrough';
+import {
+  type WtStep,
+  WalkthroughContext,
+  readWtStep,
+  writeWtStep,
+  nextWtStep,
+  WT_DEFS,
+  wtEvt_stepCompleted,
+  wtEvt_skipped,
+  wtEvt_finished,
+} from '../../lib/walkthroughEngine';
+import { WalkthroughOverlay } from '../../components/WalkthroughOverlay';
 
 // ─── Badge context ────────────────────────────────────────────────────────────
 
@@ -25,44 +35,6 @@ export const BadgeContext = createContext<BadgeContextType>({
   newRecCount: 0,
   setNewRecCount: () => {},
 });
-
-// ─── Pulsing dot shown on Library tab when step === 2 ────────────────────────
-
-function PulsingDot() {
-  const scale   = useRef(new Animated.Value(1)).current;
-  const opacity = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.parallel([
-        Animated.sequence([
-          Animated.timing(scale,   { toValue: 1.8, duration: 700, useNativeDriver: true }),
-          Animated.timing(scale,   { toValue: 1.0, duration: 700, useNativeDriver: true }),
-        ]),
-        Animated.sequence([
-          Animated.timing(opacity, { toValue: 0.2, duration: 700, useNativeDriver: true }),
-          Animated.timing(opacity, { toValue: 1.0, duration: 700, useNativeDriver: true }),
-        ]),
-      ]),
-    ).start();
-  }, []);
-
-  return (
-    <Animated.View
-      style={{
-        position: 'absolute',
-        top: -3,
-        right: -6,
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: '#15803d',
-        transform: [{ scale }],
-        opacity,
-      }}
-    />
-  );
-}
 
 // ─── Tab ordering (matches Tabs.Screen declaration order) ─────────────────────
 
@@ -99,8 +71,7 @@ const RESISTANCE       = 0.62; // content moves at 62% of finger travel
 export default function TabsLayout() {
   const [newRecCount, setNewRecCount] = useState(0);
   const [guidedStep,  setGuidedStep]  = useState<GuidedStep>(99);
-  const [showNoted,   setShowNoted]   = useState(false);
-  const notedShown = useRef(false);
+  const [wtStep,      setWtStep]      = useState<WtStep | null>(null);
   const router        = useRouter();
   const segments      = useSegments();
   const routerRef     = useRef(router);
@@ -108,24 +79,46 @@ export default function TabsLayout() {
   useEffect(() => { routerRef.current   = router;   }, [router]);
   useEffect(() => { segmentsRef.current = segments; }, [segments]);
 
+  // Load the guided-tour step (rec-feed action banner)
   useEffect(() => {
     readGuidedStep().then(setGuidedStep);
   }, []);
 
+  // Load the walkthrough step (in-app overlay tour)
   useEffect(() => {
-    if (guidedStep === 1 && !notedShown.current) {
-      notedShown.current = true;
-      setShowNoted(true);
-    }
-  }, [guidedStep]);
+    readWtStep().then(s => setWtStep(s ?? 'done'));
+  }, []);
 
+  // Simplify the legacy advance: jump straight to 99 (overlay banners removed)
   function advanceGuided(fromStep: GuidedStep) {
-    const next: GuidedStep =
-      fromStep === 0 ? 1
-      : fromStep === 1 ? 2
-      : 99;
+    const next: GuidedStep = 99;
     setGuidedStep(next);
     writeGuidedStep(next);
+  }
+
+  // Walkthrough advance: move to next step + navigate to its tab
+  function advanceWt() {
+    if (!wtStep || wtStep === 'done') return;
+    wtEvt_stepCompleted(wtStep);
+    const next = nextWtStep(wtStep);
+    setWtStep(next);
+    writeWtStep(next);
+    if (next !== 'done') {
+      const def = WT_DEFS[next as keyof typeof WT_DEFS];
+      if (def?.tab) {
+        routerRef.current.navigate({ pathname: def.tab as any });
+      }
+    } else {
+      wtEvt_finished();
+    }
+  }
+
+  // Walkthrough skip: jump to done immediately
+  function skipWt() {
+    if (!wtStep || wtStep === 'done') return;
+    wtEvt_skipped(wtStep);
+    setWtStep('done');
+    writeWtStep('done');
   }
 
   useEffect(() => {
@@ -176,13 +169,16 @@ export default function TabsLayout() {
   const guidedStepRef = useRef<GuidedStep>(guidedStep);
   useEffect(() => { guidedStepRef.current = guidedStep; }, [guidedStep]);
 
+  const wtStepRef = useRef<WtStep | null>(wtStep);
+  useEffect(() => { wtStepRef.current = wtStep; }, [wtStep]);
+
   // ── Pager-style swipe gesture ──────────────────────────────────────────────
   //
   // Architecture: Animated.Value tracks finger in real time (finger-connected).
   // On release: if distance OR velocity meets threshold → animate to edge then
   // navigate + reset; otherwise → spring back to center.
-  // The Animated.View wraps just the Tabs (not the overlays), so guided tour
-  // banners stay fixed while the content slides.
+  // The Animated.View wraps just the Tabs (not the overlays), so the overlay
+  // stays fixed while the content slides.
 
   const panX = useRef(new Animated.Value(0)).current;
 
@@ -208,8 +204,10 @@ export default function TabsLayout() {
       // Do not steal taps — only evaluate once motion has started
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, { dx, dy }) => {
-        // Never intercept during guided tour
+        // Never intercept during the legacy guided tour or the new walkthrough overlay
         if (guidedStepRef.current < 99) return false;
+        const ws = wtStepRef.current;
+        if (ws === 'home' || ws === 'library') return false;
 
         // Capture when movement is horizontal-dominant and past the noise floor
         const absDx = Math.abs(dx);
@@ -259,118 +257,102 @@ export default function TabsLayout() {
   return (
     <BadgeContext.Provider value={{ newRecCount, setNewRecCount }}>
       <GuidedTourContext.Provider value={{ step: guidedStep, advance: advanceGuided }}>
+        <WalkthroughContext.Provider value={{ wtStep, advance: advanceWt, skip: skipWt }}>
 
-        {/* Clip so the sliding content never bleeds outside the screen */}
-        <View style={{ flex: 1, overflow: 'hidden' }}>
+          {/* Clip so the sliding content never bleeds outside the screen */}
+          <View style={{ flex: 1, overflow: 'hidden' }}>
 
-          {/* ── Tabs track the finger ── */}
-          <Animated.View
-            style={{ flex: 1, transform: [{ translateX: panX }] }}
-            {...panResponder.panHandlers}
-          >
-            <Tabs
-              screenOptions={{
-                tabBarActiveTintColor:   '#1c1917',
-                tabBarInactiveTintColor: '#a8a29e',
-                tabBarStyle: {
-                  borderTopColor: '#e7e5e4',
-                  borderTopWidth: 1,
-                  paddingBottom: 8,
-                  paddingTop: 4,
-                  height: 62,
-                },
-                tabBarLabelStyle: {
-                  fontSize: 10,
-                  fontWeight: '500',
-                  marginTop: 2,
-                },
-                headerShown: false,
-              }}
+            {/* ── Tabs track the finger ── */}
+            <Animated.View
+              style={{ flex: 1, transform: [{ translateX: panX }] }}
+              {...panResponder.panHandlers}
             >
-              <Tabs.Screen
-                name="index"
-                options={{
-                  title: 'Home',
-                  tabBarIcon: ({ focused, color }) => (
-                    <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color} />
-                  ),
-                }}
-              />
-              <Tabs.Screen
-                name="search"
-                options={{
-                  title: 'Recommend',
-                  tabBarIcon: ({ focused, color }) => (
-                    <Ionicons
-                      name={focused ? 'paper-plane' : 'paper-plane-outline'}
-                      size={22}
-                      color={color}
-                    />
-                  ),
-                }}
-              />
-              <Tabs.Screen
-                name="library"
-                listeners={{
-                  tabPress: () => {
-                    if (guidedStep === 2) advanceGuided(2);
+              <Tabs
+                screenOptions={{
+                  tabBarActiveTintColor:   '#1c1917',
+                  tabBarInactiveTintColor: '#a8a29e',
+                  tabBarStyle: {
+                    borderTopColor: '#e7e5e4',
+                    borderTopWidth: 1,
+                    paddingBottom: 8,
+                    paddingTop: 4,
+                    height: 62,
                   },
+                  tabBarLabelStyle: {
+                    fontSize: 10,
+                    fontWeight: '500',
+                    marginTop: 2,
+                  },
+                  headerShown: false,
                 }}
-                options={{
-                  title: 'Library',
-                  tabBarIcon: ({ focused, color, size }) => (
-                    <>
+              >
+                <Tabs.Screen
+                  name="index"
+                  options={{
+                    title: 'Home',
+                    tabBarIcon: ({ focused, color }) => (
+                      <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color} />
+                    ),
+                  }}
+                />
+                <Tabs.Screen
+                  name="search"
+                  options={{
+                    title: 'Recommend',
+                    tabBarIcon: ({ focused, color }) => (
                       <Ionicons
-                        name={focused ? 'library' : 'library-outline'}
-                        size={size}
+                        name={focused ? 'paper-plane' : 'paper-plane-outline'}
+                        size={22}
                         color={color}
                       />
-                      {guidedStep === 2 && <PulsingDot />}
-                    </>
-                  ),
-                }}
-              />
-              <Tabs.Screen
-                name="notes"
-                options={{
-                  title: 'Inbox',
-                  tabBarBadge: newRecCount > 0 ? newRecCount : undefined,
-                  tabBarBadgeStyle: { backgroundColor: '#1c1917', fontSize: 10 },
-                  tabBarIcon: ({ focused, color }) => (
-                    <Ionicons name={focused ? 'mail' : 'mail-outline'} size={22} color={color} />
-                  ),
-                }}
-              />
-              <Tabs.Screen
-                name="profile"
-                options={{
-                  title: 'Profile',
-                  tabBarIcon: ({ focused, color }) => (
-                    <Ionicons
-                      name={focused ? 'person-circle' : 'person-circle-outline'}
-                      size={22}
-                      color={color}
-                    />
-                  ),
-                }}
-              />
-            </Tabs>
-          </Animated.View>
+                    ),
+                  }}
+                />
+                <Tabs.Screen
+                  name="library"
+                  options={{
+                    title: 'Library',
+                    tabBarIcon: ({ focused, color }) => (
+                      <Ionicons
+                        name={focused ? 'library' : 'library-outline'}
+                        size={22}
+                        color={color}
+                      />
+                    ),
+                  }}
+                />
+                <Tabs.Screen
+                  name="notes"
+                  options={{
+                    title: 'Inbox',
+                    tabBarBadge: newRecCount > 0 ? newRecCount : undefined,
+                    tabBarBadgeStyle: { backgroundColor: '#1c1917', fontSize: 10 },
+                    tabBarIcon: ({ focused, color }) => (
+                      <Ionicons name={focused ? 'mail' : 'mail-outline'} size={22} color={color} />
+                    ),
+                  }}
+                />
+                <Tabs.Screen
+                  name="profile"
+                  options={{
+                    title: 'Profile',
+                    tabBarIcon: ({ focused, color }) => (
+                      <Ionicons
+                        name={focused ? 'person-circle' : 'person-circle-outline'}
+                        size={22}
+                        color={color}
+                      />
+                    ),
+                  }}
+                />
+              </Tabs>
+            </Animated.View>
 
-          {/* ── Guided-tour overlays stay fixed (outside Animated.View) ── */}
-          {showNoted && (
-            <GuidedNotedToast
-              onDone={() => {
-                setShowNoted(false);
-                advanceGuided(1);
-              }}
-            />
-          )}
-          {guidedStep === 2 && (
-            <GuidedLibraryBanner onDismiss={() => advanceGuided(2)} />
-          )}
+            {/* ── In-app walkthrough overlay (Home + Library steps) ── */}
+            <WalkthroughOverlay />
 
-        </View>
+          </View>
+        </WalkthroughContext.Provider>
       </GuidedTourContext.Provider>
     </BadgeContext.Provider>
   );
