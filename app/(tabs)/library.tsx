@@ -12,6 +12,7 @@ import { transitionStatus, saveCurrentPage } from '../../lib/userBookActions';
 import { findSeriesForBook } from '../../lib/seriesCatalog';
 import { triggerRecPrewarm } from '../../lib/recPrewarm';
 import { registerWtTarget, useWalkthrough } from '../../lib/walkthroughEngine';
+import { WtDemoLibrary } from '../../components/walkthrough/WtDemoLibrary';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -656,6 +657,8 @@ export default function LibraryScreen() {
     await loadBooks();
     setRefreshing(false);
   }
+
+  if (wtStep === 'library') return <WtDemoLibrary />;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>

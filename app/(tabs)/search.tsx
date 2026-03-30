@@ -37,6 +37,7 @@ import { useWalkthrough, registerWtTarget, wtEvt_recStepReached } from '../../li
 import { getRecSession, clearRecSession } from '../../lib/recSession';
 import { registerCacheClearer } from '../../lib/tabCache';
 import { RecommendationsFeed } from '../../components/RecommendationsFeed';
+import { WtDemoRecommend } from '../../components/walkthrough/WtDemoRecommend';
 import { RecEntryScreen, hasSeenRecEntry } from '../../components/RecEntryScreen';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1454,17 +1455,20 @@ export default function RecommendationsScreen() {
             {/* ════════════════════════════════════════════════════════
                 Section 1 — For You
             ════════════════════════════════════════════════════════ */}
-            <RecommendationsFeed
-              userId={currentUserId}
-              supabase={supabase}
-              tasteProfile={tasteProfile}
-              entitlement={entitlement}
-              feedbackCtx={feedbackCtx}
-              setFeedbackCtx={setFeedbackCtx}
-              guidedStep={guidedStep}
-              onGuidedAdvance={advanceGuided}
-              wtRef={recommendTargetRef}
-            />
+            {wtStep === 'recommend' ? (
+              <WtDemoRecommend />
+            ) : (
+              <RecommendationsFeed
+                userId={currentUserId}
+                supabase={supabase}
+                tasteProfile={tasteProfile}
+                entitlement={entitlement}
+                feedbackCtx={feedbackCtx}
+                setFeedbackCtx={setFeedbackCtx}
+                guidedStep={guidedStep}
+                onGuidedAdvance={advanceGuided}
+              />
+            )}
             {/* ════════════════════════════════════════════════════════
                 Section 2 — Refine Your Taste (promoted above Social)
             ════════════════════════════════════════════════════════ */}

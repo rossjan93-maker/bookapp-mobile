@@ -54,7 +54,7 @@ const TAB_COUNT  = 5;
 const TAB_BAR_H  = 62;
 const RING_SIZE  = 52;
 const RING_R     = RING_SIZE / 2;
-const DIM_COLOR  = 'rgba(0,0,0,0.60)';
+const DIM_COLOR  = 'rgba(0,0,0,0.50)';
 // Crisp white frame — visible against dim background; outer glow suggests lift
 const FRAME_COLOR = 'rgba(255,255,255,0.88)';
 const AURA_COLOR  = 'rgba(255,255,255,0.07)';

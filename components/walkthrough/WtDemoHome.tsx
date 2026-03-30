@@ -1,0 +1,93 @@
+import React from 'react';
+import { Text, View } from 'react-native';
+import { useWalkthroughTarget } from '../../lib/walkthroughEngine';
+
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <Text style={{
+      fontSize: 11, fontWeight: '700', color: '#a8a29e',
+      letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10,
+    }}>
+      {children}
+    </Text>
+  );
+}
+
+export function WtDemoHome({ greeting }: { greeting: string | null }) {
+  const { ref, onLayout } = useWalkthroughTarget('home_content');
+
+  return (
+    <>
+      {/* Hero heading — matches the real home screen */}
+      <View style={{ marginBottom: 28 }}>
+        <Text style={{
+          fontSize: 34, fontWeight: '800', color: '#1c1917',
+          letterSpacing: -0.8, lineHeight: 40,
+        }}>
+          {greeting ? `Hi, ${greeting}` : 'Home'}
+        </Text>
+        <Text style={{ fontSize: 14, color: '#a8a29e', marginTop: 5 }}>
+          Currently reading · The Thursday Murder Club
+        </Text>
+      </View>
+
+      {/* Continue Reading demo card */}
+      <View style={{ marginBottom: 32 }}>
+        <SectionLabel>Continue Reading</SectionLabel>
+
+        <View
+          ref={ref}
+          onLayout={onLayout}
+          style={{
+            backgroundColor: '#fff',
+            borderRadius: 14,
+            padding: 14,
+            borderLeftWidth: 3,
+            borderLeftColor: '#d4a574',
+            shadowColor: '#1c1917',
+            shadowOpacity: 0.18,
+            shadowRadius: 18,
+            shadowOffset: { width: 0, height: 6 },
+            elevation: 12,
+            transform: [{ scale: 1.02 }],
+            borderWidth: 1,
+            borderColor: 'rgba(212, 165, 116, 0.25)',
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 }}>
+            {/* Cover placeholder */}
+            <View style={{
+              width: 44, height: 64, borderRadius: 6,
+              backgroundColor: '#ddd5c8',
+            }} />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={{
+                fontSize: 14, fontWeight: '700', color: '#1c1917',
+                lineHeight: 19, marginBottom: 3,
+              }} numberOfLines={2}>
+                The Thursday Murder Club
+              </Text>
+              <Text style={{ fontSize: 12, color: '#78716c' }}>
+                Richard Osman
+              </Text>
+            </View>
+          </View>
+
+          {/* Progress bar */}
+          <View style={{
+            height: 3, backgroundColor: '#e7e5e4',
+            borderRadius: 2, overflow: 'hidden', marginBottom: 4,
+          }}>
+            <View style={{
+              height: 3, width: '63%',
+              backgroundColor: '#1c1917', borderRadius: 2,
+            }} />
+          </View>
+          <Text style={{ fontSize: 10, color: '#a8a29e' }}>
+            Page 270 of 382 · 63%
+          </Text>
+        </View>
+      </View>
+    </>
+  );
+}

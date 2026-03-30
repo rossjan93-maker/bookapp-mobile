@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { registerWtTarget, useWalkthrough } from '../../lib/walkthroughEngine';
+import { WtDemoHome } from '../../components/walkthrough/WtDemoHome';
 import { supabase } from '../../lib/supabase';
 import { registerCacheClearer } from '../../lib/tabCache';
 import { CoverThumb } from '../../components/CoverThumb';
@@ -593,6 +594,17 @@ export default function HomeScreen() {
     setRefreshing(true);
     await loadAll();
     setRefreshing(false);
+  }
+
+  if (wtStep === 'home') {
+    return (
+      <ScrollView
+        style={{ backgroundColor: '#faf9f7' }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }}
+      >
+        <WtDemoHome greeting={greeting} />
+      </ScrollView>
+    );
   }
 
   return (

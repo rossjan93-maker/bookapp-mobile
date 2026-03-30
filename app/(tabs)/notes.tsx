@@ -7,6 +7,7 @@ import { BadgeContext } from './_layout';
 import { getFirstName } from '../../lib/displayName';
 import { CoverThumb } from '../../components/CoverThumb';
 import { registerWtTarget, useWalkthrough } from '../../lib/walkthroughEngine';
+import { WtDemoInbox } from '../../components/walkthrough/WtDemoInbox';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -264,6 +265,8 @@ export default function InboxScreen() {
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
+
+  if (wtStep === 'inbox') return <WtDemoInbox />;
 
   return (
     <ScrollView

@@ -143,7 +143,7 @@ export const WT_DEFS: Record<'home' | 'recommend' | 'library' | 'inbox', WtStepD
     spotlightRect:   LIBRARY_RECT,
     inScreenHotspot: LIBRARY_HOTSPOT,
     hotspotAnchor:   'left-center',
-    minDelay:        700,
+    minDelay:        0,
   },
 
   inbox: {
