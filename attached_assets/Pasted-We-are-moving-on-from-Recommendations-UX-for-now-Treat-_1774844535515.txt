@@ -1,0 +1,173 @@
+We are moving on from Recommendations UX for now. Treat that surface as accepted-for-now: good, not great.
+
+Next priority: redesign onboarding and taste intake so the app gets better signal up front and explains itself clearly to the user.
+
+This is a high-standard task.
+Do not give me a shallow visual refresh or a few copy tweaks.
+I want a strategically correct onboarding system that improves cold start recommendations, product clarity, and first-session activation.
+
+Context:
+- This is a reading tracker / recommendation app
+- Recommendations infrastructure is already in place
+- The bigger bottleneck now is upstream signal quality and first-use clarity
+- The current book-selection-led intake is weak
+- I do NOT want onboarding to depend primarily on surfacing books for the user to pick from at the start
+- Intake should focus more on reader preferences, taste characteristics, and reading behavior
+- The onboarding should also orient the user to the product: timeline/feed, recommendations, friends/social, tracking/progress, and how the app gets smarter over time
+
+What I want:
+A full onboarding redesign that is:
+1. strategically sound
+2. compact enough to complete
+3. strong for cold start
+4. architected cleanly
+5. instrumented so we can learn from it
+
+Core goals:
+1. Capture high-value taste signal early without forcing the user to identify books from a surfaced list
+2. Explain what each part of the app does in a way that feels guided, not overwhelming
+3. Get the user to a credible first recommendation set quickly
+4. Make the product feel like it improves as the user logs books and gives feedback
+5. Build this in a way that can evolve later into stronger persona/taste modeling
+
+Please inspect the current onboarding flow and redesign it from first principles.
+
+I want you to think in terms of:
+- product strategy
+- signal quality
+- UX flow
+- state/data model
+- implementation structure
+- instrumentation
+
+Deliverables before coding:
+1. Explain what is structurally wrong with the current onboarding
+2. Propose the new onboarding architecture
+3. Specify the exact steps/screens
+4. Name the files/components/hooks you will create or replace
+5. Explain what data should be collected at each step and why it matters downstream
+
+Desired onboarding shape:
+The exact details are up to you, but directionally I want something like this:
+
+Step 1 — Reader identity / orientation
+- What kind of reader are you?
+- fiction / nonfiction / both
+- reading frequency
+- current reading goal or cadence
+- maybe whether they are trying to read more, read better, finish more books, discover better books, track reading, read with friends, etc.
+
+Step 2 — Taste profile
+Capture the things that actually shape fit:
+- preferred genres / subjects
+- disliked genres / subjects
+- pacing tolerance
+- tone preferences
+- literary vs accessible
+- plot-driven vs character-driven vs idea-driven
+- series appetite
+- length tolerance
+- dark/heavy vs light/comforting
+- experimental vs familiar
+- etc.
+
+Step 3 — Reading behavior / habits
+- how they choose books now
+- whether they abandon books often
+- whether they reread
+- whether they care about popularity vs niche
+- whether they like being challenged vs staying in lane
+- current formats if useful (audio/ebook/physical)
+
+Step 4 — Optional historical grounding
+- import history if available
+- search and add past favorites if helpful
+- BUT this should be optional and should not be the primary cold-start mechanism
+- if you include book-based grounding, it should be lightweight and additive, not the main event
+
+Step 5 — Guided product walkthrough
+Show the user what the app does:
+- recommendations
+- tracking/progress
+- timeline/feed
+- friends/social
+- explain briefly how feedback improves results
+This should feel sequential and well-designed, not like dumping them onto a tab bar.
+
+Step 6 — First recommendations handoff
+- generate first recommendation stack
+- explain why the stack looks the way it does
+- make the “why this fits you” moment clear
+- let the user start acting on recommendations immediately
+
+Important UX principles:
+- Do not make onboarding too long or tedious
+- Progressive disclosure
+- Strong defaults
+- Skippable where appropriate
+- Clear progress indication
+- Every question must earn its place
+- Avoid generic “choose some books you like” as the core mechanic
+- The user should feel the app understands readers, not just metadata
+
+Implementation requirements:
+1. Refactor cleanly
+- do not just patch the old onboarding file if the architecture is weak
+- introduce new components/hooks/state structure if needed
+
+2. Make the onboarding modular
+- easy to iterate on question sets
+- easy to reorder or test steps
+- easy to add future persona/taste modeling
+
+3. Persist data cleanly
+- define the onboarding state model
+- define how it maps into taste profile / preferences used by recommendations
+- avoid messy one-off fields if a better structure exists
+
+4. Instrumentation
+Add analytics / logging for:
+- onboarding started
+- step viewed
+- step completed
+- onboarding completed
+- skipped sections
+- import started/completed/skipped
+- time to first recommendation
+- first recommendation actions taken
+I want this measurable, not aesthetic-only
+
+5. Explainability
+- make it clear to the user why they are being asked things
+- make it clear that recommendations improve with feedback
+- the first recommendation handoff should feel intentional
+
+6. Product quality
+- this should feel like a premium reading product
+- not generic form onboarding
+- not a clunky survey
+- thoughtful language and pacing
+
+What I do NOT want:
+- a shallow UI reskin
+- a long bloated questionnaire
+- a book-picking-first flow as the main intake
+- weak architectural thinking
+- changes without runtime/flow validation
+- mediocre Replit output that is only incrementally better
+
+Success criteria:
+- onboarding better captures taste signal before first recommendations
+- the product is easier to understand on first use
+- the first recommendation stack feels more credible
+- the onboarding is modular and strategically well built
+- analytics are in place
+- the implementation is architecturally sound, not patched together
+
+Before coding:
+Please first read the current onboarding/taste-related files and give me:
+1. diagnosis of what is wrong now
+2. proposed new onboarding flow
+3. implementation plan with exact files/components/state shape
+
+Then implement.

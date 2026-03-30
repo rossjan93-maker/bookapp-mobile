@@ -30,14 +30,19 @@ The application is built with React Native using Expo Router for navigation and 
     - **Center-of-Gravity Fit Classifier:** `lib/fitClassifier.ts` classifies book fit (core, adjacent, stretch, reject) based on multiple signals like author matches, dominant lanes, and market position, providing nuanced explanations for recommendations.
     - **Set Composition Engine:** In `lib/recommender.ts`, a 3-phase engine seeds recommendations by lane, fills with CORE books, and then ADJACENT books, applying continuation discounts and author/lane caps to ensure diverse and relevant sets.
     - **Expert Reasoning Layer:** `lib/expertRec.ts` implements a heuristic-based expert system that builds a `ReaderThesis` and `CandidateJudgment` to compose recommendation sets, structured for potential future LLM integration.
-- **Onboarding System (5-phase):**
-    - Phase 1 (Walkthrough): `components/OnboardingWalkthrough.tsx` — 4-step Modal overlay with spotlight highlighting each key tab. Fires on first visit to the `(tabs)` layout. Completion stored in AsyncStorage (`readstack_walkthrough_v1`).
-    - Phase 2 (Signal collection): `app/onboarding.tsx` — curated grid of 16 popular books across genres; user selects ≥3 they've read, then rates each (Loved/Liked/Okay/Not for me → star ratings 5/4/3/2).
-    - Phase 3 (Learning): Animated "Building your taste profile…" screen with pulsing dots and cycling messages; minimum 2.3s; concurrently saves rated books to Supabase and computes recommendation pipeline.
-    - Phase 4 (Payoff): Shows 3–5 recommendations from the real `getCandidateBooks` + `getRankedRecs` pipeline with "Based on what you just told us" header and "Want to Read" action.
-    - Phase 5 (Contextual tooltips): `components/OnboardingTooltip.tsx` — reusable wrapper component; first-use scan tip in `app/scan.tsx` shows above action buttons on first result.
-    - State storage: `profiles.onboarding_completed` (Supabase; migration `20260327000001_onboarding.sql`) determines routing; walkthrough/tooltip state uses AsyncStorage keys.
-    - Routing: `app/_layout.tsx` checks `onboarding_completed` after auth; new users → `/onboarding`; existing users → `/`. Defensive error fallback prevents blocking existing users before migration is applied.
+- **Onboarding System (8-step, rebuilt):**
+    - Architecture: `app/onboarding.tsx` — completely rewritten as a clean multi-step orchestrator with a shared `IntakeState` accumulated across steps. Each step is a self-contained function component. `lib/onboardingAnalytics.ts` fires structured events at every step/action.
+    - Step 1 — Identity (`'identity'`): Reader goals (discover/track/read more/social), reading frequency (4 levels), preferred formats (print/ebook/audio). Step 1 of 4.
+    - Step 2 — Fiction split (`'fiction_split'`): Fiction / Nonfiction / Both — one tap, auto-advances. Gates which genre options are shown in step 3. Step 2 of 4.
+    - Step 3 — Genres (`'genres'` then `'avoid'`): Liked genres then avoided genres, both filtered by fiction split. Populates `genre_affinities` and `liked_subjects` for OL retrieval. Step 2 of 4.
+    - Step 4 — Taste (`'taste'`): 6 binary choice questions, one at a time with slide animation, each auto-advancing. Answers stored as ANSWER_BOOSTS keys: emotion_driven/idea_driven, pacing_non_negotiable/ideas_over_pacing, originality_first/craft_first, challenging/effortless, dark_tone/light_tone, literary_leaning/commercial_leaning. Step 3 of 4.
+    - Step 5 — Anchor book (`'anchor_book'`): Optional single book search via Google Books. Framed as "the strongest cold-start signal." Book saved as finished+5★. Step 4 of 4.
+    - Step 6 — Product walkthrough (`'walkthrough'`): 4-panel swipeable tour (Picks, Library, Feed, Getting smarter). Rec pre-fetch starts here so results are ready by the next step.
+    - Step 7 — Payoff (`'payoff'`): 5 recs with "why this fits you" summary sentence derived from intake. Save buttons feed first books into library.
+    - Signal persistence: all taste answers → `reader_preferences.diagnosis_answers` (using ANSWER_BOOSTS keys); behavioral metadata (goals, frequency, formats, fiction_split) → `b_*` prefixed keys in same JSONB column; genre selections → `favorite_genres`/`avoid_genres`; anchor book → `user_books` as finished+5★.
+    - New ANSWER_BOOSTS in `lib/tasteProfile.ts`: `dark_tone`, `light_tone`, `literary_leaning`, `commercial_leaning` (all boosting existing traits: Emotional, Depth, Pacing, Writing, Originality, Prose, Characters). `applyDiagnosisBoosts` exported for reuse in synthetic profile builder.
+    - `lib/onboardingAnalytics.ts`: `obStart`, `obStepView`, `obStepComplete`, `obTasteAnswer`, `obTasteSkipped`, `obAnchorBook`, `obWalkthroughPanel`, `obFinishLater`, `obComplete`, `obRecSaved` — all log to console with `[ONBOARDING]` prefix and ISO timestamps.
+    - Routing: `app/_layout.tsx` checks `profiles.onboarding_completed` after auth; new users → `/onboarding`; existing users → `/`. Guided tour (GuidedActionBanner) triggers on first visit to recs tab after onboarding.
 - **Barcode Scan / "Will I like this?" Feature:**
     - Entry point: barcode icon button in the top-right of the Recommendations tab header.
     - Screen: `app/scan.tsx` — full scan + result screen (Expo Router stack route `/scan`).

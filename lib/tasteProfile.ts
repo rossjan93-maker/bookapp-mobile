@@ -153,6 +153,7 @@ function buildTraitScores(rows: RawUserBook[]): {
 // the user has rated several books.
 
 const ANSWER_BOOSTS: Record<string, (p: Record<string, number>, a: Record<string, number>) => void> = {
+  // ── Existing keys ────────────────────────────────────────────────────────────
   idea_driven:           (p)    => { p.Insight  = Math.min(1, (p.Insight  ?? 0) + 0.20); p.Evidence  = Math.min(1, (p.Evidence  ?? 0) + 0.10); },
   emotion_driven:        (p)    => { p.Emotional = Math.min(1, (p.Emotional ?? 0) + 0.20); p.Characters = Math.min(1, (p.Characters ?? 0) + 0.10); },
   pacing_non_negotiable: (p)    => { p.Pacing    = Math.min(1, (p.Pacing    ?? 0) + 0.25); },
@@ -163,9 +164,16 @@ const ANSWER_BOOSTS: Record<string, (p: Record<string, number>, a: Record<string
   effortless:            (p)    => { p.Pacing    = Math.min(1, (p.Pacing    ?? 0) + 0.15); },
   dnf_characters:        (p)    => { p.Characters = Math.min(1, (p.Characters ?? 0) + 0.25); },
   dnf_pacing:            (p)    => { p.Pacing    = Math.min(1, (p.Pacing    ?? 0) + 0.20); },
+  // ── New keys (added with expanded onboarding) ─────────────────────────────────
+  // Tone preference: dark/heavy vs light/comforting
+  dark_tone:             (p)    => { p.Emotional = Math.min(1, (p.Emotional ?? 0) + 0.12); p.Depth = Math.min(1, (p.Depth ?? 0) + 0.15); },
+  light_tone:            (p)    => { p.Pacing    = Math.min(1, (p.Pacing    ?? 0) + 0.12); },
+  // Literary vs accessible/commercial
+  literary_leaning:      (p)    => { p.Writing   = Math.min(1, (p.Writing   ?? 0) + 0.20); p.Originality = Math.min(1, (p.Originality ?? 0) + 0.15); },
+  commercial_leaning:    (p)    => { p.Pacing    = Math.min(1, (p.Pacing    ?? 0) + 0.15); p.Characters = Math.min(1, (p.Characters ?? 0) + 0.08); },
 };
 
-function applyDiagnosisBoosts(
+export function applyDiagnosisBoosts(
   preferred: Record<string, number>,
   avoided:   Record<string, number>,
   answers:   Record<string, string>,
