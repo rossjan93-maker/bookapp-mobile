@@ -1,0 +1,114 @@
+The current walkthrough is not good enough. It feels arbitrary, incomplete, and visually off-brand.
+
+Do NOT give me another generic polish pass.
+I want you to correct the walkthrough based on product hierarchy and the app’s actual design system.
+
+Current failures:
+1. Areas are being highlighted that do not make sense or do not represent the most important learning path
+2. Inbox and Profile are not explained, even though they are part of the product navigation/surface area
+3. The walkthrough has introduced a black + green visual combination that does NOT align with the theme of the app
+4. The result feels like an overlay system was added on top, rather than the app teaching itself coherently
+
+I want this fixed properly.
+
+PART 1 — DEFINE THE WALKTHROUGH MAP BEFORE CODING
+
+Before changing any code, I want you to map the actual product-tour sequence.
+
+Please first inventory the key user-facing areas that exist in the live app, including:
+- Home
+- Library
+- Recommendations
+- Inbox
+- Profile
+- any other important first-run surfaces
+
+Then produce:
+1. Which of these should be included in the FIRST-RUN walkthrough
+2. In what order they should be introduced
+3. What the user should learn from each one in one sentence
+4. Which areas should be intentionally excluded from the first-run tour and why
+
+Important:
+The tour should follow product value and user understanding, not just what is easy to highlight.
+
+The first-run tour should teach the minimum viable mental model of the app:
+- where your reading life lives
+- where recommendations come from / improve
+- where messages or updates live if Inbox matters
+- where account/profile/preferences live if Profile matters
+- how to navigate
+
+If Inbox and Profile matter to the product, they need to be addressed.
+If they do NOT belong in first-run, explain why and remove any accidental inconsistency.
+
+PART 2 — FIX THE HIGHLIGHT TARGETS
+
+I want the walkthrough to highlight only meaningful, intentional targets.
+
+Requirements:
+1. Do not spotlight arbitrary areas just because they are visually convenient
+2. Each highlighted region must correspond to a real user learning objective
+3. Each step should have a clear reason for existing
+4. At least one real in-screen target per major area, not just tab-bar highlighting
+5. The hotspot/callout placement should feel anchored to the actual product use case
+
+Before implementing, tell me:
+- what exact UI region will be highlighted for each step
+- why that region is the correct target
+- how it helps the user understand the product
+
+PART 3 — FIX THE VISUAL SYSTEM
+
+The black + green combination is not aligned with the app theme. Remove that drift.
+
+Requirements:
+1. The walkthrough must use the existing app design system
+2. No new accent color combination unless it is already part of the theme
+3. Overlay, spotlight, coach marks, hotspot rings, and CTA styling must feel native to the app
+4. Use the existing color palette, typography, spacing, radii, and shadow language
+5. The walkthrough should feel like part of the product, not a separate design layer
+
+Before implementing, identify:
+- current theme tokens/colors being used in the main app
+- which tokens the walkthrough should use
+- which current walkthrough styles are off-brand and need replacement
+
+PART 4 — TIGHTEN THE TOUR ITSELF
+
+I want a cleaner, more coherent first-run walkthrough.
+
+Requirements:
+1. Keep it concise
+2. Make each step meaningful
+3. Use calm, product-native motion
+4. Do not over-highlight low-value surfaces
+5. Do not make the user feel dragged through random UI
+
+Potential direction:
+- Welcome briefly
+- Show Home / core value
+- Show Library / reading history and tracking
+- Show Recommendations / how picks improve
+- Address Inbox/Profile only if truly important to first-run understanding
+- Then contextual prompt for import / setup when reaching Recommendations
+
+PART 5 — DELIVERABLES BEFORE CODING
+
+Before you touch code, I want:
+1. Diagnosis of why the current walkthrough feels arbitrary/incomplete
+2. Proposed walkthrough map in exact step order
+3. Exact highlighted target for each step
+4. Explanation of whether Inbox and Profile belong in first-run or later
+5. Theme/style correction plan listing what visual choices need to change
+
+Only then implement.
+
+SUCCESS CRITERIA
+
+- highlighted areas feel intentional and useful
+- the walkthrough teaches the app coherently
+- Inbox/Profile are either properly explained or intentionally excluded
+- no black + green off-brand styling
+- walkthrough feels native to the app’s theme
+- the product teaches itself in a calm, premium, logical way

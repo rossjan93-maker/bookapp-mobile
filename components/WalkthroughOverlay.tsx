@@ -93,7 +93,7 @@ function PulsingRing({ tabIdx }: { tabIdx: number }) {
         height:       RING_SIZE,
         borderRadius: RING_R,
         borderWidth:  2.5,
-        borderColor:  '#15803d',
+        borderColor:  '#1c1917',
         transform:    [{ scale }],
         opacity,
       }}
@@ -213,7 +213,7 @@ function InScreenHotspot({
           height:       RING,
           borderRadius: RING / 2,
           borderWidth:  1.5,
-          borderColor:  '#fff',
+          borderColor:  '#faf9f7',
           transform:    [{ scale: ring1Scale }],
           opacity:      ring1Opacity,
         }}
@@ -227,7 +227,7 @@ function InScreenHotspot({
           height:       RING,
           borderRadius: RING / 2,
           borderWidth:  1.5,
-          borderColor:  '#fff',
+          borderColor:  '#faf9f7',
           transform:    [{ scale: ring2Scale }],
           opacity:      ring2Opacity,
         }}
@@ -238,8 +238,8 @@ function InScreenHotspot({
           width:           DOT,
           height:          DOT,
           borderRadius:    DOT / 2,
-          backgroundColor: '#fff',
-          shadowColor:     '#fff',
+          backgroundColor: '#faf9f7',
+          shadowColor:     '#faf9f7',
           shadowOpacity:   0.6,
           shadowRadius:    5,
           shadowOffset:    { width: 0, height: 0 },

@@ -110,6 +110,9 @@ export default function TabsLayout() {
       }
     } else {
       wtEvt_finished();
+      // Navigate to the Recommend tab so RecEntryScreen can show as the
+      // contextual setup prompt immediately after the tour ends.
+      routerRef.current.navigate({ pathname: '/(tabs)/search' as any });
     }
   }
 
@@ -207,7 +210,7 @@ export default function TabsLayout() {
         // Never intercept during the legacy guided tour or the new walkthrough overlay
         if (guidedStepRef.current < 99) return false;
         const ws = wtStepRef.current;
-        if (ws === 'home' || ws === 'library') return false;
+        if (ws === 'home' || ws === 'recommend' || ws === 'library') return false;
 
         // Capture when movement is horizontal-dominant and past the noise floor
         const absDx = Math.abs(dx);

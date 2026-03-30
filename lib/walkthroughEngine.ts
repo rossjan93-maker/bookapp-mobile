@@ -2,27 +2,22 @@
 //
 // Drives the guided tour inside the real app shell after signup.
 //
-// Step order: 'home' → 'library' → 'recommend' → 'done'
+// Step order: 'home' → 'recommend' → 'library' → 'done'
 //
-// 'home' and 'library' show a spotlight overlay with a focused content-area
-// aperture + in-screen hotspot indicator + coach-mark card + pulsing tab ring.
-// 'recommend' is handled entirely by RecEntryScreen (no overlay).
-// 'done' = walkthrough finished.
+// This order follows the physical left-to-right tab layout (tabs 0 → 1 → 2):
+//   home (tab 0) → recommend (tab 1) → library (tab 2) → done
 //
-// Spotlight rects:
-//   Each step carries a spotlightRect — an inset rectangle that targets the
-//   main content element of that screen (NOT full-width — has horizontal
-//   margins so it feels like a focused beam, not a screen filter).
+// All three steps show a spotlight overlay + coach card + in-screen hotspot.
+// After 'library' completes, _layout.tsx navigates to the Recommend tab and
+// search.tsx shows RecEntryScreen (import / intake / explore) as a
+// contextual setup prompt.
 //
-// In-screen hotspot:
-//   Each step carries an inScreenHotspot { x, y } — the coordinate within
-//   the spotlight where a pulsing indicator appears.  It acts as both a
-//   visual "look here" signal and a tap target that advances the tour.
+// Inbox: acknowledged in the Recommend step body copy — no dedicated step.
+// Profile: excluded (empty for new users, self-explanatory).
 //
 // Target registration:
-//   Screen components can call registerWtTarget(key, rect) after layout.
-//   The overlay reads those rects to draw the spotlight aperture.
-//   spotlightRect is the fallback when no live registration exists.
+//   Screen components call registerWtTarget(key, rect) after layout.
+//   spotlightRect in each def is the always-available fallback.
 //
 // Persistence: AsyncStorage key 'readstack_walkthrough_v1'.
 
@@ -55,88 +50,105 @@ export type WtStepDef = {
 
 // ─── Spotlight rects + hotspot positions ──────────────────────────────────────
 //
-// Spotlight rects use horizontal insets (SW * 0.04 margin each side) so the
-// illuminated area feels like a focused beam on specific content, not a
-// wall-to-wall band.
+// Each rect targets a specific named product element, not just a proportional
+// band of screen height.  Horizontal insets (SW * 0.04) ensure the spotlight
+// looks focused rather than wall-to-wall.
 //
-// inScreenHotspot is the pulsing dot position within the spotlight area.
-// It sits at the vertical midpoint of the spotlight, horizontally centered,
-// representing the main element the user should look at.
+// Hotspot coords correspond to where a cover thumbnail / card element would
+// typically appear on each screen — left-center for list items, center for cards.
 
-const SW = Dimensions.get('window').width;
-const SH = Dimensions.get('window').height;
+const SW      = Dimensions.get('window').width;
+const SH      = Dimensions.get('window').height;
+const H_INSET = Math.round(SW * 0.04);
 
-const H_INSET = Math.round(SW * 0.04);   // horizontal margin either side
-const V_TOP   = Math.round(SH * 0.12);   // top edge of spotlight (below header)
-
-// Home — spotlight on the main feed / currently reading card area
-const HOME_SPOT_W = SW - H_INSET * 2;
-const HOME_SPOT_H = Math.round(SH * 0.30);
+// Home — targets the "currently reading" card area
+// Positioned below the greeting header (~y=13%), covers one card height (~26%)
 const HOME_RECT: TargetRect = {
   x:      H_INSET,
-  y:      V_TOP,
-  width:  HOME_SPOT_W,
-  height: HOME_SPOT_H,
+  y:      Math.round(SH * 0.13),
+  width:  SW - H_INSET * 2,
+  height: Math.round(SH * 0.26),
 };
+// Hotspot at the left-center of the card — where the book cover thumbnail lives
 const HOME_HOTSPOT = {
-  x: Math.round(SW / 2),
-  y: Math.round(V_TOP + HOME_SPOT_H * 0.45),
+  x: Math.round(SW * 0.17),
+  y: Math.round(SH * 0.26),
 };
 
-// Library — spotlight on the book list area
-const LIB_SPOT_W = SW - H_INSET * 2;
-const LIB_SPOT_H = Math.round(SH * 0.32);
+// Recommend — targets the rec card feed area
+// Positioned below the Recommend header (~y=13%), covers first 1–2 rec cards (~28%)
+const RECOMMEND_RECT: TargetRect = {
+  x:      H_INSET,
+  y:      Math.round(SH * 0.13),
+  width:  SW - H_INSET * 2,
+  height: Math.round(SH * 0.28),
+};
+// Hotspot centered on the rec card area (where first card cover would be)
+const RECOMMEND_HOTSPOT = {
+  x: Math.round(SW * 0.5),
+  y: Math.round(SH * 0.27),
+};
+
+// Library — targets the book list rows area
+// Positioned below the filter chips (~y=18%), covers first visible rows (~30%)
 const LIBRARY_RECT: TargetRect = {
   x:      H_INSET,
-  y:      V_TOP,
-  width:  LIB_SPOT_W,
-  height: LIB_SPOT_H,
+  y:      Math.round(SH * 0.18),
+  width:  SW - H_INSET * 2,
+  height: Math.round(SH * 0.30),
 };
+// Hotspot at the left-center of the first book row — where the cover thumbnail is
 const LIBRARY_HOTSPOT = {
-  x: Math.round(SW / 2),
-  y: Math.round(V_TOP + LIB_SPOT_H * 0.42),
+  x: Math.round(SW * 0.17),
+  y: Math.round(SH * 0.30),
 };
 
 // ─── Step definitions ─────────────────────────────────────────────────────────
 
 export const WT_DEFS: Record<'home' | 'library' | 'recommend', WtStepDef> = {
+
   home: {
     id:              'home',
     tab:             '/',
-    title:           'Your reading home',
-    body:            "See what you\u2019re reading right now, your recent activity, and your progress all in one place.",
+    title:           'Your reading life',
+    body:            'Active reads, progress, and pace \u2014 all at a glance. This is where you check in on what you\u2019re reading right now.',
     ctaLabel:        'Next \u2192',
     tabIdx:          0,
     cardPos:         'bottom',
     spotlightRect:   HOME_RECT,
     inScreenHotspot: HOME_HOTSPOT,
   },
+
+  recommend: {
+    id:              'recommend',
+    tab:             '/(tabs)/search',
+    title:           'Your picks',
+    body:            'Personalized recommendations that get sharper the more you read. Friends can also send you picks \u2014 those arrive in your Inbox.',
+    ctaLabel:        'Next \u2192',
+    tabIdx:          1,
+    cardPos:         'bottom',
+    spotlightRect:   RECOMMEND_RECT,
+    inScreenHotspot: RECOMMEND_HOTSPOT,
+  },
+
   library: {
     id:              'library',
     tab:             '/(tabs)/library',
     title:           'Your library',
-    body:            "Every book you\u2019ve read, saved, or are working through. Log progress, mark it finished, add notes.",
-    ctaLabel:        'Next \u2192',
+    body:            'Every book you\u2019ve read, saved, or are working through. Logging here is what teaches the engine what you like.',
+    ctaLabel:        'Done \u2192',
     tabIdx:          2,
     cardPos:         'bottom',
     spotlightRect:   LIBRARY_RECT,
     inScreenHotspot: LIBRARY_HOTSPOT,
   },
-  recommend: {
-    id:              'recommend',
-    tab:             '/(tabs)/search',
-    title:           'Your picks',
-    body:            '',
-    ctaLabel:        '',
-    tabIdx:          1,
-    cardPos:         'bottom',
-    spotlightRect:   null,
-    inScreenHotspot: null,
-  },
+
 };
 
-export const WT_OVERLAY_STEPS: WtStep[] = ['home', 'library'];
-export const WT_ORDER: WtStep[]         = ['home', 'library', 'recommend', 'done'];
+// Step order follows physical tab order (tab 0 → tab 1 → tab 2 → done).
+// No zigzag.
+export const WT_ORDER: WtStep[]         = ['home', 'recommend', 'library', 'done'];
+export const WT_OVERLAY_STEPS: WtStep[] = ['home', 'recommend', 'library'];
 
 export function nextWtStep(current: WtStep): WtStep {
   const i = WT_ORDER.indexOf(current);
@@ -144,8 +156,6 @@ export function nextWtStep(current: WtStep): WtStep {
 }
 
 // ─── Target registry ──────────────────────────────────────────────────────────
-// Screen components register their bounding rects here so the overlay can
-// draw precise spotlight apertures that track real layout.
 
 const _targets = new Map<string, TargetRect>();
 
@@ -163,22 +173,13 @@ export function clearWtTargets(): void {
   _targets.clear();
 }
 
-// ─── useWalkthroughTarget hook ────────────────────────────────────────────────
-// Attach to any View to register its live position with the overlay.
-//
-// Usage:
-//   const { ref, onLayout } = useWalkthroughTarget('home_content');
-//   <View ref={ref} onLayout={onLayout}> ... </View>
-
 export function useWalkthroughTarget(key: string) {
   const viewRef = useRef<any>(null);
-
   const onLayout = useCallback(() => {
     viewRef.current?.measureInWindow((x: number, y: number, width: number, height: number) => {
       registerWtTarget(key, { x, y, width, height });
     });
   }, [key]);
-
   return { ref: viewRef, onLayout };
 }
 

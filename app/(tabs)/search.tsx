@@ -785,21 +785,31 @@ export default function RecommendationsScreen() {
 
   // ── Recommendations entry check ────────────────────────────────────────────
   // Shows RecEntryScreen when:
-  //   (a) The user is at the walkthrough 'recommend' step (guided tour routed them here), OR
+  //   (a) The walkthrough just finished ('done') — tour is complete, setup time.
   //   (b) The user has no personalization signal and hasn't made a rec-entry choice yet.
+  //
+  // Note: during the 'recommend' overlay tour step, the app shows the rec feed
+  // with a spotlight — RecEntryScreen does NOT fire at that point.  It fires
+  // only after the full tour completes (wtStep === 'done') when _layout.tsx
+  // navigates here automatically.
+  //
   // Waits for walkthrough state to load (wtStep === null means still loading).
   const entryChecked = useRef(false);
   useEffect(() => {
     if (wtStep === null) return;             // still loading — wait
+    if (wtStep === 'home' || wtStep === 'recommend' || wtStep === 'library') return; // tour in progress
     if (entryChecked.current) return;
     entryChecked.current = true;
 
     async function maybeShowEntry() {
-      // Guided walkthrough has navigated the user here contextually
-      if (wtStep === 'recommend') {
+      // Walkthrough just finished — user has been shown the app; now prompt setup
+      if (wtStep === 'done') {
         wtEvt_recStepReached();
-        setStep('entry');
-        return;
+        const seen = await hasSeenRecEntry();
+        if (!seen) {
+          setStep('entry');
+          return;
+        }
       }
       // Fallback for existing / non-walkthrough users
       if (!supabase) return;
@@ -1347,8 +1357,7 @@ export default function RecommendationsScreen() {
       <SafeAreaView style={{ flex: 1, backgroundColor: '#faf9f7' }}>
         <RecEntryScreen
           onDone={() => {
-            // If the user arrived here via the guided walkthrough, mark it done
-            if (wtStep === 'recommend') advanceWt();
+            // Tour is already 'done' when RecEntryScreen shows — no advance needed
             setStep('hub');
             loadHub();
           }}
