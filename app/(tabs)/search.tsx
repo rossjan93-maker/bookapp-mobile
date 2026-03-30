@@ -1211,7 +1211,7 @@ function RecCard({
   // Local state
   const [moreDone, setMoreDone]           = useState(false);
   const [pendingAction, setPendingAction] = useState(false);
-  const [confirmState, setConfirmState]   = useState<'save' | 'more' | null>(null);
+  const [confirmState, setConfirmState]   = useState<'save' | 'more' | 'dismiss' | null>(null);
   const [seriesCovers, setSeriesCovers]   = useState<SeriesCover[]>([]);
   const impressionFired  = useRef(false);
 
@@ -1299,7 +1299,12 @@ function RecCard({
   function handleDismissPress() {
     if (pendingAction) return;
     setPendingAction(true);
-    onDismiss();
+    setConfirmState('dismiss');
+    if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', `phase=pending_confirm`, `| book_id=${book.id}`);
+    setTimeout(() => {
+      setConfirmState(null);
+      onDismiss();
+    }, 350);
   }
 
   function handleMoreLikeThisPress() {
@@ -1350,31 +1355,66 @@ function RecCard({
   // Behavior-driven explanation — series > author affinity > generic fallback
   const collapsedReason = buildExplanation(book, hasSeriesMeta);
 
-  // ── In-card undo row — card stays in its list position during the undo window ──
+  // ── Undo overlay — card stays full-height during the undo window (no layout jump) ──
+  // The ghost view preserves the natural card height; the overlay sits on top.
   if (isPendingDismiss) {
     return (
-      <View style={{
+      <Animated.View style={{
+        opacity,
         backgroundColor: '#fafaf9',
         borderRadius: 14,
-        marginBottom: 6,
+        marginBottom: 8,
+        shadowColor: '#000',
+        shadowOpacity: featured ? 0.07 : 0.04,
+        shadowRadius: featured ? 10 : 6,
+        shadowOffset: { width: 0, height: featured ? 2 : 1 },
+        elevation: featured ? 2 : 1,
+        overflow: 'hidden',
         borderWidth: 1,
         borderColor: '#e7e5e4',
-        paddingHorizontal: 14,
-        paddingVertical: 13,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
       }}>
-        <Text style={{ flex: 1, fontSize: 13, color: '#78716c' }} numberOfLines={1}>
-          Not for me — "{book.title}"
-        </Text>
-        <TouchableOpacity
-          onPress={onDismissUndo}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917' }}>Undo</Text>
-        </TouchableOpacity>
-      </View>
+        {/* Invisible ghost — preserves exact card height without reflowing siblings */}
+        <View style={{ opacity: 0, padding: 12, flexDirection: 'row', alignItems: 'flex-start' }}>
+          <View style={{
+            width: featured ? 52 : 44,
+            height: featured ? 76 : 64,
+            backgroundColor: '#e7e5e4',
+            borderRadius: 4,
+          }} />
+          <View style={{ flex: 1, marginLeft: 12, height: featured ? 76 : 64 }} />
+        </View>
+        {/* Action bar ghost */}
+        <View style={{ height: 43, opacity: 0, borderTopWidth: 1, borderTopColor: '#f0eeeb' }} />
+
+        {/* Undo overlay — covers the ghost, no height change to surrounding layout */}
+        <View style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          justifyContent: 'center',
+          paddingHorizontal: 16,
+          gap: 6,
+        }}>
+          <Text style={{ fontSize: 13, fontWeight: '600', color: '#57534e' }} numberOfLines={1}>
+            "{book.title}"
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Text style={{ flex: 1, fontSize: 12, color: '#a8a29e' }}>
+              Skipped
+            </Text>
+            <TouchableOpacity
+              onPress={onDismissUndo}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={{
+                backgroundColor: '#f5f5f4',
+                borderRadius: 8,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+              }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#1c1917' }}>Undo</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Animated.View>
     );
   }
 
@@ -1598,6 +1638,15 @@ function RecCard({
               </Text>
               <Text style={{ fontSize: 12, color: '#166534' }}>
                 Saved to Want to Read
+              </Text>
+            </>
+          ) : confirmState === 'dismiss' ? (
+            <>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: '#78716c' }}>
+                Skipped
+              </Text>
+              <Text style={{ fontSize: 12, color: '#a8a29e' }}>
+                We'll note this preference
               </Text>
             </>
           ) : (
@@ -1935,6 +1984,22 @@ export default function RecommendationsScreen() {
   useEffect(() => {
     if (!__DEV__) return;
     const hasR = recommendations.length > 0 || continuations.length > 0;
+    // Derive display state for logging (mirrors the render-time derivation).
+    const ds = (() => {
+      if (recsLoading && !hasR) return 'loading_initial';
+      if (hasR) return isBackgroundRefreshing ? 'ready_refreshing' : 'ready';
+      if (recsQualityGate) return 'quality_gated';
+      if (recsExhausted) return (isBackgroundRefreshing || recsLoading) ? 'exhausted_refreshing' : 'exhausted_terminal';
+      if (deckTransitionHint) return 'action_transition';
+      return 'empty';
+    })();
+    console.log('[REC_DISPLAY_STATE]',
+      `state=${ds}`,
+      `| loading=${recsLoading}`,
+      `| bg_refreshing=${isBackgroundRefreshing}`,
+      `| exhausted=${recsExhausted}`,
+      `| deck_hint=${deckTransitionHint}`,
+    );
     console.log('[REC_RENDER]',
       `loading=${recsLoading}`,
       `| recommendations_length=${recommendations.length}`,
@@ -1945,7 +2010,7 @@ export default function RecommendationsScreen() {
       `| recs_exhausted=${recsExhausted}`,
       `| showing_empty_state=${!hasR && !recsQualityGate && !recsLoading}`,
     );
-  }, [recsLoading, recommendations.length, continuations.length, discoveries.length, recsQualityGate, recsExhausted]);
+  }, [recsLoading, recommendations.length, continuations.length, discoveries.length, recsQualityGate, recsExhausted, isBackgroundRefreshing, deckTransitionHint]);
 
   // ── Search/send flow state ────────────────────────────────────────────────
   const [query, setQuery]               = useState('');
@@ -3192,6 +3257,12 @@ export default function RecommendationsScreen() {
     const filteredConts = continuations.filter(bookFilter);
     const filteredDiscs = discoveries.filter(bookFilter);
     const { conts: newConts, discs: newDiscs } = appendNextEligible(filteredConts, filteredDiscs);
+    if (__DEV__) console.log('[REC_DECK_TRANSITION]',
+      'action=save',
+      `| before_count=${recommendations.length + continuations.length + discoveries.length}`,
+      `| after_count=${(recommendations.length - 1) + newConts.length + newDiscs.length}`,
+      '| animated=true',
+    );
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setRecommendations(prev => prev.filter(bookFilter));
     setContinuations(newConts);
@@ -3304,6 +3375,12 @@ export default function RecommendationsScreen() {
       if (!_pendingDismissRecord || _pendingDismissRecord.book.id !== book.id) return;
       _pendingDismissRecord = null;
       const bookFilter = (b: ScoredBook) => b.id !== book.id;
+      if (__DEV__) console.log('[REC_DECK_TRANSITION]',
+        'action=dismiss',
+        `| before_count=${continuations.length + discoveries.length}`,
+        `| after_count=${continuations.filter(bookFilter).length + discoveries.filter(bookFilter).length}`,
+        '| animated=true',
+      );
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setRecommendations(p => p.filter(bookFilter));
       setContinuations(p   => p.filter(bookFilter));
@@ -3555,6 +3632,28 @@ export default function RecommendationsScreen() {
     const hasAnyTask      = hasRateTasks || hasTagTasks || hasAnalyseTask;
     const hasRecs         = recommendations.length > 0 || continuations.length > 0;
 
+    // ── Single resolved display-state ──────────────────────────────────────
+    // Exactly one of these is ever true at render time, eliminating all
+    // overlap between loaders, refreshers, exhaustion states, and transition hints.
+    type RecDisplayState =
+      | 'loading_initial'      // cold start, no deck, skeleton shown
+      | 'ready'                // deck visible, no background activity
+      | 'ready_refreshing'     // deck visible, background refresh running (subtle badge only)
+      | 'action_transition'    // deck just emptied via user actions, brief 2.5 s hint
+      | 'exhausted_refreshing' // all recs seen, bypass reload running
+      | 'exhausted_terminal'   // all recs seen, bypass exhausted too — caught-up
+      | 'quality_gated'        // pipeline blocked (insufficient pool, intent mismatch, etc.)
+      | 'empty';               // no recs, no special condition (non-exhaustion caught-up)
+
+    const displayState: RecDisplayState = (() => {
+      if (recsLoading && !hasRecs)   return 'loading_initial';
+      if (hasRecs)                   return isBackgroundRefreshing ? 'ready_refreshing' : 'ready';
+      if (recsQualityGate)           return 'quality_gated';
+      if (recsExhausted)             return (isBackgroundRefreshing || recsLoading) ? 'exhausted_refreshing' : 'exhausted_terminal';
+      if (deckTransitionHint)        return 'action_transition';
+      return 'empty';
+    })();
+
     return (
       <View style={{ flex: 1 }}>
       <ScrollView
@@ -3621,7 +3720,7 @@ export default function RecommendationsScreen() {
                 }}>
                   For You
                 </Text>
-                {isBackgroundRefreshing && (
+                {displayState === 'ready_refreshing' && (
                   <View style={{
                     flexDirection: 'row', alignItems: 'center',
                     marginLeft: 8, paddingHorizontal: 7, paddingVertical: 2,
@@ -3634,7 +3733,7 @@ export default function RecommendationsScreen() {
               </View>
 
               {/* ── Personalised picks loading skeleton ── */}
-              {recsLoading && (
+              {displayState === 'loading_initial' && (
                 <View style={{ marginBottom: 20 }}>
                   <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 10 }}>
                     Picked for you
@@ -3646,7 +3745,7 @@ export default function RecommendationsScreen() {
               )}
 
               {/* ── Personalised picks (tier ≥ 1) ── */}
-              {hasRecs && !recsLoading && (
+              {(displayState === 'ready' || displayState === 'ready_refreshing') && (
                 <View style={{ marginBottom: 20 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
                     <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', flex: 1 }}>
@@ -3842,7 +3941,7 @@ export default function RecommendationsScreen() {
               )}
 
               {/* ── Quality gate: not enough signal or coverage ── */}
-              {recsQualityGate && !recsLoading && !hasRecs && (tasteProfile?.tier ?? 0) >= 1 && (
+              {displayState === 'quality_gated' && (tasteProfile?.tier ?? 0) >= 1 && (
                 <View style={{
                   backgroundColor: recsQualityGate === 'intent_filtered_empty' ? '#faf9f7' : '#fff',
                   borderRadius: 14,
@@ -3892,7 +3991,7 @@ export default function RecommendationsScreen() {
               )}
 
               {/* ── All recs acted-on → replenishment running ── */}
-              {recsExhausted && !hasRecs && !recsQualityGate && (isBackgroundRefreshing || recsLoading) && (
+              {displayState === 'exhausted_refreshing' && (
                 <View style={{
                   backgroundColor: '#fff',
                   borderRadius: 14,
@@ -3916,7 +4015,7 @@ export default function RecommendationsScreen() {
               )}
 
               {/* ── All recs acted-on → replenishment complete, still empty ── */}
-              {recsExhausted && !hasRecs && !recsQualityGate && !isBackgroundRefreshing && !recsLoading && (
+              {displayState === 'exhausted_terminal' && (
                 <View style={{
                   backgroundColor: '#fff',
                   borderRadius: 14,
@@ -3953,7 +4052,7 @@ export default function RecommendationsScreen() {
               )}
 
               {/* ── Deck just emptied → brief "Refreshing" transitional hint ── */}
-              {deckTransitionHint && !hasRecs && !recsLoading && (
+              {displayState === 'action_transition' && (
                 <View style={{
                   backgroundColor: '#fff',
                   borderRadius: 14,
@@ -3977,7 +4076,7 @@ export default function RecommendationsScreen() {
               )}
 
               {/* ── No recs + no tasks → caught up (non-exhaustion path) ── */}
-              {!hasRecs && !recsQualityGate && !recsLoading && !hasAnyTask && !deckTransitionHint && !recsExhausted && (
+              {displayState === 'empty' && !hasAnyTask && (
                 <View style={{
                   backgroundColor: '#fff',
                   borderRadius: 14,

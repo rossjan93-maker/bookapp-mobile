@@ -1,0 +1,121 @@
+The Recommendations tab still feels mechanically loaded and visually jumpy. I want a combined fix for entry-state UX and action-state UX.
+
+Observed problems from the recordings:
+1. On tab open, the screen can show both:
+   - a top-level entry loader (“Finding your next picks...”)
+   - and a secondary refresh card (“Refreshing your picks...”)
+   This feels like dual loading.
+
+2. When I act on recommendation cards:
+   - the stack reflows abruptly
+   - cards disappear too suddenly
+   - lower sections like “Refine your taste” jump upward
+   - the page feels like it is statically re-rendering instead of smoothly transitioning
+
+3. Action feedback is inconsistent:
+   - “Not for me” shows as a slim dismiss/undo chip style
+   - “Want to Read” shows as a large green confirmation block
+   - these do not feel like part of one interaction system
+
+4. After acting on cards, the screen sometimes falls back into a visible loading/reset state instead of smoothly advancing the next recommendation into place.
+
+I want this fixed at the state-model and motion-system level, not with scattered cosmetic patches.
+
+Goals:
+A) Recommendations tab should feel immediate on open
+B) Acting on cards should feel smooth, continuous, and premium
+C) Only one loading / refreshing / exhausted treatment should ever be visible at once
+D) Lower modules should not jump abruptly when the recommendation stack changes
+
+Please inspect the Recommend tab lifecycle and refactor toward a single display-state model plus consistent card-transition behavior.
+
+What I want behaviorally:
+
+TAB ENTRY
+1. If a usable deck already exists:
+   - show the deck immediately on tab open
+   - do background refresh silently or with only a very subtle inline status
+   - do NOT show full loading again
+   - do NOT show both entry loading and refresh card together
+
+2. If no usable deck exists yet:
+   - show exactly one loading treatment
+   - do NOT stack multiple loaders
+
+3. If deck is exhausted:
+   - show exactly one exhausted/caught-up state
+   - do NOT stack it with loaders unless a true retry is happening
+
+CARD ACTIONS
+4. When I tap “Want to Read”, “Not for me”, or “More like this”:
+   - the card should enter a temporary action-confirmed state
+   - then glide out / collapse smoothly
+   - the next card should move up with animation, not a static jump
+
+5. The top recommendation area should maintain structural stability:
+   - preserve container height during transition where appropriate
+   - avoid the whole page shifting abruptly upward
+   - “Refine your taste” and other lower modules should move smoothly, ideally with layout animation
+
+6. Use one consistent action-feedback system:
+   - unify “Want to Read” and “Not for me” interaction language and visual pattern
+   - feedback can vary by tone/color, but the structure should be consistent
+   - avoid one action producing a tiny chip while another produces a large block unless intentionally designed as the same component family
+
+7. Do not wipe the whole recommendation area just because one card was acted on.
+   - Prefer optimistic local deck mutation
+   - Then background reconcile with server/session state
+   - Keep the deck feeling continuous
+
+Implementation tasks:
+1. Trace all render-driving booleans and conditions in search.tsx / Recommend tab:
+   - initial load
+   - cache restore
+   - background refresh
+   - exhaustion retry
+   - tab-focus revisit
+   - action pending
+   - action confirmed
+   - deck depleted
+2. Identify which conditions are simultaneously true on tab entry and causing dual loading.
+3. Refactor to one resolved display-state model, for example:
+   - loading_initial
+   - ready
+   - ready_refreshing
+   - action_transition
+   - exhausted_refreshing
+   - exhausted_terminal
+4. Prevent revisit from clearing an already-usable deck unless replacement content is actually ready.
+5. Introduce a stable top-deck transition system:
+   - optimistic removal
+   - outgoing-card animation
+   - layout animation for remaining cards and lower sections
+   - no abrupt section jumps
+6. Normalize action feedback UI into one reusable component pattern.
+7. Add logs for debugging:
+   - [REC_DISPLAY_STATE] state=...
+   - [REC_ACTION_STATE] action=..., card_id=..., phase=pending|confirmed|removed
+   - [REC_DECK_TRANSITION] before_count=..., after_count=..., animated=true/false
+8. Preserve stale-while-revalidate behavior:
+   - existing deck stays mounted while refresh happens
+   - refresh should not visually reset the page
+
+Strong preference:
+- Use proper layout transitions / shared motion if available in the stack
+- Prioritize smoothness over aggressive state replacement
+- Keep prior content mounted until successor content is ready
+
+Success criteria:
+- Opening the Recommend tab never shows two loaders at once
+- If a deck exists, the tab opens directly into it
+- Acting on a card feels smooth and continuous
+- “Refine your taste” does not jump upward abruptly
+- “Want to Read” and “Not for me” feel like part of one coherent interaction system
+- Refresh/reload does not visually wipe the tab unless there is truly no usable content
+- The Recommendations tab feels stable, immediate, and premium
+
+Before changing code:
+Please read the relevant files and explain the exact current state/render logic causing:
+1. dual loading on entry
+2. jumpy card removal / section reflow
+Then implement surgically.
