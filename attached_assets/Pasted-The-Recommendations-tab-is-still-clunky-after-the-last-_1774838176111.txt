@@ -1,0 +1,88 @@
+The Recommendations tab is still clunky after the last state-model cleanup.
+
+The logic is improved, but the motion still feels wrong. This now needs a proper transition system, not more boolean/render cleanup.
+
+Observed in the latest recording:
+1. The outgoing recommendation card does not feel like it exits.
+   - It lingers as a blank/ghost card
+   - The motion feels like content got replaced, not animated away
+
+2. The next card does not smoothly advance into place.
+   - It appears underneath / after the outgoing state
+   - The stack reflows in a chunky way rather than a continuous glide
+
+3. Lower sections like “Refine your taste” still move like the page is re-rendering.
+   - They do not feel attached to the same layout transition
+   - The whole screen still feels mechanically rearranged
+
+4. Action feedback still feels too static.
+   - We now have more consistent structure, but not enough motion quality
+   - The interaction needs a real sequence: confirm -> exit -> settle
+
+This is no longer primarily a display-state problem.
+This is now a motion architecture problem.
+
+What I want:
+A premium-feeling recommendation action flow where the current card exits smoothly, the next card advances naturally, and lower sections glide into their new positions.
+
+Target interaction model:
+1. User taps action
+2. Card enters a short confirmed state
+3. Card animates out with real motion (not just content replacement)
+4. Remaining cards shift upward with layout interpolation
+5. Lower modules move smoothly as part of the same transition
+6. Only after transition completes should the new resting layout be considered “settled”
+
+Please inspect the current implementation and identify exactly why it still feels clunky even after the ghost-card/displayState refactor.
+
+Likely areas to inspect:
+- whether the card is being replaced instead of transformed
+- whether height is collapsing at the wrong time
+- whether LayoutAnimation on web is insufficient for this use case
+- whether lower modules are outside the animated layout group
+- whether the next card becomes interactive/visible before the prior card has completed exit
+- whether action confirmation is too long / too static
+
+I want you to refactor toward a real animated transition system.
+
+Implementation goals:
+1. The active outgoing recommendation card should animate as a transformed element:
+   - translateY and/or slight translateX
+   - opacity fade
+   - subtle scale change if appropriate
+   - not just a render swap to a ghost placeholder
+
+2. The deck should support smooth reflow:
+   - remaining cards should move up via layout animation/interpolation
+   - lower sections (“Refine your taste”, etc.) should be in the same animated flow
+
+3. The container should preserve structural stability during the transition:
+   - no abrupt collapse
+   - no dead blank card hanging too long
+   - no teleporting section jumps
+
+4. Normalize the action sequence across Want to Read / Not for me / More like this:
+   - same motion structure
+   - confirmation state can vary in color/text, but motion should be coherent
+
+5. Prevent premature interactivity:
+   - while a card is transitioning out, avoid making the next card feel “live” too early if that causes overlap/confusion
+
+6. If the current implementation relies on LayoutAnimation and that is weak on web, replace it with a stronger approach appropriate for the stack:
+   - use the best motion system available in this codebase for React Native + web
+   - prioritize actual smoothness over minimal code change
+
+7. Add logs for transition lifecycle:
+   - [REC_MOTION] action=save|dismiss|more phase=confirm|exit|reflow|settled
+   - [REC_LAYOUT] deck_count_before=... after=... animated=true/false
+
+Success criteria:
+- Acting on a recommendation feels like one continuous motion, not a set of re-renders
+- The outgoing card visibly exits
+- The next card advances naturally
+- “Refine your taste” and lower sections glide rather than jump
+- No blank ghost card lingers awkwardly
+- The Recommendations tab feels materially smoother on web, not just logically cleaner
+
+Before changing code:
+Please explain the exact remaining cause of clunkiness in the current implementation and then implement surgically.

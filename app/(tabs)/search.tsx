@@ -1205,8 +1205,10 @@ function RecCard({
 }) {
   const router = useRouter();
 
-  // Animation ref — card fade-out on dismiss/save
-  const opacity = useRef(new Animated.Value(1)).current;
+  // Animation refs — card exit: opacity + translateY + scale
+  const opacity        = useRef(new Animated.Value(1)).current;
+  const cardTranslateY = useRef(new Animated.Value(0)).current;
+  const cardScale      = useRef(new Animated.Value(1)).current;
 
   // Local state
   const [moreDone, setMoreDone]           = useState(false);
@@ -1282,29 +1284,37 @@ function RecCard({
   }, []);
 
   function animateOut(cb: () => void) {
-    Animated.timing(opacity, {
-      toValue:  0,
-      duration: 150,
-      useNativeDriver: true,
-    }).start(cb);
+    if (__DEV__) console.log('[REC_MOTION]', `book_id=${book.id}`, 'phase=exit');
+    Animated.parallel([
+      Animated.timing(opacity,        { toValue: 0,    duration: 220, useNativeDriver: true }),
+      Animated.timing(cardTranslateY, { toValue: -16,  duration: 220, useNativeDriver: true }),
+      Animated.timing(cardScale,      { toValue: 0.96, duration: 220, useNativeDriver: true }),
+    ]).start(() => cb());
   }
 
   function handleSavePress() {
     if (pendingAction) return;
     setPendingAction(true);
     setConfirmState('save');
-    setTimeout(() => animateOut(onSave), 800);
+    if (__DEV__) console.log('[REC_MOTION]', `book_id=${book.id}`, 'action=save', 'phase=confirm');
+    setTimeout(() => animateOut(onSave), 350);
   }
 
   function handleDismissPress() {
     if (pendingAction) return;
     setPendingAction(true);
     setConfirmState('dismiss');
-    if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=dismiss', `phase=pending_confirm`, `| book_id=${book.id}`);
+    if (__DEV__) console.log('[REC_MOTION]', `book_id=${book.id}`, 'action=dismiss', 'phase=confirm');
     setTimeout(() => {
-      setConfirmState(null);
-      onDismiss();
-    }, 350);
+      animateOut(() => {
+        // Reset all motion values so the ghost card renders at full opacity with no transform
+        opacity.setValue(1);
+        cardTranslateY.setValue(0);
+        cardScale.setValue(1);
+        if (__DEV__) console.log('[REC_MOTION]', `book_id=${book.id}`, 'action=dismiss', 'phase=ghost');
+        onDismiss();
+      });
+    }, 200);
   }
 
   function handleMoreLikeThisPress() {
@@ -1312,7 +1322,8 @@ function RecCard({
     setPendingAction(true);
     setMoreDone(true);
     setConfirmState('more');
-    setTimeout(() => animateOut(onMoreLikeThis), 800);
+    if (__DEV__) console.log('[REC_MOTION]', `book_id=${book.id}`, 'action=more', 'phase=confirm');
+    setTimeout(() => animateOut(onMoreLikeThis), 350);
   }
 
   function handleCardPress() {
@@ -1421,6 +1432,7 @@ function RecCard({
   return (
     <Animated.View style={{
       opacity,
+      transform: [{ translateY: cardTranslateY }, { scale: cardScale }],
       backgroundColor: '#fff',
       borderRadius: 14,
       marginBottom: 8,
