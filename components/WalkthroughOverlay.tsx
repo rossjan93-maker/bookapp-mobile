@@ -111,69 +111,227 @@ function PulsingRing({ tabIdx }: { tabIdx: number }) {
   );
 }
 
-// ─── 2. Spotlight aperture ────────────────────────────────────────────────────
+// ─── 2. Warm glow halo ────────────────────────────────────────────────────────
 //
-// 4 dim panels leave a clear window around the focal card.  No box/frame border —
-// the card's own shadow + scale creates the lift.  A 3-layer warm amber bloom in
-// the dim area gives the "backlight halo emanating from behind the card" effect.
+// Three concentric rounded rects rendered above the full-screen dim, behind the
+// focal card.  Creates the "warm backlight emanating from the object" effect.
+// No sharp edges — purely additive warm light in the dim field.
 
-function SpotlightAperture({ rect, fade }: { rect: TargetRect; fade: Animated.Value }) {
+function GlowHalo({ rect }: { rect: TargetRect }) {
   const { x, y, width, height } = rect;
-  const rr = SW - (x + width);
-
-  const panel = {
-    position:        'absolute' as const,
-    backgroundColor: DIM_COLOR,
-  };
-
   return (
-    <Animated.View
-      pointerEvents="none"
-      style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: fade }}
-    >
-      {/* 4 dim panels — surround the clear card window */}
-      <View style={{ ...panel, top: 0,          left: 0, right: 0,  height: y          }} />
-      <View style={{ ...panel, top: y,          left: 0, width:  x, height             }} />
-      <View style={{ ...panel, top: y,          right: 0, width: rr, height            }} />
-      <View style={{ ...panel, top: y + height, left: 0, right: 0,  bottom: 0          }} />
-
-      {/* Warm glow bloom — rendered on the dim field, bleeding outward from the card.
-          Three nested layers give the illusion of warm light emanating from behind. */}
-
-      {/* Outer halo — widest, most diffuse */}
-      <View style={{
+    <>
+      <View pointerEvents="none" style={{
         position:        'absolute',
-        top:             y - 34,
-        left:            x - 38,
-        width:           width  + 76,
-        height:          height + 68,
-        borderRadius:    28,
+        top:             y - 36,
+        left:            x - 40,
+        width:           width  + 80,
+        height:          height + 72,
+        borderRadius:    36,
         backgroundColor: GLOW_C,
       }} />
-
-      {/* Middle halo */}
-      <View style={{
+      <View pointerEvents="none" style={{
         position:        'absolute',
-        top:             y - 18,
-        left:            x - 20,
-        width:           width  + 40,
-        height:          height + 36,
-        borderRadius:    22,
+        top:             y - 19,
+        left:            x - 21,
+        width:           width  + 42,
+        height:          height + 38,
+        borderRadius:    26,
         backgroundColor: GLOW_B,
       }} />
-
-      {/* Inner halo — tightest, warmest */}
-      <View style={{
+      <View pointerEvents="none" style={{
         position:        'absolute',
-        top:             y - 7,
-        left:            x - 8,
-        width:           width  + 16,
-        height:          height + 14,
-        borderRadius:    17,
+        top:             y - 8,
+        left:            x - 9,
+        width:           width  + 18,
+        height:          height + 16,
+        borderRadius:    20,
         backgroundColor: GLOW_A,
       }} />
-    </Animated.View>
+    </>
   );
+}
+
+// ─── 3. Focal card components ─────────────────────────────────────────────────
+//
+// Each renders the step's focal card ABOVE the full-screen dim at the exact
+// measured coordinates.  The card floats visually — no surrounding lit region,
+// no rectangular cutout.  Scale + stronger shadow + warm border do the lifting.
+//
+// These are demo-only cards. TouchableOpacity elements have no onPress so they
+// give feedback on touch without navigating.
+
+const FOCAL_CARD_SHADOW = {
+  shadowColor:   '#000',
+  shadowOpacity: 0.32,
+  shadowRadius:  28,
+  shadowOffset:  { width: 0, height: 10 } as const,
+  elevation:     20,
+};
+
+function HomeFocalCard({ rect }: { rect: TargetRect }) {
+  return (
+    <View style={{
+      position:       'absolute',
+      top:            rect.y,
+      left:           rect.x,
+      width:          rect.width,
+      backgroundColor: '#fff',
+      borderRadius:   14,
+      padding:        14,
+      borderLeftWidth: 3,
+      borderLeftColor: '#d4a574',
+      borderWidth:    1.5,
+      borderColor:    'rgba(212,165,116,0.48)',
+      ...FOCAL_CARD_SHADOW,
+      transform:      [{ scale: 1.02 }],
+    }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 }}>
+        <View style={{ width: 44, height: 64, borderRadius: 6, backgroundColor: '#ddd5c8' }} />
+        <View style={{ flex: 1, marginLeft: 10 }}>
+          <Text style={{ fontSize: 14, fontWeight: '700', color: '#1c1917', lineHeight: 19, marginBottom: 3 }} numberOfLines={2}>
+            The Thursday Murder Club
+          </Text>
+          <Text style={{ fontSize: 12, color: '#78716c' }}>Richard Osman</Text>
+        </View>
+      </View>
+      <View style={{ height: 3, backgroundColor: '#e7e5e4', borderRadius: 2, overflow: 'hidden', marginBottom: 4 }}>
+        <View style={{ height: 3, width: '63%', backgroundColor: '#1c1917', borderRadius: 2 }} />
+      </View>
+      <Text style={{ fontSize: 10, color: '#a8a29e' }}>Page 270 of 382 · 63%</Text>
+    </View>
+  );
+}
+
+function RecommendFocalCard({ rect }: { rect: TargetRect }) {
+  return (
+    <View style={{
+      position:       'absolute',
+      top:            rect.y,
+      left:           rect.x,
+      width:          rect.width,
+      backgroundColor: '#fff',
+      borderRadius:   14,
+      overflow:       'hidden',
+      ...FOCAL_CARD_SHADOW,
+      transform:      [{ scale: 1.02 }],
+    }}>
+      <View style={{ height: 3, backgroundColor: '#1c1917' }} />
+      <View style={{ padding: 12, flexDirection: 'row', alignItems: 'flex-start' }}>
+        <View style={{ width: 52, height: 76, borderRadius: 6, backgroundColor: '#ddd5c8' }} />
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={{ fontSize: 15, fontWeight: '700', color: '#1c1917', lineHeight: 21, marginBottom: 3 }} numberOfLines={2}>
+            Project Hail Mary
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 6 }}>
+            <Text style={{ fontSize: 12, color: '#78716c', flex: 1 }} numberOfLines={1}>Andy Weir</Text>
+            <View style={{ backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2 }}>
+              <Text style={{ fontSize: 9, fontWeight: '700', color: '#15803d', letterSpacing: 0.3 }}>TOP PICK</Text>
+            </View>
+          </View>
+          <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', lineHeight: 18 }} numberOfLines={2}>
+            Long-form science with immersive pacing
+          </Text>
+        </View>
+      </View>
+      <View style={{ borderTopWidth: 1, borderTopColor: '#f0eeeb', flexDirection: 'row' }}>
+        <TouchableOpacity activeOpacity={0.7} style={{ flex: 1, paddingVertical: 13, paddingHorizontal: 14, justifyContent: 'center', borderRightWidth: 1, borderRightColor: '#f0eeeb' }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917' }}>Want to Read</Text>
+        </TouchableOpacity>
+        <TouchableOpacity activeOpacity={0.7} style={{ paddingVertical: 13, paddingHorizontal: 12, justifyContent: 'center', alignItems: 'center', borderRightWidth: 1, borderRightColor: '#f0eeeb' }}>
+          <Text style={{ fontSize: 12, color: '#78716c', fontWeight: '500' }}>Not for me</Text>
+        </TouchableOpacity>
+        <TouchableOpacity activeOpacity={0.7} style={{ paddingVertical: 13, paddingHorizontal: 12, justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ fontSize: 12, color: '#78716c', fontWeight: '500' }}>More like this</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+function LibraryFocalCard({ rect }: { rect: TargetRect }) {
+  return (
+    <View style={{
+      position:       'absolute',
+      top:            rect.y,
+      left:           rect.x,
+      width:          rect.width,
+      backgroundColor: '#fff',
+      borderRadius:   14,
+      borderLeftWidth: 3,
+      borderLeftColor: '#3b82f6',
+      borderWidth:    1.5,
+      borderColor:    'rgba(59,130,246,0.42)',
+      padding:        14,
+      ...FOCAL_CARD_SHADOW,
+      transform:      [{ scale: 1.02 }],
+    }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+        <View style={{ width: 44, height: 64, borderRadius: 6, backgroundColor: '#ddd5c8' }} />
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={{ fontSize: 14, fontWeight: '700', color: '#1c1917', lineHeight: 19, marginBottom: 3 }} numberOfLines={2}>
+            The Midnight Library
+          </Text>
+          <Text style={{ fontSize: 12, color: '#78716c' }}>Matt Haig</Text>
+        </View>
+      </View>
+      <View style={{ height: 3, backgroundColor: '#e7e5e4', borderRadius: 2, overflow: 'hidden', marginTop: 10, marginBottom: 4 }}>
+        <View style={{ height: 3, width: '34%', backgroundColor: '#3b82f6', borderRadius: 2 }} />
+      </View>
+      <Text style={{ fontSize: 10, color: '#a8a29e' }}>Page 145 of 432 · 34%</Text>
+    </View>
+  );
+}
+
+function InboxFocalCard({ rect }: { rect: TargetRect }) {
+  return (
+    <View style={{
+      position:       'absolute',
+      top:            rect.y,
+      left:           rect.x,
+      width:          rect.width,
+      backgroundColor: '#fffbf5',
+      borderRadius:   14,
+      borderLeftWidth: 3,
+      borderLeftColor: '#d4a574',
+      borderWidth:    1.5,
+      borderColor:    'rgba(212,165,116,0.48)',
+      padding:        16,
+      ...FOCAL_CARD_SHADOW,
+      transform:      [{ scale: 1.02 }],
+    }}>
+      <Text style={{ fontSize: 10, fontWeight: '700', color: '#b8860b', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>
+        From Alex
+      </Text>
+      <View style={{ flexDirection: 'row', marginBottom: 12 }}>
+        <View style={{ width: 48, height: 70, borderRadius: 6, backgroundColor: '#ddd5c8' }} />
+        <View style={{ flex: 1, marginLeft: 14 }}>
+          <Text style={{ fontWeight: '700', fontSize: 16, color: '#1c1917', lineHeight: 22, marginBottom: 3 }}>
+            The Song of Achilles
+          </Text>
+          <Text style={{ color: '#78716c', fontSize: 13 }}>Madeline Miller</Text>
+        </View>
+      </View>
+      <View style={{ backgroundColor: '#fffbf2', borderTopWidth: 1, borderTopColor: '#f0ede8', paddingTop: 10, paddingHorizontal: 10, paddingBottom: 8, borderRadius: 6, marginBottom: 14 }}>
+        <Text style={{ fontSize: 13, color: '#57534e', fontStyle: 'italic', lineHeight: 20 }}>
+          "You need to read this. Trust me."
+        </Text>
+      </View>
+      <TouchableOpacity activeOpacity={0.8} style={{ alignSelf: 'flex-start', paddingHorizontal: 16, paddingVertical: 9, backgroundColor: '#1c1917', borderRadius: 8 }}>
+        <Text style={{ color: '#faf9f7', fontSize: 13, fontWeight: '700' }}>Want to Read</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function renderFocalCard(step: WtStep, rect: TargetRect): React.ReactElement | null {
+  switch (step) {
+    case 'home':      return <HomeFocalCard      rect={rect} />;
+    case 'recommend': return <RecommendFocalCard rect={rect} />;
+    case 'library':   return <LibraryFocalCard   rect={rect} />;
+    case 'inbox':     return <InboxFocalCard      rect={rect} />;
+    default:          return null;
+  }
 }
 
 // ─── 3. In-screen hotspot ─────────────────────────────────────────────────────
@@ -566,35 +724,33 @@ export function WalkthroughOverlay() {
         pointerEvents: 'box-none',
       }}
     >
-      {/* Dim + spotlight aperture — shows immediately */}
-      {spotRect ? (
-        <SpotlightAperture rect={spotRect} fade={overlayFade} />
-      ) : (
-        <Animated.View
-          pointerEvents="none"
-          style={{
-            position:        'absolute',
-            top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: DIM_COLOR,
-            opacity:         overlayFade,
-          }}
-        />
-      )}
+      {/* Full-screen dim — no cutout aperture, no rectangular lit region */}
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position:        'absolute',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: DIM_COLOR,
+          opacity:         overlayFade,
+        }}
+      />
 
       {/* Touch blocker — blocks all touches in the dim area, lets tab bar through */}
       <View
-        style={{
-          position: 'absolute',
-          top: 0, left: 0, right: 0,
-          bottom: TAB_BAR_H,
-        }}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: TAB_BAR_H }}
         pointerEvents="box-only"
       />
 
-      {/* Below: only render once content is confirmed ready */}
-      {stepReady && (
+      {/* Focal content: only render once the card rect is confirmed */}
+      {stepReady && measuredRect && (
         <>
-          {/* In-screen hotspot — rendered above blocker so it receives touches */}
+          {/* Warm glow bloom — sits above the dim, behind the focal card */}
+          <GlowHalo rect={measuredRect} />
+
+          {/* The focal card — positioned at measured coordinates, floating above the dim */}
+          {renderFocalCard(wtStep!, measuredRect)}
+
+          {/* In-screen hotspot — tap target above the blocker */}
           <InScreenHotspot
             pos={hotspot}
             onPress={handleHotspotTap}
@@ -603,13 +759,13 @@ export function WalkthroughOverlay() {
           {/* Pulsing ring on the active tab icon */}
           <PulsingRing tabIdx={def.tabIdx} />
 
-          {/* Coach card — positioned attached to the focal card */}
+          {/* Coach card — dynamically positioned relative to the focal card */}
           <CoachCard
-            step={wtStep}
+            step={wtStep!}
             totalSteps={totalSteps}
             stepIdx={stepIdx}
             def={def}
-            cardRect={measuredRect ?? null}
+            cardRect={measuredRect}
             onNext={advance}
             onSkip={handleSkip}
           />

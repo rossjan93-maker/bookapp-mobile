@@ -38,7 +38,6 @@ export function WtDemoRecommend() {
           shadowOffset: { width: 0, height: 8 },
           elevation: 14,
           overflow: 'hidden',
-          transform: [{ scale: 1.02 }],
         }}
       >
         {/* Top accent bar — featured card marker */}

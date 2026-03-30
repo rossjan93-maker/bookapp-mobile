@@ -54,9 +54,8 @@ export function WtDemoLibrary() {
             elevation: 14,
             paddingTop: 14, paddingRight: 14,
             paddingBottom: 14, paddingLeft: 14,
-            transform: [{ scale: 1.02 }],
-            borderWidth: 1.5,
-            borderColor: 'rgba(59, 130, 246, 0.40)',
+            borderWidth: 1,
+            borderColor: 'rgba(59, 130, 246, 0.15)',
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
