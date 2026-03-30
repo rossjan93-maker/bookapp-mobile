@@ -1,20 +1,29 @@
 // ─── Onboarding & rec-entry instrumentation ───────────────────────────────────
 //
 // Two phases:
-//   Phase 1 — App walkthrough (immediately post-signup, app/onboarding.tsx)
-//   Phase 2 — Recommendations entry (first visit to recs tab)
+//   Phase 1 — Cinematic intro prelude (app/onboarding.tsx)
+//   Phase 2 — In-app guided walkthrough (WalkthroughOverlay + _layout.tsx)
+//   Phase 3 — Recommendations entry (first visit to recs tab)
 //
 // Wire to PostHog/Amplitude/etc. by replacing _track() body.
-// Public API stays the same.
 
 type OnboardingEvent =
-  // ── Phase 1: app walkthrough ──────────────────────────────────────────────
+  // ── Phase 1: intro prelude ────────────────────────────────────────────────
+  | 'intro_started'
+  | 'intro_slide_viewed'
+  | 'intro_completed'
+  | 'intro_skipped'
+  | 'intro_handoff_started'
+  | 'intro_handoff_completed'
+  | 'intro_handoff_failed'
+  // ── Phase 2: in-app walkthrough ───────────────────────────────────────────
   | 'walkthrough_started'
   | 'walkthrough_step_viewed'
+  | 'walkthrough_step_completed'
   | 'walkthrough_completed'
   | 'walkthrough_skipped'
   | 'walkthrough_import_tapped'
-  // ── Phase 2: recommendations entry ───────────────────────────────────────
+  // ── Phase 3: recommendations entry ───────────────────────────────────────
   | 'rec_entry_shown'
   | 'rec_entry_import_tapped'
   | 'rec_entry_intake_started'
@@ -49,7 +58,40 @@ function _track(event: OnboardingEvent, props: EventProps = {}): void {
   console.log(`[ONBOARDING] ${event}`, { ...props, ts: new Date().toISOString() });
 }
 
-// ─── Phase 1: App walkthrough ─────────────────────────────────────────────────
+// ─── Phase 1: intro prelude ───────────────────────────────────────────────────
+
+export function introEvt_started(): void {
+  _sessionStart = Date.now();
+  _track('intro_started');
+}
+
+export function introEvt_slideViewed(idx: number): void {
+  _track('intro_slide_viewed', { idx });
+}
+
+export function introEvt_completed(): void {
+  const durationMs = _sessionStart !== null ? Date.now() - _sessionStart : -1;
+  _track('intro_completed', { durationMs });
+}
+
+export function introEvt_skipped(): void {
+  const durationMs = _sessionStart !== null ? Date.now() - _sessionStart : -1;
+  _track('intro_skipped', { durationMs });
+}
+
+export function introEvt_handoffStarted(): void {
+  _track('intro_handoff_started');
+}
+
+export function introEvt_handoffCompleted(): void {
+  _track('intro_handoff_completed');
+}
+
+export function introEvt_handoffFailed(reason: string): void {
+  _track('intro_handoff_failed', { reason });
+}
+
+// ─── Phase 2: in-app walkthrough ─────────────────────────────────────────────
 
 export function wtStart(): void {
   _sessionStart = Date.now();
@@ -73,7 +115,7 @@ export function wtImportTapped(): void {
   _track('walkthrough_import_tapped');
 }
 
-// ─── Phase 2: Recommendations entry ──────────────────────────────────────────
+// ─── Phase 3: recommendations entry ──────────────────────────────────────────
 
 export function reEntryShown(): void {
   _track('rec_entry_shown');
@@ -121,7 +163,7 @@ export function riAnchorSkipped(): void {
   _track('intake_anchor_skipped');
 }
 
-// ─── Legacy helpers (called by onboarding.tsx — kept for compat) ──────────────
+// ─── Legacy helpers (called by existing screens — kept for compat) ─────────────
 
 export function obStart(): void {
   _sessionStart = Date.now();
@@ -154,7 +196,6 @@ export function obAnchorBook(action: 'searched' | 'selected' | 'skipped', title?
 }
 
 export function obWalkthroughPanel(panelIdx: number): void {
-  // kept for backward-compat; no longer emitted by any screen
   _track('walkthrough_step_viewed', { slideIdx: panelIdx });
 }
 

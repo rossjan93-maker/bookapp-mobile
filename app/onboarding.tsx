@@ -1,17 +1,18 @@
-// ─── Welcome screens (Phase 1 of new-user flow) ───────────────────────────────
+// ─── Cinematic intro prelude ───────────────────────────────────────────────────
 //
-// 2 slides only. Job: welcome the user and set expectation.
-// Does NOT explain the app in detail — that happens via the in-app walkthrough.
+// 1-screen, full-screen dark composition.
+// Job: welcome the user, establish visual quality, hand off reliably.
 //
-// On completion:
-//   - Sets profiles.onboarding_completed = true
-//   - Writes walkthrough='home' to start the in-app tour
-//   - Arms the rec-feed action banner (guidedStep=0)
-//   - Navigates to '/' (home tab)
+// Handoff is IMMEDIATE — no Supabase awaiting.
+// completeOnboarding() updates needsOnboarding in _layout.tsx BEFORE router.replace('/').
+// This prevents the routing guard from redirecting back to onboarding.
+//
+// Supabase profile write and AsyncStorage writes happen in background after navigation.
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   Animated,
+  Dimensions,
   Platform,
   SafeAreaView,
   StatusBar,
@@ -20,181 +21,325 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { writeGuidedStep } from '../components/OnboardingWalkthrough';
-import { writeWtStep, wtEvt_started, wtEvt_stepViewed, wtEvt_stepCompleted, wtEvt_skipped } from '../lib/walkthroughEngine';
+import { writeWtStep } from '../lib/walkthroughEngine';
+import {
+  introEvt_started,
+  introEvt_handoffStarted,
+  introEvt_completed,
+  introEvt_skipped,
+} from '../lib/onboardingAnalytics';
+import { useOnboardingBridge } from './_layout';
+
+// ─── Dimensions ───────────────────────────────────────────────────────────────
+
+const { width: SW, height: SH } = Dimensions.get('window');
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
-const BG   = '#faf9f7';
-const INK  = '#1c1917';
-const SUB  = '#78716c';
-const BORD = '#e7e5e4';
+const BG     = '#1c1917';     // deep dark warm
+const CREAM  = '#faf9f7';     // text / CTA
+const MUTED  = '#78716c';     // skip / subtext
+const ACCENT = '#15803d';     // green card
 
-// ─── Slides ───────────────────────────────────────────────────────────────────
+// ─── Book-card data ───────────────────────────────────────────────────────────
 
-type Slide = {
-  icon:     React.ComponentProps<typeof Ionicons>['name'];
-  headline: string;
-  body:     string;
+type CardConfig = {
+  w: number; h: number;
+  color: string;
+  rotate: string;
+  offsetX: number; offsetY: number;
+  delay: number;
 };
 
-const SLIDES: Slide[] = [
+const CARDS: CardConfig[] = [
+  // back card — rotated left, peeking behind
   {
-    icon:     'book-outline',
-    headline: 'Welcome to readstack',
-    body:     "Your personal book companion. Track your reading, build your library, and get picks that actually match your taste.",
+    w: 110, h: 152, color: '#292219',
+    rotate: '-9deg',
+    offsetX: -28, offsetY: -8,
+    delay: 60,
   },
+  // middle card — rotated right
   {
-    icon:     'trending-up-outline',
-    headline: 'It gets better as you read',
-    body:     "Every book you save, rate, or dismiss teaches readstack your taste. The more you use it, the sharper your recommendations get.",
+    w: 118, h: 162, color: '#1a2e1a',
+    rotate: '7deg',
+    offsetX: 26, offsetY: -4,
+    delay: 30,
+  },
+  // front card — upright, darkened green
+  {
+    w: 128, h: 178, color: ACCENT,
+    rotate: '-1deg',
+    offsetX: 0, offsetY: 0,
+    delay: 0,
   },
 ];
+
+// ─── Animated book card ───────────────────────────────────────────────────────
+
+function BookCard({ cfg, visible }: { cfg: CardConfig; visible: Animated.Value }) {
+  return (
+    <Animated.View
+      style={{
+        position:    'absolute',
+        width:       cfg.w,
+        height:      cfg.h,
+        borderRadius: 8,
+        backgroundColor: cfg.color,
+        transform: [
+          { translateX: cfg.offsetX },
+          { translateY: cfg.offsetY },
+          { rotate: cfg.rotate },
+          {
+            translateY: visible.interpolate({
+              inputRange:  [0, 1],
+              outputRange: [56, 0],
+            }),
+          },
+          {
+            scale: visible.interpolate({
+              inputRange:  [0, 1],
+              outputRange: [0.88, 1],
+            }),
+          },
+        ],
+        opacity: visible.interpolate({
+          inputRange:  [0, 1],
+          outputRange: [0, 1],
+        }),
+        // Subtle spine line
+        borderLeftWidth:  3,
+        borderLeftColor:  'rgba(255,255,255,0.08)',
+        borderRightWidth: 1,
+        borderRightColor: 'rgba(0,0,0,0.25)',
+        // Shadow
+        shadowColor:    '#000',
+        shadowOpacity:  0.55,
+        shadowRadius:   14,
+        shadowOffset:   { width: 0, height: 8 },
+        elevation:      12,
+      }}
+    >
+      {/* Subtle texture lines inside card */}
+      <View style={{ position: 'absolute', top: 20, left: 14, right: 14 }}>
+        {[0, 1, 2, 3].map(i => (
+          <View
+            key={i}
+            style={{
+              height:          2,
+              borderRadius:    1,
+              backgroundColor: 'rgba(255,255,255,0.07)',
+              marginBottom:    8,
+              width:           i === 0 ? '80%' : i === 1 ? '60%' : i === 2 ? '72%' : '45%',
+            }}
+          />
+        ))}
+      </View>
+    </Animated.View>
+  );
+}
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function OnboardingScreen() {
-  const router   = useRouter();
-  const [idx,    setIdx]   = useState(0);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const router             = useRouter();
+  const { completeOnboarding } = useOnboardingBridge();
 
-  const slide  = SLIDES[idx];
-  const isLast = idx === SLIDES.length - 1;
+  // Per-card entry animations
+  const cardAnims = useRef(CARDS.map(() => new Animated.Value(0))).current;
+  // Text block fade-in
+  const textFade  = useRef(new Animated.Value(0)).current;
+  const ctaSlide  = useRef(new Animated.Value(24)).current;
+  const ctaFade   = useRef(new Animated.Value(0)).current;
 
-  useEffect(() => { wtEvt_started(); }, []);
-  useEffect(() => { wtEvt_stepViewed(`slide_${idx}` as any); }, [idx]);
+  useEffect(() => {
+    introEvt_started();
 
-  function goTo(next: number) {
-    Animated.timing(fadeAnim, { toValue: 0, duration: 80, useNativeDriver: true }).start(() => {
-      setIdx(next);
-      Animated.timing(fadeAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
-    });
-  }
+    // Stagger card entries
+    const cardSeqs = CARDS.map((cfg, i) =>
+      Animated.sequence([
+        Animated.delay(cfg.delay),
+        Animated.spring(cardAnims[i], {
+          toValue:        1,
+          useNativeDriver: false,
+          tension:         60,
+          friction:        9,
+        }),
+      ]),
+    );
 
-  async function finish() {
-    wtEvt_stepCompleted(`slide_${idx}` as any);
-    if (supabase) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await Promise.allSettled([
-          supabase.from('profiles').update({ onboarding_completed: true }).eq('id', user.id),
-          writeGuidedStep(0),       // arm rec-feed action banner
-          writeWtStep('home'),      // start the in-app walkthrough at Home
-        ]);
-      }
-    }
+    Animated.sequence([
+      // All cards enter (parallel, staggered via internal delays)
+      Animated.parallel(cardSeqs),
+      // Text fades in
+      Animated.delay(80),
+      Animated.parallel([
+        Animated.timing(textFade, { toValue: 1, duration: 380, useNativeDriver: false }),
+        Animated.timing(ctaFade,  { toValue: 1, duration: 420, useNativeDriver: false }),
+        Animated.timing(ctaSlide, { toValue: 0, duration: 380, useNativeDriver: false }),
+      ]),
+    ]).start();
+  }, []);
+
+  // ── Fail-safe: if somehow we're still here after 8s, navigate anyway ────────
+  useEffect(() => {
+    const t = setTimeout(() => finish('failsafe'), 8000);
+    return () => clearTimeout(t);
+  }, []);
+
+  function finish(source: 'cta' | 'skip' | 'failsafe' = 'cta') {
+    if (source === 'skip') introEvt_skipped();
+    else                   introEvt_completed();
+
+    introEvt_handoffStarted();
+
+    // ① Update parent needsOnboarding BEFORE navigating (fixes redirect loop)
+    completeOnboarding();
+
+    // ② Navigate immediately
     router.replace('/');
-  }
 
-  function handleSkip() {
-    wtEvt_skipped(`slide_${idx}` as any);
-    finish();
-  }
-
-  function handleNext() {
-    if (isLast) {
-      finish();
-    } else {
-      goTo(idx + 1);
+    // ③ Background writes — do NOT block navigation on these
+    Promise.allSettled([
+      writeGuidedStep(0),
+      writeWtStep('home'),
+    ]);
+    if (supabase) {
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        if (user) {
+          supabase
+            ?.from('profiles')
+            .update({ onboarding_completed: true })
+            .eq('id', user.id)
+            .then(() => {})
+            .catch(() => {});
+        }
+      }).catch(() => {});
     }
   }
+
+  // ── Dimensions ──────────────────────────────────────────────────────────────
+
+  const cardAreaH    = Math.min(SH * 0.34, 260);
+  const topPad       = Platform.OS === 'android' ? 20 : 0;
+  const bottomPad    = SH * 0.06;
+  const textTopSpace = SH * 0.04;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: BG }}>
-      <StatusBar barStyle="dark-content" />
+    <View style={{ flex: 1, backgroundColor: BG }}>
+      <StatusBar barStyle="light-content" backgroundColor={BG} />
+      <SafeAreaView style={{ flex: 1 }}>
 
-      {/* Top bar */}
-      <View
-        style={{
-          paddingHorizontal: 20,
-          paddingTop:        Platform.OS === 'android' ? 16 : 8,
-          paddingBottom:     12,
-          flexDirection:     'row',
-          alignItems:        'center',
-          justifyContent:    'space-between',
-        }}
-      >
-        {/* Progress dots */}
-        <View style={{ flexDirection: 'row', gap: 6 }}>
-          {SLIDES.map((_, i) => (
-            <View
-              key={i}
-              style={{
-                width:           i === idx ? 20 : 6,
-                height:          6,
-                borderRadius:    3,
-                backgroundColor: i <= idx ? INK : BORD,
-              }}
-            />
-          ))}
-        </View>
-        <TouchableOpacity onPress={handleSkip} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={{ fontSize: 14, color: SUB, fontWeight: '500' }}>Skip</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Slide */}
-      <Animated.View
-        style={{
-          flex:              1,
-          opacity:           fadeAnim,
-          paddingHorizontal: 26,
-          justifyContent:    'center',
-          paddingBottom:     120,
-        }}
-      >
+        {/* Skip — top right */}
         <View
           style={{
-            width:           72,
-            height:          72,
-            borderRadius:    36,
-            backgroundColor: INK + '10',
-            alignItems:      'center',
-            justifyContent:  'center',
-            marginBottom:    30,
+            paddingHorizontal: 22,
+            paddingTop:        topPad + 4,
+            alignItems:        'flex-end',
           }}
         >
-          <Ionicons name={slide.icon} size={34} color={INK} />
+          <TouchableOpacity
+            onPress={() => finish('skip')}
+            hitSlop={{ top: 12, bottom: 12, left: 16, right: 16 }}
+          >
+            <Text style={{ fontSize: 14, color: MUTED, fontWeight: '500', letterSpacing: 0.3 }}>
+              Skip
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        <Text style={{ fontSize: 30, fontWeight: '800', color: INK, lineHeight: 36, marginBottom: 14 }}>
-          {slide.headline}
-        </Text>
+        {/* ── Main content area ─────────────────────────────────────────────── */}
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: bottomPad }}>
 
-        <Text style={{ fontSize: 16, color: SUB, lineHeight: 25 }}>
-          {slide.body}
-        </Text>
-      </Animated.View>
+          {/* Book card stack */}
+          <View
+            style={{
+              width:          180,
+              height:         cardAreaH,
+              alignItems:     'center',
+              justifyContent: 'center',
+              marginBottom:   textTopSpace,
+            }}
+          >
+            {/* Render back to front */}
+            {[...CARDS].reverse().map((cfg, ri) => {
+              const i = CARDS.length - 1 - ri;
+              return <BookCard key={i} cfg={cfg} visible={cardAnims[i]} />;
+            })}
+          </View>
 
-      {/* Bottom CTA */}
-      <View
-        style={{
-          position:          'absolute',
-          bottom: 0, left: 0, right: 0,
-          backgroundColor:   BG,
-          borderTopWidth:    1,
-          borderTopColor:    BORD,
-          paddingHorizontal: 20,
-          paddingVertical:   14,
-        }}
-      >
-        <TouchableOpacity
-          onPress={handleNext}
-          activeOpacity={0.8}
+          {/* Wordmark + tagline */}
+          <Animated.View
+            style={{
+              alignItems: 'center',
+              opacity:    textFade,
+              paddingHorizontal: 36,
+            }}
+          >
+            <Text
+              style={{
+                fontSize:      38,
+                fontWeight:    '800',
+                color:         CREAM,
+                letterSpacing: -0.5,
+                textAlign:     'center',
+                marginBottom:  10,
+              }}
+            >
+              readstack
+            </Text>
+
+            <Text
+              style={{
+                fontSize:   16,
+                color:      '#a8a29e',
+                lineHeight: 24,
+                textAlign:  'center',
+                maxWidth:   280,
+              }}
+            >
+              Your reading life, organized.{'\n'}
+              Recommendations that get sharper{'\n'}
+              every time you read.
+            </Text>
+          </Animated.View>
+        </View>
+
+        {/* ── Bottom CTA ─────────────────────────────────────────────────────── */}
+        <Animated.View
           style={{
-            backgroundColor: INK,
-            borderRadius:    14,
-            paddingVertical: 15,
-            alignItems:      'center',
+            paddingHorizontal: 22,
+            paddingBottom:     Platform.OS === 'android' ? 24 : 16,
+            opacity:           ctaFade,
+            transform:         [{ translateY: ctaSlide }],
           }}
         >
-          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
-            {isLast ? 'Get started \u2192' : 'Next \u2192'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+          <TouchableOpacity
+            onPress={() => finish('cta')}
+            activeOpacity={0.85}
+            style={{
+              backgroundColor: CREAM,
+              borderRadius:    16,
+              paddingVertical: 16,
+              alignItems:      'center',
+            }}
+          >
+            <Text
+              style={{
+                color:       BG,
+                fontSize:    16,
+                fontWeight:  '800',
+                letterSpacing: 0.2,
+              }}
+            >
+              Get started →
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
+
+      </SafeAreaView>
+    </View>
   );
 }

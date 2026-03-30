@@ -1,0 +1,229 @@
+We need to fix the onboarding/walkthrough experience properly. The current direction is still wrong.
+
+This is a combined blocker + architecture + design task.
+
+Do NOT treat this as another tweak to welcome screens.
+Do NOT respond with a shallow copy/UI pass.
+I want a robust solution that fixes:
+1. broken intro progression
+2. wrong onboarding architecture
+3. weak visual/motion design
+
+The desired product shape is now clear:
+
+A. Very brief cinematic intro prelude
+B. Immediate handoff into the real app shell
+C. Real in-app guided walkthrough over live UI and navigation
+D. Contextual Recommendations setup only when the user reaches Recommendations
+
+That is the correct order.
+
+CURRENT FAILURES TO FIX
+
+Blocker / functional:
+- the intro does not reliably progress into the app
+- the current intro is too sparse and underdesigned
+- current onboarding/walkthrough is still too detached from the real app
+- the user is not actually being guided through the live interface
+
+Architectural:
+- onboarding is still too screen-based
+- it does not guide through the actual app shell
+- it does not highlight real app regions with hotspots / coach marks
+- recommendations setup is not properly integrated into the live walkthrough flow
+
+Design:
+- intro does not feel premium, graphic, or full-screen
+- walkthrough lacks visual spotlighting and polish
+- experience does not feel like the app is guiding the user in place
+
+I want you to solve this in one coherent system.
+
+==================================================
+PART 1 — INTRO PRELUDE (SHORT, CINEMATIC, RELIABLE)
+==================================================
+
+The intro should be a short prelude, not the main onboarding system.
+
+Its only jobs:
+- welcome the user
+- establish visual quality and tone
+- communicate the core promise with motion
+- hand off reliably into the real app shell
+
+Requirements:
+1. 1–2 screens max
+2. full-screen graphic treatment
+3. tasteful, premium animation
+4. minimal but strong copy
+5. Continue and Skip must BOTH reliably enter the app shell every time
+6. async persistence must NOT block visible progression
+7. add fail-safe handoff logic so the user cannot get stuck
+
+Visual direction:
+- full-screen composition
+- graphic, animated, premium
+- calm, editorial, intentional
+- not empty slides with a small icon and text
+- could use book-stack motion, cards assembling, library-to-recommendation transformation, subtle parallax, layered depth, etc.
+- no gimmicky over-animation
+
+Important:
+The intro is NOT where the main teaching happens.
+It is a prelude only.
+
+==================================================
+PART 2 — REAL IN-APP WALKTHROUGH (MAIN SYSTEM)
+==================================================
+
+The true walkthrough must happen inside the live app shell.
+
+After the intro completes, the user should enter the actual app and be guided through it with spotlight/hotspot/coach-mark behavior on real UI.
+
+I want a real walkthrough engine, not ad hoc banners.
+
+Requirements:
+1. Walkthrough lives in the app shell, not detached slides
+2. Highlight actual tabs AND actual live UI regions inside screens
+3. Use spotlight / dim overlay / coach marks / hotspot targeting
+4. Progress through real navigation
+5. The user should feel brought through the product itself
+
+I do NOT want only tab-bar highlighting.
+I want at least one meaningful live in-screen highlight per major area.
+
+Examples of what should be highlighted:
+- Home / main content area and what it is for
+- Library / tracking / progress area
+- Recommendations tab and recommendation interaction area
+- optional social/friends area if it is core enough
+
+Walkthrough progression should support:
+- step registry / state machine
+- target registration by live UI elements
+- anchor measurement / positioning
+- waiting for layout readiness
+- persistence of progress
+- skip / resume
+- tab-aware navigation
+- ability to programmatically move the user to the next relevant tab
+- for some steps, optionally require tapping the highlighted live target rather than only pressing Next
+
+I want the app to feel like it is teaching itself in place.
+
+==================================================
+PART 3 — RECOMMENDATIONS CONTEXTUAL SETUP
+==================================================
+
+Do NOT force taste setup immediately after signup.
+
+When the in-app walkthrough reaches Recommendations, that is where we introduce setup.
+
+At that moment, the user should see a contextual Recommendations entry experience that offers:
+
+Option A — Import my library
+- this should be prominent
+- mention Goodreads / StoryGraph / other competitor imports where relevant
+- frame this as the fastest path to strong recommendations
+
+Option B — Answer a few questions
+- lightweight intake only
+- concise and relevant
+- no bloated questionnaire
+
+Option C — Explore anyway
+- allow the user to continue with a starter deck if they are not ready
+
+This Recommendations setup should happen because the user has reached Recommendations in the live walkthrough, not as a detached onboarding survey.
+
+==================================================
+PART 4 — ARCHITECTURE / IMPLEMENTATION EXPECTATIONS
+==================================================
+
+Before coding, I want a serious diagnosis and implementation plan.
+
+Please first read the current:
+- intro/onboarding code
+- app shell / tabs layout
+- existing walkthrough / guided-tour code
+- recommendations entry logic
+
+Then provide:
+1. diagnosis of why the current system fails
+2. proposed architecture for the new intro + in-app walkthrough + contextual rec setup
+3. exact files/components/hooks/state you will create or replace
+4. exact handoff logic from intro -> app shell -> walkthrough -> recommendations setup
+5. how target registration and anchor measurement will work
+6. how you will avoid brittle positioning/layout issues
+7. how you will ensure Continue/Skip never strand the user
+
+I want a modular architecture, not more patchwork.
+
+Likely pieces:
+- intro prelude component(s)
+- walkthrough engine / state machine
+- overlay / spotlight component
+- target registration system
+- walkthrough persistence
+- tab-aware orchestrator
+- recommendations entry component integrated into the walkthrough flow
+
+==================================================
+PART 5 — INSTRUMENTATION
+==================================================
+
+Add analytics/logging for:
+- intro_started
+- intro_slide_viewed
+- intro_completed
+- intro_skipped
+- intro_handoff_started
+- intro_handoff_completed
+- intro_handoff_failed
+
+- walkthrough_started
+- walkthrough_step_viewed
+- walkthrough_step_completed
+- walkthrough_skipped
+- walkthrough_finished
+
+- recommendations_step_reached
+- import_cta_shown
+- import_cta_clicked
+- import_started
+- import_completed
+- quick_intake_started
+- quick_intake_completed
+- quick_intake_skipped
+- explore_anyway_clicked
+
+==================================================
+PART 6 — SUCCESS CRITERIA
+==================================================
+
+This is successful only if all of the following are true:
+
+- intro feels like a designed, full-screen, animated prelude
+- user can always progress into the app
+- intro handoff is reliable
+- user enters the real app quickly
+- walkthrough highlights live UI, not just detached slides
+- user is guided through actual navigation and real product regions
+- recommendations setup appears contextually when the user reaches Recommendations
+- import is clearly visible and compelling there
+- the whole experience feels premium, intentional, and product-native
+
+What I do NOT want:
+- another screen-only onboarding flow
+- another passive tutorial deck as the main guidance
+- another patch to the current wrong order
+- weak architectural thinking
+- output that is only cosmetically better
+- compile-only validation without real runtime verification
+
+Before implementing:
+Give me:
+1. diagnosis
+2. proposed architecture
+3. implementation plan with exact files/components/state
+Then implement.

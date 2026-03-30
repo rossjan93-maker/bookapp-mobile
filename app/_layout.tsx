@@ -1,9 +1,22 @@
-import { useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { clearAllTabCaches } from '../lib/tabCache';
+
+// ─── Onboarding bridge ────────────────────────────────────────────────────────
+// Lets onboarding.tsx call completeOnboarding() to update needsOnboarding in
+// the root layout BEFORE navigating away. Without this the routing guard sees
+// needsOnboarding=true when segments changes and redirects back to /onboarding.
+
+type OnboardingBridgeCtx = { completeOnboarding: () => void };
+export const OnboardingBridgeContext = createContext<OnboardingBridgeCtx>({
+  completeOnboarding: () => {},
+});
+export const useOnboardingBridge = () => useContext(OnboardingBridgeContext);
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function ensureProfile(
   userId: string,
@@ -12,8 +25,8 @@ async function ensureProfile(
   lastName?: string | null,
 ) {
   if (!supabase) return;
-  const emailPrefix    = email.split('@')[0] || 'user';
-  const idSuffix       = userId.replace(/-/g, '').slice(0, 6);
+  const emailPrefix      = email.split('@')[0] || 'user';
+  const idSuffix         = userId.replace(/-/g, '').slice(0, 6);
   const fallbackUsername = `${emailPrefix}_${idSuffix}`;
 
   const upsertData: Record<string, unknown> = { id: userId, username: fallbackUsername };
@@ -32,14 +45,14 @@ async function checkOnboardingCompleted(userId: string): Promise<boolean> {
     .select('onboarding_completed')
     .eq('id', userId)
     .maybeSingle();
-  // If the column doesn't exist yet (migration not applied), treat as completed
-  // so existing users are not sent to onboarding unexpectedly.
   if (error) return true;
   return data?.onboarding_completed === true;
 }
 
+// ─── Root layout ──────────────────────────────────────────────────────────────
+
 export default function RootLayout() {
-  const [session, setSession]                 = useState<Session | null | undefined>(undefined);
+  const [session,         setSession]         = useState<Session | null | undefined>(undefined);
   const [needsOnboarding, setNeedsOnboarding] = useState<boolean | undefined>(undefined);
   const router   = useRouter();
   const segments = useSegments();
@@ -91,9 +104,8 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (session === undefined || needsOnboarding === undefined) return;
-
-    const inAuth        = segments[0] === '(auth)';
-    const inOnboarding  = segments[0] === 'onboarding';
+    const inAuth       = segments[0] === '(auth)';
+    const inOnboarding = segments[0] === 'onboarding';
 
     if (session && inAuth) {
       router.replace(needsOnboarding ? '/onboarding' : '/');
@@ -105,8 +117,10 @@ export default function RootLayout() {
   }, [session, segments, needsOnboarding]);
 
   return (
-    <View style={{ flex: 1 }}>
-      <Stack screenOptions={{ headerShown: false }} />
-    </View>
+    <OnboardingBridgeContext.Provider value={{ completeOnboarding: () => setNeedsOnboarding(false) }}>
+      <View style={{ flex: 1 }}>
+        <Stack screenOptions={{ headerShown: false }} />
+      </View>
+    </OnboardingBridgeContext.Provider>
   );
 }
