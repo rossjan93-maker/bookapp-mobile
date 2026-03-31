@@ -157,7 +157,7 @@ export default function OnboardingScreen() {
     return () => clearTimeout(t);
   }, []);
 
-  function finish(source: 'cta' | 'skip' | 'failsafe' = 'cta') {
+  async function finish(source: 'cta' | 'skip' | 'failsafe' = 'cta') {
     if (source === 'skip') welcomeEvt_skipped();
     else                   welcomeEvt_completed();
     welcomeEvt_handoffStarted();
@@ -165,16 +165,19 @@ export default function OnboardingScreen() {
     // ① Update parent state BEFORE navigating — prevents redirect loop
     completeOnboarding();
 
-    // ② Write authoritative onboarding stage so _layout.tsx starts walkthrough.
-    //    On web, AsyncStorage uses localStorage which is synchronous inside the
-    //    Promise constructor, so the value is visible before navigation resolves.
-    writeOnboardingStage('walkthrough');
-    writeWtStep('home');
+    // ② Await both stage writes before navigating so _layout.tsx always
+    //    reads 'walkthrough' on first mount, never null.
+    //    On web AsyncStorage uses localStorage (synchronous), so these
+    //    resolve in the same microtask and add no perceptible delay.
+    await Promise.all([
+      writeOnboardingStage('walkthrough'),
+      writeWtStep('home'),
+    ]);
 
-    // ③ Immediate navigation
+    // ③ Navigate only after writes are confirmed
     router.replace('/');
 
-    // ④ Background writes
+    // ④ Background writes (non-blocking)
     Promise.allSettled([writeGuidedStep(0)]);
     if (supabase) {
       supabase.auth.getUser().then(({ data: { user } }) => {

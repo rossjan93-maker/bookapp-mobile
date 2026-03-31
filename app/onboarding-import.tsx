@@ -4,18 +4,19 @@
 // outside (tabs) so there is no tab bar — it feels like a dedicated destination.
 //
 // Navigation contract:
-//   → Arrived from walkthrough completion (router.replace from _layout.tsx)
+//   → Arrived when _layout.tsx reads stage='final_setup' (advanceWt/skipWt)
 //   → On refresh: URL persists natively, page re-mounts and checks state
-//   → On navigate-away while pending: _layout.tsx redirects back here
+//   → On navigate-away before acting: _layout.tsx redirects back here
 //
 // Actions:
-//   Import library  → write 'importing' → push /import/goodreads
-//   Answer questions → write 'dismissed' → navigate /(tabs)/search
-//   Not right now   → write 'dismissed' → replace /(tabs)
+//   Import library   → write stage='done' → push /import/goodreads
+//   Answer questions → write stage='done' → navigate /(tabs)/search
+//   Not right now    → write stage='done' → replace /(tabs)
 //
 // State guard:
-//   On mount we read importObState. If it is NOT 'pending' (user already
-//   acted, or somehow arrived here directly), we redirect home immediately.
+//   On mount we read the onboarding stage. If it is NOT 'final_setup' (user
+//   already acted, or arrived here directly without completing the walkthrough),
+//   we redirect home immediately.
 
 import React, { useEffect, useState } from 'react';
 import {
