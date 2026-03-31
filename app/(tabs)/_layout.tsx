@@ -90,6 +90,14 @@ export default function TabsLayout() {
     readGuidedStep().then(setGuidedStep);
   }, []);
 
+  // Pre-load importObState from AsyncStorage at mount so advanceWt() can trigger
+  // the import prompt immediately (no async gap between walkthrough end and overlay).
+  // undefined = not yet loaded; null = never seen (prompt eligible); string = already actioned.
+  const importObStateRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    getImportObState().then(s => { importObStateRef.current = s; });
+  }, []);
+
   // Load the walkthrough step (in-app overlay tour).
   // If resuming a mid-tour step (e.g. after a reload), navigate to that step's
   // tab so the fixture mounts and the coach card appears immediately.
@@ -109,8 +117,9 @@ export default function TabsLayout() {
     });
   }, []);
 
-  // After walkthrough completes, check whether to show the import onboarding prompt.
-  // Fires once per app session when wtStep settles to 'done'.
+  // Safety-valve: if wtStep lands on 'done' via any path OTHER than advanceWt()
+  // (e.g. skipWt, cold-start resume, reload), run the full async check.
+  // For the normal advanceWt() path the prompt fires immediately (no async gap).
   const importObChecked = useRef(false);
   useEffect(() => {
     if (wtStep !== 'done') return;
@@ -138,7 +147,10 @@ export default function TabsLayout() {
     writeGuidedStep(next);
   }
 
-  // Walkthrough advance: move to next step + navigate to its tab
+  // Walkthrough advance: move to next step + navigate to its tab.
+  // On completion ('done'), immediately show the import prompt using the
+  // pre-loaded importObStateRef — no async gap between overlay closing and
+  // the import screen appearing.  The safety-valve useEffect covers edge cases.
   function advanceWt() {
     if (!wtStep || wtStep === 'done') return;
     wtEvt_stepCompleted(wtStep);
@@ -152,8 +164,16 @@ export default function TabsLayout() {
       }
     } else {
       wtEvt_finished();
-      // Do NOT navigate to search — OnboardingImportPrompt handles the post-tour
-      // moment as a full-screen overlay.  The user will navigate from there.
+      // If import prompt hasn't been seen (null = never actioned), show it
+      // immediately — pre-loaded value is available synchronously.
+      // undefined means the AsyncStorage read is still in flight (rare race);
+      // the safety-valve useEffect will catch that case.
+      if (importObStateRef.current === null) {
+        importObChecked.current = true; // prevent the safety-valve from double-firing
+        setShowImportOb(true);
+      }
+      // If importObStateRef.current !== null (already actioned), do nothing —
+      // user chose import or dismissed previously; don't nag.
     }
   }
 
@@ -216,6 +236,9 @@ export default function TabsLayout() {
   const wtStepRef = useRef<WtStep | null>(wtStep);
   useEffect(() => { wtStepRef.current = wtStep; }, [wtStep]);
 
+  const showImportObRef = useRef(false);
+  useEffect(() => { showImportObRef.current = showImportOb; }, [showImportOb]);
+
   // ── Pager-style swipe gesture ──────────────────────────────────────────────
   //
   // Architecture: Animated.Value tracks finger in real time (finger-connected).
@@ -253,7 +276,7 @@ export default function TabsLayout() {
         if (guidedStepRef.current < 99) return false;
         const ws = wtStepRef.current;
         if (ws === 'home' || ws === 'recommend' || ws === 'library' || ws === 'inbox') return false;
-        if (showImportOb) return false;
+        if (showImportObRef.current) return false;
 
         // Capture when movement is horizontal-dominant and past the noise floor
         const absDx = Math.abs(dx);

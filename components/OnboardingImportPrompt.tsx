@@ -111,41 +111,44 @@ export function OnboardingImportPrompt({
           paddingBottom:    24,
         }}>
 
-          {/* Step dots — visually anchors this as the closing onboarding step */}
-          <View style={{ flexDirection: 'row', gap: 5, marginBottom: 40 }}>
+          {/* Step indicator — anchors this as the final setup step */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 44 }}>
             {[1, 2, 3].map(i => (
               <View
                 key={i}
                 style={{
-                  width:           i === 3 ? 22 : 6,
+                  width:           i === 3 ? 24 : 6,
                   height:          6,
                   borderRadius:    3,
-                  backgroundColor: INK,
+                  backgroundColor: i === 3 ? INK : '#d6d3d1',
                 }}
               />
             ))}
+            <Text style={{ fontSize: 12, color: MUT, marginLeft: 4, fontWeight: '500' }}>
+              Last step
+            </Text>
           </View>
 
           {/* Headline */}
           <Text style={{
-            fontSize:      32,
+            fontSize:      33,
             fontWeight:    '800',
             color:         INK,
-            lineHeight:    38,
-            letterSpacing: -0.5,
-            marginBottom:  12,
+            lineHeight:    40,
+            letterSpacing: -0.6,
+            marginBottom:  14,
           }}>
-            Make your first{'\n'}picks count.
+            One import.{'\n'}Instant recommendations.
           </Text>
 
           {/* Sub-copy */}
           <Text style={{
             fontSize:     16,
             color:        SUB,
-            lineHeight:   25,
+            lineHeight:   26,
             marginBottom: 40,
           }}>
-            Connect your reading history and we'll tune your recommendations from day one — no manual setup required.
+            This is the fastest way to make readstack useful. Connect your reading history and we'll tune your picks from day one.
           </Text>
 
           {/* ── Primary CTA: Import ── */}
@@ -192,74 +195,28 @@ export function OnboardingImportPrompt({
             <Ionicons name="chevron-forward" size={18} color="#78716c" />
           </TouchableOpacity>
 
-          {/* Divider */}
+          {/* ── Secondary row: intake + dismiss as calm text links ── */}
           <View style={{
             flexDirection: 'row',
-            alignItems:    'center',
-            gap:           10,
-            marginBottom:  14,
+            justifyContent: 'center',
+            alignItems:     'center',
+            gap:            24,
+            paddingTop:     8,
           }}>
-            <View style={{ flex: 1, height: 1, backgroundColor: BOR }} />
-            <Text style={{ fontSize: 11, color: MUT, fontWeight: '500' }}>or</Text>
-            <View style={{ flex: 1, height: 1, backgroundColor: BOR }} />
-          </View>
-
-          {/* ── Secondary: Quick intake ── */}
-          <TouchableOpacity
-            onPress={handleIntake}
-            activeOpacity={0.78}
-            style={{
-              backgroundColor:  '#fff',
-              borderRadius:     14,
-              borderWidth:      1.5,
-              borderColor:      BOR,
-              paddingVertical:  15,
-              paddingHorizontal: 18,
-              flexDirection:    'row',
-              alignItems:       'center',
-              gap:              12,
-              marginBottom:     28,
-            }}
-          >
-            <View style={{
-              width:           38,
-              height:          38,
-              borderRadius:    19,
-              backgroundColor: '#f5f5f4',
-              alignItems:      'center',
-              justifyContent:  'center',
-            }}>
-              <Ionicons name="options-outline" size={18} color={INK} />
-            </View>
-
-            <View style={{ flex: 1 }}>
-              <Text style={{
-                fontSize:   15,
-                fontWeight: '600',
-                color:      INK,
-                lineHeight: 21,
-                marginBottom: 2,
-              }}>
+            <TouchableOpacity onPress={handleIntake} activeOpacity={0.7} hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}>
+              <Text style={{ fontSize: 14, color: SUB, fontWeight: '500' }}>
                 Answer a few questions
               </Text>
-              <Text style={{ fontSize: 12, color: SUB }}>
-                Genres, pacing, style — under 90 seconds
+            </TouchableOpacity>
+
+            <View style={{ width: 1, height: 14, backgroundColor: BOR }} />
+
+            <TouchableOpacity onPress={handleDismiss} activeOpacity={0.7} hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}>
+              <Text style={{ fontSize: 14, color: MUT, fontWeight: '500' }}>
+                Not right now
               </Text>
-            </View>
-
-            <Ionicons name="chevron-forward" size={16} color={MUT} />
-          </TouchableOpacity>
-
-          {/* ── Tertiary: dismiss ── */}
-          <TouchableOpacity
-            onPress={handleDismiss}
-            activeOpacity={0.7}
-            style={{ alignItems: 'center', paddingVertical: 10 }}
-          >
-            <Text style={{ fontSize: 14, color: MUT, fontWeight: '500' }}>
-              Not right now →
-            </Text>
-          </TouchableOpacity>
+            </TouchableOpacity>
+          </View>
 
         </View>
       </SafeAreaView>

@@ -1,12 +1,12 @@
 // ─── Welcome screen ────────────────────────────────────────────────────────────
 //
-// One full-screen dark composition.
+// Full-screen light composition matching the app's real palette.
 // Job: welcome, set tone, invite the user into the live app tour.
 //
-// Animation approach: card springs fire immediately on mount (fire-and-forget).
+// Animation approach: book spine cards spring in with individual start delays.
 // Text + CTA fade in after a fixed 600ms setTimeout — NOT chained to spring
 // completion.  This guarantees the CTA is always visible/touchable within ~1s
-// regardless of spring behaviour on web (where springs can be slow).
+// regardless of spring behaviour on web.
 //
 // Handoff: completeOnboarding() updates needsOnboarding in _layout.tsx BEFORE
 // router.replace('/'), preventing the routing guard from looping back here.
@@ -39,16 +39,17 @@ import { useOnboardingBridge } from './_layout';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
-// ─── Palette ──────────────────────────────────────────────────────────────────
+// ─── Palette — matches app-wide tokens ────────────────────────────────────────
 
-const BG     = '#1c1917';
-const CREAM  = '#faf9f7';
-const MUTED  = '#78716c';
-const GREEN  = '#15803d';
+const BG    = '#faf9f7';   // warm off-white (real app background)
+const INK   = '#1c1917';   // near-black ink
+const SUB   = '#78716c';   // warm gray subtext
+const GREEN = '#15803d';   // forest green accent
 
-// ─── Book-card configurations ─────────────────────────────────────────────────
+// ─── Book spine configurations ────────────────────────────────────────────────
+// Displayed as stacked vertical spines — visible on the light background.
 
-type CardConfig = {
+type SpineConfig = {
   w: number; h: number;
   color: string;
   rotate: string;
@@ -56,26 +57,27 @@ type CardConfig = {
   startDelay: number;
 };
 
-const CARDS: CardConfig[] = [
-  { w: 108, h: 150, color: '#292219',  rotate: '-9deg', offsetX: -30, offsetY: -6,  startDelay: 80 },
-  { w: 116, h: 160, color: '#1a2e1a',  rotate:  '7deg', offsetX:  28, offsetY: -3,  startDelay: 40 },
-  { w: 126, h: 176, color: GREEN,      rotate: '-1deg', offsetX:   0, offsetY:  0,  startDelay:  0 },
+const SPINES: SpineConfig[] = [
+  { w: 54, h: 148, color: '#d6d0c8', rotate: '-7deg', offsetX: -56, offsetY: 10,  startDelay: 100 },
+  { w: 48, h: 162, color: '#b5c4b1', rotate:  '3deg', offsetX: -10, offsetY:  0,  startDelay:  50 },
+  { w: 58, h: 172, color: GREEN,     rotate: '-2deg', offsetX:  46, offsetY:  4,  startDelay:   0 },
+  { w: 44, h: 138, color: '#c9bdb0', rotate:  '8deg', offsetX:  98, offsetY: 14,  startDelay:  70 },
 ];
 
-// ─── Animated book card ───────────────────────────────────────────────────────
+// ─── Animated book spine ──────────────────────────────────────────────────────
 
-function BookCard({ cfg, anim }: { cfg: CardConfig; anim: Animated.Value }) {
-  const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [60, 0] });
+function BookSpine({ cfg, anim }: { cfg: SpineConfig; anim: Animated.Value }) {
+  const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [48, 0] });
   const scale      = anim.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] });
 
   return (
     <Animated.View
       style={{
-        position:         'absolute',
-        width:            cfg.w,
-        height:           cfg.h,
-        borderRadius:     8,
-        backgroundColor:  cfg.color,
+        position:        'absolute',
+        width:           cfg.w,
+        height:          cfg.h,
+        borderRadius:    6,
+        backgroundColor: cfg.color,
         transform: [
           { translateX: cfg.offsetX },
           { translateY: cfg.offsetY },
@@ -83,28 +85,25 @@ function BookCard({ cfg, anim }: { cfg: CardConfig; anim: Animated.Value }) {
           { translateY },
           { scale },
         ],
-        opacity:          anim,
-        borderLeftWidth:  3,
-        borderLeftColor:  'rgba(255,255,255,0.07)',
-        borderRightWidth: 1,
-        borderRightColor: 'rgba(0,0,0,0.28)',
-        shadowColor:      '#000',
-        shadowOpacity:    0.52,
-        shadowRadius:     14,
-        shadowOffset:     { width: 0, height: 8 },
-        elevation:        12,
+        opacity: anim,
+        shadowColor:     '#1c1917',
+        shadowOpacity:   0.12,
+        shadowRadius:    12,
+        shadowOffset:    { width: 0, height: 6 },
+        elevation:       8,
       }}
     >
-      <View style={{ position: 'absolute', top: 18, left: 14, right: 14 }}>
+      {/* Subtle spine detail lines */}
+      <View style={{ position: 'absolute', top: 16, left: 10, right: 10 }}>
         {[0, 1, 2].map(i => (
           <View
             key={i}
             style={{
-              height:          2,
+              height:          1.5,
               borderRadius:    1,
-              backgroundColor: 'rgba(255,255,255,0.07)',
-              marginBottom:    9,
-              width:           i === 0 ? '78%' : i === 1 ? '55%' : '68%',
+              backgroundColor: cfg.color === GREEN ? 'rgba(255,255,255,0.18)' : 'rgba(28,25,23,0.1)',
+              marginBottom:    8,
+              width:           i === 0 ? '80%' : i === 1 ? '55%' : '70%',
             }}
           />
         ))}
@@ -119,41 +118,39 @@ export default function OnboardingScreen() {
   const router             = useRouter();
   const { completeOnboarding } = useOnboardingBridge();
 
-  const cardAnims  = useRef(CARDS.map(() => new Animated.Value(0))).current;
+  const spineAnims = useRef(SPINES.map(() => new Animated.Value(0))).current;
   const textFade   = useRef(new Animated.Value(0)).current;
   const ctaFade    = useRef(new Animated.Value(0)).current;
-  const ctaOffsetY = useRef(new Animated.Value(20)).current;
+  const ctaOffsetY = useRef(new Animated.Value(18)).current;
 
   useEffect(() => {
     welcomeEvt_started();
 
-    // ── Card springs: fire-and-forget with individual start delays ────────────
-    CARDS.forEach((cfg, i) => {
+    // ── Spine springs: fire-and-forget with individual delays ─────────────────
+    SPINES.forEach((cfg, i) => {
       setTimeout(() => {
-        Animated.spring(cardAnims[i], {
+        Animated.spring(spineAnims[i], {
           toValue:         1,
           useNativeDriver: false,
-          tension:         55,
-          friction:        9,
+          tension:         60,
+          friction:        10,
         }).start();
       }, cfg.startDelay);
     });
 
-    // ── Text + CTA: fixed delay, NOT chained to card springs ─────────────────
-    // Fires after 600ms regardless of spring state, so the button is ALWAYS
-    // visible and touchable within ~1s of mount.
+    // ── Text + CTA: fixed delay — always visible within ~1s of mount ──────────
     const t = setTimeout(() => {
       Animated.parallel([
-        Animated.timing(textFade,   { toValue: 1, duration: 350, useNativeDriver: false }),
-        Animated.timing(ctaFade,    { toValue: 1, duration: 400, useNativeDriver: false }),
-        Animated.timing(ctaOffsetY, { toValue: 0, duration: 350, useNativeDriver: false }),
+        Animated.timing(textFade,   { toValue: 1, duration: 380, useNativeDriver: false }),
+        Animated.timing(ctaFade,    { toValue: 1, duration: 440, useNativeDriver: false }),
+        Animated.timing(ctaOffsetY, { toValue: 0, duration: 380, useNativeDriver: false }),
       ]).start();
-    }, 600);
+    }, 580);
 
     return () => clearTimeout(t);
   }, []);
 
-  // ── Hard fail-safe: navigate after 12s even if nothing else fired ─────────
+  // ── Hard fail-safe: navigate after 12s even if nothing else fired ──────────
   useEffect(() => {
     const t = setTimeout(() => finish('failsafe'), 12000);
     return () => clearTimeout(t);
@@ -181,21 +178,21 @@ export default function OnboardingScreen() {
     }
   }
 
-  const cardAreaH    = Math.min(SH * 0.32, 240);
-  const topPad       = Platform.OS === 'android' ? 20 : 0;
+  const spineAreaH = Math.min(SH * 0.30, 220);
+  const topPad     = Platform.OS === 'android' ? 20 : 0;
 
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
-      <StatusBar barStyle="light-content" backgroundColor={BG} />
+      <StatusBar barStyle="dark-content" backgroundColor={BG} />
       <SafeAreaView style={{ flex: 1 }}>
 
         {/* Skip — top right */}
-        <View style={{ paddingHorizontal: 22, paddingTop: topPad + 4, alignItems: 'flex-end' }}>
+        <View style={{ paddingHorizontal: 24, paddingTop: topPad + 4, alignItems: 'flex-end' }}>
           <TouchableOpacity
             onPress={() => finish('skip')}
             hitSlop={{ top: 14, bottom: 14, left: 20, right: 20 }}
           >
-            <Text style={{ fontSize: 14, color: MUTED, fontWeight: '500', letterSpacing: 0.3 }}>
+            <Text style={{ fontSize: 14, color: SUB, fontWeight: '500', letterSpacing: 0.2 }}>
               Skip
             </Text>
           </TouchableOpacity>
@@ -207,57 +204,70 @@ export default function OnboardingScreen() {
             flex:           1,
             alignItems:     'center',
             justifyContent: 'center',
-            paddingBottom:  SH * 0.08,
+            paddingBottom:  SH * 0.06,
           }}
         >
-          {/* Book stack */}
+          {/* Book spine stack */}
           <View
             style={{
-              width:          200,
-              height:         cardAreaH,
+              width:          240,
+              height:         spineAreaH,
               alignItems:     'center',
               justifyContent: 'center',
-              marginBottom:   SH * 0.04,
+              marginBottom:   SH * 0.05,
             }}
           >
-            {[...CARDS].reverse().map((cfg, ri) => {
-              const i = CARDS.length - 1 - ri;
-              return <BookCard key={i} cfg={cfg} anim={cardAnims[i]} />;
+            {[...SPINES].reverse().map((cfg, ri) => {
+              const i = SPINES.length - 1 - ri;
+              return <BookSpine key={i} cfg={cfg} anim={spineAnims[i]} />;
             })}
           </View>
 
-          {/* Wordmark + tagline */}
+          {/* Wordmark */}
           <Animated.View
             style={{
               alignItems:        'center',
               opacity:           textFade,
-              paddingHorizontal: 40,
+              paddingHorizontal: 36,
             }}
           >
+            {/* Logo mark */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
+              <Text
+                style={{
+                  fontSize:      42,
+                  fontWeight:    '800',
+                  color:         INK,
+                  letterSpacing: -1,
+                }}
+              >
+                readstack
+              </Text>
+            </View>
+
+            {/* Green rule accent */}
+            <View
+              style={{
+                width:           44,
+                height:          3,
+                borderRadius:    2,
+                backgroundColor: GREEN,
+                marginBottom:    20,
+              }}
+            />
+
+            {/* Editorial tagline — single line, confident */}
             <Text
               style={{
-                fontSize:      36,
-                fontWeight:    '800',
-                color:         CREAM,
-                letterSpacing: -0.5,
+                fontSize:      17,
+                color:         SUB,
+                lineHeight:    26,
                 textAlign:     'center',
-                marginBottom:  10,
+                letterSpacing: 0.1,
+                maxWidth:      280,
               }}
             >
-              readstack
-            </Text>
-            <Text
-              style={{
-                fontSize:   16,
-                color:      '#a8a29e',
-                lineHeight: 25,
-                textAlign:  'center',
-                maxWidth:   270,
-              }}
-            >
-              Track what you read.{'\n'}
-              Get recommendations that fit.{'\n'}
-              Better with every book.
+              Books that are actually right for you.
             </Text>
           </Animated.View>
         </View>
@@ -275,14 +285,14 @@ export default function OnboardingScreen() {
             onPress={() => finish('cta')}
             activeOpacity={0.85}
             style={{
-              backgroundColor: CREAM,
+              backgroundColor: INK,
               borderRadius:    16,
               paddingVertical: 17,
               alignItems:      'center',
             }}
           >
             <Text style={{ color: BG, fontSize: 16, fontWeight: '800', letterSpacing: 0.2 }}>
-              Let's show you around →
+              Show me around →
             </Text>
           </TouchableOpacity>
         </Animated.View>

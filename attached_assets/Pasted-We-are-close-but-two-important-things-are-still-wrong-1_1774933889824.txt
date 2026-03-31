@@ -1,0 +1,126 @@
+We are close, but two important things are still wrong:
+
+1. The onboarding flow is still not clearly finishing on the upload/import library step
+2. The opening/welcome screen still feels low-quality:
+   - black background is too heavy / generic
+   - the logo treatment is not premium enough
+   - the intro does not feel like a polished product opening
+
+I want this corrected.
+
+==================================================
+PART 1 — ONBOARDING MUST FINISH ON IMPORT
+==================================================
+
+The final step of onboarding should clearly be the upload/import library moment.
+
+Desired sequence:
+1. brief welcome
+2. guided app walkthrough
+3. final onboarding step = import/upload library
+4. then normal app usage
+
+This must be obvious in the product flow.
+I do NOT want the walkthrough to end ambiguously and then Recommendations to maybe do something.
+The import/upload step should feel like the intentional closing action of onboarding.
+
+Requirements:
+- after the walkthrough completes, the user should land on a clear final onboarding screen focused on import/upload
+- import/upload must be the primary CTA
+- “Not right now” should still exist, but be secondary
+- if quick questions still exist, they must not compete with import as the main action
+- onboarding should feel complete only after this decision point
+
+Before coding, tell me:
+1. exactly where the flow is currently failing to finish on import/upload
+2. what route/state transition you will change
+3. the exact new flow from walkthrough completion -> import/upload step -> normal app usage
+
+==================================================
+PART 2 — OPENING SCREEN MUST FEEL PREMIUM
+==================================================
+
+The current opening/welcome screen is not good enough.
+
+Problems:
+- black background feels too harsh / generic
+- logo treatment does not feel premium
+- intro feels more like a placeholder than a polished product opening
+
+I want the opening to feel:
+- premium
+- editorial
+- calm
+- high-quality
+- native to the app’s design language
+
+Design direction:
+- move away from heavy black if it is not part of the core app theme
+- use the real product palette / materials / typography
+- improve the logo treatment so it feels intentional and refined
+- full-screen composition should feel designed, not like a splash screen stub
+- motion should remain tasteful and restrained
+
+I do NOT want:
+- generic dark startup splash
+- cheap-looking logo animation
+- placeholder-feeling empty intro
+
+Before coding, tell me:
+1. what specifically is making the current opening feel low-quality
+2. what visual direction you will move to instead
+3. which theme tokens/materials from the real app you will reuse
+
+==================================================
+PART 3 — FINAL IMPORT SCREEN DESIGN
+==================================================
+
+The final onboarding import/upload screen should feel like a strong closing moment.
+
+It should communicate:
+“This is the fastest way to make the app useful.”
+
+Requirements:
+- primary CTA = Import / Upload library
+- supporting copy explains the value in one sentence
+- Goodreads / StoryGraph / competitor import support should be visible if applicable
+- “Not right now” should be calm and available, not guilt-inducing
+- this screen should feel premium and product-native, not like admin work
+
+I want this screen to feel like the final step of setup, not just another optional panel.
+
+==================================================
+PART 4 — PERSISTENCE RULES
+==================================================
+
+Keep the persistence logic clean:
+- if user imports successfully, do not prompt again
+- if user dismisses, do not nag them repeatedly
+- if user skips, import remains available later as a secondary option in the product
+- if user already has strong signal, do not show the onboarding import step again
+
+Confirm exactly how this logic is implemented.
+
+==================================================
+DELIVERABLES BEFORE CODING
+==================================================
+
+Before implementing, give me:
+
+1. Diagnosis of why onboarding still does not clearly finish on import/upload
+2. Proposed corrected flow
+3. Diagnosis of why the opening screen feels low-quality
+4. Proposed premium visual direction for the opening
+5. Exact files/components/state you will change
+
+Then implement.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- onboarding clearly ends on the import/upload library step
+- import/upload is the obvious primary action
+- opening screen feels premium and aligned with the app
+- black heavy intro / weak logo treatment is gone
+- the whole onboarding flow feels intentional and complete
