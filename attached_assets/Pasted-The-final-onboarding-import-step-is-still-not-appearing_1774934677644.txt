@@ -1,0 +1,57 @@
+The final onboarding import step is still not appearing. Stop all other work and fix this specific bug.
+
+Expected behavior:
+When the user completes the final walkthrough step, the app should immediately transition into the import/upload library screen as the final onboarding step.
+
+Actual behavior:
+That import step is not appearing.
+
+This is now a narrow debugging task, not a redesign task.
+
+What I need from you before coding:
+1. Trace the exact state transition from:
+   - final walkthrough step completed
+   - walkthrough state set to done
+   - route/tab transition
+   - import onboarding visibility decision
+2. Tell me exactly why the import step is not appearing
+3. Identify whether the blocker is:
+   - persisted AsyncStorage state
+   - signal detection logic
+   - stale closure / state timing
+   - route transition timing
+   - conditional render ordering
+   - something else
+
+Then fix it.
+
+Requirements:
+- On final walkthrough completion, the import step must appear immediately and reliably
+- No dead air after walkthrough completion
+- No dependency on a slow async chain before showing the import screen
+- If a user has already dismissed or completed import, explain exactly how that is being detected
+- If a persisted flag is incorrectly blocking the flow, fix it
+- Add temporary debug logs for:
+  - walkthrough final step completion
+  - wtStep transition to done
+  - current import prompt state value
+  - current route/tab at handoff
+  - signal-check result
+  - final decision: show import prompt = true/false
+- Confirm the exact conditions under which the import step should show
+- Confirm the exact conditions under which it should not show
+
+Important:
+I want the final onboarding import step to be the explicit closing step of onboarding.
+Do not route the user into a dead state and maybe show it later.
+It should appear immediately.
+
+Deliverables:
+1. Root cause
+2. Exact files changed
+3. Exact logic fix
+4. Runtime evidence from logs showing:
+   - walkthrough completes
+   - import step visibility becomes true
+   - import screen renders
+5. If local persisted state can block testing, tell me exactly which key/value to clear for a fresh test

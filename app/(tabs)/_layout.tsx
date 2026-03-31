@@ -27,7 +27,6 @@ import {
   OnboardingImportPrompt,
   getImportObState,
 } from '../../components/OnboardingImportPrompt';
-import { hasPersonalizationSignal } from '../../lib/personalizationSignal';
 
 // ─── Badge context ────────────────────────────────────────────────────────────
 
@@ -117,9 +116,18 @@ export default function TabsLayout() {
     });
   }, []);
 
-  // Safety-valve: if wtStep lands on 'done' via any path OTHER than advanceWt()
-  // (e.g. skipWt, cold-start resume, reload), run the full async check.
-  // For the normal advanceWt() path the prompt fires immediately (no async gap).
+  // Safety-valve: fires whenever wtStep lands on 'done', covering:
+  //   - skipWt() (advanceWt never called → importObChecked still false)
+  //   - cold-start resume with stored 'done' step
+  //   - reload while already done
+  //   - the rare race where importObStateRef was still undefined in advanceWt()
+  //
+  // NOTE: signal check intentionally REMOVED.
+  // The persistence key (readstack_import_ob_v1) is the sole correct gate:
+  //   null       → user has never seen the prompt → show once
+  //   'started'  → user tapped Import → never show again
+  //   'dismissed' → user dismissed → never show again
+  // Adding a signal check here caused users with books to silently miss the prompt.
   const importObChecked = useRef(false);
   useEffect(() => {
     if (wtStep !== 'done') return;
@@ -128,14 +136,13 @@ export default function TabsLayout() {
 
     async function maybeShowImportOb() {
       const state = await getImportObState();
-      if (state !== null) return; // already started, dismissed, or completed
-
-      if (!supabase) { setShowImportOb(true); return; }
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const alreadyHasSignal = await hasPersonalizationSignal(user.id);
-      if (!alreadyHasSignal) setShowImportOb(true);
+      console.log('[IMPORT_OB] safety_valve_check', { state });
+      if (state !== null) {
+        console.log('[IMPORT_OB] safety_valve: skip — already actioned', { state });
+        return;
+      }
+      console.log('[IMPORT_OB] safety_valve: decision: show=true');
+      setShowImportOb(true);
     }
     maybeShowImportOb();
   }, [wtStep]);
@@ -164,16 +171,24 @@ export default function TabsLayout() {
       }
     } else {
       wtEvt_finished();
-      // If import prompt hasn't been seen (null = never actioned), show it
-      // immediately — pre-loaded value is available synchronously.
-      // undefined means the AsyncStorage read is still in flight (rare race);
-      // the safety-valve useEffect will catch that case.
-      if (importObStateRef.current === null) {
-        importObChecked.current = true; // prevent the safety-valve from double-firing
+      const importState = importObStateRef.current;
+      console.log('[IMPORT_OB] walkthrough_finished_handler', { importState });
+
+      if (importState === null) {
+        // Pre-loaded: never seen before — show immediately, no async gap.
+        // Mark importObChecked so safety-valve doesn't double-fire.
+        importObChecked.current = true;
+        console.log('[IMPORT_OB] decision: show=true (null, immediate path)');
         setShowImportOb(true);
+      } else if (importState === undefined) {
+        // Pre-load still in flight (rare race) — let safety-valve handle it.
+        // Do NOT set importObChecked so safety-valve runs.
+        console.log('[IMPORT_OB] decision: deferred to safety-valve (undefined, read still in flight)');
+      } else {
+        // 'started' or 'dismissed' — user has already actioned this prompt.
+        importObChecked.current = true; // safety-valve not needed
+        console.log('[IMPORT_OB] decision: show=false (already actioned:', importState, ')');
       }
-      // If importObStateRef.current !== null (already actioned), do nothing —
-      // user chose import or dismissed previously; don't nag.
     }
   }
 
