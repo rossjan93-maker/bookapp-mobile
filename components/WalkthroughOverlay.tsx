@@ -181,8 +181,6 @@ function HomeFocalCard({ rect }: { rect: TargetRect }) {
       padding:        14,
       borderLeftWidth: 3,
       borderLeftColor: '#d4a574',
-      borderWidth:    1.5,
-      borderColor:    'rgba(212,165,116,0.48)',
       ...FOCAL_CARD_SHADOW,
       transform:      [{ scale: 1.02 }],
     }}>
@@ -260,8 +258,6 @@ function LibraryFocalCard({ rect }: { rect: TargetRect }) {
       borderRadius:   14,
       borderLeftWidth: 3,
       borderLeftColor: '#3b82f6',
-      borderWidth:    1.5,
-      borderColor:    'rgba(59,130,246,0.42)',
       padding:        14,
       ...FOCAL_CARD_SHADOW,
       transform:      [{ scale: 1.02 }],
@@ -294,8 +290,6 @@ function InboxFocalCard({ rect }: { rect: TargetRect }) {
       borderRadius:   14,
       borderLeftWidth: 3,
       borderLeftColor: '#d4a574',
-      borderWidth:    1.5,
-      borderColor:    'rgba(212,165,116,0.48)',
       padding:        16,
       ...FOCAL_CARD_SHADOW,
       transform:      [{ scale: 1.02 }],
@@ -741,31 +735,20 @@ export function WalkthroughOverlay() {
         pointerEvents="box-only"
       />
 
-      {/* Focal content: only render once the card rect is confirmed */}
-      {stepReady && measuredRect && (
+      {/* Focal content — renders once stepReady, using measured rect when available
+          or the static fallback rect so the coach card is always reachable.       */}
+      {stepReady && spotRect && (
         <>
-          {/* Warm glow bloom — sits above the dim, behind the focal card */}
-          <GlowHalo rect={measuredRect} />
+          {/* Focal card — floats above the dim at the measured/fallback position */}
+          {renderFocalCard(wtStep!, measuredRect ?? spotRect)}
 
-          {/* The focal card — positioned at measured coordinates, floating above the dim */}
-          {renderFocalCard(wtStep!, measuredRect)}
-
-          {/* In-screen hotspot — tap target above the blocker */}
-          <InScreenHotspot
-            pos={hotspot}
-            onPress={handleHotspotTap}
-          />
-
-          {/* Pulsing ring on the active tab icon */}
-          <PulsingRing tabIdx={def.tabIdx} />
-
-          {/* Coach card — dynamically positioned relative to the focal card */}
+          {/* Coach card — anchored to the focal card, Next button always reachable */}
           <CoachCard
             step={wtStep!}
             totalSteps={totalSteps}
             stepIdx={stepIdx}
             def={def}
-            cardRect={measuredRect}
+            cardRect={measuredRect ?? spotRect}
             onNext={advance}
             onSkip={handleSkip}
           />

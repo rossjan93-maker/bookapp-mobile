@@ -84,9 +84,23 @@ export default function TabsLayout() {
     readGuidedStep().then(setGuidedStep);
   }, []);
 
-  // Load the walkthrough step (in-app overlay tour)
+  // Load the walkthrough step (in-app overlay tour).
+  // If resuming a mid-tour step (e.g. after a reload), navigate to that step's
+  // tab so the fixture mounts and the coach card appears immediately.
   useEffect(() => {
-    readWtStep().then(s => setWtStep(s ?? 'done'));
+    readWtStep().then(s => {
+      const step = s ?? 'done';
+      setWtStep(step);
+      if (step && step !== 'done' && step !== 'home') {
+        const def = WT_DEFS[step as keyof typeof WT_DEFS];
+        if (def?.tab) {
+          // Short delay lets the router finish its initial render before navigating.
+          setTimeout(() => {
+            routerRef.current.navigate({ pathname: def.tab as any });
+          }, 80);
+        }
+      }
+    });
   }, []);
 
   // Simplify the legacy advance: jump straight to 99 (overlay banners removed)

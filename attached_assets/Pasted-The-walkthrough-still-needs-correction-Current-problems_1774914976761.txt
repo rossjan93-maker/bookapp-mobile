@@ -1,0 +1,103 @@
+The walkthrough still needs correction.
+
+Current problems:
+1. The onboarding / walkthrough appears to stop at Recommendations instead of progressing cleanly through the remaining intended steps
+2. The orange/amber coloring being added into the highlighted card treatment should be removed
+3. The pulsing white dots / hotspot dots should be removed
+4. The card itself should be the focal point — we do not need extra decorative signaling layered on top
+
+What I want now:
+A simpler, cleaner walkthrough treatment with reliable progression.
+
+Priority order:
+A. Fix walkthrough progression so it does not stop at Recommendations
+B. Remove the orange tinting from the highlighted card treatment
+C. Remove the pulsing white dots/hotspot dots
+D. Keep the card/module itself as the focal point using subtle elevation only
+
+==================================================
+PROGRESSION BUG
+==================================================
+
+First diagnose exactly why the walkthrough is stopping at Recommendations.
+
+I want you to inspect:
+- walkthrough step state transitions
+- step completion logic
+- navigation progression logic
+- any gating that may be preventing the next step from advancing
+- any interaction dependency that is causing the flow to stall
+
+Before coding, tell me:
+1. why it is stopping at Recommendations
+2. what exact fix you will apply
+3. how progression will work step-by-step after the fix
+
+Success criteria:
+- walkthrough advances cleanly through all intended steps
+- no dead-end at Recommendations
+- Skip still works
+- final completion exits cleanly into normal product use
+
+==================================================
+VISUAL CORRECTION
+==================================================
+
+The current highlighted card treatment is too decorative.
+
+Remove:
+- orange / amber coloring placed into or around the card
+- pulsing white dots / hotspot dots
+- any extra ornamental effect that is not necessary
+
+Keep:
+- the actual card/module as the focal point
+- subtle lift/elevation
+- slightly stronger shadow
+- maybe a very subtle on-brand outline if needed
+- calm, premium emphasis only
+
+I want the card to stand out because it is elevated and visually clean, not because it has colored glow effects or pulsing markers.
+
+Design rule:
+Less overlay choreography.
+More product-native emphasis.
+
+==================================================
+TARGETING RULE
+==================================================
+
+Keep the object-led walkthrough principle:
+- the actual card/module being discussed is the focal point
+- not a section
+- not a region
+- not a decorative hotspot
+
+But now simplify the visual treatment:
+- no orange tint
+- no pulsing dots
+- no unnecessary glow effects if they distract
+- let the real component carry the focus
+
+==================================================
+DELIVERABLES BEFORE CODING
+==================================================
+
+Before changing code, give me:
+1. Diagnosis of why the walkthrough currently stops at Recommendations
+2. Exact step progression after the fix
+3. What visual styles you will remove
+4. What simpler focal treatment will remain
+
+Then implement.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- walkthrough no longer stops at Recommendations
+- progression is reliable through all intended steps
+- orange tinting is gone
+- pulsing white dots are gone
+- the card/module itself remains the focal point
+- the walkthrough feels cleaner, calmer, and more native to the app
