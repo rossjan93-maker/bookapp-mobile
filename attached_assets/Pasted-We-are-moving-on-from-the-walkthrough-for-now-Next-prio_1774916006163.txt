@@ -1,0 +1,197 @@
+We are moving on from the walkthrough for now.
+
+Next priority:
+the post-tour Recommendations entry and import/setup surface.
+
+The walkthrough only matters if it hands the user into a clear next action. Right now, after the tour, a new user needs a strong, obvious, well-designed Recommendations entry experience.
+
+I want this surface to make one thing clear:
+the fastest way to get good picks is to bring in reading history or add a little taste context.
+
+==================================================
+GOAL
+==================================================
+
+Build a first-visit Recommendations entry surface that appears after the walkthrough and gives the user three clear paths:
+
+1. Import my library
+2. Answer a few questions
+3. Explore anyway
+
+This should feel like the product’s first real setup moment.
+Not a settings page.
+Not an afterthought.
+Not a blocking questionnaire.
+
+==================================================
+PRODUCT INTENT
+==================================================
+
+The user has already:
+- created an account
+- seen the app shell
+- completed the guided walkthrough
+
+Now they arrive at Recommendations.
+
+At this moment, the product should say:
+“Want better picks? Here’s the fastest way.”
+
+Import should be the hero path.
+Quick intake should be the lighter fallback.
+Explore anyway should exist, but be visually secondary.
+
+==================================================
+WHAT I WANT
+==================================================
+
+A dedicated Recommendations entry state for first-time / low-signal users.
+
+This surface should:
+- feel premium and product-native
+- clearly explain the value exchange
+- make import highly visible
+- make quick setup easy
+- let the user continue without friction if they skip
+
+I want this to feel like a real product choice point, not a prompt stack.
+
+==================================================
+REQUIRED OPTIONS
+==================================================
+
+OPTION A — Import my library
+This should be the primary CTA.
+
+Requirements:
+- highest visual priority
+- clearly framed as the fastest path to strong recommendations
+- explicitly mention Goodreads / StoryGraph / competitor import support where appropriate
+- should feel like a high-confidence shortcut, not admin work
+
+Possible supporting copy direction:
+“Already track books somewhere else? Bring that history in and we’ll tune your picks faster.”
+
+OPTION B — Answer a few questions
+This should be the secondary path.
+
+Requirements:
+- lightweight
+- concise
+- not a long onboarding flow
+- just enough signal to improve starter picks
+
+Directionally this should include:
+- fiction / nonfiction / both
+- favorite / avoided genres
+- 3–4 meaningful taste questions
+- optional favorite book
+
+This should happen inline or as a short sub-flow from the Recommendations entry surface.
+Not as a full detached onboarding experience.
+
+OPTION C — Explore anyway
+This should remain available, but tertiary.
+
+Requirements:
+- visually de-emphasized compared with Import and Quick Setup
+- still easy enough to choose
+- should allow access to a starter Recommendations experience
+
+==================================================
+UX REQUIREMENTS
+==================================================
+
+This surface must:
+- explain the value of personalization in one sentence
+- not feel like homework
+- not over-explain
+- not be visually cluttered
+- not bury import
+- not force setup before the user can continue
+
+I want:
+- clear hierarchy
+- strong first action
+- confident, concise copy
+- a setup screen that feels designed, not form-like
+
+==================================================
+STATE / LOGIC REQUIREMENTS
+==================================================
+
+The Recommendations entry should appear when:
+- the walkthrough has completed
+- the user lands on Recommendations
+- the user has insufficient personalization signal
+
+It should NOT appear for users who already have meaningful signal from:
+- imports
+- enough library/history
+- prior intake/preferences that are sufficient
+
+I want you to define the signal threshold/logic clearly before coding.
+
+Also:
+- once a user chooses Import / Quick Setup / Explore anyway, persist that state appropriately
+- do not keep nagging them unnecessarily
+- but ensure import/setup remains discoverable later inside Recommendations if they skip
+
+==================================================
+COPY / DESIGN DIRECTION
+==================================================
+
+Tone:
+- premium
+- calm
+- clear
+- confident
+- product-native
+- not salesy
+- not generic onboarding language
+
+Visual hierarchy:
+1. Import
+2. Quick questions
+3. Explore anyway
+
+No off-brand colors.
+No modal feeling unless absolutely necessary.
+It should feel like a natural Recommendations landing state.
+
+==================================================
+DELIVERABLES BEFORE CODING
+==================================================
+
+Before implementing, give me:
+
+1. Diagnosis of the current Recommendations entry/setup experience
+2. Proposed first-visit Recommendations entry flow
+3. Exact state logic for when this entry appears vs. does not appear
+4. Exact components/screens/subflows you will create or modify
+5. Exact copy hierarchy for:
+   - primary import path
+   - secondary quick setup path
+   - tertiary explore path
+6. How this handoff works immediately after the walkthrough completes
+
+Then implement.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+This pass is successful only if:
+- a first-time user reaches Recommendations and immediately understands how to improve picks
+- import is the obvious high-value path
+- quick setup is available but lighter-weight
+- explore anyway remains available
+- the surface feels premium and intentional
+- the logic only shows this entry when it is actually needed
+- the user can continue into Recommendations without confusion or friction
+
+Do NOT:
+- reintroduce a big onboarding survey
+- bury import in settings or secondary UI
+- make this feel like a generic modal or form
+- focus only on styling without solving the state/logic

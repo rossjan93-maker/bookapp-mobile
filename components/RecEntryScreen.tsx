@@ -297,59 +297,69 @@ function EntryOptions({
   return (
     <ScrollView
       style={{ flex: 1 }}
-      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 28, paddingBottom: 40 }}
+      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 36, paddingBottom: 48 }}
       showsVerticalScrollIndicator={false}
     >
       {/* Header */}
-      <Text style={{ fontSize: 28, fontWeight: '800', color: INK, lineHeight: 34, marginBottom: 6 }}>
-        Personalize your picks
+      <Text style={{
+        fontSize: 30, fontWeight: '800', color: INK,
+        lineHeight: 36, letterSpacing: -0.5, marginBottom: 10,
+      }}>
+        Get picks worth reading.
       </Text>
-      <Text style={{ fontSize: 15, color: SUB, lineHeight: 22, marginBottom: 32 }}>
-        More signal means better recommendations. Choose how you want to start.
+      <Text style={{ fontSize: 15, color: SUB, lineHeight: 23, marginBottom: 36 }}>
+        Your reading history is the fastest signal. Import it and we tune your picks from day one — or take 90 seconds to tell us your taste.
       </Text>
 
-      {/* Option A — Import (primary, most prominent) */}
+      {/* Option A — Import (primary) */}
       <TouchableOpacity
         onPress={onImport}
-        activeOpacity={0.8}
+        activeOpacity={0.82}
         style={{
           backgroundColor: INK,
-          borderRadius:    16,
-          padding:         20,
-          marginBottom:    12,
+          borderRadius:    18,
+          padding:         22,
+          marginBottom:    10,
         }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 12 }}>
-          <View
-            style={{
-              width: 44, height: 44, borderRadius: 22,
-              backgroundColor: '#ffffff18',
-              alignItems: 'center', justifyContent: 'center',
-            }}
-          >
+        {/* Top row: icon + label + chevron */}
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 14 }}>
+          <View style={{
+            width: 46, height: 46, borderRadius: 23,
+            backgroundColor: '#ffffff14',
+            alignItems: 'center', justifyContent: 'center',
+            marginTop: 1,
+          }}>
             <Ionicons name="cloud-download-outline" size={22} color="#fff" />
           </View>
+
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 17, fontWeight: '700', color: '#fff', lineHeight: 22 }}>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: '#fff', lineHeight: 22, marginBottom: 4 }}>
               Import my library
             </Text>
-            <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 2 }}>
-              Goodreads · StoryGraph · others
+            <Text style={{ fontSize: 13, color: '#c4bfb9', lineHeight: 19 }}>
+              Goodreads or StoryGraph — bring in your reading history and we'll know your taste immediately.
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color="#a8a29e" />
+
+          <Ionicons name="chevron-forward" size={18} color="#78716c" style={{ marginTop: 3 }} />
         </View>
-        <View
-          style={{
-            backgroundColor: GRN + '30',
-            borderRadius:    8,
-            paddingHorizontal: 10,
-            paddingVertical:   6,
-            alignSelf:       'flex-start',
-          }}
-        >
-          <Text style={{ fontSize: 12, fontWeight: '600', color: '#a3e635' }}>
-            Fastest path to strong recommendations
+
+        {/* Badge */}
+        <View style={{
+          marginTop: 16,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+          backgroundColor: '#ffffff0d',
+          borderRadius: 8,
+          paddingHorizontal: 10,
+          paddingVertical: 7,
+          alignSelf: 'flex-start',
+        }}>
+          <Ionicons name="checkmark-circle-outline" size={13} color="#86efac" />
+          <Text style={{ fontSize: 12, fontWeight: '600', color: '#86efac', letterSpacing: 0.1 }}>
+            Best results · no setup required
           </Text>
         </View>
       </TouchableOpacity>
@@ -360,44 +370,45 @@ function EntryOptions({
         activeOpacity={0.8}
         style={{
           backgroundColor: '#fff',
-          borderRadius:    16,
+          borderRadius:    18,
           borderWidth:     1.5,
           borderColor:     BORD,
           padding:         20,
-          marginBottom:    12,
+          marginBottom:    10,
           flexDirection:   'row',
-          alignItems:      'center',
+          alignItems:      'flex-start',
           gap:             14,
         }}
       >
-        <View
-          style={{
-            width: 44, height: 44, borderRadius: 22,
-            backgroundColor: '#f5f5f4',
-            alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <Ionicons name="list-outline" size={22} color={INK} />
+        <View style={{
+          width: 46, height: 46, borderRadius: 23,
+          backgroundColor: '#f5f5f4',
+          alignItems: 'center', justifyContent: 'center',
+          marginTop: 1,
+        }}>
+          <Ionicons name="options-outline" size={20} color={INK} />
         </View>
+
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 16, fontWeight: '700', color: INK }}>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: INK, lineHeight: 22, marginBottom: 4 }}>
             Answer a few questions
           </Text>
-          <Text style={{ fontSize: 13, color: SUB, marginTop: 2 }}>
-            Genres, taste, optional favourite book — takes about 90 seconds
+          <Text style={{ fontSize: 13, color: SUB, lineHeight: 19 }}>
+            Genres, pacing, style — takes under 90 seconds.
           </Text>
         </View>
-        <Ionicons name="chevron-forward" size={18} color={MUTED} />
+
+        <Ionicons name="chevron-forward" size={18} color={MUTED} style={{ marginTop: 3 }} />
       </TouchableOpacity>
 
-      {/* Option C — Explore anyway */}
+      {/* Option C — Not right now (tertiary) */}
       <TouchableOpacity
         onPress={onExplore}
-        activeOpacity={0.75}
-        style={{ alignItems: 'center', paddingVertical: 16 }}
+        activeOpacity={0.7}
+        style={{ alignItems: 'center', paddingVertical: 18 }}
       >
-        <Text style={{ fontSize: 15, color: MUTED, fontWeight: '500' }}>
-          Explore without personalizing →
+        <Text style={{ fontSize: 14, color: MUTED, fontWeight: '500' }}>
+          Not right now →
         </Text>
       </TouchableOpacity>
     </ScrollView>
