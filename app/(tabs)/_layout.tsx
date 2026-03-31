@@ -24,8 +24,8 @@ import {
 } from '../../lib/walkthroughEngine';
 import { WalkthroughOverlay } from '../../components/WalkthroughOverlay';
 import {
-  OnboardingImportPrompt,
   getImportObState,
+  setImportObState,
 } from '../../components/OnboardingImportPrompt';
 
 // ─── Badge context ────────────────────────────────────────────────────────────
@@ -76,7 +76,6 @@ export default function TabsLayout() {
   const [newRecCount,   setNewRecCount]   = useState(0);
   const [guidedStep,    setGuidedStep]    = useState<GuidedStep>(99);
   const [wtStep,        setWtStep]        = useState<WtStep | null>(null);
-  const [showImportOb,  setShowImportOb]  = useState(false);
   const router        = useRouter();
   const segments      = useSegments();
   const routerRef     = useRef(router);
@@ -90,24 +89,23 @@ export default function TabsLayout() {
   }, []);
 
   // Pre-load importObState at mount.
-  // Doubles as the refresh-restore path: if the key is 'pending', the user
-  // completed the walkthrough but hasn't yet chosen import or dismiss —
-  // show the import screen immediately without waiting for the wtStep chain.
+  // Primary purpose: redirect to /onboarding-import if state is 'pending'.
+  // This covers the navigate-away-then-reload case: user goes back to the tab
+  // shell (e.g. presses browser back) while still pending — we catch them here
+  // and send them back to the final onboarding destination.
   //   undefined  — not yet loaded
-  //   null       — default; walkthrough not yet completed
-  //   'pending'  — walkthrough done, decision not yet made → show immediately
-  //   'started'  — user tapped Import (never show again)
-  //   'dismissed' — user dismissed (never show again)
+  //   null       — default; walkthrough not yet completed (no redirect)
+  //   'pending'  — walkthrough done, decision not yet made → redirect
+  //   'importing' — user tapped Import (no redirect)
+  //   'dismissed' — user dismissed (no redirect)
+  //   'completed' — import finished (no redirect)
   const importObStateRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     getImportObState().then(s => {
       importObStateRef.current = s;
       if (s === 'pending') {
-        // Restore the pending final onboarding step after any refresh/cold-start.
-        // Mark importObChecked so the safety-valve doesn't double-fire.
-        console.log('[IMPORT_OB] mount_restore: pending — restoring import step');
-        importObChecked.current = true;
-        setShowImportOb(true);
+        console.log('[IMPORT_OB] mount_redirect: pending — navigating to /onboarding-import');
+        routerRef.current.replace('/onboarding-import' as any);
       }
     });
   }, []);
@@ -131,43 +129,38 @@ export default function TabsLayout() {
     });
   }, []);
 
-  // Safety-valve: fires whenever wtStep lands on 'done', covering:
-  //   - skipWt() (user skipped tour, advanceWt never called)
-  //   - cold-start resume where wtStep was stored as 'done'
-  //   - the rare race where importObStateRef was still undefined in advanceWt()
+  // Safety-valve: covers paths where advanceWt() was never called:
+  //   - user skipped the tour (skipWt)
+  //   - cold-start with a stored 'done' step but importObState still null
+  //   - the rare race where importObStateRef was undefined in advanceWt()
   //
-  // The mount-restore useEffect (above) handles the 'pending' refresh case,
-  // so if importObChecked.current is already true here, we skip and defer.
-  //
-  // State handling:
-  //   'pending'   → should have been shown by mount-restore; show anyway as fallback
-  //   null        → first-time completion via skip/cold-start → write 'pending', show
-  //   'started'   → never show again
-  //   'dismissed' → never show again
+  // The mount-redirect useEffect above already handles 'pending' on refresh.
+  // Here we only need to act when wtStep arrives at 'done' via a path that
+  // didn't go through advanceWt(). We use importObChecked to avoid firing twice.
   const importObChecked = useRef(false);
   useEffect(() => {
     if (wtStep !== 'done') return;
     if (importObChecked.current) return;
     importObChecked.current = true;
 
-    async function maybeShowImportOb() {
+    async function maybeNavigateToImportStep() {
       const state = await getImportObState();
       console.log('[IMPORT_OB] safety_valve_check', { state });
 
-      if (state === 'started' || state === 'dismissed') {
+      if (state === 'importing' || state === 'dismissed' || state === 'completed') {
         console.log('[IMPORT_OB] safety_valve: skip — already actioned', { state });
         return;
       }
 
-      // 'pending' (fallback restore) or null (first-time via skip/cold-start):
-      // write 'pending' so subsequent refreshes also restore correctly.
+      // null (first time via skip) or 'pending' (fallback — should have been
+      // caught by mount-redirect, but navigate anyway as a belt-and-suspenders):
       if (state !== 'pending') {
         await setImportObState('pending');
       }
-      console.log('[IMPORT_OB] safety_valve: show=true (state was:', state, ')');
-      setShowImportOb(true);
+      console.log('[IMPORT_OB] safety_valve: navigating to /onboarding-import (state was:', state, ')');
+      routerRef.current.replace('/onboarding-import' as any);
     }
-    maybeShowImportOb();
+    maybeNavigateToImportStep();
   }, [wtStep]);
 
   // Simplify the legacy advance: jump straight to 99 (overlay banners removed)
@@ -198,26 +191,25 @@ export default function TabsLayout() {
       console.log('[IMPORT_OB] walkthrough_finished_handler', { importState });
 
       if (importState === null) {
-        // First completion: write 'pending' so the import step survives refresh,
-        // then show immediately (no async gap between walkthrough and import screen).
+        // First completion: write 'pending' then navigate to the dedicated route.
+        // This is the primary happy path — walkthrough just finished.
         setImportObState('pending'); // fire-and-forget async write
         importObStateRef.current = 'pending';
         importObChecked.current = true; // safety-valve not needed
-        console.log('[IMPORT_OB] decision: show=true — wrote pending');
-        setShowImportOb(true);
+        console.log('[IMPORT_OB] decision: navigate to /onboarding-import — wrote pending');
+        routerRef.current.replace('/onboarding-import' as any);
       } else if (importState === 'pending') {
-        // Already pending (e.g. mount-restore ran first) — just show.
+        // Already pending (mount-redirect ran first, or replayed walkthrough).
         importObChecked.current = true;
-        console.log('[IMPORT_OB] decision: show=true — already pending');
-        setShowImportOb(true);
+        console.log('[IMPORT_OB] decision: navigate to /onboarding-import — already pending');
+        routerRef.current.replace('/onboarding-import' as any);
       } else if (importState === undefined) {
-        // Pre-load still in flight (rare race) — safety-valve will handle it
-        // and will write 'pending' before showing.
+        // Pre-load still in flight (rare race) — safety-valve handles it.
         console.log('[IMPORT_OB] decision: deferred to safety-valve (pre-load in flight)');
       } else {
-        // 'started' or 'dismissed' — user already actioned this; don't show.
+        // 'importing', 'dismissed', or 'completed' — user already decided; don't redirect.
         importObChecked.current = true;
-        console.log('[IMPORT_OB] decision: show=false — already actioned:', importState);
+        console.log('[IMPORT_OB] decision: no redirect — already actioned:', importState);
       }
     }
   }
@@ -281,9 +273,6 @@ export default function TabsLayout() {
   const wtStepRef = useRef<WtStep | null>(wtStep);
   useEffect(() => { wtStepRef.current = wtStep; }, [wtStep]);
 
-  const showImportObRef = useRef(false);
-  useEffect(() => { showImportObRef.current = showImportOb; }, [showImportOb]);
-
   // ── Pager-style swipe gesture ──────────────────────────────────────────────
   //
   // Architecture: Animated.Value tracks finger in real time (finger-connected).
@@ -316,12 +305,11 @@ export default function TabsLayout() {
       // Do not steal taps — only evaluate once motion has started
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, { dx, dy }) => {
-        // Never intercept during the legacy guided tour, the walkthrough overlay,
-        // or the import onboarding prompt.
+        // Never intercept during the legacy guided tour or the walkthrough overlay.
+        // (The import onboarding step is a separate route — PanResponder is not mounted there.)
         if (guidedStepRef.current < 99) return false;
         const ws = wtStepRef.current;
         if (ws === 'home' || ws === 'recommend' || ws === 'library' || ws === 'inbox') return false;
-        if (showImportObRef.current) return false;
 
         // Capture when movement is horizontal-dominant and past the noise floor
         const absDx = Math.abs(dx);
@@ -464,12 +452,6 @@ export default function TabsLayout() {
 
             {/* ── In-app walkthrough overlay (Home + Library steps) ── */}
             <WalkthroughOverlay />
-
-            {/* ── Final onboarding step: import prompt ── */}
-            <OnboardingImportPrompt
-              visible={showImportOb}
-              onDismiss={() => setShowImportOb(false)}
-            />
 
           </View>
         </WalkthroughContext.Provider>
