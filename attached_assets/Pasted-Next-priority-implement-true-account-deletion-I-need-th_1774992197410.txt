@@ -1,0 +1,103 @@
+Next priority: implement true account deletion.
+
+I need this for two reasons:
+1. I want to delete my current account so I can sign up again with the same email for testing
+2. “Delete account” should be a real user-facing feature in the product
+
+This is important:
+Deleting the account must free the email for reuse.
+That means this cannot just delete profile/app rows.
+It must delete the actual auth user as well.
+
+==================================================
+GOAL
+==================================================
+
+Build a real account deletion flow that:
+- deletes the user’s app data
+- deletes the user’s profile
+- deletes the auth user
+- signs the user out
+- returns them to login/signup cleanly
+
+If this is not a true auth-user deletion, it does not solve the testing need.
+
+==================================================
+PRODUCT REQUIREMENT
+==================================================
+
+“Delete account” should exist as a user-facing option in Settings.
+
+Requirements:
+- clearly labeled
+- appropriately dangerous/destructive styling
+- confirmation step
+- ideally require re-auth / password confirmation / recent auth if needed
+- explain that account deletion is permanent
+- after deletion, user is signed out and returned to auth flow
+
+==================================================
+TESTING REQUIREMENT
+==================================================
+
+I specifically need to be able to:
+- delete my current test account
+- sign up again with the same email
+
+So before coding, confirm explicitly:
+- whether your deletion flow will actually remove the auth user
+- whether the email will become reusable after deletion
+- what backend/admin/API path will perform that deletion
+
+==================================================
+WHAT I NEED FROM YOU BEFORE CODING
+==================================================
+
+Before implementing, give me:
+
+1. Diagnosis of the current account deletion state:
+   - do we already have any delete-account logic?
+   - does it delete auth users or only app data?
+   - are there FK / cascade issues we need to handle?
+
+2. Exact deletion architecture:
+   - what backend function/route will perform the deletion
+   - what tables/data are deleted
+   - how auth user deletion will be done
+   - how email reuse is guaranteed
+
+3. Exact user flow:
+   - Settings -> Delete account
+   - confirmation
+   - re-auth if needed
+   - deletion in progress state
+   - success path back to login/signup
+
+4. Any schema/foreign-key/cascade updates needed so deletion does not fail
+
+==================================================
+IMPLEMENTATION REQUIREMENTS
+==================================================
+
+I want:
+1. A proper backend deletion path
+2. A user-facing Settings entry for Delete account
+3. Clear error handling
+4. Clean sign-out and redirect after deletion
+5. Real deletion of auth user, not just local/profile cleanup
+
+Also:
+- if there is already partial delete logic, upgrade/fix it rather than duplicating it
+- if there is a dev/test helper path, it must use the same underlying deletion engine
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- user can delete their account from Settings
+- auth user is actually removed
+- email becomes reusable for sign-up
+- app data is cleaned up correctly
+- no orphaned records / FK failures
+- user is signed out and returned to auth flow
+- the experience feels safe, explicit, and complete

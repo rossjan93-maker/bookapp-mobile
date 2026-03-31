@@ -12,6 +12,7 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { getDisplayName } from '../lib/displayName';
+import { ONBOARDING_STAGE_KEY } from '../lib/onboardingStage';
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
@@ -287,6 +288,13 @@ export default function SettingsScreen() {
       setDeletingAccount(false);
       return;
     }
+
+    // Clear local onboarding state so a new sign-up on the same device
+    // gets a fresh onboarding experience (no stale stage key left behind).
+    await AsyncStorage.multiRemove([
+      ONBOARDING_STAGE_KEY,
+      'readstack_walkthrough_v1',
+    ]);
 
     await supabase.auth.signOut();
   }
