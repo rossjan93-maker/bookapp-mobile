@@ -4,6 +4,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { clearAllTabCaches } from '../lib/tabCache';
+import { readOnboardingStage } from '../lib/onboardingStage';
 
 // ─── Onboarding bridge ────────────────────────────────────────────────────────
 // Lets onboarding.tsx call completeOnboarding() to update needsOnboarding in
@@ -75,7 +76,15 @@ export default function RootLayout() {
           meta?.last_name,
         );
         const completed = await checkOnboardingCompleted(data.session.user.id);
-        setNeedsOnboarding(!completed);
+        if (completed) {
+          setNeedsOnboarding(false);
+        } else {
+          // DB may not have been written yet (first-run race or network blip).
+          // If local stage is non-null the user already passed the welcome screen —
+          // trust local and skip it; tabs layout resumes from the local stage.
+          const localStage = await readOnboardingStage();
+          setNeedsOnboarding(localStage === null);
+        }
       } else {
         setNeedsOnboarding(false);
       }
@@ -92,7 +101,12 @@ export default function RootLayout() {
           meta?.last_name,
         );
         const completed = await checkOnboardingCompleted(newSession.user.id);
-        setNeedsOnboarding(!completed);
+        if (completed) {
+          setNeedsOnboarding(false);
+        } else {
+          const localStage = await readOnboardingStage();
+          setNeedsOnboarding(localStage === null);
+        }
       } else if (event === 'SIGNED_OUT') {
         setNeedsOnboarding(false);
         clearAllTabCaches();

@@ -1,0 +1,116 @@
+The onboarding flow is now working in the correct order, but it is still surfacing on every login. That is wrong.
+
+New requirement:
+This full onboarding flow should only ever run on a user’s initial onboarding journey, not every time they log in.
+
+==================================================
+EXPECTED BEHAVIOR
+==================================================
+
+For a brand new user:
+- intro
+- walkthrough
+- final setup
+- normal app usage
+
+After that onboarding is completed or dismissed appropriately:
+- future logins should go straight into the app
+- the user should NOT be re-routed through onboarding again
+- the ordered onboarding flow is first-run only
+
+==================================================
+DIAGNOSIS NEEDED
+==================================================
+
+Before coding, diagnose exactly why onboarding is reappearing on every login.
+
+I want you to trace:
+1. what currently determines whether onboarding starts
+2. what state is being persisted locally
+3. what state is being persisted in the backend/profile
+4. why the app currently treats later logins like first-run onboarding
+
+==================================================
+REQUIRED FIX
+==================================================
+
+I want a clear separation between:
+
+A. FIRST-RUN COMPLETION STATE
+This should answer:
+Has this user already completed first-run onboarding at least once?
+
+B. CURRENT ONBOARDING STAGE
+This should answer:
+If they are currently in onboarding, which stage are they in?
+
+The app should only enter onboarding automatically when:
+- the user has not yet completed first-run onboarding
+
+Once first-run onboarding is resolved:
+- future logins should not automatically restart it
+
+==================================================
+STATE MODEL
+==================================================
+
+I want you to define clearly:
+- which backend/profile field is the durable “onboarding completed” flag
+- which local storage key is the temporary ordered stage tracker
+- when each one is written
+- when each one is read
+- which one wins if they conflict
+
+Likely shape:
+- backend/profile: onboarding_completed = true/false
+- local: readstack_onboarding_stage_v1 = walkthrough / final_setup / done
+
+Behavior:
+- first login with onboarding_completed = false -> onboarding flow runs
+- once onboarding is truly completed/resolved -> onboarding_completed becomes true
+- future logins with onboarding_completed = true -> go straight into app
+- local stage should only matter while onboarding is in progress, not forever
+
+==================================================
+IMPORTANT EDGE CASES
+==================================================
+
+Handle these explicitly:
+1. User completes walkthrough and dismisses final setup:
+   - should this count as onboarding completed? I think yes.
+   - they made a decision and should not be forced through onboarding again
+
+2. User completes import successfully:
+   - definitely counts as onboarding completed
+
+3. User refreshes mid-onboarding:
+   - should resume correctly
+
+4. User fully finishes onboarding, logs out, logs back in:
+   - should NOT restart onboarding
+
+5. Manual reset for testing:
+   - should still be possible with explicit reset steps
+
+==================================================
+DELIVERABLES BEFORE CODING
+==================================================
+
+Before implementing, give me:
+1. root cause of why onboarding is appearing every login
+2. exact new completion-vs-stage model
+3. exact rules for when onboarding starts and when it does not
+4. exact files/components/state you will modify
+5. exact point at which onboarding_completed becomes true
+
+Then implement.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- onboarding runs only for true first-run users
+- onboarding does not restart on every login
+- once the user completes or dismisses the final setup step, onboarding is considered resolved
+- refresh still resumes correctly if onboarding is mid-flight
+- future logins go straight into the app

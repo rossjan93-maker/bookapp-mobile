@@ -1033,7 +1033,19 @@ export default function GoodreadsImportScreen() {
       await new Promise(r => setTimeout(r, 350));
 
       setExecutionResult(result);
-      writeOnboardingStage('done'); // fire-and-forget — marks final onboarding step done
+      writeOnboardingStage('done'); // fire-and-forget — marks local stage done
+      // Belt-and-suspenders: ensure the durable DB flag is set so future logins
+      // never restart onboarding (import may be reached directly, bypassing the
+      // onboarding-import.tsx action handler where the primary DB write lives).
+      if (supabase) {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          if (session?.user) {
+            supabase?.from('profiles')
+              .update({ onboarding_completed: true })
+              .eq('id', session.user.id);
+          }
+        }).catch(() => {});
+      }
       setStep('complete');
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Import failed. Please try again.');

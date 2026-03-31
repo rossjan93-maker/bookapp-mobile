@@ -174,18 +174,30 @@ export default function OnboardingScreen() {
       writeWtStep('home'),
     ]);
 
-    // ③ Navigate only after writes are confirmed
+    // ③ Write onboarding_completed=true to DB before navigating.
+    //    Use getSession() (cached, no network round-trip) rather than getUser().
+    //    Awaiting here ensures the value is durable — future logins will read true
+    //    and skip the welcome screen even if the local stage key is later cleared.
+    if (supabase) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          await supabase
+            .from('profiles')
+            .update({ onboarding_completed: true })
+            .eq('id', session.user.id);
+        }
+      } catch {
+        // Fail silently — the local stage key + _layout.tsx fallback guard
+        // will prevent the welcome screen from reappearing even if this fails.
+      }
+    }
+
+    // ④ Navigate only after all writes are confirmed
     router.replace('/');
 
-    // ④ Background writes (non-blocking)
+    // ⑤ Background writes (non-blocking)
     Promise.allSettled([writeGuidedStep(0)]);
-    if (supabase) {
-      supabase.auth.getUser().then(({ data: { user } }) => {
-        if (user) {
-          supabase?.from('profiles').update({ onboarding_completed: true }).eq('id', user.id);
-        }
-      }).catch(() => {});
-    }
   }
 
   const spineAreaH = Math.min(SH * 0.30, 220);

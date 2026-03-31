@@ -28,12 +28,33 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { readOnboardingStage, writeOnboardingStage } from '../lib/onboardingStage';
+import { supabase } from '../lib/supabase';
 
 const BG  = '#faf9f7';
 const INK = '#1c1917';
 const SUB = '#78716c';
 const MUT = '#a8a29e';
 const BOR = '#e7e5e4';
+
+// ─── Shared helper ────────────────────────────────────────────────────────────
+// Write onboarding_completed=true to the profiles table.
+// Called from every resolution action so the flag is durable for future logins.
+// Uses getSession() (cached) to avoid a network round-trip.
+async function markOnboardingComplete(): Promise<void> {
+  if (!supabase) return;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      await supabase
+        .from('profiles')
+        .update({ onboarding_completed: true })
+        .eq('id', session.user.id);
+    }
+  } catch {
+    // Non-blocking — local stage='done' already prevents the import page from
+    // appearing again; this write is belt-and-suspenders for future logins.
+  }
+}
 
 export default function OnboardingImportPage() {
   const router  = useRouter();
@@ -61,23 +82,23 @@ export default function OnboardingImportPage() {
   }, []);
 
   async function handleImport() {
-    console.log('[IMPORT_ROUTE] action: import_tapped — writing done stage');
-    await writeOnboardingStage('done');
-    console.log('[IMPORT_ROUTE] action: stage written — pushing /import/goodreads');
+    console.log('[IMPORT_ROUTE] action: import_tapped');
+    await Promise.all([writeOnboardingStage('done'), markOnboardingComplete()]);
+    console.log('[IMPORT_ROUTE] action: stage=done + onboarding_completed written — pushing /import/goodreads');
     router.push('/import/goodreads' as any);
   }
 
   async function handleIntake() {
-    console.log('[IMPORT_ROUTE] action: intake_tapped — writing done stage');
-    await writeOnboardingStage('done');
-    console.log('[IMPORT_ROUTE] action: stage written — navigating to /(tabs)/search');
+    console.log('[IMPORT_ROUTE] action: intake_tapped');
+    await Promise.all([writeOnboardingStage('done'), markOnboardingComplete()]);
+    console.log('[IMPORT_ROUTE] action: stage=done + onboarding_completed written — navigating to /(tabs)/search');
     router.navigate('/(tabs)/search' as any);
   }
 
   async function handleDismiss() {
-    console.log('[IMPORT_ROUTE] action: not_right_now_tapped — writing done stage');
-    await writeOnboardingStage('done');
-    console.log('[IMPORT_ROUTE] action: stage written — replacing with /(tabs)');
+    console.log('[IMPORT_ROUTE] action: not_right_now_tapped');
+    await Promise.all([writeOnboardingStage('done'), markOnboardingComplete()]);
+    console.log('[IMPORT_ROUTE] action: stage=done + onboarding_completed written — replacing with /(tabs)');
     router.replace('/(tabs)' as any);
   }
 
