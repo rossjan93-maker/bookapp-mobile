@@ -28,7 +28,9 @@ export function WtDemoInbox() {
         New · 1
       </Text>
 
-      {/* Demo inbox card — matches real newItems card style exactly */}
+      {/* Demo inbox card — invisible measurement target only.
+          The overlay renders the visible focal card at these coordinates.
+          opacity:0 hides this so the focal card above the dim has no ghost twin. */}
       <View
         ref={ref}
         onLayout={onLayout}
@@ -46,6 +48,7 @@ export function WtDemoInbox() {
           elevation: 14,
           borderWidth: 1,
           borderColor: 'rgba(212, 165, 116, 0.15)',
+          opacity: 0,
         }}
       >
         {/* From label */}

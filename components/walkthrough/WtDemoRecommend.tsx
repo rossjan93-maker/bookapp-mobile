@@ -22,7 +22,8 @@ export function WtDemoRecommend() {
         </Text>
       </View>
 
-      {/* Demo RecCard — featured style (same tokens as the real card) */}
+      {/* Demo RecCard — invisible measurement target only.
+          The overlay focal card renders the visible version above the dim. */}
       <View
         ref={ref}
         onLayout={onLayout}
@@ -38,6 +39,7 @@ export function WtDemoRecommend() {
           shadowOffset: { width: 0, height: 8 },
           elevation: 14,
           overflow: 'hidden',
+          opacity: 0,
         }}
       >
         {/* Top accent bar — featured card marker */}

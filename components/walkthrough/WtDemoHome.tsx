@@ -51,6 +51,7 @@ export function WtDemoHome({ greeting }: { greeting: string | null }) {
             elevation: 14,
             borderWidth: 1,
             borderColor: 'rgba(212, 165, 116, 0.15)',
+            opacity: 0,
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 }}>

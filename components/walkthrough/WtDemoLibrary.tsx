@@ -56,6 +56,7 @@ export function WtDemoLibrary() {
             paddingBottom: 14, paddingLeft: 14,
             borderWidth: 1,
             borderColor: 'rgba(59, 130, 246, 0.15)',
+            opacity: 0,
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
