@@ -101,11 +101,16 @@ export default function TabsLayout() {
   //   'completed' — import finished (no redirect)
   const importObStateRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
+    console.log('[IMPORT_OB] preload_start — reading AsyncStorage key readstack_import_ob_v1');
     getImportObState().then(s => {
       importObStateRef.current = s;
+      console.log('[IMPORT_OB] preload_complete', { importObState: s });
       if (s === 'pending') {
-        console.log('[IMPORT_OB] mount_redirect: pending — navigating to /onboarding-import');
+        console.log('[IMPORT_OB] preload: state is pending — calling router.replace /onboarding-import');
         routerRef.current.replace('/onboarding-import' as any);
+        setTimeout(() => {
+          console.log('[IMPORT_OB] preload_redirect: segments after replace:', segmentsRef.current);
+        }, 150);
       }
     });
   }, []);
@@ -116,6 +121,7 @@ export default function TabsLayout() {
   useEffect(() => {
     readWtStep().then(s => {
       const step = s ?? 'done';
+      console.log('[WT_LOAD] readWtStep raw:', s, '→ resolved step:', step);
       setWtStep(step);
       if (step && step !== 'done' && step !== 'home') {
         const def = WT_DEFS[step as keyof typeof WT_DEFS];
@@ -178,6 +184,7 @@ export default function TabsLayout() {
     if (!wtStep || wtStep === 'done') return;
     wtEvt_stepCompleted(wtStep);
     const next = nextWtStep(wtStep);
+    console.log('[WT_ADVANCE] step', wtStep, '→', next);
     setWtStep(next);
     writeWtStep(next);
     if (next !== 'done') {
@@ -188,28 +195,39 @@ export default function TabsLayout() {
     } else {
       wtEvt_finished();
       const importState = importObStateRef.current;
-      console.log('[IMPORT_OB] walkthrough_finished_handler', { importState });
+      console.log('[IMPORT_OB] walkthrough_finished_handler', {
+        importState,
+        importObStateRefValue: importObStateRef.current,
+        currentSegments: segmentsRef.current,
+      });
 
       if (importState === null) {
         // First completion: write 'pending' then navigate to the dedicated route.
         // This is the primary happy path — walkthrough just finished.
-        setImportObState('pending'); // fire-and-forget async write
+        setImportObState('pending'); // localStorage write is synchronous on web even though API is async
         importObStateRef.current = 'pending';
         importObChecked.current = true; // safety-valve not needed
-        console.log('[IMPORT_OB] decision: navigate to /onboarding-import — wrote pending');
+        console.log('[IMPORT_OB] decision: writing pending — calling router.replace /onboarding-import');
         routerRef.current.replace('/onboarding-import' as any);
+        setTimeout(() => {
+          console.log('[IMPORT_OB] segments after router.replace:', segmentsRef.current);
+        }, 150);
       } else if (importState === 'pending') {
         // Already pending (mount-redirect ran first, or replayed walkthrough).
         importObChecked.current = true;
-        console.log('[IMPORT_OB] decision: navigate to /onboarding-import — already pending');
+        console.log('[IMPORT_OB] decision: already pending — calling router.replace /onboarding-import');
         routerRef.current.replace('/onboarding-import' as any);
+        setTimeout(() => {
+          console.log('[IMPORT_OB] segments after router.replace:', segmentsRef.current);
+        }, 150);
       } else if (importState === undefined) {
         // Pre-load still in flight (rare race) — safety-valve handles it.
-        console.log('[IMPORT_OB] decision: deferred to safety-valve (pre-load in flight)');
+        console.log('[IMPORT_OB] decision: deferred to safety-valve — preload ref is still undefined');
       } else {
         // 'importing', 'dismissed', or 'completed' — user already decided; don't redirect.
         importObChecked.current = true;
-        console.log('[IMPORT_OB] decision: no redirect — already actioned:', importState);
+        console.log('[IMPORT_OB] decision: NO redirect — state is already actioned:', importState,
+          '— to re-test, run: localStorage.removeItem("readstack_import_ob_v1") in DevTools');
       }
     }
   }

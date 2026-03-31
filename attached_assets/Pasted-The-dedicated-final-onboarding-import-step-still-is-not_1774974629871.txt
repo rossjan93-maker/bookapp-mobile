@@ -1,0 +1,106 @@
+The dedicated final onboarding import step still is not working.
+
+Stop all design/polish work.
+This is now a narrow routing + state debugging task.
+
+Expected behavior:
+- walkthrough completes
+- final onboarding state is persisted as pending
+- app routes to the dedicated final onboarding page
+- refreshing the page while pending returns the user to that page
+- only import success or “Not right now” clears the pending state
+
+Actual behavior:
+That flow is still not happening.
+
+I want a full trace of the dedicated route flow before you change anything.
+
+==================================================
+DEBUG THIS EXACT PATH
+==================================================
+
+Trace the app from:
+1. final walkthrough step completed
+2. walkthrough state set to done
+3. pending final onboarding state written
+4. router navigation to the dedicated final onboarding route
+5. final onboarding page mount
+6. page deciding whether to render or redirect away
+
+I need you to identify exactly where this is breaking.
+
+==================================================
+ADD TEMP DEBUG LOGS
+==================================================
+
+Add logs for all of these:
+- walkthrough final step completed
+- wtStep transition to done
+- final onboarding pending state being written
+- router.replace / router.push target path
+- current pathname after navigation
+- final onboarding page mounted
+- final onboarding page read of persisted state
+- final onboarding page decision: render / redirect
+- import page dismiss action
+- import page import action
+- import success -> completed state write
+
+I want the exact values in the logs, not vague summaries.
+
+==================================================
+LIKELY FAILURE POINTS TO CHECK
+==================================================
+
+Check these explicitly:
+1. Is `/onboarding-import` actually being navigated to?
+2. Is the route mounted at all?
+3. Is the final onboarding page immediately redirecting away because the pending state is missing or stale?
+4. Is the pending state being written after navigation instead of before?
+5. Is a stale auth/session issue interrupting the route or causing a redirect?
+6. Is there an `_layout` / route guard overriding this route?
+7. Is the tabs layout still taking precedence over the dedicated route?
+
+==================================================
+AUTH / SESSION
+==================================================
+
+There was previously an Invalid Refresh Token error during this flow.
+I need you to check whether auth/session issues are interfering with the final onboarding route.
+
+Before coding, tell me:
+- whether auth/session errors are involved in this failure
+- whether the route is being blocked by auth state
+- how the app should behave if a stale session exists during onboarding
+
+Do not leave raw auth errors visible during onboarding.
+
+==================================================
+REQUIRED FIX
+==================================================
+
+Once you find the root cause, fix it so that:
+- pending state is written before routing
+- `/onboarding-import` reliably mounts
+- the page renders while pending
+- refresh stays on that page while pending
+- dismiss/import clears pending correctly
+- route exits cleanly into normal app usage after a decision
+
+==================================================
+DELIVERABLES
+==================================================
+
+Before coding:
+1. Exact root cause
+2. Exact point in the route/state chain where it fails
+3. Exact files you will modify
+
+After coding:
+1. Exact changed files
+2. The debug log sequence showing the route now works
+3. Confirmation that refresh while pending returns to `/onboarding-import`
+4. Confirmation that dismiss/import clears the route correctly
+
+This is not a redesign pass.
+It is a route/state debugging pass.

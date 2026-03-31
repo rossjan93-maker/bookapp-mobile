@@ -42,32 +42,43 @@ export default function OnboardingImportPage() {
   // Any other value means the user already made a decision (or arrived here
   // directly without completing the walkthrough) — redirect home.
   useEffect(() => {
+    // Synchronous mount confirmation — fires before the async state read.
+    // If you never see this log, the route is not mounting at all.
+    console.log('[IMPORT_ROUTE] MOUNTED — starting AsyncStorage read for readstack_import_ob_v1');
+
     getImportObState().then(state => {
-      console.log('[IMPORT_ROUTE] mount_check', { state });
+      console.log('[IMPORT_ROUTE] state_read_complete', {
+        state,
+        decision: state === 'pending' ? 'RENDER' : 'REDIRECT_HOME',
+      });
       if (state !== 'pending') {
-        console.log('[IMPORT_ROUTE] not pending — redirecting home', { state });
+        console.log('[IMPORT_ROUTE] not pending — calling router.replace /(tabs)', { state });
         router.replace('/(tabs)' as any);
         return;
       }
+      console.log('[IMPORT_ROUTE] state is pending — setting ready=true, will render');
       setReady(true);
     });
   }, []);
 
   async function handleImport() {
+    console.log('[IMPORT_ROUTE] action: import_tapped — writing importing state');
     await setImportObState('importing');
-    console.log('[IMPORT_ROUTE] action: importing');
+    console.log('[IMPORT_ROUTE] action: importing state written — pushing /import/goodreads');
     router.push('/import/goodreads' as any);
   }
 
   async function handleIntake() {
+    console.log('[IMPORT_ROUTE] action: intake_tapped — writing dismissed state');
     await setImportObState('dismissed');
-    console.log('[IMPORT_ROUTE] action: dismissed (intake)');
+    console.log('[IMPORT_ROUTE] action: dismissed written — navigating to /(tabs)/search');
     router.navigate('/(tabs)/search' as any);
   }
 
   async function handleDismiss() {
+    console.log('[IMPORT_ROUTE] action: not_right_now_tapped — writing dismissed state');
     await setImportObState('dismissed');
-    console.log('[IMPORT_ROUTE] action: dismissed (not right now)');
+    console.log('[IMPORT_ROUTE] action: dismissed written — replacing with /(tabs)');
     router.replace('/(tabs)' as any);
   }
 

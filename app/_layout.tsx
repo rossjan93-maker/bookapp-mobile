@@ -104,14 +104,26 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (session === undefined || needsOnboarding === undefined) return;
-    const inAuth       = segments[0] === '(auth)';
-    const inOnboarding = segments[0] === 'onboarding';
+    const inAuth        = segments[0] === '(auth)';
+    // Treat /onboarding-import as part of the onboarding flow so the guard
+    // never evicts the user mid-step (e.g. on token refresh or if the DB
+    // check returns false again after completeOnboarding() was called).
+    const inOnboarding  = segments[0] === 'onboarding' || segments[0] === 'onboarding-import';
+
+    console.log('[ROOT_GUARD] check', {
+      segments: segments[0],
+      session:        !!session,
+      needsOnboarding,
+      inAuth,
+      inOnboarding,
+    });
 
     if (session && inAuth) {
       router.replace(needsOnboarding ? '/onboarding' : '/');
     } else if (session && needsOnboarding && !inAuth && !inOnboarding) {
       router.replace('/onboarding');
     } else if (!session && !inAuth) {
+      console.log('[ROOT_GUARD] no session — redirecting to /login (segments:', segments[0], ')');
       router.replace('/login');
     }
   }, [session, segments, needsOnboarding]);
