@@ -33,12 +33,13 @@ import type { FeedbackContext } from '../../lib/recFeedback';
 import { getEntitlement } from '../../lib/recEntitlement';
 import type { RecEntitlement } from '../../lib/recEntitlement';
 import { useGuidedTour } from '../../components/OnboardingWalkthrough';
-import { useWalkthrough, registerWtTarget, wtEvt_recStepReached } from '../../lib/walkthroughEngine';
+import { useWalkthrough, registerWtTarget } from '../../lib/walkthroughEngine';
 import { getRecSession, clearRecSession } from '../../lib/recSession';
 import { registerCacheClearer } from '../../lib/tabCache';
 import { RecommendationsFeed } from '../../components/RecommendationsFeed';
 import { WtDemoRecommend } from '../../components/walkthrough/WtDemoRecommend';
 import { RecEntryScreen, hasSeenRecEntry } from '../../components/RecEntryScreen';
+import { hasPersonalizationSignal } from '../../lib/personalizationSignal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -708,38 +709,7 @@ let _hubCache: HubSnapshot | null = null;
 registerCacheClearer(() => { clearRecSession(); _hubCache = null; });
 
 // ─── Entry check helpers ───────────────────────────────────────────────────────
-// Determines whether the Recommendations entry experience should be shown.
-// True = show entry. False = go straight to hub.
-
-async function hasPersonalizationSignal(userId: string): Promise<boolean> {
-  if (!supabase) return false;
-  try {
-    // Check reader_preferences for any taste/genre signal
-    const { data: prefs } = await supabase
-      .from('reader_preferences')
-      .select('favorite_genres, diagnosis_answers')
-      .eq('user_id', userId)
-      .maybeSingle();
-    if (prefs) {
-      const genres  = (prefs.favorite_genres as string[] | null) ?? [];
-      const answers = (prefs.diagnosis_answers as Record<string, string> | null) ?? {};
-      if (genres.length > 0) return true;
-      // intake_completed flag or any non-behavioral key
-      if (answers.intake_completed === 'true') return true;
-      const tasteKeys = Object.keys(answers).filter(k => !k.startsWith('b_') && k !== 'intake_completed');
-      if (tasteKeys.length > 0) return true;
-    }
-    // Check for any finished books (strongest signal)
-    const { count } = await supabase
-      .from('user_books')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('status', 'finished');
-    return (count ?? 0) > 0;
-  } catch {
-    return false; // on error, don't show entry — assume something exists
-  }
-}
+// hasPersonalizationSignal imported from lib/personalizationSignal.ts
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
@@ -811,14 +781,12 @@ export default function RecommendationsScreen() {
   }, [step]));
 
   // ── Recommendations entry check ────────────────────────────────────────────
-  // Shows RecEntryScreen when:
-  //   (a) The walkthrough just finished ('done') — tour is complete, setup time.
-  //   (b) The user has no personalization signal and hasn't made a rec-entry choice yet.
+  // Shows RecEntryScreen for low-signal users who haven't made a rec-entry
+  // choice yet and aren't mid-tour.
   //
-  // Note: during the 'recommend' overlay tour step, the app shows the rec feed
-  // with a spotlight — RecEntryScreen does NOT fire at that point.  It fires
-  // only after the full tour completes (wtStep === 'done') when _layout.tsx
-  // navigates here automatically.
+  // Post-tour onboarding is now handled by OnboardingImportPrompt in _layout.tsx.
+  // RecEntryScreen here is the secondary/ongoing discovery surface for users
+  // who skipped or arrived without going through the walkthrough.
   //
   // Waits for walkthrough state to load (wtStep === null means still loading).
   const entryChecked = useRef(false);
@@ -829,16 +797,6 @@ export default function RecommendationsScreen() {
     entryChecked.current = true;
 
     async function maybeShowEntry() {
-      // Walkthrough just finished — user has been shown the app; now prompt setup
-      if (wtStep === 'done') {
-        wtEvt_recStepReached();
-        const seen = await hasSeenRecEntry();
-        if (!seen) {
-          setStep('entry');
-          return;
-        }
-      }
-      // Fallback for existing / non-walkthrough users
       if (!supabase) return;
       const seen = await hasSeenRecEntry();
       if (seen) return;

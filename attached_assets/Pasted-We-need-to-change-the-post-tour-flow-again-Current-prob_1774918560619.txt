@@ -1,0 +1,142 @@
+We need to change the post-tour flow again.
+
+Current problem:
+After the user finishes the walkthrough and turns to Recommendations, nothing meaningful happens. The handoff is weak.
+
+New product decision:
+Library import should become the final step of onboarding.
+
+This should be the onboarding closer:
+- after the walkthrough
+- before normal product usage
+- with Import as the primary CTA
+- with a lighter secondary dismissal path
+- and with persistence rules so we do not keep bothering the user unnecessarily
+
+==================================================
+NEW DESIRED FLOW
+==================================================
+
+1. User signs up
+2. Brief welcome
+3. Live in-app walkthrough
+4. Final onboarding step = Import your library
+5. Then enter normal app usage
+
+This final onboarding step should feel like:
+“You’ve seen the app. Now here is the fastest way to make it useful.”
+
+==================================================
+PRODUCT PRINCIPLE
+==================================================
+
+Import should be prioritized as the strongest post-onboarding action.
+
+Why:
+- it is the fastest way to improve recommendations
+- it makes the product immediately more relevant
+- it is a cleaner final step than dropping users onto Recommendations and hoping setup happens there
+
+==================================================
+FINAL ONBOARDING STEP REQUIREMENTS
+==================================================
+
+Build a dedicated final onboarding/setup surface after the walkthrough.
+
+Primary CTA:
+- Import my library
+
+Secondary action:
+- Not right now
+
+Optional tertiary/supporting path:
+- Answer a few questions
+Only include this if it fits cleanly and does not weaken Import as the primary action.
+
+The main message should be:
+Importing your reading history is the fastest way to get better picks.
+
+This should feel premium and intentional.
+Not like a settings modal.
+Not like admin work.
+
+==================================================
+PERSISTENCE / NAGGING RULES
+==================================================
+
+I want the behavior to be explicit:
+
+1. If the user successfully imports:
+- mark onboarding import as complete
+- do not prompt them for this again
+
+2. If the user dismisses with “Not right now”:
+- do not keep forcing this onboarding prompt
+- allow import to remain available later as a secondary option inside the product
+- Recommendations/Profile/Settings can still expose import, but it should not keep interrupting them
+
+3. If the user starts import but abandons it:
+- allow a subtle resume path later
+- do not trap them
+
+4. If the user already has meaningful signal (imported library / enough books / sufficient history):
+- never show this onboarding import step again
+
+I want this logic clearly defined before coding.
+
+==================================================
+RECOMMENDATIONS TAB CHANGE
+==================================================
+
+Because import is now the final onboarding step, do NOT rely on the Recommendations tab as the main onboarding conversion point anymore.
+
+Recommendations can still expose:
+- import
+- quick setup
+- explore
+but those should become secondary ongoing product options, not the main post-tour handoff.
+
+==================================================
+WHAT I WANT FROM YOU BEFORE CODING
+==================================================
+
+Before implementing, give me:
+
+1. Diagnosis of why the current handoff to Recommendations is weak / does nothing
+2. Proposed new flow from walkthrough completion -> final onboarding import step -> normal app usage
+3. Exact persistence logic for:
+   - imported
+   - dismissed
+   - started but abandoned
+   - already has signal
+4. Exact files/components/state you will create or modify
+5. Explanation of how import remains available later without nagging the user
+
+==================================================
+DESIGN REQUIREMENTS
+==================================================
+
+The final onboarding import step should:
+- feel like a strong closing step
+- clearly prioritize import
+- explain the value in one sentence
+- make “Not right now” available without guilt
+- feel calm, premium, and product-native
+
+Do NOT:
+- make this feel like a blocking admin task
+- bury import
+- repeatedly nag dismissed users
+- make Recommendations the only place setup can happen
+- reintroduce a long onboarding survey
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- after the walkthrough, the user sees a clear final onboarding step
+- import is the obvious primary action
+- dismissal is respected
+- successful import prevents future prompts
+- import remains available later as a secondary option without nagging
+- onboarding closes with a clear action instead of a dead handoff

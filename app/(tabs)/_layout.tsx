@@ -23,6 +23,11 @@ import {
   wtEvt_finished,
 } from '../../lib/walkthroughEngine';
 import { WalkthroughOverlay } from '../../components/WalkthroughOverlay';
+import {
+  OnboardingImportPrompt,
+  getImportObState,
+} from '../../components/OnboardingImportPrompt';
+import { hasPersonalizationSignal } from '../../lib/personalizationSignal';
 
 // ─── Badge context ────────────────────────────────────────────────────────────
 
@@ -69,9 +74,10 @@ const RESISTANCE       = 0.62; // content moves at 62% of finger travel
 // ─── Layout ───────────────────────────────────────────────────────────────────
 
 export default function TabsLayout() {
-  const [newRecCount, setNewRecCount] = useState(0);
-  const [guidedStep,  setGuidedStep]  = useState<GuidedStep>(99);
-  const [wtStep,      setWtStep]      = useState<WtStep | null>(null);
+  const [newRecCount,   setNewRecCount]   = useState(0);
+  const [guidedStep,    setGuidedStep]    = useState<GuidedStep>(99);
+  const [wtStep,        setWtStep]        = useState<WtStep | null>(null);
+  const [showImportOb,  setShowImportOb]  = useState(false);
   const router        = useRouter();
   const segments      = useSegments();
   const routerRef     = useRef(router);
@@ -103,6 +109,28 @@ export default function TabsLayout() {
     });
   }, []);
 
+  // After walkthrough completes, check whether to show the import onboarding prompt.
+  // Fires once per app session when wtStep settles to 'done'.
+  const importObChecked = useRef(false);
+  useEffect(() => {
+    if (wtStep !== 'done') return;
+    if (importObChecked.current) return;
+    importObChecked.current = true;
+
+    async function maybeShowImportOb() {
+      const state = await getImportObState();
+      if (state !== null) return; // already started, dismissed, or completed
+
+      if (!supabase) { setShowImportOb(true); return; }
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const alreadyHasSignal = await hasPersonalizationSignal(user.id);
+      if (!alreadyHasSignal) setShowImportOb(true);
+    }
+    maybeShowImportOb();
+  }, [wtStep]);
+
   // Simplify the legacy advance: jump straight to 99 (overlay banners removed)
   function advanceGuided(fromStep: GuidedStep) {
     const next: GuidedStep = 99;
@@ -124,9 +152,8 @@ export default function TabsLayout() {
       }
     } else {
       wtEvt_finished();
-      // Navigate to the Recommend tab so RecEntryScreen can show as the
-      // contextual setup prompt immediately after the tour ends.
-      routerRef.current.navigate({ pathname: '/(tabs)/search' as any });
+      // Do NOT navigate to search — OnboardingImportPrompt handles the post-tour
+      // moment as a full-screen overlay.  The user will navigate from there.
     }
   }
 
@@ -221,10 +248,12 @@ export default function TabsLayout() {
       // Do not steal taps — only evaluate once motion has started
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, { dx, dy }) => {
-        // Never intercept during the legacy guided tour or the new walkthrough overlay
+        // Never intercept during the legacy guided tour, the walkthrough overlay,
+        // or the import onboarding prompt.
         if (guidedStepRef.current < 99) return false;
         const ws = wtStepRef.current;
         if (ws === 'home' || ws === 'recommend' || ws === 'library' || ws === 'inbox') return false;
+        if (showImportOb) return false;
 
         // Capture when movement is horizontal-dominant and past the noise floor
         const absDx = Math.abs(dx);
@@ -367,6 +396,12 @@ export default function TabsLayout() {
 
             {/* ── In-app walkthrough overlay (Home + Library steps) ── */}
             <WalkthroughOverlay />
+
+            {/* ── Final onboarding step: import prompt ── */}
+            <OnboardingImportPrompt
+              visible={showImportOb}
+              onDismiss={() => setShowImportOb(false)}
+            />
 
           </View>
         </WalkthroughContext.Provider>
