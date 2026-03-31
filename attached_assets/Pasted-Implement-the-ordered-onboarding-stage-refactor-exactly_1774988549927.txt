@@ -1,0 +1,225 @@
+Implement the ordered onboarding stage refactor exactly as proposed.
+
+We are no longer patching the old onboarding/import logic.
+The current problem is the state model itself.
+
+I want you to replace the drifting multi-key inference with one authoritative ordered onboarding stage model.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Make onboarding deterministic and ordered:
+
+1. intro/welcome
+2. live walkthrough
+3. final setup (dedicated import/upload page)
+4. normal app usage
+
+The user must never:
+- see final setup as the first onboarding screen
+- skip final setup after walkthrough
+- refresh and fall into the wrong onboarding stage
+- regress unpredictably because multiple keys drift out of sync
+
+==================================================
+APPROVED DIAGNOSIS
+==================================================
+
+The current model is broken because onboarding stage is inferred from multiple independent keys.
+
+Key visible bug:
+`readstack_walkthrough_v1 ?? 'done'` causes the app to treat a missing walkthrough key as if the walkthrough already finished.
+That is why import can appear first.
+
+Second visible bug:
+welcome completion is stored separately in the database, while walkthrough and final setup live in local keys, so tests can easily drift into invalid combinations.
+
+Third visible bug:
+final setup can be lost after walkthrough because the app infers “what stage am I in?” from multiple stale values instead of one authoritative stage.
+
+==================================================
+NEW AUTHORITATIVE STATE MODEL
+==================================================
+
+Create a new single source of truth key:
+
+`readstack_onboarding_stage_v1`
+
+Allowed values:
+- null
+- walkthrough
+- final_setup
+- done
+
+Meaning:
+- null = no local onboarding stage set yet
+- walkthrough = welcome completed, walkthrough in progress
+- final_setup = walkthrough complete, final import/upload step pending
+- done = onboarding complete / final setup resolved
+
+Important:
+`readstack_walkthrough_v1` stays only for walkthrough sub-step resumption.
+It should only matter when stage = `walkthrough`.
+
+Do NOT continue using old import-ob logic as the primary stage driver.
+Do NOT infer stage from multiple drifting flags.
+
+==================================================
+REQUIRED FLOW
+==================================================
+
+Brand new user:
+- welcome screen first
+- on welcome completion, write onboarding stage = `walkthrough`
+- also initialize walkthrough sub-step = `home`
+- then enter app shell and start walkthrough
+
+Mid-walkthrough:
+- if stage = `walkthrough`, resume walkthrough from `readstack_walkthrough_v1`
+
+When walkthrough completes:
+- write onboarding stage = `final_setup`
+- route immediately to the dedicated final setup page
+
+While final setup is pending:
+- refresh must return the user to the dedicated final setup page
+- not back to intro
+- not back to bare tabs
+- not to the wrong screen
+
+When user dismisses final setup:
+- write onboarding stage = `done`
+- route into normal app usage
+
+When user taps import:
+- write onboarding stage = `done`
+- then proceed to import flow
+- do not show final onboarding setup again
+
+When import completes successfully:
+- keep stage = `done`
+
+Returning/pre-existing users:
+- if onboarding stage is null and welcome DB flag says onboarding already completed, do not force onboarding
+- they should enter the normal app
+
+==================================================
+FILES TO CHANGE
+==================================================
+
+Implement in this dependency order:
+
+1. `lib/onboardingStage.ts`
+Create this new module with:
+- `OnboardingStage` type
+- key constant
+- `readOnboardingStage()`
+- `writeOnboardingStage()`
+
+2. `app/onboarding.tsx`
+On completion of the welcome/intro:
+- write onboarding stage = `walkthrough`
+- write walkthrough sub-step = `home`
+- then navigate into the app
+
+3. `app/(tabs)/_layout.tsx`
+Refactor to use the new authoritative stage model.
+Requirements:
+- remove the `?? 'done'` walkthrough fallback
+- remove old import prompt state/ref logic that tries to infer final setup
+- read onboarding stage once and route based on that stage
+- if stage = `walkthrough`, run walkthrough
+- if stage = `final_setup`, route to `/onboarding-import`
+- if stage = `done`, normal app
+- keep walkthrough progression deterministic
+
+Also:
+- when walkthrough completes, write stage = `final_setup` before routing
+- do not leave an async gap where the app appears finished before final setup appears
+
+4. `app/onboarding-import.tsx`
+This is the dedicated final onboarding route/page.
+Requirements:
+- on mount, read `readstack_onboarding_stage_v1`
+- if stage != `final_setup`, redirect out
+- if stage == `final_setup`, render the page
+- dismiss action writes stage = `done`
+- import action writes stage = `done` before continuing to import flow
+- route out cleanly after decision
+
+5. `app/import/goodreads.tsx`
+On successful import, ensure onboarding stage remains `done`
+
+6. Remove obsolete old import-step logic
+- old `readstack_import_ob_v1` logic should no longer drive the onboarding stage
+- if a compatibility shim is needed temporarily, keep it minimal and clearly marked
+- do not let the old key remain the source of truth
+
+==================================================
+TESTING / RESET BEHAVIOR
+==================================================
+
+After implementation, provide exact reset instructions for:
+
+A. Full fresh onboarding test
+B. Resume walkthrough mid-step
+C. Final setup pending test
+D. Done state / normal app usage test
+
+I want the exact localStorage keys and DB/profile values involved.
+
+==================================================
+DEBUG / VALIDATION
+==================================================
+
+After implementation, provide runtime validation for these cases:
+
+1. Fresh user flow:
+- intro
+- walkthrough
+- final setup
+- normal app
+
+2. Refresh while on final setup:
+- stays on final setup
+
+3. Dismiss final setup:
+- enters app
+- does not show final setup again
+
+4. Import path:
+- enters import flow
+- does not show final setup again
+
+5. Resume walkthrough:
+- if stage = walkthrough and sub-step = library, it resumes there
+
+Include:
+- exact changed files
+- exact routing/state logic
+- exact test/reset instructions
+- runtime evidence/logs for each scenario
+
+==================================================
+IMPORTANT CONSTRAINTS
+==================================================
+
+Do not redesign the visuals in this pass.
+Do not do a copy pass.
+Do not re-argue the architecture.
+Do not patch around the current broken logic.
+
+This pass is purely:
+authoritative onboarding stage model + deterministic routing.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- import/upload never appears as the first onboarding screen
+- onboarding always flows intro -> walkthrough -> final_setup -> app
+- final_setup always appears after walkthrough
+- refresh preserves the correct stage
+- dismissal/import persist correctly
+- no more drift from loosely-coupled onboarding flags

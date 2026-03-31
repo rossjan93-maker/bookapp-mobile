@@ -1,0 +1,150 @@
+The onboarding state machine is still wrong.
+
+Observed behavior:
+1. After clearing state for testing, the first login can show the upload/import library screen immediately as the first window. That is wrong — import should be the LAST onboarding step, not the first.
+2. Subsequent tests can revert to the older onboarding flow and then fail to show the final upload/import step. That is also wrong.
+
+This means the current onboarding state model is conflating:
+- intro/welcome
+- walkthrough progress
+- final import/setup step
+
+I need this fixed as an explicit ordered state machine.
+
+==================================================
+REQUIRED STATE ORDER
+==================================================
+
+The onboarding sequence must be:
+
+1. intro/welcome
+2. live app walkthrough
+3. final import/upload setup step
+4. normal product usage
+
+The user must never:
+- see import/upload as the first onboarding screen
+- skip directly to final setup before intro + walkthrough
+- complete intro/walkthrough and then lose the final setup step
+
+==================================================
+I WANT AN EXPLICIT STATE MODEL
+==================================================
+
+Before coding, define explicit persisted states such as:
+
+- intro_completed: true/false
+- walkthrough_completed: true/false
+- final_setup_pending: true/false
+- final_setup_completed: true/false
+- final_setup_dismissed: true/false
+
+Or an equivalent single authoritative onboarding stage enum if that is cleaner.
+
+What matters:
+The app must always know exactly which stage the user is in.
+
+Possible ordered stages:
+- intro
+- walkthrough
+- final_setup
+- done
+
+I do NOT want multiple loosely-coupled flags that can drift out of sync.
+
+==================================================
+BEHAVIOR RULES
+==================================================
+
+1. New user with no onboarding progress:
+- should start at intro
+- never at final import/setup
+
+2. After intro completes:
+- should enter walkthrough
+
+3. After walkthrough completes:
+- should enter final import/upload setup
+- immediately and reliably
+
+4. While final setup is pending:
+- refresh should keep them on that final setup step
+- not send them backward to intro/walkthrough
+- not drop them into the app with no final setup
+
+5. If final setup is dismissed:
+- mark it dismissed
+- allow normal app usage
+- do not show it again as onboarding
+
+6. If import completes:
+- mark final setup completed
+- do not show it again
+
+==================================================
+DIAGNOSE THE CURRENT BUG
+==================================================
+
+Before coding, I want you to trace exactly why:
+- import/upload can appear first on a fresh test
+- later tests can revert to older onboarding
+- final setup can be lost after walkthrough
+
+I want the exact broken state transitions identified.
+
+==================================================
+TESTING REQUIREMENT
+==================================================
+
+Also tell me exactly which localStorage / AsyncStorage keys and backend/profile values currently affect this flow.
+
+I want:
+1. the full list of keys/fields involved
+2. what each one currently means
+3. which ones should be removed/replaced if they are causing drift
+4. the exact clean test reset procedure once the new state model is implemented
+
+==================================================
+IMPLEMENTATION REQUIREMENT
+==================================================
+
+I want the onboarding flow driven by one authoritative ordered state model.
+
+That can be:
+- a single persisted onboarding stage enum
+or
+- a clearly derived ordered state from explicit flags
+
+But it must be impossible for the app to:
+- jump to final setup first
+- skip final setup after walkthrough
+- regress unpredictably on refresh
+
+==================================================
+DELIVERABLES BEFORE CODING
+==================================================
+
+Before implementing, give me:
+1. diagnosis of the current broken onboarding state model
+2. proposed new authoritative ordered state model
+3. exact files/components/state you will change
+4. exact routing behavior for:
+   - fresh user
+   - walkthrough complete
+   - final setup pending
+   - final setup dismissed
+   - final setup completed
+5. exact testing reset instructions for the new model
+
+Then implement.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- import/upload never appears as the first onboarding screen
+- onboarding always flows intro -> walkthrough -> final setup -> app
+- final setup always appears after walkthrough
+- refresh preserves the correct current onboarding stage
+- dismiss/import decisions persist correctly
+- the flow is deterministic and ordered
