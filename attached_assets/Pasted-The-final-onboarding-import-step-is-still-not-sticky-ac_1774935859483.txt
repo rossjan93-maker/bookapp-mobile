@@ -1,0 +1,98 @@
+The final onboarding import step is still not sticky across refresh. This is now a persistence/state-model bug.
+
+Observed behavior:
+- after clearing localStorage, the final import step appears
+- but if the page is refreshed, it does not reliably remain as the final onboarding step
+
+Diagnosis:
+The import screen is likely being shown from transient local UI state (`showImportOb = true`) rather than a persisted “pending final onboarding step” state.
+That means refresh wipes the in-memory flag and the app no longer knows the user is still mid-final-step.
+
+I want you to fix this properly.
+
+==================================================
+NEW REQUIREMENT
+==================================================
+
+The final onboarding import step must be resumable and persistent.
+
+If the user has:
+- completed the walkthrough
+- but has NOT yet chosen import or “Not right now”
+
+then refreshing the page should bring them back to that final onboarding import step.
+
+This is not optional.
+The final import step is part of onboarding and must persist until the user makes a decision.
+
+==================================================
+STATE MODEL I WANT
+==================================================
+
+I want explicit persistent state for the final onboarding import step.
+
+Use a clear persisted concept like:
+- final onboarding import step pending = true/false
+
+Desired behavior:
+1. When walkthrough completes:
+   - persist final import step as pending
+   - show the import screen immediately
+
+2. If the user refreshes while this step is still pending:
+   - restore the import screen
+   - do not drop them into the normal app without the decision point
+
+3. If the user imports successfully:
+   - pending = false
+   - completed/imported = true
+   - never show this final onboarding step again
+
+4. If the user clicks “Not right now”:
+   - pending = false
+   - dismissed = true
+   - do not show this final onboarding step again
+   - keep import available later as a secondary option in the app
+
+5. If the user starts import and abandons it:
+   - define explicitly whether that means pending remains true or a resumable state is stored
+   - I want a clear rule here before coding
+
+==================================================
+WHAT I NEED FROM YOU BEFORE CODING
+==================================================
+
+1. Diagnose exactly how the current logic works today:
+   - what state shows the import screen
+   - what is persisted
+   - what is not persisted
+   - why refresh loses the final step
+
+2. Propose the corrected state model, including:
+   - pending
+   - dismissed
+   - imported/completed
+   - started-but-abandoned if needed
+
+3. Explain exactly where this state is stored and read from
+4. Explain the refresh behavior before and after the fix
+5. Name the exact files/components/state you will modify
+
+==================================================
+IMPORTANT
+==================================================
+
+Do NOT solve this with more transient local state.
+Do NOT rely only on the walkthrough completion event.
+The import step must survive refresh until the user makes a final decision.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- walkthrough completes
+- final import step appears immediately
+- if the page refreshes before the user decides, the final import step still appears
+- if user imports, it never appears again
+- if user dismisses, it never appears again
+- the logic is explicit and durable

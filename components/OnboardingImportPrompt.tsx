@@ -6,9 +6,11 @@
 // a content screen.
 //
 // AsyncStorage key: readstack_import_ob_v1
-//   null        — never shown (prompt should appear)
-//   'started'   — user tapped Import (never nag again)
-//   'dismissed' — user dismissed or chose intake (never nag again)
+//   null        — default; walkthrough not yet completed
+//   'pending'   — walkthrough done, user has NOT yet chosen import or dismiss
+//                 → ALWAYS show the import screen on mount (survives refresh)
+//   'started'   — user tapped Import (never show again; import accessible via Settings)
+//   'dismissed' — user chose "Not right now" or quick questions (never show again)
 //
 // Navigation on choice:
 //   Import        → /import/goodreads  (marks 'started')
@@ -39,7 +41,7 @@ export async function getImportObState(): Promise<string | null> {
   }
 }
 
-export async function setImportObState(val: 'started' | 'dismissed'): Promise<void> {
+export async function setImportObState(val: 'pending' | 'started' | 'dismissed'): Promise<void> {
   try {
     await AsyncStorage.setItem(IMPORT_OB_KEY, val);
   } catch {}

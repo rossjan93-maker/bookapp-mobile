@@ -89,12 +89,27 @@ export default function TabsLayout() {
     readGuidedStep().then(setGuidedStep);
   }, []);
 
-  // Pre-load importObState from AsyncStorage at mount so advanceWt() can trigger
-  // the import prompt immediately (no async gap between walkthrough end and overlay).
-  // undefined = not yet loaded; null = never seen (prompt eligible); string = already actioned.
+  // Pre-load importObState at mount.
+  // Doubles as the refresh-restore path: if the key is 'pending', the user
+  // completed the walkthrough but hasn't yet chosen import or dismiss —
+  // show the import screen immediately without waiting for the wtStep chain.
+  //   undefined  — not yet loaded
+  //   null       — default; walkthrough not yet completed
+  //   'pending'  — walkthrough done, decision not yet made → show immediately
+  //   'started'  — user tapped Import (never show again)
+  //   'dismissed' — user dismissed (never show again)
   const importObStateRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    getImportObState().then(s => { importObStateRef.current = s; });
+    getImportObState().then(s => {
+      importObStateRef.current = s;
+      if (s === 'pending') {
+        // Restore the pending final onboarding step after any refresh/cold-start.
+        // Mark importObChecked so the safety-valve doesn't double-fire.
+        console.log('[IMPORT_OB] mount_restore: pending — restoring import step');
+        importObChecked.current = true;
+        setShowImportOb(true);
+      }
+    });
   }, []);
 
   // Load the walkthrough step (in-app overlay tour).
@@ -117,17 +132,18 @@ export default function TabsLayout() {
   }, []);
 
   // Safety-valve: fires whenever wtStep lands on 'done', covering:
-  //   - skipWt() (advanceWt never called → importObChecked still false)
-  //   - cold-start resume with stored 'done' step
-  //   - reload while already done
+  //   - skipWt() (user skipped tour, advanceWt never called)
+  //   - cold-start resume where wtStep was stored as 'done'
   //   - the rare race where importObStateRef was still undefined in advanceWt()
   //
-  // NOTE: signal check intentionally REMOVED.
-  // The persistence key (readstack_import_ob_v1) is the sole correct gate:
-  //   null       → user has never seen the prompt → show once
-  //   'started'  → user tapped Import → never show again
-  //   'dismissed' → user dismissed → never show again
-  // Adding a signal check here caused users with books to silently miss the prompt.
+  // The mount-restore useEffect (above) handles the 'pending' refresh case,
+  // so if importObChecked.current is already true here, we skip and defer.
+  //
+  // State handling:
+  //   'pending'   → should have been shown by mount-restore; show anyway as fallback
+  //   null        → first-time completion via skip/cold-start → write 'pending', show
+  //   'started'   → never show again
+  //   'dismissed' → never show again
   const importObChecked = useRef(false);
   useEffect(() => {
     if (wtStep !== 'done') return;
@@ -137,11 +153,18 @@ export default function TabsLayout() {
     async function maybeShowImportOb() {
       const state = await getImportObState();
       console.log('[IMPORT_OB] safety_valve_check', { state });
-      if (state !== null) {
+
+      if (state === 'started' || state === 'dismissed') {
         console.log('[IMPORT_OB] safety_valve: skip — already actioned', { state });
         return;
       }
-      console.log('[IMPORT_OB] safety_valve: decision: show=true');
+
+      // 'pending' (fallback restore) or null (first-time via skip/cold-start):
+      // write 'pending' so subsequent refreshes also restore correctly.
+      if (state !== 'pending') {
+        await setImportObState('pending');
+      }
+      console.log('[IMPORT_OB] safety_valve: show=true (state was:', state, ')');
       setShowImportOb(true);
     }
     maybeShowImportOb();
@@ -175,19 +198,26 @@ export default function TabsLayout() {
       console.log('[IMPORT_OB] walkthrough_finished_handler', { importState });
 
       if (importState === null) {
-        // Pre-loaded: never seen before — show immediately, no async gap.
-        // Mark importObChecked so safety-valve doesn't double-fire.
+        // First completion: write 'pending' so the import step survives refresh,
+        // then show immediately (no async gap between walkthrough and import screen).
+        setImportObState('pending'); // fire-and-forget async write
+        importObStateRef.current = 'pending';
+        importObChecked.current = true; // safety-valve not needed
+        console.log('[IMPORT_OB] decision: show=true — wrote pending');
+        setShowImportOb(true);
+      } else if (importState === 'pending') {
+        // Already pending (e.g. mount-restore ran first) — just show.
         importObChecked.current = true;
-        console.log('[IMPORT_OB] decision: show=true (null, immediate path)');
+        console.log('[IMPORT_OB] decision: show=true — already pending');
         setShowImportOb(true);
       } else if (importState === undefined) {
-        // Pre-load still in flight (rare race) — let safety-valve handle it.
-        // Do NOT set importObChecked so safety-valve runs.
-        console.log('[IMPORT_OB] decision: deferred to safety-valve (undefined, read still in flight)');
+        // Pre-load still in flight (rare race) — safety-valve will handle it
+        // and will write 'pending' before showing.
+        console.log('[IMPORT_OB] decision: deferred to safety-valve (pre-load in flight)');
       } else {
-        // 'started' or 'dismissed' — user has already actioned this prompt.
-        importObChecked.current = true; // safety-valve not needed
-        console.log('[IMPORT_OB] decision: show=false (already actioned:', importState, ')');
+        // 'started' or 'dismissed' — user already actioned this; don't show.
+        importObChecked.current = true;
+        console.log('[IMPORT_OB] decision: show=false — already actioned:', importState);
       }
     }
   }
