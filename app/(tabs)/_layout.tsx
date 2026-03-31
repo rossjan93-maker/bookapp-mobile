@@ -24,9 +24,9 @@ import {
 } from '../../lib/walkthroughEngine';
 import { WalkthroughOverlay } from '../../components/WalkthroughOverlay';
 import {
-  getImportObState,
-  setImportObState,
-} from '../../components/OnboardingImportPrompt';
+  readOnboardingStage,
+  writeOnboardingStage,
+} from '../../lib/onboardingStage';
 
 // ─── Badge context ────────────────────────────────────────────────────────────
 
@@ -88,86 +88,46 @@ export default function TabsLayout() {
     readGuidedStep().then(setGuidedStep);
   }, []);
 
-  // Pre-load importObState at mount.
-  // Primary purpose: redirect to /onboarding-import if state is 'pending'.
-  // This covers the navigate-away-then-reload case: user goes back to the tab
-  // shell (e.g. presses browser back) while still pending — we catch them here
-  // and send them back to the final onboarding destination.
-  //   undefined  — not yet loaded
-  //   null       — default; walkthrough not yet completed (no redirect)
-  //   'pending'  — walkthrough done, decision not yet made → redirect
-  //   'importing' — user tapped Import (no redirect)
-  //   'dismissed' — user dismissed (no redirect)
-  //   'completed' — import finished (no redirect)
-  const importObStateRef = useRef<string | null | undefined>(undefined);
-  useEffect(() => {
-    console.log('[IMPORT_OB] preload_start — reading AsyncStorage key readstack_import_ob_v1');
-    getImportObState().then(s => {
-      importObStateRef.current = s;
-      console.log('[IMPORT_OB] preload_complete', { importObState: s });
-      if (s === 'pending') {
-        console.log('[IMPORT_OB] preload: state is pending — calling router.replace /onboarding-import');
-        routerRef.current.replace('/onboarding-import' as any);
-        setTimeout(() => {
-          console.log('[IMPORT_OB] preload_redirect: segments after replace:', segmentsRef.current);
-        }, 150);
-      }
-    });
-  }, []);
-
-  // Load the walkthrough step (in-app overlay tour).
-  // If resuming a mid-tour step (e.g. after a reload), navigate to that step's
-  // tab so the fixture mounts and the coach card appears immediately.
-  useEffect(() => {
-    readWtStep().then(s => {
-      const step = s ?? 'done';
-      console.log('[WT_LOAD] readWtStep raw:', s, '→ resolved step:', step);
-      setWtStep(step);
-      if (step && step !== 'done' && step !== 'home') {
-        const def = WT_DEFS[step as keyof typeof WT_DEFS];
-        if (def?.tab) {
-          // Short delay lets the router finish its initial render before navigating.
-          setTimeout(() => {
-            routerRef.current.navigate({ pathname: def.tab as any });
-          }, 80);
-        }
-      }
-    });
-  }, []);
-
-  // Safety-valve: covers paths where advanceWt() was never called:
-  //   - user skipped the tour (skipWt)
-  //   - cold-start with a stored 'done' step but importObState still null
-  //   - the rare race where importObStateRef was undefined in advanceWt()
+  // Single authoritative onboarding stage read at mount.
   //
-  // The mount-redirect useEffect above already handles 'pending' on refresh.
-  // Here we only need to act when wtStep arrives at 'done' via a path that
-  // didn't go through advanceWt(). We use importObChecked to avoid firing twice.
-  const importObChecked = useRef(false);
+  // Stage values (readstack_onboarding_stage_v1):
+  //   null          — pre-existing user; no onboarding, no walkthrough
+  //   'walkthrough' — new user; read sub-step and start the overlay tour
+  //   'final_setup' — walkthrough done; redirect to /onboarding-import
+  //   'done'        — fully complete; normal app experience
+  //
+  // No multi-key inference, no safety-valve fallbacks.  advanceWt() and
+  // skipWt() are the only code paths that advance the stage forward.
   useEffect(() => {
-    if (wtStep !== 'done') return;
-    if (importObChecked.current) return;
-    importObChecked.current = true;
+    readOnboardingStage().then(async stage => {
+      console.log('[STAGE] mount_read', { stage });
 
-    async function maybeNavigateToImportStep() {
-      const state = await getImportObState();
-      console.log('[IMPORT_OB] safety_valve_check', { state });
-
-      if (state === 'importing' || state === 'dismissed' || state === 'completed') {
-        console.log('[IMPORT_OB] safety_valve: skip — already actioned', { state });
+      if (stage === 'final_setup') {
+        console.log('[STAGE] final_setup — redirecting to /onboarding-import');
+        routerRef.current.replace('/onboarding-import' as any);
         return;
       }
 
-      // null (first time via skip) or 'pending' (fallback — should have been
-      // caught by mount-redirect, but navigate anyway as a belt-and-suspenders):
-      if (state !== 'pending') {
-        await setImportObState('pending');
+      if (stage === 'walkthrough') {
+        const sub = await readWtStep();
+        const step = sub ?? 'home';
+        console.log('[STAGE] walkthrough — wtStep:', step);
+        setWtStep(step);
+        if (step !== 'home' && step !== 'done') {
+          const def = WT_DEFS[step as keyof typeof WT_DEFS];
+          if (def?.tab) {
+            setTimeout(() => {
+              routerRef.current.navigate({ pathname: def.tab as any });
+            }, 80);
+          }
+        }
+        return;
       }
-      console.log('[IMPORT_OB] safety_valve: navigating to /onboarding-import (state was:', state, ')');
-      routerRef.current.replace('/onboarding-import' as any);
-    }
-    maybeNavigateToImportStep();
-  }, [wtStep]);
+
+      // null or 'done' — no walkthrough overlay, normal app
+      console.log('[STAGE] no onboarding action', { stage });
+    });
+  }, []);
 
   // Simplify the legacy advance: jump straight to 99 (overlay banners removed)
   function advanceGuided(fromStep: GuidedStep) {
@@ -177,9 +137,8 @@ export default function TabsLayout() {
   }
 
   // Walkthrough advance: move to next step + navigate to its tab.
-  // On completion ('done'), immediately show the import prompt using the
-  // pre-loaded importObStateRef — no async gap between overlay closing and
-  // the import screen appearing.  The safety-valve useEffect covers edge cases.
+  // On completion ('done'), write stage='final_setup' and navigate to the
+  // dedicated import/setup route.  No pre-loaded state refs needed.
   function advanceWt() {
     if (!wtStep || wtStep === 'done') return;
     wtEvt_stepCompleted(wtStep);
@@ -194,50 +153,24 @@ export default function TabsLayout() {
       }
     } else {
       wtEvt_finished();
-      const importState = importObStateRef.current;
-      console.log('[IMPORT_OB] walkthrough_finished_handler', {
-        importState,
-        importObStateRefValue: importObStateRef.current,
-        currentSegments: segmentsRef.current,
+      console.log('[STAGE] walkthrough_complete — writing final_setup → /onboarding-import');
+      writeOnboardingStage('final_setup').then(() => {
+        routerRef.current.replace('/onboarding-import' as any);
       });
-
-      if (importState === null) {
-        // First completion: write 'pending' then navigate to the dedicated route.
-        // This is the primary happy path — walkthrough just finished.
-        setImportObState('pending'); // localStorage write is synchronous on web even though API is async
-        importObStateRef.current = 'pending';
-        importObChecked.current = true; // safety-valve not needed
-        console.log('[IMPORT_OB] decision: writing pending — calling router.replace /onboarding-import');
-        routerRef.current.replace('/onboarding-import' as any);
-        setTimeout(() => {
-          console.log('[IMPORT_OB] segments after router.replace:', segmentsRef.current);
-        }, 150);
-      } else if (importState === 'pending') {
-        // Already pending (mount-redirect ran first, or replayed walkthrough).
-        importObChecked.current = true;
-        console.log('[IMPORT_OB] decision: already pending — calling router.replace /onboarding-import');
-        routerRef.current.replace('/onboarding-import' as any);
-        setTimeout(() => {
-          console.log('[IMPORT_OB] segments after router.replace:', segmentsRef.current);
-        }, 150);
-      } else if (importState === undefined) {
-        // Pre-load still in flight (rare race) — safety-valve handles it.
-        console.log('[IMPORT_OB] decision: deferred to safety-valve — preload ref is still undefined');
-      } else {
-        // 'importing', 'dismissed', or 'completed' — user already decided; don't redirect.
-        importObChecked.current = true;
-        console.log('[IMPORT_OB] decision: NO redirect — state is already actioned:', importState,
-          '— to re-test, run: localStorage.removeItem("readstack_import_ob_v1") in DevTools');
-      }
     }
   }
 
-  // Walkthrough skip: jump to done immediately
+  // Walkthrough skip: close overlay and advance stage to final_setup.
+  // Skipping the tour is not skipping onboarding — the import step still shows.
   function skipWt() {
     if (!wtStep || wtStep === 'done') return;
     wtEvt_skipped(wtStep);
     setWtStep('done');
     writeWtStep('done');
+    console.log('[STAGE] walkthrough_skipped — writing final_setup → /onboarding-import');
+    writeOnboardingStage('final_setup').then(() => {
+      routerRef.current.replace('/onboarding-import' as any);
+    });
   }
 
   useEffect(() => {

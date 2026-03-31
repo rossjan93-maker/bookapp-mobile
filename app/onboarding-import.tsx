@@ -26,7 +26,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { getImportObState, setImportObState } from '../components/OnboardingImportPrompt';
+import { readOnboardingStage, writeOnboardingStage } from '../lib/onboardingStage';
 
 const BG  = '#faf9f7';
 const INK = '#1c1917';
@@ -38,47 +38,45 @@ export default function OnboardingImportPage() {
   const router  = useRouter();
   const [ready, setReady] = useState(false);
 
-  // Guard: only render content if state is still 'pending'.
-  // Any other value means the user already made a decision (or arrived here
-  // directly without completing the walkthrough) — redirect home.
+  // Guard: only render content if the onboarding stage is 'final_setup'.
+  // Any other value means the user already acted (or arrived here directly
+  // without completing the walkthrough) — redirect home immediately.
   useEffect(() => {
-    // Synchronous mount confirmation — fires before the async state read.
-    // If you never see this log, the route is not mounting at all.
-    console.log('[IMPORT_ROUTE] MOUNTED — starting AsyncStorage read for readstack_import_ob_v1');
+    console.log('[IMPORT_ROUTE] MOUNTED — reading readstack_onboarding_stage_v1');
 
-    getImportObState().then(state => {
-      console.log('[IMPORT_ROUTE] state_read_complete', {
-        state,
-        decision: state === 'pending' ? 'RENDER' : 'REDIRECT_HOME',
+    readOnboardingStage().then(stage => {
+      console.log('[IMPORT_ROUTE] stage_read_complete', {
+        stage,
+        decision: stage === 'final_setup' ? 'RENDER' : 'REDIRECT_HOME',
       });
-      if (state !== 'pending') {
-        console.log('[IMPORT_ROUTE] not pending — calling router.replace /(tabs)', { state });
+      if (stage !== 'final_setup') {
+        console.log('[IMPORT_ROUTE] stage is not final_setup — redirecting home', { stage });
         router.replace('/(tabs)' as any);
         return;
       }
-      console.log('[IMPORT_ROUTE] state is pending — setting ready=true, will render');
+      console.log('[IMPORT_ROUTE] stage is final_setup — setting ready=true, will render');
       setReady(true);
     });
   }, []);
 
   async function handleImport() {
-    console.log('[IMPORT_ROUTE] action: import_tapped — writing importing state');
-    await setImportObState('importing');
-    console.log('[IMPORT_ROUTE] action: importing state written — pushing /import/goodreads');
+    console.log('[IMPORT_ROUTE] action: import_tapped — writing done stage');
+    await writeOnboardingStage('done');
+    console.log('[IMPORT_ROUTE] action: stage written — pushing /import/goodreads');
     router.push('/import/goodreads' as any);
   }
 
   async function handleIntake() {
-    console.log('[IMPORT_ROUTE] action: intake_tapped — writing dismissed state');
-    await setImportObState('dismissed');
-    console.log('[IMPORT_ROUTE] action: dismissed written — navigating to /(tabs)/search');
+    console.log('[IMPORT_ROUTE] action: intake_tapped — writing done stage');
+    await writeOnboardingStage('done');
+    console.log('[IMPORT_ROUTE] action: stage written — navigating to /(tabs)/search');
     router.navigate('/(tabs)/search' as any);
   }
 
   async function handleDismiss() {
-    console.log('[IMPORT_ROUTE] action: not_right_now_tapped — writing dismissed state');
-    await setImportObState('dismissed');
-    console.log('[IMPORT_ROUTE] action: dismissed written — replacing with /(tabs)');
+    console.log('[IMPORT_ROUTE] action: not_right_now_tapped — writing done stage');
+    await writeOnboardingStage('done');
+    console.log('[IMPORT_ROUTE] action: stage written — replacing with /(tabs)');
     router.replace('/(tabs)' as any);
   }
 

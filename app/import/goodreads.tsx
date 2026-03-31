@@ -19,7 +19,7 @@ import type { ExecutionSummary } from '../../lib/goodreadsExecutor';
 import { resetGoodreadsImport } from '../../lib/goodreadsReset';
 import type { GoodreadsResetResult } from '../../lib/goodreadsReset';
 import { repairBooksMetadata } from '../../lib/metadataRepair';
-import { setImportObState } from '../../components/OnboardingImportPrompt';
+import { writeOnboardingStage } from '../../lib/onboardingStage';
 
 type Step =
   | 'idle'
@@ -1033,7 +1033,7 @@ export default function GoodreadsImportScreen() {
       await new Promise(r => setTimeout(r, 350));
 
       setExecutionResult(result);
-      setImportObState('completed'); // fire-and-forget — marks final onboarding step done
+      writeOnboardingStage('done'); // fire-and-forget — marks final onboarding step done
       setStep('complete');
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Import failed. Please try again.');

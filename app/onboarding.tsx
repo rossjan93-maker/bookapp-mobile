@@ -27,6 +27,7 @@ import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { writeGuidedStep } from '../components/OnboardingWalkthrough';
 import { writeWtStep } from '../lib/walkthroughEngine';
+import { writeOnboardingStage } from '../lib/onboardingStage';
 import {
   welcomeEvt_started,
   welcomeEvt_completed,
@@ -164,11 +165,17 @@ export default function OnboardingScreen() {
     // ① Update parent state BEFORE navigating — prevents redirect loop
     completeOnboarding();
 
-    // ② Immediate navigation
+    // ② Write authoritative onboarding stage so _layout.tsx starts walkthrough.
+    //    On web, AsyncStorage uses localStorage which is synchronous inside the
+    //    Promise constructor, so the value is visible before navigation resolves.
+    writeOnboardingStage('walkthrough');
+    writeWtStep('home');
+
+    // ③ Immediate navigation
     router.replace('/');
 
-    // ③ Background writes
-    Promise.allSettled([writeGuidedStep(0), writeWtStep('home')]);
+    // ④ Background writes
+    Promise.allSettled([writeGuidedStep(0)]);
     if (supabase) {
       supabase.auth.getUser().then(({ data: { user } }) => {
         if (user) {
