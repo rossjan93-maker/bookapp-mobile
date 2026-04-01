@@ -36,7 +36,9 @@ export default function OnboardingQuestionsPage() {
 
   async function handleDone() {
     markOnboardingComplete();
-    router.replace('/(tabs)' as any);
+    // Land on the Recommendations tab so the user immediately sees their picks
+    // (or the first-load deck-assembling state) — not a blank home screen.
+    router.replace('/(tabs)/search' as any);
   }
 
   return (

@@ -32,7 +32,9 @@ import {
   Text,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   useWalkthrough,
   WT_DEFS,
@@ -49,7 +51,8 @@ import {
 // ─── Layout constants ─────────────────────────────────────────────────────────
 
 const SW         = Dimensions.get('window').width;
-const SH         = Dimensions.get('window').height;
+// Note: SH removed — CoachCard now uses useWindowDimensions().height so
+// positioning responds to mobile-browser viewport changes (address bar, etc.).
 const TAB_COUNT  = 5;
 const TAB_BAR_H  = 62;
 const RING_SIZE  = 52;
@@ -460,6 +463,12 @@ function CoachCard({
   const slideIn = useRef(new Animated.Value(20)).current;
   const fade    = useRef(new Animated.Value(0)).current;
 
+  // Dynamic dimensions — respond to mobile browser viewport changes
+  // (address bar show/hide, keyboard, orientation) rather than using the
+  // stale module-level constant which captures only the initial window size.
+  const { height: winH } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+
   useEffect(() => {
     slideIn.setValue(20);
     fade.setValue(0);
@@ -470,23 +479,25 @@ function CoachCard({
   }, [step]);
 
   // Compute position: prefer just below the card, fall back above if cramped.
+  // SAFE_BOT accounts for the tab bar AND the device/browser bottom inset so
+  // the card is never hidden behind browser chrome on mobile web.
   const GAP       = 14;
   const SIDE      = 14;
-  const SAFE_BOT  = TAB_BAR_H + 8;
+  const SAFE_BOT  = TAB_BAR_H + Math.max(insets.bottom, 8);
 
   let positionStyle: object;
   let arrowAbove: boolean; // true = arrow at top of coach card (pointing up to card above)
 
   if (cardRect) {
-    const belowTop = cardRect.y + cardRect.height + GAP;
-    const fitsBelow = belowTop + COACH_H_EST < SH - SAFE_BOT;
+    const belowTop  = cardRect.y + cardRect.height + GAP;
+    const fitsBelow = belowTop + COACH_H_EST < winH - SAFE_BOT;
 
     if (fitsBelow) {
       positionStyle = { top: belowTop, left: SIDE, right: SIDE };
       arrowAbove    = true;   // coach is below the card → arrow points UP toward card
     } else {
       // Not enough room below — position coach above the card
-      const aboveBottom = SH - cardRect.y + GAP;
+      const aboveBottom = winH - cardRect.y + GAP;
       positionStyle = { bottom: aboveBottom, left: SIDE, right: SIDE };
       arrowAbove    = false;  // coach is above the card → arrow points DOWN toward card
     }
@@ -628,6 +639,7 @@ function CoachCard({
 
 export function WalkthroughOverlay() {
   const { wtStep, advance, skip } = useWalkthrough();
+  const insets = useSafeAreaInsets();
 
   const overlayFade   = useRef(new Animated.Value(0)).current;
   const prevStep      = useRef<WtStep | null>(null);
@@ -729,9 +741,11 @@ export function WalkthroughOverlay() {
         }}
       />
 
-      {/* Touch blocker — blocks all touches in the dim area, lets tab bar through */}
+      {/* Touch blocker — blocks touches in the dim area.
+          bottom = tab bar height + safe-area inset so browser chrome on
+          mobile web stays interactive (address bar, nav gestures, etc.)     */}
       <View
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: TAB_BAR_H }}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: TAB_BAR_H + insets.bottom }}
         pointerEvents="box-only"
       />
 

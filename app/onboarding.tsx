@@ -15,13 +15,13 @@
 import React, { useEffect, useRef } from 'react';
 import {
   Animated,
-  Dimensions,
   Platform,
   SafeAreaView,
   StatusBar,
   Text,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
@@ -35,10 +35,6 @@ import {
   welcomeEvt_handoffStarted,
 } from '../lib/onboardingAnalytics';
 import { useOnboardingBridge } from './_layout';
-
-// ─── Dimensions ───────────────────────────────────────────────────────────────
-
-const { width: SW, height: SH } = Dimensions.get('window');
 
 // ─── Palette — matches app-wide tokens ────────────────────────────────────────
 
@@ -118,6 +114,10 @@ function BookSpine({ cfg, anim }: { cfg: SpineConfig; anim: Animated.Value }) {
 export default function OnboardingScreen() {
   const router             = useRouter();
   const { completeOnboarding } = useOnboardingBridge();
+  // Dynamic height so layout adapts when the mobile browser address bar
+  // shows/hides (changing the viewport height) rather than using the stale
+  // module-level Dimensions.get('window') snapshot.
+  const { height: SH } = useWindowDimensions();
 
   const spineAnims = useRef(SPINES.map(() => new Animated.Value(0))).current;
   const textFade   = useRef(new Animated.Value(0)).current;

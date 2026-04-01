@@ -1,0 +1,90 @@
+I want a surgical fix pass on the first-time mobile web onboarding flow. This is specifically the browser experience on phone, not just native. Do not give me a generic polish pass. Read the current implementation first, identify the exact files/routes/components involved, then make the fixes and explain what changed.
+
+Context from live test:
+- This was first login on a phone in browser.
+- The onboarding/tutorial overlay does not sit cleanly in the browser viewport.
+- Some instructional sections overlap or do not sit clearly in the available space.
+- On the final setup screen, if the user chooses “Answer a few questions,” the app goes through the question flow, but recommendations do not populate afterward.
+- The current result is that the user gives input but does not get a convincing “the app understood me and generated picks” outcome.
+
+What I want fixed
+
+1. Mobile web viewport and safe-area handling
+- Audit the first-run experience on mobile browser.
+- Fix top/bottom spacing, browser chrome collisions, safe-area insets, and card/overlay positioning.
+- The tutorial card/overlay should never feel cropped, jammed against the browser UI, or ambiguously layered over the underlying screen.
+- Make this robust for mobile web viewport height changes, not a fragile one-off CSS tweak.
+
+2. Guided walkthrough clarity
+- Tighten the walkthrough layout so the instructional card feels intentional and visually anchored.
+- Reduce the sense that the live UI and tutorial card are competing for attention.
+- Ensure text blocks, CTA, and step indicators fit comfortably on small mobile browser screens.
+- Keep the current structure if possible, but improve layout discipline and readability.
+
+3. Final setup flow logic
+- Audit the entire path:
+  welcome -> walkthrough -> final setup -> “Answer a few questions” -> question steps -> recommendation generation -> populated recommendations screen
+- Fix any route/state/guard issue that causes question answers to not produce actual recommendation content.
+- The user should not land in a dead-end, placeholder-only, or ambiguous loading state.
+- After the final question step, there should be an explicit bridge state such as:
+  “Got it. We’re generating your first picks.”
+  followed by an actual hydrated recommendation result.
+- If recommendations cannot be generated yet, show a deliberate fallback state with clear language, not silent emptiness or skeletons that look broken.
+
+4. Recommendation hydration after question-based onboarding
+- Diagnose why recommendations are not populating after the questions path.
+- Check:
+  - onboarding completion state
+  - route guards
+  - preference persistence
+  - recommendation fetch trigger
+  - cache reads/writes
+  - loading state transitions
+  - whether the rec screen is mounting before user preference state is committed
+- Fix the actual root cause, not just the symptom.
+- I want the question path to produce a credible cold-start recommendation set or a clearly reasoned fallback.
+
+5. Empty-state quality on first run
+- The first-run home/recommendations experience still feels too empty.
+- Improve the first meaningful-use moment so a new user sees something alive immediately after onboarding.
+- That can be:
+  - populated starter recommendations
+  - clearer “learning your taste” language with a real next action
+  - a better first-run recommendations loading/result state
+- Do not overbuild. Just remove the “nothing happened” feeling.
+
+6. CTA hierarchy and flow legibility
+- Review the screens in the question flow and final setup flow for button hierarchy.
+- Primary action should always be obvious.
+- Secondary skip actions should be consistent and visually quieter.
+- Progress should feel legible across the sequence.
+
+Specific UX issues observed in the recording
+- “One import. Instant recommendations.” is fine directionally, but “Answer a few questions” currently lacks a clear payoff.
+- Some question screens feel visually too sparse / under-designed.
+- The “Building your picks…” state is too weak and not reassuring enough.
+- The recommendations screen appears to show placeholders rather than a confident first result.
+- The app does not yet deliver a strong “I told it what I like, and it responded intelligently” moment.
+
+Constraints
+- Do not regress the existing onboarding ordering.
+- Do not reintroduce the issue where the library upload step appears at every login. It should remain first-time only.
+- Do not create a hacky timeout-based fix for recommendation generation.
+- Prefer durable fixes in route/state logic, persistence timing, and render conditions.
+- Keep the current product direction: onboarding should lean on preference/taste inputs, not force a heavy book-selection flow up front.
+
+What I want back
+1. Exact diagnosis of root causes
+2. Files changed
+3. Code changes implemented
+4. Why the fix is architecturally correct
+5. Manual test plan for:
+   - first-time mobile web signup
+   - first-time native signup if relevant
+   - returning user login
+   - answer-questions path
+   - import-library path
+   - skip-for-now path
+6. Runtime proof that the question-based onboarding now ends in a populated or clearly handled recommendation state
+
+Please make the changes, not just describe them.

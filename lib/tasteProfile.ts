@@ -540,7 +540,22 @@ export async function computeTasteProfile(
     isGoodreadsRow(r)
   ).length;
 
-  const tier       = computeConfidenceTier(evidence, strongSignalCount);
+  // ── Intake boost ──────────────────────────────────────────────────────────
+  // A user who completed the quick intake (genres + taste questions) has given
+  // explicit preference signal equivalent in quality to ~5 rated books.
+  // Boost effectiveSignalCount to the tier-1 floor (5) so the rec pipeline
+  // runs for intake-only users rather than showing "Rate a few books".
+  // The boost applies only when intake_completed='true' AND at least one genre
+  // was selected — a bare click-through that skipped genre selection doesn't count.
+  // As real history accumulates, strongSignalCount will naturally exceed 5 and
+  // this boost has no further effect.
+  const intakeCompleted  = diagnosisAnswers.intake_completed === 'true';
+  const hasIntakeGenres  = prefGenres.length > 0;
+  const effectiveSignalCount = (intakeCompleted && hasIntakeGenres)
+    ? Math.max(strongSignalCount, 5)
+    : strongSignalCount;
+
+  const tier       = computeConfidenceTier(evidence, effectiveSignalCount);
   const label      = CONFIDENCE_LABELS[tier];
   const confidence = confidenceLevel(tier);
   const nextAt     = tierNextThreshold(tier);
