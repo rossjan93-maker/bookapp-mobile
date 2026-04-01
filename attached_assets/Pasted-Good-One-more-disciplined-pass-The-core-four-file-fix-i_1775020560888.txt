@@ -1,0 +1,76 @@
+Good. One more disciplined pass. The core four-file fix is in, but I want you to execute the final correction and then verify behavior rigorously.
+
+There is one critical issue in the current implementation that must be fixed before we treat this as done:
+
+Critical correction
+In lib/tasteProfile.ts, the intake-based tier unlock logic was initially referencing prefGenres before that const was declared. That creates a temporal dead zone runtime failure. The fix should read directly from prefsData when computing the intake unlock condition.
+
+Required implementation:
+- use something equivalent to:
+  hasIntakeGenres = (prefsData?.favorite_genres ?? []).length > 0
+- do not reference prefGenres before declaration
+- confirm computeTasteProfile no longer has any TDZ / ordering issue
+
+Desired behavior
+A user who completes onboarding intake with meaningful genre/taste inputs should be allowed into the tier-1 cold-start recommendation path even with zero finished books.
+A user who skips and provides no signal should remain tier 0.
+A user with real reading history should behave normally with no artificial inflation beyond the initial unlock threshold.
+
+Expected logic
+- if intake_completed is true and favorite_genres contains meaningful selections:
+  effectiveSignalCount = max(strongSignalCount, 5)
+- otherwise:
+  effectiveSignalCount = strongSignalCount
+- computeConfidenceTier should use effectiveSignalCount
+- this should only solve the 0→1 cold-start unlock, not distort later tiers
+
+Other confirmed changes that should remain
+1. onboarding-questions should route to the Recommendations tab, not home
+2. WalkthroughOverlay should use reactive window dimensions and safe-area-aware positioning
+3. onboarding.tsx should use reactive window dimensions rather than stale module-level height values
+
+Now verify these exact flows after the correction
+
+1. Question-based onboarding path
+- new account
+- walkthrough
+- final setup
+- answer a few questions
+- complete genre/taste flow
+- confirm onboarding input is persisted
+- confirm user lands on Recommendations tab
+- confirm recommendations pipeline runs
+- confirm user sees actual recommendation cards or a deliberate handled fallback
+- confirm user does NOT see “Rate a few books to unlock picks” after completing intake
+
+2. Skip path
+- new account
+- skip / not right now
+- confirm no onboarding loop
+- confirm no false tier unlock
+- confirm recommendations tab remains coherent for a no-signal user
+
+3. Import path
+- new account
+- import library
+- confirm path still works and is not affected by the tier-floor logic
+
+4. Returning user
+- sign out and sign back in
+- confirm onboarding does not repeat
+- confirm final import/setup does not reappear every login
+
+5. Mobile web viewport
+- test in a phone browser
+- verify walkthrough coach card remains correctly positioned as browser chrome expands/collapses
+- verify bottom touch areas remain usable
+- verify welcome/onboarding screen layout no longer feels cramped or overlapped
+
+What I want back
+1. Exact final code changes
+2. Confirmation that the TDZ/runtime ordering bug is fixed
+3. Manual verification results for the five flows above
+4. Any remaining risks or edge cases
+5. Runtime proof that the question-based onboarding now ends in recommendation hydration rather than a dead-end state
+
+Do not stop at static reasoning alone. I want this checked as a runtime-safe implementation.
