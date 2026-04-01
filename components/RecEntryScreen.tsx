@@ -151,8 +151,8 @@ const TASTE_QS: TasteQ[] = [
   {
     id:     'q_pacing',
     prompt: 'How much does pacing matter?',
-    optionA: { key: 'pacing_non_negotiable', headline: 'It has to move',        sub: 'If I'm bored I'll put it down',         icon: 'flash-outline' },
-    optionB: { key: 'ideas_over_pacing',     headline: 'I'll go slow',          sub: 'If the substance is there, I'm patient', icon: 'telescope-outline' },
+    optionA: { key: 'pacing_non_negotiable', headline: 'It has to move',      sub: "If I'm bored I'll put it down",          icon: 'flash-outline' },
+    optionB: { key: 'ideas_over_pacing',     headline: "I'll go slow",          sub: "If the substance is there, I'm patient", icon: 'telescope-outline' },
     optionC: { key: 'pacing_flexible',       headline: 'Depends what I need',   sub: 'Mood-driven — I read both',             icon: 'options-outline' },
   },
   {
