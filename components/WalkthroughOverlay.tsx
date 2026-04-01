@@ -478,33 +478,57 @@ function CoachCard({
     ]).start();
   }, [step]);
 
-  // Compute position: prefer just below the card, fall back above if cramped.
-  // SAFE_BOT accounts for the tab bar AND the device/browser bottom inset so
-  // the card is never hidden behind browser chrome on mobile web.
+  // Compute position: prefer just below the focal card, fall back above if
+  // there is enough vertical room, then clamp to a bottom anchor so the coach
+  // card is always fully visible regardless of focal card position or screen size.
+  //
+  // SAFE_BOT accounts for the tab bar AND the device/browser bottom inset.
+  // SAFE_TOP accounts for the status bar / notch so the card never slides behind it.
   const GAP       = 14;
   const SIDE      = 14;
   const SAFE_BOT  = TAB_BAR_H + Math.max(insets.bottom, 8);
+  const SAFE_TOP  = Math.max(insets.top, 8);
 
   let positionStyle: object;
-  let arrowAbove: boolean; // true = arrow at top of coach card (pointing up to card above)
+  let arrowAbove: boolean;  // true  = upward triangle at top of card   (coach is BELOW focal)
+                            // false = downward triangle at bottom of card (coach is ABOVE focal)
+  let showArrow = true;     // hidden in bottom-anchor fallback (no focal card in sight)
 
   if (cardRect) {
+    // ── Option A: below the focal card ───────────────────────────────────────
     const belowTop  = cardRect.y + cardRect.height + GAP;
     const fitsBelow = belowTop + COACH_H_EST < winH - SAFE_BOT;
 
+    // ── Option B: above the focal card ───────────────────────────────────────
+    // Only viable if the coach card's top edge clears the status bar.
+    const coachTopIfAbove = cardRect.y - GAP - COACH_H_EST;
+    const fitsAbove       = coachTopIfAbove > SAFE_TOP;
+
     if (fitsBelow) {
       positionStyle = { top: belowTop, left: SIDE, right: SIDE };
-      arrowAbove    = true;   // coach is below the card → arrow points UP toward card
-    } else {
-      // Not enough room below — position coach above the card
+      arrowAbove    = true;   // coach is BELOW → upward arrow points at card above
+    } else if (fitsAbove) {
+      // Position coach above the focal card.
+      // `bottom` = distance from the bottom of the container to the coach card's
+      //   bottom edge, which should sit at (cardRect.y - GAP) from the screen top.
+      // bottom = winH - (cardRect.y - GAP) = winH - cardRect.y + GAP
       const aboveBottom = winH - cardRect.y + GAP;
       positionStyle = { bottom: aboveBottom, left: SIDE, right: SIDE };
-      arrowAbove    = false;  // coach is above the card → arrow points DOWN toward card
+      arrowAbove    = false;  // coach is ABOVE → downward arrow points at card below
+    } else {
+      // ── Option C: bottom anchor (fallback) ───────────────────────────────
+      // Neither above nor below fits — typically the focal card spans a large
+      // portion of the screen (e.g. Inbox on small devices or with browser chrome).
+      // Anchor the coach card just above the tab bar so it is always fully visible.
+      positionStyle = { bottom: SAFE_BOT + 8, left: SIDE, right: SIDE };
+      arrowAbove    = true;
+      showArrow     = false; // arrow would point at nothing meaningful
     }
   } else {
-    // Fallback: no rect yet — anchor at bottom
-    positionStyle = { bottom: SAFE_BOT, left: SIDE, right: SIDE };
+    // No rect yet — anchor at bottom (readiness gate not yet triggered)
+    positionStyle = { bottom: SAFE_BOT + 8, left: SIDE, right: SIDE };
     arrowAbove    = true;
+    showArrow     = false;
   }
 
   // Arrow horizontal position — aim at the card center, clamped inside coach bounds.
@@ -529,8 +553,10 @@ function CoachCard({
         elevation:       16,
       }}
     >
-      {/* Arrow connecting coach card to the focal card */}
-      {arrowAbove ? (
+      {/* Arrow connecting coach card to the focal card.
+          Hidden when using the bottom-anchor fallback (showArrow=false),
+          because there is no clear direction to point toward. */}
+      {showArrow && arrowAbove && (
         // Coach is BELOW the card — upward triangle at top
         <View
           style={{
@@ -547,7 +573,8 @@ function CoachCard({
             borderBottomColor: '#faf9f7',
           }}
         />
-      ) : (
+      )}
+      {showArrow && !arrowAbove && (
         // Coach is ABOVE the card — downward triangle at bottom
         <View
           style={{

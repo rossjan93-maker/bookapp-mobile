@@ -16,6 +16,55 @@ import { supabase, hasSupabaseConfig } from '../../lib/supabase';
 // resend         — resend confirmation email flow (email only)
 type Mode = 'signin' | 'signup' | 'forgot' | 'resend';
 
+// ─── Error message mapping ────────────────────────────────────────────────────
+// Maps raw Supabase/backend auth errors to clean product language.
+// No raw backend text should ever reach the UI.
+
+function mapSignInError(error: { message?: string; status?: number }): {
+  text: string;
+  offerResend: boolean;  // true → show "Resend confirmation" CTA inline
+} {
+  const raw    = (error.message ?? '').toLowerCase();
+  const status = error.status ?? 0;
+
+  // Rate limit — safe to surface explicitly (doesn't reveal account existence)
+  if (status === 429 || raw.includes('too many') || raw.includes('rate limit')) {
+    return { text: 'Too many attempts — wait a moment and try again.', offerResend: false };
+  }
+
+  // Email not confirmed — user signed up but hasn't clicked confirmation link
+  if (raw.includes('not confirmed') || raw.includes('email not confirmed')) {
+    return {
+      text: 'Check your inbox — you need to confirm this email before signing in.',
+      offerResend: true,
+    };
+  }
+
+  // All other sign-in failures (wrong password, unknown email, etc.) are mapped to
+  // a single clear message. We deliberately do not distinguish "wrong password" from
+  // "unknown email" to prevent email enumeration.
+  if (
+    status === 400 ||
+    raw.includes('invalid') ||
+    raw.includes('credentials') ||
+    raw.includes('password') ||
+    raw.includes('user not found') ||
+    raw.includes('no user')
+  ) {
+    return { text: 'Email or password is incorrect.', offerResend: false };
+  }
+
+  // Network / server errors
+  return { text: 'Something went wrong. Check your connection and try again.', offerResend: false };
+}
+
+function mapSignUpError(error: { message?: string; status?: number }): string {
+  const status = error.status ?? 0;
+  if (status === 429) return 'Too many attempts — wait a moment and try again.';
+  // Other raw errors from signUp (shouldn't surface to the user)
+  return 'Something went wrong. Please try again.';
+}
+
 // ─── Shared style primitives ─────────────────────────────────────────────────
 const INPUT: object = {
   width: '100%' as const,
@@ -56,19 +105,26 @@ export default function LoginScreen() {
   // statusIsError — true → red text, false → neutral stone text
   const [status, setStatus]         = useState('');
   const [statusIsError, setStatusIsError] = useState(false);
+  // offerResend — true when the error specifically means "email not confirmed";
+  // shows a one-tap "Resend confirmation" link alongside the error message.
+  const [offerResend, setOfferResend] = useState(false);
 
   // ── Post-action states ───────────────────────────────────────────────────────
-  // signupAmbiguous — shown after signup returns user=null (may be duplicate email)
+  // duplicateEmail  — shown when signup detects an existing account on this email
+  // emailConfirmPending — shown after a new signup; waiting for confirmation
   // emailSent       — shown after forgot / resend flow completes
-  const [signupAmbiguous, setSignupAmbiguous] = useState(false);
-  const [emailSent, setEmailSent]             = useState(false);
+  const [duplicateEmail, setDuplicateEmail]           = useState(false);
+  const [emailConfirmPending, setEmailConfirmPending] = useState(false);
+  const [emailSent, setEmailSent]                     = useState(false);
 
   // ── Mode switching ──────────────────────────────────────────────────────────
   function switchMode(m: Mode) {
     setMode(m);
     setStatus('');
     setStatusIsError(false);
-    setSignupAmbiguous(false);
+    setOfferResend(false);
+    setDuplicateEmail(false);
+    setEmailConfirmPending(false);
     setEmailSent(false);
     setConfirmPassword('');
     setShowPassword(false);
@@ -80,7 +136,9 @@ export default function LoginScreen() {
     setLoading(true);
     setStatus('');
     setStatusIsError(false);
-    setSignupAmbiguous(false);
+    setOfferResend(false);
+    setDuplicateEmail(false);
+    setEmailConfirmPending(false);
 
     // ── Client-side validation ───────────────────────────────────────────────
     if (!firstName.trim()) {
@@ -156,8 +214,7 @@ export default function LoginScreen() {
     });
 
     if (error) {
-      // Supabase error — show as-is (e.g. "Password should be at least 6 characters")
-      setStatus(error.message);
+      setStatus(mapSignUpError(error));
       setStatusIsError(true);
       setLoading(false);
       return;
@@ -171,22 +228,22 @@ export default function LoginScreen() {
         first_name: firstName.trim(),
         last_name:  lastName.trim(),
       });
-      // Unique constraint violation — username is already taken.
+      // Unique constraint violation — username race condition
       if (profileError?.code === '23505') {
         setStatus('That username is already taken. Please choose another.');
         setStatusIsError(true);
         setLoading(false);
         return;
       }
-      setStatus('Check your email to confirm your account.');
-      setStatusIsError(false);
+      // New user created — waiting for email confirmation
+      setEmailConfirmPending(true);
     } else {
-      // ── Ambiguous outcome ────────────────────────────────────────────────────
-      // Supabase returned user=null without an error. This happens when email
-      // confirmation is enabled and the address already has an account — Supabase
-      // does not reveal this to prevent email enumeration. We surface a neutral
-      // recovery panel so the user can find their way forward without guessing.
-      setSignupAmbiguous(true);
+      // ── Existing account detected ────────────────────────────────────────────
+      // Supabase returns user=null (no error) when email confirmation is enabled
+      // and the submitted email already belongs to an existing confirmed account.
+      // This is intentional on Supabase's side (prevents email enumeration), but
+      // we can treat user=null as "account exists" in this configuration.
+      setDuplicateEmail(true);
     }
 
     setLoading(false);
@@ -197,13 +254,16 @@ export default function LoginScreen() {
     setLoading(true);
     setStatus('');
     setStatusIsError(false);
+    setOfferResend(false);
     const { error } = await supabase!.auth.signInWithPassword({
       email:    email.trim(),
       password,
     });
     if (error) {
-      setStatus(error.message);
+      const { text, offerResend: shouldOfferResend } = mapSignInError(error);
+      setStatus(text);
       setStatusIsError(true);
+      setOfferResend(shouldOfferResend);
     }
     setLoading(false);
   }
@@ -218,6 +278,7 @@ export default function LoginScreen() {
     setLoading(true);
     setStatus('');
     setStatusIsError(false);
+    setOfferResend(false);
 
     const { error } = await supabase!.auth.resetPasswordForEmail(email.trim());
 
@@ -252,6 +313,7 @@ export default function LoginScreen() {
     setLoading(true);
     setStatus('');
     setStatusIsError(false);
+    setOfferResend(false);
 
     const { error } = await supabase!.auth.resend({ type: 'signup', email: email.trim() });
 
@@ -548,34 +610,100 @@ export default function LoginScreen() {
         </View>
       )}
 
-      {/* ── Ambiguous signup recovery panel ──────────────────────────────────── */}
-      {signupAmbiguous && (
+      {/* ── Status message ────────────────────────────────────────────────────── */}
+      {status !== '' && !duplicateEmail && !emailConfirmPending && (
+        <View style={{ width: '100%', marginTop: 18 }}>
+          <Text style={{
+            textAlign: 'center',
+            fontSize: 13,
+            color: statusIsError ? '#b91c1c' : '#57534e',
+            lineHeight: 20,
+          }}>
+            {status}
+          </Text>
+          {/* Inline resend CTA — shown when the error is "email not confirmed" */}
+          {offerResend && mode === 'signin' && (
+            <TouchableOpacity
+              onPress={() => switchMode('resend')}
+              style={{ marginTop: 10, alignItems: 'center' }}
+            >
+              <Text style={{ fontSize: 13, color: '#1c1917', fontWeight: '600', textDecorationLine: 'underline' }}>
+                Resend confirmation email
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* ── New signup: email confirmation pending ────────────────────────────── */}
+      {emailConfirmPending && (
         <View style={{
           marginTop: 24,
           width: '100%',
-          backgroundColor: '#f5f0e8',
+          backgroundColor: '#f0fdf4',
           borderRadius: 12,
           padding: 18,
           borderWidth: 1,
-          borderColor: '#e7ddd0',
+          borderColor: '#bbf7d0',
         }}>
           <Text style={{
             fontSize: 14,
-            fontWeight: '600',
-            color: '#1c1917',
-            marginBottom: 8,
-            lineHeight: 20,
+            fontWeight: '700',
+            color: '#15803d',
+            marginBottom: 6,
           }}>
-            Check your email
+            Almost there — check your email
           </Text>
           <Text style={{
             fontSize: 13,
-            color: '#57534e',
+            color: '#166534',
+            lineHeight: 20,
+            marginBottom: 16,
+          }}>
+            We sent a confirmation link to {email.trim() || 'your email'}. Click it to activate your account.
+          </Text>
+          <TouchableOpacity
+            onPress={() => switchMode('resend')}
+            style={{
+              borderWidth: 1,
+              borderColor: '#86efac',
+              borderRadius: 9,
+              paddingVertical: 10,
+              alignItems: 'center',
+              backgroundColor: '#fff',
+            }}
+          >
+            <Text style={{ fontSize: 13, color: '#15803d', fontWeight: '600' }}>Resend confirmation email</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ── Duplicate email recovery panel ────────────────────────────────────── */}
+      {duplicateEmail && (
+        <View style={{
+          marginTop: 24,
+          width: '100%',
+          backgroundColor: '#fef9f0',
+          borderRadius: 12,
+          padding: 18,
+          borderWidth: 1,
+          borderColor: '#fde68a',
+        }}>
+          <Text style={{
+            fontSize: 14,
+            fontWeight: '700',
+            color: '#92400e',
+            marginBottom: 6,
+          }}>
+            An account already exists with this email.
+          </Text>
+          <Text style={{
+            fontSize: 13,
+            color: '#78350f',
             lineHeight: 20,
             marginBottom: 18,
           }}>
-            If this address is new, we sent a confirmation link.{'\n'}
-            If you already have an account, sign in or reset your password below.
+            Sign in to your existing account, or reset your password if you've forgotten it.
           </Text>
 
           <TouchableOpacity
@@ -591,51 +719,20 @@ export default function LoginScreen() {
             <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Sign In</Text>
           </TouchableOpacity>
 
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <TouchableOpacity
-              onPress={() => switchMode('forgot')}
-              style={{
-                flex: 1,
-                borderWidth: 1,
-                borderColor: '#d6cfc8',
-                borderRadius: 9,
-                paddingVertical: 10,
-                alignItems: 'center',
-                backgroundColor: '#fff',
-              }}
-            >
-              <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500' }}>Reset Password</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => switchMode('resend')}
-              style={{
-                flex: 1,
-                borderWidth: 1,
-                borderColor: '#d6cfc8',
-                borderRadius: 9,
-                paddingVertical: 10,
-                alignItems: 'center',
-                backgroundColor: '#fff',
-              }}
-            >
-              <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500' }}>Resend Email</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            onPress={() => switchMode('forgot')}
+            style={{
+              borderWidth: 1,
+              borderColor: '#d6cfc8',
+              borderRadius: 9,
+              paddingVertical: 10,
+              alignItems: 'center',
+              backgroundColor: '#fff',
+            }}
+          >
+            <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500' }}>Reset Password</Text>
+          </TouchableOpacity>
         </View>
-      )}
-
-      {/* ── Status message ────────────────────────────────────────────────────── */}
-      {status !== '' && !signupAmbiguous && (
-        <Text style={{
-          marginTop: 18,
-          textAlign: 'center',
-          fontSize: 13,
-          color: statusIsError ? '#b91c1c' : '#57534e',
-          lineHeight: 20,
-        }}>
-          {status}
-        </Text>
       )}
 
       {/* ── After-send back link (forgot / resend) ────────────────────────────── */}
