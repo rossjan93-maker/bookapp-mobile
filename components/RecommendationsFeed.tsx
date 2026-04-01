@@ -821,7 +821,15 @@ export function RecommendationsFeed({
   const tier = tasteProfile?.tier ?? 0;
 
   if (!userId) return null;
-  if (tier < 1 && !isInitialLoading) {
+
+  // ── Insufficient-confidence gate ───────────────────────────────────────────
+  // tier < 1 means we do NOT have enough reader signal to make picks we trust.
+  // The pipeline is intentionally not running (it has its own tier < 1 guard),
+  // so isInitialLoading is semantically irrelevant here — we will never finish
+  // loading because we never started. Show the setup CTA immediately regardless
+  // of isInitialLoading, so the user never sees skeleton cards for a state that
+  // is NOT a loading state — it is an insufficient-signal state.
+  if (tier < 1) {
     return (
       <View style={{ marginBottom: 36 }}>
         <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 12 }}>
@@ -830,59 +838,86 @@ export function RecommendationsFeed({
         <View
           ref={wtRef}
           style={{
-            backgroundColor: '#fff', borderRadius: 14, padding: 20,
-            shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 1 }, elevation: 1,
+            backgroundColor: '#fff', borderRadius: 16,
+            overflow: 'hidden',
+            shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
           }}
         >
-          <Text style={{ fontSize: 15, fontWeight: '700', color: '#1c1917', marginBottom: 4 }}>
-            Build your reading profile
-          </Text>
-          <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 19, marginBottom: 20 }}>
-            We need a bit more to go on before we can make confident picks for you. Any of these helps.
-          </Text>
+          {/* Header strip */}
+          <View style={{ backgroundColor: '#faf9f7', borderBottomWidth: 1, borderBottomColor: '#f0ede8', padding: 20, paddingBottom: 16 }}>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: '#1c1917', letterSpacing: -0.2, marginBottom: 6 }}>
+              We're not guessing yet.
+            </Text>
+            <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
+              Recommendations only unlock when we have enough signal to make picks worth trusting. Add some reading history and we'll take it from there.
+            </Text>
+          </View>
 
-          {/* CTA 1 — Import library */}
-          <TouchableOpacity
-            onPress={() => router.push('/import/goodreads' as any)}
-            activeOpacity={0.8}
-            style={{
-              backgroundColor: '#1c1917', borderRadius: 10, paddingVertical: 13,
-              paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10,
-            }}
-          >
-            <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 14 }}>📚</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: '#fff' }}>Import your reading history</Text>
-              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 1 }}>Goodreads or StoryGraph CSV</Text>
-            </View>
-            <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>›</Text>
-          </TouchableOpacity>
+          <View style={{ padding: 16, gap: 10 }}>
+            {/* CTA 1 — Import library (primary) */}
+            <TouchableOpacity
+              onPress={() => router.push('/import/goodreads' as any)}
+              activeOpacity={0.82}
+              style={{
+                backgroundColor: '#1c1917', borderRadius: 12, paddingVertical: 14,
+                paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12,
+              }}
+            >
+              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 15 }}>📚</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff', lineHeight: 19 }}>Import your library</Text>
+                <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 1 }}>Goodreads or StoryGraph — fastest way to unlock</Text>
+              </View>
+              <Text style={{ fontSize: 16, color: 'rgba(255,255,255,0.35)' }}>›</Text>
+            </TouchableOpacity>
 
-          {/* CTA 2 — Add books manually */}
-          <TouchableOpacity
-            onPress={() => router.push('/add-book' as any)}
-            activeOpacity={0.8}
-            style={{
-              borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16,
-              flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10,
-              borderWidth: 1.5, borderColor: '#e7e5e4', backgroundColor: '#faf9f7',
-            }}
-          >
-            <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: '#f5f5f4', alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 14 }}>＋</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>Add books you've read</Text>
-              <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 1 }}>Search and rate a few favourites</Text>
-            </View>
-            <Text style={{ fontSize: 13, color: '#d6d3d1' }}>›</Text>
-          </TouchableOpacity>
+            {/* CTA 2 — Add books manually (secondary) */}
+            <TouchableOpacity
+              onPress={() => router.push('/add-book' as any)}
+              activeOpacity={0.8}
+              style={{
+                borderRadius: 12, paddingVertical: 13, paddingHorizontal: 16,
+                flexDirection: 'row', alignItems: 'center', gap: 12,
+                borderWidth: 1.5, borderColor: '#e7e5e4', backgroundColor: '#faf9f7',
+              }}
+            >
+              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#f0ede8', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 15 }}>＋</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', lineHeight: 19 }}>Add books you've read</Text>
+                <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 1 }}>Search and rate a few favourites</Text>
+              </View>
+              <Text style={{ fontSize: 16, color: '#d6d3d1' }}>›</Text>
+            </TouchableOpacity>
 
-          <Text style={{ fontSize: 11, color: '#c4b5a5', textAlign: 'center', marginTop: 6, lineHeight: 16 }}>
-            Five rated books is enough to unlock your first picks
-          </Text>
+            {/* CTA 3 — Answer preference questions (tertiary) */}
+            <TouchableOpacity
+              onPress={() => router.push('/edit-preferences' as any)}
+              activeOpacity={0.8}
+              style={{
+                borderRadius: 12, paddingVertical: 13, paddingHorizontal: 16,
+                flexDirection: 'row', alignItems: 'center', gap: 12,
+                borderWidth: 1.5, borderColor: '#e7e5e4', backgroundColor: '#faf9f7',
+              }}
+            >
+              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#f0ede8', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 15 }}>🎯</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', lineHeight: 19 }}>Answer a few quick questions</Text>
+                <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 1 }}>Genres, pace, style — under 90 seconds</Text>
+              </View>
+              <Text style={{ fontSize: 16, color: '#d6d3d1' }}>›</Text>
+            </TouchableOpacity>
+
+            {/* Supporting line */}
+            <Text style={{ fontSize: 11, color: '#c4b5a5', textAlign: 'center', paddingTop: 2, paddingBottom: 4, lineHeight: 17 }}>
+              Five rated books is enough to unlock your first picks.
+            </Text>
+          </View>
         </View>
       </View>
     );

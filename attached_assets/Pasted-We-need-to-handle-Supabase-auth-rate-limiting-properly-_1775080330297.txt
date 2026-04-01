@@ -1,0 +1,90 @@
+We need to handle Supabase auth rate limiting properly in the signup / confirmation flow.
+
+Current problem:
+When I repeatedly delete and recreate the same account for testing, I hit:
+"Too many attempts — wait a moment and try again."
+
+This is likely Supabase Auth rate limiting on signup / confirmation emails.
+The app currently surfaces this as a generic inline error, but the overall flow is not robust enough for testing or real users.
+
+==================================================
+WHAT I NEED
+==================================================
+
+1. Diagnose exactly which auth call is rate-limited in our current flow
+- signUp
+- resend confirmation
+- login
+- something else
+
+2. Confirm how our current signup flow behaves when:
+- the account was just deleted
+- the same email is reused
+- confirmation email is requested again
+- Supabase returns a 429 / too many attempts / email rate limited state
+
+==================================================
+REQUIRED UX BEHAVIOR
+==================================================
+
+If signup/confirmation hits a rate limit, I want a specific and familiar UI state.
+
+Do NOT just show a generic auth failure.
+
+Show something like:
+- "We’ve sent too many emails recently. Wait a minute and try again."
+- or "Please wait before requesting another confirmation email."
+
+And provide the right next action:
+- retry later
+- resend confirmation when eligible
+- use a different email for testing if needed
+
+==================================================
+IMPORTANT PRODUCT REQUIREMENTS
+==================================================
+
+1. Do not require repeated sign-up calls just to resend a confirmation email
+Use the proper resend-confirmation path instead of treating every retry as a fresh signup attempt.
+
+2. If the email already exists but is unconfirmed, the app should not behave like a totally new signup
+It should guide the user toward:
+- resend confirmation
+- sign in after confirmation
+- reset password if appropriate
+
+3. Map Supabase rate-limit responses into clean product language
+No raw backend wording.
+
+==================================================
+TESTING / DEV REQUIREMENT
+==================================================
+
+Because I am repeatedly deleting and recreating accounts during development, I want the flow to be resilient to that pattern.
+
+Before coding, tell me:
+1. which exact Supabase endpoint is being rate-limited in our app
+2. what error payload/message we currently receive
+3. whether we are unnecessarily calling signUp when we should be using resend confirmation
+4. exact files/components/state you will modify
+
+==================================================
+IF APPLICABLE
+==================================================
+
+If the app currently lacks a dedicated resend-confirmation path, add one.
+
+I want:
+- clear "Check your email" success state after signup
+- a resend confirmation action
+- rate-limit-aware messaging when resend is temporarily blocked
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- rate-limited signup/confirmation errors are handled explicitly
+- users are not left with a generic auth failure
+- resend confirmation is used where appropriate
+- existing-but-unconfirmed accounts are handled gracefully
+- the flow feels standard and familiar

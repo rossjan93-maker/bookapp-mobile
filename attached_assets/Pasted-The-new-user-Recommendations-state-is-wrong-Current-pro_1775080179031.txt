@@ -1,0 +1,109 @@
+The new-user Recommendations state is wrong.
+
+Current problem:
+On a brand-new / low-signal account, the “For You” section shows “Assembling your picks…” with skeleton cards.
+
+This looks like a failed or incomplete load.
+That is the wrong product message.
+
+We should only use skeletons / loading placeholders when the app is genuinely loading recommendations it is ready to show.
+
+If we do NOT have enough reader signal to make recommendations we trust, the UI should say that explicitly.
+
+==================================================
+NEW PRODUCT RULE
+==================================================
+
+Separate these two states clearly:
+
+1. True loading state
+Meaning:
+- we have enough confidence to generate picks
+- the recs are actively loading/fetching/rendering
+UI:
+- loading copy
+- skeleton cards
+- temporary loading treatment
+
+2. Insufficient-confidence state
+Meaning:
+- we do NOT yet have enough signal to make strong picks
+- we are intentionally withholding recommendations
+UI:
+- explicit explanation
+- setup / signal-building actions
+- no fake-loading cards
+
+Do NOT blur these together.
+
+==================================================
+NEW REQUIREMENT FOR THE “FOR YOU” SECTION
+==================================================
+
+When a new/low-signal user does not yet have enough detail for recommendations, replace the current “Assembling your picks…” skeleton state with an explicit empty/setup state.
+
+That state should clearly communicate:
+- what this section is for
+- why it is not populated yet
+- what the user needs to do to unlock it
+
+I want it to feel intentional and confidence-driven, not broken.
+
+==================================================
+CONTENT REQUIREMENTS
+==================================================
+
+The section should explain something like:
+
+- We’re not guessing yet
+- We need a little more signal before we make picks
+- Add reading history so your recommendations are worth trusting
+
+Then provide clear actions in this order:
+
+1. Import your library (primary)
+2. Add books you’ve read (secondary)
+3. Answer a few quick questions (tertiary)
+
+And a short supporting line such as:
+- Five rated books is enough to unlock your first picks
+or
+- Importing your history is the fastest way to unlock strong recommendations
+
+==================================================
+IMPORTANT CONSTRAINT
+==================================================
+
+Do NOT show fake-loading skeleton rec cards when the real issue is insufficient confidence.
+
+Skeletons should only appear for true loading states.
+
+If confidence is insufficient, the UI should be explicit and honest.
+
+==================================================
+WHAT I NEED BEFORE CODING
+==================================================
+
+Before implementing, give me:
+
+1. the exact current conditions under which “Assembling your picks…” and skeletons render
+2. your proposed distinction between:
+   - true loading
+   - insufficient confidence
+3. the exact rendering logic for each state
+4. the exact files/components/state you will modify
+
+Then implement.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- new/low-signal users do NOT see misleading skeleton rec cards
+- the Recommendations section clearly explains its purpose
+- the app clearly explains why recommendations are not shown yet
+- the user is told exactly how to unlock the feature
+- import is primary
+- add books is secondary
+- questions are tertiary
+- the empty state feels deliberate and premium, not broken
