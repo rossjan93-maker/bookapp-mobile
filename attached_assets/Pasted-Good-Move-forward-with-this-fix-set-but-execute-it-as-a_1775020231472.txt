@@ -1,0 +1,108 @@
+Good. Move forward with this fix set, but execute it as a disciplined implementation and verification pass, not a loose patch.
+
+I want you to implement the exact diagnosis below and verify the outcome end to end.
+
+Core objective
+Fix the first-time onboarding question path so a brand-new user who answers preference questions actually lands in a credible, populated recommendations experience on mobile web, while also tightening the mobile browser walkthrough layout issues.
+
+Confirmed diagnosis to implement
+1. Root cause: recommendations do not populate after “Answer a few questions”
+- computeTasteProfile() currently derives strongSignalCount only from finished/rated books
+- a new user who completed intake has zero finished books, so strongSignalCount = 0
+- that leaves them at tier 0
+- RecommendationsFeed is hard-gated at tier < 1, so the rec pipeline never runs
+- the intake data is being written, but the gate prevents the pipeline from using it
+
+Required fix:
+- in lib/tasteProfile.ts, introduce an effectiveSignalCount before computeConfidenceTier
+- if intake_completed is true and favorite_genres has meaningful selections, floor effectiveSignalCount at the tier-1 threshold so intake-based users can enter the pipeline
+- keep this limited to the 0→1 boundary only
+- do not let this create artificial inflation beyond the initial unlock threshold
+- preserve normal behavior once real reading history exceeds that threshold
+
+Architectural intent:
+Explicit genre/taste onboarding input should be sufficient to unlock cold-start recommendations. It should not require finished books just to begin.
+
+2. Post-question routing is wrong
+- after onboarding questions complete, the user is currently routed to the default tabs root/home experience
+- that makes it look like nothing happened
+
+Required fix:
+- in app/onboarding-questions.tsx, route the user directly to the Recommendations tab, not the home tab
+- the user should land where the result of their onboarding input is visible
+
+3. Mobile web viewport / walkthrough overlay issues
+- current onboarding and walkthrough use stale module-level Dimensions height values
+- on mobile browser, dynamic browser chrome changes viewport height
+- this causes card positioning and spacing issues
+
+Required fix:
+- replace stale module-level screen height assumptions with reactive window dimension logic
+- ensure the walkthrough card positions correctly when mobile browser chrome expands/collapses
+- account for bottom safe-area / browser inset in touch blocker and card layout
+- fix welcome/onboarding screen layout so it remains visually stable on mobile web
+
+Files expected to change
+- lib/tasteProfile.ts
+- app/onboarding-questions.tsx
+- components/WalkthroughOverlay.tsx
+- app/onboarding.tsx
+
+Implementation requirements
+1. Make the code changes
+2. Keep the fix surgical
+3. Do not introduce timeout-based hacks
+4. Do not regress onboarding order
+5. Do not reintroduce the bug where onboarding/import appears every login
+6. Do not just describe the fix — actually implement it
+
+After implementation, I want verification on these exact paths
+
+A. Question-based onboarding path
+- Create new account
+- Welcome
+- Walkthrough
+- Final setup
+- Tap “Answer a few questions”
+- Complete question flow
+- Confirm user lands on Recommendations tab
+- Confirm recommendations pipeline actually runs
+- Confirm real recommendation cards populate, or a deliberate fallback appears if generation fails
+- Confirm user does NOT see “Rate a few books to unlock picks” after already completing intake
+
+B. Import path
+- New account
+- Complete onboarding
+- Choose import path
+- Confirm imported-history route still works
+- Confirm recommendations still populate from imported history
+
+C. Skip path
+- New account
+- Complete walkthrough
+- Choose “Not right now”
+- Confirm app enters normally
+- Confirm no onboarding loop
+- Confirm recommendations tab behavior is coherent for a true no-signal user
+
+D. Returning user
+- Sign out
+- Sign back in with same account
+- Confirm onboarding does not repeat
+- Confirm library import step does not reappear
+
+E. Mobile web layout verification
+- Test in phone browser
+- While walkthrough is open, verify overlay card remains correctly positioned when browser chrome shows/hides
+- Verify no clipping into top or bottom browser UI
+- Verify CTA/buttons remain tappable and visually clear
+- Verify onboarding screens do not feel cramped or overlapped
+
+What I want back
+1. Exact code changes made
+2. Why each change is correct
+3. Any follow-on risks or edge cases
+4. Manual verification results for all five flows above
+5. Runtime proof that the question path now results in recommendation hydration
+
+If anything in the current diagnosis turns out incomplete, continue the investigation and solve the actual root cause rather than stopping at the first patch.

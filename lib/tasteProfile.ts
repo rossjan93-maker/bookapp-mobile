@@ -549,8 +549,11 @@ export async function computeTasteProfile(
   // was selected — a bare click-through that skipped genre selection doesn't count.
   // As real history accumulates, strongSignalCount will naturally exceed 5 and
   // this boost has no further effect.
+  // prefGenres is computed later (line ~609) for the genre blending section;
+  // read it directly from prefsData here so this boost does not create a
+  // temporal dead zone reference error.
   const intakeCompleted  = diagnosisAnswers.intake_completed === 'true';
-  const hasIntakeGenres  = prefGenres.length > 0;
+  const hasIntakeGenres  = ((prefsData?.favorite_genres ?? []) as string[]).length > 0;
   const effectiveSignalCount = (intakeCompleted && hasIntakeGenres)
     ? Math.max(strongSignalCount, 5)
     : strongSignalCount;
