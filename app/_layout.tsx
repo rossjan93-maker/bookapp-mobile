@@ -79,11 +79,14 @@ export default function RootLayout() {
         if (completed) {
           setNeedsOnboarding(false);
         } else {
-          // DB may not have been written yet (first-run race or network blip).
-          // If local stage is non-null the user already passed the welcome screen —
-          // trust local and skip it; tabs layout resumes from the local stage.
+          // onboarding_completed=false means the user has not finished onboarding.
+          // Trust the local stage ONLY for mid-flow stages (walkthrough/final_setup)
+          // where the DB write may have raced or the network blipped.  A local stage
+          // of 'done' or null while the DB says false means the user needs the welcome
+          // screen (e.g. after a dev reset, or a first login on a clean device).
           const localStage = await readOnboardingStage();
-          setNeedsOnboarding(localStage === null);
+          const midFlow = localStage === 'walkthrough' || localStage === 'final_setup';
+          setNeedsOnboarding(!midFlow);
         }
       } else {
         setNeedsOnboarding(false);
@@ -105,7 +108,8 @@ export default function RootLayout() {
           setNeedsOnboarding(false);
         } else {
           const localStage = await readOnboardingStage();
-          setNeedsOnboarding(localStage === null);
+          const midFlow = localStage === 'walkthrough' || localStage === 'final_setup';
+          setNeedsOnboarding(!midFlow);
         }
       } else if (event === 'SIGNED_OUT') {
         setNeedsOnboarding(false);

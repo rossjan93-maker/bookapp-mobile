@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase, hasSupabaseConfig } from '../../lib/supabase';
 
 // ─── Mode type ───────────────────────────────────────────────────────────────
@@ -44,8 +45,11 @@ export default function LoginScreen() {
   const [password, setPassword]   = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName]   = useState('');
-  const [username, setUsername]   = useState('');
-  const [loading, setLoading]     = useState(false);
+  const [username, setUsername]           = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword]   = useState(false);
+  const [showConfirm, setShowConfirm]     = useState(false);
+  const [loading, setLoading]             = useState(false);
 
   // ── Status state ────────────────────────────────────────────────────────────
   // status        — message shown below the form
@@ -66,6 +70,9 @@ export default function LoginScreen() {
     setStatusIsError(false);
     setSignupAmbiguous(false);
     setEmailSent(false);
+    setConfirmPassword('');
+    setShowPassword(false);
+    setShowConfirm(false);
   }
 
   // ── Sign up ─────────────────────────────────────────────────────────────────
@@ -109,6 +116,12 @@ export default function LoginScreen() {
     }
     if (password.length < 6) {
       setStatus('Password must be at least 6 characters.');
+      setStatusIsError(true);
+      setLoading(false);
+      return;
+    }
+    if (password !== confirmPassword) {
+      setStatus('Passwords do not match.');
       setStatusIsError(true);
       setLoading(false);
       return;
@@ -419,15 +432,76 @@ export default function LoginScreen() {
 
       {/* ── Password field (signin / signup only) ────────────────────────────── */}
       {inTabMode && (
-        <TextInput
-          placeholder="Password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          placeholderTextColor="#a8a29e"
-          style={[INPUT, { marginBottom: 18 }]}
-        />
+        <View style={{
+          width: '100%',
+          flexDirection: 'row',
+          alignItems: 'center',
+          borderWidth: 1,
+          borderColor: '#e7e5e4',
+          borderRadius: 10,
+          backgroundColor: '#fff',
+          marginBottom: 10,
+          paddingRight: 4,
+        }}>
+          <TextInput
+            placeholder="Password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={!showPassword}
+            placeholderTextColor="#a8a29e"
+            style={{ flex: 1, fontSize: 15, color: '#1c1917', padding: 13 }}
+          />
+          <TouchableOpacity
+            onPress={() => setShowPassword(p => !p)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={{ paddingHorizontal: 8 }}
+          >
+            <Ionicons
+              name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+              size={20}
+              color="#a8a29e"
+            />
+          </TouchableOpacity>
+        </View>
       )}
+
+      {/* ── Confirm password field (signup only) ─────────────────────────────── */}
+      {mode === 'signup' && (
+        <View style={{
+          width: '100%',
+          flexDirection: 'row',
+          alignItems: 'center',
+          borderWidth: 1,
+          borderColor: '#e7e5e4',
+          borderRadius: 10,
+          backgroundColor: '#fff',
+          marginBottom: 18,
+          paddingRight: 4,
+        }}>
+          <TextInput
+            placeholder="Confirm password"
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            secureTextEntry={!showConfirm}
+            placeholderTextColor="#a8a29e"
+            style={{ flex: 1, fontSize: 15, color: '#1c1917', padding: 13 }}
+          />
+          <TouchableOpacity
+            onPress={() => setShowConfirm(p => !p)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={{ paddingHorizontal: 8 }}
+          >
+            <Ionicons
+              name={showConfirm ? 'eye-off-outline' : 'eye-outline'}
+              size={20}
+              color="#a8a29e"
+            />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ── Bottom margin for signin (no confirm field) ───────────────────────── */}
+      {mode === 'signin' && <View style={{ height: 8 }} />}
 
       {/* ── Submit button ─────────────────────────────────────────────────────── */}
       {loading ? (

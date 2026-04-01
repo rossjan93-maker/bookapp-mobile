@@ -316,8 +316,13 @@ export default function SettingsScreen() {
       return;
     }
 
-    // Clear client-side caches so the app cold-starts clean
+    // Clear client-side caches so the app cold-starts clean.
+    // Onboarding stage + walkthrough step are also cleared so that the
+    // routing guard sends the user back to the welcome screen on next login
+    // rather than inferring they are mid-flow from a stale local key.
     const keysToRemove = [
+      ONBOARDING_STAGE_KEY,
+      'readstack_walkthrough_v1',
       'readstack_guided_v1',
       `readstack_rec_v1_${userId}`,
       `readstack_rec_acted_v1_${userId}`,
