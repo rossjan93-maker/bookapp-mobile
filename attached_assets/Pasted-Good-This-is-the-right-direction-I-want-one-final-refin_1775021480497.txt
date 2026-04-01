@@ -1,0 +1,91 @@
+Good. This is the right direction. I want one final refinement pass focused on the actual first-run visual sequence on the Recommendations tab.
+
+What you just changed is useful:
+- the tier unlock logic is fixed
+- question-path routing is fixed
+- mobile web viewport handling is improved
+- first-run state now distinguishes intake cold-start users
+- the bridge card is the right idea
+
+Now tighten the presentation so the first personalized moment feels more deliberate and polished.
+
+Primary objective
+Make the first-run Recommendations experience feel like one cohesive sequence, not separate pieces stacked together.
+
+Current risk
+Right now the experience is likely:
+- header
+- hub skeleton
+- green bridge card
+- “Assembling your picks…”
+- animated silhouettes
+- recommendation cards
+That is better than before, but it may still feel layered rather than orchestrated.
+
+What I want improved
+
+1. Unify the bridge + assembling state
+Audit whether the bridge card and the existing assembling loader feel redundant when shown together.
+If they do, combine them into a more coherent single first-run state for intake-complete cold-start users.
+
+Goal:
+One clear block that says:
+- we saved your preferences
+- we are building your first picks from them
+- here is the active loading state
+This should feel intentional, not like two separate components colliding.
+
+2. Tighten first-run hierarchy
+For an intake-cold-start user landing on Recommendations:
+- the eye should go immediately to the personalized state
+- spacing should feel clean
+- there should be no visual competition from lower-priority sections
+- the first cards should feel like the payoff to the onboarding effort
+
+Review:
+- top spacing
+- section label spacing
+- distance between header, personalized loading state, and first cards
+- whether “Shared Books” appears too early or too prominently on first run
+
+3. Suppress secondary noise for first-run users
+You already softened Shared Books. Good.
+Now check whether any other sections, labels, empty states, or structural chrome are still distracting a brand-new user from the main outcome: first personalized recommendations.
+
+I want first-run users focused on “For You,” not the broader app ecosystem.
+
+4. Improve copy quality
+Review the first-run copy for polish and tone.
+I want it to feel crisp and confident, not generic.
+For intake-complete cold-start users, the language should clearly imply:
+- your input was captured
+- the system is using it
+- this is the start of personalization
+
+Keep it short. Do not make it marketing-heavy.
+
+5. Verify no regressions
+Do not regress:
+- no-signal user state
+- import path
+- returning user behavior
+- mobile web layout stability
+- first-time-only onboarding behavior
+
+What I want back
+1. Exact files changed in this final refinement pass
+2. Whether you kept the bridge card + loader separate or merged them into one state, and why
+3. Final user-type behavior for:
+   - no-signal user
+   - intake-complete cold-start user
+   - history-backed user
+   - returning user
+4. Manual verification notes for:
+   - question path
+   - skip path
+   - import path
+   - returning user
+   - mobile web
+5. Screenshot-level description of what the intake-cold-start user now sees, in order, from landing to first real cards
+
+Keep this pass tight. This is not a systems rewrite. It is a UX refinement of the first-run Recommendations destination.
