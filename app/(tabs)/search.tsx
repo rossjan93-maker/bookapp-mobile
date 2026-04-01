@@ -34,6 +34,7 @@ import { getEntitlement } from '../../lib/recEntitlement';
 import type { RecEntitlement } from '../../lib/recEntitlement';
 import { useGuidedTour } from '../../components/OnboardingWalkthrough';
 import { useWalkthrough, registerWtTarget } from '../../lib/walkthroughEngine';
+import { readOnboardingStage } from '../../lib/onboardingStage';
 import { getRecSession, clearRecSession } from '../../lib/recSession';
 import { registerCacheClearer } from '../../lib/tabCache';
 import { RecommendationsFeed } from '../../components/RecommendationsFeed';
@@ -779,38 +780,60 @@ export default function RecommendationsScreen() {
     return () => clearTimeout(t);
   }, [hubLoading, wtStep, step]);
 
-  // Reload hub whenever screen comes into focus
-  useFocusEffect(useCallback(() => {
-    if (step === 'hub') loadHub();
-  }, [step]));
-
   // ── Recommendations entry check ────────────────────────────────────────────
   // Shows RecEntryScreen for low-signal users who haven't made a rec-entry
   // choice yet and aren't mid-tour.
   //
-  // Post-tour onboarding is now handled by OnboardingImportPrompt in _layout.tsx.
-  // RecEntryScreen here is the secondary/ongoing discovery surface for users
-  // who skipped or arrived without going through the walkthrough.
+  // Safe to call multiple times (entryChecked ref + stage gate handle concurrency):
+  //   • Returns without locking if stage is 'walkthrough' or 'final_setup' so
+  //     the check can re-run after onboarding-import completes.
+  //   • Sets entryChecked=true only once a real show/no-show decision is made.
   //
-  // Waits for walkthrough state to load (wtStep === null means still loading).
+  // Triggered two ways:
+  //   1. useEffect([wtStep]) — fires when walkthrough state settles to 'done'
+  //   2. useFocusEffect     — fires when user navigates to this tab (handles
+  //      the post-onboarding-import arrival where wtStep doesn't change again)
   const entryChecked = useRef(false);
-  useEffect(() => {
-    if (wtStep === null) return;             // still loading — wait
-    if (wtStep === 'home' || wtStep === 'recommend' || wtStep === 'library' || wtStep === 'inbox') return; // tour in progress
-    if (entryChecked.current) return;
-    entryChecked.current = true;
 
-    async function maybeShowEntry() {
-      if (!supabase) return;
-      const seen = await hasSeenRecEntry();
-      if (seen) return;
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const hasSignal = await hasPersonalizationSignal(user.id);
-      if (!hasSignal) setStep('entry');
-    }
+  async function maybeShowEntry() {
+    if (entryChecked.current) return;
+    if (!supabase) return;
+    // Defer (without locking) if still in the active onboarding flow so we
+    // don't show RecEntryScreen before the user has seen onboarding-import.
+    const stage = await readOnboardingStage();
+    if (stage === 'walkthrough' || stage === 'final_setup') return;
+    // Past onboarding — make a real decision and lock.
+    entryChecked.current = true;
+    const seen = await hasSeenRecEntry();
+    if (seen) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const hasSignal = await hasPersonalizationSignal(user.id);
+    if (!hasSignal) setStep('entry');
+  }
+
+  useEffect(() => {
+    if (wtStep === null) return;
+    if (wtStep === 'home' || wtStep === 'recommend' || wtStep === 'library' || wtStep === 'inbox') return;
     maybeShowEntry();
   }, [wtStep]);
+
+  // Reload hub + run entry check whenever screen comes into focus.
+  // The entry check here catches the case where the user arrives at search after
+  // completing onboarding-import — at that point wtStep is already 'done' and
+  // the useEffect([wtStep]) won't re-trigger (deps haven't changed).
+  useFocusEffect(useCallback(() => {
+    if (step === 'hub') loadHub();
+    if (
+      wtStep !== null &&
+      wtStep !== 'home' &&
+      wtStep !== 'recommend' &&
+      wtStep !== 'library' &&
+      wtStep !== 'inbox'
+    ) {
+      maybeShowEntry();
+    }
+  }, [step, wtStep]));
 
   async function handleRefresh() {
     if (step !== 'hub') return;

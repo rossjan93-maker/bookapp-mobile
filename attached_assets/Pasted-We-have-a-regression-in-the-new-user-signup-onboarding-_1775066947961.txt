@@ -1,0 +1,145 @@
+We have a regression in the new-user signup + onboarding flow.
+
+Current issues from a net new login:
+
+1. Signup form needs a second password confirmation field
+2. Password fields should support show/hide toggle
+3. After account creation, onboarding order is wrong again
+4. The user is being sent into the information-gathering / taste setup flow too early
+5. We are surfacing books too early
+6. The user cannot cleanly move away from that section the way we discussed
+
+This is wrong.
+
+==================================================
+CORRECT FIRST-RUN FLOW
+==================================================
+
+The intended sequence is:
+
+1. Sign up
+2. Welcome screen
+3. Guided app walkthrough
+4. Final setup step:
+   - Upload / import library
+   - or add books
+   - or not right now
+5. Normal app usage
+
+What should NOT happen:
+- user should NOT land in taste/intake first
+- user should NOT be asked to evaluate books before orientation
+- user should NOT be trapped in setup with no clean escape
+- books should NOT be surfaced prematurely as part of the wrong onboarding phase
+
+==================================================
+PART 1 — SIGNUP FORM FIX
+==================================================
+
+Add:
+- Password field
+- Confirm password field
+- Show/hide toggle for both password fields (or a shared toggle pattern if clean)
+
+Requirements:
+- confirmation must validate match before submit
+- validation should be clear and inline
+- no clunky duplicate messaging
+- maintain premium, minimal styling
+- this should feel like a polished production signup experience
+
+Before coding, tell me:
+1. what the current signup form structure is
+2. where you will add confirm password
+3. how the show/hide behavior will work
+4. how mismatch validation will be handled
+
+==================================================
+PART 2 — ONBOARDING ORDER REGRESSION
+==================================================
+
+The onboarding order is wrong again.
+
+I need you to diagnose exactly why a net new user is going into the information-gathering flow instead of:
+
+welcome -> walkthrough -> final setup
+
+Check:
+- onboarding stage model
+- route guards
+- post-signup redirect target
+- any logic that auto-enters questions/setup too early
+- any stale local state or fallback logic that can bypass welcome/walkthrough
+
+Before coding, tell me:
+1. the exact current route/state chain for a net new user after signup
+2. the exact reason they are entering the wrong step
+3. the exact logic change needed to restore the intended sequence
+
+==================================================
+PART 3 — FINAL SETUP SHOULD BE LIBRARY-FIRST
+==================================================
+
+After the walkthrough, the final setup step should clearly prioritize:
+
+Primary:
+- Upload / import library
+
+Secondary:
+- Add books manually
+
+Tertiary:
+- Not right now
+
+Quick taste questions can exist, but they should NOT hijack the first-run flow again.
+They are secondary, not the primary onboarding destination.
+
+I want the final setup screen to feel like:
+“Here’s the fastest way to make readstack useful.”
+
+Not:
+“Answer a survey before you know what the app does.”
+
+==================================================
+PART 4 — USER MUST BE ABLE TO MOVE AWAY
+==================================================
+
+The user must not get trapped in setup.
+
+Requirements:
+- user can choose Not right now
+- user can enter the app without being forced through questions
+- if setup is dismissed, do not immediately bounce them back into it
+- keep import/add-books available later as secondary options in the product
+
+Before coding, tell me:
+1. why the user currently cannot move away cleanly
+2. what state/route behavior is causing that trap
+3. how you will fix it
+
+==================================================
+PART 5 — WHAT I WANT BEFORE CODING
+==================================================
+
+Before implementing, give me:
+
+1. diagnosis of the signup form gap
+2. diagnosis of the onboarding order regression
+3. diagnosis of why the user cannot move away from the current section
+4. exact corrected first-run flow
+5. exact files/components/state you will modify
+
+Then implement.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- signup form has confirm password
+- password fields support show/hide
+- new user goes:
+  sign up -> welcome -> walkthrough -> final setup
+- final setup prioritizes upload/import library and add books
+- user is not forced into taste questions first
+- user can choose not right now and continue
+- no trapping / no regression back into the wrong onboarding phase

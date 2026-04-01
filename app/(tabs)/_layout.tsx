@@ -112,8 +112,19 @@ export default function TabsLayout() {
         const sub = await readWtStep();
         const step = sub ?? 'home';
         console.log('[STAGE] walkthrough — wtStep:', step);
+
+        // Recovery: walkthrough wrote wtStep='done' but stage='final_setup'
+        // never persisted (e.g. app closed between the two writes). Recover by
+        // writing final_setup and navigating to onboarding-import.
+        if (step === 'done') {
+          console.log('[STAGE] walkthrough+done — recovery: writing final_setup → /onboarding-import');
+          await writeOnboardingStage('final_setup');
+          routerRef.current.replace('/onboarding-import' as any);
+          return;
+        }
+
         setWtStep(step);
-        if (step !== 'home' && step !== 'done') {
+        if (step !== 'home') {
           const def = WT_DEFS[step as keyof typeof WT_DEFS];
           if (def?.tab) {
             setTimeout(() => {
@@ -124,8 +135,11 @@ export default function TabsLayout() {
         return;
       }
 
-      // null or 'done' — no walkthrough overlay, normal app
+      // null or 'done' — no walkthrough overlay, normal app.
+      // Signal 'done' to consumers (e.g. search.tsx entry check) so they know
+      // loading is complete and can proceed with their own checks.
       console.log('[STAGE] no onboarding action', { stage });
+      setWtStep('done');
     });
   }, []);
 
@@ -137,16 +151,17 @@ export default function TabsLayout() {
   }
 
   // Walkthrough advance: move to next step + navigate to its tab.
-  // On completion ('done'), write stage='final_setup' and navigate to the
-  // dedicated import/setup route.  No pre-loaded state refs needed.
+  // On completion ('done'), write stage='final_setup' BEFORE updating wtStep so
+  // search.tsx's entry-check effect never sees wtStep='done' while stage is still
+  // 'walkthrough' (which would trigger RecEntryScreen prematurely).
   function advanceWt() {
     if (!wtStep || wtStep === 'done') return;
     wtEvt_stepCompleted(wtStep);
     const next = nextWtStep(wtStep);
     console.log('[WT_ADVANCE] step', wtStep, '→', next);
-    setWtStep(next);
-    writeWtStep(next);
     if (next !== 'done') {
+      setWtStep(next);
+      writeWtStep(next);
       const def = WT_DEFS[next as keyof typeof WT_DEFS];
       if (def?.tab) {
         routerRef.current.navigate({ pathname: def.tab as any });
@@ -155,6 +170,10 @@ export default function TabsLayout() {
       wtEvt_finished();
       console.log('[STAGE] walkthrough_complete — writing final_setup → /onboarding-import');
       writeOnboardingStage('final_setup').then(() => {
+        // Update state + storage only after stage is persisted, then navigate.
+        // This ensures consumers never observe wtStep='done' while stage='walkthrough'.
+        setWtStep('done');
+        writeWtStep('done');
         routerRef.current.replace('/onboarding-import' as any);
       });
     }
