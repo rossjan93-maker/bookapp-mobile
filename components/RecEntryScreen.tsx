@@ -130,31 +130,37 @@ function getGenres(split: IntakeState['fictionSplit']): Genre[] {
 
 // ─── Taste questions (3 — minimum meaningful signal) ─────────────────────────
 
+type TasteOption = { key: string; headline: string; sub?: string; icon: React.ComponentProps<typeof Ionicons>['name'] };
+
 type TasteQ = {
   id:      string;
   prompt:  string;
-  optionA: { key: string; headline: string; icon: React.ComponentProps<typeof Ionicons>['name'] };
-  optionB: { key: string; headline: string; icon: React.ComponentProps<typeof Ionicons>['name'] };
+  optionA: TasteOption;
+  optionB: TasteOption;
+  optionC: TasteOption;
 };
 
 const TASTE_QS: TasteQ[] = [
   {
     id:     'q_what_grips',
-    prompt: 'What usually grips you?',
-    optionA: { key: 'emotion_driven',  headline: 'Emotion & character', icon: 'heart-outline' },
-    optionB: { key: 'idea_driven',     headline: 'Ideas & perspective', icon: 'bulb-outline' },
+    prompt: 'What tends to grip you?',
+    optionA: { key: 'emotion_driven',  headline: 'Feeling & character',    sub: 'Emotional pull, relationships, inner lives', icon: 'heart-outline' },
+    optionB: { key: 'idea_driven',     headline: 'Ideas & perspective',    sub: 'Concepts, arguments, worldview shifts',      icon: 'bulb-outline' },
+    optionC: { key: 'grip_both',       headline: 'Both, honestly',         sub: 'Depends on the book and the mood',           icon: 'shuffle-outline' },
   },
   {
     id:     'q_pacing',
-    prompt: 'Pacing — how important?',
-    optionA: { key: 'pacing_non_negotiable', headline: 'Has to move fast',  icon: 'flash-outline' },
-    optionB: { key: 'ideas_over_pacing',     headline: 'Depth over speed',  icon: 'telescope-outline' },
+    prompt: 'How much does pacing matter?',
+    optionA: { key: 'pacing_non_negotiable', headline: 'It has to move',        sub: 'If I'm bored I'll put it down',         icon: 'flash-outline' },
+    optionB: { key: 'ideas_over_pacing',     headline: 'I'll go slow',          sub: 'If the substance is there, I'm patient', icon: 'telescope-outline' },
+    optionC: { key: 'pacing_flexible',       headline: 'Depends what I need',   sub: 'Mood-driven — I read both',             icon: 'options-outline' },
   },
   {
     id:     'q_style',
-    prompt: 'Literary or accessible?',
-    optionA: { key: 'literary_leaning',   headline: 'Literary & ambitious',    icon: 'library-outline' },
-    optionB: { key: 'commercial_leaning', headline: 'Readable & page-turning', icon: 'people-outline' },
+    prompt: 'Where do you lean?',
+    optionA: { key: 'literary_leaning',   headline: 'Toward prose & craft',       sub: 'Writing quality matters a lot to me', icon: 'library-outline' },
+    optionB: { key: 'commercial_leaning', headline: 'Toward pure readability',    sub: 'I want momentum, not difficulty',     icon: 'people-outline' },
+    optionC: { key: 'style_flexible',     headline: 'Comfortable with both',      sub: 'Great writing in any register works', icon: 'layers-outline' },
   },
 ];
 
@@ -574,29 +580,37 @@ function IntakeTaste({
           {q.prompt}
         </Text>
 
-        {[q.optionA, q.optionB].map(opt => (
-          <TouchableOpacity
-            key={opt.key}
-            onPress={() => handlePick(opt.key)}
-            activeOpacity={0.75}
-            style={{
-              backgroundColor: '#fff',
-              borderRadius:    14,
-              borderWidth:     1.5,
-              borderColor:     BORD,
-              padding:         16,
-              marginBottom:    10,
-              flexDirection:   'row',
-              alignItems:      'center',
-              gap:             12,
-            }}
-          >
-            <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#f5f5f4', alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name={opt.icon} size={18} color={INK} />
-            </View>
-            <Text style={{ fontSize: 15, fontWeight: '600', color: INK, flex: 1 }}>{opt.headline}</Text>
-          </TouchableOpacity>
-        ))}
+        {[q.optionA, q.optionB, q.optionC].map((opt, i) => {
+          const isBoth = i === 2;
+          return (
+            <TouchableOpacity
+              key={opt.key}
+              onPress={() => handlePick(opt.key)}
+              activeOpacity={0.75}
+              style={{
+                backgroundColor: isBoth ? '#faf9f7' : '#fff',
+                borderRadius:    14,
+                borderWidth:     1.5,
+                borderColor:     isBoth ? '#e7e5e4' : BORD,
+                padding:         14,
+                marginBottom:    10,
+                flexDirection:   'row',
+                alignItems:      'center',
+                gap:             12,
+              }}
+            >
+              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: isBoth ? '#f5f5f4' : '#f5f5f4', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name={opt.icon} size={17} color={isBoth ? '#a8a29e' : INK} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: isBoth ? '#78716c' : INK }}>{opt.headline}</Text>
+                {opt.sub != null && (
+                  <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 2, lineHeight: 16 }}>{opt.sub}</Text>
+                )}
+              </View>
+            </TouchableOpacity>
+          );
+        })}
       </Animated.View>
 
       <View style={{ alignItems: 'center', marginTop: 8, gap: 10 }}>

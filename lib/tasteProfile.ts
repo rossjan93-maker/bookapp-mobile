@@ -171,6 +171,10 @@ const ANSWER_BOOSTS: Record<string, (p: Record<string, number>, a: Record<string
   // Literary vs accessible/commercial
   literary_leaning:      (p)    => { p.Writing   = Math.min(1, (p.Writing   ?? 0) + 0.20); p.Originality = Math.min(1, (p.Originality ?? 0) + 0.15); },
   commercial_leaning:    (p)    => { p.Pacing    = Math.min(1, (p.Pacing    ?? 0) + 0.15); p.Characters = Math.min(1, (p.Characters ?? 0) + 0.08); },
+  // ── "Both / depends" answers — small balanced nudges; let book data dominate ──
+  grip_both:             (p)    => { p.Emotional = Math.min(1, (p.Emotional ?? 0) + 0.10); p.Insight  = Math.min(1, (p.Insight  ?? 0) + 0.10); },
+  pacing_flexible:       (_p)   => { /* neutral — no directional prior */ },
+  style_flexible:        (p)    => { p.Writing   = Math.min(1, (p.Writing   ?? 0) + 0.08); p.Pacing   = Math.min(1, (p.Pacing   ?? 0) + 0.08); },
 };
 
 export function applyDiagnosisBoosts(

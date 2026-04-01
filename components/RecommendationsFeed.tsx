@@ -9,7 +9,7 @@ import {
   UIManager,
   View,
 } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { getPersonalizedRecsWithExpert } from '../lib/recommender';
@@ -325,6 +325,7 @@ export function RecommendationsFeed({
   onGuidedAdvance: _onGuidedAdvance,
   wtRef,
 }: RecommendationsFeedProps) {
+  const router = useRouter();
 
   // ── Queue-synced React state ───────────────────────────────────────────────
   // The authoritative queue lives in lib/recQueue (module-level).
@@ -829,15 +830,58 @@ export function RecommendationsFeed({
         <View
           ref={wtRef}
           style={{
-          backgroundColor: '#fff', borderRadius: 14, padding: 20, alignItems: 'center',
-          shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 1 }, elevation: 1,
-        }}>
-          <Text style={{ fontSize: 22, marginBottom: 12 }}>✦</Text>
-          <Text style={{ fontSize: 15, fontWeight: '600', color: '#1c1917', marginBottom: 6 }}>
-            Rate a few books to unlock picks
+            backgroundColor: '#fff', borderRadius: 14, padding: 20,
+            shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 1 }, elevation: 1,
+          }}
+        >
+          <Text style={{ fontSize: 15, fontWeight: '700', color: '#1c1917', marginBottom: 4 }}>
+            Build your reading profile
           </Text>
-          <Text style={{ fontSize: 13, color: '#a8a29e', textAlign: 'center', lineHeight: 20 }}>
-            We need a bit more signal before we can personalise your recommendations.
+          <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 19, marginBottom: 20 }}>
+            We need a bit more to go on before we can make confident picks for you. Any of these helps.
+          </Text>
+
+          {/* CTA 1 — Import library */}
+          <TouchableOpacity
+            onPress={() => router.push('/import/goodreads' as any)}
+            activeOpacity={0.8}
+            style={{
+              backgroundColor: '#1c1917', borderRadius: 10, paddingVertical: 13,
+              paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10,
+            }}
+          >
+            <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 14 }}>📚</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#fff' }}>Import your reading history</Text>
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 1 }}>Goodreads or StoryGraph CSV</Text>
+            </View>
+            <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>›</Text>
+          </TouchableOpacity>
+
+          {/* CTA 2 — Add books manually */}
+          <TouchableOpacity
+            onPress={() => router.push('/add-book' as any)}
+            activeOpacity={0.8}
+            style={{
+              borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16,
+              flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10,
+              borderWidth: 1.5, borderColor: '#e7e5e4', backgroundColor: '#faf9f7',
+            }}
+          >
+            <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: '#f5f5f4', alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 14 }}>＋</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>Add books you've read</Text>
+              <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 1 }}>Search and rate a few favourites</Text>
+            </View>
+            <Text style={{ fontSize: 13, color: '#d6d3d1' }}>›</Text>
+          </TouchableOpacity>
+
+          <Text style={{ fontSize: 11, color: '#c4b5a5', textAlign: 'center', marginTop: 6, lineHeight: 16 }}>
+            Five rated books is enough to unlock your first picks
           </Text>
         </View>
       </View>
