@@ -1,0 +1,92 @@
+Good. The core logic fix appears correct, but I do not want to stop at static proof. I want one final product-quality pass focused on the actual first-run experience the user will feel.
+
+What I need now
+Treat the underlying bug as fixed unless runtime disproves it. The next step is to tighten the first-run recommendations experience so it feels intentional, credible, and alive after onboarding.
+
+Current state from your verification
+- intake-based tier unlock logic is now bounded correctly
+- routing after onboarding questions goes to the Recommendations tab
+- viewport handling for mobile web walkthrough has been improved
+- TDZ/runtime ordering bug is fixed
+
+That is necessary, but not sufficient. I now want you to improve the user-facing experience of what happens immediately after question-based onboarding.
+
+Primary goal
+When a brand-new user completes the question flow, the Recommendations tab should not merely “work.” It should feel like the system understood them and is actively producing something valuable.
+
+Focus areas
+
+1. First-run recommendations arrival state
+Audit the exact state the user sees when they land on the Recommendations tab immediately after onboarding questions.
+I want you to improve:
+- loading copy
+- skeleton / placeholder presentation
+- any dead-feeling empty space
+- the transition from onboarding completion -> recommendation generation -> first visible cards
+
+The current state likely still risks feeling vague or thin even if the logic works.
+
+Desired outcome:
+A new user should see a clear bridge such as:
+- “Got it. Building your first picks.”
+- then a strong loading/assembling state
+- then actual cards, with no ambiguity about what is happening
+
+2. Empty/fallback handling
+If recommendations are delayed or cannot yet hydrate, I do not want a weak or confusing fallback.
+Build a deliberate fallback state for intake-complete users that:
+- acknowledges their preferences were saved
+- explains that picks are being assembled
+- gives a clear next action if needed
+- does not show “Rate a few books to unlock picks” to someone who already completed intake
+
+This needs to distinguish:
+- no-signal user
+- intake-complete cold-start user
+- history-backed user
+
+3. First impression quality of the Recommendations tab
+Review the first screen a new user lands on after onboarding.
+Tighten:
+- hierarchy
+- spacing
+- section titles
+- clarity of what the user is looking at
+- whether the first visible content feels alive vs placeholder-heavy
+
+I want a more credible “first personalized result” moment.
+
+4. Mobile browser UX sanity check
+Now that viewport math is fixed, do a quality pass on whether the onboarding -> recommendations handoff feels good on mobile web specifically.
+Check for:
+- awkward spacing
+- clipped copy
+- weak CTA placement
+- loading states that feel too subtle
+- transitions that feel abrupt
+
+5. No regressions
+Do not regress:
+- onboarding order
+- import path
+- skip path
+- returning user behavior
+- first-time-only gating for the import/setup step
+
+What I want back
+1. Exact files changed in this product-quality pass
+2. What first-run states were improved
+3. How you now distinguish:
+   - no-signal user
+   - intake-complete cold-start user
+   - real-history user
+4. Manual verification notes for:
+   - question path
+   - skip path
+   - import path
+   - returning user
+   - mobile web
+5. Runtime proof if available
+
+Important
+Do not reopen the architecture unnecessarily. Keep this pass focused on experience quality and state clarity at the Recommendations destination after onboarding.

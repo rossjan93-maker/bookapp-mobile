@@ -724,6 +724,10 @@ export default function RecommendationsScreen() {
   // hubLoading is true only on a cold start with no rec session cache.
   // On return visits, hub sections render immediately from _hubCache.
   const [hubLoading, setHubLoading]           = useState<boolean>(() => !getRecSession());
+  // wasFirstRun: locked at mount — true iff there was no rec session yet.
+  // Combined with strongSignalCount===0 after Phase 1 resolves, this identifies
+  // an intake-complete user seeing the Recommendations tab for the first time.
+  const [wasFirstRun]                         = useState<boolean>(() => !getRecSession());
   const [feedbackCtx, setFeedbackCtx]         = useState<FeedbackContext>(emptyContext());
   const [entitlement, setEntitlement]         = useState<RecEntitlement | null>(null);
   const [booksToRate, setBooksToRate]         = useState<BookToRate[]>(() => _hubCache?.booksToRate ?? []);
@@ -1358,6 +1362,19 @@ export default function RecommendationsScreen() {
     const hasTagTasks     = booksToTag.length > 0;
     const hasAnalyseTask  = (tasteProfile?.evidence.imported_books_count ?? 0) > 0 && (tasteProfile?.tier ?? 0) < 3;
     const hasAnyTask      = hasRateTasks || hasTagTasks || hasAnalyseTask;
+
+    // ── User-type detection ──────────────────────────────────────────────────
+    // isIntakeColdStart: a brand-new user who answered intake questions but has
+    // no real reading history yet (strongSignalCount === 0).  The pipeline will
+    // fire (tier >= 1 from the intake boost) so the Feed shows DeckAssemblingLoader.
+    // We show an additional acknowledgment card so the user knows we used their
+    // stated preferences, not a generic default.
+    // wasFirstRun is locked at mount (no rec session → first visit to this tab),
+    // so this stays false for all subsequent tab visits even in the same session.
+    const isIntakeColdStart =
+      wasFirstRun &&
+      (tasteProfile?.tier ?? 0) >= 1 &&
+      (tasteProfile?.strongSignalCount ?? 0) === 0;
     return (
       <View style={{ flex: 1 }}>
       <ScrollView
@@ -1403,10 +1420,6 @@ export default function RecommendationsScreen() {
             <SkeletonCard />
             <SkeletonCard />
             <SkeletonCard />
-            <View style={{ height: 28 }} />
-            <SectionLabel>Incoming</SectionLabel>
-            <SkeletonCard />
-            <SkeletonCard />
           </View>
         ) : (
           <>
@@ -1416,16 +1429,43 @@ export default function RecommendationsScreen() {
             {wtStep === 'recommend' ? (
               <WtDemoRecommend />
             ) : (
-              <RecommendationsFeed
-                userId={currentUserId}
-                supabase={supabase}
-                tasteProfile={tasteProfile}
-                entitlement={entitlement}
-                feedbackCtx={feedbackCtx}
-                setFeedbackCtx={setFeedbackCtx}
-                guidedStep={guidedStep}
-                onGuidedAdvance={advanceGuided}
-              />
+              <>
+                {/* ── First-run acknowledgment ─────────────────────────────────
+                    Shown only on a user's first visit to this tab after answering
+                    intake questions (tier >= 1, strongSignalCount === 0, no prior
+                    rec session).  Pairs with the DeckAssemblingLoader inside the
+                    Feed to give the user two signals: "we got your preferences"
+                    and "picks are being built right now."
+                    On any return visit, wasFirstRun is false → card never shows. */}
+                {isIntakeColdStart && (
+                  <View style={{
+                    backgroundColor: '#f0fdf4',
+                    borderRadius:    10,
+                    paddingHorizontal: 14,
+                    paddingVertical:   12,
+                    marginBottom:    16,
+                    borderWidth:     1,
+                    borderColor:     '#bbf7d0',
+                  }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#15803d', marginBottom: 3 }}>
+                      Preferences saved
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#166534', lineHeight: 18 }}>
+                      Assembling your first picks from your genre preferences.
+                    </Text>
+                  </View>
+                )}
+                <RecommendationsFeed
+                  userId={currentUserId}
+                  supabase={supabase}
+                  tasteProfile={tasteProfile}
+                  entitlement={entitlement}
+                  feedbackCtx={feedbackCtx}
+                  setFeedbackCtx={setFeedbackCtx}
+                  guidedStep={guidedStep}
+                  onGuidedAdvance={advanceGuided}
+                />
+              </>
             )}
             {/* ════════════════════════════════════════════════════════
                 Section 2 — Refine Your Taste (promoted above Social)
@@ -1513,34 +1553,46 @@ export default function RecommendationsScreen() {
             <View style={{ marginBottom: 36 }}>
               <SectionLabel>Shared Books</SectionLabel>
 
-              {/* ── Both empty: unified card with prompt + CTA ── */}
+              {/* ── Both empty ────────────────────────────────────────────────
+                  Two variants:
+                  • isIntakeColdStart (brand-new, just answered questions):
+                    Soft one-liner only — keep the screen focused on "For You."
+                    A social CTA here is premature noise.
+                  • Established or returning user:
+                    Full card with prominent "Recommend a book" CTA. */}
               {incomingRecs.length === 0 && sentRecs.length === 0 && (
-                <View style={{
-                  backgroundColor: '#fff',
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: '#e7e5e4',
-                  overflow: 'hidden',
-                }}>
-                  <View style={{ padding: 14 }}>
-                    <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 19, marginBottom: 12 }}>
-                      Share a book with a friend to get started.
-                    </Text>
-                    <TouchableOpacity
-                      onPress={() => setStep('search')}
-                      style={{
-                        backgroundColor: '#1c1917',
-                        borderRadius: 10,
-                        paddingVertical: 11,
-                        alignItems: 'center',
-                      }}
-                    >
-                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#fff' }}>
-                        Recommend a book
+                isIntakeColdStart ? (
+                  <Text style={{ fontSize: 13, color: '#a8a29e', lineHeight: 19 }}>
+                    Books shared with friends will appear here.
+                  </Text>
+                ) : (
+                  <View style={{
+                    backgroundColor: '#fff',
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: '#e7e5e4',
+                    overflow: 'hidden',
+                  }}>
+                    <View style={{ padding: 14 }}>
+                      <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 19, marginBottom: 12 }}>
+                        Share a book with a friend to get started.
                       </Text>
-                    </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => setStep('search')}
+                        style={{
+                          backgroundColor: '#1c1917',
+                          borderRadius: 10,
+                          paddingVertical: 11,
+                          alignItems: 'center',
+                        }}
+                      >
+                        <Text style={{ fontSize: 14, fontWeight: '600', color: '#fff' }}>
+                          Recommend a book
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                </View>
+                )
               )}
 
               {/* ── From friends ── */}
