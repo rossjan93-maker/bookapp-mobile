@@ -40,13 +40,16 @@ async function ensureProfile(
 }
 
 async function checkOnboardingCompleted(userId: string): Promise<boolean> {
-  if (!supabase) return true;
+  if (!supabase) return false;
   const { data, error } = await supabase
     .from('profiles')
     .select('onboarding_completed')
     .eq('id', userId)
     .maybeSingle();
-  if (error) return true;
+  // On any DB error, assume not completed — never skip onboarding on a failure.
+  if (error) return false;
+  // maybeSingle returns data=null when no row exists (new user).
+  // null?.onboarding_completed === true → false → correctly sends to onboarding.
   return data?.onboarding_completed === true;
 }
 
@@ -95,7 +98,9 @@ export default function RootLayout() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       setSession(newSession);
-      if (event === 'SIGNED_IN' && newSession) {
+      // Handle both SIGNED_IN and USER_UPDATED (email confirmation can fire either
+      // depending on Supabase version / PKCE configuration).
+      if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && newSession) {
         const meta = newSession.user.user_metadata;
         await ensureProfile(
           newSession.user.id,

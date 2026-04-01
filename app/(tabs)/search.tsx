@@ -801,7 +801,9 @@ export default function RecommendationsScreen() {
     // Defer (without locking) if still in the active onboarding flow so we
     // don't show RecEntryScreen before the user has seen onboarding-import.
     const stage = await readOnboardingStage();
-    if (stage === 'walkthrough' || stage === 'final_setup') return;
+    // null  → pre-welcome-screen (root guard will route to /onboarding)
+    // walkthrough / final_setup → mid-onboarding overlay or import step
+    if (stage === null || stage === 'walkthrough' || stage === 'final_setup') return;
     // Past onboarding — make a real decision and lock.
     entryChecked.current = true;
     const seen = await hasSeenRecEntry();

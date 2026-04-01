@@ -174,29 +174,20 @@ export default function OnboardingScreen() {
       writeWtStep('home'),
     ]);
 
-    // ③ Write onboarding_completed=true to DB before navigating.
-    //    Use getSession() (cached, no network round-trip) rather than getUser().
-    //    Awaiting here ensures the value is durable — future logins will read true
-    //    and skip the welcome screen even if the local stage key is later cleared.
-    if (supabase) {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          await supabase
-            .from('profiles')
-            .update({ onboarding_completed: true })
-            .eq('id', session.user.id);
-        }
-      } catch {
-        // Fail silently — the local stage key + _layout.tsx fallback guard
-        // will prevent the welcome screen from reappearing even if this fails.
-      }
-    }
-
-    // ④ Navigate only after all writes are confirmed
+    // ③ Navigate only after stage writes are confirmed.
+    //
+    // NOTE: We intentionally do NOT write onboarding_completed=true here.
+    // That flag is the signal the root layout uses to detect whether the FULL
+    // onboarding sequence (walkthrough + import/setup step) is done. Writing it
+    // here — at the welcome screen — would cause the DB to report "complete"
+    // before the user has reached onboarding-import.tsx. On a new device or
+    // fresh browser session (e.g. after clicking the confirmation email link on a
+    // different phone), checkOnboardingCompleted would return true and skip the
+    // entire sequence. The flag is written by onboarding-import.tsx in all three
+    // resolution paths (import / intake / not now).
     router.replace('/');
 
-    // ⑤ Background writes (non-blocking)
+    // ④ Background writes (non-blocking)
     Promise.allSettled([writeGuidedStep(0)]);
   }
 

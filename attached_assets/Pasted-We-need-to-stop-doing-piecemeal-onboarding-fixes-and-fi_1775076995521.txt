@@ -1,0 +1,161 @@
+We need to stop doing piecemeal onboarding fixes and finish the verified-new-user flow properly.
+
+I reviewed the latest run from a brand-new account coming from the Supabase email confirmation link.
+The flow is still wrong and still feels unfinished.
+
+==================================================
+WHAT IS WRONG IN THE CURRENT RUN
+==================================================
+
+From the recorded flow, these problems are visible:
+
+1. Confirm-email path still bypasses the intended first-run sequence
+A net new verified user is entering the app shell and walkthrough directly instead of the intended flow:
+sign up -> welcome -> walkthrough -> final setup -> app
+
+2. Final setup hierarchy is still wrong
+The import/setup screen exists, but “Answer a few questions” is still able to pull the user into a side flow too easily.
+That is not the priority.
+Import/upload and add-books should remain the dominant closing action of onboarding.
+
+3. The question screens are badly organized on mobile
+The layout is top-heavy and messy:
+- huge dead space in the lower half
+- weak grouping of content
+- progress/header area feels cramped
+- skip links look faint / half-disabled
+- CTA placement feels detached from the content
+- overall information hierarchy is weak
+
+4. The questions flow still feels too early and too heavy
+Even if it is no longer binary, it still feels like the app is pulling the user back into reader-profiling instead of finishing onboarding cleanly.
+
+5. Post-questions handoff looks broken
+After the user goes through the questions flow, Recommendations appears to sit in a skeleton-only / dead loading state.
+Then other tabs also look skeletal or spinner-like.
+The app does not feel like it has entered a usable, complete state.
+
+6. There is no explicit “onboarding is complete” moment
+The user is pushed from one flow into another and then dropped into ambiguous loaders.
+This feels unfinished and erodes trust.
+
+==================================================
+AUTHORITATIVE FIRST-RUN FLOW
+==================================================
+
+For a brand-new verified user, the only acceptable flow is:
+
+1. Sign up
+2. Welcome
+3. Guided walkthrough
+4. Final setup
+   - Import/upload library (primary)
+   - Add books manually (secondary)
+   - Not right now (tertiary)
+5. Enter usable app state
+
+Optional lightweight questions may exist, but they must NOT hijack the primary final-setup path.
+They are secondary support, not the main closing action.
+
+==================================================
+WHAT I NEED YOU TO FIX
+==================================================
+
+PART 1 — Confirm-email first-run path
+Make the email-confirmation entry path obey the exact same first-run routing model as every other new-user path.
+
+A verified brand-new user must not land directly in the app shell without the intended sequence.
+
+Before coding, trace:
+- auth confirm redirect path
+- profile/bootstrap readiness
+- onboarding state read
+- route chosen
+- why the current path bypasses the intended first-run sequence
+
+PART 2 — Final setup hierarchy
+Final setup must clearly prioritize:
+1. Import/upload library
+2. Add books manually
+3. Not right now
+
+Quick questions may exist only as a lower-priority supporting action.
+Do not let them visually or behaviorally dominate this step again.
+
+PART 3 — Question-flow mobile layout cleanup
+Redesign the question screens so they are actually well-composed on mobile.
+
+Requirements:
+- reduce dead vertical space
+- improve grouping and spacing
+- strengthen hierarchy between title, options, skip, and CTA
+- make the progress/header feel intentional, not cramped
+- make skip links readable and clearly secondary, not ghosted-looking
+- keep the screens calm and premium
+- do not let content float awkwardly in the top third of the screen
+
+I want these screens to feel editorial and controlled, not sparse and unfinished.
+
+PART 4 — Post-questions completion handoff
+After the user completes or skips the questions flow, the app must enter a clearly usable state.
+
+It must NOT land in:
+- endless skeletons
+- dead recommendations area
+- ambiguous loading surfaces across tabs
+
+If there is not enough signal to show recs, then show an intentional low-signal setup state.
+Do not leave the user staring at placeholders.
+
+PART 5 — Explicit onboarding completion moment
+The user needs a clean transition from onboarding into product use.
+
+I want an explicit completion handoff:
+- final setup resolved
+- app enters usable mode
+- Recommendations / Library / Home all show intentional states
+- no ambiguous “maybe still loading” experience
+
+==================================================
+BEFORE CODING, GIVE ME THIS
+==================================================
+
+1. Exact route/state chain for the verified-new-user email-confirmation path
+2. Exact reason the current run bypasses the intended first-run flow
+3. Exact reason the questions screens look poorly organized on mobile
+4. Exact reason the post-questions handoff lands in skeleton/dead states
+5. Exact files/components/state you will modify
+
+Then implement.
+
+==================================================
+RUNTIME PROOF REQUIRED
+==================================================
+
+After implementing, provide proof for this exact path:
+
+brand-new signup
+-> click Supabase confirm link
+-> welcome
+-> walkthrough
+-> final setup
+-> app usable state
+
+And also show:
+- final setup dismiss path
+- final setup import path
+- final setup question path
+- post-questions Recommendations behavior
+- no dead skeleton-only landing state
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- brand-new verified user follows the correct first-run sequence
+- import/upload and add-books remain the primary final-setup actions
+- question screens are visually organized and premium on mobile
+- questions do not dominate onboarding
+- post-questions handoff is usable and intentional
+- no dead skeleton-only landing state
+- onboarding ends with a clear, confident entry into the app
