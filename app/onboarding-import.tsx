@@ -28,6 +28,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { readOnboardingStage, writeOnboardingStage } from '../lib/onboardingStage';
+import { useOnboardingBridge } from './_layout';
 import { supabase } from '../lib/supabase';
 
 const BG  = '#faf9f7';
@@ -58,6 +59,7 @@ async function markOnboardingComplete(): Promise<void> {
 
 export default function OnboardingImportPage() {
   const router  = useRouter();
+  const { completeOnboarding } = useOnboardingBridge();
   const [ready, setReady] = useState(false);
 
   // Guard: only render content if the onboarding stage is 'final_setup'.
@@ -83,22 +85,32 @@ export default function OnboardingImportPage() {
 
   async function handleImport() {
     console.log('[IMPORT_ROUTE] action: import_tapped');
+    // completeOnboarding() tells the root layout guard immediately so it does
+    // not re-intercept when segments change away from onboarding-import.
+    completeOnboarding();
     await Promise.all([writeOnboardingStage('done'), markOnboardingComplete()]);
-    console.log('[IMPORT_ROUTE] action: stage=done + onboarding_completed written — pushing /import/goodreads');
+    console.log('[IMPORT_ROUTE] import: stage=done + onboarding_completed written — pushing /import/goodreads');
     router.push('/import/goodreads' as any);
   }
 
   async function handleIntake() {
     console.log('[IMPORT_ROUTE] action: intake_tapped');
-    await Promise.all([writeOnboardingStage('done'), markOnboardingComplete()]);
-    console.log('[IMPORT_ROUTE] action: stage=done + onboarding_completed written — navigating to /(tabs)/search');
-    router.navigate('/(tabs)/search' as any);
+    // Disarm the routing guard before navigating.
+    completeOnboarding();
+    // Write stage='done' so onboarding-import doesn't re-appear if the user
+    // backs out mid-questions. Do NOT write markOnboardingComplete() here —
+    // that is deferred to onboarding-questions when the flow actually finishes.
+    await writeOnboardingStage('done');
+    console.log('[IMPORT_ROUTE] intake: stage=done written — replacing with /onboarding-questions');
+    router.replace('/onboarding-questions' as any);
   }
 
   async function handleDismiss() {
     console.log('[IMPORT_ROUTE] action: not_right_now_tapped');
+    // Disarm the routing guard before navigating.
+    completeOnboarding();
     await Promise.all([writeOnboardingStage('done'), markOnboardingComplete()]);
-    console.log('[IMPORT_ROUTE] action: stage=done + onboarding_completed written — replacing with /(tabs)');
+    console.log('[IMPORT_ROUTE] dismiss: stage=done + onboarding_completed written — replacing with /(tabs)');
     router.replace('/(tabs)' as any);
   }
 

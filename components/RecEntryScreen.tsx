@@ -745,9 +745,15 @@ function SavingOverlay() {
 
 type Phase = 'options' | 'intake_genres' | 'intake_taste' | 'intake_anchor' | 'saving';
 
-export function RecEntryScreen({ onDone }: { onDone: () => void }) {
+export function RecEntryScreen({
+  onDone,
+  initialPhase,
+}: {
+  onDone: () => void;
+  initialPhase?: Phase;
+}) {
   const router = useRouter();
-  const [phase, setPhase] = useState<Phase>('options');
+  const [phase, setPhase] = useState<Phase>(initialPhase ?? 'options');
   const [intake, setIntake] = useState<IntakeState>({
     fictionSplit: 'both',
     likedGenres:  [],

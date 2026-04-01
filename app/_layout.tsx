@@ -122,7 +122,7 @@ export default function RootLayout() {
     // Treat /onboarding-import as part of the onboarding flow so the guard
     // never evicts the user mid-step (e.g. on token refresh or if the DB
     // check returns false again after completeOnboarding() was called).
-    const inOnboarding  = segments[0] === 'onboarding' || segments[0] === 'onboarding-import';
+    const inOnboarding  = segments[0] === 'onboarding' || segments[0] === 'onboarding-import' || segments[0] === 'onboarding-questions';
 
     console.log('[ROOT_GUARD] check', {
       segments: segments[0],

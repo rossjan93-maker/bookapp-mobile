@@ -1,0 +1,90 @@
+This latest fix may address the missing welcome screen for new accounts, but there is still an unresolved bug:
+
+On the final onboarding import/setup page, clicking “Answer a few questions” does nothing.
+
+I want a narrow debugging pass now.
+
+==================================================
+WHAT I NEED YOU TO VERIFY FIRST
+==================================================
+
+1. Confirm whether the welcome-screen issue is actually fixed for a truly new account
+   - new account should see:
+     welcome -> walkthrough -> final setup
+   - not skip straight to walkthrough sections
+
+2. Debug the “Answer a few questions” action on the final setup page
+   - right now it appears to do nothing
+   - I need the exact reason why
+
+==================================================
+DEBUG THE QUICK QUESTIONS PATH
+==================================================
+
+Trace the full click path for “Answer a few questions”:
+
+- button press handler
+- state change
+- route change if any
+- render condition for the quick-questions flow
+- whether another branch immediately overrides it
+- whether the button is writing completion state too early and exiting the flow
+
+I want you to tell me exactly where the chain is breaking.
+
+==================================================
+LIKELY FAILURE POINTS TO CHECK
+==================================================
+
+Check these explicitly:
+1. Is the button press handler firing at all?
+2. Does it set some local state that is immediately reset?
+3. Is it writing onboarding_completed = true too early, causing the app to skip away before the questions render?
+4. Is the final-setup route redirecting away after the button press?
+5. Is the quick-questions UI path mounted but hidden by another render branch?
+6. Is there a route/path mismatch for the questions flow?
+
+==================================================
+REQUIREMENTS
+==================================================
+
+I want this behavior:
+
+- New account:
+  welcome -> walkthrough -> final setup page
+
+- On final setup page:
+  - Import = primary
+  - Answer a few questions = works and opens the lightweight questions flow
+  - Not right now = dismisses final setup
+
+Important:
+“Answer a few questions” should not be a dead button.
+It must lead to a real, usable lightweight intake flow.
+
+Also:
+Do NOT mark onboarding as fully resolved the instant the user taps “Answer a few questions” if that prevents the questions flow from rendering.
+Only mark the final setup step resolved at the correct point in that sub-flow.
+
+==================================================
+DELIVERABLES BEFORE CODING
+==================================================
+
+Before implementing, give me:
+1. Whether the new-account welcome bug is actually fixed
+2. Root cause of why “Answer a few questions” currently does nothing
+3. Exact files/components/state you will modify
+4. Exact corrected behavior for the quick-questions path
+
+Then implement.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- a truly new account sees the welcome screen first
+- onboarding order is welcome -> walkthrough -> final setup
+- “Answer a few questions” on final setup works
+- the questions flow actually appears
+- completion state is only written at the correct point
+- no dead buttons on the final setup page
