@@ -83,13 +83,16 @@ export default function RootLayout() {
           setNeedsOnboarding(false);
         } else {
           // onboarding_completed=false means the user has not finished onboarding.
-          // Trust the local stage ONLY for mid-flow stages (walkthrough/final_setup)
-          // where the DB write may have raced or the network blipped.  A local stage
-          // of 'done' or null while the DB says false means the user needs the welcome
-          // screen (e.g. after a dev reset, or a first login on a clean device).
+          // Trust the local stage for:
+          //   - mid-flow stages (walkthrough/final_setup): DB write may have raced
+          //   - 'done': user just completed a dismissal action; the DB write is in
+          //     flight or the auth event fired before it committed. Never redirect
+          //     a user whose local stage already says they are done.
+          // A null local stage while DB says false = fresh user → needs welcome.
           const localStage = await readOnboardingStage();
-          const midFlow = localStage === 'walkthrough' || localStage === 'final_setup';
-          setNeedsOnboarding(!midFlow);
+          const locallyDone = localStage === 'done';
+          const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup';
+          setNeedsOnboarding(!midFlow && !locallyDone);
         }
       } else {
         setNeedsOnboarding(false);
@@ -112,9 +115,10 @@ export default function RootLayout() {
         if (completed) {
           setNeedsOnboarding(false);
         } else {
-          const localStage = await readOnboardingStage();
-          const midFlow = localStage === 'walkthrough' || localStage === 'final_setup';
-          setNeedsOnboarding(!midFlow);
+          const localStage  = await readOnboardingStage();
+          const locallyDone = localStage === 'done';
+          const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup';
+          setNeedsOnboarding(!midFlow && !locallyDone);
         }
       } else if (event === 'SIGNED_OUT') {
         setNeedsOnboarding(false);

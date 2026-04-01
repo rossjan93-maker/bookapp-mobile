@@ -1,0 +1,177 @@
+We need to fix three connected onboarding/recommendation issues together.
+
+This is not a polish pass.
+These are product-state and layout problems.
+
+==================================================
+CURRENT PROBLEMS
+==================================================
+
+From the latest mobile run:
+
+1. The walkthrough info/coach bubble is still not organized well
+- it is too visually dominant
+- it competes with the highlighted card
+- hierarchy inside the bubble is weak
+- the top row (progress + skip) feels cramped
+- body copy + CTA spacing feels bulky
+- overall it does not feel tight, premium, or well-composed
+
+2. “Not right now” on the final import/setup page does not work
+- this is a route/state bug
+- the user is not being allowed to cleanly dismiss final setup
+
+3. Recommendations is still communicating the wrong state
+- we are showing “Building your picks…” and/or skeleton rec cards
+- but this user has not given enough signal
+- we should not act like we are loading trusted recs when we actually do not have enough information
+
+The system is still blindly behaving as if recommendation generation should happen by default.
+That is wrong.
+
+==================================================
+AUTHORITATIVE PRODUCT RULE
+==================================================
+
+Recommendations should only enter a true loading state when we actually have enough confidence to generate picks.
+
+If we do NOT have enough signal:
+- do NOT show “Building your picks…”
+- do NOT show fake-loading/skeleton rec cards
+- do NOT imply that recommendations are simply taking a moment to load
+
+Instead:
+show an explicit low-signal / setup state that tells the user:
+- what this section is for
+- why it is not populated yet
+- how to unlock it
+
+We are protecting trust, not filling space.
+
+==================================================
+PART 1 — WALKTHROUGH COACH BUBBLE CLEANUP
+==================================================
+
+I want the walkthrough bubble redesigned so it feels supportive, not dominant.
+
+Current issue:
+The highlighted card and the coach bubble are both large focal objects.
+The coach bubble should support the highlight, not fight it.
+
+Requirements:
+- reduce the visual bulk of the coach bubble
+- tighten internal hierarchy
+- improve spacing between title, body, and CTA
+- make the progress/skip row cleaner and less cramped
+- keep the card fully readable
+- keep it subordinate to the highlighted UI element
+- preserve viewport-safe placement
+
+I want it to feel tighter, more editorial, and less like a giant modal dropped on top of the app.
+
+Before coding, tell me:
+1. why the current coach bubble still feels poorly organized
+2. what exact layout changes you propose
+3. which sizing/spacing/hierarchy rules you will change
+4. exact files/components you will modify
+
+==================================================
+PART 2 — FINAL SETUP DISMISSAL BUG
+==================================================
+
+“Not right now” on the final import/setup page does not work.
+
+I need you to trace exactly:
+- button press
+- state write
+- route transition
+- any guard/redirect that overrides it
+- why the user is not being cleanly released into the app
+
+Required behavior:
+- tapping “Not right now” resolves final setup
+- user enters normal app usage
+- user is not immediately bounced back into final setup
+- final setup is not shown again as onboarding
+
+Before coding, tell me:
+1. exact root cause of the broken dismissal path
+2. exact files/components/state you will modify
+3. exact state that should be written when dismissal succeeds
+
+==================================================
+PART 3 — RECOMMENDATIONS MUST DISTINGUISH
+==================================================
+
+I want a clean distinction between:
+
+A. true loading state
+Meaning:
+- we have enough signal
+- recommendation generation is actively in progress
+
+B. insufficient-confidence state
+Meaning:
+- we do NOT have enough signal to make trustworthy picks yet
+- recommendations are being intentionally withheld
+
+Current run is still blurring these two.
+
+==================================================
+REQUIRED LOW-SIGNAL STATE
+==================================================
+
+For low-signal users, the Recommendations section should show an explicit setup/unlock state.
+
+It should clearly say, in product language:
+- we are not guessing yet
+- we need more signal before we make picks
+- here is how to unlock recommendations
+
+Action hierarchy:
+1. Import your library (primary)
+2. Add books you’ve read (secondary)
+3. Answer a few questions (tertiary)
+
+Important:
+Do NOT show loading copy or skeleton rec cards in this state.
+
+==================================================
+REQUIRED LOADING STATE
+==================================================
+
+Only show:
+- “Building your picks…”
+- spinner
+- skeleton recommendation cards
+
+when the user actually has sufficient signal and recommendations are actively loading.
+
+==================================================
+BEFORE CODING, I WANT
+==================================================
+
+Before implementing, give me:
+
+1. exact current rendering logic for:
+   - true loading
+   - insufficient confidence
+   - withheld recommendations
+2. exact reason the app is still showing building/skeleton states for low-signal users
+3. your proposed corrected state model
+4. exact files/components/state you will modify
+
+Then implement.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- walkthrough info bubble feels tighter, cleaner, and less dominant
+- highlighted card remains the primary focal point
+- “Not right now” on final setup works
+- final setup dismissal resolves cleanly
+- low-signal users do NOT see fake recommendation loading
+- recommendations are only shown/loading when confidence is high enough
+- low-signal users see an explicit unlock/setup state
+- the product stops pretending it already knows enough
