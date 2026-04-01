@@ -58,11 +58,62 @@ function mapSignInError(error: { message?: string; status?: number }): {
   return { text: 'Something went wrong. Check your connection and try again.', offerResend: false };
 }
 
-function mapSignUpError(error: { message?: string; status?: number }): string {
+function mapSignUpError(error: { message?: string; status?: number }): {
+  text: string;
+  rateLimited: boolean;
+} {
   const status = error.status ?? 0;
-  if (status === 429) return 'Too many attempts — wait a moment and try again.';
-  // Other raw errors from signUp (shouldn't surface to the user)
-  return 'Something went wrong. Please try again.';
+  const raw    = (error.message ?? '').toLowerCase();
+  if (
+    status === 429 ||
+    raw.includes('rate limit') ||
+    raw.includes('over email send rate limit') ||
+    raw.includes('too many')
+  ) {
+    return {
+      text: 'Too many emails sent to this address recently — wait a minute and try again.',
+      rateLimited: true,
+    };
+  }
+  return { text: 'Something went wrong. Please try again.', rateLimited: false };
+}
+
+// ─── Unconfirmed-existing-account helper ──────────────────────────────────────
+// Detects signUp errors that indicate the email already belongs to an existing
+// but unconfirmed account. Routes to duplicate/resend guidance rather than a
+// generic error, since the user just needs to confirm their existing account.
+function isUnconfirmedAccountError(error: { message?: string; status?: number } | null): boolean {
+  if (!error) return false;
+  const raw    = (error.message ?? '').toLowerCase();
+  const status = error.status ?? 0;
+  return (
+    // Supabase "user already registered" variants
+    raw.includes('already registered') ||
+    raw.includes('already exists') ||
+    raw.includes('user already') ||
+    raw.includes('email already') ||
+    raw.includes('email exists') ||
+    // "email not confirmed" can surface as an error on re-signup
+    raw.includes('not confirmed') ||
+    raw.includes('email not confirmed') ||
+    // 422 Unprocessable Entity — Supabase uses this for existing-user conflicts
+    status === 422
+  );
+}
+
+// ─── Rate-limit helper ────────────────────────────────────────────────────────
+// Detects rate-limit errors from supabase.auth.resend responses.
+// Checks both HTTP status and message text for robustness.
+function isResendRateLimitError(error: { message?: string; status?: number } | null): boolean {
+  if (!error) return false;
+  const raw    = (error.message ?? '').toLowerCase();
+  const status = error.status ?? 0;
+  return (
+    status === 429 ||
+    raw.includes('rate limit') ||
+    raw.includes('over email send rate limit') ||
+    raw.includes('too many')
+  );
 }
 
 // ─── Shared style primitives ─────────────────────────────────────────────────
@@ -110,12 +161,18 @@ export default function LoginScreen() {
   const [offerResend, setOfferResend] = useState(false);
 
   // ── Post-action states ───────────────────────────────────────────────────────
-  // duplicateEmail  — shown when signup detects an existing account on this email
+  // duplicateEmail      — shown when signup detects an existing account on this email
   // emailConfirmPending — shown after a new signup; waiting for confirmation
-  // emailSent       — shown after forgot / resend flow completes
+  // emailSent           — shown after forgot / resend flow completes
+  // signUpRateLimited   — shown when signup hits a rate limit (distinct amber panel)
+  // resendRateLimited   — shown inline in emailConfirmPending when resend is rate-limited
+  // resendSent          — shown inline in emailConfirmPending after a successful resend
   const [duplicateEmail, setDuplicateEmail]           = useState(false);
   const [emailConfirmPending, setEmailConfirmPending] = useState(false);
   const [emailSent, setEmailSent]                     = useState(false);
+  const [signUpRateLimited, setSignUpRateLimited]     = useState(false);
+  const [resendRateLimited, setResendRateLimited]     = useState(false);
+  const [resendSent, setResendSent]                   = useState(false);
 
   // ── Mode switching ──────────────────────────────────────────────────────────
   function switchMode(m: Mode) {
@@ -126,6 +183,9 @@ export default function LoginScreen() {
     setDuplicateEmail(false);
     setEmailConfirmPending(false);
     setEmailSent(false);
+    setSignUpRateLimited(false);
+    setResendRateLimited(false);
+    setResendSent(false);
     setConfirmPassword('');
     setShowPassword(false);
     setShowConfirm(false);
@@ -139,6 +199,9 @@ export default function LoginScreen() {
     setOfferResend(false);
     setDuplicateEmail(false);
     setEmailConfirmPending(false);
+    setSignUpRateLimited(false);
+    setResendRateLimited(false);
+    setResendSent(false);
 
     // ── Client-side validation ───────────────────────────────────────────────
     if (!firstName.trim()) {
@@ -214,8 +277,21 @@ export default function LoginScreen() {
     });
 
     if (error) {
-      setStatus(mapSignUpError(error));
-      setStatusIsError(true);
+      // Unconfirmed-existing-account: route to duplicate/resend guidance.
+      // This catches cases where the account exists but email confirmation is
+      // pending — the user should resend confirmation, not see a generic error.
+      if (isUnconfirmedAccountError(error)) {
+        setDuplicateEmail(true);
+        setLoading(false);
+        return;
+      }
+      const { text, rateLimited } = mapSignUpError(error);
+      if (rateLimited) {
+        setSignUpRateLimited(true);
+      } else {
+        setStatus(text);
+        setStatusIsError(true);
+      }
       setLoading(false);
       return;
     }
@@ -304,6 +380,7 @@ export default function LoginScreen() {
   }
 
   // ── Resend confirmation ──────────────────────────────────────────────────────
+  // Used in the standalone resend mode (mode === 'resend').
   async function handleResendConfirmation() {
     if (!email.trim()) {
       setStatus('Enter your email address above first.');
@@ -323,7 +400,7 @@ export default function LoginScreen() {
     // "user not found" from Supabase should not be revealed to the caller.
     // Rate limit (429) is safe to surface explicitly: it does not reveal whether
     // the email exists or not.
-    if (error && error.status === 429) {
+    if (isResendRateLimitError(error)) {
       setStatus('Too many requests — please wait a moment and try again.');
       setStatusIsError(true);
       return;
@@ -332,6 +409,27 @@ export default function LoginScreen() {
     setEmailSent(true);
     setStatus('If that address has an unconfirmed account, we sent a new confirmation link. Check your email.');
     setStatusIsError(false);
+  }
+
+  // ── Inline resend (from emailConfirmPending or duplicateEmail panels) ────────
+  // Performs resend without navigating away; updates inline flags instead.
+  async function handleInlineResend() {
+    setLoading(true);
+    setResendRateLimited(false);
+    setResendSent(false);
+
+    const { error } = await supabase!.auth.resend({ type: 'signup', email: email.trim() });
+
+    setLoading(false);
+
+    if (isResendRateLimitError(error)) {
+      setResendRateLimited(true);
+      return;
+    }
+
+    // For any non-rate-limit error (404/422 enumeration etc.) we show success
+    // to avoid revealing account existence, matching the standalone resend behaviour.
+    setResendSent(true);
   }
 
   // ── Derived flags ────────────────────────────────────────────────────────────
@@ -611,7 +709,7 @@ export default function LoginScreen() {
       )}
 
       {/* ── Status message ────────────────────────────────────────────────────── */}
-      {status !== '' && !duplicateEmail && !emailConfirmPending && (
+      {status !== '' && !duplicateEmail && !emailConfirmPending && !signUpRateLimited && (
         <View style={{ width: '100%', marginTop: 18 }}>
           <Text style={{
             textAlign: 'center',
@@ -632,6 +730,49 @@ export default function LoginScreen() {
               </Text>
             </TouchableOpacity>
           )}
+        </View>
+      )}
+
+      {/* ── Signup rate-limit panel ───────────────────────────────────────────── */}
+      {signUpRateLimited && (
+        <View style={{
+          marginTop: 24,
+          width: '100%',
+          backgroundColor: '#fffbeb',
+          borderRadius: 12,
+          padding: 18,
+          borderWidth: 1,
+          borderColor: '#fde68a',
+        }}>
+          <Text style={{
+            fontSize: 14,
+            fontWeight: '700',
+            color: '#92400e',
+            marginBottom: 6,
+          }}>
+            Too many emails sent
+          </Text>
+          <Text style={{
+            fontSize: 13,
+            color: '#78350f',
+            lineHeight: 20,
+            marginBottom: 16,
+          }}>
+            We've sent too many emails to this address recently. Please wait a minute before trying again.
+          </Text>
+          <TouchableOpacity
+            onPress={() => setSignUpRateLimited(false)}
+            style={{
+              borderWidth: 1,
+              borderColor: '#fcd34d',
+              borderRadius: 9,
+              paddingVertical: 10,
+              alignItems: 'center',
+              backgroundColor: '#fff',
+            }}
+          >
+            <Text style={{ fontSize: 13, color: '#92400e', fontWeight: '600' }}>Try again later</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -662,19 +803,46 @@ export default function LoginScreen() {
           }}>
             We sent a confirmation link to {email.trim() || 'your email'}. Click it to activate your account.
           </Text>
-          <TouchableOpacity
-            onPress={() => switchMode('resend')}
-            style={{
+
+          {/* Inline resend feedback */}
+          {resendSent && (
+            <Text style={{ fontSize: 13, color: '#15803d', fontWeight: '600', marginBottom: 10, textAlign: 'center' }}>
+              Sent! Check your inbox again.
+            </Text>
+          )}
+          {resendRateLimited && (
+            <View style={{
+              backgroundColor: '#fffbeb',
+              borderRadius: 8,
+              padding: 12,
               borderWidth: 1,
-              borderColor: '#86efac',
-              borderRadius: 9,
-              paddingVertical: 10,
-              alignItems: 'center',
-              backgroundColor: '#fff',
-            }}
-          >
-            <Text style={{ fontSize: 13, color: '#15803d', fontWeight: '600' }}>Resend confirmation email</Text>
-          </TouchableOpacity>
+              borderColor: '#fde68a',
+              marginBottom: 10,
+            }}>
+              <Text style={{ fontSize: 13, color: '#92400e', lineHeight: 19 }}>
+                We've sent too many emails to this address recently. Please wait a minute before trying again.
+              </Text>
+            </View>
+          )}
+
+          {!resendSent && (
+            <TouchableOpacity
+              onPress={handleInlineResend}
+              disabled={loading}
+              style={{
+                borderWidth: 1,
+                borderColor: '#86efac',
+                borderRadius: 9,
+                paddingVertical: 10,
+                alignItems: 'center',
+                backgroundColor: '#fff',
+              }}
+            >
+              <Text style={{ fontSize: 13, color: '#15803d', fontWeight: '600' }}>
+                {resendRateLimited ? 'Try resending later' : 'Resend confirmation email'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -703,7 +871,7 @@ export default function LoginScreen() {
             lineHeight: 20,
             marginBottom: 18,
           }}>
-            Sign in to your existing account, or reset your password if you've forgotten it.
+            Sign in to your existing account, reset your password if you've forgotten it, or resend your confirmation email if you haven't confirmed yet.
           </Text>
 
           <TouchableOpacity
@@ -728,10 +896,51 @@ export default function LoginScreen() {
               paddingVertical: 10,
               alignItems: 'center',
               backgroundColor: '#fff',
+              marginBottom: 8,
             }}
           >
             <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500' }}>Reset Password</Text>
           </TouchableOpacity>
+
+          {/* Resend confirmation — for unconfirmed accounts */}
+          {resendSent ? (
+            <Text style={{ fontSize: 13, color: '#92400e', fontWeight: '600', textAlign: 'center', marginTop: 4 }}>
+              Confirmation email sent — check your inbox.
+            </Text>
+          ) : (
+            <>
+              {resendRateLimited && (
+                <View style={{
+                  backgroundColor: '#fffbeb',
+                  borderRadius: 8,
+                  padding: 10,
+                  borderWidth: 1,
+                  borderColor: '#fde68a',
+                  marginBottom: 8,
+                }}>
+                  <Text style={{ fontSize: 12, color: '#92400e', lineHeight: 18 }}>
+                    Too many emails sent recently — wait a minute before trying again.
+                  </Text>
+                </View>
+              )}
+              <TouchableOpacity
+                onPress={handleInlineResend}
+                disabled={loading}
+                style={{
+                  borderWidth: 1,
+                  borderColor: '#d6cfc8',
+                  borderRadius: 9,
+                  paddingVertical: 10,
+                  alignItems: 'center',
+                  backgroundColor: '#fff',
+                }}
+              >
+                <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500' }}>
+                  {resendRateLimited ? 'Try resending later' : 'Resend confirmation email'}
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       )}
 
