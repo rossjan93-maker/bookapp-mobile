@@ -807,7 +807,11 @@ export function RecommendationsFeed({
     | 'empty';
 
   const displayState: DisplayState = (() => {
-    if (isInitialLoading && !hasCards) return 'loading_initial';
+    // Do NOT enter loading_initial when a quality gate is already known (restored
+    // from the previous session on mount). Showing DeckAssemblingLoader over a
+    // quality gate state forces the user through a false "building picks" experience
+    // before landing on the same gated state every time they reload.
+    if (isInitialLoading && !hasCards && !recsQualityGate) return 'loading_initial';
     if (hasCards)                      return isReplenishing ? 'ready_refreshing' : 'ready';
     if (deckTransitionHint)            return 'transitioning';
     if (recsQualityGate)               return 'quality_gated';
@@ -1114,27 +1118,19 @@ export function RecommendationsFeed({
         </View>
       )}
 
-      {/* ── Quality gate: not enough signal or intent too narrow ── */}
-      {displayState === 'quality_gated' && tier >= 1 && (
+      {/* ── Quality gate: intent too narrow ── */}
+      {displayState === 'quality_gated' && tier >= 1 && recsQualityGate === 'intent_filtered_empty' && (
         <View style={{
-          backgroundColor: recsQualityGate === 'intent_filtered_empty' ? '#faf9f7' : '#fff',
-          borderRadius: 14, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#e7e5e4',
+          backgroundColor: '#faf9f7', borderRadius: 14, padding: 16, marginBottom: 16,
+          borderWidth: 1, borderColor: '#e7e5e4',
         }}>
           <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', marginBottom: 6 }}>
-            {recsQualityGate === 'intent_filtered_empty'
-              ? 'No matches with these filters'
-              : recsQualityGate === 'insufficient_pool'
-                ? 'Not enough books in your genres yet'
-                : 'No close matches in the current catalog'}
+            No matches with these filters
           </Text>
           <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
-            {recsQualityGate === 'intent_filtered_empty'
-              ? 'Your current filters are too narrow for the available pool. Try relaxing a filter or clearing them to see your regular picks.'
-              : recsQualityGate === 'insufficient_pool'
-                ? 'Rate a few more books in your favourite genres. Each rating sharpens the pool significantly.'
-                : 'Your taste profile is strong but the catalog coverage is limited right now. Try removing some filters.'}
+            Your current filters are too narrow for the available pool. Try relaxing a filter or clearing them to see your regular picks.
           </Text>
-          {recsQualityGate === 'intent_filtered_empty' && isIntentActive(nextReadIntent) && (
+          {isIntentActive(nextReadIntent) && (
             <TouchableOpacity
               onPress={handleClearIntent}
               style={{ marginTop: 12, backgroundColor: '#1c1917', borderRadius: 9, paddingVertical: 10, alignItems: 'center' }}
@@ -1142,6 +1138,109 @@ export function RecommendationsFeed({
               <Text style={{ fontSize: 13, fontWeight: '700', color: '#faf9f7' }}>Clear filters</Text>
             </TouchableOpacity>
           )}
+        </View>
+      )}
+
+      {/* ── Quality gate: insufficient candidate pool — full actionable CTA ── */}
+      {displayState === 'quality_gated' && tier >= 1 && recsQualityGate === 'insufficient_pool' && (
+        <View
+          style={{
+            backgroundColor: '#fff', borderRadius: 16,
+            overflow: 'hidden',
+            shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8,
+            shadowOffset: { width: 0, height: 2 }, elevation: 2,
+            marginBottom: 16,
+          }}
+        >
+          {/* Header strip */}
+          <View style={{ backgroundColor: '#faf9f7', borderBottomWidth: 1, borderBottomColor: '#f0ede8', padding: 20, paddingBottom: 16 }}>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: '#1c1917', letterSpacing: -0.2, marginBottom: 6 }}>
+              Candidate pool too narrow.
+            </Text>
+            <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
+              We have your taste profile, but couldn't find enough matching books in the current catalog. Adding more reading history helps us work around coverage gaps.
+            </Text>
+          </View>
+
+          <View style={{ padding: 16, gap: 10 }}>
+            {/* CTA 1 — Import library (primary) */}
+            <TouchableOpacity
+              onPress={() => router.push('/import/goodreads' as any)}
+              activeOpacity={0.82}
+              style={{
+                backgroundColor: '#1c1917', borderRadius: 12, paddingVertical: 14,
+                paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12,
+              }}
+            >
+              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 15 }}>📚</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff', lineHeight: 19 }}>Import your library</Text>
+                <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 1 }}>Goodreads or StoryGraph — fastest way to expand</Text>
+              </View>
+              <Text style={{ fontSize: 16, color: 'rgba(255,255,255,0.35)' }}>›</Text>
+            </TouchableOpacity>
+
+            {/* CTA 2 — Add books manually */}
+            <TouchableOpacity
+              onPress={() => router.push('/add-book' as any)}
+              activeOpacity={0.8}
+              style={{
+                borderRadius: 12, paddingVertical: 13, paddingHorizontal: 16,
+                flexDirection: 'row', alignItems: 'center', gap: 12,
+                borderWidth: 1.5, borderColor: '#e7e5e4', backgroundColor: '#faf9f7',
+              }}
+            >
+              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#f0ede8', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 15 }}>＋</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', lineHeight: 19 }}>Add books you've read</Text>
+                <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 1 }}>Search and rate a few favourites</Text>
+              </View>
+              <Text style={{ fontSize: 16, color: '#d6d3d1' }}>›</Text>
+            </TouchableOpacity>
+
+            {/* CTA 3 — Refine preferences */}
+            <TouchableOpacity
+              onPress={() => router.push('/edit-preferences' as any)}
+              activeOpacity={0.8}
+              style={{
+                borderRadius: 12, paddingVertical: 13, paddingHorizontal: 16,
+                flexDirection: 'row', alignItems: 'center', gap: 12,
+                borderWidth: 1.5, borderColor: '#e7e5e4', backgroundColor: '#faf9f7',
+              }}
+            >
+              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#f0ede8', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 15 }}>🎯</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', lineHeight: 19 }}>Refine your preferences</Text>
+                <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 1 }}>Genres, pace, style — widens the candidate pool</Text>
+              </View>
+              <Text style={{ fontSize: 16, color: '#d6d3d1' }}>›</Text>
+            </TouchableOpacity>
+
+            <Text style={{ fontSize: 11, color: '#c4b5a5', textAlign: 'center', paddingTop: 2, paddingBottom: 4, lineHeight: 17 }}>
+              More reading history means more candidates to work with.
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* ── Quality gate: other (catalog coverage) ── */}
+      {displayState === 'quality_gated' && tier >= 1 && recsQualityGate !== 'insufficient_pool' && recsQualityGate !== 'intent_filtered_empty' && (
+        <View style={{
+          backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 16,
+          borderWidth: 1, borderColor: '#e7e5e4',
+        }}>
+          <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', marginBottom: 6 }}>
+            No close matches in the current catalog
+          </Text>
+          <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
+            Your taste profile is strong but catalog coverage is limited right now. Try removing some filters or check back later.
+          </Text>
         </View>
       )}
 

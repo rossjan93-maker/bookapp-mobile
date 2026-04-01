@@ -64,7 +64,7 @@ const GLOW_B = 'rgba(212,165,116,0.11)';
 const GLOW_C = 'rgba(212,165,116,0.06)';
 const CARD_W  = SW - 28;
 // Estimated coach-card height for dynamic positioning (avoids onLayout complexity)
-const COACH_H_EST = 185;
+const COACH_H_EST = 160;
 
 function tabCenterX(idx: number): number {
   return (SW / TAB_COUNT) * idx + SW / TAB_COUNT / 2;
@@ -484,8 +484,8 @@ function CoachCard({
   //
   // SAFE_BOT accounts for the tab bar AND the device/browser bottom inset.
   // SAFE_TOP accounts for the status bar / notch so the card never slides behind it.
-  const GAP       = 14;
-  const SIDE      = 14;
+  const GAP       = 12;
+  const SIDE      = 20;
   const SAFE_BOT  = TAB_BAR_H + Math.max(insets.bottom, 8);
   const SAFE_TOP  = Math.max(insets.top, 8);
 
@@ -542,15 +542,17 @@ function CoachCard({
         position:        'absolute',
         ...positionStyle,
         backgroundColor: '#faf9f7',
-        borderRadius:    18,
-        padding:         16,
+        borderRadius:    12,
+        borderWidth:     1,
+        borderColor:     'rgba(0,0,0,0.09)',
+        padding:         12,
         opacity:         fade,
         transform:       [{ translateY: slideIn }],
         shadowColor:     '#000',
-        shadowOpacity:   0.14,
-        shadowRadius:    16,
-        shadowOffset:    { width: 0, height: 4 },
-        elevation:       12,
+        shadowOpacity:   0.07,
+        shadowRadius:    8,
+        shadowOffset:    { width: 0, height: 3 },
+        elevation:       6,
       }}
     >
       {/* Arrow connecting coach card to the focal card.
@@ -594,15 +596,15 @@ function CoachCard({
       )}
 
       {/* Step progress dots + skip */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
         <View style={{ flex: 1, flexDirection: 'row', gap: 4 }}>
           {Array.from({ length: totalSteps }).map((_, i) => (
             <View
               key={i}
               style={{
-                width:           i === stepIdx ? 18 : 5,
-                height:          5,
-                borderRadius:    2.5,
+                width:           i === stepIdx ? 16 : 5,
+                height:          4,
+                borderRadius:    2,
                 backgroundColor: i <= stepIdx ? '#1c1917' : '#e7e5e4',
               }}
             />
@@ -612,7 +614,7 @@ function CoachCard({
           onPress={onSkip}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
-          <Text style={{ fontSize: 12, color: '#a8a29e', fontWeight: '500' }}>
+          <Text style={{ fontSize: 11, color: '#a8a29e', fontWeight: '500' }}>
             Skip tour
           </Text>
         </TouchableOpacity>
@@ -621,11 +623,11 @@ function CoachCard({
       {/* Title */}
       <Text
         style={{
-          fontSize:     16,
-          fontWeight:   '700',
+          fontSize:     14,
+          fontWeight:   '600',
           color:        '#1c1917',
-          lineHeight:   22,
-          marginBottom: 5,
+          lineHeight:   20,
+          marginBottom: 4,
         }}
       >
         {def.title}
@@ -634,10 +636,10 @@ function CoachCard({
       {/* Body */}
       <Text
         style={{
-          fontSize:     13,
+          fontSize:     12,
           color:        '#78716c',
-          lineHeight:   19,
-          marginBottom: 14,
+          lineHeight:   17,
+          marginBottom: 12,
         }}
       >
         {def.body}
@@ -650,11 +652,11 @@ function CoachCard({
         style={{
           backgroundColor: '#1c1917',
           borderRadius:    10,
-          paddingVertical: 11,
+          paddingVertical: 10,
           alignItems:      'center',
         }}
       >
-        <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>
+        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>
           {def.ctaLabel}
         </Text>
       </TouchableOpacity>
