@@ -35,7 +35,13 @@ export default function OnboardingQuestionsPage() {
   const router = useRouter();
 
   async function handleDone() {
-    markOnboardingComplete();
+    // Await the DB write so onboarding_completed=true is durable before
+    // navigating away.  markOnboardingComplete() catches its own errors, so
+    // this never throws — awaiting it simply ensures the Supabase call is
+    // dispatched and completes (or the client times out) before we navigate.
+    // Without await, a fast background → foreground switch can silently drop
+    // the write, leaving onboarding_completed=false for cross-device logins.
+    await markOnboardingComplete();
     // Land on the Recommendations tab so the user immediately sees their picks
     // (or the first-load deck-assembling state) — not a blank home screen.
     router.replace('/(tabs)/search' as any);

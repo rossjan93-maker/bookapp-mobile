@@ -801,17 +801,33 @@ export default function RecommendationsScreen() {
     // Defer (without locking) if still in the active onboarding flow so we
     // don't show RecEntryScreen before the user has seen onboarding-import.
     const stage = await readOnboardingStage();
+    if (__DEV__) console.log('[ENTRY_CHECK] stage_read', { stage });
     // null  → pre-welcome-screen (root guard will route to /onboarding)
     // walkthrough / final_setup → mid-onboarding overlay or import step
-    if (stage === null || stage === 'walkthrough' || stage === 'final_setup') return;
+    if (stage === null || stage === 'walkthrough' || stage === 'final_setup') {
+      if (__DEV__) console.log('[ENTRY_CHECK] deferred — mid-flow or pre-welcome', { stage });
+      return;
+    }
     // Past onboarding — make a real decision and lock.
     entryChecked.current = true;
     const seen = await hasSeenRecEntry();
-    if (seen) return;
+    if (seen) {
+      if (__DEV__) console.log('[ENTRY_CHECK] seen=true — skip entry, show hub');
+      return;
+    }
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const hasSignal = await hasPersonalizationSignal(user.id);
-    if (!hasSignal) setStep('entry');
+    if (__DEV__) console.log('[ENTRY_CHECK] decision', {
+      hasSignal,
+      showing: hasSignal ? 'hub' : 'RecEntryScreen',
+    });
+    if (!hasSignal) {
+      if (__DEV__) console.log('[ENTRY_CHECK] → showing RecEntryScreen');
+      setStep('entry');
+    } else {
+      if (__DEV__) console.log('[ENTRY_CHECK] → showing hub (personalization signal exists)');
+    }
   }
 
   useEffect(() => {

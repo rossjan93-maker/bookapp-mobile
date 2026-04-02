@@ -66,6 +66,25 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 // Session freshness threshold — pipeline skipped on tab revisit when below this age
 const REC_SESSION_TTL_MS = 4 * 60 * 1000; // 4 minutes
 
+// Hard timeout for the full recommendation pipeline (network + scoring).
+// On lossy mobile connections, the OL live-fetch can hang indefinitely.
+// After this duration the race rejects, loading is cleared, and the user
+// sees an honest "timed out" state with a retry CTA.
+const PIPELINE_TIMEOUT_MS = 12_000; // 12 seconds
+
+class PipelineTimeoutError extends Error {
+  constructor() {
+    super('pipeline_timeout');
+    this.name = 'PipelineTimeoutError';
+  }
+}
+
+function makePipelineTimeoutRace(): Promise<never> {
+  return new Promise((_, reject) =>
+    setTimeout(() => reject(new PipelineTimeoutError()), PIPELINE_TIMEOUT_MS),
+  );
+}
+
 // Custom LayoutAnimation config that matches the motion token system (380ms, ease-in-out).
 // Used for all stack reflowing — slower and softer than the 300ms preset.
 const REFLOW_LAYOUT_ANIM = LayoutAnimation.create(
@@ -354,6 +373,9 @@ export function RecommendationsFeed({
   const [recsQualityGate, setRecsQualityGate]   = useState<QualityGate | null>(null);
   const [isExhausted, setIsExhausted]           = useState(false);
   const [deckTransitionHint, setDeckTransitionHint] = useState(false);
+  // Set true when the pipeline hits the 12s hard timeout.  Cleared at the
+  // start of every new runPipeline call so a retry always starts fresh.
+  const [pipelineTimedOut, setPipelineTimedOut] = useState(false);
   const hadDeckRef = useRef(false);
 
   // ── Pipeline metadata ──────────────────────────────────────────────────────
@@ -403,7 +425,10 @@ export function RecommendationsFeed({
       }
       if (s?.recMode)      setRecMode(s.recMode);
       if (s?.readerThesis) setReaderThesis(s.readerThesis);
-      if (s?.qualityGate)  setRecsQualityGate(s.qualityGate);
+      if (s?.qualityGate) {
+        setRecsQualityGate(s.qualityGate);
+        if (__DEV__) console.log('[REC_GATE_RESTORE] gate restored from session:', s.qualityGate);
+      }
       setIsFreePreview(s?.isFreePreview ?? false);
     }).catch(() => {
       initForUser(userId, []);
@@ -522,11 +547,17 @@ export function RecommendationsFeed({
     };
 
     try {
-      const recResult = await getPersonalizedRecsWithExpert(
-        supabase, userId, tasteProfile, activeEnt, 12,
-        feedbackCtx, intent,
-        opts?.exhaustionBypass ? { exhaustionBypass: true, clearOLCache: true } : undefined,
-      );
+      // Clear any previous timeout state so the retry path starts clean.
+      setPipelineTimedOut(false);
+
+      const recResult = await Promise.race([
+        getPersonalizedRecsWithExpert(
+          supabase, userId, tasteProfile, activeEnt, 12,
+          feedbackCtx, intent,
+          opts?.exhaustionBypass ? { exhaustionBypass: true, clearOLCache: true } : undefined,
+        ),
+        makePipelineTimeoutRace(),
+      ]);
 
       if (requestId !== latestPipelineRef.current) return;
 
@@ -589,7 +620,15 @@ export function RecommendationsFeed({
         if (__DEV__) console.log('[REC_REFRESH]', `quality_gate=${gate}`, 'commit=skipped');
       }
     } catch (e) {
-      if (__DEV__) console.warn('[REC_PIPELINE_ERROR]', e);
+      if (e instanceof PipelineTimeoutError) {
+        // Always log — this is a production-observable failure, not a dev-only detail.
+        console.warn('[REC_PIPELINE_TIMEOUT] recommendation pipeline timed out after', PIPELINE_TIMEOUT_MS / 1000, 's — clearing loader, showing retry state');
+        if (requestId === latestPipelineRef.current) {
+          setPipelineTimedOut(true);
+        }
+      } else {
+        if (__DEV__) console.warn('[REC_PIPELINE_ERROR]', e);
+      }
     } finally {
       if (requestId === latestPipelineRef.current) {
         setIsInitialLoading(false);
@@ -804,9 +843,15 @@ export function RecommendationsFeed({
     | 'exhausted_refreshing'
     | 'exhausted_terminal'
     | 'transitioning'
+    | 'pipeline_timed_out'
     | 'empty';
 
   const displayState: DisplayState = (() => {
+    // Timeout state takes precedence over loading_initial — the pipeline already
+    // finished (by timing out), so showing DeckAssemblingLoader again would be
+    // incorrect.  pipelineTimedOut is cleared at the start of every new
+    // runPipeline call, so a retry always transitions back through loading_initial.
+    if (pipelineTimedOut && !hasCards) return 'pipeline_timed_out';
     // Do NOT enter loading_initial when a quality gate is already known (restored
     // from the previous session on mount). Showing DeckAssemblingLoader over a
     // quality gate state forces the user through a false "building picks" experience
@@ -1241,6 +1286,38 @@ export function RecommendationsFeed({
           <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
             Your taste profile is strong but catalog coverage is limited right now. Try removing some filters or check back later.
           </Text>
+        </View>
+      )}
+
+      {/* ── Pipeline timeout: network hung for more than 12s ── */}
+      {displayState === 'pipeline_timed_out' && (
+        <View style={{
+          backgroundColor: '#fff', borderRadius: 14, padding: 20, marginBottom: 16,
+          borderWidth: 1, borderColor: '#e7e5e4',
+          shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6,
+          shadowOffset: { width: 0, height: 1 }, elevation: 1,
+        }}>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 6 }}>
+            Connection took too long
+          </Text>
+          <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20, marginBottom: 16 }}>
+            Could not load recommendations. Check your connection and try again.
+          </Text>
+          <TouchableOpacity
+            onPress={() => {
+              setPipelineTimedOut(false);
+              setIsInitialLoading(true);
+              runPipeline(nextReadIntent, {});
+            }}
+            activeOpacity={0.75}
+            style={{
+              alignSelf: 'flex-start',
+              backgroundColor: '#1c1917', borderRadius: 8,
+              paddingVertical: 10, paddingHorizontal: 16,
+            }}
+          >
+            <Text style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>Retry</Text>
+          </TouchableOpacity>
         </View>
       )}
 

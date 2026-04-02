@@ -5,6 +5,7 @@ import { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { clearAllTabCaches } from '../lib/tabCache';
 import { readOnboardingStage } from '../lib/onboardingStage';
+import { clearLocalOnboardingState } from '../lib/localStateClear';
 
 // ─── Onboarding bridge ────────────────────────────────────────────────────────
 // Lets onboarding.tsx call completeOnboarding() to update needsOnboarding in
@@ -123,6 +124,7 @@ export default function RootLayout() {
       } else if (event === 'SIGNED_OUT') {
         setNeedsOnboarding(false);
         clearAllTabCaches();
+        clearLocalOnboardingState();
       }
     });
 
