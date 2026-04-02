@@ -51,11 +51,18 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+// Base key (no user suffix). Kept exported so clearLocalOnboardingState can
+// reference it in comments. The active key on this device is always the
+// user-scoped variant: REC_ENTRY_KEY + '_' + userId.
 export const REC_ENTRY_KEY = 'readstack_rec_entry_v1';
 
-export async function hasSeenRecEntry(): Promise<boolean> {
+function recEntryKeyForUser(userId: string): string {
+  return `${REC_ENTRY_KEY}_${userId}`;
+}
+
+export async function hasSeenRecEntry(userId: string): Promise<boolean> {
   try {
-    return (await AsyncStorage.getItem(REC_ENTRY_KEY)) === '1';
+    return (await AsyncStorage.getItem(recEntryKeyForUser(userId))) === '1';
   } catch {
     return false;
   }
@@ -63,7 +70,9 @@ export async function hasSeenRecEntry(): Promise<boolean> {
 
 async function markRecEntrySeen(): Promise<void> {
   try {
-    await AsyncStorage.setItem(REC_ENTRY_KEY, '1');
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) return;
+    await AsyncStorage.setItem(recEntryKeyForUser(session.user.id), '1');
   } catch {}
 }
 

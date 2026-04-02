@@ -810,13 +810,13 @@ export default function RecommendationsScreen() {
     }
     // Past onboarding — make a real decision and lock.
     entryChecked.current = true;
-    const seen = await hasSeenRecEntry();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const seen = await hasSeenRecEntry(user.id);
     if (seen) {
       if (__DEV__) console.log('[ENTRY_CHECK] seen=true — skip entry, show hub');
       return;
     }
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
     const hasSignal = await hasPersonalizationSignal(user.id);
     if (__DEV__) console.log('[ENTRY_CHECK] decision', {
       hasSignal,
