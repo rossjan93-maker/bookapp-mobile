@@ -1075,7 +1075,15 @@ export default function BookDetailScreen() {
       <View style={{ backgroundColor: '#f0ede8', alignItems: 'center', paddingTop: 80, paddingBottom: 60 }}>
         <BackButton
           onPress={() => router.back()}
-          style={{ position: 'absolute', top: 76, left: 20, zIndex: 10 }}
+          style={{
+            position: 'absolute',
+            top: 76,
+            left: 20,
+            zIndex: 10,
+            backgroundColor: 'rgba(255,255,255,0.82)',
+            borderRadius: 20,
+            padding: 5,
+          }}
         />
         <CoverThumb url={enrichedCoverUrl || coverUrl || null} externalId={externalId || null} title={title || null} width={122} height={180} />
       </View>

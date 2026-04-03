@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
   RefreshControl,
   ScrollView,
   Text,
@@ -13,6 +12,7 @@ import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computeGoalProgress } from '../../lib/pacing';
 import { computeAvgPagesPerDay, computeSourceCompletion } from '../../lib/signals';
+import { ProfileScreenSkeleton } from '../../components/Placeholder';
 import type { SourceCompletion } from '../../lib/signals';
 import { registerCacheClearer } from '../../lib/tabCache';
 
@@ -338,17 +338,19 @@ export default function ProfileScreen() {
   }
 
   if (loading) {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#faf9f7' }}>
-        <ActivityIndicator color="#78716c" />
-      </View>
-    );
+    return <ProfileScreenSkeleton />;
   }
 
   if (error) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <Text style={{ color: '#b91c1c', textAlign: 'center', fontSize: 14 }}>{error}</Text>
+        <Text style={{ color: '#b91c1c', textAlign: 'center', fontSize: 14, marginBottom: 18 }}>{error}</Text>
+        <TouchableOpacity
+          onPress={() => { setError(null); setLoading(true); loadProfile(true); }}
+          style={{ backgroundColor: '#1c1917', borderRadius: 10, paddingVertical: 11, paddingHorizontal: 24 }}
+        >
+          <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Try again</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -697,7 +699,26 @@ export default function ProfileScreen() {
       <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
         <SectionLabel>Friends</SectionLabel>
         {acceptedFriends === null ? null : acceptedFriends.length === 0 ? (
-          <Text style={{ color: '#a8a29e', fontSize: 14 }}>No friends yet.</Text>
+          <TouchableOpacity
+            onPress={() => router.push('/(tabs)/')}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              backgroundColor: '#fff',
+              borderRadius: 12,
+              paddingVertical: 13,
+              paddingHorizontal: 16,
+              shadowColor: '#000',
+              shadowOpacity: 0.04,
+              shadowRadius: 6,
+              shadowOffset: { width: 0, height: 1 },
+              elevation: 1,
+            }}
+          >
+            <Text style={{ fontSize: 14, color: '#57534e' }}>Find friends to connect with</Text>
+            <Text style={{ fontSize: 16, color: '#d6d3d1' }}>›</Text>
+          </TouchableOpacity>
         ) : (
           <View style={{
             backgroundColor: '#fff',
@@ -770,7 +791,26 @@ export default function ProfileScreen() {
       <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
         <SectionLabel>Recommendations Sent</SectionLabel>
         {sentRecs === null ? null : sentRecs.length === 0 ? (
-          <Text style={{ color: '#a8a29e', fontSize: 14 }}>No recommendations sent yet.</Text>
+          <TouchableOpacity
+            onPress={() => router.push('/(tabs)/library')}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              backgroundColor: '#fff',
+              borderRadius: 12,
+              paddingVertical: 13,
+              paddingHorizontal: 16,
+              shadowColor: '#000',
+              shadowOpacity: 0.04,
+              shadowRadius: 6,
+              shadowOffset: { width: 0, height: 1 },
+              elevation: 1,
+            }}
+          >
+            <Text style={{ fontSize: 14, color: '#57534e' }}>Browse your library to send one</Text>
+            <Text style={{ fontSize: 16, color: '#d6d3d1' }}>›</Text>
+          </TouchableOpacity>
         ) : (
           <>
             {(recsExpanded ? sentRecs : sentRecs.slice(0, 3)).map(rec => {

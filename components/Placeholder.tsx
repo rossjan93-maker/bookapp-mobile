@@ -275,6 +275,183 @@ export function HomeScreenSkeleton() {
   );
 }
 
+// ── ProfileScreenSkeleton ─────────────────────────────────────────────────────
+// Full-page Profile loading state. Covers the header (avatar + name + username),
+// reading goal card, taste profile card, reading intelligence card, and friends
+// section so the screen feels settled before data arrives.
+
+export function ProfileScreenSkeleton() {
+  return (
+    <View style={{ flex: 1, backgroundColor: BG }}>
+      {/* Header block */}
+      <View style={{
+        paddingHorizontal: 24,
+        paddingTop: 48,
+        paddingBottom: 28,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f0ede8',
+      }}>
+        <Pulse style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+          {/* Avatar circle */}
+          <Box w={60} h={60} r={30} style={{ marginRight: 16, flexShrink: 0 }} />
+          {/* Name + username */}
+          <View style={{ flex: 1, paddingTop: 2, gap: 8 }}>
+            <Box w="52%" h={22} r={6} />
+            <Box w="32%" h={13} r={5} c={FILL2} />
+            <Box w="42%" h={13} r={5} c={FILL2} style={{ marginTop: 4 }} />
+          </View>
+          {/* Settings link placeholder */}
+          <Box w={52} h={13} r={5} c={FILL2} style={{ marginTop: 3 }} />
+        </Pulse>
+      </View>
+
+      {/* Reading Goal card */}
+      <View style={{ paddingHorizontal: 24, marginTop: 24 }}>
+        <Pulse style={{
+          backgroundColor: '#fff',
+          borderRadius: 14,
+          padding: 16,
+          shadowColor: '#000',
+          shadowOpacity: 0.04,
+          shadowRadius: 6,
+          shadowOffset: { width: 0, height: 1 },
+          elevation: 1,
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box w="48%" h={13} r={5} />
+            <Box w={28} h={13} r={5} c={FILL2} />
+          </View>
+        </Pulse>
+      </View>
+
+      {/* Taste profile card */}
+      <View style={{ paddingHorizontal: 24, marginTop: 14 }}>
+        <Pulse style={{
+          backgroundColor: '#fff',
+          borderRadius: 14,
+          padding: 16,
+          shadowColor: '#000',
+          shadowOpacity: 0.04,
+          shadowRadius: 6,
+          shadowOffset: { width: 0, height: 1 },
+          elevation: 1,
+          gap: 8,
+        }}>
+          <Box w="38%" h={13} r={5} />
+          <Box w="62%" h={12} r={5} c={FILL2} />
+        </Pulse>
+      </View>
+
+      {/* Reading intelligence card */}
+      <View style={{ paddingHorizontal: 24, marginTop: 14, marginBottom: 28 }}>
+        <Pulse style={{
+          backgroundColor: '#fff',
+          borderRadius: 14,
+          padding: 18,
+          shadowColor: '#000',
+          shadowOpacity: 0.04,
+          shadowRadius: 6,
+          shadowOffset: { width: 0, height: 1 },
+          elevation: 1,
+          gap: 8,
+        }}>
+          <Box w={80} h={18} r={6} c={FILL2} />
+          <Box w="72%" h={13} r={5} />
+          <Box w="58%" h={12} r={5} c={FILL2} />
+        </Pulse>
+      </View>
+
+      {/* Friends section */}
+      <View style={{ paddingHorizontal: 24 }}>
+        <SectionLabelSkeleton label="Friends" />
+        <Pulse style={{
+          backgroundColor: '#fff',
+          borderRadius: 14,
+          overflow: 'hidden',
+          shadowColor: '#000',
+          shadowOpacity: 0.04,
+          shadowRadius: 6,
+          shadowOffset: { width: 0, height: 1 },
+          elevation: 1,
+        }}>
+          {[0, 1, 2].map(i => (
+            <View
+              key={i}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingVertical: 13,
+                paddingHorizontal: 16,
+                borderTopWidth: i > 0 ? 1 : 0,
+                borderTopColor: '#f5f5f4',
+              }}
+            >
+              <Box w={36} h={36} r={18} style={{ marginRight: 12 }} />
+              <View style={{ flex: 1, gap: 6 }}>
+                <Box w="42%" h={13} r={5} />
+                <Box w="28%" h={11} r={4} c={FILL2} />
+              </View>
+            </View>
+          ))}
+        </Pulse>
+      </View>
+    </View>
+  );
+}
+
+// ── InboxScreenSkeleton ────────────────────────────────────────────────────────
+// Full-page Inbox/Notes loading state. Shows the heading, subtitle, section
+// label, and 2 recommendation card stubs so the screen feels structured before
+// data arrives.
+
+export function InboxScreenSkeleton() {
+  return (
+    <View style={{ flex: 1, backgroundColor: BG, paddingHorizontal: 20, paddingTop: 24 }}>
+      {/* "Inbox" heading */}
+      <Pulse style={{ marginBottom: 22 }}>
+        <Box w={80} h={28} r={6} style={{ marginBottom: 7 }} />
+        <Box w="56%" h={13} r={5} c={FILL2} />
+      </Pulse>
+
+      {/* Section label "NEW" */}
+      <SectionLabelSkeleton label="New" />
+
+      {/* Recommendation card stub × 2 */}
+      {[0, 1].map(i => (
+        <Pulse
+          key={i}
+          style={{
+            backgroundColor: '#fffbf5',
+            borderRadius: 14,
+            borderLeftWidth: 3,
+            borderLeftColor: '#e7d5b8',
+            padding: 16,
+            marginBottom: 10,
+            shadowColor: '#000',
+            shadowOpacity: 0.04,
+            shadowRadius: 6,
+            shadowOffset: { width: 0, height: 1 },
+            elevation: 1,
+          }}
+        >
+          {/* Sender label */}
+          <Box w={90} h={10} r={4} c={FILL2} style={{ marginBottom: 10 }} />
+          {/* Cover + title/author */}
+          <View style={{ flexDirection: 'row', marginBottom: 14 }}>
+            <Box w={48} h={70} r={4} />
+            <View style={{ flex: 1, marginLeft: 14, gap: 8 }}>
+              <Box w="72%" h={16} r={5} />
+              <Box w="48%" h={13} r={5} c={FILL2} />
+            </View>
+          </View>
+          {/* Action button */}
+          <Box w="100%" h={38} r={9} c={FILL2} />
+        </Pulse>
+      ))}
+    </View>
+  );
+}
+
 // ── LibraryScreenSkeleton ──────────────────────────────────────────────────────
 // Full-page Library loading state. Shows the header, filter chips and book
 // rows as placeholders so the screen feels structured while data loads.

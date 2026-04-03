@@ -1,5 +1,5 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { registerCacheClearer } from '../../lib/tabCache';
@@ -8,6 +8,7 @@ import { getFirstName } from '../../lib/displayName';
 import { CoverThumb } from '../../components/CoverThumb';
 import { registerWtTarget, useWalkthrough } from '../../lib/walkthroughEngine';
 import { WtDemoInbox } from '../../components/walkthrough/WtDemoInbox';
+import { InboxScreenSkeleton } from '../../components/Placeholder';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -231,17 +232,19 @@ export default function InboxScreen() {
   // ── Loading / error states ────────────────────────────────────────────────
 
   if (loading) {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color="#a8a29e" />
-      </View>
-    );
+    return <InboxScreenSkeleton />;
   }
 
   if (error) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <Text style={{ color: '#b91c1c', textAlign: 'center', fontSize: 14 }}>{error}</Text>
+        <Text style={{ color: '#b91c1c', textAlign: 'center', fontSize: 14, marginBottom: 18 }}>{error}</Text>
+        <TouchableOpacity
+          onPress={() => { setError(null); setLoading(true); loadNotes(); }}
+          style={{ backgroundColor: '#1c1917', borderRadius: 10, paddingVertical: 11, paddingHorizontal: 24 }}
+        >
+          <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Try again</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -321,9 +324,20 @@ export default function InboxScreen() {
               <Text style={{ fontSize: 17, fontWeight: '700', color: '#1c1917', marginBottom: 8, textAlign: 'center' }}>
                 Nothing here yet
               </Text>
-              <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
+              <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 20 }}>
                 When a friend recommends a book,{'\n'}it will show up here.
               </Text>
+              <TouchableOpacity
+                onPress={() => router.push('/(tabs)/')}
+                style={{
+                  backgroundColor: '#1c1917',
+                  borderRadius: 10,
+                  paddingVertical: 11,
+                  paddingHorizontal: 22,
+                }}
+              >
+                <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Find friends</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </>

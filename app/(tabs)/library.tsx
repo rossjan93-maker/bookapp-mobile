@@ -645,7 +645,13 @@ export default function LibraryScreen() {
   if (error) {
     return (
       <View style={{ flex: 1, backgroundColor: '#faf9f7', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <Text style={{ color: '#b91c1c', textAlign: 'center', fontSize: 14 }}>{error}</Text>
+        <Text style={{ color: '#b91c1c', textAlign: 'center', fontSize: 14, marginBottom: 18 }}>{error}</Text>
+        <TouchableOpacity
+          onPress={() => { setError(null); setLoading(true); loadBooks(); }}
+          style={{ backgroundColor: '#1c1917', borderRadius: 10, paddingVertical: 11, paddingHorizontal: 24 }}
+        >
+          <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Try again</Text>
+        </TouchableOpacity>
       </View>
     );
   }

@@ -984,7 +984,15 @@ export default function HomeScreen() {
         )}
 
         {feedError ? (
-          <Text style={{ color: '#b91c1c', marginBottom: 16, fontSize: 14 }}>{feedError}</Text>
+          <View style={{ marginBottom: 16 }}>
+            <Text style={{ color: '#b91c1c', fontSize: 14, marginBottom: 10 }}>{feedError}</Text>
+            <TouchableOpacity
+              onPress={() => { setFeedError(null); loadAll(); }}
+              style={{ alignSelf: 'flex-start', borderWidth: 1, borderColor: '#d6d3d1', borderRadius: 8, paddingVertical: 7, paddingHorizontal: 14 }}
+            >
+              <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500' }}>Try again</Text>
+            </TouchableOpacity>
+          </View>
         ) : totalFeedWithVerb === 0 && pendingRecCount === 0 ? (
           <View
             ref={(!currentReads.length && !(yearlyGoal && yearlyGoal > 0)) ? homeTargetRef : undefined}

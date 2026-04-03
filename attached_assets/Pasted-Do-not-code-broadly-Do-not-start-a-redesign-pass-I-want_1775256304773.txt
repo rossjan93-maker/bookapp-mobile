@@ -1,0 +1,205 @@
+Do not code broadly.
+Do not start a redesign pass.
+I want a focused Wave 1 premium-beta UX implementation pass only.
+
+This pass is about fixing the highest-leward UX-system issues identified in the audit:
+- missing skeletons on key screens
+- weak empty states with no onward path
+- weak error recovery
+- inconsistent success confirmation
+- one small but important readability polish fix
+
+We are NOT doing a full UX overhaul.
+We are doing the first beta-quality systems pass.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Implement the highest-priority UX-system improvements that will most increase perceived quality for beta users.
+
+This Wave 1 should focus on:
+
+1. Profile skeleton screen
+2. Inbox/Notes skeleton screen
+3. Empty-state CTAs for:
+   - Library
+   - Inbox
+   - Profile friends / sent recs if applicable
+4. Retry-capable error states for:
+   - Home
+   - Library
+   - any other obvious screen-level load failure already using static text only
+5. Book-detail back-button contrast/readability fix
+
+If any of these are already partly implemented, tighten and finish them rather than duplicating them.
+
+==================================================
+IMPORTANT CONSTRAINTS
+==================================================
+
+Do NOT in this pass:
+- redesign the app shell
+- refactor Search tab architecture
+- change recommendation logic
+- touch onboarding/auth flows unless required for a screen-level state fix
+- build a giant global design system
+- do motion polish beyond what is necessary for these screens
+- start Wave 2 work (toast system, bottom-sheet overhaul, rec-card stagger, etc.)
+
+Keep this pass disciplined and scoped.
+
+==================================================
+PART 1 — PROFILE SKELETON
+==================================================
+
+Current issue:
+Profile uses a raw spinner / abrupt load and does not feel premium.
+
+I want:
+- a real Profile skeleton state
+- layout-shaped placeholders that match the actual profile screen structure
+- no generic centered spinner as the primary first-load experience
+
+Before coding, tell me:
+1. what the current Profile loading path is
+2. what sections the skeleton will cover
+3. exact file(s) you will modify
+
+Implementation goal:
+Profile should feel intentional immediately, even before data arrives.
+
+==================================================
+PART 2 — INBOX / NOTES SKELETON
+==================================================
+
+Current issue:
+Inbox/Notes also uses a raw spinner and feels unfinished on first load.
+
+I want:
+- a proper skeleton for the empty/loading shell of the inbox
+- placeholders shaped like the actual inbox items / structure
+- no generic spinner-first experience
+
+Before coding, tell me:
+1. what the current Notes/Inbox loading path is
+2. what the skeleton will render
+3. exact file(s) you will modify
+
+==================================================
+PART 3 — EMPTY-STATE CTAS
+==================================================
+
+Current issue:
+Some empty states explain absence, but do not provide a clear next action.
+That makes the product feel passive and unfinished.
+
+I want explicit onward-path CTAs added where appropriate.
+
+Audit and improve at minimum:
+
+A. Library empty state
+Examples of acceptable CTAs:
+- Search books
+- Add a book
+- Import your library
+
+B. Inbox empty state
+Examples:
+- Find friends
+- Learn how recommendations show up here
+- Start by connecting with readers
+
+C. Profile friends / sent recs empty states
+Examples:
+- Find friends
+- Send your first recommendation
+
+Important:
+Do not force the same CTA everywhere.
+Each empty state should point to the most natural next action for that screen.
+
+Before coding, tell me:
+1. which empty states currently exist
+2. which ones are dead ends
+3. exact CTA/actions you will add to each
+4. exact file(s) you will modify
+
+==================================================
+PART 4 — ERROR STATES WITH RETRY
+==================================================
+
+Current issue:
+Some screens surface static error text with no obvious recovery path.
+
+I want:
+- explicit retry actions on the key screens that currently just show text errors
+- clear, standard product language
+- recovery that feels intentional
+
+At minimum audit and improve:
+- Home load failure
+- Library load failure
+- any other obvious first-class screen already using static text-only failure state
+
+Before coding, tell me:
+1. which screens currently have text-only errors
+2. what retry path exists today if any
+3. what exact retry UI you will add
+4. exact file(s) you will modify
+
+==================================================
+PART 5 — BOOK DETAIL BACK BUTTON READABILITY
+==================================================
+
+Current issue:
+The back button can disappear visually over light book covers and feel fragile.
+
+I want:
+- a clean contrast treatment behind the back button
+- always-readable navigation
+- minimal, premium-looking solution
+
+This should be small and disciplined:
+- no giant redesign
+- just a reliable contrast/backdrop treatment
+
+Before coding, tell me:
+1. what the current back-button structure is
+2. the exact visual treatment you will apply
+3. exact file(s) you will modify
+
+==================================================
+IMPLEMENTATION EXPECTATIONS
+==================================================
+
+I want you to:
+- reuse existing visual language where possible
+- keep spacing, placeholder geometry, and CTA hierarchy consistent
+- avoid introducing new inconsistent patterns
+- make the app feel more intentional, not more complex
+
+==================================================
+WHAT I WANT BEFORE CODING
+==================================================
+
+Before implementing, give me:
+
+1. exact files/components you will modify
+2. exact Wave 1 items you are implementing in this pass
+3. any item from the list above you are intentionally not touching and why
+4. confirmation that this is still a scoped Wave 1 pass, not a broader redesign
+
+Then implement.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- Profile has a real skeleton loading state
+- Inbox/Notes has a real skeleton loading state
+- Library/Inbox/Profile empty states have clear onward CTAs where appropriate
+- Home/Library (and other obvious primary screens) have retryable error states instead of dead-end text
+- Book detail back button is always readable
+- no broad regressions are introduced
+- app feels more premium at beta through better state clarity and recovery
