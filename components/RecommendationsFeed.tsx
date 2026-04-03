@@ -4,7 +4,6 @@ import {
   LayoutAnimation,
   Platform,
   Text,
-  TextInput,
   TouchableOpacity,
   UIManager,
   View,
@@ -18,16 +17,7 @@ import type { TasteProfile } from '../lib/tasteProfile';
 import type { RecEntitlement } from '../lib/recEntitlement';
 import { loadFeedbackContext, persistFeedback } from '../lib/recFeedback';
 import type { FeedbackContext } from '../lib/recFeedback';
-import {
-  emptyIntent as emptyNextReadIntent,
-  isIntentActive,
-  intentSummaryLabel,
-  parseNaturalLanguageIntent,
-  mergeIntents,
-} from '../lib/nextReadIntent';
-import type { NextReadIntent, NextReadPace, NextReadTone } from '../lib/nextReadIntent';
 import { getBookTraits } from '../lib/bookTraits';
-import type { DeterministicLane } from '../lib/bookTraits';
 import type { ReaderThesis } from '../lib/expertRec';
 import { type RecSessionCache, getRecSession, setRecSession } from '../lib/recSession';
 import { addActedOnIds, loadActedOnIds } from '../lib/recPayloadCache';
@@ -92,231 +82,6 @@ const REFLOW_LAYOUT_ANIM = LayoutAnimation.create(
   LayoutAnimation.Types.easeInEaseOut,
   LayoutAnimation.Properties.opacity,
 );
-
-// ── Intent panel lane options ──────────────────────────────────────────────────
-const LANE_OPTIONS: Array<{ lane: DeterministicLane; label: string }> = [
-  { lane: 'scifi_fantasy',        label: 'Fantasy'              },
-  { lane: 'scifi_fantasy',        label: 'Sci-fi'               },
-  { lane: 'modern_suspense',      label: 'Thriller'             },
-  { lane: 'romantasy',            label: 'Romantasy'            },
-  { lane: 'romance',              label: 'Romance'              },
-  { lane: 'horror',               label: 'Horror'               },
-  { lane: 'memoir_nonfiction',    label: 'Memoir'               },
-  { lane: 'contemporary_fiction', label: 'Contemporary fiction' },
-  { lane: 'literary',             label: 'Literary fiction'     },
-];
-
-// ── Intent Panel ──────────────────────────────────────────────────────────────
-
-type NextReadPanelProps = {
-  draft:        NextReadIntent;
-  setDraft:     (intent: NextReadIntent) => void;
-  nlInput:      string;
-  setNlInput:   (s: string) => void;
-  open:         boolean;
-  panelHeight:  Animated.Value;
-  onToggle:     () => void;
-  onApply:      (mergedIntent: NextReadIntent) => void;
-  onClear:      () => void;
-  activeIntent: NextReadIntent;
-};
-
-function NextReadPanel({
-  draft, setDraft, nlInput, setNlInput,
-  open, panelHeight, onToggle, onApply, onClear, activeIntent,
-}: NextReadPanelProps) {
-  const isActive = isIntentActive(activeIntent);
-  const nlParsed = nlInput.trim() ? parseNaturalLanguageIntent(nlInput) : null;
-  const hasNLMatch = nlParsed?.interpreted ?? false;
-
-  function Pill({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
-    return (
-      <TouchableOpacity
-        onPress={onPress}
-        style={{
-          backgroundColor: active ? '#1c1917' : '#f5f5f4',
-          borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6,
-          borderWidth: 1, borderColor: active ? '#1c1917' : '#e7e5e4',
-        }}
-      >
-        <Text style={{ fontSize: 12, fontWeight: active ? '600' : '400', color: active ? '#faf9f7' : '#57534e' }}>
-          {label}
-        </Text>
-      </TouchableOpacity>
-    );
-  }
-
-  function PillRow({ children }: { children: React.ReactNode }) {
-    return <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>{children}</View>;
-  }
-
-  function PanelSectionLabel({ children }: { children: string }) {
-    return (
-      <Text style={{ fontSize: 10, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 7 }}>
-        {children}
-      </Text>
-    );
-  }
-
-  function toggleLane(lane: DeterministicLane) {
-    const current = draft.hard.lanes ?? [];
-    const next = current.includes(lane) ? current.filter(l => l !== lane) : [...current, lane];
-    setDraft({ ...draft, hard: { ...draft.hard, lanes: next.length ? next : undefined } });
-  }
-
-  function isLaneActive(lane: DeterministicLane) { return (draft.hard.lanes ?? []).includes(lane); }
-  function setPace(pace: NextReadPace) { setDraft({ ...draft, soft: { ...draft.soft, pace: draft.soft.pace === pace ? null : pace } }); }
-  function setTone(tone: NextReadTone) { setDraft({ ...draft, soft: { ...draft.soft, tone: draft.soft.tone === tone ? null : tone } }); }
-  function setIntensity(level: 'high' | 'low') { setDraft({ ...draft, soft: { ...draft.soft, intensity: draft.soft.intensity === level ? null : level } }); }
-  function toggleStandalone() { setDraft({ ...draft, hard: { ...draft.hard, standalone_only: !draft.hard.standalone_only } }); }
-  function toggleShort() { const c = draft.hard.max_page_count; setDraft({ ...draft, hard: { ...draft.hard, max_page_count: c ? null : 350 } }); }
-  function toggleExclude(key: keyof NextReadIntent['exclude']) { setDraft({ ...draft, exclude: { ...draft.exclude, [key]: !draft.exclude[key] } }); }
-  function handleApply() { const nlIntent = nlParsed?.intent ?? emptyNextReadIntent(); onApply(mergeIntents(draft, nlIntent)); }
-
-  const summaryText = isActive ? intentSummaryLabel(activeIntent) : null;
-
-  return (
-    <View style={{ marginBottom: 10 }}>
-      <TouchableOpacity
-        onPress={onToggle}
-        style={{
-          flexDirection: 'row', alignItems: 'center',
-          paddingVertical: 9, paddingHorizontal: 13,
-          backgroundColor: isActive ? '#f5f0e8' : '#f5f5f4',
-          borderRadius: 9, borderWidth: 1,
-          borderColor: isActive ? '#d6c9b0' : '#e7e5e4',
-        }}
-      >
-        <Text style={{ fontSize: 12, color: '#78716c', flex: 1, lineHeight: 17 }}>
-          {open ? '▲' : '▼'}{'  '}
-          {isActive && summaryText ? summaryText : 'Tell us what sounds good'}
-        </Text>
-        {isActive && (
-          <View style={{ backgroundColor: '#1c1917', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 }}>
-            <Text style={{ fontSize: 9, fontWeight: '700', color: '#faf9f7', letterSpacing: 0.4 }}>FILTERED</Text>
-          </View>
-        )}
-      </TouchableOpacity>
-
-      <Animated.View style={{ maxHeight: panelHeight.interpolate({ inputRange: [0, 1], outputRange: [0, 720] }), overflow: 'hidden' }}>
-        <View style={{
-          backgroundColor: '#faf9f7', borderRadius: 10, padding: 14, marginTop: 4,
-          borderWidth: 1, borderColor: '#e7e5e4', gap: 14,
-        }}>
-          {/* Natural language input */}
-          <View>
-            <PanelSectionLabel>Describe what you want</PanelSectionLabel>
-            <TextInput
-              value={nlInput}
-              onChangeText={setNlInput}
-              placeholder={'e.g. "Fast-paced thriller, standalone, not too dark"'}
-              placeholderTextColor="#c4bdb7"
-              multiline
-              numberOfLines={2}
-              style={{
-                backgroundColor: '#fff', borderRadius: 9,
-                paddingHorizontal: 11, paddingVertical: 9,
-                fontSize: 13, color: '#1c1917', lineHeight: 19,
-                borderWidth: 1, borderColor: '#e7e5e4',
-                minHeight: 52, textAlignVertical: 'top',
-              }}
-            />
-            {hasNLMatch && nlParsed && (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6, paddingHorizontal: 2 }}>
-                <Text style={{ fontSize: 10, color: '#a8a29e', alignSelf: 'center', marginRight: 2 }}>Using:</Text>
-                {nlParsed.labels.map(label => (
-                  <View key={label} style={{ backgroundColor: '#f0ede8', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
-                    <Text style={{ fontSize: 10, color: '#57534e', fontWeight: '500' }}>{label}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-            {nlInput.trim().length > 0 && !hasNLMatch && (
-              <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 5, paddingHorizontal: 2 }}>
-                No signals detected — try words like "fast-paced", "thriller", or "standalone".
-              </Text>
-            )}
-          </View>
-
-          {/* Genre / Lane */}
-          <View>
-            <PanelSectionLabel>What are you in the mood for?</PanelSectionLabel>
-            <PillRow>
-              {LANE_OPTIONS.map(({ lane, label }, idx) => (
-                <Pill key={`${lane}-${idx}`} label={label} active={isLaneActive(lane)} onPress={() => toggleLane(lane)} />
-              ))}
-            </PillRow>
-          </View>
-
-          {/* Pace */}
-          <View>
-            <PanelSectionLabel>Pace</PanelSectionLabel>
-            <PillRow>
-              <Pill label="Page-turner" active={draft.soft.pace === 'fast'} onPress={() => setPace('fast')} />
-              <Pill label="Steady build" active={draft.soft.pace === 'moderate'} onPress={() => setPace('moderate')} />
-              <Pill label="Slow & immersive" active={draft.soft.pace === 'slow'} onPress={() => setPace('slow')} />
-            </PillRow>
-          </View>
-
-          {/* Tone */}
-          <View>
-            <PanelSectionLabel>Tone</PanelSectionLabel>
-            <PillRow>
-              <Pill label="Light / fun" active={draft.soft.tone === 'light'} onPress={() => setTone('light')} />
-              <Pill label="Balanced" active={draft.soft.tone === 'balanced'} onPress={() => setTone('balanced')} />
-              <Pill label="Dark / gritty" active={draft.soft.tone === 'dark'} onPress={() => setTone('dark')} />
-            </PillRow>
-          </View>
-
-          {/* Emotional intensity */}
-          <View>
-            <PanelSectionLabel>Emotional intensity</PanelSectionLabel>
-            <PillRow>
-              <Pill label="High stakes" active={draft.soft.intensity === 'high'} onPress={() => setIntensity('high')} />
-              <Pill label="Low key" active={draft.soft.intensity === 'low'} onPress={() => setIntensity('low')} />
-            </PillRow>
-          </View>
-
-          {/* Format */}
-          <View>
-            <PanelSectionLabel>Format</PanelSectionLabel>
-            <PillRow>
-              <Pill label="Standalone only" active={!!draft.hard.standalone_only} onPress={toggleStandalone} />
-              <Pill label="Short read (≤350 pages)" active={!!draft.hard.max_page_count} onPress={toggleShort} />
-            </PillRow>
-          </View>
-
-          {/* Exclude */}
-          <View>
-            <PanelSectionLabel>Exclude</PanelSectionLabel>
-            <PillRow>
-              <Pill label="Series books" active={!!draft.exclude.series} onPress={() => toggleExclude('series')} />
-              <Pill label="Books I've seen before" active={!!draft.exclude.seen} onPress={() => toggleExclude('seen')} />
-            </PillRow>
-          </View>
-
-          {/* Actions */}
-          <View style={{ flexDirection: 'row', gap: 8, paddingTop: 4 }}>
-            <TouchableOpacity
-              onPress={handleApply}
-              style={{ flex: 1, backgroundColor: '#1c1917', borderRadius: 9, paddingVertical: 11, alignItems: 'center' }}
-            >
-              <Text style={{ fontSize: 13, fontWeight: '700', color: '#faf9f7' }}>Apply</Text>
-            </TouchableOpacity>
-            {isActive && (
-              <TouchableOpacity
-                onPress={onClear}
-                style={{ paddingHorizontal: 16, backgroundColor: '#f5f5f4', borderRadius: 9, paddingVertical: 11, alignItems: 'center' }}
-              >
-                <Text style={{ fontSize: 13, fontWeight: '500', color: '#57534e' }}>Clear</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      </Animated.View>
-    </View>
-  );
-}
 
 // ── RecommendationsFeed ───────────────────────────────────────────────────────
 
@@ -389,13 +154,6 @@ export function RecommendationsFeed({
   const [dismissPending, setDismissPendingUI] = useState<{ book: ScoredBook } | null>(null);
   const [saveFailure, setSaveFailure]          = useState<{ book: ScoredBook } | null>(null);
 
-  // ── Intent panel ──────────────────────────────────────────────────────────
-  const [nextReadIntent, setNextReadIntent]   = useState<NextReadIntent>(emptyNextReadIntent());
-  const [draftIntent, setDraftIntent]         = useState<NextReadIntent>(emptyNextReadIntent());
-  const [nlInput, setNlInput]                 = useState('');
-  const [intentPanelOpen, setIntentPanelOpen] = useState(false);
-  const intentPanelHeight = useRef(new Animated.Value(0)).current;
-
   // ── Pipeline guards ───────────────────────────────────────────────────────
   const latestPipelineRef    = useRef(0);
   const exhaustionAttemptRef = useRef(0);
@@ -460,7 +218,7 @@ export function RecommendationsFeed({
     if (isBgRefresh) setIsReplenishing(true);
     else             setIsInitialLoading(true);
 
-    runPipeline(nextReadIntent, { isBgRefresh });
+    runPipeline({ isBgRefresh });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tasteProfile?.strongSignalCount, userId, entitlement?.expert_recs_enabled]);
 
@@ -523,13 +281,12 @@ export function RecommendationsFeed({
     exhaustionAttemptRef.current += 1;
     if (__DEV__) console.log('[REC_EXHAUSTED_RELOAD]', `attempt=${exhaustionAttemptRef.current}`, '| exhaustion_bypass=true');
     setIsReplenishing(true);
-    runPipeline(nextReadIntent, { isBgRefresh: true, exhaustionBypass: true });
+    runPipeline({ isBgRefresh: true, exhaustionBypass: true });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isExhausted, tasteProfile?.tier, isReplenishing]);
 
   // ── Pipeline runner ───────────────────────────────────────────────────────
   async function runPipeline(
-    intent: NextReadIntent,
     opts?: { isBgRefresh?: boolean; exhaustionBypass?: boolean },
   ) {
     if (!supabase || !userId || !tasteProfile || tasteProfile.tier < 1) return;
@@ -553,7 +310,7 @@ export function RecommendationsFeed({
       const recResult = await Promise.race([
         getPersonalizedRecsWithExpert(
           supabase, userId, tasteProfile, activeEnt, 12,
-          feedbackCtx, intent,
+          feedbackCtx, undefined,
           opts?.exhaustionBypass ? { exhaustionBypass: true, clearOLCache: true } : undefined,
         ),
         makePipelineTimeoutRace(),
@@ -647,7 +404,7 @@ export function RecommendationsFeed({
       if (__DEV__) console.log('[REC_REFRESH]', 'reason=watermark', `| queue_depth=${depth}`, '| visible_disruption=false');
       isReplenishingRef.current = true;
       setIsReplenishing(true);
-      runPipeline(nextReadIntent, { isBgRefresh: true });
+      runPipeline({ isBgRefresh: true });
     }
   }
 
@@ -798,38 +555,6 @@ export function RecommendationsFeed({
   function handleExplanationOpen(book: ScoredBook) {
     if (!supabase || !userId) return;
     persistFeedback(supabase, userId, book, 'explanation_opened').catch(() => {});
-  }
-
-  // ── Intent apply / clear ──────────────────────────────────────────────────
-  function handleApplyIntent(merged: NextReadIntent) {
-    setNextReadIntent(merged);
-    setIntentPanelOpen(false);
-    Animated.timing(intentPanelHeight, { toValue: 0, duration: 180, useNativeDriver: false }).start();
-    setRecsQualityGate(null);
-    const hasCards = getQueueDepth() > 0;
-    if (hasCards) setIsReplenishing(true);
-    else          setIsInitialLoading(true);
-    runPipeline(merged, { isBgRefresh: hasCards });
-  }
-
-  function handleClearIntent() {
-    const empty = emptyNextReadIntent();
-    setNextReadIntent(empty);
-    setDraftIntent(empty);
-    setNlInput('');
-    setIntentPanelOpen(false);
-    Animated.timing(intentPanelHeight, { toValue: 0, duration: 180, useNativeDriver: false }).start();
-    const hasCards = getQueueDepth() > 0;
-    if (hasCards) setIsReplenishing(true);
-    else          setIsInitialLoading(true);
-    runPipeline(empty, { isBgRefresh: hasCards });
-  }
-
-  function toggleIntentPanel() {
-    const next = !intentPanelOpen;
-    setIntentPanelOpen(next);
-    Animated.timing(intentPanelHeight, { toValue: next ? 1 : 0, duration: 220, useNativeDriver: false }).start();
-    if (!next) setDraftIntent(nextReadIntent);
   }
 
   // ── Display state machine ─────────────────────────────────────────────────
@@ -1068,20 +793,6 @@ export function RecommendationsFeed({
           {/* Guided tour step 0 */}
           {guidedStep === 0 && hasCards && <GuidedActionBanner />}
 
-          {/* ── Intent panel ── */}
-          <NextReadPanel
-            draft={draftIntent}
-            setDraft={setDraftIntent}
-            nlInput={nlInput}
-            setNlInput={setNlInput}
-            open={intentPanelOpen}
-            panelHeight={intentPanelHeight}
-            onToggle={toggleIntentPanel}
-            onApply={handleApplyIntent}
-            onClear={handleClearIntent}
-            activeIntent={nextReadIntent}
-          />
-
           {/* ── Currently Reading bucket ── */}
           {visibleConts.length > 0 && (
             <>
@@ -1159,29 +870,6 @@ export function RecommendationsFeed({
                 Check your connection and try again.
               </Text>
             </View>
-          )}
-        </View>
-      )}
-
-      {/* ── Quality gate: intent too narrow ── */}
-      {displayState === 'quality_gated' && tier >= 1 && recsQualityGate === 'intent_filtered_empty' && (
-        <View style={{
-          backgroundColor: '#faf9f7', borderRadius: 14, padding: 16, marginBottom: 16,
-          borderWidth: 1, borderColor: '#e7e5e4',
-        }}>
-          <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', marginBottom: 6 }}>
-            No matches with these filters
-          </Text>
-          <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
-            Your current filters are too narrow for the available pool. Try relaxing a filter or clearing them to see your regular picks.
-          </Text>
-          {isIntentActive(nextReadIntent) && (
-            <TouchableOpacity
-              onPress={handleClearIntent}
-              style={{ marginTop: 12, backgroundColor: '#1c1917', borderRadius: 9, paddingVertical: 10, alignItems: 'center' }}
-            >
-              <Text style={{ fontSize: 13, fontWeight: '700', color: '#faf9f7' }}>Clear filters</Text>
-            </TouchableOpacity>
           )}
         </View>
       )}
@@ -1275,7 +963,7 @@ export function RecommendationsFeed({
       )}
 
       {/* ── Quality gate: other (catalog coverage) ── */}
-      {displayState === 'quality_gated' && tier >= 1 && recsQualityGate !== 'insufficient_pool' && recsQualityGate !== 'intent_filtered_empty' && (
+      {displayState === 'quality_gated' && tier >= 1 && recsQualityGate !== 'insufficient_pool' && (
         <View style={{
           backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 16,
           borderWidth: 1, borderColor: '#e7e5e4',
@@ -1307,7 +995,7 @@ export function RecommendationsFeed({
             onPress={() => {
               setPipelineTimedOut(false);
               setIsInitialLoading(true);
-              runPipeline(nextReadIntent, {});
+              runPipeline();
             }}
             activeOpacity={0.75}
             style={{
