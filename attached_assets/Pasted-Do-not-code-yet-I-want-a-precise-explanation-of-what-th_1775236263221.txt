@@ -1,0 +1,109 @@
+Do not code yet.
+
+I want a precise explanation of what the “Tell us what sounds good” section in Recommendations actually does today in the codebase.
+
+I do NOT want product intent or speculation.
+I want repo-grounded truth.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Explain the actual current function of the “Tell us what sounds good” section in Recommendations.
+
+I need to know whether it is:
+- meaningfully shaping recommendations
+- acting as a temporary query/filter layer
+- affecting ranking
+- only affecting retrieval
+- only affecting UI state
+- or basically decorative / low-value right now
+
+==================================================
+WHAT I WANT YOU TO TRACE
+==================================================
+
+Starting from the exact UI shown in Recommendations, trace the full chain for this section:
+
+- the free-text box
+- the mood chips
+- pace chips
+- tone chips
+- emotional intensity chips
+- format chips
+- exclude chips
+- Apply button
+
+For each one, tell me:
+
+1. what state it writes
+2. where that state lives
+3. what reads that state
+4. when it is applied
+5. what exact effect it has on the recommendation pipeline
+6. whether it changes:
+   - retrieval
+   - filtering
+   - scoring
+   - ranking
+   - display only
+7. whether it persists across refresh/session
+8. whether it is actually useful right now
+
+==================================================
+I WANT AN EXACT ANSWER TO THIS QUESTION
+==================================================
+
+If a user fills out “Tell us what sounds good” and taps Apply, what concretely changes?
+
+I want the exact answer in terms of code behavior, not UX language.
+
+Examples of the kind of answer I want:
+- “it narrows candidate retrieval before scoring”
+- “it filters already-generated recs client-side only”
+- “it sets an intent object that is passed into the recommender”
+- “it only changes local UI state and does not materially affect recommendations yet”
+- “it is partially wired and only some fields matter”
+
+==================================================
+ALSO TELL ME
+==================================================
+
+1. Is this section aligned with the current product strategy?
+   We have said we want trusted, high-confidence recommendations and not fake complexity.
+
+2. Does this section currently help that goal, hurt that goal, or mostly distract from it?
+
+3. Is it redundant with:
+   - onboarding questions
+   - taste profile
+   - imported history
+   - library-based signal
+   - RecEntryScreen / final setup
+
+4. Is it currently too early / too prominent / too weakly connected to actual rec quality?
+
+==================================================
+WHAT I WANT BEFORE ANY CHANGE
+==================================================
+
+Give me a structured answer with these sections:
+
+1. Current purpose in code
+2. End-to-end data flow
+3. Actual effect on recommendations
+4. Persistence/state model
+5. What is real vs cosmetic
+6. Whether this feature is worth keeping in its current form
+7. Exact files/components involved
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+Your answer should let me clearly decide whether this section:
+- should stay
+- should be demoted
+- should be redesigned
+- should be removed
+- or should be fully wired into the recommendation system properly
