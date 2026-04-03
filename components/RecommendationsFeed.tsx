@@ -620,10 +620,10 @@ export function RecommendationsFeed({
           {/* Header strip */}
           <View style={{ backgroundColor: '#faf9f7', borderBottomWidth: 1, borderBottomColor: '#f0ede8', padding: 20, paddingBottom: 16 }}>
             <Text style={{ fontSize: 16, fontWeight: '800', color: '#1c1917', letterSpacing: -0.2, marginBottom: 6 }}>
-              We're not guessing yet.
+              Nothing to share just yet.
             </Text>
             <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
-              Recommendations only unlock when we have enough signal to make picks worth trusting. Add some reading history and we'll take it from there.
+              Recommendations unlock once we have enough reading history to make picks worth trusting. Add a few books and we'll take it from there.
             </Text>
           </View>
 
