@@ -1,7 +1,7 @@
 import { createContext, useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, PanResponder, View } from 'react-native';
 import { Tabs, useRouter, useSegments } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { CustomTabBar } from '../../components/CustomTabBar';
 import { supabase } from '../../lib/supabase';
 import { loadRecPayload } from '../../lib/recPayloadCache';
 import { getRecSession, setRecSession } from '../../lib/recSession';
@@ -340,83 +340,20 @@ export default function TabsLayout() {
               {...panResponder.panHandlers}
             >
               <Tabs
-                screenOptions={{
-                  tabBarActiveTintColor:   '#1c1917',
-                  tabBarInactiveTintColor: '#a8a29e',
-                  tabBarStyle: {
-                    borderTopColor: '#e7e5e4',
-                    borderTopWidth: 1,
-                    paddingBottom: 8,
-                    paddingTop: 4,
-                    height: 62,
-                  },
-                  tabBarLabelStyle: {
-                    fontSize: 10,
-                    fontWeight: '500',
-                    marginTop: 2,
-                  },
-                  headerShown: false,
-                }}
+                tabBar={(props) => <CustomTabBar {...props} />}
+                screenOptions={{ headerShown: false }}
               >
-                <Tabs.Screen
-                  name="index"
-                  options={{
-                    title: 'Home',
-                    tabBarIcon: ({ focused, color }) => (
-                      <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color} />
-                    ),
-                  }}
-                />
-                <Tabs.Screen
-                  name="search"
-                  options={{
-                    title: 'Recommend',
-                    tabBarIcon: ({ focused, color }) => (
-                      <Ionicons
-                        name={focused ? 'paper-plane' : 'paper-plane-outline'}
-                        size={22}
-                        color={color}
-                      />
-                    ),
-                  }}
-                />
-                <Tabs.Screen
-                  name="library"
-                  options={{
-                    title: 'Library',
-                    tabBarIcon: ({ focused, color }) => (
-                      <Ionicons
-                        name={focused ? 'library' : 'library-outline'}
-                        size={22}
-                        color={color}
-                      />
-                    ),
-                  }}
-                />
+                <Tabs.Screen name="index"   options={{ title: 'Home'    }} />
+                <Tabs.Screen name="search"  options={{ title: 'For You' }} />
+                <Tabs.Screen name="library" options={{ title: 'Library' }} />
                 <Tabs.Screen
                   name="notes"
                   options={{
                     title: 'Inbox',
                     tabBarBadge: newRecCount > 0 ? newRecCount : undefined,
-                    tabBarBadgeStyle: { backgroundColor: '#1c1917', fontSize: 10 },
-                    tabBarIcon: ({ focused, color }) => (
-                      <Ionicons name={focused ? 'mail' : 'mail-outline'} size={22} color={color} />
-                    ),
                   }}
                 />
-                <Tabs.Screen
-                  name="profile"
-                  options={{
-                    title: 'Profile',
-                    tabBarIcon: ({ focused, color }) => (
-                      <Ionicons
-                        name={focused ? 'person-circle' : 'person-circle-outline'}
-                        size={22}
-                        color={color}
-                      />
-                    ),
-                  }}
-                />
+                <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
               </Tabs>
             </Animated.View>
 
