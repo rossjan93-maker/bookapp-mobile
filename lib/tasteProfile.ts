@@ -193,6 +193,40 @@ export function applyDiagnosisBoosts(
   return { preferred: round(p), avoided: round(a) };
 }
 
+// ── Reading style boosts (from edit-preferences screen) ───────────────────────
+// Maps each "Reading style I prefer" chip to trait nudges. Applied at all tiers
+// because these are explicit stated preferences — not inferred from book data.
+// Magnitudes (0.10–0.20) are intentionally small so actual rating data dominates
+// once it accumulates. Multiple chips stack additively, capped at 1 per trait.
+
+const STYLE_BOOSTS: Record<string, (p: Record<string, number>, a: Record<string, number>) => void> = {
+  'Fast-paced':      (p) => { p.Pacing     = Math.min(1, (p.Pacing     ?? 0) + 0.20); },
+  'Slow-burn':       (p) => { p.Pacing     = Math.max(0, (p.Pacing     ?? 0.30) - 0.15); p.Depth = Math.min(1, (p.Depth ?? 0) + 0.10); },
+  'Character-driven':(p) => { p.Characters = Math.min(1, (p.Characters ?? 0) + 0.20); p.Emotional = Math.min(1, (p.Emotional ?? 0) + 0.10); },
+  'Plot-driven':     (p) => { p.Pacing     = Math.min(1, (p.Pacing     ?? 0) + 0.15); },
+  'Dense prose':     (p) => { p.Writing    = Math.min(1, (p.Writing    ?? 0) + 0.20); p.Prose = Math.min(1, (p.Prose ?? 0) + 0.15); p.Depth = Math.min(1, (p.Depth ?? 0) + 0.10); },
+  'Light read':      (p) => { p.Pacing     = Math.min(1, (p.Pacing     ?? 0) + 0.15); },
+  'Dark themes':     (p) => { p.Emotional  = Math.min(1, (p.Emotional  ?? 0) + 0.12); p.Depth = Math.min(1, (p.Depth ?? 0) + 0.15); },
+  'Funny / Witty':   (p) => { p.Originality = Math.min(1, (p.Originality ?? 0) + 0.10); },
+  'Reflective':      (p) => { p.Depth      = Math.min(1, (p.Depth      ?? 0) + 0.15); p.Insight = Math.min(1, (p.Insight ?? 0) + 0.10); },
+  'Action-packed':   (p) => { p.Pacing     = Math.min(1, (p.Pacing     ?? 0) + 0.25); },
+};
+
+export function applyStyleBoosts(
+  preferred: Record<string, number>,
+  avoided:   Record<string, number>,
+  styles:    string[],
+): { preferred: Record<string, number>; avoided: Record<string, number> } {
+  const p = { ...preferred };
+  const a = { ...avoided };
+  for (const style of styles) {
+    STYLE_BOOSTS[style]?.(p, a);
+  }
+  const round = (r: Record<string, number>) =>
+    Object.fromEntries(Object.entries(r).map(([k, v]) => [k, +v.toFixed(2)]));
+  return { preferred: round(p), avoided: round(a) };
+}
+
 // ── Liked subjects + authors from 4+ star finished books ──────────────────────
 // Used by the recommender as anchor terms for OL subject / author searches.
 
@@ -499,10 +533,10 @@ export async function computeTasteProfile(
       .is('deleted_at', null)
       .not('rating', 'is', null),
 
-    // Diagnosis answers + genre preferences from reader_preferences
+    // Diagnosis answers + genre/style preferences from reader_preferences
     client
       .from('reader_preferences')
-      .select('diagnosis_answers, favorite_genres, avoid_genres')
+      .select('diagnosis_answers, favorite_genres, avoid_genres, reading_styles, favorite_authors')
       .eq('user_id', userId)
       .maybeSingle(),
   ]);
@@ -514,6 +548,8 @@ export async function computeTasteProfile(
     diagnosis_answers?: Record<string, string>;
     favorite_genres?:   string[];
     avoid_genres?:      string[];
+    reading_styles?:    string[];
+    favorite_authors?:  string | null;
   };
   const prefsData = (prefsRes.data ?? null) as PrefsRow | null;
 
@@ -570,8 +606,13 @@ export async function computeTasteProfile(
   const { preferred_traits: rawPref, avoided_traits: rawAvoid } = buildTraitScores(rows);
 
   // Apply diagnosis answer boosts on top of tag-derived scores
-  const { preferred: preferred_traits, avoided: avoided_traits } =
+  const { preferred: boostedPref, avoided: boostedAvoid } =
     applyDiagnosisBoosts(rawPref, rawAvoid, diagnosisAnswers);
+
+  // Apply reading style boosts (from edit-preferences screen)
+  const readingStyles = (prefsData?.reading_styles ?? []) as string[];
+  const { preferred: preferred_traits, avoided: avoided_traits } =
+    applyStyleBoosts(boostedPref, boostedAvoid, readingStyles);
 
   const finishedRatedRows = (finishedRatedRes.data ?? []) as FinishedBookRow[];
 
@@ -581,7 +622,24 @@ export async function computeTasteProfile(
   // Liked subject + author anchors for retrieval
   // Dense Goodreads users (≥20 imported books) get stricter subject noise filtering
   const isDenseGoodreadsUser = evidence.imported_books_count >= 20;
-  const { liked_subjects, liked_authors } = buildLikedAnchors(finishedRatedRows, isDenseGoodreadsUser);
+  const { liked_subjects, liked_authors: ratedLikedAuthors } = buildLikedAnchors(finishedRatedRows, isDenseGoodreadsUser);
+
+  // Merge stated favorite authors (from edit-preferences) into liked_authors.
+  // Actual 4★+ books come first; favorites fill remaining slots up to 8 total.
+  // Deduplication is by lowercase name so "Kazuo Ishiguro" won't double-count.
+  const seenAuthorKeys = new Set(ratedLikedAuthors.map(a => a.toLowerCase()));
+  const statedAuthors = (prefsData?.favorite_authors ?? '')
+    .split(',')
+    .map((a: string) => a.trim())
+    .filter((a: string) => a.length > 0 && !/^unknown/i.test(a));
+  const supplementAuthors: string[] = [];
+  for (const a of statedAuthors) {
+    if (!seenAuthorKeys.has(a.toLowerCase())) {
+      seenAuthorKeys.add(a.toLowerCase());
+      supplementAuthors.push(a);
+    }
+  }
+  const liked_authors = [...ratedLikedAuthors, ...supplementAuthors].slice(0, 8);
 
   // Deterministic lanes — built for all users; only has teeth for dense-import users
   const det_lanes = buildDeterministicLanes(finishedRatedRows, evidence);
