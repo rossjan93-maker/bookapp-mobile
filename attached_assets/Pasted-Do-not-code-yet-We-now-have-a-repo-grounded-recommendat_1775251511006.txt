@@ -1,0 +1,425 @@
+Do not code yet.
+
+We now have a repo-grounded recommendation-system audit.
+The next step is not more plumbing.
+The next step is to review the rubric itself and decide what should stay, what is overweighted, what is underweighted, and what is distorting output.
+
+I want a structured rubric critique based on the current codebase.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Take the current recommendation-system audit and turn it into a product/rubric review.
+
+I want to understand:
+- which scoring and filtering layers are doing the most work
+- which ones are likely improving quality
+- which ones may be over-constraining output
+- which ones may be under-crediting important signal
+- where the rubric is too conservative
+- where it may be too brittle
+- what should be changed first if we want better recommendations
+
+Do NOT implement anything in this pass.
+This is a critique/review pass only.
+
+==================================================
+WHAT I WANT
+==================================================
+
+Use the current repo state and current recommendation pipeline as the source of truth.
+
+I want you to review the rubric component by component and tell me, in practical product terms:
+
+- what each major rule/weight/gate is doing
+- why it may help
+- why it may hurt
+- whether it appears correctly tuned
+- whether it should be:
+  - kept
+  - increased
+  - reduced
+  - removed
+  - tested further before changing
+
+==================================================
+OUTPUT FORMAT
+==================================================
+
+Return a structured report with these exact sections:
+
+1. Executive judgment
+2. Recommendation system control points
+3. Weight/penalty/gate review table
+4. Most important drivers of final output
+5. Likely under-credited signals
+6. Likely over-weighted penalties or suppressors
+7. CoG / fit classification review
+8. Quality gate review
+9. Import-history treatment review
+10. Cold-start / onboarding signal review
+11. Session-intent / next-read review
+12. Diversity / composition review
+13. Top 10 likely recommendation distortions
+14. Highest-leverage changes to test
+15. Changes to avoid making blindly
+16. Runtime validations needed before changing weights
+17. Final prioritized recommendation list
+
+==================================================
+SECTION 1 — EXECUTIVE JUDGMENT
+==================================================
+
+Give me the blunt version:
+
+- Is the current rubric mostly sensible?
+- Where is it strongest?
+- Where is it probably too aggressive?
+- Where is it probably too weak?
+- Is the system currently more likely to fail by:
+  - being too generic
+  - being too conservative
+  - overfitting limited signal
+  - under-crediting imported history
+  - filtering too aggressively
+  - or something else
+
+==================================================
+SECTION 2 — RECOMMENDATION SYSTEM CONTROL POINTS
+==================================================
+
+List the biggest control points in the system.
+
+By “control points,” I mean the layers that most strongly shape what the user finally sees.
+
+Examples:
+- strong signal / tiering
+- genre affinity
+- trait alignment
+- avoided trait penalties
+- subject overlap
+- feedback boosts
+- enrichment quality
+- metadata penalties
+- subtype penalties
+- CoG / fit class
+- RIL series suppression
+- intent layer
+- quality gates
+- composition engine
+- expert layer
+
+For each, briefly say whether it is:
+- primary
+- secondary
+- cleanup/safety
+- weak/noisy
+- likely too influential
+- likely not influential enough
+
+==================================================
+SECTION 3 — WEIGHT / PENALTY / GATE REVIEW TABLE
+==================================================
+
+This is the most important section.
+
+Make a table with columns like:
+
+- Component / rule
+- Current behavior / weight / effect
+- Product value it is trying to create
+- What it likely improves
+- What it likely risks distorting
+- Your recommendation:
+  keep / increase / reduce / remove / test first
+
+I want this for every major weighted element you can identify, including but not limited to:
+
+- preferred trait alignment
+- subject overlap bonus
+- avoided trait penalties
+- genre affinity high/medium/penalty
+- feedback boost cap
+- enrichment consensus boost
+- enrichment quality boost
+- metadata confidence penalty
+- classic/literary/spiritual/noir/etc subtype penalties
+- dense-lane boosts/penalties
+- CoG score deltas
+- reject-class behavior
+- intent soft boosts
+- intent hard filters
+- continuation discount
+- author caps
+- adjacent visibility gate
+- lane seeding
+- quality thresholds
+- expert layer if applicable
+
+Be explicit.
+If a penalty looks too blunt, say so.
+If a boost looks too small to matter, say so.
+
+==================================================
+SECTION 4 — MOST IMPORTANT DRIVERS OF FINAL OUTPUT
+==================================================
+
+Tell me what actually moves the final result the most.
+
+I want the answer in practical terms.
+
+For example:
+- “CoG is the dominant editorial layer”
+- “genre + subject + CoG matter more than onboarding priors”
+- “trait boosts matter, but only inside a bounded range”
+- etc.
+
+Rank the top output drivers in order.
+
+==================================================
+SECTION 5 — LIKELY UNDER-CREDITED SIGNALS
+==================================================
+
+Tell me which signals are probably not getting enough credit right now.
+
+Examples you should explicitly consider:
+- imported history
+- imported books without ratings
+- favorite genres from onboarding
+- anchor book
+- diagnosis answers
+- favorite authors
+- raw shelves
+- manual library additions without ratings
+- current reading / in-progress data
+
+For each one:
+- say whether it seems under-credited
+- why
+- what symptom that would cause in product behavior
+
+==================================================
+SECTION 6 — LIKELY OVER-WEIGHTED PENALTIES OR SUPPRESSORS
+==================================================
+
+Tell me which penalties or suppressors look too strong.
+
+Examples you should explicitly consider:
+- literary drift penalties
+- classic/canon suppression
+- hard-boiled noir penalty
+- spy/adventure penalty
+- philosophy/spiritual penalty
+- graphic-format penalty
+- metadata confidence penalties
+- reject-class thresholds
+
+I want you to tell me where the rubric may be throwing away too much.
+
+==================================================
+SECTION 7 — COG / FIT CLASSIFICATION REVIEW
+==================================================
+
+I want a dedicated critique of the Center-of-Gravity layer.
+
+Explain:
+- what value CoG adds
+- why it may be the right editorial layer
+- where it may be too dominant
+- where it may create over-conservative output
+- whether it is likely suppressing legitimately good but slightly off-center books too often
+- whether the reject logic looks appropriately strict or too brittle
+
+Then tell me:
+- keep as is
+- soften
+- tune selectively
+- or test before changing
+
+==================================================
+SECTION 8 — QUALITY GATE REVIEW
+==================================================
+
+Review the quality gates.
+
+I want:
+- whether insufficient_pool and insufficient_score thresholds look sensible
+- whether they are too strict or too lenient
+- whether they are aligned with user-perceived signal
+- whether they are protecting trust or blocking usefulness too often
+- whether a large imported-history user could still be gated unfairly
+
+Also tell me:
+- where the current gates are likely correct
+- where they are likely wrong
+
+==================================================
+SECTION 9 — IMPORT-HISTORY TREATMENT REVIEW
+==================================================
+
+This is critical.
+
+I want you to evaluate whether imported history appears to be treated correctly in the rubric.
+
+Specifically answer:
+- Is imported history meaningfully credited?
+- Is it likely still under-credited in practice?
+- Is the system too dependent on ratings even after a rich import?
+- Could metadata lag after import still cause weak recommendation behavior?
+- What symptoms would that produce?
+
+Then give me your judgment:
+- import treatment is mostly right
+- import treatment is directionally right but operationally fragile
+- import treatment is materially underpowered
+- import treatment is too strong
+
+==================================================
+SECTION 10 — COLD-START / ONBOARDING SIGNAL REVIEW
+==================================================
+
+Review the cold-start model.
+
+I want you to assess:
+- whether onboarding questions are appropriately lightweight
+- whether they are too weak to be useful
+- whether they are too weakly connected to tiering
+- whether anchor book is weighted sensibly
+- whether favorite genres / avoid genres are blended sensibly
+- whether cold-start users are likely being handled honestly
+
+Give me your judgment on whether the current cold-start system is:
+- sensible
+- underpowered
+- awkward
+- too dependent on import
+- too dependent on explicit rating
+
+==================================================
+SECTION 11 — SESSION-INTENT / NEXT-READ REVIEW
+==================================================
+
+Even if the UI is being removed/demoted, I want your rubric-level view.
+
+Tell me:
+- whether the underlying intent system is conceptually valuable
+- whether it is too weak to matter
+- whether it is too fragile/broken to trust
+- whether it should remain a session-only modifier
+- whether it should ever influence core taste profile long-term
+
+==================================================
+SECTION 12 — DIVERSITY / COMPOSITION REVIEW
+==================================================
+
+Review the set-composition engine.
+
+I want you to assess:
+- continuation discount
+- author caps
+- lane seeding
+- adjacent visibility gate
+- core vs adjacent balance
+- whether the final set is likely too narrow or appropriately curated
+
+Tell me whether composition currently feels:
+- well controlled
+- too repetitive
+- too conservative
+- too engineered
+- or appropriately editorial
+
+==================================================
+SECTION 13 — TOP 10 LIKELY RECOMMENDATION DISTORTIONS
+==================================================
+
+Give me the 10 most likely ways the current rubric distorts output.
+
+Examples:
+- under-crediting imported history right after import
+- CoG rejecting too many plausible books
+- subtype penalties suppressing entire valid categories
+- quality gates blocking too often for users with real signal
+- metadata dependence punishing books that are actually good matches
+- etc.
+
+For each one:
+- short name
+- likely cause
+- user-visible symptom
+
+==================================================
+SECTION 14 — HIGHEST-LEVERAGE CHANGES TO TEST
+==================================================
+
+Give me the best changes to test first if our goal is:
+better rec quality, better trust, fewer false negatives.
+
+These should be ranked in order.
+
+For each:
+- what to change
+- why it matters
+- what it would likely improve
+- what risk it carries
+
+==================================================
+SECTION 15 — CHANGES TO AVOID MAKING BLINDLY
+==================================================
+
+Tell me what not to touch casually.
+
+Examples:
+- removing all CoG logic
+- massively increasing onboarding weight
+- weakening all quality gates
+- stripping penalties without reviewing why they exist
+
+I want to know what would likely create unintended damage.
+
+==================================================
+SECTION 16 — RUNTIME VALIDATIONS NEEDED
+==================================================
+
+Tell me what the repo alone cannot answer and what needs live validation.
+
+Examples:
+- whether imported-history users are actually over-gated
+- whether certain penalties are materially suppressing good books
+- whether a 0.04 boost ever changes visible ranking enough to matter
+- whether quality gates are firing too often in real sessions
+
+Be explicit about what we still need to prove with runtime data.
+
+==================================================
+SECTION 17 — FINAL PRIORITIZED RECOMMENDATION LIST
+==================================================
+
+End with a ranked list of what you would review/change first in the rubric, in order.
+
+I want:
+- the first 5 highest-value rubric review targets
+- one sentence each
+- why each one is ahead of the others
+
+==================================================
+IMPORTANT RULES
+==================================================
+
+- No code changes
+- Ground everything in the actual repo
+- Use actual constants/weights/effects where possible
+- If something is only an inference, label it
+- Be willing to say a component is too dominant or too weak
+- Do not protect past design decisions just because they exist
+
+==================================================
+DELIVERABLE
+==================================================
+
+Return:
+1. the full written rubric critique in chat
+2. a concise “what matters most vs least” table
+3. a concise “top 10 distortions” table
+4. optionally create RECOMMENDATION_RUBRIC_REVIEW.md in the repo after giving the full answer in chat
