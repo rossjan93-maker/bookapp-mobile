@@ -145,6 +145,81 @@ function buildTraitScores(rows: RawUserBook[]): {
   return { preferred_traits, avoided_traits };
 }
 
+// ── Import-history trait priors ───────────────────────────────────────────────
+//
+// Derives lightweight trait priors from the genre lanes detected in a user's
+// loved (≥4★) finished books.  Only activates when:
+//   (a) the taste-tag profile is completely blank (rawPref has zero keys), AND
+//   (b) the user has ≥10 imported books — i.e. they have behavioural history but
+//       have not done any in-app tagging yet.
+//
+// Priors are deliberately weak (max 0.12 per trait) and are applied via MAX
+// across lanes so they do NOT stack additively.  Real taste tags (rawPref) take
+// full precedence — the caller merges as { ...importPriors, ...rawPref }.
+//
+// The intent is not to manufacture a detailed personality model.  It is to
+// reduce the "post-import blank trait profile" problem where a user with 200
+// Goodreads books sees generic genre-only recommendations because their
+// preferred_traits is {}.
+//
+// Maximum cap: 0.12 — a single in-app tag contributes ~0.25–1.0 per trait
+// (depending on how many books are tagged), so these priors are always weaker
+// than even a single real tag interaction.
+
+const IMPORT_LANE_TRAITS: Partial<Record<DeterministicLane, Record<string, number>>> = {
+  romantasy:            { Characters: 0.12, Emotional: 0.10, Pacing: 0.08 },
+  scifi_fantasy:        { Pacing: 0.10, Originality: 0.10, Worldbuilding: 0.08 },
+  modern_suspense:      { Pacing: 0.12, Suspense: 0.10 },
+  romance:              { Emotional: 0.12, Characters: 0.10 },
+  contemporary_fiction: { Characters: 0.10, Emotional: 0.08 },
+  memoir_nonfiction:    { Insight: 0.12, Emotional: 0.08 },
+  literary:             { Writing: 0.10, Depth: 0.08, Prose: 0.08 },
+  horror:               { Pacing: 0.08, Emotional: 0.08 },
+};
+
+function deriveImportTraitPriors(
+  finishedRatedRows: FinishedBookRow[],
+  evidence:          { imported_books_count: number },
+  rawPref:           Record<string, number>,
+): Record<string, number> {
+  // Bail immediately if any real taste tags exist — do not interfere.
+  if (Object.keys(rawPref).length > 0) return {};
+  // Bail if import history is too thin to be reliable.
+  if (evidence.imported_books_count < 10) return {};
+
+  // Count how many loved (≥4★) books fall into each DeterministicLane.
+  const laneFreq: Partial<Record<DeterministicLane, number>> = {};
+  for (const row of finishedRatedRows) {
+    if ((row.rating ?? 0) < 4 || !row.book) continue;
+    const authorRaw = row.book.author ?? '';
+    const combined  = [
+      ...(row.book.subjects  ?? []),
+      ...(row.raw_shelves    ?? []),
+    ];
+    const lane = detectBookLane({
+      subjects: combined,
+      title:    row.book.title  ?? '',
+      author:   authorRaw,
+    });
+    if (!lane) continue;
+    laneFreq[lane] = (laneFreq[lane] ?? 0) + 1;
+  }
+
+  // Build derived priors: only lanes with ≥2 loved books contribute.
+  // Use MAX across lanes so traits do not stack additively.
+  const derived: Record<string, number> = {};
+  for (const [lane, freq] of Object.entries(laneFreq) as [DeterministicLane, number][]) {
+    if (freq < 2) continue;
+    const traitMap = IMPORT_LANE_TRAITS[lane];
+    if (!traitMap) continue;
+    for (const [trait, strength] of Object.entries(traitMap)) {
+      derived[trait] = Math.min(0.12, Math.max(derived[trait] ?? 0, strength));
+    }
+  }
+
+  return derived;
+}
+
 // ── Diagnosis answer boosts ────────────────────────────────────────────────────
 //
 // Diagnosis answers act as lightweight priors: they nudge preferred/avoided
@@ -605,16 +680,25 @@ export async function computeTasteProfile(
 
   const { preferred_traits: rawPref, avoided_traits: rawAvoid } = buildTraitScores(rows);
 
-  // Apply diagnosis answer boosts on top of tag-derived scores
+  // finishedRatedRows is needed both for import priors and downstream
+  // (genre affinities, anchors, det_lanes).  Define it here so it is
+  // available to deriveImportTraitPriors below without re-casting later.
+  const finishedRatedRows = (finishedRatedRes.data ?? []) as FinishedBookRow[];
+
+  // Derive lightweight trait priors from import history when the in-app
+  // taste-tag profile is completely blank.  Priors are weak (≤0.12) and
+  // are overridden by any real taste tag (rawPref wins in the spread merge).
+  const importPriors = deriveImportTraitPriors(finishedRatedRows, evidence, rawPref);
+  const mergedPref   = { ...importPriors, ...rawPref };
+
+  // Apply diagnosis answer boosts on top of merged priors + tag scores
   const { preferred: boostedPref, avoided: boostedAvoid } =
-    applyDiagnosisBoosts(rawPref, rawAvoid, diagnosisAnswers);
+    applyDiagnosisBoosts(mergedPref, rawAvoid, diagnosisAnswers);
 
   // Apply reading style boosts (from edit-preferences screen)
   const readingStyles = (prefsData?.reading_styles ?? []) as string[];
   const { preferred: preferred_traits, avoided: avoided_traits } =
     applyStyleBoosts(boostedPref, boostedAvoid, readingStyles);
-
-  const finishedRatedRows = (finishedRatedRes.data ?? []) as FinishedBookRow[];
 
   // Genre affinities from rated finished books
   const genre_affinities = buildGenreAffinities(finishedRatedRows);

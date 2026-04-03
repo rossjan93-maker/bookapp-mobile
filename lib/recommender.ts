@@ -1266,14 +1266,14 @@ function applyHygiene(
 //
 // These caps prevent any single step from saturating the 0–1 scale.
 // Maximum theoretical score (no penalties):
-//   0.38 (trait+subj) + 0.22 (genre) + 0.10 (feedback) + 0.08 (enrichment) = 0.78
+//   0.42 (trait+subj) + 0.22 (genre) + 0.10 (feedback) + 0.08 (enrichment) = 0.82
 // Real "Strong fit" (>0.60) therefore requires genre + multiple trait/subject signals.
 //
 // Step 1 split — trait matching + subject overlap density:
-//   STEP1_CAP       = 0.38  total ceiling (trait matching + subject overlap combined)
+//   STEP1_CAP       = 0.42  total ceiling (raised from 0.38 to accommodate deeper subject overlap)
 //   STEP1_BASE_CAP  = 0.32  trait-only ceiling when liked_subjects are available
-//                           (reserves 0.06 for subject overlap discrimination)
-//   STEP1_OVERLAP_MAX = 0.06 max bonus from subject overlap (1 hit = 0.02, cap at 3)
+//                           (reserves 0.10 for subject overlap discrimination)
+//   STEP1_OVERLAP_MAX = 0.10 max bonus from subject overlap (1 hit = 0.02, cap at 5)
 //
 // Rationale for the split:
 //   getBookTraits() returns the same prior scores for every book of the same genre
@@ -1282,15 +1282,22 @@ function applyHygiene(
 //   a fantasy novel set in the same niche as the user's loved reads outscores a
 //   generic fantasy novel. This creates the within-cohort discrimination that was
 //   missing and causing all books to land at identical raw_score = 0.56.
+//
+// Step 6 aggregate floor:
+//   S6_PENALTY_FLOOR = -0.25  prevents stacked subtype/drift/metadata penalties from
+//   completely neutralising books with strong Steps 1–3 scores. A book needs two
+//   significant concurrent penalties before the floor activates. Single large penalties
+//   (e.g. noir -0.22, spiritual -0.22) still fire at full strength unaffected.
 
 const TRAIT_CONTRIB_CAP  = 0.14;  // per-trait ceiling in step 1
-const STEP1_CAP          = 0.38;  // total step 1 ceiling (trait + subject overlap)
+const STEP1_CAP          = 0.42;  // total step 1 ceiling (trait + subject overlap)
 const STEP1_BASE_CAP     = 0.32;  // trait-only ceiling when subject overlap can apply
-const STEP1_OVERLAP_MAX  = 0.06;  // max subject overlap contribution (capped at 3 hits × 0.02)
+const STEP1_OVERLAP_MAX  = 0.10;  // max subject overlap contribution (capped at 5 hits × 0.02)
 const STEP3_BONUS_HIGH   = 0.22;  // genre affinity >0.5
 const STEP3_BONUS_MED    = 0.10;  // genre affinity 0.2–0.5
 const STEP3_PENALTY      = 0.18;  // genre affinity <-0.35
 const TRAIT_THRESHOLD    = 0.28;  // min contribution to count for step 1
+const S6_PENALTY_FLOOR   = -0.25; // aggregate floor on Step 6 — prevents penalty stacking from crushing strong matches
 
 // ── Scoring (pure) ────────────────────────────────────────────────────────────
 
@@ -1351,8 +1358,8 @@ export function scoreBookForUser(
   // cohort discriminator: two books of the same genre may have very different
   // topic specificity relative to what the user actually loved.
   //
-  // Overlap contribution: 1 match → +0.02, 2 matches → +0.04, 3+ → +0.06
-  // Combined with trait matching, the step 1 total is capped at STEP1_CAP (0.38).
+  // Overlap contribution: 1 match → +0.02, 2 matches → +0.04, 5+ → +0.10 (STEP1_OVERLAP_MAX)
+  // Combined with trait matching, the step 1 total is capped at STEP1_CAP (0.42).
   // Safety: when liked_subjects is empty (new/low-signal users), traitOnlyCap
   // already equals STEP1_CAP so no room is reserved and no overlap is computed.
   if (hasLikedSubjects) {
@@ -1539,9 +1546,13 @@ export function scoreBookForUser(
     if (risks.length < 1) risks.push('Philosophical or spiritual focus — different territory from your main reads');
   }
 
-  // Literary drift: fires for users with low literary affinity regardless of
-  // whether a dominant lane has been established.
-  if (bookIsLiterary && literaryAffinity < 0.2) {
+  // Literary drift: fires for users with confirmed evidence of low literary
+  // affinity.  Gated at tier >= 2 so that evidence-poor users (tier 0–1) are
+  // not penalised simply for lacking literary history.  A tier 0 user with
+  // literaryAffinity = 0.00 has no aversion signal — they just haven't read
+  // enough to establish one.  The 7c dense-lane literary extra (below) already
+  // requires dominant_lanes, so it is unaffected by this gate.
+  if (bookIsLiterary && literaryAffinity < 0.2 && profile.tier >= 2) {
     s6_meta_pen -= 0.16;
     audit_flags.push('literary_drift');
     if (risks.length < 1) risks.push('Leans more literary than your strongest recurring reads');
@@ -1602,6 +1613,13 @@ export function scoreBookForUser(
       s6_meta_pen = Math.min(0, s6_meta_pen) + 0.05;
     }
   }
+
+  // ── Step 6 aggregate floor ─────────────────────────────────────────────────
+  // Applied after all penalty accumulations including the 7c commercial-prior
+  // boost.  Prevents stacked metadata + subtype + drift penalties from
+  // crushing books that have strong Steps 1–3 scores.  A book with only one
+  // large penalty (e.g. noir −0.22, spiritual −0.22) is unaffected.
+  s6_meta_pen = Math.max(S6_PENALTY_FLOOR, s6_meta_pen);
 
   // ── Final score ───────────────────────────────────────────────────────────
   const rawScore   = s1_trait + s2_avoid + s3_genre + s4_feed + s5_enr + s6_meta_pen;
