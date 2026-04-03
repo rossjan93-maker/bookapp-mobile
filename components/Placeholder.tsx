@@ -250,9 +250,8 @@ export function HomeScreenSkeleton() {
   return (
     <View style={{ flex: 1, backgroundColor: BG, paddingHorizontal: 20, paddingTop: 24 }}>
       {/* Hero heading */}
-      <Pulse style={{ marginBottom: 28, gap: 8 }}>
-        <Box w={190} h={34} r={8} />
-        <Box w={130} h={14} r={6} c={FILL2} />
+      <Pulse style={{ marginBottom: 28 }}>
+        <Box w={110} h={20} r={6} c={FILL2} />
       </Pulse>
 
       {/* Continue Reading */}

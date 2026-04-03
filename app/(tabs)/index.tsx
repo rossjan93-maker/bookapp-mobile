@@ -607,20 +607,12 @@ export default function HomeScreen() {
       {/* ── Hero heading ── */}
       <View style={{ marginBottom: 28 }}>
         <Text style={{
-          fontSize: 34,
-          fontWeight: '800',
-          color: '#1c1917',
-          letterSpacing: -0.8,
-          lineHeight: 40,
+          fontSize: 20,
+          fontWeight: '600',
+          color: '#78716c',
+          letterSpacing: -0.2,
         }}>
           {greeting ? `Hi, ${greeting}` : 'Home'}
-        </Text>
-        <Text style={{ fontSize: 14, color: '#a8a29e', marginTop: 5 }}>
-          {currentReads.length === 1
-            ? `Currently reading · ${currentReads[0].title}`
-            : currentReads.length > 1
-            ? `${currentReads.length} books in progress`
-            : 'Your reading world'}
         </Text>
       </View>
 
