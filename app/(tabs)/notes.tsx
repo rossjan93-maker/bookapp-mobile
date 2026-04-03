@@ -2,6 +2,7 @@ import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { showToast } from '../../lib/toast';
 import { registerCacheClearer } from '../../lib/tabCache';
 import { BadgeContext } from './_layout';
 import { getFirstName } from '../../lib/displayName';
@@ -211,6 +212,7 @@ export default function InboxScreen() {
 
     setItems(prev => prev.map(r => r.id === item.id ? { ...r, status: 'saved' } : r));
     setSavingId(null);
+    showToast('Saved to your library');
   }
 
   function goToDetail(item: InboxItem) {

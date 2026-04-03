@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
+import { ToastContainer } from '../components/Toast';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { clearAllTabCaches } from '../lib/tabCache';
@@ -185,6 +186,7 @@ export default function RootLayout() {
     <OnboardingBridgeContext.Provider value={{ completeOnboarding: () => setNeedsOnboarding(false) }}>
       <View style={{ flex: 1 }}>
         <Stack screenOptions={{ headerShown: false }} />
+        <ToastContainer />
       </View>
     </OnboardingBridgeContext.Provider>
   );

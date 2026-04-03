@@ -2308,7 +2308,7 @@ export default function BookDetailScreen() {
     <Modal
       visible={showEditModal}
       transparent
-      animationType="fade"
+      animationType="slide"
       onRequestClose={() => setShowEditModal(false)}
     >
       <View style={{
@@ -2417,7 +2417,7 @@ export default function BookDetailScreen() {
     <Modal
       visible={pendingDetailRating !== null}
       transparent
-      animationType="fade"
+      animationType="slide"
       onRequestClose={() => { setPendingDetailRating(null); router.back(); }}
     >
       <View style={{

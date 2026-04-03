@@ -19,6 +19,7 @@ import { CoverThumb } from '../../components/CoverThumb';
 import { HomeScreenSkeleton } from '../../components/Placeholder';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computePagePacing, computeUserAvgPace } from '../../lib/pacing';
+import { showToast } from '../../lib/toast';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -518,6 +519,7 @@ export default function HomeScreen() {
     });
     if (!error) {
       await loadFriendships(userId);
+      showToast('Friend request sent');
     }
     setAddingId(null);
   }
