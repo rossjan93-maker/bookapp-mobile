@@ -167,11 +167,6 @@ export default function SettingsScreen() {
   const [deleteError, setDeleteError]         = useState<string | null>(null);
   const deleteInputRef = useRef<TextInput>(null);
 
-  // ── Dev reset state ───────────────────────────────────────────────────────
-  const [resetting, setResetting]   = useState(false);
-  const [resetDone, setResetDone]   = useState(false);
-  const [resetError, setResetError] = useState<string | null>(null);
-
   useEffect(() => {
     async function load() {
       if (!supabase) { setLoading(false); return; }
@@ -357,49 +352,6 @@ export default function SettingsScreen() {
     console.log('[DELETE_TRACE] calling signOut()');
     await supabase.auth.signOut();
     console.log('[DELETE_TRACE] signOut() returned');
-  }
-
-  async function handleResetOnboarding(coldStart = false) {
-    if (!supabase || !userId) return;
-    setResetting(true);
-    setResetDone(false);
-    setResetError(null);
-
-    const rpc = coldStart ? 'reset_own_data_cold' : 'reset_own_onboarding';
-    const { data, error } = await supabase.rpc(rpc);
-
-    if (error || !data?.ok) {
-      const raw = error?.message ?? data?.error ?? 'Reset failed';
-      console.error(`[settings] ${rpc} failed:`, raw);
-      setResetError(raw.length < 120 ? raw : 'Reset failed — try again.');
-      setResetting(false);
-      return;
-    }
-
-    // Clear client-side caches so the app cold-starts clean.
-    // Onboarding stage + walkthrough step are also cleared so that the
-    // routing guard sends the user back to the welcome screen on next login
-    // rather than inferring they are mid-flow from a stale local key.
-    const keysToRemove = [
-      ONBOARDING_STAGE_KEY,
-      'readstack_walkthrough_v1',
-      'readstack_guided_v1',
-      `readstack_rec_v1_${userId}`,
-      `readstack_rec_acted_v1_${userId}`,
-      'readstack_tooltip_v1_scan_result',
-    ];
-    await AsyncStorage.multiRemove(keysToRemove);
-
-    setResetting(false);
-    setResetDone(true);
-
-    Alert.alert(
-      coldStart ? 'Cold start reset complete' : 'Onboarding reset',
-      coldStart
-        ? 'Library, recs, and taste data cleared. Sign out and back in to start the onboarding flow fresh.'
-        : 'Taste data and onboarding state cleared. Sign out and back in to re-experience onboarding.',
-      [{ text: 'Sign out now', onPress: () => supabase?.auth.signOut() }, { text: 'Later' }]
-    );
   }
 
   const hasName = !!(firstName.trim() || lastName.trim());
@@ -784,78 +736,6 @@ export default function SettingsScreen() {
           </>
         )}
       </SettingsCard>
-
-      {/* ── Developer / Test Tools (dev mode only) ───────────────────────────── */}
-      {__DEV__ && (
-        <>
-          <SectionHeader>Developer</SectionHeader>
-          <SettingsCard>
-            {/* Reset onboarding (keep library) */}
-            <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 16 }}>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: '#57534e', marginBottom: 4 }}>
-                Reset Onboarding
-              </Text>
-              <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18, marginBottom: 12 }}>
-                Clears taste intake, genre picks, and rec cache. Library stays intact.
-                You'll be routed back through the new onboarding flow on next sign-in.
-              </Text>
-
-              {resetError && (
-                <Text style={{ fontSize: 12, color: '#b91c1c', marginBottom: 8 }}>
-                  {resetError}
-                </Text>
-              )}
-
-              <TouchableOpacity
-                onPress={() => handleResetOnboarding(false)}
-                disabled={resetting}
-                style={{
-                  backgroundColor: resetting ? '#e7e5e4' : '#78716c',
-                  borderRadius: 9,
-                  paddingVertical: 11,
-                  alignItems: 'center',
-                  marginBottom: 8,
-                }}
-              >
-                {resetting ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={{ fontSize: 13, color: '#fff', fontWeight: '600' }}>
-                    {resetDone ? 'Reset ✓  (sign out to take effect)' : 'Reset Onboarding State'}
-                  </Text>
-                )}
-              </TouchableOpacity>
-
-              {/* Cold start: also nukes library + recs */}
-              <TouchableOpacity
-                onPress={() => {
-                  Alert.alert(
-                    'Cold start reset',
-                    'This clears your entire library, recommendations, and taste data. Your account stays. Continue?',
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Reset Everything', style: 'destructive', onPress: () => handleResetOnboarding(true) },
-                    ]
-                  );
-                }}
-                disabled={resetting}
-                style={{
-                  borderWidth: 1,
-                  borderColor: '#e7e5e4',
-                  borderRadius: 9,
-                  paddingVertical: 11,
-                  alignItems: 'center',
-                  backgroundColor: '#fff',
-                }}
-              >
-                <Text style={{ fontSize: 12, color: '#b91c1c', fontWeight: '500' }}>
-                  Cold Start (clear library too)
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </SettingsCard>
-        </>
-      )}
 
       <View style={{ height: 40 }} />
     </ScrollView>
