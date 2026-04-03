@@ -12,7 +12,8 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { getDisplayName } from '../lib/displayName';
-import { ONBOARDING_STAGE_KEY } from '../lib/onboardingStage';
+import { ONBOARDING_STAGE_KEY, readOnboardingStage } from '../lib/onboardingStage';
+import { clearLocalOnboardingState } from '../lib/localStateClear';
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
@@ -270,11 +271,14 @@ export default function SettingsScreen() {
     setDeletingAccount(true);
     setDeleteError(null);
 
+    console.log('[DELETE_TRACE] deleting account userId=', userId?.slice(0, 8) ?? '(unknown)');
+
     const { data, error } = await supabase.rpc('delete_own_account');
 
     if (error || !data?.ok) {
       const raw = error?.message ?? data?.error ?? '';
       console.error('[settings] delete_own_account failed:', raw, data?.detail ?? '');
+      console.log('[DELETE_TRACE] delete_own_account FAILED — no local clear');
 
       let friendly = 'Deletion failed — please try again.';
       if (raw.includes('foreign key') || raw.includes('violates') || raw.includes('fkey')) {
@@ -289,14 +293,20 @@ export default function SettingsScreen() {
       return;
     }
 
-    // Clear local onboarding state so a new sign-up on the same device
-    // gets a fresh onboarding experience (no stale stage key left behind).
-    await AsyncStorage.multiRemove([
-      ONBOARDING_STAGE_KEY,
-      'readstack_walkthrough_v1',
-    ]);
+    console.log('[DELETE_TRACE] delete_own_account succeeded — clearing all local onboarding state');
 
+    // Comprehensive clear of all local onboarding/rec-entry state so a new
+    // sign-up on the same device starts completely clean.  This runs before
+    // signOut() so the keys are gone before SIGNED_OUT fires (belt-and-suspenders
+    // alongside the SIGNED_OUT handler in _layout.tsx which also awaits this).
+    await clearLocalOnboardingState();
+
+    const stageAfterClear = await readOnboardingStage();
+    console.log('[DELETE_TRACE] post-clear stage=', stageAfterClear, '(expect null)');
+
+    console.log('[DELETE_TRACE] calling signOut()');
     await supabase.auth.signOut();
+    console.log('[DELETE_TRACE] signOut() returned');
   }
 
   async function handleResetOnboarding(coldStart = false) {

@@ -71,6 +71,7 @@ export default function RootLayout() {
 
     supabase.auth.getSession().then(async ({ data }) => {
       setSession(data.session);
+      console.log('[DELETE_TRACE] cold-start userId=', data.session?.user?.id?.slice(0, 8) ?? null);
       if (data.session) {
         const meta = data.session.user.user_metadata;
         await ensureProfile(
@@ -80,7 +81,9 @@ export default function RootLayout() {
           meta?.last_name,
         );
         const completed = await checkOnboardingCompleted(data.session.user.id);
+        console.log('[DELETE_TRACE] cold-start DB onboarding_completed=', completed);
         if (completed) {
+          console.log('[DELETE_TRACE] cold-start → needsOnboarding=false (DB says done)');
           setNeedsOnboarding(false);
         } else {
           // onboarding_completed=false means the user has not finished onboarding.
@@ -93,6 +96,7 @@ export default function RootLayout() {
           const localStage = await readOnboardingStage();
           const locallyDone = localStage === 'done';
           const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup';
+          console.log('[DELETE_TRACE] cold-start localStage=', localStage, '→ needsOnboarding=', !midFlow && !locallyDone);
           setNeedsOnboarding(!midFlow && !locallyDone);
         }
       } else {
@@ -105,6 +109,7 @@ export default function RootLayout() {
       // Handle both SIGNED_IN and USER_UPDATED (email confirmation can fire either
       // depending on Supabase version / PKCE configuration).
       if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && newSession) {
+        console.log('[DELETE_TRACE]', event, 'userId=', newSession.user.id.slice(0, 8));
         const meta = newSession.user.user_metadata;
         await ensureProfile(
           newSession.user.id,
@@ -113,18 +118,25 @@ export default function RootLayout() {
           meta?.last_name,
         );
         const completed = await checkOnboardingCompleted(newSession.user.id);
+        console.log('[DELETE_TRACE] DB onboarding_completed=', completed);
         if (completed) {
+          console.log('[DELETE_TRACE] → needsOnboarding=false (DB says done)');
           setNeedsOnboarding(false);
         } else {
           const localStage  = await readOnboardingStage();
           const locallyDone = localStage === 'done';
           const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup';
+          console.log('[DELETE_TRACE] localStage=', localStage, 'locallyDone=', locallyDone, 'midFlow=', midFlow);
+          console.log('[DELETE_TRACE] → needsOnboarding=', !midFlow && !locallyDone);
           setNeedsOnboarding(!midFlow && !locallyDone);
         }
       } else if (event === 'SIGNED_OUT') {
+        console.log('[DELETE_TRACE] SIGNED_OUT — awaiting full local state clear');
         setNeedsOnboarding(false);
         clearAllTabCaches();
-        clearLocalOnboardingState();
+        await clearLocalOnboardingState();
+        const stageAfter = await readOnboardingStage();
+        console.log('[DELETE_TRACE] post-SIGNED_OUT stage=', stageAfter, '(expect null)');
       }
     });
 
