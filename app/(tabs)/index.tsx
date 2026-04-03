@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
   RefreshControl,
   ScrollView,
   Text,
@@ -211,6 +213,10 @@ export default function HomeScreen() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // ── Goal progress bar animation ──────────────────────────────────────────────
+  // Animates the fill from 0 → actual% whenever the reading-goal data settles.
+  const barFillAnim = useRef(new Animated.Value(0)).current;
+
   // Refs so we can write to the cache after all setters have been called
   // (state is async; refs give us the live values within the async load).
   const _crRef    = useRef<CurrentRead[]>([]);
@@ -241,6 +247,21 @@ export default function HomeScreen() {
     const t = setTimeout(measureHomeContent, 120);
     return () => clearTimeout(t);
   }, [feedLoading, wtStep]);
+
+  // Animate progress bar whenever the goal data settles.
+  // Uses raw state values (available before the loading guard) rather than the
+  // derived goalActualPct (which is computed after the early return).
+  useEffect(() => {
+    if (feedLoading || !yearlyGoal || yearlyGoal <= 0) return;
+    const pct = Math.min(100, Math.round((booksThisYear.length / yearlyGoal) * 100));
+    Animated.timing(barFillAnim, {
+      toValue:         pct,
+      duration:        900,
+      delay:           120,
+      easing:          Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [feedLoading, yearlyGoal, booksThisYear.length]);
 
   async function loadAll() {
     const t0 = Date.now();
@@ -812,16 +833,21 @@ export default function HomeScreen() {
 
               {/* ── 3. Goal-aware progress bar ── */}
               <View style={{
-                height: 5,
+                height: 7,
                 backgroundColor: '#e7e5e4',
-                borderRadius: 3,
+                borderRadius: 4,
                 marginBottom: 14,
+                overflow: 'hidden',
               }}>
-                <View style={{
-                  height: 5,
-                  width: `${goalActualPct}%`,
+                <Animated.View style={{
+                  height: 7,
+                  width: barFillAnim.interpolate({
+                    inputRange:  [0, 100],
+                    outputRange: ['0%', '100%'],
+                    extrapolate: 'clamp',
+                  }),
                   backgroundColor: '#1c1917',
-                  borderRadius: 3,
+                  borderRadius: 4,
                 }} />
                 {goalExpectedPct > 0 && goalExpectedPct < 100 && (
                   <View style={{
@@ -832,7 +858,7 @@ export default function HomeScreen() {
                     width: 2,
                     backgroundColor: goalActualPct >= goalExpectedPct
                       ? 'rgba(255,255,255,0.55)'
-                      : 'rgba(0,0,0,0.18)',
+                      : 'rgba(0,0,0,0.22)',
                   }} />
                 )}
               </View>

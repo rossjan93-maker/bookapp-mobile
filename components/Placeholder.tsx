@@ -201,7 +201,7 @@ function GoalCardSkeleton() {
         </View>
         <Box w={32} h={11} c={FILL2} />
       </View>
-      <Box w="100%" h={3} r={2} />
+      <Box w="100%" h={7} r={4} />
     </Pulse>
   );
 }
