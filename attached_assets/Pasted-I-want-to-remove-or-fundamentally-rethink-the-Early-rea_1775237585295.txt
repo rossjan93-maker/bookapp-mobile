@@ -1,0 +1,110 @@
+I want to remove or fundamentally rethink the “Early read on your taste” section at the top of Home.
+
+Right now it appears redundant.
+
+Why:
+- it forwards users to Recommendations
+- it does not seem to react meaningfully to the actual classification/state of suggestions
+- it duplicates the role of the Recommendations tab instead of adding unique value
+- on Home, it is taking up prime space without a clear job
+
+For beta, I want Home to be tighter and more purposeful.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Audit the “Early read on your taste” / top-of-Home recommendation teaser section and determine whether it should be removed.
+
+My current view:
+If it is not meaningfully state-aware and not doing something distinct from the Recommendations tab, remove it from Home for now.
+
+==================================================
+WHAT I NEED YOU TO CHECK
+==================================================
+
+Before coding, trace this section end to end and tell me:
+
+1. What exact component/file renders it
+2. What exact state/data feeds it
+3. Whether it reacts to:
+   - low-signal state
+   - early picks
+   - quality-gated state
+   - real recommendation availability
+   - recommendation classification/confidence
+4. Whether it is actually showing unique information or just acting as a teaser/link to Recommendations
+5. Whether it is helping the Home tab or just duplicating another surface
+
+==================================================
+KEY QUESTION
+==================================================
+
+I want a direct answer to this:
+
+Does this section have a real product function right now, or is it mostly redundant?
+
+Examples of acceptable answers:
+- “It is only a static teaser and does not meaningfully reflect recommendation state.”
+- “It is wired to live rec state and does provide distinct value.”
+- “It partly reflects rec state but not enough to justify its placement.”
+
+==================================================
+IF IT IS REDUNDANT
+==================================================
+
+If your repo-grounded conclusion is that it is redundant, remove it from the Home tab for now.
+
+Requirements:
+- remove the visible section cleanly
+- remove any now-unused imports/state/hooks tied only to that section
+- do not break Home layout spacing
+- do not break Recommendations logic
+- do not leave dead placeholders or awkward empty gaps
+
+I want Home to focus on things that are uniquely Home:
+- current reading
+- pace/progress
+- timeline/activity
+- other actually useful at-a-glance reading context
+
+Not a weak mirror of Recommendations.
+
+==================================================
+IF YOU BELIEVE IT SHOULD STAY
+==================================================
+
+Only argue to keep it if it is actually:
+- state-aware
+- distinct from Recommendations
+- useful on Home
+- responsive to classification/confidence/quality-gated states
+
+If you think it should stay, explain exactly why and what makes it non-redundant.
+
+==================================================
+WHAT I WANT BEFORE CODING
+==================================================
+
+Before implementing, give me:
+
+1. Exact files/components rendering this section
+2. Exact state/data it currently depends on
+3. Whether it reacts meaningfully to recommendation state/classification
+4. Your conclusion:
+   - keep
+   - remove
+   - redesign later
+5. Exact files you will modify if removing it
+
+Then implement if removal is the right call.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- we understand the real current function of this section
+- redundant teaser content is removed from Home if it has no real purpose
+- Home becomes cleaner and more focused
+- no regressions are introduced to Recommendations or Home layout
+- the beta surface becomes more intentional

@@ -17,8 +17,6 @@ import { CoverThumb } from '../../components/CoverThumb';
 import { HomeScreenSkeleton } from '../../components/Placeholder';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computePagePacing, computeUserAvgPace } from '../../lib/pacing';
-import { computeTasteProfile } from '../../lib/tasteProfile';
-import type { TasteProfile } from '../../lib/tasteProfile';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -166,7 +164,6 @@ type HomeSnapshot = {
   yearlyGoal:      number | null;
   pendingRecCount: number;
   booksThisYear:   YearBook[];
-  tasteProfile:    TasteProfile | null;
   feed:            FeedEvent[];
   friendships:     FriendshipRow[];
   fetchedAt:       number;
@@ -194,9 +191,6 @@ export default function HomeScreen() {
   const [booksThisYear,   setBooksThisYear]   = useState<YearBook[]>(() => _homeCache?.booksThisYear ?? []);
   const [goalExpanded,    setGoalExpanded]    = useState(false);
 
-  // Taste profile / learning mode
-  const [tasteProfile,    setTasteProfile]    = useState<TasteProfile | null>(() => _homeCache?.tasteProfile ?? null);
-
   // Activity feed
   const [feed,            setFeed]            = useState<FeedEvent[]>(() => _homeCache?.feed ?? []);
   // feedLoading is only true on a genuine cold start (no cache at all)
@@ -223,7 +217,6 @@ export default function HomeScreen() {
   const _gyRef    = useRef<number | null>(null);
   const _prRef    = useRef<number>(0);
   const _byRef    = useRef<YearBook[]>([]);
-  const _tpRef    = useRef<TasteProfile | null>(null);
   const _feedRef  = useRef<FeedEvent[]>([]);
   const _fsRef    = useRef<FriendshipRow[]>([]);
 
@@ -272,16 +265,13 @@ export default function HomeScreen() {
 
     // ── Parallel fetch: friendships + all user-specific data at once ────────────
     // Previously: loadFriendships() was awaited alone, blocking everything else.
-    // Now: all 5 queries start simultaneously. Feed is kicked off once friend IDs
+    // Now: all 4 queries start simultaneously. Feed is kicked off once friend IDs
     // are known, but the dashboard content is unblocked from the start.
     const [friendshipRows] = await Promise.all([
       loadFriendships(user.id),
       loadCurrentRead(user.id),
       loadPendingRecs(user.id),
       loadBooksThisYear(user.id),
-      computeTasteProfile(supabase!, user.id)
-        .then(tp => { setTasteProfile(tp); _tpRef.current = tp; })
-        .catch(() => {}),
     ]);
 
     // Dashboard is ready — clear the loading gate (if it was set on cold start)
@@ -307,7 +297,6 @@ export default function HomeScreen() {
       yearlyGoal:      _gyRef.current,
       pendingRecCount: _prRef.current,
       booksThisYear:   _byRef.current,
-      tasteProfile:    _tpRef.current,
       feed:            _feedRef.current,
       friendships:     _fsRef.current,
       fetchedAt:       Date.now(),
@@ -634,47 +623,6 @@ export default function HomeScreen() {
             : 'Your reading world'}
         </Text>
       </View>
-
-      {/* ── Taste Learning Status (compact, tier ≤ 1 only) ── */}
-      {tasteProfile !== null && tasteProfile.tier <= 1 && (
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={() => router.push('/(tabs)/search')}
-          style={{ marginBottom: 28 }}
-        >
-          <View style={{
-            backgroundColor: '#fff',
-            borderRadius: 14,
-            paddingHorizontal: 16,
-            paddingVertical: 14,
-            shadowColor: '#000',
-            shadowOpacity: 0.04,
-            shadowRadius: 6,
-            shadowOffset: { width: 0, height: 1 },
-            elevation: 1,
-          }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917' }}>
-                  {tasteProfile.label}
-                </Text>
-                <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 2 }}>
-                  {tasteProfile.strongSignalCount} of {tasteProfile.nextTierAt} signals to next tier
-                </Text>
-              </View>
-              <Text style={{ fontSize: 13, color: '#a8a29e' }}>›</Text>
-            </View>
-            <View style={{ height: 3, backgroundColor: '#e7e5e4', borderRadius: 2, overflow: 'hidden' }}>
-              <View style={{
-                height: 3,
-                width: `${Math.min(100, Math.round((tasteProfile.strongSignalCount / tasteProfile.nextTierAt) * 100))}%`,
-                backgroundColor: '#1c1917',
-                borderRadius: 2,
-              }} />
-            </View>
-          </View>
-        </TouchableOpacity>
-      )}
 
       {/* ── 1. Continue Reading ── */}
       {currentReads.length > 0 && (
