@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { BackButton } from '../components/BackButton';
 import { supabase } from '../lib/supabase';
 import { CoverThumb } from '../components/CoverThumb';
 import {
@@ -340,9 +341,7 @@ export default function AddBookScreen() {
       <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
         {/* ── Header ── */}
         <View style={{ paddingHorizontal: 20, paddingTop: 60, paddingBottom: 12 }}>
-          <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 20 }}>
-            <Text style={{ fontSize: 14, color: '#78716c' }}>← Back</Text>
-          </TouchableOpacity>
+          <BackButton onPress={() => router.back()} style={{ marginBottom: 20 }} />
           <Text style={{
             fontSize: 28,
             fontWeight: '800',
@@ -605,9 +604,7 @@ export default function AddBookScreen() {
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 60, paddingBottom: 48 }}
         keyboardShouldPersistTaps="handled"
       >
-        <TouchableOpacity onPress={() => setStep('search')} style={{ marginBottom: 22 }}>
-          <Text style={{ fontSize: 14, color: '#78716c' }}>← Back to search</Text>
-        </TouchableOpacity>
+        <BackButton onPress={() => setStep('search')} label="Search" style={{ marginBottom: 22 }} />
 
         <Text style={{
           fontSize: 22,

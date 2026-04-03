@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { BackButton } from '../../components/BackButton';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
@@ -1072,13 +1073,10 @@ export default function BookDetailScreen() {
     >
       {/* ── Hero cover ── */}
       <View style={{ backgroundColor: '#f0ede8', alignItems: 'center', paddingTop: 80, paddingBottom: 60 }}>
-        <TouchableOpacity
+        <BackButton
           onPress={() => router.back()}
           style={{ position: 'absolute', top: 76, left: 20, zIndex: 10 }}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Text style={{ fontSize: 14, color: '#78716c' }}>← Back</Text>
-        </TouchableOpacity>
+        />
         <CoverThumb url={enrichedCoverUrl || coverUrl || null} externalId={externalId || null} title={title || null} width={122} height={180} />
       </View>
 

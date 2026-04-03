@@ -25,6 +25,7 @@ import {
   hybridMerge,
 } from '../../lib/bookSearch';
 import { CoverThumb } from '../../components/CoverThumb';
+import { BackButton } from '../../components/BackButton';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computeTasteProfile } from '../../lib/tasteProfile';
 import type { TasteProfile } from '../../lib/tasteProfile';
@@ -1734,9 +1735,7 @@ export default function RecommendationsScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
         <View style={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 4 }}>
-          <TouchableOpacity onPress={() => setStep('hub')} style={{ marginBottom: 16 }}>
-            <Text style={{ color: '#78716c', fontSize: 14 }}>← Back</Text>
-          </TouchableOpacity>
+          <BackButton onPress={() => setStep('hub')} style={{ marginBottom: 16 }} />
           <Text style={{
             fontSize: 22,
             fontWeight: '800',
@@ -1859,9 +1858,7 @@ export default function RecommendationsScreen() {
   if (step === 'friends') {
     return (
       <View style={{ flex: 1, backgroundColor: '#faf9f7', paddingHorizontal: 20, paddingTop: 24 }}>
-        <TouchableOpacity onPress={() => setStep('search')} style={{ marginBottom: 20 }}>
-          <Text style={{ color: '#78716c', fontSize: 14 }}>← Back to search</Text>
-        </TouchableOpacity>
+        <BackButton onPress={() => setStep('search')} label="Search" style={{ marginBottom: 20 }} />
 
         <View style={{
           backgroundColor: '#fff',

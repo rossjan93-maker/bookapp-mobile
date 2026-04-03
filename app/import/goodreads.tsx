@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { BackButton } from '../../components/BackButton';
 import { supabase } from '../../lib/supabase';
 import { parseGoodreadsCSV } from '../../lib/goodreadsParser';
 import { stageGoodreadsImport } from '../../lib/goodreadsStager';
@@ -46,13 +47,6 @@ function ScreenContainer({ children }: { children: React.ReactNode }) {
   );
 }
 
-function BackButton({ onPress, disabled }: { onPress: () => void; disabled?: boolean }) {
-  return (
-    <TouchableOpacity onPress={onPress} disabled={disabled} style={{ marginBottom: 28 }}>
-      <Text style={{ fontSize: 14, color: disabled ? '#d6d3d1' : '#78716c' }}>← Back</Text>
-    </TouchableOpacity>
-  );
-}
 
 function PageTitle({ children }: { children: string }) {
   return (
@@ -1211,7 +1205,7 @@ export default function GoodreadsImportScreen() {
 
   return (
     <ScreenContainer>
-      <BackButton onPress={() => router.back()} disabled={isLocked} />
+      <BackButton onPress={() => router.back()} disabled={isLocked} style={{ marginBottom: 28 }} />
 
       {step === 'idle' && (
         <IdleView onPickFile={handlePickFile} isWeb={isWeb} onResetRequest={handleResetRequest} />

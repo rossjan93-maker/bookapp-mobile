@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { BackButton } from '../components/BackButton';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { getDisplayName } from '../lib/displayName';
@@ -373,9 +374,7 @@ export default function SettingsScreen() {
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 60 }}
       keyboardShouldPersistTaps="handled"
     >
-      <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 24 }}>
-        <Text style={{ fontSize: 14, color: '#78716c' }}>← Back</Text>
-      </TouchableOpacity>
+      <BackButton onPress={() => router.back()} style={{ marginBottom: 24 }} />
 
       <Text style={{
         fontSize: 28,

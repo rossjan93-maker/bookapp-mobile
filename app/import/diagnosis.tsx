@@ -7,6 +7,7 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { BackButton } from '../../components/BackButton';
 import { supabase } from '../../lib/supabase';
 import {
   computeTasteProfile,
@@ -135,9 +136,7 @@ export default function DiagnosisScreen() {
         style={{ flex: 1, backgroundColor: '#faf9f7' }}
         contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 56, paddingBottom: 60 }}
       >
-        <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 24 }}>
-          <Text style={{ fontSize: 14, color: '#a8a29e' }}>← Back</Text>
-        </TouchableOpacity>
+        <BackButton onPress={() => router.back()} style={{ marginBottom: 24 }} />
 
         <Text style={{ fontSize: 28, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, marginBottom: 6 }}>
           What we think we know

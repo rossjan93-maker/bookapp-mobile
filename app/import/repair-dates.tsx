@@ -7,6 +7,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { BackButton } from '../../components/BackButton';
 import { supabase } from '../../lib/supabase';
 import {
   auditFinishedDates,
@@ -17,13 +18,6 @@ import type { AuditRow, AuditReport } from '../../lib/finishedAtRepair';
 
 // ─── Layout helpers ────────────────────────────────────────────────────────────
 
-function BackButton({ onPress }: { onPress: () => void }) {
-  return (
-    <TouchableOpacity onPress={onPress} style={{ marginBottom: 28 }}>
-      <Text style={{ fontSize: 14, color: '#78716c' }}>← Back</Text>
-    </TouchableOpacity>
-  );
-}
 
 function SectionLabel({ children }: { children: string }) {
   return (
@@ -194,7 +188,7 @@ export default function RepairDatesScreen() {
       style={{ flex: 1, backgroundColor: '#faf9f7' }}
       contentContainerStyle={{ paddingHorizontal: 22, paddingTop: 56, paddingBottom: 60 }}
     >
-      <BackButton onPress={() => router.back()} />
+      <BackButton onPress={() => router.back()} style={{ marginBottom: 28 }} />
 
       <Text style={{
         fontSize: 26,

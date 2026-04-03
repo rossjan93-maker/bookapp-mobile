@@ -7,6 +7,7 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { BackButton } from '../../components/BackButton';
 import { supabase } from '../../lib/supabase';
 import { getDisplayName } from '../../lib/displayName';
 import { directionalTrustInsight } from '../../lib/signals';
@@ -269,9 +270,7 @@ export default function FriendDetailScreen() {
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 48 }}
     >
       {/* ── Back ── */}
-      <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 28 }}>
-        <Text style={{ fontSize: 14, color: '#78716c' }}>← Back</Text>
-      </TouchableOpacity>
+      <BackButton onPress={() => router.back()} style={{ marginBottom: 28 }} />
 
       {/* ── Avatar + Name ── */}
       <View style={{ alignItems: 'center', marginBottom: 36 }}>

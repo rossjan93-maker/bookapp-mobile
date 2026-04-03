@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { BackButton } from '../components/BackButton';
 import { supabase } from '../lib/supabase';
 
 const GENRES = [
@@ -159,9 +160,7 @@ export default function EditPreferencesScreen() {
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 60, paddingBottom: 56 }}
       keyboardShouldPersistTaps="handled"
     >
-      <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 20 }}>
-        <Text style={{ fontSize: 14, color: '#6b7280' }}>← Back</Text>
-      </TouchableOpacity>
+      <BackButton onPress={() => router.back()} style={{ marginBottom: 20 }} />
 
       <Text style={{
         fontSize: 28,

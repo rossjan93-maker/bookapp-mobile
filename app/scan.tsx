@@ -27,6 +27,7 @@ import { Ionicons }                 from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 
 import { supabase }                 from '../lib/supabase';
+import { BackButton }               from '../components/BackButton';
 import { computeTasteProfile }      from '../lib/tasteProfile';
 import { loadFeedbackContext, persistFeedback } from '../lib/recFeedback';
 import {
@@ -444,9 +445,7 @@ export default function ScanScreen() {
   // ── Header ─────────────────────────────────────────────────────────────────
   const header = (
     <View style={s.header}>
-      <Pressable onPress={() => router.back()} style={s.headerBack} hitSlop={12}>
-        <Ionicons name="chevron-back" size={24} color="#1c1917" />
-      </Pressable>
+      <BackButton onPress={() => router.back()} color="#1c1917" />
       <Text style={s.headerTitle}>Scan a book</Text>
       <View style={{ width: 40 }} />
     </View>
