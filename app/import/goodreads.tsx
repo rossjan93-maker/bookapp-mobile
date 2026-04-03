@@ -239,6 +239,8 @@ const GOODREADS_EXPORT_URL = 'https://www.goodreads.com/review/import';
 
 // ─── Step: idle ───────────────────────────────────────────────────────────────
 
+const STORYGRAPH_EXPORT_URL = 'https://app.thestorygraph.com/profile/edit';
+
 function IdleView({
   onPickFile,
   isWeb,
@@ -248,7 +250,9 @@ function IdleView({
   isWeb: boolean;
   onResetRequest: () => void;
 }) {
-  const steps = [
+  const [platform, setPlatform] = useState<'goodreads' | 'storygraph'>('goodreads');
+
+  const goodreadsSteps = [
     {
       label: 'Open Goodreads in Safari or Chrome',
       sub: 'Tap the black button below. If the Goodreads app opens instead of a browser, tap "..." or the share icon inside the app and choose "Open in Safari" or "Open in Browser".',
@@ -269,29 +273,107 @@ function IdleView({
     },
   ];
 
+  const storygraphSteps = [
+    {
+      label: 'Open StoryGraph in your browser',
+      sub: 'Tap the button below to open StoryGraph. Sign in if you aren\'t already.',
+    },
+    {
+      label: 'Go to Account → Edit Profile',
+      sub: 'Scroll down to the "Import/Export" section at the bottom of the page.',
+    },
+    {
+      label: 'Tap "Export your data"',
+      sub: 'StoryGraph will email you a CSV file — check your inbox. It may take a few minutes.',
+    },
+    {
+      label: 'Save the CSV, then add books manually',
+      sub: 'Use your exported CSV as a reference list. You can add books in readstack via Search → find the book → mark as read and rate it. Direct StoryGraph import is coming soon.',
+    },
+  ];
+
+  const steps = platform === 'goodreads' ? goodreadsSteps : storygraphSteps;
+
   return (
     <>
-      <PageTitle>Import from Goodreads</PageTitle>
+      <PageTitle>Import your library</PageTitle>
       <PageSubtitle>
-        Bring your full reading history into readstack. You'll see a preview before anything is saved.
+        Bring your reading history into readstack. You'll see a preview before anything is saved.
       </PageSubtitle>
 
-      {/* ── Browser-only warning ── */}
+      {/* ── Platform picker ── */}
       <View style={{
-        backgroundColor: '#fffbf5',
-        borderRadius: 12,
-        padding: 14,
-        borderLeftWidth: 3,
-        borderLeftColor: '#d4a574',
+        flexDirection: 'row',
+        backgroundColor: '#f5f5f4',
+        borderRadius: 10,
+        padding: 3,
         marginBottom: 20,
       }}>
-        <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 3 }}>
-          Do this in Safari or Chrome — not the Goodreads app
-        </Text>
-        <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
-          If the Goodreads app opens when you tap the button below, use the app menu to open the page in Safari or Chrome instead.
-        </Text>
+        {(['goodreads', 'storygraph'] as const).map(p => (
+          <TouchableOpacity
+            key={p}
+            onPress={() => setPlatform(p)}
+            style={{
+              flex: 1,
+              paddingVertical: 8,
+              borderRadius: 8,
+              alignItems: 'center',
+              backgroundColor: platform === p ? '#fff' : 'transparent',
+              shadowColor: platform === p ? '#000' : 'transparent',
+              shadowOpacity: platform === p ? 0.06 : 0,
+              shadowRadius: 4,
+              shadowOffset: { width: 0, height: 1 },
+              elevation: platform === p ? 1 : 0,
+            }}
+          >
+            <Text style={{
+              fontSize: 13,
+              fontWeight: platform === p ? '700' : '500',
+              color: platform === p ? '#1c1917' : '#78716c',
+            }}>
+              {p === 'goodreads' ? 'Goodreads' : 'StoryGraph'}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
+
+      {platform === 'storygraph' && (
+        /* ── StoryGraph coming-soon notice ── */
+        <View style={{
+          backgroundColor: '#fffbeb',
+          borderRadius: 12,
+          padding: 14,
+          borderLeftWidth: 3,
+          borderLeftColor: '#f59e0b',
+          marginBottom: 20,
+        }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 3 }}>
+            Direct import coming soon
+          </Text>
+          <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
+            StoryGraph doesn't support automatic CSV upload yet. Export your data below, then use it as a reference to add books manually in readstack.
+          </Text>
+        </View>
+      )}
+
+      {platform === 'goodreads' && (
+        /* ── Browser-only warning (Goodreads only) ── */
+        <View style={{
+          backgroundColor: '#fffbf5',
+          borderRadius: 12,
+          padding: 14,
+          borderLeftWidth: 3,
+          borderLeftColor: '#d4a574',
+          marginBottom: 20,
+        }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 3 }}>
+            Do this in Safari or Chrome — not the Goodreads app
+          </Text>
+          <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
+            If the Goodreads app opens when you tap the button below, use the app menu to open the page in Safari or Chrome instead.
+          </Text>
+        </View>
+      )}
 
       <Card>
         <View style={{ padding: 18 }}>
@@ -321,93 +403,127 @@ function IdleView({
         </View>
       </Card>
 
-      {/* Open Goodreads export page in browser */}
-      <TouchableOpacity
-        onPress={() => Linking.openURL(GOODREADS_EXPORT_URL)}
-        style={{
-          marginTop: 20,
-          backgroundColor: '#1c1917',
-          borderRadius: 12,
-          paddingVertical: 15,
-          alignItems: 'center',
-        }}
-      >
-        <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>
-          Open Goodreads Export Page
-        </Text>
-      </TouchableOpacity>
+      {platform === 'goodreads' ? (
+        <>
+          {/* Open Goodreads export page in browser */}
+          <TouchableOpacity
+            onPress={() => Linking.openURL(GOODREADS_EXPORT_URL)}
+            style={{
+              marginTop: 20,
+              backgroundColor: '#1c1917',
+              borderRadius: 12,
+              paddingVertical: 15,
+              alignItems: 'center',
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>
+              Open Goodreads Export Page
+            </Text>
+          </TouchableOpacity>
 
-      {/* Fallback: selectable URL for manual paste into Safari */}
-      <View style={{ marginTop: 12, alignItems: 'center', paddingHorizontal: 8 }}>
-        <Text style={{ fontSize: 11, color: '#a8a29e', marginBottom: 4, textAlign: 'center' }}>
-          If the app opens instead, copy this link and paste it into Safari:
-        </Text>
-        <Text
-          selectable
-          style={{ fontSize: 12, color: '#57534e', textAlign: 'center' }}
-        >
-          goodreads.com/review/import
-        </Text>
-      </View>
+          {/* Fallback: selectable URL for manual paste into Safari */}
+          <View style={{ marginTop: 12, alignItems: 'center', paddingHorizontal: 8 }}>
+            <Text style={{ fontSize: 11, color: '#a8a29e', marginBottom: 4, textAlign: 'center' }}>
+              If the app opens instead, copy this link and paste it into Safari:
+            </Text>
+            <Text
+              selectable
+              style={{ fontSize: 12, color: '#57534e', textAlign: 'center' }}
+            >
+              goodreads.com/review/import
+            </Text>
+          </View>
 
-      {/* Divider */}
-      <View style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginVertical: 20,
-      }}>
-        <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
-        <Text style={{ fontSize: 12, color: '#a8a29e', marginHorizontal: 12 }}>then</Text>
-        <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
-      </View>
-
-      {isWeb ? (
-        /* Web: full file-picker CTA */
-        <TouchableOpacity
-          onPress={onPickFile}
-          style={{
-            backgroundColor: '#fff',
-            borderRadius: 12,
-            paddingVertical: 15,
+          {/* Divider */}
+          <View style={{
+            flexDirection: 'row',
             alignItems: 'center',
-            borderWidth: 1,
-            borderColor: '#e7e5e4',
-          }}
-        >
-          <Text style={{ color: '#1c1917', fontSize: 15, fontWeight: '600' }}>
-            Choose CSV File
-          </Text>
-          <Text style={{ color: '#a8a29e', fontSize: 12, marginTop: 3 }}>
-            goodreads_library_export.csv
-          </Text>
-        </TouchableOpacity>
-      ) : (
-        /* Mobile: helpful note instead of a dead end */
-        <View style={{
-          backgroundColor: '#fff',
-          borderRadius: 12,
-          padding: 18,
-          borderWidth: 1,
-          borderColor: '#e7e5e4',
-        }}>
-          <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', marginBottom: 6 }}>
-            Uploading the file
-          </Text>
-          <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
-            Once the CSV is saved to Files, open readstack in a web browser and come back to this screen to upload it.
-          </Text>
-        </View>
-      )}
+            marginVertical: 20,
+          }}>
+            <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
+            <Text style={{ fontSize: 12, color: '#a8a29e', marginHorizontal: 12 }}>then</Text>
+            <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
+          </View>
 
-      {/* ── Goodreads reset entry point ── */}
-      <View style={{ marginTop: 36, alignItems: 'center' }}>
-        <View style={{ height: 1, backgroundColor: '#e7e5e4', width: '100%', marginBottom: 20 }} />
-        <TouchableOpacity onPress={onResetRequest} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Text style={{ fontSize: 13, color: '#a8a29e' }}>
-            Reset Goodreads import
-          </Text>
-        </TouchableOpacity>
-      </View>
+          {isWeb ? (
+            /* Web: full file-picker CTA */
+            <TouchableOpacity
+              onPress={onPickFile}
+              style={{
+                backgroundColor: '#fff',
+                borderRadius: 12,
+                paddingVertical: 15,
+                alignItems: 'center',
+                borderWidth: 1,
+                borderColor: '#e7e5e4',
+              }}
+            >
+              <Text style={{ color: '#1c1917', fontSize: 15, fontWeight: '600' }}>
+                Choose CSV File
+              </Text>
+              <Text style={{ color: '#a8a29e', fontSize: 12, marginTop: 3 }}>
+                goodreads_library_export.csv
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            /* Mobile: helpful note instead of a dead end */
+            <View style={{
+              backgroundColor: '#fff',
+              borderRadius: 12,
+              padding: 18,
+              borderWidth: 1,
+              borderColor: '#e7e5e4',
+            }}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', marginBottom: 6 }}>
+                Uploading the file
+              </Text>
+              <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
+                Once the CSV is saved to Files, open readstack in a web browser and come back to this screen to upload it.
+              </Text>
+            </View>
+          )}
+
+          {/* ── Goodreads reset entry point ── */}
+          <View style={{ marginTop: 36, alignItems: 'center' }}>
+            <View style={{ height: 1, backgroundColor: '#e7e5e4', width: '100%', marginBottom: 20 }} />
+            <TouchableOpacity onPress={onResetRequest} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <Text style={{ fontSize: 13, color: '#a8a29e' }}>
+                Reset Goodreads import
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      ) : (
+        <>
+          {/* StoryGraph: open their export page */}
+          <TouchableOpacity
+            onPress={() => Linking.openURL(STORYGRAPH_EXPORT_URL)}
+            style={{
+              marginTop: 20,
+              backgroundColor: '#1c1917',
+              borderRadius: 12,
+              paddingVertical: 15,
+              alignItems: 'center',
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>
+              Open StoryGraph Profile
+            </Text>
+          </TouchableOpacity>
+
+          <View style={{ marginTop: 12, alignItems: 'center', paddingHorizontal: 8 }}>
+            <Text style={{ fontSize: 11, color: '#a8a29e', marginBottom: 4, textAlign: 'center' }}>
+              Or copy this link into your browser:
+            </Text>
+            <Text
+              selectable
+              style={{ fontSize: 12, color: '#57534e', textAlign: 'center' }}
+            >
+              app.thestorygraph.com/profile/edit
+            </Text>
+          </View>
+        </>
+      )}
     </>
   );
 }
