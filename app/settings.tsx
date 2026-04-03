@@ -100,20 +100,23 @@ function SaveButton({
   onPress,
   saving,
   saved,
+  disabled,
   label,
 }: {
   onPress: () => void;
   saving: boolean;
   saved: boolean;
+  disabled?: boolean;
   label: string;
 }) {
+  const isDisabled = saving || saved || !!disabled;
   return (
     <TouchableOpacity
       onPress={onPress}
-      disabled={saving || saved}
+      disabled={isDisabled}
       style={{
         marginTop: 10,
-        backgroundColor: saved ? '#15803d' : saving ? '#d6d3d1' : '#1c1917',
+        backgroundColor: saved ? '#15803d' : isDisabled ? '#d6d3d1' : '#1c1917',
         borderRadius: 10,
         paddingVertical: 13,
         alignItems: 'center',
@@ -135,10 +138,11 @@ function SaveButton({
 export default function SettingsScreen() {
   const router = useRouter();
 
-  const [userId, setUserId]     = useState<string | null>(null);
-  const [username, setUsername] = useState('');
-  const [email, setEmail]       = useState<string | null>(null);
-  const [loading, setLoading]   = useState(true);
+  const [userId, setUserId]         = useState<string | null>(null);
+  const [username, setUsername]     = useState('');
+  const [originalUsername, setOriginalUsername] = useState('');
+  const [email, setEmail]           = useState<string | null>(null);
+  const [loading, setLoading]       = useState(true);
 
   const [firstName, setFirstName]       = useState('');
   const [lastName, setLastName]         = useState('');
@@ -146,6 +150,9 @@ export default function SettingsScreen() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaved, setProfileSaved]   = useState(false);
   const [profileError, setProfileError]   = useState<string | null>(null);
+
+  type UsernameStatus = 'idle' | 'checking' | 'available' | 'taken' | 'invalid';
+  const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>('idle');
 
   const [goalDraft, setGoalDraft] = useState('');
   const [goalDirty, setGoalDirty] = useState(false);
@@ -180,7 +187,9 @@ export default function SettingsScreen() {
         .single();
 
       if (data) {
-        setUsername(data.username ?? '');
+        const saved = data.username ?? '';
+        setUsername(saved);
+        setOriginalUsername(saved);
         setFirstName(data.first_name ?? '');
         setLastName(data.last_name ?? '');
         setGoalDraft(data.yearly_reading_goal ? String(data.yearly_reading_goal) : '');
@@ -190,6 +199,36 @@ export default function SettingsScreen() {
     load();
   }, []);
 
+  // ── Debounced username availability check ─────────────────────────────────
+  useEffect(() => {
+    const uname = username.trim().toLowerCase().replace(/\s+/g, '');
+
+    // Empty or unchanged — no check needed
+    if (!uname || uname === originalUsername) {
+      setUsernameStatus('idle');
+      return;
+    }
+    // Format validation first — no round-trip if invalid
+    if (!/^[a-z0-9_]{3,20}$/.test(uname)) {
+      setUsernameStatus('invalid');
+      return;
+    }
+
+    setUsernameStatus('checking');
+    const timer = setTimeout(async () => {
+      if (!supabase || !userId) return;
+      const { data } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('username', uname)
+        .neq('id', userId)
+        .limit(1);
+      setUsernameStatus(data && data.length > 0 ? 'taken' : 'available');
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [username, userId, originalUsername]);
+
   async function handleSaveProfile() {
     if (!supabase || !userId) return;
     setProfileError(null);
@@ -197,6 +236,14 @@ export default function SettingsScreen() {
     const uname = username.trim().toLowerCase().replace(/\s+/g, '');
     if (uname && !/^[a-z0-9_]{3,20}$/.test(uname)) {
       setProfileError('Username must be 3–20 characters: letters, numbers, or underscores.');
+      return;
+    }
+    if (usernameStatus === 'taken') {
+      setProfileError('That username is already taken. Please choose another.');
+      return;
+    }
+    if (usernameStatus === 'checking') {
+      setProfileError('Still checking availability — try again in a moment.');
       return;
     }
 
@@ -211,6 +258,8 @@ export default function SettingsScreen() {
       .eq('id', userId);
     setSavingProfile(false);
     if (!error) {
+      setOriginalUsername(uname);
+      setUsernameStatus('idle');
       setProfileDirty(false);
       setProfileSaved(true);
       setTimeout(() => setProfileSaved(false), 2500);
@@ -404,6 +453,15 @@ export default function SettingsScreen() {
             autoCorrect={false}
             style={{ flex: 1, fontSize: 15, color: '#1c1917', paddingVertical: 2, marginLeft: 2 }}
           />
+          {usernameStatus === 'checking' && (
+            <ActivityIndicator size="small" color="#a8a29e" style={{ marginLeft: 6 }} />
+          )}
+          {usernameStatus === 'available' && (
+            <Text style={{ fontSize: 15, color: '#16a34a', marginLeft: 6 }}>✓</Text>
+          )}
+          {usernameStatus === 'taken' && (
+            <Text style={{ fontSize: 15, color: '#dc2626', marginLeft: 6 }}>✕</Text>
+          )}
         </SettingsRow>
         <SettingsRow>
           <RowLabel>First name</RowLabel>
@@ -442,6 +500,22 @@ export default function SettingsScreen() {
         </CardFooter>
       </SettingsCard>
 
+      {usernameStatus === 'taken' && !profileError && (
+        <Text style={{ fontSize: 12, color: '#dc2626', marginTop: 8, paddingHorizontal: 2 }}>
+          That username is already taken.
+        </Text>
+      )}
+      {usernameStatus === 'invalid' && !profileError && (
+        <Text style={{ fontSize: 12, color: '#92400e', marginTop: 8, paddingHorizontal: 2 }}>
+          3–20 characters — letters, numbers, or underscores only.
+        </Text>
+      )}
+      {usernameStatus === 'available' && !profileError && (
+        <Text style={{ fontSize: 12, color: '#16a34a', marginTop: 8, paddingHorizontal: 2 }}>
+          Username is available.
+        </Text>
+      )}
+
       {profileError && (
         <Text style={{ fontSize: 12, color: '#b91c1c', marginTop: 8, paddingHorizontal: 2 }}>
           {profileError}
@@ -453,6 +527,7 @@ export default function SettingsScreen() {
           onPress={handleSaveProfile}
           saving={savingProfile}
           saved={profileSaved}
+          disabled={usernameStatus === 'taken' || usernameStatus === 'checking' || usernameStatus === 'invalid'}
           label="Save Profile"
         />
       )}
