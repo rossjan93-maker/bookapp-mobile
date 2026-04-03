@@ -110,6 +110,15 @@ export default function RootLayout() {
       // depending on Supabase version / PKCE configuration).
       if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && newSession) {
         console.log('[DELETE_TRACE]', event, 'userId=', newSession.user.id.slice(0, 8));
+        // Check if a profile row already exists BEFORE ensureProfile runs.
+        // Detects UUID recycling: if pre-exists=true with onboarding_completed=true,
+        // the old profile survived account deletion and is poisoning the new account.
+        const { data: preProfile } = await supabase
+          .from('profiles')
+          .select('id, onboarding_completed')
+          .eq('id', newSession.user.id)
+          .maybeSingle();
+        console.log('[DELETE_TRACE] profile pre-exists=', !!preProfile, 'existing onboarding_completed=', preProfile?.onboarding_completed ?? null);
         const meta = newSession.user.user_metadata;
         await ensureProfile(
           newSession.user.id,
@@ -160,8 +169,11 @@ export default function RootLayout() {
     });
 
     if (session && inAuth) {
-      router.replace(needsOnboarding ? '/onboarding' : '/');
+      const route = needsOnboarding ? '/onboarding' : '/';
+      console.log('[ROOT_GUARD] → route=', route, '(session+inAuth)');
+      router.replace(route);
     } else if (session && needsOnboarding && !inAuth && !inOnboarding) {
+      console.log('[ROOT_GUARD] → route=/onboarding (guard redirect)');
       router.replace('/onboarding');
     } else if (!session && !inAuth) {
       console.log('[ROOT_GUARD] no session — redirecting to /login (segments:', segments[0], ')');
