@@ -476,9 +476,9 @@ export default function SettingsScreen() {
             keyboardType="number-pad"
             returnKeyType="done"
             onSubmitEditing={handleSaveGoal}
-            style={{ flex: 1, fontSize: 22, fontWeight: '700', color: '#1c1917', paddingVertical: 2 }}
+            style={{ flex: 1, fontSize: 17, fontWeight: '600', color: '#1c1917', paddingVertical: 2 }}
           />
-          <Text style={{ fontSize: 13, color: '#a8a29e', marginLeft: 6 }}>books / yr</Text>
+          <Text style={{ fontSize: 13, color: '#a8a29e', marginLeft: 8 }}>books / yr</Text>
         </SettingsRow>
         <CardFooter>
           <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>
