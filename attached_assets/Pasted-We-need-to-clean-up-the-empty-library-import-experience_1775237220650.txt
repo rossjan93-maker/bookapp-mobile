@@ -1,0 +1,133 @@
+We need to clean up the empty-library import experience.
+
+Current problems:
+1. The import surface is duplicated
+   - there is an import card/banner at the top
+   - and then a larger “Start your library / Import from Goodreads” section below
+   - this is redundant and weakens hierarchy
+
+2. The import experience is too narrow
+   - it is centered on Goodreads only
+   - but the import section should guide users coming from the main book-tracker apps/platforms
+   - the product should acknowledge the real ecosystem users are coming from
+
+==================================================
+OBJECTIVE
+==================================================
+
+Create one clean, unified import/start-library section for empty-library users.
+
+It should:
+- remove duplicated import UI
+- clearly explain the value of importing
+- guide users coming from the major book-tracker platforms
+- still allow manual add-book behavior
+- feel premium, clear, and beta-ready
+
+==================================================
+PART 1 — REMOVE DUPLICATION
+==================================================
+
+The top import card/banner should be removed from this empty-library state.
+
+I only want one primary import/start-library section on the page.
+
+The user should not see:
+- a top import card
+- plus a second larger import section below
+
+That is repetitive and makes the page feel less intentional.
+
+Before coding, tell me:
+1. exactly which component/render branch is producing the top import card
+2. exactly which component/render branch is producing the main empty-library section
+3. which one you will remove
+4. whether removing the top piece affects any other states of the Library screen
+
+==================================================
+PART 2 — EXPAND IMPORT GUIDANCE
+==================================================
+
+The remaining import section should support the real book-tracker ecosystem.
+
+I want it to acknowledge/import-guide users coming from the major players in this space.
+
+At minimum, account for:
+- Goodreads
+- StoryGraph
+- other common exportable reading-history sources if currently supported or planned
+
+Important:
+I do NOT want fake support claims.
+If we only truly support Goodreads right now, say so clearly.
+But the UI should still guide users from other platforms in a sensible way.
+
+Examples of acceptable behavior:
+- “Import from Goodreads” as the live CTA, with supporting guidance for StoryGraph/other sources
+- or a small source-picker if multiple import routes are actually supported
+- or a help/explainer row showing how users from StoryGraph/other apps should proceed
+
+Before coding, tell me:
+1. which platforms are actually supported right now
+2. which platforms are not yet supported
+3. what exact guidance you propose showing for each major source
+4. whether this should be one CTA + explanatory text or a multi-source chooser
+
+==================================================
+PART 3 — EMPTY-LIBRARY PAGE HIERARCHY
+==================================================
+
+The page should have a cleaner hierarchy.
+
+Desired priority:
+1. Start your library / import your history
+2. Clear explanation of why importing matters for recommendations
+3. Primary import action
+4. Secondary manual add-book action
+
+I want the page to feel like:
+- one coherent start state
+- not multiple overlapping entry points
+
+==================================================
+PART 4 — COPY / PRODUCT BEHAVIOR
+==================================================
+
+The import section should explain:
+- why importing helps
+- that recommendations improve with reading history
+- what the user should do depending on where they currently track books
+
+Do not overcomplicate it.
+Do not make it look like we support imports we do not actually support.
+
+If Goodreads is the only live import:
+say that cleanly.
+If StoryGraph or others are supported:
+surface that clearly.
+
+==================================================
+WHAT I WANT BEFORE CODING
+==================================================
+
+Before implementing, give me:
+
+1. the exact current file/components rendering the duplicated import UI
+2. which top import element you will remove
+3. which platforms are actually supported today
+4. your proposed revised empty-library layout
+5. your proposed copy/guidance for users coming from the main book-tracker apps
+6. exact files/components/state you will modify
+
+Then implement.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- duplicated import UI is removed
+- Library empty state has one clear import/start section
+- import guidance acknowledges the main book-tracker ecosystem
+- supported vs unsupported import sources are communicated honestly
+- manual add-book remains available as a secondary action
+- page feels cleaner, more intentional, and beta-ready

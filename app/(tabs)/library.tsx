@@ -758,8 +758,8 @@ export default function LibraryScreen() {
             </ScrollView>
           )}
 
-          {/* ── Goodreads import banner (shown until user imports) ── */}
-          {hasGoodreadsImport === false && (
+          {/* ── Goodreads import banner (shown for users with books who haven't imported) ── */}
+          {hasGoodreadsImport === false && items.length > 0 && (
             <TouchableOpacity
               ref={libEmptyRef}
               onPress={() => router.push('/import/goodreads')}
@@ -1274,14 +1274,16 @@ export default function LibraryScreen() {
       }}
       ListEmptyComponent={
         items.length === 0 && activeFilter === 'all' ? (
-          <View style={{ alignItems: 'center', paddingTop: 44, paddingHorizontal: 28 }}>
-            <Text style={{ fontSize: 20, fontWeight: '800', color: '#1c1917', marginBottom: 8, textAlign: 'center', letterSpacing: -0.3 }}>
+          <View ref={libEmptyRef} style={{ paddingTop: 36, paddingHorizontal: 24 }}>
+            {/* Heading + value prop */}
+            <Text style={{ fontSize: 22, fontWeight: '800', color: '#1c1917', marginBottom: 8, letterSpacing: -0.4 }}>
               Start your library
             </Text>
-            <Text style={{ color: '#78716c', fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 32 }}>
-              Build your reading history by importing from Goodreads, or add books one at a time.
+            <Text style={{ color: '#78716c', fontSize: 14, lineHeight: 22, marginBottom: 28 }}>
+              Your reading history powers your recommendations. The more readstack knows, the better your picks get.
             </Text>
 
+            {/* Primary CTA */}
             <TouchableOpacity
               onPress={() => router.push('/import/goodreads')}
               style={{
@@ -1290,12 +1292,65 @@ export default function LibraryScreen() {
                 borderRadius: 12,
                 paddingVertical: 15,
                 alignItems: 'center',
-                marginBottom: 12,
+                marginBottom: 20,
               }}
             >
-              <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Import from Goodreads</Text>
+              <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>Import from Goodreads</Text>
+              <Text style={{ color: '#a8a29e', fontSize: 12, marginTop: 3 }}>Brings in your full reading history at once</Text>
             </TouchableOpacity>
 
+            {/* Platform guidance panel */}
+            <View style={{
+              borderWidth: 1,
+              borderColor: '#e7e5e4',
+              borderRadius: 12,
+              overflow: 'hidden',
+              marginBottom: 16,
+            }}>
+              <View style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f5f5f4', backgroundColor: '#faf9f7' }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.6, textTransform: 'uppercase' }}>
+                  Where do you track books?
+                </Text>
+              </View>
+
+              {/* Goodreads row */}
+              <TouchableOpacity
+                onPress={() => router.push('/import/goodreads')}
+                style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#f5f5f4', backgroundColor: '#fff' }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>Goodreads</Text>
+                  <Text style={{ fontSize: 12, color: '#78716c', marginTop: 1 }}>Import your full library — live now</Text>
+                </View>
+                <View style={{ backgroundColor: '#dcfce7', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, marginRight: 8 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#15803d' }}>Supported</Text>
+                </View>
+                <Text style={{ fontSize: 16, color: '#d6d3d1' }}>›</Text>
+              </TouchableOpacity>
+
+              {/* StoryGraph row */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#f5f5f4', backgroundColor: '#fff' }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>StoryGraph</Text>
+                  <Text style={{ fontSize: 12, color: '#78716c', marginTop: 1, lineHeight: 17 }}>
+                    Export your library from StoryGraph, then add your books manually below for now. Direct import is on the roadmap.
+                  </Text>
+                </View>
+                <View style={{ backgroundColor: '#fef9c3', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, marginLeft: 10, alignSelf: 'flex-start', marginTop: 2 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#92400e' }}>Coming soon</Text>
+                </View>
+              </View>
+
+              {/* Other sources row */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 13, backgroundColor: '#fff' }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>Elsewhere</Text>
+                  <Text style={{ fontSize: 12, color: '#78716c', marginTop: 1 }}>Track books in Libby, Amazon, or a spreadsheet? Add them manually below.</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Secondary CTA */}
             <TouchableOpacity
               onPress={() => router.push('/add-book')}
               style={{
@@ -1305,9 +1360,10 @@ export default function LibraryScreen() {
                 borderRadius: 12,
                 paddingVertical: 14,
                 alignItems: 'center',
+                marginBottom: 8,
               }}
             >
-              <Text style={{ color: '#57534e', fontSize: 14, fontWeight: '500' }}>Add your first book</Text>
+              <Text style={{ color: '#57534e', fontSize: 14, fontWeight: '500' }}>Add your first book manually</Text>
             </TouchableOpacity>
           </View>
         ) : items.length === 0 ? (
