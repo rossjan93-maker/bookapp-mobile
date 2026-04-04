@@ -1,0 +1,81 @@
+I want you to evaluate a better Goodreads import acquisition flow.
+
+The current problem is not parsing.
+It is that when users open the Goodreads export link, the CSV may open as raw text in the browser/webview instead of downloading cleanly, and the browser UI does not reliably offer an obvious save/download action.
+
+I want to know whether we can solve this by framing the export flow inside the app and handling the result ourselves.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Evaluate whether we can build an in-app Goodreads import assistant that handles both:
+
+1. real download responses
+2. raw CSV opened inline as page text
+
+I do NOT want a vague answer.
+I want a realistic repo/product/technical plan.
+
+==================================================
+KEY QUESTION
+==================================================
+
+Can we:
+- open the Goodreads export page inside the app
+- detect whether the response is a downloadable file vs inline CSV text
+- and then provide our own native/app actions such as:
+  - Import this export
+  - Save to Files
+  - Copy CSV text
+  - Continue with parser
+
+I do NOT want to depend on the browser exposing a save button.
+
+==================================================
+WHAT I WANT YOU TO ASSESS
+==================================================
+
+Assess these exact approaches:
+
+A. Embedded webview/import assistant for Goodreads export page
+B. Intercepting actual file downloads and importing them directly
+C. Detecting inline CSV text rendered in a page and ingesting that text directly
+D. Providing “Copy CSV text” / “Import from this page” fallback actions
+E. Whether cookies/session/auth with Goodreads make this too fragile
+F. Whether this is safe and realistic for beta
+G. Whether we should still keep the normal file-picker upload as fallback
+
+==================================================
+IMPORTANT
+==================================================
+
+Do NOT assume the browser will cooperate.
+Design around the fact that CSV may render inline.
+
+Do NOT propose unsupported Goodreads API fantasies.
+Do NOT propose credential scraping/login hacks unless explicitly labeling them as risky and not recommended.
+
+==================================================
+BEFORE CODING
+==================================================
+
+Before implementing, tell me:
+
+1. whether this in-app assistant approach is actually feasible
+2. what the safest/recommended version would be
+3. what the biggest technical risks are
+4. whether the app can reliably distinguish:
+   - file download
+   - inline CSV text page
+5. what exact routes/components/native handling would need to change
+6. whether this is a better beta path than the current upload-only dependence
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- we are no longer blocked by the browser needing to show a save button
+- users can import whether Goodreads exports as file download or inline CSV text
+- the app owns the handoff instead of relying on fragile browser UI
+- the solution is realistic for beta
