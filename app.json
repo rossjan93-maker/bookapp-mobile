@@ -6,7 +6,13 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "plugins": ["expo-router"],
+    "plugins": [
+      "expo-router",
+      "expo-apple-authentication"
+    ],
+    "ios": {
+      "usesAppleSignIn": true
+    },
     "experiments": {
       "typedRoutes": true
     },

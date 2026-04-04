@@ -19,6 +19,7 @@ The application is developed using React Native with Expo Router for navigation 
 - **Barcode Scan / "Will I like this?" Feature:** Allows users to scan book barcodes (or manually enter ISBNs on web) to receive a fit evaluation based on their taste profile.
 - **UI/UX:** Uses a specific color scheme (`#faf9f7`, `#1c1917`, `#a8a29e`, `#57534e`) and includes a `CoverThumb` component for dynamic cover display. Defensive fallbacks are implemented for critical queries.
 - **Account Lifecycle Layer:** Manages user self-deletion, developer/test account resets, and a redesigned signup/recovery user experience. Includes deployment-ready Supabase Edge Functions for account management.
+- **Social Sign-In:** Google (expo-auth-session + expo-web-browser, works on all platforms) and Apple (expo-apple-authentication, iOS only, native sheet) sign-in. Both flows integrate with existing onboarding/auth guard via supabase.auth.onAuthStateChange. Social buttons appear above email/password form in login.tsx with "or" divider. Error messages are user-friendly (no raw API errors). Apple button is platform-conditional (shown only on iOS). Requires Supabase provider configuration for each provider to activate.
 
 **Design Principles (Readstack Systems Contract v1):**
 - **Core Product Principle:** The app should be calm, stateful, and understand the user, operating without exposing its internal machinery.

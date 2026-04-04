@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   ScrollView,
   Text,
   TextInput,
@@ -9,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase, hasSupabaseConfig } from '../../lib/supabase';
+import { isAppleAvailable, signInWithApple, signInWithGoogle } from '../../lib/socialAuth';
 
 // ─── Mode type ───────────────────────────────────────────────────────────────
 // signin / signup — primary tab-toggle modes
@@ -189,6 +191,7 @@ export default function LoginScreen() {
     setConfirmPassword('');
     setShowPassword(false);
     setShowConfirm(false);
+    setSocialError('');
   }
 
   // ── Sign up ─────────────────────────────────────────────────────────────────
@@ -432,6 +435,31 @@ export default function LoginScreen() {
     setResendSent(true);
   }
 
+  // ── Social auth state ────────────────────────────────────────────────────────
+  const [socialLoading,    setSocialLoading]    = useState<'google' | 'apple' | null>(null);
+  const [socialError,      setSocialError]      = useState('');
+  const [appleAvailable,   setAppleAvailable]   = useState(false);
+
+  useEffect(() => {
+    isAppleAvailable().then(setAppleAvailable);
+  }, []);
+
+  async function handleGoogleSignIn() {
+    setSocialLoading('google');
+    setSocialError('');
+    const { error } = await signInWithGoogle();
+    setSocialLoading(null);
+    if (error) setSocialError(error);
+  }
+
+  async function handleAppleSignIn() {
+    setSocialLoading('apple');
+    setSocialError('');
+    const { error } = await signInWithApple();
+    setSocialLoading(null);
+    if (error) setSocialError(error);
+  }
+
   // ── Derived flags ────────────────────────────────────────────────────────────
   const inTabMode   = mode === 'signin' || mode === 'signup';
   const inEmailMode = mode === 'forgot'  || mode === 'resend';
@@ -517,6 +545,97 @@ export default function LoginScreen() {
               </Text>
             </TouchableOpacity>
           ))}
+        </View>
+      )}
+
+      {/* ── Social sign-in buttons ─────────────────────────────────────────────── */}
+      {inTabMode && (
+        <View style={{ width: '100%', marginBottom: 20 }}>
+
+          {/* Google */}
+          <TouchableOpacity
+            onPress={handleGoogleSignIn}
+            disabled={socialLoading !== null || loading}
+            style={{
+              flexDirection:    'row',
+              alignItems:       'center',
+              justifyContent:   'center',
+              borderWidth:      1,
+              borderColor:      '#e7e5e4',
+              borderRadius:     10,
+              paddingVertical:  13,
+              backgroundColor:  '#fff',
+              gap:              10,
+              opacity:          socialLoading !== null || loading ? 0.65 : 1,
+            }}
+          >
+            {socialLoading === 'google' ? (
+              <ActivityIndicator size="small" color="#78716c" />
+            ) : (
+              <>
+                <Ionicons name="logo-google" size={18} color="#4285F4" />
+                <Text style={{ fontSize: 15, fontWeight: '600', color: '#1c1917' }}>
+                  Continue with Google
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          {/* Apple — iOS only */}
+          {appleAvailable && (
+            <TouchableOpacity
+              onPress={handleAppleSignIn}
+              disabled={socialLoading !== null || loading}
+              style={{
+                flexDirection:    'row',
+                alignItems:       'center',
+                justifyContent:   'center',
+                borderRadius:     10,
+                paddingVertical:  13,
+                backgroundColor:  '#000',
+                gap:              10,
+                marginTop:        10,
+                opacity:          socialLoading !== null || loading ? 0.65 : 1,
+              }}
+            >
+              {socialLoading === 'apple' ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="logo-apple" size={18} color="#fff" />
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: '#fff' }}>
+                    Continue with Apple
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {/* Social error message */}
+          {socialError !== '' && (
+            <Text style={{
+              fontSize: 13,
+              color: '#b91c1c',
+              textAlign: 'center',
+              lineHeight: 20,
+              marginTop: 10,
+            }}>
+              {socialError}
+            </Text>
+          )}
+
+          {/* OR divider */}
+          <View style={{
+            flexDirection: 'row',
+            alignItems:    'center',
+            gap:           12,
+            marginTop:     20,
+          }}>
+            <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
+            <Text style={{ fontSize: 12, color: '#a8a29e', fontWeight: '500' }}>or</Text>
+            <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
+          </View>
+
         </View>
       )}
 
