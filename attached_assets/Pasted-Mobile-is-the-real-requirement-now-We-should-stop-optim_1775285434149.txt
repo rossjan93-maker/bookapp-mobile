@@ -1,0 +1,73 @@
+Mobile is the real requirement now.
+
+We should stop optimizing around file download behavior on mobile.
+The right mobile solution is: Share to readstack.
+
+==================================================
+PRODUCT DECISION
+==================================================
+
+For mobile, I want us to build a native share/import path so users can send Goodreads export data directly into readstack.
+
+Target flow:
+1. User opens Goodreads export page in mobile browser
+2. If the export opens as raw CSV text or as a file, user taps Share
+3. User selects readstack
+4. readstack receives the shared payload
+5. We detect whether it is Goodreads CSV
+6. If valid, we import it directly or route to a confirmation/import screen
+
+This should become the primary mobile solution.
+
+==================================================
+WHAT I WANT YOU TO EVALUATE AND PLAN
+==================================================
+
+Before coding, give me a repo-grounded implementation plan for mobile share-to-import support.
+
+I want you to assess:
+
+1. iOS share extension path
+2. Android share intent path
+3. how shared text vs shared file would be received
+4. how we would route that incoming payload into an import handler screen
+5. how we would detect Goodreads CSV safely
+6. how this interacts with the current import screen and parser
+
+==================================================
+IMPORTANT
+==================================================
+
+I do NOT want us to keep relying on the browser offering a save/download button on mobile.
+I want the app to accept the export via the mobile share sheet.
+
+I also do NOT want to remove fallback paths.
+Keep:
+- choose file
+- paste CSV text
+
+But for mobile, “Share to readstack” should become the better path if feasible.
+
+==================================================
+BEFORE CODING
+==================================================
+
+Before implementing, tell me:
+
+1. whether this is feasible in our current Expo/React Native setup
+2. what packages/config/plugins are needed
+3. whether iOS and Android differ materially
+4. what exact routes/components/files you would add or modify
+5. what the user flow would be on:
+   - iPhone
+   - Android
+6. what the major risks are for beta
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- mobile users are no longer blocked by browser download/save behavior
+- Goodreads export can be sent directly into readstack from the mobile share sheet
+- the app can receive shared text and/or files and route them into import
+- fallback paths remain available
