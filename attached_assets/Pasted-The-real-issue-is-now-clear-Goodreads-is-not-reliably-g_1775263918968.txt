@@ -1,0 +1,76 @@
+The real issue is now clear:
+
+Goodreads is not reliably giving users a usable download/save flow.
+Sometimes the export just opens as raw CSV text in the browser.
+That means we cannot keep treating “download the file” as the required path.
+
+I do NOT want us to keep trying to force the browser to show a save/download option.
+I want us to design around the fact that this may never appear.
+
+==================================================
+NEW PRODUCT DECISION
+==================================================
+
+We are no longer designing Goodreads import around downloading a file.
+
+We are designing it around two valid acquisition paths:
+
+1. Choose CSV file
+2. Paste raw CSV text
+
+“Open Goodreads export page” is only the acquisition step that gets the user to the data.
+It is not the actual import mechanism by itself.
+
+==================================================
+WHAT THIS MEANS
+==================================================
+
+If Goodreads opens the export as raw text in the browser instead of downloading a file:
+- that is NOT an edge case
+- that is a supported import path
+
+The user should be able to:
+- open the Goodreads export page
+- copy the raw CSV contents
+- return to readstack
+- paste the CSV text
+- import successfully
+
+That flow must be clear and intentional.
+
+==================================================
+I WANT YOU TO ADJUST THE IMPORT UX AROUND THIS REALITY
+==================================================
+
+Before coding, tell me:
+
+1. whether the current implementation now fully supports the “raw text opened in browser” case
+2. whether the paste flow is prominent enough and understandable enough for non-technical users
+3. whether the screen still over-emphasizes downloading a file
+4. what exact copy and hierarchy changes you recommend so the user understands:
+   - if you have a file, choose it
+   - if Goodreads opened raw text, copy and paste it here
+
+==================================================
+I ALSO WANT THIS REVIEWED
+==================================================
+
+Review whether we should change the screen structure so the supported paths are more explicit.
+
+For example, the screen may need to present:
+
+- Step 1: Open Goodreads export page
+- Step 2a: Choose CSV file
+- Step 2b: Or paste CSV text if Goodreads opened it in-browser
+
+I want the user to understand immediately that:
+they do NOT need a traditional download button in order to succeed.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- the import experience no longer depends on a browser save/download option
+- users who get raw CSV text in-browser have a clear supported path
+- the app clearly communicates both import routes
+- the Goodreads/browser limitation is worked around, not fought

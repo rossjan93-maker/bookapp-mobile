@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -436,13 +436,9 @@ export default function LoginScreen() {
   }
 
   // ── Social auth state ────────────────────────────────────────────────────────
-  const [socialLoading,    setSocialLoading]    = useState<'google' | 'apple' | null>(null);
-  const [socialError,      setSocialError]      = useState('');
-  const [appleAvailable,   setAppleAvailable]   = useState(false);
-
-  useEffect(() => {
-    isAppleAvailable().then(setAppleAvailable);
-  }, []);
+  const [socialLoading, setSocialLoading] = useState<'google' | 'apple' | null>(null);
+  const [socialError,   setSocialError]   = useState('');
+  const appleAvailable = isAppleAvailable();
 
   async function handleGoogleSignIn() {
     setSocialLoading('google');
