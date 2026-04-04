@@ -5,10 +5,13 @@ import {
   Platform,
   ScrollView,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
 import { BackButton } from '../../components/BackButton';
 import { supabase } from '../../lib/supabase';
 import { parseGoodreadsCSV } from '../../lib/goodreadsParser';
@@ -136,6 +139,24 @@ function pickCSVFile(): Promise<{ name: string; text: string } | null> {
   });
 }
 
+// ─── Native document picker ───────────────────────────────────────────────────
+
+async function pickNativeDocument(): Promise<{ name: string; text: string } | null> {
+  if (Platform.OS === 'web') return null;
+  try {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['text/csv', 'text/plain', 'public.comma-separated-values-text', '*/*'],
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled || !result.assets?.[0]) return null;
+    const asset = result.assets[0];
+    const text = await FileSystem.readAsStringAsync(asset.uri);
+    return { name: asset.name ?? 'goodreads_library_export.csv', text };
+  } catch {
+    return null;
+  }
+}
+
 // ─── Shared stat row ─────────────────────────────────────────────────────────
 
 function StatRow({
@@ -237,12 +258,20 @@ const STORYGRAPH_EXPORT_URL = 'https://app.thestorygraph.com/profile/edit';
 
 function IdleView({
   onPickFile,
+  onPickNativeFile,
   isWeb,
   onResetRequest,
+  pastedText,
+  onPastedTextChange,
+  onSubmitPaste,
 }: {
   onPickFile: () => void;
+  onPickNativeFile: () => void;
   isWeb: boolean;
   onResetRequest: () => void;
+  pastedText: string;
+  onPastedTextChange: (text: string) => void;
+  onSubmitPaste: () => void;
 }) {
   const [platform, setPlatform] = useState<'goodreads' | 'storygraph'>('goodreads');
 
@@ -260,10 +289,10 @@ function IdleView({
       sub: 'Goodreads is subtle here. It may quietly add a new line under the button, or the CSV may open directly in a preview. Both mean it worked.',
     },
     {
-      label: 'Save the file and come back',
+      label: 'Get the CSV into readstack',
       sub: isWeb
-        ? 'If a preview opened, tap the Share icon and choose "Save to Files". Then come back here and tap "Choose CSV File" below — look for goodreads_library_export.csv.'
-        : 'If a preview opened, tap the Share icon and choose "Save to Files". Then open readstack in a web browser and upload goodreads_library_export.csv.',
+        ? 'If a file downloaded, tap "Choose CSV File" below. If the CSV opened as text in your browser, select all, copy, and paste it in the box below.'
+        : 'If a file downloaded: tap Share → Save to Files, then come back here and tap "Choose CSV File". If the CSV opened as text: select all, copy, and paste it in the box below.',
     },
   ];
 
@@ -460,22 +489,79 @@ function IdleView({
               </Text>
             </TouchableOpacity>
           ) : (
-            /* Mobile: helpful note instead of a dead end */
-            <View style={{
-              backgroundColor: '#fff',
-              borderRadius: 12,
-              padding: 18,
-              borderWidth: 1,
-              borderColor: '#e7e5e4',
-            }}>
-              <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', marginBottom: 6 }}>
-                Uploading the file
+            /* Mobile: native document picker */
+            <TouchableOpacity
+              onPress={onPickNativeFile}
+              style={{
+                backgroundColor: '#fff',
+                borderRadius: 12,
+                paddingVertical: 15,
+                alignItems: 'center',
+                borderWidth: 1,
+                borderColor: '#e7e5e4',
+              }}
+            >
+              <Text style={{ color: '#1c1917', fontSize: 15, fontWeight: '600' }}>
+                Choose CSV File
               </Text>
-              <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
-                Once the CSV is saved to Files, open readstack in a web browser and come back to this screen to upload it.
+              <Text style={{ color: '#a8a29e', fontSize: 12, marginTop: 3 }}>
+                goodreads_library_export.csv
               </Text>
-            </View>
+            </TouchableOpacity>
           )}
+
+          {/* ── Paste CSV text (all platforms) ── */}
+          <View style={{ marginTop: 20 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
+              <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
+              <Text style={{ fontSize: 12, color: '#a8a29e', marginHorizontal: 12 }}>or</Text>
+              <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
+            </View>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', marginBottom: 5 }}>
+              Paste CSV text
+            </Text>
+            <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18, marginBottom: 10 }}>
+              If Goodreads displayed your export as text in the browser — select all, copy, then paste it here.
+            </Text>
+            <TextInput
+              value={pastedText}
+              onChangeText={onPastedTextChange}
+              multiline
+              placeholder="Paste your Goodreads CSV here…"
+              placeholderTextColor="#a8a29e"
+              style={{
+                backgroundColor: '#fff',
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: pastedText.trim().length > 0 ? '#d4a574' : '#e7e5e4',
+                padding: 12,
+                fontSize: 11,
+                color: '#1c1917',
+                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                height: 100,
+                textAlignVertical: 'top',
+              }}
+            />
+            <TouchableOpacity
+              onPress={onSubmitPaste}
+              disabled={pastedText.trim().length < 10}
+              style={{
+                marginTop: 10,
+                backgroundColor: pastedText.trim().length >= 10 ? '#1c1917' : '#f5f5f4',
+                borderRadius: 12,
+                paddingVertical: 14,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{
+                color: pastedText.trim().length >= 10 ? '#fff' : '#a8a29e',
+                fontSize: 15,
+                fontWeight: '600',
+              }}>
+                Import pasted text
+              </Text>
+            </TouchableOpacity>
+          </View>
 
           {/* ── Goodreads reset entry point ── */}
           <View style={{ marginTop: 36, alignItems: 'center' }}>
@@ -1068,23 +1154,21 @@ export default function GoodreadsImportScreen() {
   const [resetResult, setResetResult] = useState<GoodreadsResetResult | null>(null);
 
   const isWeb = Platform.OS === 'web';
+  const [pastedText, setPastedText] = useState('');
 
-  // ── Parse + stage ──────────────────────────────────────────────────────────
+  // ── Shared CSV processing (all acquisition paths feed here) ────────────────
 
-  async function handlePickFile() {
-    const file = await pickCSVFile();
-    if (!file) return;
-
+  async function processCSVText(csvText: string, filename: string) {
     setProgressStages(stageList(PROCESSING_STAGES, 0));
     setStep('processing');
 
     try {
-      const parseResult = parseGoodreadsCSV(file.text);
+      const parseResult = parseGoodreadsCSV(csvText);
 
       if (!parseResult.isGoodreadsExport) {
         const errMsg = parseResult.parseErrors[0]?.message ?? 'This does not look like a Goodreads export CSV.';
         setErrorMsg(
-          `We couldn't read this file as a Goodreads export.\n\n${errMsg}\n\nMake sure you're uploading the file exported from Goodreads → My Books → Import and Export.`
+          `We couldn't read this as a Goodreads export.\n\n${errMsg}\n\nMake sure you're using the file exported from Goodreads → My Books → Import and Export.`
         );
         setStep('error');
         return;
@@ -1102,7 +1186,7 @@ export default function GoodreadsImportScreen() {
       if (!user) throw new Error('You must be signed in to import your library.');
 
       setProgressStages(stageList(PROCESSING_STAGES, 2));
-      const staged = await stageGoodreadsImport(user.id, parseResult.rows, file.name);
+      const staged = await stageGoodreadsImport(user.id, parseResult.rows, filename);
 
       setCurrentUserId(user.id);
       setCurrentBatchId(staged.batchId);
@@ -1112,6 +1196,30 @@ export default function GoodreadsImportScreen() {
       setErrorMsg(err instanceof Error ? err.message : 'An unexpected error occurred.');
       setStep('error');
     }
+  }
+
+  // ── Acquisition: web file picker ───────────────────────────────────────────
+
+  async function handlePickFile() {
+    const file = await pickCSVFile();
+    if (!file) return;
+    await processCSVText(file.text, file.name);
+  }
+
+  // ── Acquisition: native document picker ───────────────────────────────────
+
+  async function handlePickNativeFile() {
+    const file = await pickNativeDocument();
+    if (!file) return;
+    await processCSVText(file.text, file.name);
+  }
+
+  // ── Acquisition: pasted CSV text ──────────────────────────────────────────
+
+  async function handleSubmitPaste() {
+    const trimmed = pastedText.trim();
+    if (trimmed.length < 10) return;
+    await processCSVText(trimmed, 'pasted_csv.csv');
   }
 
   // ── Execute import ─────────────────────────────────────────────────────────
@@ -1199,6 +1307,7 @@ export default function GoodreadsImportScreen() {
     setErrorMsg(null);
     setProgressStages([]);
     setCoversEnriched(0);
+    setPastedText('');
   }
 
   const isLocked = step === 'processing' || step === 'executing' || step === 'resetting';
@@ -1208,7 +1317,15 @@ export default function GoodreadsImportScreen() {
       <BackButton onPress={() => router.back()} disabled={isLocked} style={{ marginBottom: 28 }} />
 
       {step === 'idle' && (
-        <IdleView onPickFile={handlePickFile} isWeb={isWeb} onResetRequest={handleResetRequest} />
+        <IdleView
+          onPickFile={handlePickFile}
+          onPickNativeFile={handlePickNativeFile}
+          isWeb={isWeb}
+          onResetRequest={handleResetRequest}
+          pastedText={pastedText}
+          onPastedTextChange={setPastedText}
+          onSubmitPaste={handleSubmitPaste}
+        />
       )}
 
       {(step === 'processing' || step === 'executing' || step === 'resetting') && (
