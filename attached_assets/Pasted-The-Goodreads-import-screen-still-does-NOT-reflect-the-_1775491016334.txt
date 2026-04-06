@@ -1,0 +1,156 @@
+The Goodreads import screen still does NOT reflect the product direction we approved.
+
+The current native UI is still muddled because it is showing old flows alongside the new one.
+This is exactly what we wanted to avoid.
+
+You explicitly chose a “minimal diff” approach and left the old external export CTA / helper structure largely in place, which is why the screen still reads like multiple competing workarounds instead of one clear primary path. :contentReference[oaicite:0]{index=0} :contentReference[oaicite:1]{index=1}
+
+We now need to bring the actual in-app Goodreads browser solution into the app experience properly.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Make the native Goodreads import screen clearly reflect the new primary architecture:
+
+PRIMARY on iPhone + Android:
+- in-app Goodreads browser transfer
+
+SECONDARY / fallback:
+- choose CSV file
+- paste CSV text
+- any legacy helper paths only if still necessary, and visually demoted
+
+The native screen should no longer look like:
+- a browser helper setup page
+- a desktop bookmarklet flow
+- an external export-page-first flow
+- a stack of competing methods
+
+It should look like one clear recommended path, with fallback options underneath.
+
+==================================================
+WHAT IS WRONG RIGHT NOW
+==================================================
+
+The current screen is still wrong because:
+
+1. It still visually centers old browser-helper/manual concepts
+2. It still surfaces “Open Goodreads Export Page” in a way that competes with the in-app browser path
+3. It still shows platform-mixed advice instead of a clean native-first path
+4. It reads like a workaround screen, not a product-grade transfer flow
+
+This happened because the implementation chose the minimal approach of inserting the new browser CTA while leaving the old structure largely intact. :contentReference[oaicite:2]{index=2} :contentReference[oaicite:3]{index=3}
+
+That is no longer acceptable.
+I want the native UI to reflect the architecture we approved:
+native in-app Goodreads browser is the primary story. :contentReference[oaicite:4]{index=4}
+
+==================================================
+NEW NATIVE UI REQUIREMENT
+==================================================
+
+On iPhone and Android, the Goodreads tab/screen should be reorganized like this:
+
+1. Headline / short supporting copy
+2. One clear primary card or section explaining the in-app Goodreads transfer
+3. One dominant CTA:
+   "Import from Goodreads"
+4. Optional short line explaining:
+   "You'll sign in to Goodreads if needed, then tap Export Library"
+5. Secondary section:
+   "Other ways to import"
+   containing:
+   - Choose CSV file
+   - Paste CSV text
+   - any truly necessary legacy path, only if still needed
+
+The user should immediately understand:
+- this is the recommended path
+- it happens inside readstack
+- the other methods are fallback only
+
+==================================================
+IMPORTANT PLATFORM RULES
+==================================================
+
+NATIVE (iPhone / Android):
+- in-app browser is primary
+- old external export-page CTA must NOT visually compete
+- desktop bookmarklet/browser-helper concepts must NOT appear as primary native UI
+- Siri Shortcut/helper language must NOT sit above or alongside the primary CTA in a way that confuses the hierarchy
+
+WEB:
+- keep the existing web-appropriate flow
+- bookmarklet/helper can remain appropriate on web
+- do not break the web path
+
+==================================================
+I WANT YOU TO CHANGE THE NATIVE SCREEN HIERARCHY
+==================================================
+
+For native only, I want:
+
+A. Primary section
+- title like:
+  "Fastest way to import from Goodreads"
+  or equivalent
+- one or two lines of calm product copy
+- one dominant CTA:
+  "Import from Goodreads"
+
+B. Browser expectation copy
+Small copy that says something like:
+- "We’ll open Goodreads inside readstack"
+- "Sign in if needed, then tap Export Library"
+- "We’ll capture the export automatically when possible"
+
+C. Fallback section
+Collapsed or clearly secondary:
+- Choose CSV file
+- Paste CSV text
+
+D. Legacy helper paths
+- only keep if still necessary
+- demote them hard
+- do not let them read as the main flow on native
+
+==================================================
+SPECIFIC THINGS I WANT REMOVED OR DEMOTED ON NATIVE
+==================================================
+
+On native, do NOT leave these visually competing with the new primary path:
+
+- browser helper / bookmarklet setup as a prominent card
+- “Open Goodreads Export Page” as a major CTA outside the fallback area
+- Safari/Chrome wording that belongs to the old external-browser flow unless it is still essential and subordinate
+- any desktop-first mental model
+
+If a legacy path still needs to exist, move it into:
+"Other ways to import"
+
+==================================================
+BEFORE CODING
+==================================================
+
+Before implementing, tell me:
+
+1. exactly what the current native Goodreads screen hierarchy is
+2. exactly what you will remove from the primary surface
+3. exactly what will remain but be demoted into fallback
+4. your proposed revised native hierarchy
+5. how web will remain unchanged
+6. exact files/components you will modify
+
+Then implement.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- native Goodreads import screen clearly reflects the in-app browser transfer as the primary path
+- users do NOT see multiple equally weighted import methods competing at the top
+- old helper / export-page-first UI is removed or strongly demoted on native
+- fallback methods remain available but secondary
+- web flow remains appropriate and unaffected
+- the screen finally matches the solution we approved instead of a minimal-diff compromise

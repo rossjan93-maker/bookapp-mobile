@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ActivityIndicator,
   Linking,
@@ -53,10 +52,8 @@ const BOOKMARKLET_HREF = [
 //   Action 1: Run JavaScript on Webpage → return document.body.innerText
 //   Action 2: Copy to Clipboard (the result)
 //   Action 3: Open URL → bookappmobile://import/goodreads?source=shortcut
-// The app detects source=shortcut, reads the clipboard, validates, and imports.
-// Replace SHORTCUT_INSTALL_URL with the published iCloud Shortcuts link once created.
-const SHORTCUT_INSTALL_URL = 'https://www.icloud.com/shortcuts/';
-const SHORTCUT_SETUP_KEY   = 'readstack_goodreads_shortcut_setup_done';
+// The app detects source=shortcut (in the main component), reads the clipboard,
+// validates, and imports. This path remains available for existing shortcut users.
 
 type Step =
   | 'idle'
@@ -309,19 +306,6 @@ function IdleView({
   onOpenBrowser?: () => void;
 }) {
   const [platform, setPlatform] = useState<'goodreads' | 'storygraph'>('goodreads');
-  const [shortcutSetupDone, setShortcutSetupDone] = useState(false);
-  const [showFallbacks, setShowFallbacks] = useState(false);
-
-  useEffect(() => {
-    AsyncStorage.getItem(SHORTCUT_SETUP_KEY)
-      .then(val => { if (val === 'true') setShortcutSetupDone(true); })
-      .catch(() => {});
-  }, []);
-
-  const markSetupDone = useCallback(() => {
-    setShortcutSetupDone(true);
-    AsyncStorage.setItem(SHORTCUT_SETUP_KEY, 'true').catch(() => {});
-  }, []);
 
   const storygraphSteps = [
     {
@@ -524,274 +508,135 @@ function IdleView({
         </>
       )}
 
-      {/* ── Goodreads: iOS ── */}
-      {platform === 'goodreads' && Platform.OS === 'ios' && (
+      {/* ── Goodreads: Native (iOS + Android) — in-app browser primary path ── */}
+      {platform === 'goodreads' && Platform.OS !== 'web' && (
         <>
-          {/* Primary browser CTA — new in-app transfer path */}
-          {onOpenBrowser && (
-            <TouchableOpacity
-              onPress={onOpenBrowser}
-              style={{
-                backgroundColor: '#1c1917',
-                borderRadius: 12,
-                paddingVertical: 15,
-                alignItems: 'center',
-                marginBottom: 16,
-              }}
-            >
-              <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
-                Import from Goodreads
-              </Text>
-              <Text style={{ color: '#a8a29e', fontSize: 11, marginTop: 3 }}>
-                Opens Goodreads inside readstack
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {!shortcutSetupDone ? (
-            /* Setup card — shown until user marks done */
-            <>
-              <View style={{
-                alignSelf: 'flex-start',
-                backgroundColor: '#f5f0eb',
-                borderRadius: 6,
-                paddingVertical: 3,
-                paddingHorizontal: 8,
-                marginBottom: 10,
-              }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: '#92400e', letterSpacing: 0.5 }}>
-                  FASTEST WAY ON iPHONE
-                </Text>
-              </View>
-
-              <View style={{
-                backgroundColor: '#fff',
-                borderRadius: 14,
-                borderWidth: 1.5,
-                borderColor: '#1c1917',
-                padding: 18,
-                marginBottom: 4,
-              }}>
-                <Text style={{ fontSize: 15, fontWeight: '800', color: '#1c1917', marginBottom: 6 }}>
-                  Set up once, import in one tap
-                </Text>
-                <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18, marginBottom: 16 }}>
-                  Install the readstack Shortcut and your library transfers directly from the Goodreads page — no copying, no files.
-                </Text>
-
-                {[
-                  { n: '1', text: 'Tap "Get the Shortcut" below' },
-                  { n: '2', text: 'Open the Goodreads export page in Safari' },
-                  { n: '3', text: 'Tap Share → readstack Import' },
-                ].map(({ n, text }) => (
-                  <View key={n} style={{
-                    flexDirection: 'row', alignItems: 'flex-start',
-                    marginBottom: n === '3' ? 0 : 10,
-                  }}>
-                    <View style={{
-                      width: 22, height: 22, borderRadius: 11,
-                      backgroundColor: '#1c1917',
-                      alignItems: 'center', justifyContent: 'center',
-                      marginRight: 10, marginTop: 1, flexShrink: 0,
-                    }}>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#fff' }}>{n}</Text>
-                    </View>
-                    <Text style={{ flex: 1, fontSize: 13, color: '#1c1917', fontWeight: '500', lineHeight: 20 }}>
-                      {text}
-                    </Text>
-                  </View>
-                ))}
-
-                <TouchableOpacity
-                  onPress={() => Linking.openURL(SHORTCUT_INSTALL_URL)}
-                  style={{
-                    backgroundColor: '#1c1917',
-                    borderRadius: 10,
-                    paddingVertical: 13,
-                    alignItems: 'center',
-                    marginTop: 18,
-                  }}
-                >
-                  <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>
-                    Get the Shortcut
-                  </Text>
-                </TouchableOpacity>
-                <Text style={{ fontSize: 11, color: '#a8a29e', textAlign: 'center', marginTop: 8, lineHeight: 16 }}>
-                  Opens Apple Shortcuts. Tap Add Shortcut, then come back here.
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                onPress={markSetupDone}
-                style={{ alignItems: 'center', paddingVertical: 12, marginBottom: 8 }}
-              >
-                <Text style={{ fontSize: 13, color: '#78716c' }}>
-                  I've already set this up →
-                </Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            /* Setup done — compact reminder strip */
-            <View style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              backgroundColor: '#f5f5f4',
-              borderRadius: 10,
-              paddingVertical: 12,
-              paddingHorizontal: 14,
-              marginBottom: 16,
-            }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 2 }}>
-                  readstack Shortcut installed ✓
-                </Text>
-                <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
-                  Open the export page, then tap Share → readstack Import
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => {
-                  setShortcutSetupDone(false);
-                  AsyncStorage.removeItem(SHORTCUT_SETUP_KEY).catch(() => {});
-                }}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text style={{ fontSize: 12, color: '#a8a29e' }}>Change</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* Primary action — always visible */}
-          <TouchableOpacity
-            onPress={() => Linking.openURL(GOODREADS_EXPORT_URL)}
-            style={{
-              backgroundColor: '#1c1917',
-              borderRadius: 12,
-              paddingVertical: 15,
-              alignItems: 'center',
-            }}
-          >
-            <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>
-              Open Goodreads Export Page
-            </Text>
-          </TouchableOpacity>
-          <View style={{ marginTop: 6, alignItems: 'center' }}>
-            <Text selectable style={{ fontSize: 11, color: '#a8a29e' }}>
-              goodreads.com/review/import
-            </Text>
-          </View>
-
-          {/* Collapsed fallbacks */}
-          <TouchableOpacity
-            onPress={() => setShowFallbacks(f => !f)}
-            style={{
-              flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-              marginTop: 22, paddingVertical: 6,
-            }}
-          >
-            <Text style={{ fontSize: 13, color: '#78716c', marginRight: 4 }}>
-              {showFallbacks ? 'Hide other options' : 'Other ways to import'}
-            </Text>
-            <Text style={{ fontSize: 11, color: '#a8a29e' }}>{showFallbacks ? '↑' : '↓'}</Text>
-          </TouchableOpacity>
-          {showFallbacks && renderFallbacks()}
-        </>
-      )}
-
-      {/* ── Goodreads: Android ── */}
-      {platform === 'goodreads' && Platform.OS === 'android' && (
-        <>
-          {/* Primary browser CTA — new in-app transfer path */}
-          {onOpenBrowser && (
-            <TouchableOpacity
-              onPress={onOpenBrowser}
-              style={{
-                backgroundColor: '#1c1917',
-                borderRadius: 12,
-                paddingVertical: 15,
-                alignItems: 'center',
-                marginBottom: 16,
-              }}
-            >
-              <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
-                Import from Goodreads
-              </Text>
-              <Text style={{ color: '#a8a29e', fontSize: 11, marginTop: 3 }}>
-                Opens Goodreads inside readstack
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          <View style={{
-            backgroundColor: '#fffbf5',
-            borderRadius: 12,
-            padding: 14,
-            borderLeftWidth: 3,
-            borderLeftColor: '#d4a574',
-            marginBottom: 16,
+          {/* A. Headline + supporting copy */}
+          <Text style={{
+            fontSize: 20,
+            fontWeight: '800',
+            color: '#1c1917',
+            letterSpacing: -0.3,
+            marginBottom: 8,
           }}>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 3 }}>
-              Do this in Chrome — not the Goodreads app
-            </Text>
-            <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
-              If the Goodreads app opens, use its menu to open in Chrome. The export button only appears in Desktop Site mode.
-            </Text>
-          </View>
+            Import from Goodreads
+          </Text>
+          <Text style={{
+            fontSize: 13,
+            color: '#78716c',
+            lineHeight: 20,
+            marginBottom: 22,
+          }}>
+            We open Goodreads inside readstack. Sign in if needed, then tap Export Library — we capture your library automatically when possible.
+          </Text>
 
-          <Card>
-            <View style={{ padding: 18 }}>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 14 }}>
-                How to export and import
-              </Text>
-              {[
-                { label: 'Open the Goodreads export page in Chrome', sub: 'Tap the button below.' },
-                { label: 'Switch to Desktop Site', sub: 'Tap ⋮ in Chrome → "Desktop site". The export button only shows in desktop mode.' },
-                { label: 'Tap "Export Library"', sub: 'Your library will open as text or a file will download — either works.' },
-                { label: 'Paste or choose the file below', sub: 'If text opened: select all, copy, paste in the box below. If a file downloaded: tap "Choose CSV File".' },
-              ].map((step, i, arr) => (
-                <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: i < arr.length - 1 ? 14 : 0 }}>
-                  <View style={{
-                    width: 22, height: 22, borderRadius: 11,
-                    backgroundColor: '#f5f5f4',
-                    alignItems: 'center', justifyContent: 'center',
-                    marginRight: 12, marginTop: 1, flexShrink: 0,
-                  }}>
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#78716c' }}>{i + 1}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', lineHeight: 20 }}>
-                      {step.label}
-                    </Text>
-                    <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18, marginTop: 2 }}>
-                      {step.sub}
-                    </Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </Card>
-
+          {/* B. One dominant CTA */}
           <TouchableOpacity
-            onPress={() => Linking.openURL(GOODREADS_EXPORT_URL)}
+            onPress={onOpenBrowser}
+            disabled={!onOpenBrowser}
             style={{
-              marginTop: 16,
               backgroundColor: '#1c1917',
-              borderRadius: 12,
-              paddingVertical: 15,
+              borderRadius: 14,
+              paddingVertical: 17,
               alignItems: 'center',
+              marginBottom: 10,
             }}
           >
-            <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>
-              Open Goodreads Export Page
+            <Text style={{
+              color: '#fff',
+              fontSize: 16,
+              fontWeight: '800',
+              letterSpacing: -0.2,
+            }}>
+              Import from Goodreads
             </Text>
           </TouchableOpacity>
-          <View style={{ marginTop: 6, alignItems: 'center' }}>
-            <Text selectable style={{ fontSize: 11, color: '#a8a29e' }}>
-              goodreads.com/review/import
-            </Text>
-          </View>
 
-          {renderFallbacks()}
+          {/* C. Browser expectation copy */}
+          <Text style={{
+            fontSize: 11,
+            color: '#a8a29e',
+            textAlign: 'center',
+            lineHeight: 16,
+            marginBottom: 36,
+          }}>
+            Opens Goodreads inside readstack · sign in if prompted
+          </Text>
+
+          {/* D. Other ways to import — always visible, clearly secondary */}
+          <View style={{
+            borderTopWidth: 1,
+            borderTopColor: '#e7e5e4',
+            paddingTop: 20,
+          }}>
+            <Text style={{
+              fontSize: 11,
+              fontWeight: '700',
+              color: '#a8a29e',
+              letterSpacing: 0.8,
+              textTransform: 'uppercase',
+              marginBottom: 14,
+            }}>
+              Other ways to import
+            </Text>
+
+            <TouchableOpacity
+              onPress={onPickNativeFile}
+              style={{
+                backgroundColor: '#f5f5f4',
+                borderRadius: 10,
+                paddingVertical: 13,
+                alignItems: 'center',
+                marginBottom: 16,
+              }}
+            >
+              <Text style={{ color: '#1c1917', fontSize: 14, fontWeight: '600' }}>
+                Choose CSV File
+              </Text>
+              <Text style={{ color: '#a8a29e', fontSize: 11, marginTop: 2 }}>
+                If you already exported from Goodreads
+              </Text>
+            </TouchableOpacity>
+
+            <TextInput
+              value={pastedText}
+              onChangeText={onPastedTextChange}
+              multiline
+              placeholder="Or paste your Goodreads export text here…"
+              placeholderTextColor="#a8a29e"
+              style={{
+                backgroundColor: '#fff',
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: pastedText.trim().length > 0 ? '#d4a574' : '#e7e5e4',
+                padding: 14,
+                fontSize: 11,
+                color: '#1c1917',
+                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                height: 90,
+                textAlignVertical: 'top',
+                marginBottom: 8,
+              }}
+            />
+            <TouchableOpacity
+              onPress={onSubmitPaste}
+              disabled={pastedText.trim().length < 10}
+              style={{
+                backgroundColor: pastedText.trim().length >= 10 ? '#1c1917' : '#f5f5f4',
+                borderRadius: 10,
+                paddingVertical: 12,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{
+                color: pastedText.trim().length >= 10 ? '#fff' : '#a8a29e',
+                fontSize: 14,
+                fontWeight: '600',
+              }}>
+                Import pasted text
+              </Text>
+            </TouchableOpacity>
+          </View>
         </>
       )}
 
