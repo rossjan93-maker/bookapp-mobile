@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
@@ -47,9 +48,12 @@ const BOOKMARKLET_HREF = [
   "})();",
 ].join('');
 
-// Siri Shortcut: the Shortcut runs JavaScript on the Goodreads page,
-// URL-encodes the result, then opens bookappmobile://import/goodreads?csv=<data>.
-// Replace this URL with the published iCloud Shortcuts link once created.
+// Siri Shortcut — clipboard-based handoff (avoids deep-link payload size limits):
+//   Action 1: Run JavaScript on Webpage → return document.body.innerText
+//   Action 2: Copy to Clipboard (the result)
+//   Action 3: Open URL → bookappmobile://import/goodreads?source=shortcut
+// The app detects source=shortcut, reads the clipboard, validates, and imports.
+// Replace SHORTCUT_INSTALL_URL with the published iCloud Shortcuts link once created.
 const SHORTCUT_INSTALL_URL = 'https://www.icloud.com/shortcuts/';
 
 type Step =
@@ -1225,7 +1229,7 @@ function ErrorView({ message, onReset }: { message: string; onReset: () => void 
 
 export default function GoodreadsImportScreen() {
   const router = useRouter();
-  const { csv: incomingCsv } = useLocalSearchParams<{ csv?: string }>();
+  const { source } = useLocalSearchParams<{ source?: string }>();
   const didHandleIncoming = useRef(false);
 
   const [step, setStep]             = useState<Step>('idle');
@@ -1241,21 +1245,52 @@ export default function GoodreadsImportScreen() {
   const isWeb = Platform.OS === 'web';
   const [pastedText, setPastedText] = useState('');
 
-  // ── Deep link / Siri Shortcut receiver ────────────────────────────────────
-  // Triggered when the app is opened via bookappmobile://import/goodreads?csv=...
-  // The Siri Shortcut runs JS on the Goodreads page, URL-encodes the CSV text,
-  // and opens this URL. Expo Router decodes the param automatically.
+  // ── Siri Shortcut clipboard receiver ─────────────────────────────────────
+  // Triggered when the app is opened via bookappmobile://import/goodreads?source=shortcut
+  // The Shortcut: (1) runs JS on Goodreads page to get innerText, (2) copies
+  // that text to the clipboard, (3) opens the URL above.
+  // No payload in the URL — the CSV travels via clipboard, which has no size limit.
 
   useEffect(() => {
-    if (!incomingCsv || didHandleIncoming.current) return;
-    const csv = Array.isArray(incomingCsv) ? incomingCsv[0] : incomingCsv;
-    if (!csv || csv.trim().length < 10) return;
+    const src = Array.isArray(source) ? source[0] : source;
+    if (src !== 'shortcut' || didHandleIncoming.current) return;
     didHandleIncoming.current = true;
-    processCSVText(csv.trim(), 'goodreads_shortcut.csv');
-  // processCSVText is defined below but stable — intentional omission to avoid
-  // re-triggering if param identity changes on re-render.
+
+    (async () => {
+      let text = '';
+      try {
+        text = (await Clipboard.getStringAsync()) ?? '';
+      } catch {
+        setErrorMsg(
+          'Could not read the clipboard. Please paste your Goodreads data manually in the box below.'
+        );
+        setStep('error');
+        return;
+      }
+
+      text = text.trim();
+
+      if (!text) {
+        setErrorMsg(
+          'Nothing was found on your clipboard. Make sure you ran the readstack Shortcut on the Goodreads export page before opening the app.'
+        );
+        setStep('error');
+        return;
+      }
+
+      if (!text.slice(0, 7).startsWith('Book Id')) {
+        setErrorMsg(
+          'The clipboard content doesn\u2019t look like a Goodreads export. Open the Goodreads export page in Safari, run the readstack Shortcut, then open the app again.'
+        );
+        setStep('error');
+        return;
+      }
+
+      processCSVText(text, 'goodreads_shortcut.csv');
+    })();
+  // processCSVText is stable — intentional omission.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [incomingCsv]);
+  }, [source]);
 
   // ── Shared CSV processing (all acquisition paths feed here) ────────────────
 

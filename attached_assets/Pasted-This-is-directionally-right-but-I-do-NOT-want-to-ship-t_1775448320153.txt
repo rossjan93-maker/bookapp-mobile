@@ -1,0 +1,76 @@
+This is directionally right, but I do NOT want to ship the iPhone Shortcut in its current form.
+
+The problem is the transport mechanism:
+passing the full Goodreads CSV through
+bookappmobile://import/goodreads?csv=...
+is too fragile.
+
+I do not trust deep links with a payload this large.
+This is likely to fail or truncate for larger Goodreads libraries.
+
+==================================================
+DECISION
+==================================================
+
+Keep:
+- desktop bookmarklet
+- helper framing on the import screen
+- deep-link receiver route in the app
+
+Change:
+- do NOT pass raw CSV through the deep link query string
+- switch the Shortcut to a clipboard-based handoff instead
+
+==================================================
+NEW IPHONE SHORTCUT DESIGN
+==================================================
+
+I want the Shortcut flow to be:
+
+1. Run JavaScript on Webpage
+   - get document.body.innerText
+   - validate Goodreads CSV signature
+
+2. Copy the CSV text to clipboard
+
+3. Open URL:
+   bookappmobile://import/goodreads?source=shortcut
+
+Then in the app:
+- detect source=shortcut
+- read clipboard contents
+- validate Goodreads CSV
+- if valid, begin import or show a clear “Import Goodreads data from clipboard” confirmation
+- if invalid, show a clear fallback message
+
+==================================================
+WHY
+==================================================
+
+This avoids:
+- deep-link length limits
+- URL truncation
+- fragile payload transport
+- large-library failure
+
+It preserves:
+- fast iPhone flow
+- one-tap transfer feeling
+- no dependence on file download UX
+
+==================================================
+WHAT I WANT BEFORE YOU CHANGE IT
+==================================================
+
+Before implementing, tell me:
+
+1. exact current deep-link receiver logic
+2. how you will switch it from URL-payload import to clipboard-based import
+3. what clipboard API/package you will use
+4. what the app will do if clipboard data is missing or invalid
+5. exact files/components you will modify
+
+Then implement.
+
+Also:
+do not make the beta depend on me manually creating the Shortcut before the app side is stable.
