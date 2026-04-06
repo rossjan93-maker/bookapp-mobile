@@ -138,6 +138,68 @@ function classifyResolution(
 }
 
 // ---------------------------------------------------------------------------
+// loadStageSummary — reconstruct a StageSummary from an existing batch_id
+// Used by the import screen when resuming from the in-app Goodreads browser.
+// ---------------------------------------------------------------------------
+
+export async function loadStageSummary(batchId: string): Promise<StageSummary> {
+  if (!supabase) throw new Error('Supabase not configured.');
+
+  // Get batch-level totals
+  const { data: batch, error: batchErr } = await supabase
+    .from('import_batches')
+    .select('id, total_rows, review_needed')
+    .eq('id', batchId)
+    .single();
+
+  if (batchErr || !batch) {
+    throw new Error(`Import batch not found: ${batchErr?.message ?? 'unknown error'}`);
+  }
+
+  // Get row-level detail to reconstruct counts and review list
+  const { data: rows, error: rowsErr } = await supabase
+    .from('import_rows')
+    .select('resolution, review_reason, matched_book_id, title, author, match_confidence')
+    .eq('batch_id', batchId);
+
+  if (rowsErr) {
+    throw new Error(`Failed to load staging details: ${rowsErr.message}`);
+  }
+
+  let alreadyInApp = 0;
+  let readyToImport = 0;
+  let needsReview = 0;
+  const reviewRows: StagedRowSummary[] = [];
+
+  for (const row of rows ?? []) {
+    if (row.resolution === 'review_needed') {
+      needsReview++;
+      reviewRows.push({
+        title: row.title || '(no title)',
+        author: row.author || '(no author)',
+        resolution: 'review_needed',
+        reviewReason: row.review_reason ?? null,
+        matchedBookId: null,
+        matchConfidence: 0,
+      });
+    } else if (row.matched_book_id) {
+      alreadyInApp++;
+    } else {
+      readyToImport++;
+    }
+  }
+
+  return {
+    batchId,
+    totalRows: batch.total_rows as number,
+    alreadyInApp,
+    readyToImport,
+    needsReview,
+    reviewRows,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Main export: stageGoodreadsImport
 // ---------------------------------------------------------------------------
 

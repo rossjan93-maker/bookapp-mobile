@@ -17,7 +17,7 @@ import * as FileSystem from 'expo-file-system';
 import { BackButton } from '../../components/BackButton';
 import { supabase } from '../../lib/supabase';
 import { parseGoodreadsCSV } from '../../lib/goodreadsParser';
-import { stageGoodreadsImport } from '../../lib/goodreadsStager';
+import { stageGoodreadsImport, loadStageSummary } from '../../lib/goodreadsStager';
 import { executeGoodreadsImport } from '../../lib/goodreadsExecutor';
 import { fetchGoogleBooksCoverUrl } from '../../lib/googleBooks';
 import type { StageSummary } from '../../lib/goodreadsStager';
@@ -297,6 +297,7 @@ function IdleView({
   pastedText,
   onPastedTextChange,
   onSubmitPaste,
+  onOpenBrowser,
 }: {
   onPickFile: () => void;
   onPickNativeFile: () => void;
@@ -305,6 +306,7 @@ function IdleView({
   pastedText: string;
   onPastedTextChange: (text: string) => void;
   onSubmitPaste: () => void;
+  onOpenBrowser?: () => void;
 }) {
   const [platform, setPlatform] = useState<'goodreads' | 'storygraph'>('goodreads');
   const [shortcutSetupDone, setShortcutSetupDone] = useState(false);
@@ -525,6 +527,27 @@ function IdleView({
       {/* ── Goodreads: iOS ── */}
       {platform === 'goodreads' && Platform.OS === 'ios' && (
         <>
+          {/* Primary browser CTA — new in-app transfer path */}
+          {onOpenBrowser && (
+            <TouchableOpacity
+              onPress={onOpenBrowser}
+              style={{
+                backgroundColor: '#1c1917',
+                borderRadius: 12,
+                paddingVertical: 15,
+                alignItems: 'center',
+                marginBottom: 16,
+              }}
+            >
+              <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
+                Import from Goodreads
+              </Text>
+              <Text style={{ color: '#a8a29e', fontSize: 11, marginTop: 3 }}>
+                Opens Goodreads inside readstack
+              </Text>
+            </TouchableOpacity>
+          )}
+
           {!shortcutSetupDone ? (
             /* Setup card — shown until user marks done */
             <>
@@ -678,6 +701,27 @@ function IdleView({
       {/* ── Goodreads: Android ── */}
       {platform === 'goodreads' && Platform.OS === 'android' && (
         <>
+          {/* Primary browser CTA — new in-app transfer path */}
+          {onOpenBrowser && (
+            <TouchableOpacity
+              onPress={onOpenBrowser}
+              style={{
+                backgroundColor: '#1c1917',
+                borderRadius: 12,
+                paddingVertical: 15,
+                alignItems: 'center',
+                marginBottom: 16,
+              }}
+            >
+              <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
+                Import from Goodreads
+              </Text>
+              <Text style={{ color: '#a8a29e', fontSize: 11, marginTop: 3 }}>
+                Opens Goodreads inside readstack
+              </Text>
+            </TouchableOpacity>
+          )}
+
           <View style={{
             backgroundColor: '#fffbf5',
             borderRadius: 12,
@@ -1395,7 +1439,7 @@ function ErrorView({ message, onReset }: { message: string; onReset: () => void 
 
 export default function GoodreadsImportScreen() {
   const router = useRouter();
-  const { source } = useLocalSearchParams<{ source?: string }>();
+  const { source, batchId } = useLocalSearchParams<{ source?: string; batchId?: string }>();
   const didHandleIncoming = useRef(false);
 
   const [step, setStep]             = useState<Step>('idle');
@@ -1457,6 +1501,35 @@ export default function GoodreadsImportScreen() {
   // processCSVText is stable — intentional omission.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source]);
+
+  // ── In-app Goodreads browser handoff ─────────────────────────────────────
+  // Triggered when the browser screen calls router.replace('/import/goodreads?batchId=...')
+  // Loads the StageSummary from Supabase using the batchId and goes directly
+  // to the 'staged' state — skipping idle and processing entirely.
+
+  useEffect(() => {
+    const id = Array.isArray(batchId) ? batchId[0] : batchId;
+    if (!id || didHandleIncoming.current) return;
+    didHandleIncoming.current = true;
+
+    (async () => {
+      setProgressStages(stageList(PROCESSING_STAGES, 2));
+      setStep('processing');
+      try {
+        const summary = await loadStageSummary(id);
+        const { data: { user } } = await supabase!.auth.getUser();
+        setCurrentUserId(user?.id ?? null);
+        setCurrentBatchId(id);
+        setStageSummary(summary);
+        setStep('staged');
+      } catch (err: unknown) {
+        setErrorMsg(err instanceof Error ? err.message : 'Could not resume import.');
+        setStep('error');
+      }
+    })();
+  // loadStageSummary is stable. intentional omission.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batchId]);
 
   // ── Shared CSV processing (all acquisition paths feed here) ────────────────
 
@@ -1627,6 +1700,11 @@ export default function GoodreadsImportScreen() {
           pastedText={pastedText}
           onPastedTextChange={setPastedText}
           onSubmitPaste={handleSubmitPaste}
+          onOpenBrowser={
+            Platform.OS !== 'web'
+              ? () => router.push('/import/goodreads-browser' as any)
+              : undefined
+          }
         />
       )}
 
