@@ -23,6 +23,12 @@
     },
     "web": {
       "output": "single"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ac03c9eb-779b-4e1d-95d5-101751782e07"
+      }
     }
   }
 }

@@ -1,0 +1,10 @@
+node_modules
+.cache
+.expo
+.local
+.git
+dist
+build
+coverage
+tmp
+.DS_Store

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
-import type { WebViewMessageEvent } from 'react-native-webview';
+import type { WebViewMessageEvent, WebViewNavigation } from 'react-native-webview';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import { useRouter } from 'expo-router';
@@ -25,76 +25,193 @@ const DESKTOP_UA =
 
 const GOODREADS_EXPORT_URL = 'https://www.goodreads.com/review/import';
 
-// 30-second timeout — starts when export_page_ready fires (Method 1 attached interceptor)
+// Pattern that identifies a Goodreads CSV export URL (matches both legacy and
+// current Goodreads paths). Tested against:
+//   /review/export   /review/export.csv   /review/import?format=csv
+//   /review_csv      /api/reviews/export  /books.csv
+const CSV_URL_PATTERN = /review[/_](?:export|import|csv)|export.*\.csv|books\.csv/i;
+
+// 30-second timeout — starts when export_page_ready fires
 const CAPTURE_TIMEOUT_MS = 30_000;
 
 // ─── Injected JavaScript ──────────────────────────────────────────────────────
-// Runs after each page load inside the WebView.
 //
-// Method 1 (primary): Find a[href*="review_csv"] links, attach a click
-//   interceptor that calls fetch() in-page (same-origin, carries Goodreads
-//   session cookies) and postMessages the CSV text back to the native layer.
-//   Re-runs every 1 second to catch dynamically rendered export buttons.
-//   Signals export_page_ready when at least one interceptor is attached.
+// Comprehensive capture strategy:
 //
-// Method 2 (secondary): Check if this page IS the CSV (Goodreads served it
-//   inline as text). Detected via "Book Id" present anywhere in innerText.
+//  LOG-1  : browser_mounted — fires on first inject (page loaded)
+//  LOG-2  : nav_url — fires on every inject with current URL
+//  LOG-3  : export_controls_detected — fires when any export control is found,
+//            with count of links/forms/buttons discovered
+//  LOG-4  : export_page_ready — fires when first interceptor is attached
+//  LOG-5  : export_trigger_detected — fires when the user activates an export
+//            control (click/submit)
 //
-// onShouldStartLoadWithRequest-based native re-fetch is NOT used — it does
-// not reliably carry Goodreads session cookies.
+// Interception strategy (broadest to narrowest):
+//  A) window.fetch override — catches fetch()-initiated exports before any DOM event
+//  B) window.XMLHttpRequest override — catches XHR-initiated exports
+//  C) a[href*csv / href*export] — link click interception (existing)
+//  D) form[action*csv / action*export] — form submit interception
+//  E) buttons inside matching forms — click interception on submit buttons
+//  F) Method 2 (inline) — body text contains "Book Id" = this page IS the CSV
+//
+// onShouldStartLoadWithRequest on the native side handles the case where
+// Goodreads initiates a browser navigation / download directly (the Android
+// download-manager path).
 
 const INJECTED_JS = `
 (function() {
   try {
-    // Method 2 (secondary): Check if this page IS the CSV content itself.
-    // Goodreads may serve the CSV inline as plain text. Detected by checking
-    // whether body text CONTAINS "Book Id" (not starts-with — the header row
-    // may be preceded by a BOM or whitespace).
+    var _log = function(obj) {
+      try {
+        window.ReactNativeWebView.postMessage(JSON.stringify(obj));
+      } catch(_) {}
+    };
+
+    // ── LOG-1/2: mount + current URL ──────────────────────────────────────
+    _log({ type: 'log', event: 'browser_mounted', url: window.location.href });
+
+    // ── Method F (inline CSV): Check if this page IS the CSV itself ───────
     var bodyText = (document.body && document.body.innerText)
       ? document.body.innerText.trim()
       : '';
     if (bodyText.indexOf('Book Id') >= 0) {
-      window.ReactNativeWebView.postMessage(
-        JSON.stringify({ type: 'csv_captured', data: bodyText })
-      );
-      return; // CSV detected — no need to attach Method 1 interceptors
+      _log({ type: 'csv_captured', data: bodyText, source: 'inline_body' });
+      return;
     }
 
-    // Method 1 (primary): Intercept export link clicks.
-    // Re-polls every 1 second to handle dynamically rendered export buttons.
-    // Signals export_page_ready when at least one interceptor is attached.
+    // ── Method A: Intercept window.fetch ──────────────────────────────────
+    var _origFetch = window.fetch;
+    if (_origFetch && !window.__rnFetchPatched) {
+      window.__rnFetchPatched = true;
+      window.fetch = function(input, init) {
+        var url = (typeof input === 'string') ? input : (input && input.url) || '';
+        var isCsvExport = /review[\\/_](?:export|import|csv)|export.*\\.csv|books\\.csv/i.test(url);
+        if (isCsvExport) {
+          _log({ type: 'log', event: 'fetch_intercepted', url: url });
+          return _origFetch(input, Object.assign({}, init, { credentials: 'include' }))
+            .then(function(r) {
+              return r.clone().text().then(function(text) {
+                if (text.indexOf('Book Id') >= 0) {
+                  _log({ type: 'csv_captured', data: text, source: 'fetch_intercept' });
+                } else {
+                  _log({ type: 'log', event: 'fetch_response_not_csv', url: url, preview: text.slice(0, 120) });
+                }
+                return r;
+              });
+            });
+        }
+        return _origFetch(input, init);
+      };
+    }
+
+    // ── Method B: Intercept XMLHttpRequest ────────────────────────────────
+    var _OrigXHR = window.XMLHttpRequest;
+    if (_OrigXHR && !window.__rnXHRPatched) {
+      window.__rnXHRPatched = true;
+      var _XHROrig_open = _OrigXHR.prototype.open;
+      var _XHROrig_send = _OrigXHR.prototype.send;
+      _OrigXHR.prototype.open = function(method, url) {
+        this.__rnUrl = url || '';
+        return _XHROrig_open.apply(this, arguments);
+      };
+      _OrigXHR.prototype.send = function() {
+        var isCsvExport = /review[\\/_](?:export|import|csv)|export.*\\.csv|books\\.csv/i.test(this.__rnUrl || '');
+        if (isCsvExport) {
+          _log({ type: 'log', event: 'xhr_intercepted', url: this.__rnUrl });
+          var self = this;
+          this.addEventListener('load', function() {
+            var text = self.responseText || '';
+            if (text.indexOf('Book Id') >= 0) {
+              _log({ type: 'csv_captured', data: text, source: 'xhr_intercept' });
+            }
+          });
+        }
+        return _XHROrig_send.apply(this, arguments);
+      };
+    }
+
+    // ── DOM scanning: links, forms, buttons ───────────────────────────────
     var attached = false;
 
     function attachInterceptors() {
-      var links = document.querySelectorAll('a[href*="review_csv"]');
-      if (links.length > 0 && !attached) {
+      // Selector broadened: review_csv, review/export, export.csv, books.csv
+      var CSV_SELECTOR = 'a[href*="review_csv"], a[href*="review/export"], a[href*="export.csv"], a[href*="books.csv"]';
+      var FORM_SELECTOR = 'form[action*="review_csv"], form[action*="review/export"], form[action*="export"]';
+
+      var links = document.querySelectorAll(CSV_SELECTOR);
+      var forms = document.querySelectorAll(FORM_SELECTOR);
+
+      var controlCount = links.length + forms.length;
+
+      if (controlCount > 0 && !attached) {
         attached = true;
-        window.ReactNativeWebView.postMessage(
-          JSON.stringify({ type: 'export_page_ready' })
-        );
+        _log({ type: 'log', event: 'export_controls_detected', links: links.length, forms: forms.length });
+        _log({ type: 'export_page_ready' });
       }
+
+      // C: anchor links
       links.forEach(function(link) {
         if (!link.dataset.rnIntercepted) {
           link.dataset.rnIntercepted = '1';
           link.addEventListener('click', function(e) {
             e.preventDefault();
             e.stopPropagation();
-            window.ReactNativeWebView.postMessage(
-              JSON.stringify({ type: 'export_started' })
-            );
+            _log({ type: 'log', event: 'export_trigger_detected', control: 'link', href: link.href });
+            _log({ type: 'export_started' });
             var url = link.href;
             fetch(url, { credentials: 'include' })
               .then(function(r) { return r.text(); })
               .then(function(text) {
-                window.ReactNativeWebView.postMessage(
-                  JSON.stringify({ type: 'csv_captured', data: text })
-                );
+                _log({ type: 'csv_captured', data: text, source: 'link_click_fetch' });
               })
               .catch(function(err) {
-                window.ReactNativeWebView.postMessage(
-                  JSON.stringify({ type: 'capture_failed', error: String(err) })
-                );
+                _log({ type: 'capture_failed', error: String(err) });
               });
+          });
+        }
+      });
+
+      // D/E: forms and their submit buttons
+      forms.forEach(function(form) {
+        if (!form.dataset.rnIntercepted) {
+          form.dataset.rnIntercepted = '1';
+          _log({ type: 'log', event: 'export_controls_detected', forms: 1, action: form.action });
+          form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            _log({ type: 'log', event: 'export_trigger_detected', control: 'form_submit', action: form.action });
+            _log({ type: 'export_started' });
+            var url = form.action || window.location.href;
+            fetch(url, { credentials: 'include', method: form.method || 'GET' })
+              .then(function(r) { return r.text(); })
+              .then(function(text) {
+                _log({ type: 'csv_captured', data: text, source: 'form_submit_fetch' });
+              })
+              .catch(function(err) {
+                _log({ type: 'capture_failed', error: String(err) });
+              });
+          });
+          // Also intercept any submit buttons inside the form
+          var submitBtns = form.querySelectorAll('button, input[type="submit"]');
+          submitBtns.forEach(function(btn) {
+            if (!btn.dataset.rnIntercepted) {
+              btn.dataset.rnIntercepted = '1';
+              btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                _log({ type: 'log', event: 'export_trigger_detected', control: 'form_button', action: form.action });
+                _log({ type: 'export_started' });
+                var url = form.action || window.location.href;
+                fetch(url, { credentials: 'include', method: form.method || 'GET' })
+                  .then(function(r) { return r.text(); })
+                  .then(function(text) {
+                    _log({ type: 'csv_captured', data: text, source: 'form_button_fetch' });
+                  })
+                  .catch(function(err) {
+                    _log({ type: 'capture_failed', error: String(err) });
+                  });
+              });
+            }
           });
         }
       });
@@ -104,7 +221,11 @@ const INJECTED_JS = `
     var pollId = setInterval(attachInterceptors, 1000);
     window.addEventListener('beforeunload', function() { clearInterval(pollId); });
   } catch(e) {
-    // Never crash the page — fail silently
+    try {
+      window.ReactNativeWebView.postMessage(
+        JSON.stringify({ type: 'log', event: 'injected_js_error', error: String(e) })
+      );
+    } catch(_) {}
   }
   true;
 })();
@@ -121,25 +242,34 @@ type BrowserState =
   | 'cancelled';         // router.back() called
 
 type WebViewMsg =
+  | { type: 'log'; event: string; [key: string]: unknown }
   | { type: 'export_page_ready' }
   | { type: 'export_started' }
-  | { type: 'csv_captured'; data: string }
+  | { type: 'csv_captured'; data: string; source?: string }
   | { type: 'capture_failed'; error: string };
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function GoodreadsBrowserScreen() {
   const router = useRouter();
+  const webViewRef = useRef<WebView>(null);
 
   const [browserState, setBrowserState] = useState<BrowserState>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pastedText, setPastedText] = useState('');
 
-  // The captured CSV is held here during retry — never written to AsyncStorage
   const pendingCsvRef = useRef<string | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Guard against double-processing (e.g. two csv_captured messages in quick succession)
   const processingRef = useRef(false);
+
+  // ── Mount log ────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    console.log('[GoodreadsBrowser] screen mounted');
+    return () => {
+      console.log('[GoodreadsBrowser] screen unmounted');
+    };
+  }, []);
 
   // ── Timer helpers ────────────────────────────────────────────────────────
 
@@ -158,22 +288,18 @@ export default function GoodreadsBrowserScreen() {
   }, [clearTimer]);
 
   // ── Core parse → stage → batchId → route sequence ───────────────────────
-  // Called from: WebView csv_captured message, paste submit, file picker.
-  // The CSV text is held in memory only during this call. Never AsyncStorage.
 
-  const processCSV = useCallback(async (csvText: string) => {
+  const processCSV = useCallback(async (csvText: string, source?: string) => {
     if (processingRef.current) return;
     processingRef.current = true;
     clearTimer();
 
-    // Save for potential retry on staging-failed
-    pendingCsvRef.current = csvText;
+    console.log('[GoodreadsBrowser] processCSV called, source:', source ?? 'unknown', 'length:', csvText.length);
 
-    // (a) Transition to capture-detected immediately
+    pendingCsvRef.current = csvText;
     setBrowserState('capture-detected');
 
     try {
-      // (b) Parse — validate it's a Goodreads export with at least one row
       const parseResult = parseGoodreadsCSV(csvText);
 
       if (!parseResult.isGoodreadsExport) {
@@ -194,50 +320,83 @@ export default function GoodreadsBrowserScreen() {
         return;
       }
 
-      // (c) Transition to parsing-staging before async work
       setBrowserState('parsing-staging');
 
-      // (d) Get authenticated user
       if (!supabase) throw new Error('Supabase not configured.');
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('You must be signed in to import your library.');
 
-      // (e) Stage — writes import_batches + import_rows to Supabase
       const staged = await stageGoodreadsImport(
         user.id,
         parseResult.rows,
         'goodreads_browser_transfer.csv',
       );
 
-      // (f) Route with batchId — browser screen replaced by import screen in staged state
+      console.log('[GoodreadsBrowser] staging complete, batchId:', staged.batchId);
+
       router.replace({
         pathname: '/import/goodreads',
         params: { batchId: staged.batchId },
       });
-      // processingRef intentionally NOT reset — we are navigating away
 
     } catch (err: unknown) {
+      console.error('[GoodreadsBrowser] processCSV error:', err);
       setErrorMsg(err instanceof Error ? err.message : 'An unexpected error occurred.');
       setBrowserState('staging-failed');
       processingRef.current = false;
     }
   }, [clearTimer, router]);
 
-  // ── Navigation state change — re-arms Method 2 per navigation ───────────
-  // `injectedJavaScript` runs automatically after each page load, so Method 2
-  // (inline CSV detection) already executes on every navigation via the
-  // injected script. This callback provides an additional native-layer signal
-  // that a navigation completed, keeping the state machine in sync (e.g.
-  // resetting the strip text if the user navigates away from the export page).
+  // ── onShouldStartLoadWithRequest ─────────────────────────────────────────
+  // Android download path: Goodreads triggers a navigation / download to the
+  // CSV URL instead of running through our injected click interceptor.
+  // We block that navigation and re-fetch the URL from inside the WebView
+  // (where the session cookie lives) by injecting a fetch() call.
+
+  const handleShouldStartLoadWithRequest = useCallback(
+    (request: WebViewNavigation): boolean => {
+      const { url, navigationType } = request;
+      console.log('[GoodreadsBrowser] onShouldStartLoadWithRequest', navigationType, url);
+
+      if (CSV_URL_PATTERN.test(url)) {
+        console.log('[GoodreadsBrowser] CSV URL intercepted at native layer, re-fetching in-page:', url);
+        // Inject a fetch() inside the WebView so it runs with session cookies
+        const escapedUrl = url.replace(/'/g, "\\'");
+        webViewRef.current?.injectJavaScript(`
+          (function() {
+            try {
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'log', event: 'native_nav_refetch', url: '${escapedUrl}'
+              }));
+              fetch('${escapedUrl}', { credentials: 'include' })
+                .then(function(r) { return r.text(); })
+                .then(function(text) {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'csv_captured', data: text, source: 'native_nav_refetch'
+                  }));
+                })
+                .catch(function(err) {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'capture_failed', error: String(err)
+                  }));
+                });
+            } catch(e) {}
+          })();
+          true;
+        `);
+        return false; // Block the native navigation / download
+      }
+
+      return true; // Allow all other navigations
+    },
+    [],
+  );
+
+  // ── Navigation state change ──────────────────────────────────────────────
 
   const handleNavigationStateChange = useCallback(
     (navState: { url?: string }) => {
-      // If the user has navigated away from a fallback or captured state back
-      // to a fresh page, let the injected JS re-evaluate Method 2 and
-      // Method 1 naturally. No extra action needed here beyond logging intent.
-      // The injected JS fires per-load and will postMessage csv_captured or
-      // export_page_ready as appropriate.
-      void navState;
+      console.log('[GoodreadsBrowser] navigationStateChange url:', navState.url ?? '(none)');
     },
     [],
   );
@@ -252,25 +411,33 @@ export default function GoodreadsBrowserScreen() {
       return;
     }
 
+    if (msg.type === 'log') {
+      // Diagnostic instrumentation — forward to native console
+      const { event: ev, ...rest } = msg;
+      console.log(`[GoodreadsBrowser][webview] ${ev}`, rest);
+      return;
+    }
+
     switch (msg.type) {
       case 'export_page_ready':
-        // Method 1 has attached at least one interceptor — start the 30s timeout
+        console.log('[GoodreadsBrowser] export_page_ready — starting 30s timeout');
         startTimeoutTimer();
         break;
 
       case 'export_started':
-        // User tapped the export link — give immediate feedback
+        console.log('[GoodreadsBrowser] export_started');
         setBrowserState(prev => prev === 'idle' ? 'capture-detected' : prev);
         break;
 
       case 'csv_captured':
+        console.log('[GoodreadsBrowser] csv_captured, source:', (msg as { type: 'csv_captured'; data: string; source?: string }).source ?? 'unknown', 'length:', msg.data?.length);
         if (!processingRef.current) {
-          processCSV(msg.data);
+          processCSV(msg.data, (msg as { type: 'csv_captured'; data: string; source?: string }).source);
         }
         break;
 
       case 'capture_failed':
-        // In-page fetch failed — surface fallback overlay immediately
+        console.warn('[GoodreadsBrowser] capture_failed:', msg.error);
         clearTimer();
         setBrowserState('auto-capture-timeout');
         break;
@@ -298,16 +465,13 @@ export default function GoodreadsBrowserScreen() {
     setBrowserState('auto-capture-timeout');
   }, []);
 
-  // ── Keep trying (dismisses fallback overlay, back to idle) ───────────────
-  // Clears the current timer but does NOT start a new one — the 30-second
-  // timeout window only opens again when `export_page_ready` fires from the
-  // injected JS (i.e. when the user lands on the Goodreads export page).
+  // ── Keep trying ──────────────────────────────────────────────────────────
 
   const handleKeepTrying = useCallback(() => {
     processingRef.current = false;
     setErrorMsg(null);
     setPastedText('');
-    clearTimer(); // reset timer state; startTimeoutTimer runs on next export_page_ready
+    clearTimer();
     setBrowserState('idle');
   }, [clearTimer]);
 
@@ -324,7 +488,7 @@ export default function GoodreadsBrowserScreen() {
   const handlePasteSubmit = useCallback(async () => {
     const trimmed = pastedText.trim();
     if (trimmed.length < 10) return;
-    await processCSV(trimmed);
+    await processCSV(trimmed, 'paste');
   }, [pastedText, processCSV]);
 
   // ── Fallback: native file picker ──────────────────────────────────────────
@@ -338,7 +502,7 @@ export default function GoodreadsBrowserScreen() {
       if (result.canceled || !result.assets?.[0]) return;
       const asset = result.assets[0];
       const text = await FileSystem.readAsStringAsync(asset.uri);
-      await processCSV(text);
+      await processCSV(text, 'file_picker');
     } catch {
       // User cancelled or error — no-op
     }
@@ -396,11 +560,13 @@ export default function GoodreadsBrowserScreen() {
       {/* ── WebView — always mounted, dimmed during capture ── */}
       <View style={[styles.webViewWrap, dimWebView && styles.webViewDimmed]}>
         <WebView
+          ref={webViewRef}
           source={{ uri: GOODREADS_EXPORT_URL }}
           userAgent={DESKTOP_UA}
           injectedJavaScript={INJECTED_JS}
           onMessage={handleMessage}
           onNavigationStateChange={handleNavigationStateChange}
+          onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
           sharedCookiesEnabled={Platform.OS === 'ios'}
           domStorageEnabled
           thirdPartyCookiesEnabled
@@ -443,7 +609,7 @@ export default function GoodreadsBrowserScreen() {
       {/* ── Fallback overlay: auto-capture-timeout ── */}
       {showFallbackOverlay && (
         <View style={styles.fallbackOverlay}>
-          <Text style={styles.fallbackTitle}>Auto-capture didn't work</Text>
+          <Text style={styles.fallbackTitle}>Auto-capture didn&apos;t work</Text>
           <Text style={styles.fallbackSubtitle}>
             Paste your Goodreads export text below, or choose the downloaded CSV file.
           </Text>
@@ -642,68 +808,50 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#1c1917',
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    height: 110,
+    minHeight: 100,
+    maxHeight: 180,
     textAlignVertical: 'top',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   pasteInputActive: {
-    borderColor: '#d4a574',
+    borderColor: '#a8a29e',
   },
-
-  // Shared buttons
   primaryBtn: {
     backgroundColor: '#1c1917',
     borderRadius: 12,
     paddingVertical: 14,
-    alignItems: 'center',
+    paddingHorizontal: 24,
     width: '100%',
+    alignItems: 'center',
     marginBottom: 10,
   },
   primaryBtnDisabled: {
-    backgroundColor: '#f5f5f4',
+    opacity: 0.3,
   },
   primaryBtnText: {
-    color: '#fff',
+    color: '#faf9f7',
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: -0.2,
   },
   primaryBtnTextDisabled: {
-    color: '#a8a29e',
-  },
-  secondaryBtn: {
-    backgroundColor: '#f5f5f4',
-    borderRadius: 10,
-    paddingVertical: 13,
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 10,
-  },
-  secondaryBtnText: {
-    color: '#1c1917',
-    fontSize: 14,
-    fontWeight: '600',
+    color: '#faf9f7',
   },
   ghostBtn: {
     paddingVertical: 12,
+    paddingHorizontal: 24,
     alignItems: 'center',
   },
   ghostBtnText: {
-    fontSize: 13,
     color: '#78716c',
-  },
-  keepTryingBtn: {
-    marginTop: 16,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  keepTryingText: {
-    fontSize: 13,
-    color: '#78716c',
+    fontSize: 14,
+    fontWeight: '500',
   },
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginVertical: 12,
+    width: '100%',
   },
   dividerLine: {
     flex: 1,
@@ -711,9 +859,37 @@ const styles = StyleSheet.create({
     backgroundColor: '#e7e5e4',
   },
   dividerLabel: {
-    fontSize: 11,
-    fontWeight: '500',
+    marginHorizontal: 12,
+    fontSize: 12,
     color: '#a8a29e',
-    marginHorizontal: 10,
+    fontWeight: '500',
+  },
+  secondaryBtn: {
+    borderWidth: 1,
+    borderColor: '#e7e5e4',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 10,
+    backgroundColor: '#fff',
+  },
+  secondaryBtnText: {
+    color: '#1c1917',
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: -0.2,
+  },
+  keepTryingBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  keepTryingText: {
+    color: '#78716c',
+    fontSize: 13,
+    fontWeight: '500',
   },
 });
