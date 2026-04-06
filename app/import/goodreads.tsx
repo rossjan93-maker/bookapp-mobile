@@ -285,14 +285,8 @@ function IdleView({
       sub: 'iPhone: tap ᴬᴬ in the address bar → "Request Desktop Website". Android: tap ⋮ → "Desktop site". The export button only appears in desktop mode.',
     },
     {
-      label: 'Tap "Export Library" — watch what happens next',
-      sub: 'Goodreads is subtle here. It may quietly add a new line under the button, or the CSV may open directly in a preview. Both mean it worked.',
-    },
-    {
-      label: 'Get the CSV into readstack',
-      sub: isWeb
-        ? 'If a file downloaded, tap "Choose CSV File" below. If the CSV opened as text in your browser, select all, copy, and paste it in the box below.'
-        : 'If a file downloaded: tap Share → Save to Files, then come back here and tap "Choose CSV File". If the CSV opened as text: select all, copy, and paste it in the box below.',
+      label: 'Tap "Export Library"',
+      sub: 'Goodreads may download a file, or your library may open as text in the browser. Either way, you\'re ready for the next step.',
     },
   ];
 
@@ -393,7 +387,7 @@ function IdleView({
             Do this in Safari or Chrome — not the Goodreads app
           </Text>
           <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
-            If the Goodreads app opens when you tap the button below, use the app menu to open the page in Safari or Chrome instead.
+            If the Goodreads app opens when you tap the button below, use the app menu to open the page in Safari or Chrome instead. Goodreads may download a file or open your library as text — both work fine.
           </Text>
         </View>
       )}
@@ -428,7 +422,7 @@ function IdleView({
 
       {platform === 'goodreads' ? (
         <>
-          {/* Open Goodreads export page in browser */}
+          {/* ── Step 1: Open Goodreads ── */}
           <TouchableOpacity
             onPress={() => Linking.openURL(GOODREADS_EXPORT_URL)}
             style={{
@@ -444,93 +438,83 @@ function IdleView({
             </Text>
           </TouchableOpacity>
 
-          {/* Fallback: selectable URL for manual paste into Safari */}
-          <View style={{ marginTop: 12, alignItems: 'center', paddingHorizontal: 8 }}>
-            <Text style={{ fontSize: 11, color: '#a8a29e', marginBottom: 4, textAlign: 'center' }}>
-              If the app opens instead, copy this link and paste it into Safari:
+          {/* Fallback: selectable URL */}
+          <View style={{ marginTop: 10, alignItems: 'center', paddingHorizontal: 8 }}>
+            <Text style={{ fontSize: 11, color: '#a8a29e', marginBottom: 3, textAlign: 'center' }}>
+              If the app opens instead, paste this into Safari or Chrome:
             </Text>
-            <Text
-              selectable
-              style={{ fontSize: 12, color: '#57534e', textAlign: 'center' }}
-            >
+            <Text selectable style={{ fontSize: 12, color: '#57534e', textAlign: 'center' }}>
               goodreads.com/review/import
             </Text>
           </View>
 
-          {/* Divider */}
+          {/* ── Step 2: section label ── */}
           <View style={{
             flexDirection: 'row',
             alignItems: 'center',
-            marginVertical: 20,
+            marginTop: 28,
+            marginBottom: 14,
           }}>
             <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
-            <Text style={{ fontSize: 12, color: '#a8a29e', marginHorizontal: 12 }}>then</Text>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: '#78716c', marginHorizontal: 12 }}>
+              Then bring it back here
+            </Text>
             <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
           </View>
 
-          {isWeb ? (
-            /* Web: full file-picker CTA */
-            <TouchableOpacity
-              onPress={onPickFile}
-              style={{
-                backgroundColor: '#fff',
-                borderRadius: 12,
-                paddingVertical: 15,
-                alignItems: 'center',
-                borderWidth: 1,
-                borderColor: '#e7e5e4',
-              }}
-            >
-              <Text style={{ color: '#1c1917', fontSize: 15, fontWeight: '600' }}>
-                Choose CSV File
-              </Text>
-              <Text style={{ color: '#a8a29e', fontSize: 12, marginTop: 3 }}>
-                goodreads_library_export.csv
-              </Text>
-            </TouchableOpacity>
-          ) : (
-            /* Mobile: native document picker */
-            <TouchableOpacity
-              onPress={onPickNativeFile}
-              style={{
-                backgroundColor: '#fff',
-                borderRadius: 12,
-                paddingVertical: 15,
-                alignItems: 'center',
-                borderWidth: 1,
-                borderColor: '#e7e5e4',
-              }}
-            >
-              <Text style={{ color: '#1c1917', fontSize: 15, fontWeight: '600' }}>
-                Choose CSV File
-              </Text>
-              <Text style={{ color: '#a8a29e', fontSize: 12, marginTop: 3 }}>
-                goodreads_library_export.csv
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {/* ── Paste CSV text (all platforms) ── */}
-          <View style={{ marginTop: 20 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
-              <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
-              <Text style={{ fontSize: 12, color: '#a8a29e', marginHorizontal: 12 }}>or</Text>
-              <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
-            </View>
-            <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', marginBottom: 5 }}>
-              Paste CSV text
+          {/* ── Option A: Got a file ── */}
+          <View style={{
+            backgroundColor: '#fff',
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: '#e7e5e4',
+            padding: 18,
+            marginBottom: 12,
+          }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 4 }}>
+              A file downloaded to your device
             </Text>
-            <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18, marginBottom: 10 }}>
-              If Goodreads displayed your export as text in the browser — select all, copy, then paste it here.
+            <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18, marginBottom: 14 }}>
+              Your browser saved a .csv file. Tap below to find and open it.
+            </Text>
+            <TouchableOpacity
+              onPress={isWeb ? onPickFile : onPickNativeFile}
+              style={{
+                backgroundColor: '#f5f5f4',
+                borderRadius: 10,
+                paddingVertical: 13,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: '#1c1917', fontSize: 14, fontWeight: '600' }}>
+                Choose CSV File
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* ── Option B: Opened as text ── */}
+          <View style={{
+            backgroundColor: '#fff',
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: pastedText.trim().length > 0 ? '#d4a574' : '#e7e5e4',
+            padding: 18,
+          }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 4 }}>
+              Your library opened as text in the browser
+            </Text>
+            <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18, marginBottom: 14 }}>
+              This is normal — Goodreads sometimes does this instead of downloading a file.{'\n'}
+              Select all the text on that page (Ctrl+A or Cmd+A), copy it, then paste it below.
             </Text>
             <TextInput
               value={pastedText}
               onChangeText={onPastedTextChange}
               multiline
-              placeholder="Paste your Goodreads CSV here…"
+              placeholder="Paste your Goodreads export here…"
               placeholderTextColor="#a8a29e"
               style={{
-                backgroundColor: '#fff',
+                backgroundColor: '#faf9f7',
                 borderRadius: 10,
                 borderWidth: 1,
                 borderColor: pastedText.trim().length > 0 ? '#d4a574' : '#e7e5e4',
@@ -538,27 +522,27 @@ function IdleView({
                 fontSize: 11,
                 color: '#1c1917',
                 fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                height: 100,
+                height: 110,
                 textAlignVertical: 'top',
+                marginBottom: 10,
               }}
             />
             <TouchableOpacity
               onPress={onSubmitPaste}
               disabled={pastedText.trim().length < 10}
               style={{
-                marginTop: 10,
                 backgroundColor: pastedText.trim().length >= 10 ? '#1c1917' : '#f5f5f4',
-                borderRadius: 12,
-                paddingVertical: 14,
+                borderRadius: 10,
+                paddingVertical: 13,
                 alignItems: 'center',
               }}
             >
               <Text style={{
                 color: pastedText.trim().length >= 10 ? '#fff' : '#a8a29e',
-                fontSize: 15,
+                fontSize: 14,
                 fontWeight: '600',
               }}>
-                Import pasted text
+                Import
               </Text>
             </TouchableOpacity>
           </View>
