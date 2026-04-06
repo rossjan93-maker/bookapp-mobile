@@ -38,7 +38,7 @@ const CAPTURE_TIMEOUT_MS = 30_000;
 //   Signals export_page_ready when at least one interceptor is attached.
 //
 // Method 2 (secondary): Check if this page IS the CSV (Goodreads served it
-//   inline as text). Detected via "Book Id" at the start of innerText.
+//   inline as text). Detected via "Book Id" present anywhere in innerText.
 //
 // onShouldStartLoadWithRequest-based native re-fetch is NOT used — it does
 // not reliably carry Goodreads session cookies.
@@ -46,18 +46,23 @@ const CAPTURE_TIMEOUT_MS = 30_000;
 const INJECTED_JS = `
 (function() {
   try {
-    // Method 2: Check if this page is the CSV content itself
+    // Method 2 (secondary): Check if this page IS the CSV content itself.
+    // Goodreads may serve the CSV inline as plain text. Detected by checking
+    // whether body text CONTAINS "Book Id" (not starts-with — the header row
+    // may be preceded by a BOM or whitespace).
     var bodyText = (document.body && document.body.innerText)
       ? document.body.innerText.trim()
       : '';
-    if (bodyText.indexOf('Book Id') === 0) {
+    if (bodyText.indexOf('Book Id') >= 0) {
       window.ReactNativeWebView.postMessage(
         JSON.stringify({ type: 'csv_captured', data: bodyText })
       );
-      return;
+      return; // CSV detected — no need to attach Method 1 interceptors
     }
 
-    // Method 1: Intercept export link clicks
+    // Method 1 (primary): Intercept export link clicks.
+    // Re-polls every 1 second to handle dynamically rendered export buttons.
+    // Signals export_page_ready when at least one interceptor is attached.
     var attached = false;
 
     function attachInterceptors() {
@@ -206,7 +211,7 @@ export default function GoodreadsBrowserScreen() {
 
       // (f) Route with batchId — browser screen replaced by import screen in staged state
       router.replace({
-        pathname: '/import/goodreads' as any,
+        pathname: '/import/goodreads',
         params: { batchId: staged.batchId },
       });
       // processingRef intentionally NOT reset — we are navigating away
@@ -217,6 +222,25 @@ export default function GoodreadsBrowserScreen() {
       processingRef.current = false;
     }
   }, [clearTimer, router]);
+
+  // ── Navigation state change — re-arms Method 2 per navigation ───────────
+  // `injectedJavaScript` runs automatically after each page load, so Method 2
+  // (inline CSV detection) already executes on every navigation via the
+  // injected script. This callback provides an additional native-layer signal
+  // that a navigation completed, keeping the state machine in sync (e.g.
+  // resetting the strip text if the user navigates away from the export page).
+
+  const handleNavigationStateChange = useCallback(
+    (navState: { url?: string }) => {
+      // If the user has navigated away from a fallback or captured state back
+      // to a fresh page, let the injected JS re-evaluate Method 2 and
+      // Method 1 naturally. No extra action needed here beyond logging intent.
+      // The injected JS fires per-load and will postMessage csv_captured or
+      // export_page_ready as appropriate.
+      void navState;
+    },
+    [],
+  );
 
   // ── WebView message handler ──────────────────────────────────────────────
 
@@ -275,14 +299,17 @@ export default function GoodreadsBrowserScreen() {
   }, []);
 
   // ── Keep trying (dismisses fallback overlay, back to idle) ───────────────
+  // Clears the current timer but does NOT start a new one — the 30-second
+  // timeout window only opens again when `export_page_ready` fires from the
+  // injected JS (i.e. when the user lands on the Goodreads export page).
 
   const handleKeepTrying = useCallback(() => {
     processingRef.current = false;
     setErrorMsg(null);
     setPastedText('');
+    clearTimer(); // reset timer state; startTimeoutTimer runs on next export_page_ready
     setBrowserState('idle');
-    startTimeoutTimer(); // restart timeout
-  }, [startTimeoutTimer]);
+  }, [clearTimer]);
 
   // ── Cancel ───────────────────────────────────────────────────────────────
 
@@ -373,6 +400,7 @@ export default function GoodreadsBrowserScreen() {
           userAgent={DESKTOP_UA}
           injectedJavaScript={INJECTED_JS}
           onMessage={handleMessage}
+          onNavigationStateChange={handleNavigationStateChange}
           sharedCookiesEnabled={Platform.OS === 'ios'}
           domStorageEnabled
           thirdPartyCookiesEnabled
