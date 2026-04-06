@@ -265,9 +265,9 @@ export default function GoodreadsBrowserScreen() {
   // ── Mount log ────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    console.log('[GoodreadsBrowser] screen mounted');
+    console.log('[GoodreadsBrowser] mounted_v3 Platform.OS=' + Platform.OS);
     return () => {
-      console.log('[GoodreadsBrowser] screen unmounted');
+      console.log('[GoodreadsBrowser] unmounted_v3');
     };
   }, []);
 
@@ -538,7 +538,7 @@ export default function GoodreadsBrowserScreen() {
           </Text>
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>Goodreads Import</Text>
+        <Text style={styles.headerTitle}>Goodreads Browser V3</Text>
 
         <View style={styles.headerSide} />
       </View>
@@ -554,6 +554,14 @@ export default function GoodreadsBrowserScreen() {
         )}
         <Text style={styles.stripText} numberOfLines={1}>
           {stripLabel}
+        </Text>
+      </View>
+
+      {/* ── DEBUG BANNER (temporary — remove after real-device verification) ── */}
+      <View style={styles.debugBanner}>
+        <Text style={styles.debugBannerBadge}>GR_BROWSER_V3</Text>
+        <Text style={styles.debugBannerBody}>
+          If you can read this, you are in the native Goodreads browser route.
         </Text>
       </View>
 
@@ -723,6 +731,33 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#78716c',
     textAlign: 'center',
+  },
+
+  // Debug banner (temporary)
+  debugBanner: {
+    backgroundColor: '#fef08a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#ca8a04',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  debugBannerBadge: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#92400e',
+    letterSpacing: 0.5,
+    backgroundColor: '#fde68a',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  debugBannerBody: {
+    fontSize: 11,
+    color: '#78350f',
+    flex: 1,
   },
 
   // WebView

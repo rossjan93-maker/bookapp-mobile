@@ -1548,7 +1548,10 @@ export default function GoodreadsImportScreen() {
           onSubmitPaste={handleSubmitPaste}
           onOpenBrowser={
             Platform.OS !== 'web'
-              ? () => router.push('/import/goodreads-browser')
+              ? () => {
+                  console.log('[GoodreadsImport] opening_browser_v3 Platform.OS=' + Platform.OS);
+                  router.push('/import/goodreads-browser');
+                }
               : undefined
           }
         />
