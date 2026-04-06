@@ -6,21 +6,44 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "channel": "development",
       "android": {
         "buildType": "apk"
       }
     },
     "preview": {
       "distribution": "internal",
+      "channel": "preview",
       "android": {
         "buildType": "apk"
       }
     },
+    "beta": {
+      "distribution": "store",
+      "channel": "beta",
+      "autoIncrement": true,
+      "ios": {
+        "simulator": false
+      }
+    },
     "production": {
+      "distribution": "store",
+      "channel": "production",
       "autoIncrement": true
     }
   },
   "submit": {
-    "production": {}
+    "beta": {
+      "ios": {
+        "appleTeamId": "YOUR_APPLE_TEAM_ID",
+        "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID"
+      }
+    },
+    "production": {
+      "ios": {
+        "appleTeamId": "YOUR_APPLE_TEAM_ID",
+        "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID"
+      }
+    }
   }
 }

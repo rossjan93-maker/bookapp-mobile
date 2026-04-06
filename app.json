@@ -9,8 +9,15 @@
     "plugins": [
       "expo-router",
       "expo-apple-authentication",
-      "expo-dev-client"
+      "expo-dev-client",
+      "expo-updates"
     ],
+    "updates": {
+      "url": "https://u.expo.dev/ac03c9eb-779b-4e1d-95d5-101751782e07"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "ios": {
       "bundleIdentifier": "com.readstack.app",
       "usesAppleSignIn": true

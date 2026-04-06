@@ -1,0 +1,101 @@
+We are now focusing on iPhone beta distribution through TestFlight and fast post-install updates through EAS Update.
+
+Do not work on Android distribution right now.
+Assume Android stays on the current dev-build path for my own testing.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Set this project up so that:
+
+1. iPhone testers can install the app through TestFlight
+2. after that, most beta fixes can be pushed through EAS Update without requiring a reinstall
+3. we have a clean “beta” release path, not just a dev/testing workaround
+
+==================================================
+WHAT I WANT
+==================================================
+
+I want a repo-grounded implementation/setup plan for:
+
+A. TestFlight readiness
+B. EAS Update readiness
+C. the correct relationship between them
+
+The end state should be:
+
+- a fresh iOS build that includes the current native Goodreads browser flow
+- that build is suitable for TestFlight distribution
+- the app is configured for EAS Update
+- we have a beta channel/branch strategy for sending updates to installed beta users
+
+==================================================
+IMPORTANT PRODUCT RULES
+==================================================
+
+1. Do not widen scope into Android distribution
+2. Do not redesign the app
+3. Do not touch unrelated systems unless required for TestFlight/EAS Update setup
+4. Keep the plan focused on:
+   - Apple/TestFlight distribution
+   - expo-updates / EAS Update
+   - build/update workflow for beta users
+
+==================================================
+WHAT I WANT BEFORE CODING
+==================================================
+
+Before making changes, tell me:
+
+1. whether expo-updates is already installed/configured
+2. whether the project is already ready for TestFlight submission or what is missing
+3. exactly what app config fields need to be verified or changed for iOS/TestFlight
+4. exactly what EAS Update configuration is needed
+5. what beta channel/branch structure you recommend
+   - e.g. beta channel / beta branch
+6. what kinds of future changes would require:
+   - a new iOS build
+   - versus an EAS Update only
+7. exact files/config you will modify
+8. exact commands I will run later for:
+   - iOS build
+   - submission/upload
+   - publishing a beta update
+
+==================================================
+IMPLEMENTATION GOALS
+==================================================
+
+I want you to set up or prepare:
+
+1. expo-updates / EAS Update configuration
+2. a clean beta update channel strategy
+3. any required app.json / app.config / eas.json updates for this workflow
+4. anything needed so the next iOS build is TestFlight-ready
+
+==================================================
+DELIVERABLES I WANT
+==================================================
+
+When done, give me:
+
+1. exact files changed
+2. exact commands to create the next iOS build
+3. exact commands or workflow to get that build into TestFlight
+4. exact command to publish a beta EAS Update afterward
+5. a plain-English explanation of:
+   - how I get testers onto TestFlight
+   - how they receive later updates
+   - when I must create a new build instead of pushing an update
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- the project is prepared for TestFlight
+- the project is prepared for EAS Update
+- we have a defined beta channel strategy
+- iPhone testers can install the app through TestFlight
+- later JS/UI fixes can be pushed through EAS Update without reinstalling
+- native changes still correctly require a new build
