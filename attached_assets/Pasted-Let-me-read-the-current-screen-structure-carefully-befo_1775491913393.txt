@@ -1,0 +1,133 @@
+Let me read the current screen structure carefully before answering.
+
+
+6 actions
+Now I have the full picture. Here's my honest assessment before touching a line of code:
+
+1. What the current native Goodreads screen hierarchy actually is:
+
+iOS Goodreads tab (top to bottom):
+
+"Import from Goodreads" browser button ← new, but immediately followed by…
+Badge "FASTEST WAY ON iPHONE" + full Shortcut setup card (3 steps, "Get the Shortcut" CTA) — or if installed: compact strip
+"Open Goodreads Export Page" — second large black button, labeled in code as "Primary action — always visible"
+URL text goodreads.com/review/import
+"Other ways to import" toggle → collapsed paste + file picker
+Android Goodreads tab:
+
+"Import from Goodreads" browser button ← new, but immediately followed by…
+"Do this in Chrome — not the Goodreads app" warning card
+4-step instruction card for external Chrome export flow
+"Open Goodreads Export Page" — another large black button
+Paste input + file picker
+The browser CTA was prepended to an unchanged old structure. The screen has two competing primary black buttons on iOS, three visual sections fighting for attention on Android.
+
+2. What I will remove from the primary native surface:
+
+iOS: entire Shortcut setup card, "FASTEST WAY ON iPHONE" badge, "Get the Shortcut" button, "I've already set this up" link, the installed-shortcut strip
+iOS + Android: "Open Goodreads Export Page" as a standalone primary CTA
+Android: "Do this in Chrome" warning card + the 4-step Chrome export instruction card
+3. What remains but gets demoted into the fallback section:
+
+Choose CSV File
+Paste CSV text
+(Shortcut path is fully retired from native primary surface — it's superseded by the in-app browser)
+4. New native hierarchy:
+
+A. "Import from Goodreads" (headline)
+   short copy: "We open Goodreads inside readstack — sign in if needed, then tap Export Library."
+B. Primary CTA (one large button): "Import from Goodreads"
+C. Small note below button:
+   "We capture your library automatically when possible."
+D. ─── Other ways to import ───  (always visible, clearly secondary)
+   [ Choose CSV File ] (secondary button style)
+   or
+   Paste text area + Import button
+
+5. Web stays unchanged — the bookmarklet, "Open Goodreads Export Page", paste/file all remain as-is. Zero edits to the web section.
+
+6. Files modified: only app/import/goodreads.tsx — specifically the IdleView function (iOS and Android Goodreads blocks). The web block, StoryGraph block, reset entry point, and everything outside IdleView are untouched.
+
+Implementing now:
+
+
+2 actions
+Now I'll implement the rewrite. I'll do it as a series of precise edits:
+
+
+2 actions
+Now replace both the iOS and Android Goodreads blocks with one clean native-first block:
+
+
+2 actions
+Now check for any lingering references to the removed state variables:
+
+
+2 actions
+Good — SHORTCUT_SETUP_KEY is defined but no longer referenced. Let me check if AsyncStorage is used anywhere else in the file:
+
+
+2 actions
+AsyncStorage and SHORTCUT_SETUP_KEY are now unused. Let me clean those up too, and check if SHORTCUT_INSTALL_URL is still referenced:
+
+
+2 actions
+Remove the now-unused import, constant, and key:
+
+
+8 actions
+Let me verify renderFallbacks is still intact for the web block, then restart:
+
+
+2 actions
+Good — renderFallbacks and the web block are intact. Let me restart and verify:
+
+
+4 actions
+App is running. Let me take a screenshot of the import screen:
+
+
+2 actions
+The app is running cleanly — no compilation errors. Let me write the commit message:
+
+
+2 actions
+Let me check the latest logs before completing:
+
+
+2 actions
+Clean build — no errors from my changes. Let me take a screenshot of the web import screen to confirm the web UI is unaffected:
+
+
+2 actions
+Everything is clean. The implementation is complete. Let me mark it done:
+
+
+Deciding on direct user instruction response
+The changes are done. Here's what the native Goodreads import screen now looks like versus before:
+
+Before: The browser CTA was prepended to an unchanged old structure — so users saw the browser button, then immediately a "FASTEST WAY ON iPHONE" Shortcut card, then a second "Open Goodreads Export Page" black button, making it look like a list of competing methods.
+
+After (iOS + Android):
+
+Import from Goodreads                          ← headline
+We open Goodreads inside readstack. Sign       ← one line of copy
+in if needed, then tap Export Library...
+[ Import from Goodreads ]                      ← single dominant CTA
+Opens Goodreads inside readstack · sign        ← expectation copy (small, muted)
+in if prompted
+─── OTHER WAYS TO IMPORT ───────────────────   ← divider, always visible
+[ Choose CSV File ]                            ← secondary button
+  If you already exported from Goodreads
+[paste box…]
+[ Import pasted text ]
+
+Removed from native entirely:
+
+Siri Shortcut setup card (the "FASTEST WAY ON iPHONE" badge and all three steps)
+"Get the Shortcut" CTA and "I've already set this up" link
+Shortcut installed reminder strip
+"Open Goodreads Export Page" as a standalone primary button
+Android "Do this in Chrome" warning card and 4-step Chrome instruction card
+The expand/collapse toggle for fallback methods
+Web: completely untouched — the bookmarklet helper, "Open Goodreads Export Page" button, paste, and file picker all remain exactly as they were.
