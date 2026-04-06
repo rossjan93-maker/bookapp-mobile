@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import { BackButton } from '../../components/BackButton';
@@ -24,6 +24,33 @@ import { resetGoodreadsImport } from '../../lib/goodreadsReset';
 import type { GoodreadsResetResult } from '../../lib/goodreadsReset';
 import { repairBooksMetadata } from '../../lib/metadataRepair';
 import { writeOnboardingStage } from '../../lib/onboardingStage';
+
+// ─── Transfer helper constants ─────────────────────────────────────────────
+// Bookmarklet: reads the Goodreads export page text and copies it to clipboard.
+// No apostrophes in alert strings — avoids nested quoting issues in the href.
+const BOOKMARKLET_HREF = [
+  "javascript:(function(){",
+  "var t=(document.body.innerText||'').trim();",
+  "if(t.slice(0,7)!=='Book Id'){",
+  "alert('This does not look like a Goodreads export page. Make sure you have clicked Export Library first.');",
+  "return;}",
+  "function ok(){alert('Copied! Go back to readstack and paste it in the import box.');}",
+  "function fb(){var a=document.createElement('textarea');",
+  "a.value=t;a.style.cssText='position:fixed;opacity:0;top:0;left:0';",
+  "document.body.appendChild(a);a.focus();a.select();",
+  "var d=document.execCommand('copy');document.body.removeChild(a);",
+  "if(d){ok();}else{alert('Auto-copy failed. Select all, copy, and paste in readstack.');}",
+  "}",
+  "if(navigator.clipboard&&window.isSecureContext){",
+  "navigator.clipboard.writeText(t).then(ok).catch(fb);",
+  "}else{fb();}",
+  "})();",
+].join('');
+
+// Siri Shortcut: the Shortcut runs JavaScript on the Goodreads page,
+// URL-encodes the result, then opens bookappmobile://import/goodreads?csv=<data>.
+// Replace this URL with the published iCloud Shortcuts link once created.
+const SHORTCUT_INSTALL_URL = 'https://www.icloud.com/shortcuts/';
 
 type Step =
   | 'idle'
@@ -448,65 +475,101 @@ function IdleView({
             </Text>
           </View>
 
-          {/* ── Step 2: section label ── */}
-          <View style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            marginTop: 28,
-            marginBottom: 14,
-          }}>
-            <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
-            <Text style={{ fontSize: 12, fontWeight: '600', color: '#78716c', marginHorizontal: 12 }}>
-              Then bring it back here
-            </Text>
-            <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
-          </View>
+          {/* ── iOS: Siri Shortcut — primary transfer path ── */}
+          {Platform.OS === 'ios' && (
+            <>
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', marginTop: 28, marginBottom: 14,
+              }}>
+                <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
+                <Text style={{ fontSize: 12, fontWeight: '600', color: '#78716c', marginHorizontal: 12 }}>
+                  then transfer automatically
+                </Text>
+                <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
+              </View>
+              <View style={{
+                backgroundColor: '#fff', borderRadius: 14,
+                borderWidth: 1.5, borderColor: '#1c1917', padding: 18,
+              }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 6 }}>
+                  Transfer with the readstack Shortcut
+                </Text>
+                <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 19, marginBottom: 16 }}>
+                  Install once. On the Goodreads export page:{'\n'}
+                  tap Share → readstack Import{'\n'}
+                  → your library transfers directly into readstack.
+                </Text>
+                <TouchableOpacity
+                  onPress={() => Linking.openURL(SHORTCUT_INSTALL_URL)}
+                  style={{
+                    backgroundColor: '#1c1917', borderRadius: 10,
+                    paddingVertical: 13, alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>
+                    Get the readstack Shortcut
+                  </Text>
+                </TouchableOpacity>
+                <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 10, textAlign: 'center', lineHeight: 16 }}>
+                  Opens Apple Shortcuts. Tap Add Shortcut, then return here.
+                </Text>
+              </View>
+            </>
+          )}
 
-          {/* ── Option A: Got a file ── */}
-          <View style={{
-            backgroundColor: '#fff',
-            borderRadius: 14,
-            borderWidth: 1,
-            borderColor: '#e7e5e4',
-            padding: 18,
-            marginBottom: 12,
-          }}>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 4 }}>
-              A file downloaded to your device
-            </Text>
-            <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18, marginBottom: 14 }}>
-              Your browser saved a .csv file. Tap below to find and open it.
-            </Text>
-            <TouchableOpacity
-              onPress={isWeb ? onPickFile : onPickNativeFile}
-              style={{
-                backgroundColor: '#f5f5f4',
-                borderRadius: 10,
-                paddingVertical: 13,
-                alignItems: 'center',
-              }}
-            >
-              <Text style={{ color: '#1c1917', fontSize: 14, fontWeight: '600' }}>
-                Choose CSV File
-              </Text>
-            </TouchableOpacity>
-          </View>
+          {/* ── Web: bookmarklet — primary transfer path ── */}
+          {Platform.OS === 'web' && (
+            <>
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', marginTop: 28, marginBottom: 14,
+              }}>
+                <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
+                <Text style={{ fontSize: 12, fontWeight: '600', color: '#78716c', marginHorizontal: 12 }}>
+                  then use the desktop helper
+                </Text>
+                <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
+              </View>
+              <View style={{
+                backgroundColor: '#fff', borderRadius: 14,
+                borderWidth: 1.5, borderColor: '#1c1917', padding: 18,
+              }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 6 }}>
+                  Set up the readstack browser helper
+                </Text>
+                <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 19, marginBottom: 14 }}>
+                  Drag this button to your browser's bookmarks bar — one-time setup.{'\n'}
+                  On the Goodreads export page, click the bookmark. Your library is copied to clipboard automatically.
+                </Text>
+                <View style={{ alignItems: 'center', marginBottom: 14 }}>
+                  {/* @ts-ignore — web-only anchor rendered via React Native Web Text with href */}
+                  <Text
+                    href={BOOKMARKLET_HREF}
+                    accessibilityRole="link"
+                    style={{
+                      backgroundColor: '#f5f5f4',
+                      borderRadius: 8,
+                      paddingVertical: 10,
+                      paddingHorizontal: 20,
+                      fontSize: 13,
+                      fontWeight: '700',
+                      color: '#1c1917',
+                      borderWidth: 1,
+                      borderColor: '#e7e5e4',
+                      cursor: 'grab',
+                    } as any}
+                  >
+                    ⊕ readstack Import
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 11, color: '#78716c', lineHeight: 17 }}>
+                  After clicking the bookmark on Goodreads, paste the copied text in the box below.
+                </Text>
+              </View>
+            </>
+          )}
 
-          {/* ── Option B: Opened as text ── */}
-          <View style={{
-            backgroundColor: '#fff',
-            borderRadius: 14,
-            borderWidth: 1,
-            borderColor: pastedText.trim().length > 0 ? '#d4a574' : '#e7e5e4',
-            padding: 18,
-          }}>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 4 }}>
-              Your library opened as text in the browser
-            </Text>
-            <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18, marginBottom: 14 }}>
-              This is normal — Goodreads sometimes does this instead of downloading a file.{'\n'}
-              Select all the text on that page (Ctrl+A or Cmd+A), copy it, then paste it below.
-            </Text>
+          {/* ── Paste box: receive end for bookmarklet (web) / manual fallback (all) ── */}
+          <View style={{ marginTop: 12 }}>
             <TextInput
               value={pastedText}
               onChangeText={onPastedTextChange}
@@ -514,11 +577,11 @@ function IdleView({
               placeholder="Paste your Goodreads export here…"
               placeholderTextColor="#a8a29e"
               style={{
-                backgroundColor: '#faf9f7',
-                borderRadius: 10,
+                backgroundColor: '#fff',
+                borderRadius: 12,
                 borderWidth: 1,
                 borderColor: pastedText.trim().length > 0 ? '#d4a574' : '#e7e5e4',
-                padding: 12,
+                padding: 14,
                 fontSize: 11,
                 color: '#1c1917',
                 fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
@@ -532,17 +595,52 @@ function IdleView({
               disabled={pastedText.trim().length < 10}
               style={{
                 backgroundColor: pastedText.trim().length >= 10 ? '#1c1917' : '#f5f5f4',
-                borderRadius: 10,
-                paddingVertical: 13,
+                borderRadius: 12,
+                paddingVertical: 14,
                 alignItems: 'center',
               }}
             >
               <Text style={{
                 color: pastedText.trim().length >= 10 ? '#fff' : '#a8a29e',
-                fontSize: 14,
+                fontSize: 15,
                 fontWeight: '600',
               }}>
                 Import
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* ── Manual fallback divider ── */}
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', marginTop: 28, marginBottom: 14,
+          }}>
+            <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
+            <Text style={{ fontSize: 12, fontWeight: '500', color: '#a8a29e', marginHorizontal: 12 }}>
+              or if a file downloaded
+            </Text>
+            <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
+          </View>
+
+          {/* ── Option A: Got a file ── */}
+          <View style={{
+            backgroundColor: '#fff', borderRadius: 14,
+            borderWidth: 1, borderColor: '#e7e5e4', padding: 18,
+          }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 4 }}>
+              A file downloaded to your device
+            </Text>
+            <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18, marginBottom: 14 }}>
+              Your browser saved a .csv file. Tap below to find and open it.
+            </Text>
+            <TouchableOpacity
+              onPress={isWeb ? onPickFile : onPickNativeFile}
+              style={{
+                backgroundColor: '#f5f5f4', borderRadius: 10,
+                paddingVertical: 13, alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: '#1c1917', fontSize: 14, fontWeight: '600' }}>
+                Choose CSV File
               </Text>
             </TouchableOpacity>
           </View>
@@ -1127,6 +1225,9 @@ function ErrorView({ message, onReset }: { message: string; onReset: () => void 
 
 export default function GoodreadsImportScreen() {
   const router = useRouter();
+  const { csv: incomingCsv } = useLocalSearchParams<{ csv?: string }>();
+  const didHandleIncoming = useRef(false);
+
   const [step, setStep]             = useState<Step>('idle');
   const [progressStages, setProgressStages]   = useState<ProgressStage[]>([]);
   const [coversEnriched, setCoversEnriched]   = useState(0);
@@ -1139,6 +1240,22 @@ export default function GoodreadsImportScreen() {
 
   const isWeb = Platform.OS === 'web';
   const [pastedText, setPastedText] = useState('');
+
+  // ── Deep link / Siri Shortcut receiver ────────────────────────────────────
+  // Triggered when the app is opened via bookappmobile://import/goodreads?csv=...
+  // The Siri Shortcut runs JS on the Goodreads page, URL-encodes the CSV text,
+  // and opens this URL. Expo Router decodes the param automatically.
+
+  useEffect(() => {
+    if (!incomingCsv || didHandleIncoming.current) return;
+    const csv = Array.isArray(incomingCsv) ? incomingCsv[0] : incomingCsv;
+    if (!csv || csv.trim().length < 10) return;
+    didHandleIncoming.current = true;
+    processCSVText(csv.trim(), 'goodreads_shortcut.csv');
+  // processCSVText is defined below but stable — intentional omission to avoid
+  // re-triggering if param identity changes on re-render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incomingCsv]);
 
   // ── Shared CSV processing (all acquisition paths feed here) ────────────────
 

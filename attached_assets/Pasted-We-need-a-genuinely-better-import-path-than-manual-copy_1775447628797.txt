@@ -1,0 +1,86 @@
+We need a genuinely better import path than manual copy/paste or hoping the browser downloads a file cleanly.
+
+I want you to think in terms of a new transfer mechanism, not a prettier import screen.
+
+==================================================
+PRODUCT DECISION
+==================================================
+
+We are designing a Goodreads Transfer Helper.
+
+The goal is:
+when the user is on the Goodreads export page, they can trigger a helper that sends the export into readstack without needing to manually manage a file.
+
+The best target experience is:
+
+iPhone:
+- user opens Goodreads export page in Safari
+- taps Share
+- taps “Send to readstack”
+- readstack opens and stages the import automatically
+
+Desktop:
+- user uses a bookmarklet/helper now
+- extension later
+
+Android:
+- user uses a share/helper path appropriate to the browser/platform
+
+==================================================
+I WANT YOU TO EVALUATE THIS AS THE NEW PRIMARY DIRECTION
+==================================================
+
+Assess these as the new preferred solution set:
+
+1. iPhone Safari Shortcut using “Run JavaScript on Webpage”
+2. Safari Web Extension bundled with the app
+3. Desktop bookmarklet as the immediate browser helper
+4. Desktop browser extension as the longer-term version
+5. Android helper/share approach
+
+==================================================
+KEY QUESTION
+==================================================
+
+I want you to tell me the best realistic beta implementation that gets us closest to:
+
+“Send Goodreads export directly to readstack”
+
+without relying on:
+- file download/save UI
+- manual raw copy/paste as the primary path
+- unsupported Goodreads APIs
+- login scraping
+
+==================================================
+BEFORE CODING
+==================================================
+
+Before implementing, tell me:
+
+1. which of these helper mechanisms is most realistic for beta
+2. which is most realistic long-term
+3. whether an iPhone Shortcut can safely read the Goodreads export page text and hand it off to readstack
+4. what the best iPhone flow would be
+5. whether a Safari Web Extension is too heavy for beta or worth it
+6. what exact routes/components/files would need to be added or changed
+7. what fallback paths we should still keep even after building the helper
+
+==================================================
+IMPORTANT
+==================================================
+
+I do NOT want another answer centered on:
+- downloading a file
+- manual copy/paste as the main user story
+
+Those can remain as fallbacks, but I want the main path to feel invented for this problem.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- the primary Goodreads import flow no longer depends on download/save UI
+- mobile users, especially on iPhone, have a much cleaner transfer path
+- the app feels like it has a real Goodreads handoff mechanism
+- the proposed solution is actually shippable for beta
