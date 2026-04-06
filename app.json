@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "bookapp-mobile",
+    "name": "readstack",
     "slug": "bookapp-mobile",
     "scheme": "bookappmobile",
     "version": "1.0.0",
@@ -8,10 +8,15 @@
     "userInterfaceStyle": "automatic",
     "plugins": [
       "expo-router",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "expo-dev-client"
     ],
     "ios": {
+      "bundleIdentifier": "com.readstack.app",
       "usesAppleSignIn": true
+    },
+    "android": {
+      "package": "com.readstack.app"
     },
     "experiments": {
       "typedRoutes": true
