@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Platform,
   ScrollView,
   Text,
@@ -53,7 +54,7 @@ function mapSignInError(error: { message?: string; status?: number }): {
     raw.includes('user not found') ||
     raw.includes('no user')
   ) {
-    return { text: 'Email or password is incorrect.', offerResend: false };
+    return { text: "We couldn\u2019t sign you in. Check your email and password, or use the options below.", offerResend: false };
   }
 
   // Network / server errors
@@ -461,15 +462,22 @@ export default function LoginScreen() {
   const inEmailMode = mode === 'forgot'  || mode === 'resend';
 
   return (
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: '#faf9f7' }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
     <ScrollView
       contentContainerStyle={{
         flexGrow: 1,
         alignItems: 'center',
-        justifyContent: 'center',
         padding: 28,
+        paddingTop: Platform.OS === 'ios' ? 80 : 52,
+        paddingBottom: 48,
         backgroundColor: '#faf9f7',
       }}
       keyboardShouldPersistTaps="handled"
+      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+      showsVerticalScrollIndicator={false}
     >
       {/* ── App name ─────────────────────────────────────────────────────────── */}
       <Text style={{
@@ -1069,5 +1077,6 @@ export default function LoginScreen() {
         </TouchableOpacity>
       )}
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
