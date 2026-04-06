@@ -1,0 +1,54 @@
+This is the first import plan that matches the product goal, so I want to keep the overall direction.
+
+However, I do NOT want you to build it exactly as currently proposed yet.
+Two things need to be corrected first.
+
+1. The architecture quietly drifted away from the brief
+I asked for:
+- automatic capture
+- server-side staging
+- tiny handoff back into the app
+
+Your current plan instead:
+- captures in WebView
+- stores the full CSV in AsyncStorage
+- routes back to goodreads.tsx for local processing
+
+That is not the same architecture.
+It is still a client-side payload handoff, just better hidden.
+
+I want you to revise the plan so the primary path is:
+- transfer session created
+- WebView captures CSV
+- CSV is sent to backend staging immediately
+- app only receives a small session/job reference
+- app resumes from that session into the existing review flow
+
+If you think that is too much for this pass, say so clearly and propose the smallest safe version, but do not silently substitute AsyncStorage for backend staging without calling it out.
+
+2. Reliability needs to be stated more honestly
+This can be the primary path, but it is not guaranteed to work for every user because:
+- WebView auth/cookie sharing may not always behave as hoped
+- Goodreads page behavior may change
+- users may still need to log into Goodreads inside the in-app browser
+
+So I want the plan to explicitly separate:
+- ideal primary path
+- realistic failure points
+- fallback experience when automatic capture fails
+
+What I want now before coding:
+1. Revise the plan with the true primary architecture:
+   - transfer session
+   - backend staging
+   - tiny app handoff
+2. Tell me whether you still believe AsyncStorage is appropriate, and if so, why it is not too fragile for large exports
+3. Tell me exactly what happens if:
+   - Goodreads login is required inside the WebView
+   - the export renders differently than expected
+   - the capture succeeds but staging fails
+4. Confirm what remains as fallback paths and how they are surfaced
+
+Keep the overall product direction.
+Do not walk it back into file-based thinking.
+But tighten the implementation plan so it actually matches the intended architecture.
