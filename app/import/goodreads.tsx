@@ -1512,9 +1512,10 @@ export default function GoodreadsImportScreen() {
     if (!id || didHandleIncoming.current) return;
     didHandleIncoming.current = true;
 
+    // Load the staged summary directly — do not transition through 'processing'.
+    // The browser screen already performed parse+stage; we just reload the
+    // StageSummary from Supabase and jump straight to 'staged'.
     (async () => {
-      setProgressStages(stageList(PROCESSING_STAGES, 2));
-      setStep('processing');
       try {
         const summary = await loadStageSummary(id);
         const { data: { user } } = await supabase!.auth.getUser();

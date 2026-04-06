@@ -7,7 +7,7 @@ import { useRouter } from 'expo-router';
 export default function GoodreadsBrowserWebStub() {
   const router = useRouter();
   useEffect(() => {
-    router.replace('/import/goodreads' as any);
+    router.replace('/import/goodreads');
   }, [router]);
   return null;
 }
