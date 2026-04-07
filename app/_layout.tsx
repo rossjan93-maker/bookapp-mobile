@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
+import * as Linking from 'expo-linking';
 import { ToastContainer } from '../components/Toast';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
@@ -151,6 +152,71 @@ export default function RootLayout() {
     });
 
     return () => subscription.unsubscribe();
+  }, []);
+
+  // ── Deep link handler — processes readstack://auth/callback URLs ────────────
+  // Handles two scenarios:
+  //   1. Cold start: app was closed when the user tapped a link in email
+  //   2. Foreground: app was open when the link was tapped
+  // Both email confirmation and password reset redirect here.
+  // PKCE flow delivers a `code`; implicit fallback delivers access/refresh tokens.
+
+  useEffect(() => {
+    if (!supabase) return;
+
+    async function handleAuthUrl(url: string) {
+      if (!supabase || !url) return;
+
+      // Only process auth/callback deep links
+      if (!url.includes('auth/callback')) return;
+
+      console.log('[DeepLink] auth/callback received:', url);
+
+      try {
+        const parsed = Linking.parse(url);
+        const params = parsed.queryParams ?? {};
+
+        // Surface any provider error before attempting token exchange
+        const errorParam = params['error'] ?? params['error_description'];
+        if (errorParam) {
+          console.warn('[DeepLink] auth error in URL:', errorParam);
+          return;
+        }
+
+        // PKCE flow: exchange the one-time code for a session
+        const code = params['code'] as string | undefined;
+        if (code) {
+          console.log('[DeepLink] PKCE code found — exchanging for session');
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) console.warn('[DeepLink] exchangeCodeForSession error:', error.message);
+          return;
+        }
+
+        // Implicit flow fallback: tokens delivered directly in query params
+        const access_token  = params['access_token']  as string | undefined;
+        const refresh_token = params['refresh_token'] as string | undefined;
+        if (access_token && refresh_token) {
+          console.log('[DeepLink] implicit tokens found — setting session');
+          const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+          if (error) console.warn('[DeepLink] setSession error:', error.message);
+          return;
+        }
+
+        console.warn('[DeepLink] auth/callback URL had no usable params:', url);
+      } catch (err) {
+        console.warn('[DeepLink] error processing URL:', err);
+      }
+    }
+
+    // Cold-start: handle the URL that launched the app (if any)
+    Linking.getInitialURL().then(url => {
+      if (url) handleAuthUrl(url);
+    });
+
+    // Foreground: handle URLs received while the app is running
+    const sub = Linking.addEventListener('url', ({ url }) => handleAuthUrl(url));
+
+    return () => sub.remove();
   }, []);
 
   useEffect(() => {

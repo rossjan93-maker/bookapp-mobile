@@ -277,6 +277,10 @@ export default function LoginScreen() {
           last_name:  lastName.trim(),
           username:   uname,
         },
+        // Redirect to the native app after email confirmation.
+        // Without this, Supabase falls back to the Site URL (readstack.co)
+        // which is a web URL and won't open the app.
+        emailRedirectTo: 'readstack://auth/callback',
       },
     });
 
@@ -360,7 +364,10 @@ export default function LoginScreen() {
     setStatusIsError(false);
     setOfferResend(false);
 
-    const { error } = await supabase!.auth.resetPasswordForEmail(email.trim());
+    const { error } = await supabase!.auth.resetPasswordForEmail(email.trim(), {
+      // Redirect to the native app after the user clicks the reset link.
+      redirectTo: 'readstack://auth/callback',
+    });
 
     setLoading(false);
 

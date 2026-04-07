@@ -78,7 +78,10 @@ async function handleOAuthBrowserFlow(
   if (!supabase) return { error: 'Not configured.' };
 
   try {
-    const redirectTo = AuthSession.makeRedirectUri();
+    const redirectTo = AuthSession.makeRedirectUri({
+      scheme: 'readstack',
+      path: 'auth/callback',
+    });
 
     const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
       provider,
