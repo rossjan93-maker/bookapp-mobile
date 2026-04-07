@@ -10,6 +10,7 @@ import { CoverThumb } from '../../components/CoverThumb';
 import { registerWtTarget, useWalkthrough } from '../../lib/walkthroughEngine';
 import { WtDemoInbox } from '../../components/walkthrough/WtDemoInbox';
 import { InboxScreenSkeleton } from '../../components/Placeholder';
+import { TabScreenHeader } from '../../components/TabScreenHeader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -274,12 +275,14 @@ export default function InboxScreen() {
   if (wtStep === 'inbox') return <WtDemoInbox />;
 
   return (
+    <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
+      <TabScreenHeader title="Inbox" />
     <ScrollView
       style={{ flex: 1, backgroundColor: '#faf9f7' }}
       contentContainerStyle={
         items.length === 0
-          ? { flex: 1, paddingHorizontal: 20, paddingTop: 24 }
-          : { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }
+          ? { flex: 1, paddingHorizontal: 20, paddingTop: 8 }
+          : { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 }
       }
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
@@ -288,18 +291,9 @@ export default function InboxScreen() {
       {/* ── Empty state ── */}
       {items.length === 0 && (
         <>
-          <View style={{ paddingBottom: 0 }}>
-            <Text style={{
-              fontSize: 28,
-              fontWeight: '800',
-              color: '#1c1917',
-              letterSpacing: -0.5,
-              marginBottom: 5,
-            }}>
-              Inbox
-            </Text>
-            <Text style={{ fontSize: 14, color: '#a8a29e' }}>Your recommendations from friends</Text>
-          </View>
+          <Text style={{ fontSize: 14, color: '#a8a29e', marginBottom: 12 }}>
+            Your recommendations from friends
+          </Text>
           {/* Flex wrapper keeps the card vertically centred; the ref is on the
               specific white card so measureInWindow returns a human-sized rect
               (not a full-screen flex container that would make the spotlight
@@ -347,16 +341,7 @@ export default function InboxScreen() {
 
       {/* ── Header ── */}
       {items.length > 0 && (
-      <View style={{ marginBottom: 24 }}>
-        <Text style={{
-          fontSize: 28,
-          fontWeight: '800',
-          color: '#1c1917',
-          letterSpacing: -0.5,
-          marginBottom: 5,
-        }}>
-          Inbox
-        </Text>
+      <View style={{ marginBottom: 20 }}>
         <Text style={{ fontSize: 14, color: '#a8a29e' }}>
           {newItems.length > 0
             ? `${newItems.length} ${newItems.length === 1 ? 'book' : 'books'} waiting for you`
@@ -500,6 +485,7 @@ export default function InboxScreen() {
         </View>
       )}
     </ScrollView>
+    </View>
   );
 }
 

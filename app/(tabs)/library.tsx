@@ -13,6 +13,7 @@ import { findSeriesForBook } from '../../lib/seriesCatalog';
 import { triggerRecPrewarm } from '../../lib/recPrewarm';
 import { registerWtTarget, useWalkthrough } from '../../lib/walkthroughEngine';
 import { WtDemoLibrary } from '../../components/walkthrough/WtDemoLibrary';
+import { TabScreenHeader } from '../../components/TabScreenHeader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -668,6 +669,24 @@ export default function LibraryScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
+      <TabScreenHeader
+        title="Library"
+        rightAction={
+          <TouchableOpacity
+            onPress={() => router.push('/add-book')}
+            style={{
+              flexDirection:    'row',
+              alignItems:       'center',
+              backgroundColor:  '#1c1917',
+              borderRadius:     8,
+              paddingHorizontal: 14,
+              paddingVertical:  8,
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>+ Add</Text>
+          </TouchableOpacity>
+        }
+      />
     <FlatList
       data={displayedItems}
       keyExtractor={item => isYearSeparator(item) ? item.key : item.id}
@@ -677,40 +696,7 @@ export default function LibraryScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
       }
       ListHeaderComponent={
-        <View ref={libTargetRef}>
-          {/* ── Editorial header ── */}
-          <View style={{
-            flexDirection: 'row',
-            alignItems: 'flex-end',
-            justifyContent: 'space-between',
-            paddingTop: 24,
-            paddingBottom: contextSubtitle ? 4 : 16,
-          }}>
-            <Text style={{
-              fontSize: 28,
-              fontWeight: '800',
-              color: '#1c1917',
-              letterSpacing: -0.5,
-              lineHeight: 34,
-            }}>
-              Library
-            </Text>
-            <TouchableOpacity
-              onPress={() => router.push('/add-book')}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                backgroundColor: '#1c1917',
-                borderRadius: 8,
-                paddingHorizontal: 14,
-                paddingVertical: 8,
-                marginBottom: 2,
-              }}
-            >
-              <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>+ Add Book</Text>
-            </TouchableOpacity>
-          </View>
-
+        <View ref={libTargetRef} style={{ paddingTop: 8 }}>
           {contextSubtitle && (
             <Text style={{ fontSize: 13, color: '#a8a29e', marginBottom: 18 }}>
               {contextSubtitle}

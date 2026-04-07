@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
@@ -114,6 +115,7 @@ registerCacheClearer(() => { _profileCache = null; });
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [email, setEmail]               = useState<string | null>(null);
   const [userId, setUserId]             = useState<string | null>(null);
   const [profile, setProfile]           = useState<Profile | null>(null);
@@ -386,7 +388,7 @@ export default function ProfileScreen() {
       {/* ── Profile header ── */}
       <View style={{
         paddingHorizontal: 24,
-        paddingTop: 48,
+        paddingTop: insets.top + 16,
         paddingBottom: 28,
         borderBottomWidth: 1,
         borderBottomColor: '#f0ede8',

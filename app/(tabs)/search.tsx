@@ -13,7 +13,9 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { TabScreenHeader } from '../../components/TabScreenHeader';
 import { supabase } from '../../lib/supabase';
 import { scoreAndFilterBooks, mergeBookResults } from '../../lib/searchRanking';
 import { expandAlias } from '../../lib/searchAliases';
@@ -717,6 +719,7 @@ registerCacheClearer(() => { clearRecSession(); _hubCache = null; });
 
 export default function RecommendationsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { step: guidedStep, advance: advanceGuided } = useGuidedTour();
   const { wtStep, advance: advanceWt } = useWalkthrough();
   const [step, setStep] = useState<Step>('hub');
@@ -1418,43 +1421,30 @@ export default function RecommendationsScreen() {
       (tasteProfile?.tier ?? 0) >= 1 &&
       (tasteProfile?.strongSignalCount ?? 0) === 0;
     return (
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
+        <TabScreenHeader
+          title="For You"
+          rightAction={
+            <Pressable
+              onPress={() => router.push('/scan' as any)}
+              hitSlop={12}
+              style={{
+                backgroundColor: '#f5f5f4',
+                borderRadius:    22,
+                padding:         10,
+              }}
+            >
+              <Ionicons name="barcode-outline" size={22} color="#1c1917" />
+            </Pressable>
+          }
+        />
       <ScrollView
         style={{ flex: 1, backgroundColor: '#faf9f7' }}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 48 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 48 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
         }
       >
-        {/* ── Header ── */}
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 28 }}>
-          <TouchableOpacity
-            style={{ flex: 1 }}
-            activeOpacity={1}
-          >
-            <Text style={{
-              fontSize: 28,
-              fontWeight: '800',
-              color: '#1c1917',
-              letterSpacing: -0.5,
-              lineHeight: 34,
-            }}>
-              Recommendations
-            </Text>
-          </TouchableOpacity>
-          <Pressable
-            onPress={() => router.push('/scan' as any)}
-            hitSlop={12}
-            style={{
-              backgroundColor: '#f5f5f4',
-              borderRadius:    22,
-              padding:         10,
-              marginTop:       4,
-            }}
-          >
-            <Ionicons name="barcode-outline" size={22} color="#1c1917" />
-          </Pressable>
-        </View>
 
         {hubLoading ? (
           <View style={{ gap: 8 }}>
@@ -1734,7 +1724,7 @@ export default function RecommendationsScreen() {
   if (step === 'search') {
     return (
       <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
-        <View style={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 4 }}>
+        <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 4 }}>
           <BackButton onPress={() => setStep('hub')} style={{ marginBottom: 16 }} />
           <Text style={{
             fontSize: 22,
@@ -1857,7 +1847,7 @@ export default function RecommendationsScreen() {
 
   if (step === 'friends') {
     return (
-      <View style={{ flex: 1, backgroundColor: '#faf9f7', paddingHorizontal: 20, paddingTop: 24 }}>
+      <View style={{ flex: 1, backgroundColor: '#faf9f7', paddingHorizontal: 20, paddingTop: insets.top + 12 }}>
         <BackButton onPress={() => setStep('search')} label="Search" style={{ marginBottom: 20 }} />
 
         <View style={{

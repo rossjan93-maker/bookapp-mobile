@@ -1,0 +1,99 @@
+We need to fix the top-of-screen mobile layout across the app.
+
+This is not a one-screen tweak.
+It is a shared app-shell / top chrome issue.
+
+==================================================
+PROBLEM
+==================================================
+
+Across multiple top-level app screens, content at the top is being cut off or pushed into the phone’s status area.
+
+Specific visible issues:
+- top titles are colliding with the phone status area
+- top-right actions like Add Book / Scan / Settings are too high and partially inaccessible
+- some screens feel cluttered because the large section title is not necessary
+- safe-area handling is inconsistent across tabs
+
+This needs to be treated as a shared layout/system problem.
+
+==================================================
+WHAT I WANT
+==================================================
+
+Create a consistent mobile top chrome / header system for the tab screens.
+
+That system should:
+1. Respect safe area correctly
+2. Keep top actions accessible
+3. Avoid content sitting under system UI
+4. Reduce unnecessary top clutter
+5. Keep the first content block visible and balanced
+
+==================================================
+DESIGN DIRECTION
+==================================================
+
+I do not think every screen needs a large section title at the very top.
+
+Review the top-level screens:
+- Home
+- For You
+- Library
+- Inbox
+- Profile
+
+Decide where the big title is redundant and remove or reduce it where appropriate.
+
+The goal is:
+- cleaner
+- less top-heavy
+- more usable vertical space
+- better accessibility for top-right actions
+
+==================================================
+TOP ACTIONS
+==================================================
+
+Actions such as:
+- Add Book
+- Scan
+- Settings
+
+must live in a deliberate top action row below the safe area.
+They should not float too high or overlap the phone’s status icons / notch area.
+
+==================================================
+IMPLEMENTATION REQUIREMENTS
+==================================================
+
+1. Create or update a shared top chrome/header pattern for mobile tab screens
+2. Standardize safe-area top spacing across these screens
+3. Reposition top-right actions into a proper action row
+4. Remove/reduce redundant large top titles where that improves the layout
+5. Ensure the first meaningful content block starts in a consistent visible area
+6. Remove or hide tester/debug floating controls from the user-facing experience
+
+==================================================
+BEFORE CODING
+==================================================
+
+Tell me:
+1. what current layout/header rules are causing the top clipping
+2. what shared header/app-shell abstraction you will create or update
+3. which screens will lose or reduce their top section title
+4. how top-right actions will be repositioned
+5. which files will change
+
+Then implement.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- nothing important sits under the phone status area
+- top-right actions are accessible and clearly placed
+- top-level screens no longer feel clipped at the top
+- redundant giant titles are removed or reduced where appropriate
+- content starts lower and more cleanly on mobile
+- this is solved through a shared layout system, not random per-screen padding

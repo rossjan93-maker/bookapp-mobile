@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { registerWtTarget, useWalkthrough } from '../../lib/walkthroughEngine';
 import { WtDemoHome } from '../../components/walkthrough/WtDemoHome';
@@ -181,6 +182,7 @@ registerCacheClearer(() => { _homeCache = null; }, 'bookData');
 
 export default function HomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   // Initialise from cache when it exists — renders meaningful content immediately
   // without a network round-trip on return visits.
@@ -612,7 +614,7 @@ export default function HomeScreen() {
     return (
       <ScrollView
         style={{ backgroundColor: '#faf9f7' }}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: insets.top + 16, paddingBottom: 40 }}
       >
         <WtDemoHome greeting={greeting} />
       </ScrollView>
@@ -622,7 +624,7 @@ export default function HomeScreen() {
   return (
     <ScrollView
       style={{ backgroundColor: '#faf9f7' }}
-      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }}
+      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: insets.top + 16, paddingBottom: 40 }}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
       }
