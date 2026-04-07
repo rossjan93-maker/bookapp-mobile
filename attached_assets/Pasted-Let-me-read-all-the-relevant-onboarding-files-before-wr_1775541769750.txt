@@ -1,0 +1,114 @@
+Let me read all the relevant onboarding files before writing a single line:
+
+
+7 actions
+Now I need to see the actual question screen layout inside RecEntryScreen — specifically how the intake phases render:
+
+
+2 actions
+Let me read the intake rendering sections of RecEntryScreen — the phase render functions are what matters for the question screen layout:
+
+
+4 actions
+Now I have everything I need. Let me diagnose before writing:
+
+Root causes of top-heavy compression:
+
+IntakeTaste / IntakeGenres / IntakeAnchor all use paddingTop: 4 or zero top padding. The parent SafeAreaView in onboarding-questions.tsx handles the device inset but gives no internal breathing room — content starts flush at the top of the safe zone.
+
+IntakeTaste skip zone uses marginTop: 8 — stacked directly under the option cards with gap: 10. The zone also uses color: BORD (#e7e5e4) for "Skip remaining" — effectively invisible. No vertical pushdown, so both the content and skips cluster at the top.
+
+IntakeGenres has paddingTop: 4 with the progress pills sitting right at the top of the safe area.
+
+app/onboarding.tsx entry animation only plays once (spring-in). No continuous motion afterward. Tagline needs to change.
+
+Plan:
+
+app/onboarding.tsx: change tagline, add looping float Animated.Values per spine, update BookSpine to apply float
+components/RecEntryScreen.tsx: IntakeTaste gets paddingTop: 28, a flexbox spacer that pushes skip links to the bottom, and cleaned-up skip typography; IntakeGenres and IntakeAnchor get paddingTop: 28 on their headers
+components/OnboardingWalkthrough.tsx: clean up GuidedActionBanner and GuidedLibraryBanner spacing
+Starting with onboarding.tsx:
+
+
+2 actions
+Update BookSpine to accept and apply the float animation:
+
+
+2 actions
+Now add the floatAnims ref and looping animation to OnboardingScreen:
+
+
+2 actions
+Now pass floatAnim to each BookSpine in the render, and update the tagline and top spacing:
+
+
+2 actions
+Now change the tagline and improve the top padding:
+
+
+2 actions
+Now increase the top Skip button padding for better breathing room:
+
+
+2 actions
+Now the three layout fixes in RecEntryScreen.tsx. Starting with IntakeTaste — the core question screen:
+
+
+2 actions
+Now fix IntakeGenres top padding and progress bar spacing:
+
+
+2 actions
+Now fix IntakeAnchor header padding:
+
+
+2 actions
+Now clean up OnboardingWalkthrough.tsx — the GuidedActionBanner spacing and GuidedLibraryBanner bottom positioning:
+
+
+2 actions
+TypeScript check and restart:
+
+
+3 actions
+The supabase possibly null error on line 73 of RecEntryScreen is pre-existing — not from my changes. Running cleanly.
+
+Here's exactly what changed and why in each file:
+
+app/onboarding.tsx — opening screen
+
+Tagline: Changed from "Books that are actually right for you." to "Your reading, together."
+
+Float animation: Added a second set of Animated.Value refs (floatAnims) — one per book spine. After the entry springs complete (~820ms), each spine starts a looping sequence of two Easing.inOut(Easing.sin) timings that oscillate between ±4–5px. Each spine has a different half-period (1.8–2.5s) and a staggered start delay (260ms apart), so the group breathes organically rather than pumping in lockstep. The float is a separate translateY stacked on top of the entry translateY in the transform array.
+
+Top spacing: Skip button padding increased from topPad + 4 to topPad + 12 for more breathing room below the status bar.
+
+components/RecEntryScreen.tsx — question screens
+
+IntakeTaste (Where do you lean / What grips you / Pacing):
+
+paddingTop on the outer View: 0 → 28 — content no longer starts flush at the safe area edge
+Progress bar marginBottom: 4 → 10 (outer dots), 20 → 28 (taste sub-progress bar)
+Question title marginBottom: 20 → 24
+Option cards padding: 14 → 16, marginBottom: 10 → 12, icon circle 36×36 → 38×38
+Skip zone: replaced marginTop: 8, gap: 10 with a flexbox <View style={{ flex: 1 }} /> spacer that pushes both skip actions to the bottom of the screen at paddingBottom: 32, gap: 16 — they are now anchored consistently regardless of content height
+"Skip this" text: fontSize: 14, color: MUTED (was same), weight now '500'; label changed to "Skip this question →" for clarity
+"Skip remaining": color changed from BORD (#e7e5e4 — nearly invisible) to #c4bfb9 — still de-emphasized but readable
+IntakeGenres (What are you drawn to):
+
+Header paddingTop: 4 → 28
+Progress row marginBottom: 4 → 14
+Title loses marginTop: 8 (now flows cleanly from progress bar)
+"Skip all →" gets hitSlop and fontWeight: '500'
+IntakeAnchor (One book that nailed it):
+
+Header paddingTop: 4 → 28
+Progress marginBottom: 8 → 18
+Subtitle marginTop: 6 → 8, lineHeight: 20 → 21
+components/OnboardingWalkthrough.tsx — guided tour banner
+
+GuidedActionBanner:
+
+borderRadius: 12 → 14, paddingVertical: 13 → 15, gap: 10 → 12, marginBottom: 12 → 16, marginTop: 4 → 8
+Added shadowColor/Opacity/Radius/Offset + elevation so the card lifts off the content beneath it rather than blending in
+"Got it" button has a paddingHorizontal: 4 wrapper and larger hitSlop for easier tapping
