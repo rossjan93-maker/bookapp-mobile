@@ -35,13 +35,13 @@
   "submit": {
     "beta": {
       "ios": {
-        "appleTeamId": "YOUR_APPLE_TEAM_ID",
+        "appleTeamId": "8537D6P5Y3",
         "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID"
       }
     },
     "production": {
       "ios": {
-        "appleTeamId": "YOUR_APPLE_TEAM_ID",
+        "appleTeamId": "8537D6P5Y3",
         "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID"
       }
     }
