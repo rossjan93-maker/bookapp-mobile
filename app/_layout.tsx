@@ -167,10 +167,16 @@ export default function RootLayout() {
     async function handleAuthUrl(url: string) {
       if (!supabase || !url) return;
 
-      // Only process auth/callback deep links
-      if (!url.includes('auth/callback')) return;
+      // auth/callback URLs are handled by the dedicated route at
+      // app/auth/callback.tsx — skip here to avoid double-processing
+      // the one-time-use PKCE code.
+      if (url.includes('auth/callback')) return;
 
-      console.log('[DeepLink] auth/callback received:', url);
+      // Only process other auth deep links below (currently unused, but
+      // kept as the canonical place for future deep link types).
+      if (!url.includes('auth/')) return;
+
+      console.log('[DeepLink] auth URL received:', url);
 
       try {
         const parsed = Linking.parse(url);
@@ -183,16 +189,8 @@ export default function RootLayout() {
           return;
         }
 
-        // PKCE flow: exchange the one-time code for a session
-        const code = params['code'] as string | undefined;
-        if (code) {
-          console.log('[DeepLink] PKCE code found — exchanging for session');
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) console.warn('[DeepLink] exchangeCodeForSession error:', error.message);
-          return;
-        }
-
         // Implicit flow fallback: tokens delivered directly in query params
+        // (PKCE codes are handled inside app/auth/callback.tsx, not here)
         const access_token  = params['access_token']  as string | undefined;
         const refresh_token = params['refresh_token'] as string | undefined;
         if (access_token && refresh_token) {
@@ -202,7 +200,7 @@ export default function RootLayout() {
           return;
         }
 
-        console.warn('[DeepLink] auth/callback URL had no usable params:', url);
+        console.warn('[DeepLink] auth URL had no usable params:', url);
       } catch (err) {
         console.warn('[DeepLink] error processing URL:', err);
       }
@@ -221,7 +219,13 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (session === undefined || needsOnboarding === undefined) return;
-    const inAuth        = segments[0] === '(auth)';
+    // '(auth)' = login/signup screens; 'auth' = the auth/callback route group.
+    // Both must be treated as "in auth" so the session guard does not redirect
+    // while the callback screen is exchanging a PKCE code (no session yet).
+    // Cast to string: Expo Router's generated segment union won't include 'auth'
+    // until after the first build that picks up app/auth/callback.tsx.
+    const seg0          = segments[0] as string;
+    const inAuth        = seg0 === '(auth)' || seg0 === 'auth';
     // Treat /onboarding-import as part of the onboarding flow so the guard
     // never evicts the user mid-step (e.g. on token refresh or if the DB
     // check returns false again after completeOnboarding() was called).
