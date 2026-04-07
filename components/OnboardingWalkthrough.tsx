@@ -3,6 +3,19 @@ import { Animated, Text, TouchableOpacity, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 
+// ─── Shared overlay positioning ───────────────────────────────────────────────
+// All floating tour overlays are positioned this many px above the tab bar.
+// Change once here — GuidedNotedToast and GuidedLibraryBanner both reference it.
+const OVER_TAB = 76;
+
+// Shared card style tokens used by all three tour banners for visual consistency.
+const CARD = {
+  borderRadius:    14,
+  paddingVertical: 14,
+  paddingHorizontal: 16,
+  gap:             12,
+} as const;
+
 // ─── Persistent state ────────────────────────────────────────────────────────
 // Written by onboarding.tsx when the flow completes.
 // Values: '0' = waiting for card action | '1' = acted | '2' = library hint | '99' = done
@@ -64,22 +77,22 @@ export function GuidedActionBanner() {
   return (
     <Animated.View
       style={{
-        opacity: fadeIn,
-        marginHorizontal: 0,
-        marginBottom: 16,
-        marginTop: 8,
-        backgroundColor: '#1c1917',
-        borderRadius: 14,
-        paddingVertical: 15,
-        paddingHorizontal: 16,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-        shadowColor: '#000',
-        shadowOpacity: 0.10,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 2 },
-        elevation: 3,
+        opacity:           fadeIn,
+        marginHorizontal:  0,
+        marginBottom:      16,
+        marginTop:         8,
+        backgroundColor:   '#1c1917',
+        borderRadius:      CARD.borderRadius,
+        paddingVertical:   CARD.paddingVertical,
+        paddingHorizontal: CARD.paddingHorizontal,
+        flexDirection:     'row',
+        alignItems:        'center',
+        gap:               CARD.gap,
+        shadowColor:       '#000',
+        shadowOpacity:     0.10,
+        shadowRadius:      8,
+        shadowOffset:      { width: 0, height: 2 },
+        elevation:         3,
       }}
     >
       <Ionicons name="information-circle-outline" size={19} color="#a8a29e" />
@@ -119,23 +132,23 @@ export function GuidedNotedToast({ onDone }: { onDone: () => void }) {
     <Animated.View
       pointerEvents="none"
       style={{
-        position: 'absolute',
-        bottom: 90,
-        left: 24,
-        right: 24,
+        position:          'absolute',
+        bottom:            OVER_TAB + 10,
+        left:              16,
+        right:             16,
         opacity,
-        backgroundColor: '#15803d',
-        borderRadius: 12,
-        paddingVertical: 14,
-        paddingHorizontal: 18,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
-        shadowColor: '#000',
-        shadowOpacity: 0.12,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 2 },
-        elevation: 4,
+        backgroundColor:   '#15803d',
+        borderRadius:      CARD.borderRadius,
+        paddingVertical:   CARD.paddingVertical,
+        paddingHorizontal: CARD.paddingHorizontal,
+        flexDirection:     'row',
+        alignItems:        'center',
+        gap:               CARD.gap,
+        shadowColor:       '#000',
+        shadowOpacity:     0.12,
+        shadowRadius:      8,
+        shadowOffset:      { width: 0, height: 2 },
+        elevation:         4,
       }}
     >
       <Ionicons name="checkmark-circle" size={20} color="#fff" />
@@ -162,10 +175,10 @@ export function GuidedLibraryBanner({ onDismiss }: { onDismiss: () => void }) {
   return (
     <Animated.View
       style={{
-        position: 'absolute',
-        bottom: 70,
-        left: 0,
-        right: 0,
+        position:          'absolute',
+        bottom:            OVER_TAB,
+        left:              0,
+        right:             0,
         paddingHorizontal: 16,
         transform: [{ translateY: slideIn }],
         opacity,
@@ -175,13 +188,18 @@ export function GuidedLibraryBanner({ onDismiss }: { onDismiss: () => void }) {
         onPress={onDismiss}
         activeOpacity={0.9}
         style={{
-          backgroundColor: '#1c1917',
-          borderRadius: 12,
-          paddingVertical: 13,
-          paddingHorizontal: 16,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 10,
+          backgroundColor:   '#1c1917',
+          borderRadius:      CARD.borderRadius,
+          paddingVertical:   CARD.paddingVertical,
+          paddingHorizontal: CARD.paddingHorizontal,
+          flexDirection:     'row',
+          alignItems:        'center',
+          gap:               CARD.gap,
+          shadowColor:       '#000',
+          shadowOpacity:     0.10,
+          shadowRadius:      8,
+          shadowOffset:      { width: 0, height: 2 },
+          elevation:         3,
         }}
       >
         <Ionicons name="library-outline" size={18} color="#a8a29e" />

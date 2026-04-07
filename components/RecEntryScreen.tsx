@@ -35,6 +35,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
+import { OB, OnboardingShell, StepDots, SubProgressBar } from './OnboardingShell';
 import {
   reEntryShown,
   reImportTapped,
@@ -459,33 +460,24 @@ function IntakeGenres({
   ];
 
   return (
-    <View style={{ flex: 1 }}>
-      {/* Header */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 28, paddingBottom: 16 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <View style={{ flexDirection: 'row', gap: 4 }}>
-            {[1, 2, 3].map(i => (
-              <View key={i} style={{ width: i === 1 ? 22 : 6, height: 6, borderRadius: 3, backgroundColor: i <= 1 ? INK : BORD }} />
-            ))}
-          </View>
-          <TouchableOpacity onPress={onSkip} hitSlop={{ top: 10, bottom: 10, left: 16, right: 16 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: MUTED }}>Skip all →</Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={{ fontSize: 24, fontWeight: '800', color: INK, lineHeight: 30 }}>
-          What are you drawn to?
-        </Text>
-
-        {/* Split tab strip */}
-        <View
-          style={{
-            flexDirection:   'row',
-            backgroundColor: '#f5f5f4',
-            borderRadius:    10,
-            padding:         3,
-            marginTop:       16,
-          }}
-        >
+    <OnboardingShell
+      progressSlot={<StepDots total={3} current={0} />}
+      headerRight={
+        <TouchableOpacity onPress={onSkip} hitSlop={{ top: 10, bottom: 10, left: 16, right: 16 }}>
+          <Text style={{ fontSize: 13, fontWeight: '500', color: MUTED }}>Skip all →</Text>
+        </TouchableOpacity>
+      }
+      title="What are you drawn to?"
+      primaryButton={
+        <BtnPrimary
+          label={liked.length > 0 ? 'Continue →' : 'Skip →'}
+          onPress={() => onContinue(split, liked)}
+        />
+      }
+    >
+      {/* Fiction / Nonfiction / Both tab strip */}
+      <View style={{ paddingHorizontal: OB.padH, marginBottom: 12 }}>
+        <View style={{ flexDirection: 'row', backgroundColor: '#f5f5f4', borderRadius: 10, padding: 3 }}>
           {splitOpts.map(opt => (
             <TouchableOpacity
               key={opt.key}
@@ -494,10 +486,14 @@ function IntakeGenres({
               style={{
                 flex: 1, paddingVertical: 9, borderRadius: 8, alignItems: 'center',
                 backgroundColor: split === opt.key ? '#fff' : 'transparent',
-                elevation: split === opt.key ? 1 : 0,
+                elevation:       split === opt.key ? 1 : 0,
               }}
             >
-              <Text style={{ fontSize: 13, fontWeight: split === opt.key ? '700' : '500', color: split === opt.key ? INK : SUB }}>
+              <Text style={{
+                fontSize:   13,
+                fontWeight: split === opt.key ? '700' : '500',
+                color:      split === opt.key ? INK : SUB,
+              }}>
                 {opt.label}
               </Text>
             </TouchableOpacity>
@@ -505,23 +501,29 @@ function IntakeGenres({
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+      {/* Genre chips */}
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: OB.padH, paddingBottom: 20 }}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
           {genres.map(g => (
             <Chip
               key={g.label}
               label={g.label}
               active={liked.includes(g.label)}
-              onPress={() => setLiked(prev => prev.includes(g.label) ? prev.filter(l => l !== g.label) : [...prev, g.label])}
+              onPress={() =>
+                setLiked(prev =>
+                  prev.includes(g.label)
+                    ? prev.filter(l => l !== g.label)
+                    : [...prev, g.label],
+                )
+              }
             />
           ))}
         </View>
       </ScrollView>
-
-      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: BG, borderTopWidth: 1, borderTopColor: BORD, padding: 16 }}>
-        <BtnPrimary label={liked.length > 0 ? 'Continue →' : 'Skip →'} onPress={() => onContinue(split, liked)} />
-      </View>
-    </View>
+    </OnboardingShell>
   );
 }
 
@@ -569,23 +571,35 @@ function IntakeTaste({
   }
 
   return (
-    <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 28 }}>
-      {/* Step progress — outer (3 dots: genres / taste / anchor) */}
-      <View style={{ flexDirection: 'row', gap: 4, marginBottom: 10 }}>
-        {[1, 2, 3].map(i => (
-          <View key={i} style={{ width: i === 2 ? 22 : 6, height: 6, borderRadius: 3, backgroundColor: i <= 2 ? INK : BORD }} />
-        ))}
-      </View>
-
-      {/* Sub-progress within taste (3 questions) */}
-      <View style={{ flexDirection: 'row', gap: 4, marginBottom: 28 }}>
-        {TASTE_QS.map((_, i) => (
-          <View key={i} style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: i <= qIdx ? INK : BORD }} />
-        ))}
-      </View>
-
-      <Animated.View style={{ transform: [{ translateY: slideAnim }] }}>
-        <Text style={{ fontSize: 22, fontWeight: '800', color: INK, lineHeight: 28, marginBottom: 24 }}>
+    <OnboardingShell
+      progressSlot={
+        // Two stacked rows: major step dots + per-question sub-progress bars
+        <View>
+          <StepDots total={3} current={1} />
+          <SubProgressBar total={TASTE_QS.length} current={qIdx} />
+        </View>
+      }
+      onSkipThis={handleSkipOne}
+      onSkipAll={() => { riTasteSkipped(); onSkip(); }}
+    >
+      {/*
+        The question prompt and option cards are animated together — both slide
+        on question change. Because the prompt must participate in the same
+        Animated.View as the cards, the shell's `title` prop is intentionally
+        omitted here and the title is rendered inside children instead.
+      */}
+      <Animated.View style={{
+        paddingHorizontal: OB.padH,
+        transform: [{ translateY: slideAnim }],
+      }}>
+        <Text style={{
+          fontSize:      22,
+          fontWeight:    '800',
+          color:         INK,
+          lineHeight:    28,
+          letterSpacing: -0.3,
+          marginBottom:  OB.titleMB,
+        }}>
           {q.prompt}
         </Text>
 
@@ -597,44 +611,39 @@ function IntakeTaste({
               onPress={() => handlePick(opt.key)}
               activeOpacity={0.75}
               style={{
-                backgroundColor: isBoth ? '#faf9f7' : '#fff',
+                backgroundColor: isBoth ? BG : '#fff',
                 borderRadius:    14,
                 borderWidth:     1.5,
-                borderColor:     isBoth ? '#e7e5e4' : BORD,
+                borderColor:     isBoth ? BORD : BORD,
                 padding:         16,
-                marginBottom:    12,
+                marginBottom:    OB.cardMB,
                 flexDirection:   'row',
                 alignItems:      'center',
                 gap:             12,
               }}
             >
-              <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#f5f5f4', alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name={opt.icon} size={18} color={isBoth ? '#a8a29e' : INK} />
+              <View style={{
+                width: 38, height: 38, borderRadius: 19,
+                backgroundColor: '#f5f5f4',
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Ionicons name={opt.icon} size={18} color={isBoth ? MUTED : INK} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 15, fontWeight: '600', color: isBoth ? '#78716c' : INK }}>{opt.headline}</Text>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: isBoth ? SUB : INK }}>
+                  {opt.headline}
+                </Text>
                 {opt.sub != null && (
-                  <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 3, lineHeight: 17 }}>{opt.sub}</Text>
+                  <Text style={{ fontSize: 12, color: MUTED, marginTop: 3, lineHeight: 17 }}>
+                    {opt.sub}
+                  </Text>
                 )}
               </View>
             </TouchableOpacity>
           );
         })}
       </Animated.View>
-
-      {/* Spacer: pushes skip zone to the bottom rather than stacking under cards */}
-      <View style={{ flex: 1 }} />
-
-      {/* Skip actions — anchored to bottom, consistent across all taste questions */}
-      <View style={{ alignItems: 'center', paddingBottom: 32, gap: 16 }}>
-        <TouchableOpacity onPress={handleSkipOne} hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }}>
-          <Text style={{ fontSize: 14, fontWeight: '500', color: MUTED }}>Skip this question →</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => { riTasteSkipped(); onSkip(); }} hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }}>
-          <Text style={{ fontSize: 13, color: '#c4bfb9' }}>Skip remaining</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+    </OnboardingShell>
   );
 }
 
@@ -666,25 +675,28 @@ function IntakeAnchor({
   }, [query]);
 
   return (
-    <View style={{ flex: 1 }}>
-      <View style={{ paddingHorizontal: 20, paddingTop: 28, paddingBottom: 16 }}>
-        {/* Progress */}
-        <View style={{ flexDirection: 'row', gap: 4, marginBottom: 18 }}>
-          {[1, 2, 3].map(i => (
-            <View key={i} style={{ width: 22, height: 6, borderRadius: 3, backgroundColor: INK }} />
-          ))}
-        </View>
-        <Text style={{ fontSize: 22, fontWeight: '800', color: INK, lineHeight: 28 }}>
-          One book that nailed it?
-        </Text>
-        <Text style={{ fontSize: 14, color: SUB, marginTop: 8, lineHeight: 21 }}>
-          Optional — a book you've loved is our strongest cold-start signal.
-        </Text>
-      </View>
-
+    <OnboardingShell
+      progressSlot={<StepDots total={3} current={2} />}
+      title="One book that nailed it?"
+      subtitle="Optional — a book you've loved is our strongest cold-start signal."
+      primaryButton={
+        <BtnPrimary
+          label={selected ? 'Build my picks →' : 'Skip →'}
+          onPress={() => {
+            if (!selected) riAnchorSkipped();
+            onComplete(selected);
+          }}
+        />
+      }
+    >
       {/* Search input */}
-      <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, borderWidth: 1.5, borderColor: BORD, paddingHorizontal: 12, gap: 8 }}>
+      <View style={{ paddingHorizontal: OB.padH, marginBottom: 12 }}>
+        <View style={{
+          flexDirection: 'row', alignItems: 'center',
+          backgroundColor: '#fff', borderRadius: 12,
+          borderWidth: 1.5, borderColor: BORD,
+          paddingHorizontal: 12, gap: 8,
+        }}>
           <Ionicons name="search" size={18} color={MUTED} />
           <TextInput
             value={query}
@@ -701,9 +713,14 @@ function IntakeAnchor({
         </View>
       </View>
 
-      {/* Selected confirmation */}
+      {/* Selected book confirmation */}
       {selected && (
-        <View style={{ marginHorizontal: 20, marginBottom: 12, backgroundColor: GRN + '14', borderRadius: 12, borderWidth: 1.5, borderColor: GRN + '44', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <View style={{
+          marginHorizontal: OB.padH, marginBottom: 12,
+          backgroundColor: GRN + '14', borderRadius: 12,
+          borderWidth: 1.5, borderColor: GRN + '44',
+          padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12,
+        }}>
           {selected.cover ? (
             <Image source={{ uri: selected.cover }} style={{ width: 40, height: 60, borderRadius: 4 }} resizeMode="cover" />
           ) : (
@@ -717,17 +734,25 @@ function IntakeAnchor({
         </View>
       )}
 
-      {/* Results */}
+      {/* Search results */}
       {!selected && (
         <FlatList
           data={results}
           keyExtractor={i => i.id}
           keyboardShouldPersistTaps="handled"
-          ListEmptyComponent={loading ? <View style={{ padding: 20, alignItems: 'center' }}><ActivityIndicator size="small" color={MUTED} /></View> : null}
+          ListEmptyComponent={
+            loading
+              ? <View style={{ padding: 20, alignItems: 'center' }}><ActivityIndicator size="small" color={MUTED} /></View>
+              : null
+          }
           renderItem={({ item }) => (
             <TouchableOpacity
               onPress={() => { setSelected(item); Keyboard.dismiss(); riAnchorSelected(item.title); }}
-              style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: BORD, gap: 12 }}
+              style={{
+                flexDirection: 'row', alignItems: 'center',
+                paddingHorizontal: OB.padH, paddingVertical: 12,
+                borderBottomWidth: 1, borderBottomColor: BORD, gap: 12,
+              }}
             >
               {item.cover ? (
                 <Image source={{ uri: item.cover }} style={{ width: 36, height: 52, borderRadius: 4 }} resizeMode="cover" />
@@ -742,17 +767,7 @@ function IntakeAnchor({
           )}
         />
       )}
-
-      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: BG, borderTopWidth: 1, borderTopColor: BORD, padding: 16, gap: 10 }}>
-        <BtnPrimary
-          label={selected ? 'Build my picks →' : 'Skip →'}
-          onPress={() => {
-            if (!selected) riAnchorSkipped();
-            onComplete(selected);
-          }}
-        />
-      </View>
-    </View>
+    </OnboardingShell>
   );
 }
 
