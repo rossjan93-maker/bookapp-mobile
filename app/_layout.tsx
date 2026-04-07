@@ -9,6 +9,22 @@ import { clearAllTabCaches } from '../lib/tabCache';
 import { readOnboardingStage } from '../lib/onboardingStage';
 import { clearLocalOnboardingState } from '../lib/localStateClear';
 
+// ─── Bootstrap context ─────────────────────────────────────────────────────────
+// Exposes live session + needsOnboarding so child routes (especially
+// app/auth/callback.tsx) can actively wait for bootstrap to resolve
+// rather than relying solely on the routing guard.
+
+type BootstrapCtx = {
+  session:         Session | null | undefined;
+  needsOnboarding: boolean | undefined;
+};
+
+export const BootstrapContext = createContext<BootstrapCtx>({
+  session:         undefined,
+  needsOnboarding: undefined,
+});
+export const useBootstrap = () => useContext(BootstrapContext);
+
 // ─── Onboarding bridge ────────────────────────────────────────────────────────
 // Lets onboarding.tsx call completeOnboarding() to update needsOnboarding in
 // the root layout BEFORE navigating away. Without this the routing guard sees
@@ -71,6 +87,7 @@ export default function RootLayout() {
       return;
     }
 
+    // ── Cold-start: hydrate session from persisted storage ─────────────────
     supabase.auth.getSession().then(async ({ data }) => {
       setSession(data.session);
       console.log('[DELETE_TRACE] cold-start userId=', data.session?.user?.id?.slice(0, 8) ?? null);
@@ -88,13 +105,6 @@ export default function RootLayout() {
           console.log('[DELETE_TRACE] cold-start → needsOnboarding=false (DB says done)');
           setNeedsOnboarding(false);
         } else {
-          // onboarding_completed=false means the user has not finished onboarding.
-          // Trust the local stage for:
-          //   - mid-flow stages (walkthrough/final_setup): DB write may have raced
-          //   - 'done': user just completed a dismissal action; the DB write is in
-          //     flight or the auth event fired before it committed. Never redirect
-          //     a user whose local stage already says they are done.
-          // A null local stage while DB says false = fresh user → needs welcome.
           const localStage = await readOnboardingStage();
           const locallyDone = localStage === 'done';
           const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup';
@@ -106,21 +116,22 @@ export default function RootLayout() {
       }
     });
 
+    // ── Auth state listener ────────────────────────────────────────────────
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       // Handle both SIGNED_IN and USER_UPDATED (email confirmation can fire either
       // depending on Supabase version / PKCE configuration).
       if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && newSession) {
-        console.log('[AUTH_CALLBACK] session now available — event=', event, 'userId=', newSession.user.id.slice(0, 8));
+        console.log('[WARM_BOOT] onAuthStateChange', event, '— userId=', newSession.user.id.slice(0, 8));
 
-        // ── CRITICAL: set needsOnboarding=undefined BEFORE setSession ──────────
+        // ── CRITICAL: reset needsOnboarding to undefined BEFORE setSession ─
         // The routing guard bails when needsOnboarding===undefined, keeping the
         // user on the callback loading screen until bootstrap fully resolves.
         // Without this, the guard fires the moment setSession runs and races
-        // against the DB calls, routing to tabs with a stale needsOnboarding=false.
+        // against the DB calls with a potentially stale needsOnboarding value.
         setNeedsOnboarding(undefined);
         setSession(newSession);
 
-        console.log('[AUTH_CALLBACK] bootstrap start — resolving profile + onboarding_completed');
+        console.log('[WARM_BOOT] session state updated — bootstrap starting');
 
         // Check if a profile row already exists BEFORE ensureProfile runs.
         // Detects UUID recycling: if pre-exists=true with onboarding_completed=true,
@@ -130,33 +141,36 @@ export default function RootLayout() {
           .select('id, onboarding_completed')
           .eq('id', newSession.user.id)
           .maybeSingle();
-        console.log('[AUTH_CALLBACK] profile pre-exists=', !!preProfile, 'existing onboarding_completed=', preProfile?.onboarding_completed ?? null);
+        console.log('[WARM_BOOT] profile pre-exists=', !!preProfile, 'existing onboarding_completed=', preProfile?.onboarding_completed ?? null);
 
+        console.log('[WARM_BOOT] profile fetch start');
         const meta = newSession.user.user_metadata;
-        console.log('[AUTH_CALLBACK] profile bootstrap start');
         await ensureProfile(
           newSession.user.id,
           newSession.user.email ?? '',
           meta?.first_name,
           meta?.last_name,
         );
-        console.log('[AUTH_CALLBACK] profile bootstrap complete');
+        console.log('[WARM_BOOT] profile fetch success');
 
         const completed = await checkOnboardingCompleted(newSession.user.id);
-        console.log('[AUTH_CALLBACK] DB onboarding_completed=', completed);
+        console.log('[WARM_BOOT] DB onboarding_completed=', completed);
 
         if (completed) {
-          console.log('[AUTH_CALLBACK] onboarding decision resolved → needsOnboarding=false (DB says done)');
+          console.log('[WARM_BOOT] onboarding decision resolved → needsOnboarding=false (DB says done)');
           setNeedsOnboarding(false);
         } else {
           const localStage  = await readOnboardingStage();
           const locallyDone = localStage === 'done';
           const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup';
           const result      = !midFlow && !locallyDone;
-          console.log('[AUTH_CALLBACK] localStage=', localStage, 'locallyDone=', locallyDone, 'midFlow=', midFlow);
-          console.log('[AUTH_CALLBACK] onboarding decision resolved → needsOnboarding=', result);
+          console.log('[WARM_BOOT] localStage=', localStage, 'locallyDone=', locallyDone, 'midFlow=', midFlow);
+          console.log('[WARM_BOOT] onboarding decision resolved → needsOnboarding=', result);
           setNeedsOnboarding(result);
         }
+
+        console.log('[WARM_BOOT] app shell ready — routing guard will now fire');
+
       } else if (event === 'SIGNED_OUT') {
         setSession(newSession);
         console.log('[DELETE_TRACE] SIGNED_OUT — awaiting full local state clear');
@@ -234,18 +248,22 @@ export default function RootLayout() {
     return () => sub.remove();
   }, []);
 
+  // ── Routing guard ──────────────────────────────────────────────────────────
+  // Fires whenever session, segments, or needsOnboarding changes.
+  // Bails when either is undefined (still bootstrapping).
+  // Note: the callback route handles its own navigation via BootstrapContext;
+  // this guard acts as a safety net for other routes.
+
   useEffect(() => {
     if (session === undefined || needsOnboarding === undefined) return;
+
     // '(auth)' = login/signup screens; 'auth' = the auth/callback route group.
     // Both must be treated as "in auth" so the session guard does not redirect
     // while the callback screen is exchanging a PKCE code (no session yet).
-    // Cast to string: Expo Router's generated segment union won't include 'auth'
-    // until after the first build that picks up app/auth/callback.tsx.
     const seg0          = segments[0] as string;
     const inAuth        = seg0 === '(auth)' || seg0 === 'auth';
     // Treat /onboarding-import as part of the onboarding flow so the guard
-    // never evicts the user mid-step (e.g. on token refresh or if the DB
-    // check returns false again after completeOnboarding() was called).
+    // never evicts the user mid-step.
     const inOnboarding  = segments[0] === 'onboarding' || segments[0] === 'onboarding-import' || segments[0] === 'onboarding-questions';
 
     console.log('[ROOT_GUARD] check', {
@@ -257,11 +275,13 @@ export default function RootLayout() {
     });
 
     if (session && inAuth) {
+      // callback.tsx drives its own navigation via BootstrapContext;
+      // the guard mirrors the same decision here as a safety net.
       if (needsOnboarding) {
-        console.log('[AUTH_CALLBACK] routing to onboarding');
+        console.log('[ROOT_GUARD] session+inAuth → /onboarding');
         router.replace('/onboarding');
       } else {
-        console.log('[AUTH_CALLBACK] routing to tabs');
+        console.log('[ROOT_GUARD] session+inAuth → /');
         router.replace('/');
       }
     } else if (session && needsOnboarding && !inAuth && !inOnboarding) {
@@ -274,11 +294,13 @@ export default function RootLayout() {
   }, [session, segments, needsOnboarding]);
 
   return (
-    <OnboardingBridgeContext.Provider value={{ completeOnboarding: () => setNeedsOnboarding(false) }}>
-      <View style={{ flex: 1 }}>
-        <Stack screenOptions={{ headerShown: false }} />
-        <ToastContainer />
-      </View>
-    </OnboardingBridgeContext.Provider>
+    <BootstrapContext.Provider value={{ session, needsOnboarding }}>
+      <OnboardingBridgeContext.Provider value={{ completeOnboarding: () => setNeedsOnboarding(false) }}>
+        <View style={{ flex: 1 }}>
+          <Stack screenOptions={{ headerShown: false }} />
+          <ToastContainer />
+        </View>
+      </OnboardingBridgeContext.Provider>
+    </BootstrapContext.Provider>
   );
 }

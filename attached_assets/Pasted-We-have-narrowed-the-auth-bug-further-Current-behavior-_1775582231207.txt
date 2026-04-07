@@ -1,0 +1,84 @@
+We have narrowed the auth bug further.
+
+Current behavior:
+- tapping the Supabase verification link now opens the app correctly
+- the callback route/loading screen appears
+- but the app still does not fully become functional until I hard close the app and reopen it
+
+So:
+- deep linking is no longer the main issue
+- unmatched route flicker is no longer the main issue
+- the remaining problem is warm-start hydration/bootstrap after callback success
+
+==================================================
+UPDATED DIAGNOSIS
+==================================================
+
+The callback route is working visually, but the app is not fully hydrating or re-bootstraping the authenticated user state while still in the warm app session.
+
+Cold restart works.
+Warm callback transition does not.
+
+That means the app is still relying on some initialization path that only runs correctly on cold boot.
+
+==================================================
+WHAT I WANT INVESTIGATED
+==================================================
+
+Focus specifically on what happens AFTER auth callback success.
+
+I want to know:
+
+1. Does exchangeCodeForSession succeed?
+2. Does onAuthStateChange fire?
+3. Does session state update in the root?
+4. Does profile/bootstrap fetch run?
+5. Does onboarding routing decision resolve?
+6. Does any cache/provider/query state remain stale until a hard restart?
+
+==================================================
+ADD EXPLICIT LOGS
+==================================================
+
+Use a clear prefix like:
+
+[WARM_BOOT] callback route mounted
+[WARM_BOOT] exchangeCodeForSession success
+[WARM_BOOT] onAuthStateChange SIGNED_IN
+[WARM_BOOT] session state updated
+[WARM_BOOT] profile fetch start
+[WARM_BOOT] profile fetch success
+[WARM_BOOT] onboarding decision resolved
+[WARM_BOOT] routing to onboarding
+[WARM_BOOT] routing to tabs
+[WARM_BOOT] app shell ready
+[WARM_BOOT] app shell stalled waiting on ...
+[WARM_BOOT] cold restart path works because ...
+
+==================================================
+WHAT I WANT CHANGED
+==================================================
+
+The callback route should not just exchange the code and hope the rest of the app catches up.
+
+I want the callback/warm-start path to explicitly wait until the app is actually ready.
+
+That likely means one of:
+- explicitly refreshing session/user state after exchange
+- explicitly awaiting bootstrap/profile initialization
+- invalidating/refetching any auth-dependent app state
+- keeping the user on the callback loading screen until the app shell is truly ready
+
+Do not let the callback route disappear until the app is actually usable.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+When a user taps the verification link:
+- app opens
+- callback loading state appears
+- session is exchanged
+- profile/bootstrap resolves
+- onboarding or app content loads immediately
+- no hard app close/reopen is required

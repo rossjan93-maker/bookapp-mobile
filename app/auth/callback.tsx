@@ -1,59 +1,105 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Text, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { useBootstrap } from '../_layout';
 
 /**
  * AuthCallbackScreen
  *
  * Matches the deep link path:  readstack://auth/callback
  *
- * Expo Router routes here instead of showing "Unmatched Route" when the user
- * taps a Supabase confirmation or password-reset email link.
- *
  * Responsibilities:
  *   1. Show a loading state so the user sees intentional UI, not a flash.
  *   2. Exchange the PKCE code for a Supabase session.
- *   3. Let the root layout's onAuthStateChange + session guard do all routing
- *      after SIGNED_IN fires — this screen does not navigate explicitly on
- *      success, so the guard owns the destination (onboarding vs. home).
- *   4. Show an error state with a back-to-sign-in button on failure.
+ *   3. ACTIVELY wait for the root layout's bootstrap to fully resolve
+ *      (session + needsOnboarding both defined) via BootstrapContext.
+ *   4. Navigate explicitly once the app is ready — does not rely solely
+ *      on the routing guard to eventually notice the state change.
+ *   5. Show an error state with a back-to-sign-in button on failure.
  *
- * The root layout's Linking handler skips auth/callback URLs (they are
- * handled here) to avoid double-processing the one-time-use PKCE code.
+ * This two-phase approach (exchange → wait for context → navigate) is
+ * what closes the warm-start hydration gap: the app is only navigated
+ * away from this screen once it is provably ready.
  */
 export default function AuthCallbackScreen() {
   const { code } = useLocalSearchParams<{ code?: string }>();
-  const router    = useRouter();
-  const [error, setError] = useState<string | null>(null);
+  const router   = useRouter();
 
+  const [error,    setError]    = useState<string | null>(null);
+  const [exchanged, setExchanged] = useState(false);
+
+  // Track whether we've already navigated away to prevent double-navigation.
+  const navigatedRef = useRef(false);
+
+  // BootstrapContext: live session + needsOnboarding from root layout.
+  // These transition: undefined → undefined → resolved value, signalling
+  // that the root layout has finished its profile/onboarding DB queries.
+  const { session, needsOnboarding } = useBootstrap();
+
+  // ── Phase 1: Exchange PKCE code ────────────────────────────────────────────
   useEffect(() => {
+    console.log('[WARM_BOOT] callback route mounted');
+
     if (!supabase) {
       setError('Client not configured.');
       return;
     }
 
     if (!code) {
-      // No PKCE code — malformed or already-consumed link.
-      console.warn('[AUTH_CALLBACK] no code param in URL — link may be malformed or already used');
+      console.warn('[WARM_BOOT] no code param in URL — link may be malformed or already used');
       setError('This link has already been used or is invalid.');
       return;
     }
 
-    console.log('[AUTH_CALLBACK] code exchange start — code=', code.slice(0, 8) + '…');
-    supabase.auth.exchangeCodeForSession(code).then(({ error: err }) => {
+    console.log('[WARM_BOOT] exchangeCodeForSession start — code=', code.slice(0, 8) + '…');
+    supabase.auth.exchangeCodeForSession(code).then(({ data, error: err }) => {
       if (err) {
-        console.warn('[AUTH_CALLBACK] code exchange error:', err.message);
+        console.warn('[WARM_BOOT] exchangeCodeForSession failed:', err.message);
         setError('The link may have expired. Please try signing in again.');
         return;
       }
-      // Success: onAuthStateChange fires SIGNED_IN in the root layout.
-      // The root layout resets needsOnboarding=undefined, runs DB bootstrap,
-      // then resolves needsOnboarding and the routing guard navigates.
-      // This screen stays visible (loading state) until the guard routes.
-      console.log('[AUTH_CALLBACK] code exchange success — waiting for bootstrap + guard to route');
+      console.log('[WARM_BOOT] exchangeCodeForSession success — userId=', data.session?.user.id.slice(0, 8) ?? 'none');
+      // Marks Phase 2 to begin: watch BootstrapContext until app is ready.
+      setExchanged(true);
     });
   }, [code]);
+
+  // ── Phase 2: Wait for bootstrap, then navigate ─────────────────────────────
+  // This effect re-runs every time session or needsOnboarding changes.
+  // It only acts once exchange has succeeded AND bootstrap has fully resolved.
+  useEffect(() => {
+    if (!exchanged) return;
+    if (navigatedRef.current) return;
+
+    // Log every evaluation so we can see the progression in Metro.
+    const sessionStatus        = session === undefined ? 'pending' : session ? 'active' : 'null';
+    const onboardingStatus     = needsOnboarding === undefined ? 'pending' : String(needsOnboarding);
+    console.log('[WARM_BOOT] app shell stalled waiting on — session=', sessionStatus, 'needsOnboarding=', onboardingStatus);
+
+    // Both states must be defined before we can make a routing decision.
+    if (session === undefined || needsOnboarding === undefined) return;
+
+    // Guard: if bootstrap resolved but session is null, something went wrong.
+    // The exchange reported success but Supabase didn't surface the session —
+    // send user back to login rather than showing a blank screen.
+    if (!session) {
+      console.warn('[WARM_BOOT] exchange succeeded but session is null after bootstrap — routing to login');
+      navigatedRef.current = true;
+      router.replace('/login');
+      return;
+    }
+
+    // App is ready. Navigate explicitly based on the resolved onboarding state.
+    navigatedRef.current = true;
+    if (needsOnboarding) {
+      console.log('[WARM_BOOT] routing to onboarding');
+      router.replace('/onboarding');
+    } else {
+      console.log('[WARM_BOOT] routing to tabs');
+      router.replace('/');
+    }
+  }, [exchanged, session, needsOnboarding]);
 
   // ── Error state ────────────────────────────────────────────────────────────
   if (error) {
@@ -101,7 +147,8 @@ export default function AuthCallbackScreen() {
     );
   }
 
-  // ── Loading state (default) ─────────────────────────────────────────────
+  // ── Loading state (default) ─────────────────────────────────────────────────
+  // Stays visible until Phase 2 confirms the app is ready and navigates.
   return (
     <View style={{
       flex: 1,
