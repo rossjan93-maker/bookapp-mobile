@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
@@ -69,10 +70,11 @@ type Step =
 // ─── Layout primitives ───────────────────────────────────────────────────────
 
 function ScreenContainer({ children }: { children: React.ReactNode }) {
+  const insets = useSafeAreaInsets();
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: '#faf9f7' }}
-      contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 56, paddingBottom: 60 }}
+      contentContainerStyle={{ paddingHorizontal: 24, paddingTop: insets.top + 16, paddingBottom: 60 }}
       keyboardShouldPersistTaps="handled"
     >
       {children}

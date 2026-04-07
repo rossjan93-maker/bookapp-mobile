@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import type { WebViewMessageEvent, WebViewNavigation } from 'react-native-webview';
 import * as DocumentPicker from 'expo-document-picker';
@@ -252,6 +253,7 @@ type WebViewMsg =
 
 export default function GoodreadsBrowserScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const webViewRef = useRef<WebView>(null);
 
   const [browserState, setBrowserState] = useState<BrowserState>('idle');
@@ -526,7 +528,7 @@ export default function GoodreadsBrowserScreen() {
     <View style={styles.container}>
 
       {/* ── Header ── */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity
           onPress={handleCancel}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -538,7 +540,7 @@ export default function GoodreadsBrowserScreen() {
           </Text>
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>Goodreads Browser V3</Text>
+        <Text style={styles.headerTitle}>Import from Goodreads</Text>
 
         <View style={styles.headerSide} />
       </View>
@@ -608,7 +610,7 @@ export default function GoodreadsBrowserScreen() {
 
       {/* ── Fallback overlay: auto-capture-timeout ── */}
       {showFallbackOverlay && (
-        <View style={styles.fallbackOverlay}>
+        <View style={[styles.fallbackOverlay, { paddingTop: insets.top + 48 }]}>
           <Text style={styles.fallbackTitle}>Auto-capture didn&apos;t work</Text>
           <Text style={styles.fallbackSubtitle}>
             Paste your Goodreads export text below, or choose the downloaded CSV file.
@@ -666,20 +668,17 @@ export default function GoodreadsBrowserScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const HEADER_TOP = Platform.OS === 'ios' ? 56 : 16;
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#faf9f7',
   },
 
-  // Header
+  // Header — paddingTop is applied dynamically via useSafeAreaInsets in JSX
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: HEADER_TOP,
     paddingBottom: 12,
     paddingHorizontal: 16,
     backgroundColor: '#faf9f7',
@@ -778,11 +777,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // Fallback overlay (auto-capture-timeout)
+  // Fallback overlay (auto-capture-timeout) — paddingTop applied dynamically via useSafeAreaInsets
   fallbackOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#faf9f7',
-    paddingTop: HEADER_TOP + 48,
     paddingHorizontal: 24,
     paddingBottom: 40,
   },
