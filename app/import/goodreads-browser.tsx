@@ -557,14 +557,6 @@ export default function GoodreadsBrowserScreen() {
         </Text>
       </View>
 
-      {/* ── DEBUG BANNER (temporary — remove after real-device verification) ── */}
-      <View style={styles.debugBanner}>
-        <Text style={styles.debugBannerBadge}>GR_BROWSER_V3</Text>
-        <Text style={styles.debugBannerBody}>
-          If you can read this, you are in the native Goodreads browser route.
-        </Text>
-      </View>
-
       {/* ── WebView — always mounted, dimmed during capture ── */}
       <View style={[styles.webViewWrap, dimWebView && styles.webViewDimmed]}>
         <WebView
@@ -731,33 +723,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#78716c',
     textAlign: 'center',
-  },
-
-  // Debug banner (temporary)
-  debugBanner: {
-    backgroundColor: '#fef08a',
-    borderBottomWidth: 1,
-    borderBottomColor: '#ca8a04',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  debugBannerBadge: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#92400e',
-    letterSpacing: 0.5,
-    backgroundColor: '#fde68a',
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  debugBannerBody: {
-    fontSize: 11,
-    color: '#78350f',
-    flex: 1,
   },
 
   // WebView
