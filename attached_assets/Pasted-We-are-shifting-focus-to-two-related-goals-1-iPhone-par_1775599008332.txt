@@ -1,0 +1,62 @@
+We are shifting focus to two related goals:
+
+1. iPhone parity for the import-library experience
+2. getting the app onto other people’s phones for real testing
+
+I want a repo-grounded plan and execution path for both.
+
+==================================================
+GOAL 1 — IPHONE IMPORT PARITY
+==================================================
+
+The Goodreads/library import experience on iPhone should match Android in principle.
+
+I want you to audit the current import flow and confirm what still needs to be validated or adjusted specifically for iPhone.
+
+That means checking:
+- entry point into import
+- in-app Goodreads browser flow
+- loading/capture states
+- staged review/import handoff
+- fallback behavior if auto-capture fails
+- any platform-specific UI/layout issues
+- any iOS-specific WebView or deep-link assumptions
+
+I do NOT want the web version treated as the main iPhone testing surface.
+
+==================================================
+GOAL 2 — GETTING THE APP ONTO OTHER PEOPLE’S PHONES
+==================================================
+
+I want the cleanest realistic path for real personal testing.
+
+For iPhone, assume TestFlight is the intended path.
+For Android, we can defer broader distribution and keep my own testing path for now.
+
+Tell me exactly:
+1. what is still needed before the app is TestFlight-ready
+2. what commands / build profiles we will use
+3. what Apple-side setup is still blocking or incomplete
+4. how we should move from my own testing to small-group tester distribution
+
+==================================================
+WHAT I WANT BEFORE CODING
+==================================================
+
+Tell me:
+1. whether the current codebase is functionally ready for iPhone import-flow testing or what is still uncertain
+2. what exact files/features are most relevant to validate iPhone parity
+3. whether anything about the current Goodreads flow is Android-specific in practice
+4. what the exact TestFlight preparation checklist is from this repo’s current state
+5. what command I will eventually run for the iOS beta build
+6. what command/workflow I will use to get it into TestFlight
+7. what changes would require a new binary vs only an EAS Update
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- we have a clear path to making iPhone import experience match Android
+- we have a clear path to getting the app onto other people’s iPhones through TestFlight
+- we know exactly what is still blocking that path
+- we are no longer relying on the web version as the main mobile test surface
