@@ -35,22 +35,23 @@ export default function AuthCallbackScreen() {
 
     if (!code) {
       // No PKCE code — malformed or already-consumed link.
-      console.warn('[AuthCallback] no code param in URL');
+      console.warn('[AUTH_CALLBACK] no code param in URL — link may be malformed or already used');
       setError('This link has already been used or is invalid.');
       return;
     }
 
-    console.log('[AuthCallback] exchanging PKCE code for session');
+    console.log('[AUTH_CALLBACK] code exchange start — code=', code.slice(0, 8) + '…');
     supabase.auth.exchangeCodeForSession(code).then(({ error: err }) => {
       if (err) {
-        console.warn('[AuthCallback] exchangeCodeForSession error:', err.message);
+        console.warn('[AUTH_CALLBACK] code exchange error:', err.message);
         setError('The link may have expired. Please try signing in again.');
         return;
       }
-      // Success: supabase.auth.onAuthStateChange fires SIGNED_IN in the root
-      // layout, which updates the session state and the guard routes the user
-      // to onboarding (new account) or home (returning user).
-      console.log('[AuthCallback] code exchanged — waiting for session guard to route');
+      // Success: onAuthStateChange fires SIGNED_IN in the root layout.
+      // The root layout resets needsOnboarding=undefined, runs DB bootstrap,
+      // then resolves needsOnboarding and the routing guard navigates.
+      // This screen stays visible (loading state) until the guard routes.
+      console.log('[AUTH_CALLBACK] code exchange success — waiting for bootstrap + guard to route');
     });
   }, [code]);
 

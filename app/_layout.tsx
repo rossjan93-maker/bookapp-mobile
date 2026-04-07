@@ -107,11 +107,21 @@ export default function RootLayout() {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-      setSession(newSession);
       // Handle both SIGNED_IN and USER_UPDATED (email confirmation can fire either
       // depending on Supabase version / PKCE configuration).
       if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && newSession) {
-        console.log('[DELETE_TRACE]', event, 'userId=', newSession.user.id.slice(0, 8));
+        console.log('[AUTH_CALLBACK] session now available — event=', event, 'userId=', newSession.user.id.slice(0, 8));
+
+        // ── CRITICAL: set needsOnboarding=undefined BEFORE setSession ──────────
+        // The routing guard bails when needsOnboarding===undefined, keeping the
+        // user on the callback loading screen until bootstrap fully resolves.
+        // Without this, the guard fires the moment setSession runs and races
+        // against the DB calls, routing to tabs with a stale needsOnboarding=false.
+        setNeedsOnboarding(undefined);
+        setSession(newSession);
+
+        console.log('[AUTH_CALLBACK] bootstrap start — resolving profile + onboarding_completed');
+
         // Check if a profile row already exists BEFORE ensureProfile runs.
         // Detects UUID recycling: if pre-exists=true with onboarding_completed=true,
         // the old profile survived account deletion and is poisoning the new account.
@@ -120,28 +130,35 @@ export default function RootLayout() {
           .select('id, onboarding_completed')
           .eq('id', newSession.user.id)
           .maybeSingle();
-        console.log('[DELETE_TRACE] profile pre-exists=', !!preProfile, 'existing onboarding_completed=', preProfile?.onboarding_completed ?? null);
+        console.log('[AUTH_CALLBACK] profile pre-exists=', !!preProfile, 'existing onboarding_completed=', preProfile?.onboarding_completed ?? null);
+
         const meta = newSession.user.user_metadata;
+        console.log('[AUTH_CALLBACK] profile bootstrap start');
         await ensureProfile(
           newSession.user.id,
           newSession.user.email ?? '',
           meta?.first_name,
           meta?.last_name,
         );
+        console.log('[AUTH_CALLBACK] profile bootstrap complete');
+
         const completed = await checkOnboardingCompleted(newSession.user.id);
-        console.log('[DELETE_TRACE] DB onboarding_completed=', completed);
+        console.log('[AUTH_CALLBACK] DB onboarding_completed=', completed);
+
         if (completed) {
-          console.log('[DELETE_TRACE] → needsOnboarding=false (DB says done)');
+          console.log('[AUTH_CALLBACK] onboarding decision resolved → needsOnboarding=false (DB says done)');
           setNeedsOnboarding(false);
         } else {
           const localStage  = await readOnboardingStage();
           const locallyDone = localStage === 'done';
           const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup';
-          console.log('[DELETE_TRACE] localStage=', localStage, 'locallyDone=', locallyDone, 'midFlow=', midFlow);
-          console.log('[DELETE_TRACE] → needsOnboarding=', !midFlow && !locallyDone);
-          setNeedsOnboarding(!midFlow && !locallyDone);
+          const result      = !midFlow && !locallyDone;
+          console.log('[AUTH_CALLBACK] localStage=', localStage, 'locallyDone=', locallyDone, 'midFlow=', midFlow);
+          console.log('[AUTH_CALLBACK] onboarding decision resolved → needsOnboarding=', result);
+          setNeedsOnboarding(result);
         }
       } else if (event === 'SIGNED_OUT') {
+        setSession(newSession);
         console.log('[DELETE_TRACE] SIGNED_OUT — awaiting full local state clear');
         setNeedsOnboarding(false);
         clearAllTabCaches();
@@ -240,9 +257,13 @@ export default function RootLayout() {
     });
 
     if (session && inAuth) {
-      const route = needsOnboarding ? '/onboarding' : '/';
-      console.log('[ROOT_GUARD] → route=', route, '(session+inAuth)');
-      router.replace(route);
+      if (needsOnboarding) {
+        console.log('[AUTH_CALLBACK] routing to onboarding');
+        router.replace('/onboarding');
+      } else {
+        console.log('[AUTH_CALLBACK] routing to tabs');
+        router.replace('/');
+      }
     } else if (session && needsOnboarding && !inAuth && !inOnboarding) {
       console.log('[ROOT_GUARD] → route=/onboarding (guard redirect)');
       router.replace('/onboarding');
