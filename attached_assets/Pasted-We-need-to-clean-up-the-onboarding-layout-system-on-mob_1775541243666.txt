@@ -1,0 +1,131 @@
+We need to clean up the onboarding layout system on mobile.
+
+This is a design/system issue, not a one-screen tweak.
+
+==================================================
+PROBLEM
+==================================================
+
+Across the onboarding screens, content is too compressed near the top of the phone and does not respect the device’s top information area enough.
+
+The result:
+- titles sit too high
+- progress bars feel crowded
+- option cards start too early
+- actions like "Skip this", "Skip remaining", and "Next" feel inconsistently placed
+- the layout does not breathe
+- the opening readstack screen feels too static
+
+I want the onboarding experience to feel premium, calm, and properly spaced.
+
+==================================================
+WHAT I WANT
+==================================================
+
+Create a consistent onboarding screen shell for mobile that all onboarding question screens use.
+
+That shell should have:
+
+1. Proper safe-area handling
+   - nothing should feel crowded against the phone status area
+   - use real safe-area spacing, not arbitrary hardcoded top compression
+
+2. Consistent top section
+   - progress indicator
+   - page title/question
+   - optional supporting text
+   These should have a repeatable spacing system.
+
+3. Flexible middle section
+   - answer cards / content blocks should sit with more vertical breathing room
+   - do not cram everything into the upper third of the screen
+
+4. Consistent bottom action zone
+   - "Next", "Skip this", "Skip remaining" should be positioned deliberately
+   - bottom actions should feel anchored and orderly, not floating in random positions
+
+==================================================
+OPENING SCREEN CHANGES
+==================================================
+
+For the opening readstack intro screen:
+
+1. Change the subheader text to:
+   "Your reading, together."
+
+2. Slightly animate the books
+   - subtle only
+   - gentle float / stagger / breathing motion
+   - should feel premium, not gimmicky
+
+3. Keep the CTA strong and bottom-anchored with proper spacing
+
+==================================================
+QUESTION SCREEN CHANGES
+==================================================
+
+For the question screens like:
+- Where do you lean?
+- What tends to grip you?
+- How much does pacing matter?
+
+I want:
+- more top breathing room from the status area
+- more balanced vertical layout
+- cleaner spacing between title and cards
+- cleaner spacing between cards and actions
+- skip actions treated consistently
+
+Do not leave huge empty lower-screen dead space while also cramming the content at the top.
+Rebalance the vertical composition.
+
+==================================================
+TOUR / WALKTHROUGH CARD CHANGES
+==================================================
+
+For the guided tour overlays:
+- make sure the explanation card, arrow/pointer, and highlighted section feel intentionally aligned
+- ensure the "Next" button sits consistently inside the card
+- make the card feel less randomly placed relative to the feature being explained
+
+==================================================
+DESIGN DIRECTION
+==================================================
+
+Target feel:
+- premium
+- breathable
+- orderly
+- native
+- visually confident
+
+Not:
+- cramped
+- top-heavy
+- arbitrary
+- placeholder-ish
+
+==================================================
+BEFORE CODING
+==================================================
+
+Tell me:
+1. what current layout/container rules are causing the top-heavy compression
+2. what shared onboarding shell or layout abstraction you will create/update
+3. how you will handle safe-area spacing consistently
+4. what animation approach you will use for the opening books
+5. which files/screens you will update
+
+Then implement.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- onboarding screens no longer feel crammed into the top of the device
+- safe-area spacing is respected consistently
+- question screens have better vertical balance and breathing room
+- skip/next actions are placed consistently
+- opening screen subheader reads "Your reading, together."
+- books on the opening screen have subtle premium animation
+- guided tour cards feel cleaner and more intentional

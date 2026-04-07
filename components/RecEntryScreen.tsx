@@ -461,18 +461,18 @@ function IntakeGenres({
   return (
     <View style={{ flex: 1 }}>
       {/* Header */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 12 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+      <View style={{ paddingHorizontal: 20, paddingTop: 28, paddingBottom: 16 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <View style={{ flexDirection: 'row', gap: 4 }}>
             {[1, 2, 3].map(i => (
               <View key={i} style={{ width: i === 1 ? 22 : 6, height: 6, borderRadius: 3, backgroundColor: i <= 1 ? INK : BORD }} />
             ))}
           </View>
-          <TouchableOpacity onPress={onSkip}>
-            <Text style={{ fontSize: 13, color: MUTED }}>Skip all →</Text>
+          <TouchableOpacity onPress={onSkip} hitSlop={{ top: 10, bottom: 10, left: 16, right: 16 }}>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: MUTED }}>Skip all →</Text>
           </TouchableOpacity>
         </View>
-        <Text style={{ fontSize: 24, fontWeight: '800', color: INK, lineHeight: 30, marginTop: 8 }}>
+        <Text style={{ fontSize: 24, fontWeight: '800', color: INK, lineHeight: 30 }}>
           What are you drawn to?
         </Text>
 
@@ -569,23 +569,23 @@ function IntakeTaste({
   }
 
   return (
-    <View style={{ flex: 1, paddingHorizontal: 20 }}>
-      {/* Progress */}
-      <View style={{ flexDirection: 'row', gap: 4, marginBottom: 4 }}>
+    <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 28 }}>
+      {/* Step progress — outer (3 dots: genres / taste / anchor) */}
+      <View style={{ flexDirection: 'row', gap: 4, marginBottom: 10 }}>
         {[1, 2, 3].map(i => (
           <View key={i} style={{ width: i === 2 ? 22 : 6, height: 6, borderRadius: 3, backgroundColor: i <= 2 ? INK : BORD }} />
         ))}
       </View>
 
-      {/* Taste sub-progress */}
-      <View style={{ flexDirection: 'row', gap: 4, marginBottom: 20 }}>
+      {/* Sub-progress within taste (3 questions) */}
+      <View style={{ flexDirection: 'row', gap: 4, marginBottom: 28 }}>
         {TASTE_QS.map((_, i) => (
           <View key={i} style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: i <= qIdx ? INK : BORD }} />
         ))}
       </View>
 
       <Animated.View style={{ transform: [{ translateY: slideAnim }] }}>
-        <Text style={{ fontSize: 22, fontWeight: '800', color: INK, lineHeight: 28, marginBottom: 20 }}>
+        <Text style={{ fontSize: 22, fontWeight: '800', color: INK, lineHeight: 28, marginBottom: 24 }}>
           {q.prompt}
         </Text>
 
@@ -601,20 +601,20 @@ function IntakeTaste({
                 borderRadius:    14,
                 borderWidth:     1.5,
                 borderColor:     isBoth ? '#e7e5e4' : BORD,
-                padding:         14,
-                marginBottom:    10,
+                padding:         16,
+                marginBottom:    12,
                 flexDirection:   'row',
                 alignItems:      'center',
                 gap:             12,
               }}
             >
-              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: isBoth ? '#f5f5f4' : '#f5f5f4', alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name={opt.icon} size={17} color={isBoth ? '#a8a29e' : INK} />
+              <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#f5f5f4', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name={opt.icon} size={18} color={isBoth ? '#a8a29e' : INK} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: '600', color: isBoth ? '#78716c' : INK }}>{opt.headline}</Text>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: isBoth ? '#78716c' : INK }}>{opt.headline}</Text>
                 {opt.sub != null && (
-                  <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 2, lineHeight: 16 }}>{opt.sub}</Text>
+                  <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 3, lineHeight: 17 }}>{opt.sub}</Text>
                 )}
               </View>
             </TouchableOpacity>
@@ -622,12 +622,16 @@ function IntakeTaste({
         })}
       </Animated.View>
 
-      <View style={{ alignItems: 'center', marginTop: 8, gap: 10 }}>
-        <TouchableOpacity onPress={handleSkipOne} hitSlop={{ top: 8, bottom: 8, left: 16, right: 16 }}>
-          <Text style={{ fontSize: 14, color: MUTED }}>Skip this →</Text>
+      {/* Spacer: pushes skip zone to the bottom rather than stacking under cards */}
+      <View style={{ flex: 1 }} />
+
+      {/* Skip actions — anchored to bottom, consistent across all taste questions */}
+      <View style={{ alignItems: 'center', paddingBottom: 32, gap: 16 }}>
+        <TouchableOpacity onPress={handleSkipOne} hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }}>
+          <Text style={{ fontSize: 14, fontWeight: '500', color: MUTED }}>Skip this question →</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => { riTasteSkipped(); onSkip(); }} hitSlop={{ top: 8, bottom: 8, left: 16, right: 16 }}>
-          <Text style={{ fontSize: 13, color: BORD }}>Skip remaining</Text>
+        <TouchableOpacity onPress={() => { riTasteSkipped(); onSkip(); }} hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }}>
+          <Text style={{ fontSize: 13, color: '#c4bfb9' }}>Skip remaining</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -663,9 +667,9 @@ function IntakeAnchor({
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 16 }}>
+      <View style={{ paddingHorizontal: 20, paddingTop: 28, paddingBottom: 16 }}>
         {/* Progress */}
-        <View style={{ flexDirection: 'row', gap: 4, marginBottom: 8 }}>
+        <View style={{ flexDirection: 'row', gap: 4, marginBottom: 18 }}>
           {[1, 2, 3].map(i => (
             <View key={i} style={{ width: 22, height: 6, borderRadius: 3, backgroundColor: INK }} />
           ))}
@@ -673,7 +677,7 @@ function IntakeAnchor({
         <Text style={{ fontSize: 22, fontWeight: '800', color: INK, lineHeight: 28 }}>
           One book that nailed it?
         </Text>
-        <Text style={{ fontSize: 14, color: SUB, marginTop: 6, lineHeight: 20 }}>
+        <Text style={{ fontSize: 14, color: SUB, marginTop: 8, lineHeight: 21 }}>
           Optional — a book you've loved is our strongest cold-start signal.
         </Text>
       </View>

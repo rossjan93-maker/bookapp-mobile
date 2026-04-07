@@ -15,6 +15,7 @@
 import React, { useEffect, useRef } from 'react';
 import {
   Animated,
+  Easing,
   Platform,
   SafeAreaView,
   StatusBar,
@@ -63,7 +64,15 @@ const SPINES: SpineConfig[] = [
 
 // ─── Animated book spine ──────────────────────────────────────────────────────
 
-function BookSpine({ cfg, anim }: { cfg: SpineConfig; anim: Animated.Value }) {
+function BookSpine({
+  cfg,
+  anim,
+  floatAnim,
+}: {
+  cfg: SpineConfig;
+  anim: Animated.Value;
+  floatAnim: Animated.Value;
+}) {
   const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [48, 0] });
   const scale      = anim.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] });
 
@@ -80,6 +89,7 @@ function BookSpine({ cfg, anim }: { cfg: SpineConfig; anim: Animated.Value }) {
           { translateY: cfg.offsetY },
           { rotate: cfg.rotate },
           { translateY },
+          { translateY: floatAnim },
           { scale },
         ],
         opacity: anim,
@@ -120,6 +130,7 @@ export default function OnboardingScreen() {
   const { height: SH } = useWindowDimensions();
 
   const spineAnims = useRef(SPINES.map(() => new Animated.Value(0))).current;
+  const floatAnims = useRef(SPINES.map(() => new Animated.Value(0))).current;
   const textFade   = useRef(new Animated.Value(0)).current;
   const ctaFade    = useRef(new Animated.Value(0)).current;
   const ctaOffsetY = useRef(new Animated.Value(18)).current;
@@ -137,6 +148,34 @@ export default function OnboardingScreen() {
           friction:        10,
         }).start();
       }, cfg.startDelay);
+    });
+
+    // ── Gentle float: starts after entry springs, each spine offset in phase ──
+    // Each spine bobs independently with a slightly different period so the
+    // group breathes organically rather than moving in lockstep.
+    SPINES.forEach((_, i) => {
+      const amplitude  = 3.5 + i * 0.5;          // 3.5–5 px range
+      const halfPeriod = 1800 + i * 220;          // 1.8–2.5 s per half-cycle
+      const startDelay = 820 + i * 260;           // staggered start after springs
+
+      setTimeout(() => {
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(floatAnims[i], {
+              toValue:         -amplitude,
+              duration:        halfPeriod,
+              easing:          Easing.inOut(Easing.sin),
+              useNativeDriver: false,
+            }),
+            Animated.timing(floatAnims[i], {
+              toValue:         amplitude,
+              duration:        halfPeriod,
+              easing:          Easing.inOut(Easing.sin),
+              useNativeDriver: false,
+            }),
+          ])
+        ).start();
+      }, startDelay);
     });
 
     // ── Text + CTA: fixed delay — always visible within ~1s of mount ──────────
@@ -200,7 +239,7 @@ export default function OnboardingScreen() {
       <SafeAreaView style={{ flex: 1 }}>
 
         {/* Skip — top right */}
-        <View style={{ paddingHorizontal: 24, paddingTop: topPad + 4, alignItems: 'flex-end' }}>
+        <View style={{ paddingHorizontal: 24, paddingTop: topPad + 12, alignItems: 'flex-end' }}>
           <TouchableOpacity
             onPress={() => finish('skip')}
             hitSlop={{ top: 14, bottom: 14, left: 20, right: 20 }}
@@ -232,7 +271,7 @@ export default function OnboardingScreen() {
           >
             {[...SPINES].reverse().map((cfg, ri) => {
               const i = SPINES.length - 1 - ri;
-              return <BookSpine key={i} cfg={cfg} anim={spineAnims[i]} />;
+              return <BookSpine key={i} cfg={cfg} anim={spineAnims[i]} floatAnim={floatAnims[i]} />;
             })}
           </View>
 
@@ -280,7 +319,7 @@ export default function OnboardingScreen() {
                 maxWidth:      280,
               }}
             >
-              Books that are actually right for you.
+              Your reading, together.
             </Text>
           </Animated.View>
         </View>

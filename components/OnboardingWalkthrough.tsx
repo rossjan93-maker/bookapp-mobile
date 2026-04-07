@@ -66,29 +66,35 @@ export function GuidedActionBanner() {
       style={{
         opacity: fadeIn,
         marginHorizontal: 0,
-        marginBottom: 12,
-        marginTop: 4,
+        marginBottom: 16,
+        marginTop: 8,
         backgroundColor: '#1c1917',
-        borderRadius: 12,
-        paddingVertical: 13,
+        borderRadius: 14,
+        paddingVertical: 15,
         paddingHorizontal: 16,
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 10,
+        gap: 12,
+        shadowColor: '#000',
+        shadowOpacity: 0.10,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 2 },
+        elevation: 3,
       }}
     >
-      <Ionicons name="information-circle-outline" size={18} color="#a8a29e" />
+      <Ionicons name="information-circle-outline" size={19} color="#a8a29e" />
       <View style={{ flex: 1 }}>
         <Text style={{ color: '#faf9f7', fontSize: 13, fontWeight: '600', lineHeight: 18 }}>
           Save, dismiss, or tap "More like this"
         </Text>
-        <Text style={{ color: '#a8a29e', fontSize: 12, lineHeight: 17, marginTop: 1 }}>
+        <Text style={{ color: '#a8a29e', fontSize: 12, lineHeight: 17, marginTop: 2 }}>
           Every choice tunes your future picks
         </Text>
       </View>
       <TouchableOpacity
         onPress={() => advance(0)}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        style={{ paddingHorizontal: 4 }}
       >
         <Text style={{ color: '#a3e635', fontSize: 13, fontWeight: '700' }}>Got it</Text>
       </TouchableOpacity>
