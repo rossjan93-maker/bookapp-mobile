@@ -20,8 +20,9 @@ import {
 import {
   View, Text, StyleSheet, Pressable, ScrollView, TextInput,
   ActivityIndicator, Image, Platform, KeyboardAvoidingView,
-  SafeAreaView, Alert,
+  Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter }                from 'expo-router';
 import { Ionicons }                 from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -71,6 +72,7 @@ const CONFIDENCE_LABEL: Record<string, string> = {
 
 export default function ScanScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   // Camera
   const [permission, requestPermission] = useCameraPermissions();
@@ -444,7 +446,7 @@ export default function ScanScreen() {
 
   // ── Header ─────────────────────────────────────────────────────────────────
   const header = (
-    <View style={s.header}>
+    <View style={[s.header, { paddingTop: insets.top + 8 }]}>
       <BackButton onPress={() => router.back()} color="#1c1917" />
       <Text style={s.headerTitle}>Scan a book</Text>
       <View style={{ width: 40 }} />
@@ -457,17 +459,17 @@ export default function ScanScreen() {
   if (phase === 'scanning') {
     if (!permission) {
       return (
-        <SafeAreaView style={s.root}>
+        <View style={s.root}>
           {header}
           <View style={s.centred}>
             <ActivityIndicator size="large" color="#1c1917" />
           </View>
-        </SafeAreaView>
+        </View>
       );
     }
     if (!permission.granted) {
       return (
-        <SafeAreaView style={s.root}>
+        <View style={s.root}>
           {header}
           <View style={s.centred}>
             <Ionicons name="camera-outline" size={48} color="#a8a29e" />
@@ -482,7 +484,7 @@ export default function ScanScreen() {
               <Text style={s.ghostBtnText}>Enter ISBN manually instead</Text>
             </Pressable>
           </View>
-        </SafeAreaView>
+        </View>
       );
     }
 
@@ -525,12 +527,15 @@ export default function ScanScreen() {
         </View>
 
         {/* Close button */}
-        <SafeAreaView style={s.cameraClose}>
-          <Pressable onPress={() => router.back()} hitSlop={16}
-            style={{ backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 20, padding: 8 }}>
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={16}
+          style={[s.cameraClose, { top: insets.top + 8 }]}
+        >
+          <View style={{ backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 20, padding: 8 }}>
             <Ionicons name="close" size={22} color="#fff" />
-          </Pressable>
-        </SafeAreaView>
+          </View>
+        </Pressable>
       </View>
     );
   }
@@ -538,20 +543,20 @@ export default function ScanScreen() {
   // Resolving / evaluating — loading screen
   if (phase === 'resolving' || phase === 'evaluating') {
     return (
-      <SafeAreaView style={s.root}>
+      <View style={s.root}>
         {header}
         <View style={s.centred}>
           <ActivityIndicator size="large" color="#1c1917" style={{ marginBottom: 16 }} />
           <Text style={s.loadingText}>{loadingText}</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   // Not found
   if (phase === 'not_found') {
     return (
-      <SafeAreaView style={s.root}>
+      <View style={s.root}>
         {header}
         <View style={s.centred}>
           <Ionicons name="search-outline" size={48} color="#a8a29e" />
@@ -569,14 +574,14 @@ export default function ScanScreen() {
             <Text style={s.ghostBtnText}>Scan again</Text>
           </Pressable>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   // Error
   if (phase === 'error') {
     return (
-      <SafeAreaView style={s.root}>
+      <View style={s.root}>
         {header}
         <View style={s.centred}>
           <Ionicons name="warning-outline" size={48} color="#a8a29e" />
@@ -586,14 +591,14 @@ export default function ScanScreen() {
             <Text style={s.primaryBtnText}>Try again</Text>
           </Pressable>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   // Manual entry
   if (phase === 'manual') {
     return (
-      <SafeAreaView style={s.root}>
+      <View style={s.root}>
         {header}
         <KeyboardAvoidingView
           style={{ flex: 1 }}
@@ -660,7 +665,7 @@ export default function ScanScreen() {
             </Pressable>
           </ScrollView>
         </KeyboardAvoidingView>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -671,7 +676,7 @@ export default function ScanScreen() {
     const headline = VERDICT_HEADLINES[verdict];
 
     return (
-      <SafeAreaView style={s.root}>
+      <View style={s.root}>
         {header}
         <ScrollView
           contentContainerStyle={s.resultContainer}
@@ -776,7 +781,7 @@ export default function ScanScreen() {
 
           {/* ── Scan another ─────────────────────────────────────────────────── */}
           <Pressable style={s.scanAnotherBtn} onPress={handleScanAnother}>
-            <Ionicons name="barcode-outline" size={16} color="#78716c" style={{ marginRight: 6 }} />
+            <Ionicons name="barcode-outline" size={16} color="#44403c" style={{ marginRight: 8 }} />
             <Text style={s.scanAnotherText}>Scan another book</Text>
           </Pressable>
         </ScrollView>
@@ -806,7 +811,7 @@ export default function ScanScreen() {
         )}
 
         {/* ── Sticky action footer — always in thumb zone ──────────────────── */}
-        <View style={s.stickyActionFooter}>
+        <View style={[s.stickyActionFooter, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           {actionState === 'idle' ? (
             <>
               <Pressable
@@ -845,7 +850,7 @@ export default function ScanScreen() {
             </View>
           )}
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -875,7 +880,7 @@ const s = StyleSheet.create({
     alignItems:     'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical:   14,
+    paddingBottom:     14,
     borderBottomWidth: 1,
     borderBottomColor: '#e7e5e4',
     backgroundColor:   '#faf9f7',
@@ -978,7 +983,6 @@ const s = StyleSheet.create({
   },
   cameraClose: {
     position: 'absolute',
-    top:      0,
     left:     16,
   },
 
@@ -1286,14 +1290,20 @@ const s = StyleSheet.create({
     flex:       1,
   },
   scanAnotherBtn: {
-    flexDirection:  'row',
-    alignItems:     'center',
-    justifyContent: 'center',
-    marginTop:      24,
-    paddingVertical: 10,
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    marginTop:       24,
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    borderRadius:    12,
+    borderWidth:     1,
+    borderColor:     '#e7e5e4',
+    backgroundColor: '#fff',
   },
   scanAnotherText: {
-    fontSize: 15,
-    color:    '#78716c',
+    fontSize:   14,
+    fontWeight: '500',
+    color:      '#44403c',
   },
 });

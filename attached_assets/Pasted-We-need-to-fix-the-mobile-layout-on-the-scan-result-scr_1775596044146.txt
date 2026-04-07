@@ -1,0 +1,70 @@
+We need to fix the mobile layout on the scan result screen and improve the clarity of the secondary action.
+
+==================================================
+PROBLEM
+==================================================
+
+On the scan result screen:
+- the back button and "Scan a book" title are still too high and are encroaching on the phone status area
+- the screen is not respecting safe area correctly
+- "Scan another book" does not read clearly enough as a button/action
+- the bottom action area needs to feel more intentional relative to the primary actions
+
+This is visible on the scan result / verdict screen after scanning a book.
+
+==================================================
+WHAT I WANT
+==================================================
+
+1. Fix the top safe-area handling on the scan flow screens
+   - back button and title must sit comfortably below the phone status area
+   - do not use hardcoded guessed padding if a safe-area inset is available
+
+2. Make "Scan another book" a clearly recognizable button
+   - it should read as an actionable secondary CTA, not passive helper text
+   - style it as a real button
+   - it should be visually subordinate to the primary actions, but still clearly tappable
+
+3. Check the full scan flow for consistency
+   - scan camera screen
+   - scan result / verdict screen
+   - any intermediate loading/result states
+   All should use the same safe-area/header logic.
+
+==================================================
+DESIGN DIRECTION
+==================================================
+
+Top:
+- clean, safe-area aware header
+- accessible back button
+- properly placed title
+
+Middle:
+- verdict content remains readable and well spaced
+
+Bottom:
+- primary action stays strongest
+- "Scan another book" becomes a true secondary button, likely outlined or low-emphasis filled
+- bottom CTAs should feel deliberate and aligned
+
+==================================================
+BEFORE CODING
+==================================================
+
+Tell me:
+1. which scan-related files/screens are involved
+2. what is currently causing the top encroachment
+3. whether you will reuse the shared safe-area/header pattern from the tab work or create a scan-specific version
+4. how you will restyle "Scan another book"
+
+Then implement.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- scan screen header no longer overlaps or crowds the phone status area
+- back button and title are comfortably placed
+- "Scan another book" is clearly a button
+- scan flow screens feel visually consistent and mobile-native
