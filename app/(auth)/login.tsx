@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { BookStackLoader } from '../../components/BookStackLoader';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase, hasSupabaseConfig } from '../../lib/supabase';
 import { isAppleAvailable, signInWithApple, signInWithGoogle } from '../../lib/socialAuth';
@@ -1108,9 +1109,9 @@ export default function LoginScreen() {
         backgroundColor: '#faf9f7',
         alignItems:      'center',
         justifyContent:  'center',
-        gap:             14,
+        gap:             20,
       }}>
-        <ActivityIndicator size="large" color="#1c1917" />
+        <BookStackLoader size="sm" />
         <Text style={{ fontSize: 15, fontWeight: '600', color: '#1c1917', letterSpacing: -0.2 }}>
           Signed in — loading your account…
         </Text>

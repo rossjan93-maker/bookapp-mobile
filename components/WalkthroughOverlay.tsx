@@ -47,6 +47,8 @@ import {
   wtEvt_skipped,
   wtEvt_hotspotTapped,
 } from '../lib/walkthroughEngine';
+import { CoverThumb } from './CoverThumb';
+import { DEMO_COVERS } from '../lib/demoCoverUrls';
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 
@@ -188,7 +190,7 @@ function HomeFocalCard({ rect }: { rect: TargetRect }) {
       transform:      [{ scale: 1.02 }],
     }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 }}>
-        <View style={{ width: 44, height: 64, borderRadius: 6, backgroundColor: '#ddd5c8' }} />
+        <CoverThumb url={DEMO_COVERS.thursdayMurderClub} title="The Thursday Murder Club" width={44} height={64} />
         <View style={{ flex: 1, marginLeft: 10 }}>
           <Text style={{ fontSize: 14, fontWeight: '700', color: '#1c1917', lineHeight: 19, marginBottom: 3 }} numberOfLines={2}>
             The Thursday Murder Club
@@ -219,7 +221,7 @@ function RecommendFocalCard({ rect }: { rect: TargetRect }) {
     }}>
       <View style={{ height: 3, backgroundColor: '#1c1917' }} />
       <View style={{ padding: 12, flexDirection: 'row', alignItems: 'flex-start' }}>
-        <View style={{ width: 52, height: 76, borderRadius: 6, backgroundColor: '#ddd5c8' }} />
+        <CoverThumb url={DEMO_COVERS.projectHailMary} title="Project Hail Mary" width={52} height={76} />
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={{ fontSize: 15, fontWeight: '700', color: '#1c1917', lineHeight: 21, marginBottom: 3 }} numberOfLines={2}>
             Project Hail Mary
@@ -266,7 +268,7 @@ function LibraryFocalCard({ rect }: { rect: TargetRect }) {
       transform:      [{ scale: 1.02 }],
     }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-        <View style={{ width: 44, height: 64, borderRadius: 6, backgroundColor: '#ddd5c8' }} />
+        <CoverThumb url={DEMO_COVERS.midnightLibrary} title="The Midnight Library" width={44} height={64} />
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={{ fontSize: 14, fontWeight: '700', color: '#1c1917', lineHeight: 19, marginBottom: 3 }} numberOfLines={2}>
             The Midnight Library
@@ -301,7 +303,7 @@ function InboxFocalCard({ rect }: { rect: TargetRect }) {
         From Alex
       </Text>
       <View style={{ flexDirection: 'row', marginBottom: 12 }}>
-        <View style={{ width: 48, height: 70, borderRadius: 6, backgroundColor: '#ddd5c8' }} />
+        <CoverThumb url={DEMO_COVERS.songOfAchilles} title="The Song of Achilles" width={48} height={70} />
         <View style={{ flex: 1, marginLeft: 14 }}>
           <Text style={{ fontWeight: '700', fontSize: 16, color: '#1c1917', lineHeight: 22, marginBottom: 3 }}>
             The Song of Achilles

@@ -1,13 +1,14 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 import { useWalkthroughTarget } from '../../lib/walkthroughEngine';
+import { CoverThumb } from '../CoverThumb';
+import { DEMO_COVERS } from '../../lib/demoCoverUrls';
 
 export function WtDemoLibrary() {
   const { ref, onLayout } = useWalkthroughTarget('library_content');
 
   return (
     <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
-      {/* Library editorial header — matches real ListHeaderComponent style */}
       <View style={{
         flexDirection: 'row', alignItems: 'flex-end',
         justifyContent: 'space-between',
@@ -28,7 +29,6 @@ export function WtDemoLibrary() {
       </View>
 
       <View style={{ paddingHorizontal: 20 }}>
-        {/* "Currently Reading" section label */}
         <Text style={{
           fontSize: 11, fontWeight: '700', color: '#a8a29e',
           letterSpacing: 1, textTransform: 'uppercase',
@@ -37,7 +37,6 @@ export function WtDemoLibrary() {
           Currently Reading
         </Text>
 
-        {/* Row 1 — Reading card (same style as real library renderItem reading branch) */}
         <View
           ref={ref}
           onLayout={onLayout}
@@ -60,10 +59,12 @@ export function WtDemoLibrary() {
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-            {/* Cover placeholder */}
-            <View style={{
-              width: 44, height: 64, borderRadius: 6, backgroundColor: '#ddd5c8',
-            }} />
+            <CoverThumb
+              url={DEMO_COVERS.midnightLibrary}
+              title="The Midnight Library"
+              width={44}
+              height={64}
+            />
             <View style={{ flex: 1, marginLeft: 12 }}>
               <Text style={{
                 fontSize: 14, fontWeight: '700', color: '#1c1917',
@@ -75,7 +76,6 @@ export function WtDemoLibrary() {
             </View>
           </View>
 
-          {/* Progress bar */}
           <View style={{
             height: 3, backgroundColor: '#e7e5e4',
             borderRadius: 2, overflow: 'hidden',
@@ -91,7 +91,6 @@ export function WtDemoLibrary() {
           </Text>
         </View>
 
-        {/* "Library" section label */}
         <Text style={{
           fontSize: 11, fontWeight: '700', color: '#c4b5a5',
           letterSpacing: 1, textTransform: 'uppercase',
@@ -100,16 +99,17 @@ export function WtDemoLibrary() {
           Library
         </Text>
 
-        {/* Row 2 — Flat archival row (same style as real non-reading branch) */}
         <View style={{
           paddingTop: 18, paddingBottom: 18,
           borderBottomWidth: 1, borderBottomColor: '#f5f5f4',
         }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {/* Cover placeholder */}
-            <View style={{
-              width: 40, height: 58, borderRadius: 5, backgroundColor: '#ddd5c8',
-            }} />
+            <CoverThumb
+              url={DEMO_COVERS.atomicHabits}
+              title="Atomic Habits"
+              width={40}
+              height={58}
+            />
             <View style={{ flex: 1, marginLeft: 12 }}>
               <Text style={{
                 fontSize: 14, fontWeight: '600', color: '#1c1917',
@@ -119,7 +119,6 @@ export function WtDemoLibrary() {
               </Text>
               <Text style={{ fontSize: 12, color: '#78716c' }}>James Clear</Text>
             </View>
-            {/* Status chip */}
             <View style={{
               backgroundColor: '#f0fdf4',
               borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,

@@ -1,13 +1,14 @@
 import React from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { useWalkthroughTarget } from '../../lib/walkthroughEngine';
+import { CoverThumb } from '../CoverThumb';
+import { DEMO_COVERS } from '../../lib/demoCoverUrls';
 
 export function WtDemoRecommend() {
   const { ref, onLayout } = useWalkthroughTarget('recommend_content');
 
   return (
     <View style={{ marginBottom: 36 }}>
-      {/* Section header — matches real RecommendationsFeed */}
       <Text style={{
         fontSize: 11, fontWeight: '700', color: '#a8a29e',
         letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 12,
@@ -15,7 +16,6 @@ export function WtDemoRecommend() {
         For You
       </Text>
 
-      {/* Picked for you row — matches real ready state header */}
       <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
         <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', flex: 1 }}>
           Picked for you
@@ -42,15 +42,15 @@ export function WtDemoRecommend() {
           opacity: 0,
         }}
       >
-        {/* Top accent bar — featured card marker */}
         <View style={{ height: 3, backgroundColor: '#1c1917' }} />
 
-        {/* Card body */}
         <View style={{ padding: 12, flexDirection: 'row', alignItems: 'flex-start' }}>
-          {/* Cover placeholder */}
-          <View style={{
-            width: 52, height: 76, borderRadius: 6, backgroundColor: '#ddd5c8',
-          }} />
+          <CoverThumb
+            url={DEMO_COVERS.projectHailMary}
+            title="Project Hail Mary"
+            width={52}
+            height={76}
+          />
 
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={{
@@ -64,7 +64,6 @@ export function WtDemoRecommend() {
               <Text style={{ fontSize: 12, color: '#78716c', flex: 1 }} numberOfLines={1}>
                 Andy Weir
               </Text>
-              {/* TOP PICK confidence chip */}
               <View style={{
                 backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0',
                 borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2,
@@ -77,7 +76,6 @@ export function WtDemoRecommend() {
               </View>
             </View>
 
-            {/* Match reason */}
             <Text style={{
               fontSize: 13, fontWeight: '600', color: '#1c1917',
               lineHeight: 18, marginBottom: 2,
@@ -87,7 +85,6 @@ export function WtDemoRecommend() {
           </View>
         </View>
 
-        {/* Action bar — matches real RecCard */}
         <View style={{
           borderTopWidth: 1, borderTopColor: '#f0eeeb',
           flexDirection: 'row', alignItems: 'stretch',

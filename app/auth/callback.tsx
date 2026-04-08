@@ -16,6 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { BookStackLoader } from '../../components/BookStackLoader';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { readOnboardingStage } from '../../lib/onboardingStage';
@@ -389,7 +390,10 @@ export default function AuthCallbackScreen() {
         borderBottomWidth: 2,
         borderBottomColor: diag.stalled ? '#fca5a5' : '#d6d3d1',
       }}>
-        <ActivityIndicator size="large" color={diag.stalled ? '#dc2626' : '#1c1917'} />
+        {diag.stalled
+          ? <ActivityIndicator size="large" color="#dc2626" />
+          : <BookStackLoader size="sm" />
+        }
         <Text style={{
           fontSize: 16, fontWeight: '700', marginTop: 12,
           color: diag.stalled ? '#dc2626' : '#1c1917', letterSpacing: -0.3,

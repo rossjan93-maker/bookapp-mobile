@@ -1,13 +1,14 @@
 import React from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { useWalkthroughTarget } from '../../lib/walkthroughEngine';
+import { CoverThumb } from '../CoverThumb';
+import { DEMO_COVERS } from '../../lib/demoCoverUrls';
 
 export function WtDemoInbox() {
   const { ref, onLayout } = useWalkthroughTarget('inbox_content');
 
   return (
     <View style={{ flex: 1, backgroundColor: '#faf9f7', paddingHorizontal: 20, paddingTop: 24 }}>
-      {/* Inbox header — matches real notes.tsx header */}
       <View style={{ marginBottom: 24 }}>
         <Text style={{
           fontSize: 28, fontWeight: '800', color: '#1c1917',
@@ -20,7 +21,6 @@ export function WtDemoInbox() {
         </Text>
       </View>
 
-      {/* "New" section label */}
       <Text style={{
         fontSize: 11, fontWeight: '700', color: '#a8a29e',
         letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10,
@@ -51,7 +51,6 @@ export function WtDemoInbox() {
           opacity: 0,
         }}
       >
-        {/* From label */}
         <Text style={{
           fontSize: 10, fontWeight: '700', color: '#b8860b',
           letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10,
@@ -59,11 +58,13 @@ export function WtDemoInbox() {
           From Alex
         </Text>
 
-        {/* Cover + book info */}
         <View style={{ flexDirection: 'row', marginBottom: 12 }}>
-          <View style={{
-            width: 48, height: 70, borderRadius: 6, backgroundColor: '#ddd5c8',
-          }} />
+          <CoverThumb
+            url={DEMO_COVERS.songOfAchilles}
+            title="The Song of Achilles"
+            width={48}
+            height={70}
+          />
           <View style={{ flex: 1, marginLeft: 14 }}>
             <Text style={{
               fontWeight: '700', fontSize: 16, color: '#1c1917',
@@ -77,7 +78,6 @@ export function WtDemoInbox() {
           </View>
         </View>
 
-        {/* Note — matches real note block style */}
         <View style={{
           backgroundColor: '#fffbf2',
           borderTopWidth: 1, borderTopColor: '#f0ede8',
@@ -91,7 +91,6 @@ export function WtDemoInbox() {
           </Text>
         </View>
 
-        {/* Action button — matches real save button */}
         <TouchableOpacity
           activeOpacity={0.8}
           style={{

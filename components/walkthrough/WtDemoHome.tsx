@@ -1,6 +1,8 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 import { useWalkthroughTarget } from '../../lib/walkthroughEngine';
+import { CoverThumb } from '../CoverThumb';
+import { DEMO_COVERS } from '../../lib/demoCoverUrls';
 
 function SectionLabel({ children }: { children: string }) {
   return (
@@ -18,7 +20,6 @@ export function WtDemoHome({ greeting }: { greeting: string | null }) {
 
   return (
     <>
-      {/* Hero heading — matches the real home screen */}
       <View style={{ marginBottom: 28 }}>
         <Text style={{
           fontSize: 34, fontWeight: '800', color: '#1c1917',
@@ -31,7 +32,6 @@ export function WtDemoHome({ greeting }: { greeting: string | null }) {
         </Text>
       </View>
 
-      {/* Continue Reading demo card */}
       <View style={{ marginBottom: 32 }}>
         <SectionLabel>Continue Reading</SectionLabel>
 
@@ -55,11 +55,12 @@ export function WtDemoHome({ greeting }: { greeting: string | null }) {
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 }}>
-            {/* Cover placeholder */}
-            <View style={{
-              width: 44, height: 64, borderRadius: 6,
-              backgroundColor: '#ddd5c8',
-            }} />
+            <CoverThumb
+              url={DEMO_COVERS.thursdayMurderClub}
+              title="The Thursday Murder Club"
+              width={44}
+              height={64}
+            />
             <View style={{ flex: 1, marginLeft: 10 }}>
               <Text style={{
                 fontSize: 14, fontWeight: '700', color: '#1c1917',
@@ -73,7 +74,6 @@ export function WtDemoHome({ greeting }: { greeting: string | null }) {
             </View>
           </View>
 
-          {/* Progress bar */}
           <View style={{
             height: 3, backgroundColor: '#e7e5e4',
             borderRadius: 2, overflow: 'hidden', marginBottom: 4,

@@ -3,10 +3,10 @@
 // Full-screen light composition matching the app's real palette.
 // Job: welcome, set tone, invite the user into the live app tour.
 //
-// Animation approach: book spine cards spring in with individual start delays.
-// Text + CTA fade in after a fixed 600ms setTimeout — NOT chained to spring
+// Animation approach: BookStackLoader builds 5 books upward, then breathes.
+// Text + CTA fade in after a fixed 600ms setTimeout — NOT chained to stack
 // completion.  This guarantees the CTA is always visible/touchable within ~1s
-// regardless of spring behaviour on web.
+// regardless of animation behaviour.
 //
 // Handoff: completeOnboarding() updates needsOnboarding in _layout.tsx BEFORE
 // router.replace('/'), preventing the routing guard from looping back here.
@@ -15,7 +15,6 @@
 import React, { useEffect, useRef } from 'react';
 import {
   Animated,
-  Easing,
   Platform,
   SafeAreaView,
   StatusBar,
@@ -36,6 +35,7 @@ import {
   welcomeEvt_handoffStarted,
 } from '../lib/onboardingAnalytics';
 import { useOnboardingBridge } from './_layout';
+import { BookStackLoader } from '../components/BookStackLoader';
 
 // ─── Palette — matches app-wide tokens ────────────────────────────────────────
 
@@ -44,93 +44,13 @@ const INK   = '#1c1917';   // near-black ink
 const SUB   = '#78716c';   // warm gray subtext
 const GREEN = '#15803d';   // forest green accent
 
-// ─── Book spine configurations ────────────────────────────────────────────────
-// Displayed as stacked vertical spines — visible on the light background.
-
-type SpineConfig = {
-  w: number; h: number;
-  color: string;
-  rotate: string;
-  offsetX: number; offsetY: number;
-  startDelay: number;
-};
-
-const SPINES: SpineConfig[] = [
-  { w: 54, h: 148, color: '#d6d0c8', rotate: '-7deg', offsetX: -56, offsetY: 10,  startDelay: 100 },
-  { w: 48, h: 162, color: '#b5c4b1', rotate:  '3deg', offsetX: -10, offsetY:  0,  startDelay:  50 },
-  { w: 58, h: 172, color: GREEN,     rotate: '-2deg', offsetX:  46, offsetY:  4,  startDelay:   0 },
-  { w: 44, h: 138, color: '#c9bdb0', rotate:  '8deg', offsetX:  98, offsetY: 14,  startDelay:  70 },
-];
-
-// ─── Animated book spine ──────────────────────────────────────────────────────
-
-function BookSpine({
-  cfg,
-  anim,
-  floatAnim,
-}: {
-  cfg: SpineConfig;
-  anim: Animated.Value;
-  floatAnim: Animated.Value;
-}) {
-  const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [48, 0] });
-  const scale      = anim.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] });
-
-  return (
-    <Animated.View
-      style={{
-        position:        'absolute',
-        width:           cfg.w,
-        height:          cfg.h,
-        borderRadius:    6,
-        backgroundColor: cfg.color,
-        transform: [
-          { translateX: cfg.offsetX },
-          { translateY: cfg.offsetY },
-          { rotate: cfg.rotate },
-          { translateY },
-          { translateY: floatAnim },
-          { scale },
-        ],
-        opacity: anim,
-        shadowColor:     '#1c1917',
-        shadowOpacity:   0.12,
-        shadowRadius:    12,
-        shadowOffset:    { width: 0, height: 6 },
-        elevation:       8,
-      }}
-    >
-      {/* Subtle spine detail lines */}
-      <View style={{ position: 'absolute', top: 16, left: 10, right: 10 }}>
-        {[0, 1, 2].map(i => (
-          <View
-            key={i}
-            style={{
-              height:          1.5,
-              borderRadius:    1,
-              backgroundColor: cfg.color === GREEN ? 'rgba(255,255,255,0.18)' : 'rgba(28,25,23,0.1)',
-              marginBottom:    8,
-              width:           i === 0 ? '80%' : i === 1 ? '55%' : '70%',
-            }}
-          />
-        ))}
-      </View>
-    </Animated.View>
-  );
-}
-
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function OnboardingScreen() {
   const router             = useRouter();
   const { completeOnboarding } = useOnboardingBridge();
-  // Dynamic height so layout adapts when the mobile browser address bar
-  // shows/hides (changing the viewport height) rather than using the stale
-  // module-level Dimensions.get('window') snapshot.
   const { height: SH } = useWindowDimensions();
 
-  const spineAnims = useRef(SPINES.map(() => new Animated.Value(0))).current;
-  const floatAnims = useRef(SPINES.map(() => new Animated.Value(0))).current;
   const textFade   = useRef(new Animated.Value(0)).current;
   const ctaFade    = useRef(new Animated.Value(0)).current;
   const ctaOffsetY = useRef(new Animated.Value(18)).current;
@@ -138,47 +58,7 @@ export default function OnboardingScreen() {
   useEffect(() => {
     welcomeEvt_started();
 
-    // ── Spine springs: fire-and-forget with individual delays ─────────────────
-    SPINES.forEach((cfg, i) => {
-      setTimeout(() => {
-        Animated.spring(spineAnims[i], {
-          toValue:         1,
-          useNativeDriver: false,
-          tension:         60,
-          friction:        10,
-        }).start();
-      }, cfg.startDelay);
-    });
-
-    // ── Gentle float: starts after entry springs, each spine offset in phase ──
-    // Each spine bobs independently with a slightly different period so the
-    // group breathes organically rather than moving in lockstep.
-    SPINES.forEach((_, i) => {
-      const amplitude  = 3.5 + i * 0.5;          // 3.5–5 px range
-      const halfPeriod = 1800 + i * 220;          // 1.8–2.5 s per half-cycle
-      const startDelay = 820 + i * 260;           // staggered start after springs
-
-      setTimeout(() => {
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(floatAnims[i], {
-              toValue:         -amplitude,
-              duration:        halfPeriod,
-              easing:          Easing.inOut(Easing.sin),
-              useNativeDriver: false,
-            }),
-            Animated.timing(floatAnims[i], {
-              toValue:         amplitude,
-              duration:        halfPeriod,
-              easing:          Easing.inOut(Easing.sin),
-              useNativeDriver: false,
-            }),
-          ])
-        ).start();
-      }, startDelay);
-    });
-
-    // ── Text + CTA: fixed delay — always visible within ~1s of mount ──────────
+    // Text + CTA: fixed delay — always visible within ~1s of mount
     const t = setTimeout(() => {
       Animated.parallel([
         Animated.timing(textFade,   { toValue: 1, duration: 380, useNativeDriver: false }),
@@ -190,7 +70,7 @@ export default function OnboardingScreen() {
     return () => clearTimeout(t);
   }, []);
 
-  // ── Hard fail-safe: navigate after 12s even if nothing else fired ──────────
+  // Hard fail-safe: navigate after 12s even if nothing else fired
   useEffect(() => {
     const t = setTimeout(() => finish('failsafe'), 12000);
     return () => clearTimeout(t);
@@ -206,8 +86,6 @@ export default function OnboardingScreen() {
 
     // ② Await both stage writes before navigating so _layout.tsx always
     //    reads 'walkthrough' on first mount, never null.
-    //    On web AsyncStorage uses localStorage (synchronous), so these
-    //    resolve in the same microtask and add no perceptible delay.
     await Promise.all([
       writeOnboardingStage('walkthrough'),
       writeWtStep('home'),
@@ -230,8 +108,7 @@ export default function OnboardingScreen() {
     Promise.allSettled([writeGuidedStep(0)]);
   }
 
-  const spineAreaH = Math.min(SH * 0.30, 220);
-  const topPad     = Platform.OS === 'android' ? 20 : 0;
+  const topPad = Platform.OS === 'android' ? 20 : 0;
 
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
@@ -259,20 +136,9 @@ export default function OnboardingScreen() {
             paddingBottom:  SH * 0.06,
           }}
         >
-          {/* Book spine stack */}
-          <View
-            style={{
-              width:          240,
-              height:         spineAreaH,
-              alignItems:     'center',
-              justifyContent: 'center',
-              marginBottom:   SH * 0.05,
-            }}
-          >
-            {[...SPINES].reverse().map((cfg, ri) => {
-              const i = SPINES.length - 1 - ri;
-              return <BookSpine key={i} cfg={cfg} anim={spineAnims[i]} floatAnim={floatAnims[i]} />;
-            })}
+          {/* Book stack — builds upward then breathes */}
+          <View style={{ marginBottom: SH * 0.05 }}>
+            <BookStackLoader size="lg" />
           </View>
 
           {/* Wordmark */}
@@ -308,7 +174,7 @@ export default function OnboardingScreen() {
               }}
             />
 
-            {/* Editorial tagline — single line, confident */}
+            {/* Editorial tagline */}
             <Text
               style={{
                 fontSize:      17,

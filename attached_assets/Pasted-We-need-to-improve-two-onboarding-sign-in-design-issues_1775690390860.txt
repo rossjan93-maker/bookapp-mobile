@@ -1,0 +1,69 @@
+We need to improve two onboarding / sign-in design issues.
+
+==================================================
+PRIORITY 1 — DEMO BOOK COVERS MUST ALWAYS APPEAR
+==================================================
+
+Problem:
+The onboarding/demo experience keeps showing the same demo books across screens, but the cover artwork is missing or unreliable. That makes the app feel unfinished.
+
+What I want:
+1. Audit all onboarding / guided tour / demo fixture book data
+2. Identify every place the same demo books are reused
+3. Make those demo books deterministic and stable
+4. For all demo/onboarding states, use guaranteed cover artwork
+5. Prefer bundled local cover assets for demo books instead of relying on live remote fetches
+
+Requirements:
+- same demo books should always show the same covers
+- no blank placeholders for seeded demo books
+- this should apply across onboarding, recommendations demo, library demo, inbox demo, and any guided walkthrough fixtures
+
+==================================================
+PRIORITY 2 — REPLACE THE CURRENT BOOK/LOGO LOADER
+==================================================
+
+I do not like the current first-step onboarding book/logo treatment.
+
+I want a new branded app-wide loading component:
+a stack of 5 books building upward from one bottom book to five total books.
+
+Animation direction:
+- books appear/build upward one by one
+- elegant, premium, minimal
+- slight offset/tilt is okay
+- subtle motion, not cartoonish
+- feels like building a reading stack / reading life
+- should loop smoothly
+
+Design direction:
+- clean, editorial, premium
+- simple rounded book shapes
+- mostly neutral palette with one green accent
+- scalable and reusable
+
+Implementation requirements:
+1. Build this as a reusable component, not a static image
+2. Name it something like BookStackLoader
+3. Use SVG or React Native view-based shapes with animation
+4. Support small and large variants
+5. Use it in:
+   - onboarding welcome screen
+   - sign-in / sign-up loading overlay
+   - auth callback loading screen
+   - other user-facing loading states where appropriate
+
+==================================================
+DELIVERABLES
+==================================================
+
+Before coding, tell me:
+1. where the current demo fixture book data lives
+2. where the current onboarding logo/loader lives
+3. what files will change
+4. how you will guarantee demo cover reliability
+5. how you will implement the new loader
+
+Then implement both:
+- deterministic demo covers
+- reusable 5-book stack loader
