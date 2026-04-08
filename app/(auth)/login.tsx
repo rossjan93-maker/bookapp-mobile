@@ -1083,6 +1083,11 @@ export default function LoginScreen() {
           <Text style={{ fontSize: 13, color: '#78716c', textAlign: 'center' }}>← Back to sign in</Text>
         </TouchableOpacity>
       )}
+      {/* DEBUG MARKER — remove after confirming EAS update delivery */}
+      <Text style={{ fontSize: 10, color: '#d6d3d1', textAlign: 'center', marginTop: 24, letterSpacing: 0.2 }}>
+        DEBUG: auth-callback-diag-v1
+      </Text>
+
     </ScrollView>
     </KeyboardAvoidingView>
   );

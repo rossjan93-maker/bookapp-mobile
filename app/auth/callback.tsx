@@ -427,6 +427,10 @@ export default function AuthCallbackScreen() {
       }}>
         Signing you in…
       </Text>
+      {/* DEBUG MARKER — remove after confirming EAS update delivery */}
+      <Text style={{ fontSize: 10, color: '#d6d3d1', letterSpacing: 0.2, marginTop: 8 }}>
+        DEBUG: auth-callback-diag-v1
+      </Text>
     </View>
   );
 }
