@@ -36,13 +36,13 @@
     "beta": {
       "ios": {
         "appleTeamId": "8537D6P5Y3",
-        "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID"
+        "ascAppId": "6761791142"
       }
     },
     "production": {
       "ios": {
         "appleTeamId": "8537D6P5Y3",
-        "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID"
+        "ascAppId": "6761791142"
       }
     }
   }
