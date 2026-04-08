@@ -17,7 +17,10 @@ export const DEMO_COVERS = {
   thursdayMurderClub:  'https://covers.openlibrary.org/b/isbn/9781984880963-M.jpg',
   midnightLibrary:     'https://covers.openlibrary.org/b/isbn/9780525559474-M.jpg',
   projectHailMary:     'https://covers.openlibrary.org/b/isbn/9780593135204-M.jpg',
-  songOfAchilles:      'https://covers.openlibrary.org/b/isbn/9781408816073-M.jpg',
+  // Normal People replaces Song of Achilles — Faber/Faber UK paperback has
+  // confirmed cover art on Open Library; far more reliably cached than the
+  // Bloomsbury UK Song of Achilles edition which returned blank on some CDN nodes.
+  normalPeople:        'https://covers.openlibrary.org/b/isbn/9780571334650-M.jpg',
   atomicHabits:        'https://covers.openlibrary.org/b/isbn/9780735211292-M.jpg',
 } as const;
 

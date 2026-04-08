@@ -303,12 +303,12 @@ function InboxFocalCard({ rect }: { rect: TargetRect }) {
         From Alex
       </Text>
       <View style={{ flexDirection: 'row', marginBottom: 12 }}>
-        <CoverThumb url={DEMO_COVERS.songOfAchilles} title="The Song of Achilles" width={48} height={70} />
+        <CoverThumb url={DEMO_COVERS.normalPeople} title="Normal People" width={48} height={70} />
         <View style={{ flex: 1, marginLeft: 14 }}>
           <Text style={{ fontWeight: '700', fontSize: 16, color: '#1c1917', lineHeight: 22, marginBottom: 3 }}>
-            The Song of Achilles
+            Normal People
           </Text>
-          <Text style={{ color: '#78716c', fontSize: 13 }}>Madeline Miller</Text>
+          <Text style={{ color: '#78716c', fontSize: 13 }}>Sally Rooney</Text>
         </View>
       </View>
       <View style={{ backgroundColor: '#fffbf2', borderTopWidth: 1, borderTopColor: '#f0ede8', paddingTop: 10, paddingHorizontal: 10, paddingBottom: 8, borderRadius: 6, marginBottom: 14 }}>
@@ -486,7 +486,7 @@ function CoachCard({
   //
   // SAFE_BOT accounts for the tab bar AND the device/browser bottom inset.
   // SAFE_TOP accounts for the status bar / notch so the card never slides behind it.
-  const GAP       = 6;
+  const GAP       = 2;
   const SIDE      = 20;
   const SAFE_BOT  = TAB_BAR_H + Math.max(insets.bottom, 8);
   const SAFE_TOP  = Math.max(insets.top, 8);
@@ -534,9 +534,10 @@ function CoachCard({
   }
 
   // Arrow horizontal position — aim at the card center, clamped inside coach bounds.
+  // Offset by half the arrow base (12px = half of 24px) to center the triangle.
   const arrowLeft = cardRect
-    ? Math.max(20, Math.min(CARD_W - 40, (cardRect.x + cardRect.width / 2) - SIDE - 10))
-    : CARD_W / 2 - 10;
+    ? Math.max(16, Math.min(CARD_W - 44, (cardRect.x + cardRect.width / 2) - SIDE - 12))
+    : CARD_W / 2 - 12;
 
   return (
     <Animated.View
@@ -558,43 +559,75 @@ function CoachCard({
       }}
     >
       {/* Arrow connecting coach card to the focal card.
-          Hidden when using the bottom-anchor fallback (showArrow=false),
-          because there is no clear direction to point toward. */}
+          Uses a double-triangle (border + fill) technique so the arrow
+          visually extends the coach card's own border — making the connection
+          look structural rather than decorative.
+          Hidden when using the bottom-anchor fallback (showArrow=false). */}
+
       {showArrow && arrowAbove && (
-        // Coach is BELOW the card — upward triangle at top
-        <View
-          style={{
-            position:           'absolute',
-            top:               -10,
-            left:               arrowLeft,
-            width:              0,
-            height:             0,
-            borderLeftWidth:    10,
-            borderRightWidth:   10,
-            borderBottomWidth:  10,
-            borderLeftColor:   'transparent',
-            borderRightColor:  'transparent',
-            borderBottomColor: '#faf9f7',
-          }}
-        />
+        // Coach is BELOW the focal card — upward-pointing triangle at top.
+        // Border triangle sits 2px further out in the card's border color;
+        // fill triangle sits on top in the card background color.
+        <>
+          {/* Border layer */}
+          <View
+            style={{
+              position:          'absolute',
+              top:               -18,
+              left:              arrowLeft - 1,
+              width:             0, height: 0,
+              borderLeftWidth:   13, borderRightWidth:  13,
+              borderBottomWidth: 16,
+              borderLeftColor:  'transparent', borderRightColor: 'transparent',
+              borderBottomColor: 'rgba(0,0,0,0.09)',
+            }}
+          />
+          {/* Fill layer */}
+          <View
+            style={{
+              position:          'absolute',
+              top:               -16,
+              left:              arrowLeft,
+              width:             0, height: 0,
+              borderLeftWidth:   12, borderRightWidth:  12,
+              borderBottomWidth: 14,
+              borderLeftColor:  'transparent', borderRightColor: 'transparent',
+              borderBottomColor: '#faf9f7',
+            }}
+          />
+        </>
       )}
+
       {showArrow && !arrowAbove && (
-        // Coach is ABOVE the card — downward triangle at bottom
-        <View
-          style={{
-            position:        'absolute',
-            bottom:         -10,
-            left:            arrowLeft,
-            width:           0,
-            height:          0,
-            borderLeftWidth:   10,
-            borderRightWidth:  10,
-            borderTopWidth:    10,
-            borderLeftColor:  'transparent',
-            borderRightColor: 'transparent',
-            borderTopColor:   '#faf9f7',
-          }}
-        />
+        // Coach is ABOVE the focal card — downward-pointing triangle at bottom.
+        <>
+          {/* Border layer */}
+          <View
+            style={{
+              position:       'absolute',
+              bottom:         -18,
+              left:           arrowLeft - 1,
+              width:          0, height: 0,
+              borderLeftWidth:  13, borderRightWidth:  13,
+              borderTopWidth:   16,
+              borderLeftColor: 'transparent', borderRightColor: 'transparent',
+              borderTopColor:  'rgba(0,0,0,0.09)',
+            }}
+          />
+          {/* Fill layer */}
+          <View
+            style={{
+              position:       'absolute',
+              bottom:         -16,
+              left:           arrowLeft,
+              width:          0, height: 0,
+              borderLeftWidth:  12, borderRightWidth:  12,
+              borderTopWidth:   14,
+              borderLeftColor: 'transparent', borderRightColor: 'transparent',
+              borderTopColor:  '#faf9f7',
+            }}
+          />
+        </>
       )}
 
       {/* Step progress dots + skip */}

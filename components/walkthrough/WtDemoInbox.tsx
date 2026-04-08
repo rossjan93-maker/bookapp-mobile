@@ -60,8 +60,8 @@ export function WtDemoInbox() {
 
         <View style={{ flexDirection: 'row', marginBottom: 12 }}>
           <CoverThumb
-            url={DEMO_COVERS.songOfAchilles}
-            title="The Song of Achilles"
+            url={DEMO_COVERS.normalPeople}
+            title="Normal People"
             width={48}
             height={70}
           />
@@ -70,10 +70,10 @@ export function WtDemoInbox() {
               fontWeight: '700', fontSize: 16, color: '#1c1917',
               lineHeight: 22, marginBottom: 3,
             }}>
-              The Song of Achilles
+              Normal People
             </Text>
             <Text style={{ color: '#78716c', fontSize: 13 }}>
-              Madeline Miller
+              Sally Rooney
             </Text>
           </View>
         </View>

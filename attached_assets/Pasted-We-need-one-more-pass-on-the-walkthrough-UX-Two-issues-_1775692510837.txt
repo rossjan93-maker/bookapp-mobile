@@ -1,0 +1,59 @@
+We need one more pass on the walkthrough UX.
+
+Two issues remain:
+
+==================================================
+1. COACHMARK / INFO BOX POINTER STILL FEELS TOO DETACHED
+==================================================
+
+The onboarding information box still has too much gap between itself and the element it is describing.
+
+I want the info box to feel clearly connected to the example book with stronger UX.
+
+What I want:
+- the pointer/arrow should visually emerge from the card
+- the card should feel anchored to the referenced example book
+- reduce the feeling of dead air between the card and the target
+- if needed, slightly adjust both:
+  - the GAP value
+  - arrow geometry / position
+  - card placement relative to the focal card
+
+Do not just reduce spacing blindly.
+I want the result to feel intentional and strongly connected to the referenced element.
+
+Please review:
+- the focal card position
+- coach card position
+- arrow size / offset / overlap
+- whether the arrow tip should slightly overlap the referenced card
+
+The goal:
+the user should instantly understand “this box is talking about this exact book/card.”
+
+==================================================
+2. INBOX DEMO COVER SHOULD BE CHANGED
+==================================================
+
+The demo cover for "The Song of Achilles" in the Inbox example is still not reliably loading.
+
+I want that demo book replaced with a more reliably available, more mainstream/popular title that is very likely to have stable Open Library cover art.
+
+Requirements:
+- choose a book with very strong cover availability
+- update the shared demo constants and any related walkthrough/demo references
+- make sure the replacement still fits the emotional / recommendation tone of the Inbox example
+
+If needed, pick something safer and more universally available than Song of Achilles.
+
+==================================================
+BEFORE CODING
+==================================================
+
+Tell me:
+1. what exact coachmark spacing/arrow values are currently causing the remaining disconnect
+2. what you plan to change to make the coach card feel properly anchored
+3. which book you will replace Song of Achilles with
+4. why that replacement is more reliable for cover availability
+
+Then implement.
