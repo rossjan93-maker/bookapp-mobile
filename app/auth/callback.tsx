@@ -1,62 +1,133 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useBootstrap } from '../_layout';
 
+// ─── Diagnostic state ─────────────────────────────────────────────────────────
+// Each field tracks one stage of the sign-in bootstrap.
+// Values: 'pending' = not yet known | 'ok' = confirmed good |
+//         'fail' = confirmed bad    | 'unknown' = skipped / n/a
+
+type StepStatus = 'pending' | 'ok' | 'fail' | 'unknown';
+
+type DiagState = {
+  codeExchange:  StepStatus;
+  sessionLive:   StepStatus;
+  profileExists: StepStatus;
+  onboarding:    'pending' | 'true' | 'false';
+  lastError:     string | null;
+};
+
+const DIAG_INIT: DiagState = {
+  codeExchange:  'pending',
+  sessionLive:   'pending',
+  profileExists: 'pending',
+  onboarding:    'pending',
+  lastError:     null,
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function rowColor(value: string): string {
+  if (value === 'ok' || value === 'true')    return '#16a34a';
+  if (value === 'fail' || value === 'false') return '#dc2626';
+  if (value === 'pending')                   return '#a8a29e';
+  if (value === 'unknown')                   return '#d97706';
+  return '#1c1917';
+}
+
+function DiagRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={{
+      flexDirection:   'row',
+      justifyContent:  'space-between',
+      paddingVertical: 7,
+      borderBottomWidth: 1,
+      borderBottomColor: '#f5f5f4',
+    }}>
+      <Text style={{ fontSize: 12, color: '#78716c', fontFamily: 'monospace' }}>
+        {label}
+      </Text>
+      <Text style={{ fontSize: 12, fontWeight: '700', color: rowColor(value), fontFamily: 'monospace' }}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
+
 /**
  * AuthCallbackScreen
  *
- * Matches the deep link path:  readstack://auth/callback
- *
- * Responsibilities:
- *   1. Show a loading state so the user sees intentional UI, not a flash.
- *   2. Exchange the PKCE code for a Supabase session.
- *   3. ACTIVELY wait for the root layout's bootstrap to fully resolve
- *      (session + needsOnboarding both defined) via BootstrapContext.
- *   4. Navigate explicitly once the app is ready — does not rely solely
- *      on the routing guard to eventually notice the state change.
- *   5. Show an error state with a back-to-sign-in button on failure.
- *   6. Time out after 15 s if bootstrap never resolves — never hang forever.
- *
- * This two-phase approach (exchange → wait for context → navigate) is
- * what closes the warm-start hydration gap: the app is only navigated
- * away from this screen once it is provably ready.
+ * Phase 1 — exchange the PKCE code for a session.
+ * Phase 2 — wait for root layout bootstrap (session + needsOnboarding).
+ * Diagnostic — if bootstrap stalls beyond 10 s, surface every tracked state
+ *              visibly on-device so the exact blocker can be identified
+ *              without relying on shell logs.
  */
 export default function AuthCallbackScreen() {
   const { code } = useLocalSearchParams<{ code?: string }>();
   const router   = useRouter();
 
-  const [error,     setError]    = useState<string | null>(null);
+  const [diag,     setDiag]     = useState<DiagState>(DIAG_INIT);
+  const [showDiag, setShowDiag] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [exchanged, setExchanged] = useState(false);
 
-  // Track whether we've already navigated away to prevent double-navigation.
+  // userId captured after exchange succeeds — used for the profile check
+  const exchangedUserIdRef = useRef<string | null>(null);
+  // guard against double-navigation
   const navigatedRef = useRef(false);
 
   // BootstrapContext: live session + needsOnboarding from root layout.
-  // These transition: undefined → undefined → resolved value, signalling
-  // that the root layout has finished its profile/onboarding DB queries.
   const { session, needsOnboarding } = useBootstrap();
 
-  // Refs that mirror the latest bootstrap state so the timeout callback
-  // always reads current values without being in its dependency array.
-  const sessionRef     = useRef(session);
-  const onboardingRef  = useRef(needsOnboarding);
+  // Refs so timeout callback always sees latest bootstrap state.
+  const sessionRef    = useRef(session);
+  const onboardingRef = useRef(needsOnboarding);
   useEffect(() => { sessionRef.current    = session;         }, [session]);
   useEffect(() => { onboardingRef.current = needsOnboarding; }, [needsOnboarding]);
 
-  // ── Phase 1: Exchange PKCE code ────────────────────────────────────────────
+  // Mirror BootstrapContext into diag whenever it changes.
+  useEffect(() => {
+    setDiag(d => ({
+      ...d,
+      sessionLive: session === undefined ? 'pending' : session ? 'ok' : 'fail',
+      onboarding:  needsOnboarding === undefined
+        ? 'pending'
+        : (String(needsOnboarding) as 'true' | 'false'),
+    }));
+  }, [session, needsOnboarding]);
+
+  // ── Phase 1: Exchange PKCE code ─────────────────────────────────────────────
   useEffect(() => {
     console.log('[WARM_BOOT] callback route mounted');
 
     if (!supabase) {
-      setError('Client not configured.');
+      console.warn('[WARM_BOOT] supabase client not configured');
+      setDiag(d => ({
+        ...d,
+        codeExchange:  'fail',
+        sessionLive:   'unknown',
+        profileExists: 'unknown',
+        lastError: 'Supabase client not configured',
+      }));
+      setShowDiag(true);
       return;
     }
 
     if (!code) {
-      console.warn('[WARM_BOOT] no code param in URL — link may be malformed or already used');
-      setError('This link has already been used or is invalid.');
+      console.warn('[WARM_BOOT] no code param — link may be expired or already used');
+      setDiag(d => ({
+        ...d,
+        codeExchange:  'fail',
+        sessionLive:   'unknown',
+        profileExists: 'unknown',
+        lastError: 'No code param — link may be expired or already used',
+      }));
+      setShowDiag(true);
       return;
     }
 
@@ -64,24 +135,31 @@ export default function AuthCallbackScreen() {
     supabase.auth.exchangeCodeForSession(code).then(({ data, error: err }) => {
       if (err) {
         console.warn('[WARM_BOOT] exchangeCodeForSession failed:', err.message);
-        setError('The link may have expired. Please try signing in again.');
+        setDiag(d => ({
+          ...d,
+          codeExchange:  'fail',
+          sessionLive:   'unknown',
+          profileExists: 'unknown',
+          lastError: err.message,
+        }));
+        setShowDiag(true);
         return;
       }
-      console.log('[WARM_BOOT] exchangeCodeForSession success — userId=', data.session?.user.id.slice(0, 8) ?? 'none');
-      // Marks Phase 2 to begin: watch BootstrapContext until app is ready.
+      const userId = data.session?.user?.id ?? null;
+      console.log('[WARM_BOOT] exchangeCodeForSession success — userId=', userId?.slice(0, 8) ?? 'none');
+      exchangedUserIdRef.current = userId;
+      setDiag(d => ({ ...d, codeExchange: 'ok' }));
       setExchanged(true);
     });
   }, [code]);
 
-  // ── Phase 2a: 15-second escape hatch ──────────────────────────────────────
-  // If bootstrap never resolves (e.g. DB call threw, SIGNED_IN never fired,
-  // or session exchange succeeded but the auth listener silently failed),
-  // the callback screen must NOT hang forever. After 15 s we show an
-  // actionable error and log exactly what state was blocking progress.
+  // ── Phase 2a: 10-second diagnostic timeout ──────────────────────────────────
+  // If bootstrap still hasn't resolved after exchange succeeded, reveal the
+  // diagnostic surface so the exact blocking state is visible on-device.
   useEffect(() => {
     if (!exchanged) return;
 
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       if (navigatedRef.current) return;
 
       const s = sessionRef.current;
@@ -92,33 +170,49 @@ export default function AuthCallbackScreen() {
       console.warn(
         '[WARM_BOOT] callback stalled because session=', sessionStatus,
         'needsOnboarding=', onboardingStatus,
-        '(15 s timeout — bootstrap never resolved)',
+        '(10 s timeout — bootstrap never resolved)',
       );
 
-      setError('Sign-in is taking too long. Please try again.');
-    }, 15000);
+      // Direct profile check — independent of the bootstrap listener path.
+      let profileStatus: StepStatus = 'unknown';
+      const userId = exchangedUserIdRef.current ?? s?.user?.id ?? null;
+      if (userId && supabase) {
+        try {
+          const { data: prof, error: pErr } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('id', userId)
+            .maybeSingle();
+          profileStatus = pErr ? 'fail' : prof ? 'ok' : 'fail';
+          console.log('[WARM_BOOT] timeout profile check — exists=', !!prof, 'error=', pErr?.message ?? null);
+        } catch (e) {
+          profileStatus = 'fail';
+          console.warn('[WARM_BOOT] timeout profile check threw:', e);
+        }
+      }
+
+      setDiag(d => ({
+        ...d,
+        profileExists: profileStatus,
+        lastError: d.lastError ?? 'Bootstrap timed out after 10 s',
+      }));
+      setShowDiag(true);
+    }, 10000);
 
     return () => clearTimeout(timer);
   }, [exchanged]);
 
-  // ── Phase 2b: Wait for bootstrap, then navigate ────────────────────────────
-  // This effect re-runs every time session or needsOnboarding changes.
-  // It only acts once exchange has succeeded AND bootstrap has fully resolved.
+  // ── Phase 2b: Watch bootstrap, navigate when ready ──────────────────────────
   useEffect(() => {
     if (!exchanged) return;
     if (navigatedRef.current) return;
 
-    // Log every evaluation so we can trace the progression in Metro.
     const sessionStatus    = session === undefined ? 'pending' : session ? 'active' : 'null';
     const onboardingStatus = needsOnboarding === undefined ? 'pending' : String(needsOnboarding);
     console.log('[WARM_BOOT] callback waiting on — session=', sessionStatus, 'needsOnboarding=', onboardingStatus);
 
-    // Both states must be defined before we can make a routing decision.
     if (session === undefined || needsOnboarding === undefined) return;
 
-    // Guard: if bootstrap resolved but session is null, something went wrong.
-    // The exchange reported success but Supabase didn't surface the session —
-    // send user back to login rather than showing a blank screen.
     if (!session) {
       console.warn('[WARM_BOOT] exchange succeeded but session is null after bootstrap — routing to login');
       navigatedRef.current = true;
@@ -126,7 +220,6 @@ export default function AuthCallbackScreen() {
       return;
     }
 
-    // App is ready. Navigate explicitly based on the resolved onboarding state.
     navigatedRef.current = true;
     if (needsOnboarding) {
       console.log('[WARM_BOOT] routing to onboarding');
@@ -137,67 +230,199 @@ export default function AuthCallbackScreen() {
     }
   }, [exchanged, session, needsOnboarding]);
 
-  // ── Error state ────────────────────────────────────────────────────────────
-  if (error) {
+  // ── Retry: direct session re-check, bypass bootstrap wait ──────────────────
+  async function handleRetry() {
+    if (!supabase) return;
+    setRetrying(true);
+    console.log('[WARM_BOOT] retry — calling getSession()');
+    try {
+      const { data } = await supabase.auth.getSession();
+      const s = data.session;
+      console.log('[WARM_BOOT] retry getSession —', s ? 'present userId=' + s.user.id.slice(0, 8) : 'null');
+
+      if (!s) {
+        setDiag(d => ({ ...d, sessionLive: 'fail', lastError: 'Retry: getSession returned null' }));
+        setRetrying(false);
+        return;
+      }
+
+      const { data: prof, error: pErr } = await supabase
+        .from('profiles')
+        .select('id, onboarding_completed')
+        .eq('id', s.user.id)
+        .maybeSingle();
+      console.log('[WARM_BOOT] retry profile — exists=', !!prof, 'onboarding_completed=', prof?.onboarding_completed ?? null);
+
+      const profileOk     = !pErr && !!prof;
+      const onboardingDone = prof?.onboarding_completed === true;
+
+      setDiag(d => ({
+        ...d,
+        sessionLive:   'ok',
+        profileExists: pErr ? 'fail' : profileOk ? 'ok' : 'fail',
+        onboarding:    onboardingDone ? 'false' : 'true',
+        lastError:     pErr ? pErr.message : null,
+      }));
+
+      if (navigatedRef.current) { setRetrying(false); return; }
+      navigatedRef.current = true;
+
+      if (onboardingDone) {
+        console.log('[WARM_BOOT] retry routing to tabs');
+        router.replace('/');
+      } else {
+        console.log('[WARM_BOOT] retry routing to onboarding');
+        router.replace('/onboarding');
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn('[WARM_BOOT] retry threw:', msg);
+      setDiag(d => ({ ...d, lastError: 'Retry threw: ' + msg }));
+    }
+    setRetrying(false);
+  }
+
+  // ── Diagnostic surface ──────────────────────────────────────────────────────
+  if (showDiag) {
     return (
-      <View style={{
-        flex: 1,
-        backgroundColor: '#faf9f7',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 32,
-      }}>
+      <ScrollView
+        contentContainerStyle={{
+          flexGrow:         1,
+          backgroundColor:  '#faf9f7',
+          paddingHorizontal: 24,
+          paddingTop:        64,
+          paddingBottom:     48,
+        }}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Header */}
         <Text style={{
-          fontSize: 17,
-          fontWeight: '700',
-          color: '#1c1917',
-          marginBottom: 10,
-          textAlign: 'center',
+          fontSize:      18,
+          fontWeight:    '700',
+          color:         '#1c1917',
           letterSpacing: -0.3,
+          marginBottom:  4,
         }}>
-          Sign-in failed
+          Sign-in stalled
         </Text>
         <Text style={{
-          fontSize: 14,
-          color: '#78716c',
-          lineHeight: 21,
-          textAlign: 'center',
-          marginBottom: 32,
+          fontSize:     12,
+          color:        '#a8a29e',
+          lineHeight:   18,
+          marginBottom: 24,
         }}>
-          {error}
+          Bootstrap did not complete. Tap Retry to re-attempt.
         </Text>
+
+        {/* Diagnostic table */}
+        <View style={{
+          backgroundColor: '#fff',
+          borderRadius:    10,
+          paddingHorizontal: 14,
+          paddingTop:      4,
+          paddingBottom:   4,
+          marginBottom:    24,
+          borderWidth:     1,
+          borderColor:     '#e7e5e4',
+        }}>
+          <DiagRow label="codeExchange"    value={diag.codeExchange} />
+          <DiagRow label="session"         value={diag.sessionLive} />
+          <DiagRow label="profile"         value={diag.profileExists} />
+          <DiagRow label="needsOnboarding" value={diag.onboarding} />
+        </View>
+
+        {/* lastError */}
+        {diag.lastError ? (
+          <View style={{
+            backgroundColor: '#fff1f2',
+            borderRadius:    8,
+            padding:         12,
+            marginBottom:    24,
+            borderWidth:     1,
+            borderColor:     '#fecdd3',
+          }}>
+            <Text style={{ fontSize: 11, color: '#9f1239', fontWeight: '700', marginBottom: 3 }}>
+              lastError
+            </Text>
+            <Text style={{ fontSize: 11, color: '#be123c', fontFamily: 'monospace', lineHeight: 16 }}>
+              {diag.lastError}
+            </Text>
+          </View>
+        ) : null}
+
+        {/* Retry */}
+        <TouchableOpacity
+          onPress={handleRetry}
+          disabled={retrying}
+          style={{
+            backgroundColor: '#1c1917',
+            borderRadius:    10,
+            paddingVertical: 13,
+            alignItems:      'center',
+            marginBottom:    10,
+            opacity: retrying ? 0.55 : 1,
+          }}
+        >
+          {retrying
+            ? <ActivityIndicator color="#fff" size="small" />
+            : <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Retry</Text>
+          }
+        </TouchableOpacity>
+
+        {/* Back to sign in */}
         <TouchableOpacity
           onPress={() => router.replace('/login')}
           style={{
-            backgroundColor: '#1c1917',
-            borderRadius: 10,
+            borderWidth:     1.5,
+            borderColor:     '#d6d3d1',
+            borderRadius:    10,
             paddingVertical: 13,
-            paddingHorizontal: 32,
+            alignItems:      'center',
+            marginBottom:    10,
           }}
         >
-          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>
+          <Text style={{ color: '#57534e', fontSize: 14, fontWeight: '600' }}>
             Back to sign in
           </Text>
         </TouchableOpacity>
-      </View>
+
+        {/* Debug fallback */}
+        <TouchableOpacity
+          onPress={() => {
+            console.warn('[WARM_BOOT] debug-forced navigation to /onboarding');
+            navigatedRef.current = true;
+            router.replace('/onboarding');
+          }}
+          style={{
+            borderWidth:     1.5,
+            borderColor:     '#fcd34d',
+            borderRadius:    10,
+            paddingVertical: 13,
+            alignItems:      'center',
+          }}
+        >
+          <Text style={{ color: '#92400e', fontSize: 13, fontWeight: '600' }}>
+            [DEBUG] Continue to onboarding
+          </Text>
+        </TouchableOpacity>
+      </ScrollView>
     );
   }
 
-  // ── Loading state (default) ─────────────────────────────────────────────────
-  // Stays visible until Phase 2 confirms the app is ready and navigates.
+  // ── Loading state ───────────────────────────────────────────────────────────
   return (
     <View style={{
-      flex: 1,
+      flex:            1,
       backgroundColor: '#faf9f7',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 16,
+      alignItems:      'center',
+      justifyContent:  'center',
+      gap:             16,
     }}>
       <ActivityIndicator size="large" color="#1c1917" />
       <Text style={{
-        fontSize: 15,
-        fontWeight: '500',
-        color: '#78716c',
+        fontSize:      15,
+        fontWeight:    '500',
+        color:         '#78716c',
         letterSpacing: -0.2,
       }}>
         Signing you in…
