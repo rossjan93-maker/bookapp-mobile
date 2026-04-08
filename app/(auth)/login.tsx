@@ -444,8 +444,11 @@ export default function LoginScreen() {
   }
 
   // ── Social auth state ────────────────────────────────────────────────────────
-  const [socialLoading, setSocialLoading] = useState<'google' | 'apple' | null>(null);
-  const [socialError,   setSocialError]   = useState('');
+  const [socialLoading,  setSocialLoading]  = useState<'google' | 'apple' | null>(null);
+  const [socialError,    setSocialError]    = useState('');
+  // socialSignedIn: true after a successful social auth while _layout bootstrap runs.
+  // Keeps the screen in a clear loading state so there's no apparent freeze.
+  const [socialSignedIn, setSocialSignedIn] = useState(false);
   const appleAvailable = isAppleAvailable();
 
   async function handleGoogleSignIn() {
@@ -453,7 +456,12 @@ export default function LoginScreen() {
     setSocialError('');
     const { error } = await signInWithGoogle();
     setSocialLoading(null);
-    if (error) setSocialError(error);
+    if (error) {
+      setSocialError(error);
+    } else {
+      // Success — show loading state while _layout bootstrap resolves and navigates.
+      setSocialSignedIn(true);
+    }
   }
 
   async function handleAppleSignIn() {
@@ -461,7 +469,11 @@ export default function LoginScreen() {
     setSocialError('');
     const { error } = await signInWithApple();
     setSocialLoading(null);
-    if (error) setSocialError(error);
+    if (error) {
+      setSocialError(error);
+    } else {
+      setSocialSignedIn(true);
+    }
   }
 
   // ── Derived flags ────────────────────────────────────────────────────────────
@@ -1083,12 +1095,28 @@ export default function LoginScreen() {
           <Text style={{ fontSize: 13, color: '#78716c', textAlign: 'center' }}>← Back to sign in</Text>
         </TouchableOpacity>
       )}
-      {/* DEBUG MARKER — remove after confirming EAS update delivery */}
-      <Text style={{ fontSize: 10, color: '#d6d3d1', textAlign: 'center', marginTop: 24, letterSpacing: 0.2 }}>
-        DEBUG: auth-callback-diag-v1
-      </Text>
-
     </ScrollView>
+
+    {/* ── Post-social-auth loading overlay ─────────────────────────────────────
+        Shown after signInWithGoogle / signInWithApple returns success while the
+        _layout.tsx bootstrap resolves and the routing guard navigates. Without
+        this the screen goes idle for 1–3 s with no visible feedback. */}
+    {socialSignedIn && (
+      <View style={{
+        position:        'absolute',
+        top: 0, left: 0, right: 0, bottom: 0,
+        backgroundColor: '#faf9f7',
+        alignItems:      'center',
+        justifyContent:  'center',
+        gap:             14,
+      }}>
+        <ActivityIndicator size="large" color="#1c1917" />
+        <Text style={{ fontSize: 15, fontWeight: '600', color: '#1c1917', letterSpacing: -0.2 }}>
+          Signed in — loading your account…
+        </Text>
+      </View>
+    )}
+
     </KeyboardAvoidingView>
   );
 }

@@ -119,6 +119,7 @@ async function handleOAuthBrowserFlow(
     if (code) {
       const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
       if (sessionError) return { error: mapOAuthError(sessionError) };
+      console.log('[WARM_BOOT] socialAuth exchangeCodeForSession success — provider=', provider);
       return {};
     }
 
@@ -147,13 +148,14 @@ export async function signInWithGoogle(): Promise<{ error?: string }> {
 
 // ─── Apple Sign-In ────────────────────────────────────────────────────────────
 // iOS:          native system sheet (expo-apple-authentication)
-// Web/Android:  OAuth browser flow (same pattern as Google)
+// Web/Android:  intentionally hidden until Apple web Service ID is configured.
+//               Apple's OIDC browser flow requires a registered Service ID +
+//               return URL in Apple Developer — without that it always fails.
 //
-// isAppleAvailable() returns true on all platforms — the implementation
-// branches internally. Call it synchronously; no async check needed.
+// isAppleAvailable() returns true only on iOS where the native path works.
 
 export function isAppleAvailable(): boolean {
-  return true;
+  return Platform.OS === 'ios';
 }
 
 export async function signInWithApple(): Promise<{ error?: string }> {
