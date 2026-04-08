@@ -1,0 +1,68 @@
+The latest code is definitely on-device now.
+
+Proof:
+I can see the visible marker:
+DEBUG: auth-callback-diag-v1
+
+So the app is running the updated callback screen code, but it is still sitting on "Signing you in..." and I am not seeing the stalled diagnostic surface.
+
+That means the issue is no longer "old version on device".
+It is now one of these:
+1. the timeout is not firing
+2. the callback screen is being remounted/reset before timeout completes
+3. the diagnostic branch is never being reached
+4. the loading UI is masking the real state transition
+
+==================================================
+NEW OBJECTIVE
+==================================================
+
+Make the callback screen expose diagnostic state immediately, not only after timeout.
+
+==================================================
+WHAT I WANT CHANGED
+==================================================
+
+1. Show a visible debug block immediately on mount, underneath "Signing you in..."
+2. Display these values live from the start:
+   - codeExchange: pending / success / failed
+   - session: pending / present / missing
+   - profile: pending / present / missing / error
+   - needsOnboarding: pending / true / false
+   - lastError: ...
+   - timerElapsed: ...
+   - mountCount: ...
+3. Keep the timeout fallback, but do not wait for timeout to surface core state
+4. Add a visible line showing whether the callback screen is remounting unexpectedly
+5. Add a log line and visible state update every time the component mounts/unmounts and every time the timeout is scheduled / cleared / fired
+
+==================================================
+REQUIRED LOGS
+==================================================
+
+[WARM_BOOT] callback mounted count=...
+[WARM_BOOT] callback unmounted count=...
+[WARM_BOOT] timeout scheduled for 10s
+[WARM_BOOT] timeout fired
+[WARM_BOOT] timeout cleared
+[WARM_BOOT] diag state update ...
+
+==================================================
+IMPORTANT
+==================================================
+
+I need to know whether:
+- the timer is actually firing
+- the callback screen is remounting
+- the live state is changing at all
+
+The screen should no longer hide this behind only a spinner.
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+On-device, during the stuck flow, I can immediately see:
+- what stage is pending
+- whether the callback screen is remounting
+- whether the timeout actually fires
