@@ -48,7 +48,7 @@ import {
   wtEvt_hotspotTapped,
 } from '../lib/walkthroughEngine';
 import { CoverThumb } from './CoverThumb';
-import { DEMO_COVERS } from '../lib/demoCoverUrls';
+import { DEMO_COVERS, prefetchDemoCovers } from '../lib/demoCoverUrls';
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 
@@ -486,7 +486,7 @@ function CoachCard({
   //
   // SAFE_BOT accounts for the tab bar AND the device/browser bottom inset.
   // SAFE_TOP accounts for the status bar / notch so the card never slides behind it.
-  const GAP       = 12;
+  const GAP       = 6;
   const SIDE      = 20;
   const SAFE_BOT  = TAB_BAR_H + Math.max(insets.bottom, 8);
   const SAFE_TOP  = Math.max(insets.top, 8);
@@ -675,6 +675,12 @@ export function WalkthroughOverlay() {
   const overlayFade   = useRef(new Animated.Value(0)).current;
   const prevStep      = useRef<WtStep | null>(null);
   const stepActiveAt  = useRef<number | null>(null);
+
+  // Warm the native image cache for all demo covers the moment this overlay
+  // mounts — well before any focal card renders — so covers appear instantly.
+  useEffect(() => {
+    prefetchDemoCovers();
+  }, []);
 
   // stepReady gates the coach card, hotspot, and pulsing ring.
   // The dim aperture shows immediately; the rest waits until:
