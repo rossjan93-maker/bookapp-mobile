@@ -38,6 +38,20 @@ export const useOnboardingBridge = () => useContext(OnboardingBridgeContext);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Reject after `ms` milliseconds so a hanging Supabase promise always
+// surfaces in the try/catch rather than waiting forever.
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`[WARM_BOOT] ${label} timed out after ${ms / 1000}s`)),
+        ms,
+      ),
+    ),
+  ]);
+}
+
 async function ensureProfile(
   userId: string,
   email: string,
@@ -53,18 +67,20 @@ async function ensureProfile(
   if (firstName) upsertData.first_name = firstName;
   if (lastName)  upsertData.last_name  = lastName;
 
-  await supabase
-    .from('profiles')
-    .upsert(upsertData, { onConflict: 'id', ignoreDuplicates: true });
+  await withTimeout(
+    supabase.from('profiles').upsert(upsertData, { onConflict: 'id', ignoreDuplicates: true }),
+    8000,
+    'ensureProfile upsert',
+  );
 }
 
 async function checkOnboardingCompleted(userId: string): Promise<boolean> {
   if (!supabase) return false;
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('onboarding_completed')
-    .eq('id', userId)
-    .maybeSingle();
+  const { data, error } = await withTimeout(
+    supabase.from('profiles').select('onboarding_completed').eq('id', userId).maybeSingle(),
+    8000,
+    'checkOnboardingCompleted',
+  );
   // On any DB error, assume not completed — never skip onboarding on a failure.
   if (error) return false;
   // maybeSingle returns data=null when no row exists (new user).
@@ -142,11 +158,12 @@ export default function RootLayout() {
         try {
           // Check if a profile row already exists BEFORE ensureProfile runs.
           // In the delete→recreate path the new UUID will have no profile yet.
-          const { data: preProfile } = await supabase
-            .from('profiles')
-            .select('id, onboarding_completed')
-            .eq('id', newSession.user.id)
-            .maybeSingle();
+          console.log('[WARM_BOOT] preProfile select start');
+          const { data: preProfile } = await withTimeout(
+            supabase.from('profiles').select('id, onboarding_completed').eq('id', newSession.user.id).maybeSingle(),
+            8000,
+            'preProfile select',
+          );
           console.log('[WARM_BOOT] profile pre-exists=', !!preProfile, 'existing onboarding_completed=', preProfile?.onboarding_completed ?? null);
 
           if (!preProfile) {
@@ -154,7 +171,7 @@ export default function RootLayout() {
             console.log('[DELETE_TRACE] recreated account signup start — no existing profile for userId=', newSession.user.id.slice(0, 8));
           }
 
-          console.log('[WARM_BOOT] profile fetch start');
+          console.log('[WARM_BOOT] ensureProfile start');
           const meta = newSession.user.user_metadata;
           await ensureProfile(
             newSession.user.id,
@@ -164,11 +181,12 @@ export default function RootLayout() {
           );
 
           // Re-fetch the row to confirm upsert landed and log the result.
-          const { data: postProfile } = await supabase
-            .from('profiles')
-            .select('id, onboarding_completed')
-            .eq('id', newSession.user.id)
-            .maybeSingle();
+          console.log('[WARM_BOOT] postProfile select start');
+          const { data: postProfile } = await withTimeout(
+            supabase.from('profiles').select('id, onboarding_completed').eq('id', newSession.user.id).maybeSingle(),
+            8000,
+            'postProfile select',
+          );
           console.log('[WARM_BOOT] profile fetch result — exists=', !!postProfile, 'onboarding_completed=', postProfile?.onboarding_completed ?? null);
 
           const completed = await checkOnboardingCompleted(newSession.user.id);
@@ -178,7 +196,8 @@ export default function RootLayout() {
             console.log('[WARM_BOOT] needsOnboarding=', false);
             setNeedsOnboarding(false);
           } else {
-            const localStage  = await readOnboardingStage();
+            console.log('[WARM_BOOT] localStage start');
+            const localStage  = await withTimeout(readOnboardingStage(), 3000, 'readOnboardingStage');
             const locallyDone = localStage === 'done';
             const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup';
             const result      = !midFlow && !locallyDone;
