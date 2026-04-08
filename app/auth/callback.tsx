@@ -168,26 +168,40 @@ export default function AuthCallbackScreen() {
   }, [code]);
 
   // ── Phase B: session arrives (via either path) → run substep probe ─────────
+  //
+  // session goes through three states on a fresh auth callback:
+  //   undefined  → bootstrap not yet started (initial value, ignore)
+  //   null       → getSession() cold-start returned null before auth listener fires
+  //                (this is NORMAL — NOT a failure)
+  //   Session    → auth listener fired with real session
+  //
+  // We must NOT mark failure on null, because that is always the cold-start
+  // transient. Only escalate to fail if session was previously ok (revoked).
   useEffect(() => {
-    if (session === undefined) return; // still bootstrapping
+    if (session === undefined) return;
 
     if (session === null) {
-      console.warn('[WARM_BOOT] session resolved to null');
+      // Transient cold-start null. Show it honestly in diag but do NOT set
+      // lastError or mark codeExchange/session as fail — we're still waiting.
+      console.log('[WARM_BOOT] session=null (cold-start transient — waiting for auth listener)');
       setDiag(d => ({
         ...d,
-        sessionLive: 'fail',
-        codeExchange: d.codeExchange === 'pending' ? 'fail' : d.codeExchange,
-        lastError: d.lastError ?? 'No session after auth event',
+        // Only escalate if we were previously ok (session revoked mid-flow).
+        sessionLive: d.sessionLive === 'ok' ? 'fail' : 'pending',
+        lastError:   d.sessionLive === 'ok' ? 'Session revoked during callback' : d.lastError,
       }));
       return;
     }
 
-    // session is active — if codeExchange was skip/pending, the auth listener
-    // handled the exchange; treat it as ok.
+    // Real active session — from auth listener or from exchangeCodeForSession.
+    // Whatever codeExchange was (pending/skip/fail from the cold-start null
+    // window), the presence of a session proves the exchange succeeded somewhere.
+    console.log('[WARM_BOOT] session active — userId=', session.user.id.slice(0, 8));
     setDiag(d => ({
       ...d,
       sessionLive:  'ok',
-      codeExchange: d.codeExchange === 'pending' || d.codeExchange === 'skip' ? 'ok' : d.codeExchange,
+      codeExchange: 'ok',     // session proves exchange succeeded
+      lastError:    null,     // clear any transient errors from cold-start window
     }));
 
     if (probeStarted.current) return;
@@ -196,12 +210,23 @@ export default function AuthCallbackScreen() {
   }, [session]);
 
   // ── Phase C: BootstrapContext needsOnboarding resolved ────────────────────
-  // Mirror it to diag. If the probe already navigated, ignore.
+  // _layout.tsx finishes its own bootstrap and publishes needsOnboarding via
+  // BootstrapContext. Navigate immediately when both session and needsOnboarding
+  // are confirmed — this is the fast happy path and avoids waiting for the
+  // probe to finish all its substeps on its own.
   useEffect(() => {
     if (ctxOnboarding === undefined) return;
-    const val: S = ctxOnboarding ? 'ok' : 'fail'; // ok means "needs onboarding"
+    if (session === undefined || session === null) return;
+
+    const val: S = ctxOnboarding ? 'ok' : 'fail'; // ok = "yes needs onboarding"
     setDiag(d => ({ ...d, needsOnboarding: val }));
-  }, [ctxOnboarding]);
+
+    if (navigatedRef.current) return;
+    navigatedRef.current = true;
+    const route = ctxOnboarding ? '/onboarding' : '/';
+    console.log('[WARM_BOOT] ctx bootstrap resolved — routing to', route);
+    router.replace(route as '/onboarding' | '/');
+  }, [ctxOnboarding, session]);
 
   // ── Probe: run each bootstrap substep with individual timeouts ─────────────
   async function runProbe(userId: string) {
@@ -372,7 +397,7 @@ export default function AuthCallbackScreen() {
           {diag.stalled ? 'STALLED — see below' : 'Signing you in…'}
         </Text>
         <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 4, letterSpacing: 0.2 }}>
-          DEBUG: auth-callback-diag-v2-substeps
+          DEBUG: auth-callback-diag-v3-race-fix
         </Text>
       </View>
 
