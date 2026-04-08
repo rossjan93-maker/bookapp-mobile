@@ -1,0 +1,69 @@
+We are pivoting focus now.
+
+Next priority:
+make Google sign-in and Apple sign-in actually work end-to-end.
+
+Why:
+email verification is currently slowing testing too much and is creating unnecessary auth friction. We need lower-friction account creation and sign-in for real testing.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Audit and fix social auth so:
+- Continue with Google works
+- Continue with Apple works
+- returned users land correctly
+- new users get the correct onboarding/bootstrap path
+- no duplicate-account or broken callback issues happen
+
+==================================================
+WHAT I WANT INVESTIGATED
+==================================================
+
+Please audit the current implementation for:
+
+1. Google sign-in
+- current button wiring
+- redirect URI used
+- provider config assumptions
+- native vs web path differences
+- callback handling
+- account linking / duplicate-user risk
+
+2. Apple sign-in
+- current button wiring
+- iOS requirements/config already present in app.json / Apple setup
+- Android behavior if supported / expected fallback
+- callback handling
+- account linking / duplicate-user risk
+
+3. Shared auth callback/bootstrap path
+- confirm Google/Apple both land in the same stable post-auth flow
+- confirm onboarding decision resolves correctly
+- confirm no stale local state leaks into new-user social sign-ins
+
+==================================================
+BEFORE CODING
+==================================================
+
+Tell me:
+1. what files currently own Google + Apple auth
+2. what is already configured correctly
+3. what is missing or broken
+4. whether each provider is expected to work on:
+   - Android dev build
+   - iOS/TestFlight
+   - web
+5. the exact changes you plan to make
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- Google sign-in works end-to-end
+- Apple sign-in works end-to-end where expected
+- social auth returns into the app cleanly
+- new users route into onboarding correctly
+- returning users route into app correctly
+- no silent hangs or duplicate-account confusion
