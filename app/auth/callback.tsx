@@ -372,7 +372,7 @@ export default function AuthCallbackScreen() {
           {diag.stalled ? 'STALLED — see below' : 'Signing you in…'}
         </Text>
         <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 4, letterSpacing: 0.2 }}>
-          DEBUG: auth-callback-diag-v1
+          DEBUG: auth-callback-diag-v2-substeps
         </Text>
       </View>
 
@@ -391,7 +391,7 @@ export default function AuthCallbackScreen() {
         }}>
           <View style={{ backgroundColor: '#1c1917', paddingVertical: 6, paddingHorizontal: 12 }}>
             <Text style={{ fontSize: 11, fontWeight: '800', color: '#fff', letterSpacing: 0.8, textTransform: 'uppercase' }}>
-              Bootstrap Diagnostic
+              Bootstrap Diagnostic V2
             </Text>
           </View>
           <DiagRow label="codeExchange"            value={diag.codeExchange} />
