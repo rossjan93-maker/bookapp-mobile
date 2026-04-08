@@ -17,6 +17,7 @@ import { useBootstrap } from '../_layout';
  *   4. Navigate explicitly once the app is ready — does not rely solely
  *      on the routing guard to eventually notice the state change.
  *   5. Show an error state with a back-to-sign-in button on failure.
+ *   6. Time out after 15 s if bootstrap never resolves — never hang forever.
  *
  * This two-phase approach (exchange → wait for context → navigate) is
  * what closes the warm-start hydration gap: the app is only navigated
@@ -26,7 +27,7 @@ export default function AuthCallbackScreen() {
   const { code } = useLocalSearchParams<{ code?: string }>();
   const router   = useRouter();
 
-  const [error,    setError]    = useState<string | null>(null);
+  const [error,     setError]    = useState<string | null>(null);
   const [exchanged, setExchanged] = useState(false);
 
   // Track whether we've already navigated away to prevent double-navigation.
@@ -36,6 +37,13 @@ export default function AuthCallbackScreen() {
   // These transition: undefined → undefined → resolved value, signalling
   // that the root layout has finished its profile/onboarding DB queries.
   const { session, needsOnboarding } = useBootstrap();
+
+  // Refs that mirror the latest bootstrap state so the timeout callback
+  // always reads current values without being in its dependency array.
+  const sessionRef     = useRef(session);
+  const onboardingRef  = useRef(needsOnboarding);
+  useEffect(() => { sessionRef.current    = session;         }, [session]);
+  useEffect(() => { onboardingRef.current = needsOnboarding; }, [needsOnboarding]);
 
   // ── Phase 1: Exchange PKCE code ────────────────────────────────────────────
   useEffect(() => {
@@ -65,17 +73,45 @@ export default function AuthCallbackScreen() {
     });
   }, [code]);
 
-  // ── Phase 2: Wait for bootstrap, then navigate ─────────────────────────────
+  // ── Phase 2a: 15-second escape hatch ──────────────────────────────────────
+  // If bootstrap never resolves (e.g. DB call threw, SIGNED_IN never fired,
+  // or session exchange succeeded but the auth listener silently failed),
+  // the callback screen must NOT hang forever. After 15 s we show an
+  // actionable error and log exactly what state was blocking progress.
+  useEffect(() => {
+    if (!exchanged) return;
+
+    const timer = setTimeout(() => {
+      if (navigatedRef.current) return;
+
+      const s = sessionRef.current;
+      const o = onboardingRef.current;
+      const sessionStatus    = s === undefined ? 'pending' : s ? 'active' : 'null';
+      const onboardingStatus = o === undefined ? 'pending' : String(o);
+
+      console.warn(
+        '[WARM_BOOT] callback stalled because session=', sessionStatus,
+        'needsOnboarding=', onboardingStatus,
+        '(15 s timeout — bootstrap never resolved)',
+      );
+
+      setError('Sign-in is taking too long. Please try again.');
+    }, 15000);
+
+    return () => clearTimeout(timer);
+  }, [exchanged]);
+
+  // ── Phase 2b: Wait for bootstrap, then navigate ────────────────────────────
   // This effect re-runs every time session or needsOnboarding changes.
   // It only acts once exchange has succeeded AND bootstrap has fully resolved.
   useEffect(() => {
     if (!exchanged) return;
     if (navigatedRef.current) return;
 
-    // Log every evaluation so we can see the progression in Metro.
-    const sessionStatus        = session === undefined ? 'pending' : session ? 'active' : 'null';
-    const onboardingStatus     = needsOnboarding === undefined ? 'pending' : String(needsOnboarding);
-    console.log('[WARM_BOOT] app shell stalled waiting on — session=', sessionStatus, 'needsOnboarding=', onboardingStatus);
+    // Log every evaluation so we can trace the progression in Metro.
+    const sessionStatus    = session === undefined ? 'pending' : session ? 'active' : 'null';
+    const onboardingStatus = needsOnboarding === undefined ? 'pending' : String(needsOnboarding);
+    console.log('[WARM_BOOT] callback waiting on — session=', sessionStatus, 'needsOnboarding=', onboardingStatus);
 
     // Both states must be defined before we can make a routing decision.
     if (session === undefined || needsOnboarding === undefined) return;
@@ -119,7 +155,7 @@ export default function AuthCallbackScreen() {
           textAlign: 'center',
           letterSpacing: -0.3,
         }}>
-          Link expired
+          Sign-in failed
         </Text>
         <Text style={{
           fontSize: 14,

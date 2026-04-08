@@ -316,7 +316,7 @@ export default function SettingsScreen() {
     setDeletingAccount(true);
     setDeleteError(null);
 
-    console.log('[DELETE_TRACE] deleting account userId=', userId?.slice(0, 8) ?? '(unknown)');
+    console.log('[DELETE_TRACE] account delete start — userId=', userId?.slice(0, 8) ?? '(unknown)');
 
     const { data, error } = await supabase.rpc('delete_own_account');
 

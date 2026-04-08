@@ -121,7 +121,7 @@ export default function RootLayout() {
       // Handle both SIGNED_IN and USER_UPDATED (email confirmation can fire either
       // depending on Supabase version / PKCE configuration).
       if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && newSession) {
-        console.log('[WARM_BOOT] onAuthStateChange', event, '— userId=', newSession.user.id.slice(0, 8));
+        console.log('[WARM_BOOT] onAuthStateChange SIGNED_IN — userId=', newSession.user.id.slice(0, 8));
 
         // ── CRITICAL: reset needsOnboarding to undefined BEFORE setSession ─
         // The routing guard bails when needsOnboarding===undefined, keeping the
@@ -133,52 +133,78 @@ export default function RootLayout() {
 
         console.log('[WARM_BOOT] session state updated — bootstrap starting');
 
-        // Check if a profile row already exists BEFORE ensureProfile runs.
-        // Detects UUID recycling: if pre-exists=true with onboarding_completed=true,
-        // the old profile survived account deletion and is poisoning the new account.
-        const { data: preProfile } = await supabase
-          .from('profiles')
-          .select('id, onboarding_completed')
-          .eq('id', newSession.user.id)
-          .maybeSingle();
-        console.log('[WARM_BOOT] profile pre-exists=', !!preProfile, 'existing onboarding_completed=', preProfile?.onboarding_completed ?? null);
+        // ── Wrap ALL async bootstrap work in try/catch ─────────────────────
+        // If any DB call throws (RLS, network, trigger conflict from a freshly-
+        // deleted row, etc.) the handler must NOT leave needsOnboarding===undefined
+        // forever — that is the exact deadlock that hangs the callback screen.
+        // Fallback: needsOnboarding=true sends the user to onboarding, which is
+        // the correct safe default for any recreated or genuinely new account.
+        try {
+          // Check if a profile row already exists BEFORE ensureProfile runs.
+          // In the delete→recreate path the new UUID will have no profile yet.
+          const { data: preProfile } = await supabase
+            .from('profiles')
+            .select('id, onboarding_completed')
+            .eq('id', newSession.user.id)
+            .maybeSingle();
+          console.log('[WARM_BOOT] profile pre-exists=', !!preProfile, 'existing onboarding_completed=', preProfile?.onboarding_completed ?? null);
 
-        console.log('[WARM_BOOT] profile fetch start');
-        const meta = newSession.user.user_metadata;
-        await ensureProfile(
-          newSession.user.id,
-          newSession.user.email ?? '',
-          meta?.first_name,
-          meta?.last_name,
-        );
-        console.log('[WARM_BOOT] profile fetch success');
+          if (!preProfile) {
+            // No pre-existing row → brand-new or recreated account on this device.
+            console.log('[DELETE_TRACE] recreated account signup start — no existing profile for userId=', newSession.user.id.slice(0, 8));
+          }
 
-        const completed = await checkOnboardingCompleted(newSession.user.id);
-        console.log('[WARM_BOOT] DB onboarding_completed=', completed);
+          console.log('[WARM_BOOT] profile fetch start');
+          const meta = newSession.user.user_metadata;
+          await ensureProfile(
+            newSession.user.id,
+            newSession.user.email ?? '',
+            meta?.first_name,
+            meta?.last_name,
+          );
 
-        if (completed) {
-          console.log('[WARM_BOOT] onboarding decision resolved → needsOnboarding=false (DB says done)');
-          setNeedsOnboarding(false);
-        } else {
-          const localStage  = await readOnboardingStage();
-          const locallyDone = localStage === 'done';
-          const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup';
-          const result      = !midFlow && !locallyDone;
-          console.log('[WARM_BOOT] localStage=', localStage, 'locallyDone=', locallyDone, 'midFlow=', midFlow);
-          console.log('[WARM_BOOT] onboarding decision resolved → needsOnboarding=', result);
-          setNeedsOnboarding(result);
+          // Re-fetch the row to confirm upsert landed and log the result.
+          const { data: postProfile } = await supabase
+            .from('profiles')
+            .select('id, onboarding_completed')
+            .eq('id', newSession.user.id)
+            .maybeSingle();
+          console.log('[WARM_BOOT] profile fetch result — exists=', !!postProfile, 'onboarding_completed=', postProfile?.onboarding_completed ?? null);
+
+          const completed = await checkOnboardingCompleted(newSession.user.id);
+          console.log('[WARM_BOOT] onboarding_completed=', completed);
+
+          if (completed) {
+            console.log('[WARM_BOOT] needsOnboarding=', false);
+            setNeedsOnboarding(false);
+          } else {
+            const localStage  = await readOnboardingStage();
+            const locallyDone = localStage === 'done';
+            const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup';
+            const result      = !midFlow && !locallyDone;
+            console.log('[WARM_BOOT] localStage=', localStage, 'locallyDone=', locallyDone, 'midFlow=', midFlow);
+            console.log('[WARM_BOOT] needsOnboarding=', result);
+            setNeedsOnboarding(result);
+          }
+
+          console.log('[WARM_BOOT] app shell ready — routing guard will now fire');
+
+        } catch (err) {
+          // Any throw here previously left needsOnboarding===undefined forever,
+          // hanging the callback screen indefinitely. Now we always resolve.
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error('[WARM_BOOT] bootstrap threw — needsOnboarding fallback=true:', msg);
+          setNeedsOnboarding(true);
         }
-
-        console.log('[WARM_BOOT] app shell ready — routing guard will now fire');
 
       } else if (event === 'SIGNED_OUT') {
         setSession(newSession);
-        console.log('[DELETE_TRACE] SIGNED_OUT — awaiting full local state clear');
+        console.log('[DELETE_TRACE] SIGNED_OUT — clearing local state');
         setNeedsOnboarding(false);
         clearAllTabCaches();
         await clearLocalOnboardingState();
         const stageAfter = await readOnboardingStage();
-        console.log('[DELETE_TRACE] post-SIGNED_OUT stage=', stageAfter, '(expect null)');
+        console.log('[DELETE_TRACE] cleared keys complete — stage=', stageAfter, '(expect null)');
       }
     });
 
