@@ -480,83 +480,80 @@ function CoachCard({
     ]).start();
   }, [step]);
 
-  // ── Arrow geometry constants ─────────────────────────────────────────────────
-  const ARROW_H       = 14;   // fill triangle height (matches borderBottomWidth: 14)
-  const ARROW_HALF_W  = 12;   // half of 24px base
-  const ARROW_TIP_GAP = 4;    // visual gap between arrow tip and the referenced element
+  // ── Geometry constants ────────────────────────────────────────────────────────
+  const ARROW_H      = 14;   // fill triangle height
+  const ARROW_HALF_W = 12;   // half of 24px base width
+  // GAP = distance from focal card edge to coach card body.
+  // Arrow tip sits at GAP-ARROW_H from the focal edge — with GAP=14 and ARROW_H=14
+  // the tip lands exactly at the focal card edge (zero gap, clean contact).
+  const GAP      = 14;
+  const SIDE     = 20;
+  const SAFE_BOT = TAB_BAR_H + Math.max(insets.bottom, 8);
+  const SAFE_TOP = Math.max(insets.top, 8);
 
-  const SIDE      = 20;
-  const SAFE_BOT  = TAB_BAR_H + Math.max(insets.bottom, 8);
-  const SAFE_TOP  = Math.max(insets.top, 8);
-
-  // ── Per-step anchor: exact book cover thumbnail centerline ───────────────────
+  // ── Per-step config ───────────────────────────────────────────────────────────
   //
-  // The arrow tip aims at the COVER IMAGE center within each focal card, not the
-  // abstract card bottom edge. This produces a consistent, intentional connection:
-  // the explainer always points at the book — the specific element being described.
+  // arrowX: absolute screen X the arrow tip aims at — the book cover thumbnail
+  //   center for each focal card. Converted to coach-local coords below.
+  //   Using cover center rather than card center makes the pointer feel like it
+  //   is specifically referencing the book, not the surrounding whitespace.
   //
-  // Values are geometric offsets from rect.y / rect.x derived from each focal card's
-  // internal layout: padding + preceding elements + half cover height.
+  //   Home      — 14px card pad, 44px cover → cover center at x+36
+  //   Recommend — 12px pad, 52px cover     → cover center at x+38
+  //   Library   — 14px card pad, 44px cover → cover center at x+36
+  //   Inbox     — 16px pad, 48px cover     → cover center at x+40
   //
-  //   Home      — 14px padding, 44×64px cover. Center: y+46, x+36
-  //   Recommend — 3px stripe + 12px padding, 52×76px cover. Center: y+53, x+38
-  //   Library   — 14px padding, 44×64px cover. Center: y+46, x+36
-  //   Inbox     — 16px padding + 24px "From Alex" header, 48×70px cover. Center: y+75, x+40
+  // preferred: 'below' means coach sits below the focal card (normal case).
+  //   'above' would reverse it — none of these steps require above as primary.
   //
-  function computeAnchor(s: WtStep, r: TargetRect): { x: number; y: number } {
+  function coverCenterX(s: WtStep, r: TargetRect): number {
     switch (s) {
-      case 'home':
-        return { x: r.x + 14 + 22, y: r.y + 14 + 32 };
-      case 'recommend':
-        return { x: r.x + 12 + 26, y: r.y + 3 + 12 + 38 };
-      case 'library':
-        return { x: r.x + 14 + 22, y: r.y + 14 + 32 };
-      case 'inbox':
-        return { x: r.x + 16 + 24, y: r.y + 16 + 24 + 35 };
-      default:
-        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      case 'recommend': return r.x + 12 + 26;   // pad 12 + half of 52px cover
+      case 'inbox':     return r.x + 16 + 24;   // pad 16 + half of 48px cover
+      default:          return r.x + 14 + 22;   // pad 14 + half of 44px cover (home/library)
     }
   }
 
   let positionStyle: object;
-  let arrowAbove: boolean;  // true  = upward triangle at top of card   (coach is BELOW anchor)
-                            // false = downward triangle at bottom of card (coach is ABOVE anchor)
+  let arrowAbove: boolean;  // true  = upward ▲ at coach top (coach is BELOW focal card)
+                            // false = downward ▽ at coach bottom (coach is ABOVE focal card)
   let showArrow = true;
   let arrowLeft = CARD_W / 2 - ARROW_HALF_W;
 
   if (cardRect) {
-    const anchor = computeAnchor(step, cardRect);
+    // ── Y positioning: ALWAYS relative to the focal card edge ────────────────
+    // Overlap is structurally impossible — the coach card top (or bottom when
+    // above) is placed at cardEdge + GAP. The arrow bridges the gap.
+    //
+    // Arrow tip Y when coach is below: coachTop - ARROW_H = cardBottom + GAP - ARROW_H
+    //   With GAP=14, ARROW_H=14 → tip lands exactly at cardBottom. Clean contact.
+    //
+    // Coach below:
+    const belowTop      = cardRect.y + cardRect.height + GAP;
+    const fitsBelow     = belowTop + COACH_H_EST < winH - SAFE_BOT;
 
-    // Coach below: top = anchor.y + TIP_GAP + ARROW_H
-    // Arrow tip will land at anchor.y + TIP_GAP — just below the cover center.
-    const belowTop  = anchor.y + ARROW_TIP_GAP + ARROW_H;
-    const fitsBelow = belowTop + COACH_H_EST < winH - SAFE_BOT;
-
-    // Coach above: bottom edge sits ARROW_TIP_GAP + ARROW_H above anchor.y
-    // Arrow downward tip will land at anchor.y - TIP_GAP — just above cover center.
-    const coachTopIfAbove = anchor.y - ARROW_TIP_GAP - ARROW_H - COACH_H_EST;
-    const fitsAbove       = coachTopIfAbove > SAFE_TOP;
+    // Coach above:
+    const coachTopAbove = cardRect.y - GAP - COACH_H_EST;
+    const fitsAbove     = coachTopAbove > SAFE_TOP;
 
     if (fitsBelow) {
       positionStyle = { top: belowTop, left: SIDE, right: SIDE };
-      arrowAbove    = true;   // upward arrow points at cover above
+      arrowAbove    = true;
     } else if (fitsAbove) {
-      // bottom = distance from container bottom to coach card bottom edge
-      const aboveBottom = winH - anchor.y + ARROW_TIP_GAP + ARROW_H;
-      positionStyle = { bottom: aboveBottom, left: SIDE, right: SIDE };
-      arrowAbove    = false;  // downward arrow points at cover below
+      // bottom = winH minus the coach card's bottom edge (which sits at cardRect.y - GAP)
+      positionStyle = { bottom: winH - cardRect.y + GAP, left: SIDE, right: SIDE };
+      arrowAbove    = false;
     } else {
-      // Fallback: neither fits (very small screen / large focal card)
+      // Neither fits — small screen or very tall card; anchor at bottom without arrow
       positionStyle = { bottom: SAFE_BOT + 8, left: SIDE, right: SIDE };
       arrowAbove    = true;
       showArrow     = false;
     }
 
-    // Arrow X — aim at the cover thumbnail center (per-step anchor.x),
-    // converted to local coach card coordinates.
-    arrowLeft = Math.max(16, Math.min(CARD_W - 44, anchor.x - SIDE - ARROW_HALF_W));
+    // ── X positioning: aim at cover thumbnail center, converted to coach-local coords
+    const anchorX = coverCenterX(step, cardRect);
+    arrowLeft = Math.max(16, Math.min(CARD_W - 44, anchorX - SIDE - ARROW_HALF_W));
   } else {
-    // No rect yet — anchor at bottom (readiness gate not triggered)
     positionStyle = { bottom: SAFE_BOT + 8, left: SIDE, right: SIDE };
     arrowAbove    = true;
     showArrow     = false;
@@ -592,7 +589,7 @@ function CoachCard({
         // Border triangle sits 2px further out in the card's border color;
         // fill triangle sits on top in the card background color.
         <>
-          {/* Border layer */}
+          {/* Border layer — visible shadow outline matching the card's drop shadow */}
           <View
             style={{
               position:          'absolute',
@@ -602,7 +599,7 @@ function CoachCard({
               borderLeftWidth:   13, borderRightWidth:  13,
               borderBottomWidth: 16,
               borderLeftColor:  'transparent', borderRightColor: 'transparent',
-              borderBottomColor: 'rgba(0,0,0,0.09)',
+              borderBottomColor: 'rgba(0,0,0,0.18)',
             }}
           />
           {/* Fill layer */}
@@ -634,7 +631,7 @@ function CoachCard({
               borderLeftWidth:  13, borderRightWidth:  13,
               borderTopWidth:   16,
               borderLeftColor: 'transparent', borderRightColor: 'transparent',
-              borderTopColor:  'rgba(0,0,0,0.09)',
+              borderTopColor:  'rgba(0,0,0,0.18)',
             }}
           />
           {/* Fill layer */}
