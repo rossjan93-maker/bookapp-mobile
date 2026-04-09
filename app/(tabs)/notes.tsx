@@ -1,5 +1,6 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { showToast } from '../../lib/toast';
@@ -10,7 +11,6 @@ import { CoverThumb } from '../../components/CoverThumb';
 import { registerWtTarget, useWalkthrough } from '../../lib/walkthroughEngine';
 import { WtDemoInbox } from '../../components/walkthrough/WtDemoInbox';
 import { InboxScreenSkeleton } from '../../components/Placeholder';
-import { TabScreenHeader } from '../../components/TabScreenHeader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,16 +39,18 @@ function statusLabel(status: string): string | null {
 
 function SectionLabel({ children }: { children: string }) {
   return (
-    <Text style={{
-      fontSize: 11,
-      fontWeight: '700',
-      color: '#9e958d',
-      letterSpacing: 0.9,
-      textTransform: 'uppercase',
-      marginBottom: 12,
-    }}>
-      {children}
-    </Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 8 }}>
+      <View style={{ width: 14, height: 1.5, backgroundColor: '#7b9e7e', borderRadius: 1 }} />
+      <Text style={{
+        fontSize: 10.5,
+        fontWeight: '700',
+        color: '#9e958d',
+        letterSpacing: 1.1,
+        textTransform: 'uppercase',
+      }}>
+        {children}
+      </Text>
+    </View>
   );
 }
 
@@ -71,6 +73,7 @@ registerCacheClearer(() => { _inboxCache = null; });
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function InboxScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { setNewRecCount } = useContext(BadgeContext);
 
@@ -276,19 +279,32 @@ export default function InboxScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#f5f1ec' }}>
-      <TabScreenHeader title="Inbox" />
     <ScrollView
       style={{ flex: 1, backgroundColor: '#f5f1ec' }}
       contentContainerStyle={
         items.length === 0
-          ? { flex: 1, paddingHorizontal: 20, paddingTop: 8 }
-          : { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 }
+          ? { flex: 1, paddingHorizontal: 20, paddingTop: insets.top + 8 }
+          : { paddingHorizontal: 20, paddingTop: insets.top + 8, paddingBottom: 40 }
       }
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
       }
     >
-      {/* ── Empty state ── */}
+      {/* ── Hero header ── */}
+      <View style={{ marginBottom: 28 }}>
+        <Text style={{
+          fontSize: 32,
+          fontWeight: '800',
+          color: '#231f1b',
+          letterSpacing: -1,
+          lineHeight: 38,
+        }}>Inbox</Text>
+        <Text style={{ fontSize: 12, color: '#9e958d', fontWeight: '500', marginTop: 3 }}>
+          {items.length > 0 ? `${items.length} rec${items.length === 1 ? '' : 's'} from friends` : 'Recs from friends'}
+        </Text>
+        <View style={{ width: 28, height: 2.5, backgroundColor: '#7b9e7e', marginTop: 10, borderRadius: 2 }} />
+      </View>
+
       {items.length === 0 && (
         <>
           <Text style={{ fontSize: 14, color: '#9e958d', marginBottom: 12 }}>

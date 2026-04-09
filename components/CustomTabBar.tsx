@@ -18,157 +18,141 @@ const TABS: TabConfig[] = [
   { name: 'profile', label: 'Profile', icon: 'person-outline',   iconFocused: 'person'   },
 ];
 
-const ACTIVE   = '#231f1b';
-const INACTIVE = '#9e958d';
+const INK      = '#231f1b';
+const DUST     = '#9e958d';
 const SAGE     = '#7b9e7e';
-const PILL_BG  = '#ede9e4';
 
 export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 8) }]}>
-      {state.routes.map((route, index) => {
-        const isFocused = state.index === index;
-        const tab       = TABS[index];
-        if (!tab) return null;
+    <View style={[styles.outerWrap, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+      <View style={styles.pill}>
+        {state.routes.map((route, index) => {
+          const isFocused  = state.index === index;
+          const tab        = TABS[index];
+          if (!tab) return null;
 
-        const descriptor = descriptors[route.key];
-        const badge      = descriptor.options.tabBarBadge;
-        const badgeStyle = descriptor.options.tabBarBadgeStyle;
+          const descriptor = descriptors[route.key];
+          const badge      = descriptor.options.tabBarBadge;
+          const badgeStyle = descriptor.options.tabBarBadgeStyle;
 
-        function onPress() {
-          const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-          if (!isFocused && !event.defaultPrevented) {
-            navigation.navigate(route.name, route.params);
+          function onPress() {
+            const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+            if (!isFocused && !event.defaultPrevented) {
+              navigation.navigate(route.name, route.params);
+            }
           }
-        }
 
-        function onLongPress() {
-          navigation.emit({ type: 'tabLongPress', target: route.key });
-        }
+          function onLongPress() {
+            navigation.emit({ type: 'tabLongPress', target: route.key });
+          }
 
-        return (
-          <TouchableOpacity
-            key={route.key}
-            accessibilityRole="button"
-            accessibilityState={isFocused ? { selected: true } : {}}
-            accessibilityLabel={descriptor.options.tabBarAccessibilityLabel}
-            onPress={onPress}
-            onLongPress={onLongPress}
-            activeOpacity={0.7}
-            style={styles.tab}
-          >
-            {/* Active indicator dot — sage green when focused */}
-            <View style={styles.dotRow}>
-              <View style={[styles.dot, isFocused && styles.dotActive]} />
-            </View>
-
-            {/* Icon + optional badge */}
-            <View style={styles.iconWrap}>
+          return (
+            <TouchableOpacity
+              key={route.key}
+              accessibilityRole="button"
+              accessibilityState={isFocused ? { selected: true } : {}}
+              accessibilityLabel={descriptor.options.tabBarAccessibilityLabel}
+              onPress={onPress}
+              onLongPress={onLongPress}
+              activeOpacity={0.7}
+              style={styles.tab}
+            >
+              {/* Active tab gets a sage tinted pill background */}
               <View style={[styles.iconPill, isFocused && styles.iconPillActive]}>
                 <Ionicons
                   name={isFocused ? tab.iconFocused : tab.icon}
-                  size={22}
-                  color={isFocused ? ACTIVE : INACTIVE}
+                  size={21}
+                  color={isFocused ? SAGE : DUST}
                 />
+                {badge !== undefined && badge !== null && (
+                  <View style={[styles.badge, badgeStyle as any]}>
+                    <Text style={styles.badgeText}>{badge}</Text>
+                  </View>
+                )}
               </View>
-              {badge !== undefined && badge !== null && (
-                <View style={[styles.badge, badgeStyle as any]}>
-                  <Text style={styles.badgeText}>{badge}</Text>
-                </View>
-              )}
-            </View>
 
-            {/* Label */}
-            <Text
-              style={[styles.label, isFocused && styles.labelActive]}
-              numberOfLines={1}
-              allowFontScaling={false}
-            >
-              {tab.label}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
+              <Text
+                style={[styles.label, isFocused && styles.labelActive]}
+                numberOfLines={1}
+                allowFontScaling={false}
+              >
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  outerWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    backgroundColor: 'transparent',
+  },
+
+  pill: {
     flexDirection:   'row',
     backgroundColor: '#fefcf9',
-    borderTopWidth:  StyleSheet.hairlineWidth,
-    borderTopColor:  '#ede9e4',
-    paddingTop:      8,
+    borderRadius:    28,
+    paddingVertical: 8,
+    shadowColor:     '#231f1b',
+    shadowOpacity:   0.11,
+    shadowRadius:    18,
+    shadowOffset:    { width: 0, height: 4 },
+    elevation:       8,
   },
+
   tab: {
     flex:           1,
     alignItems:     'center',
-    justifyContent: 'flex-start',
-    paddingTop:     0,
-  },
-
-  dotRow: {
-    height:         5,
     justifyContent: 'center',
-    alignItems:     'center',
-    marginBottom:   3,
-  },
-  dot: {
-    width:           0,
-    height:          0,
-    borderRadius:    2,
-    backgroundColor: SAGE,
-  },
-  dotActive: {
-    width:  20,
-    height: 3,
+    gap:            3,
   },
 
-  iconWrap: {
-    position: 'relative',
-  },
   iconPill: {
-    width:         44,
-    height:        34,
-    borderRadius:  17,
+    width:         40,
+    height:        30,
+    borderRadius:  15,
     alignItems:    'center',
     justifyContent:'center',
+    position:      'relative',
   },
   iconPillActive: {
-    backgroundColor: PILL_BG,
+    backgroundColor: '#eef4ee',
   },
 
   badge: {
-    position:        'absolute',
-    top:             -3,
-    right:           -2,
-    backgroundColor: '#231f1b',
-    borderRadius:    8,
-    minWidth:        16,
-    height:          16,
-    alignItems:      'center',
-    justifyContent:  'center',
+    position:          'absolute',
+    top:               -3,
+    right:             -4,
+    backgroundColor:   '#231f1b',
+    borderRadius:      8,
+    minWidth:          15,
+    height:            15,
+    alignItems:        'center',
+    justifyContent:    'center',
     paddingHorizontal: 3,
   },
   badgeText: {
     color:      '#fefcf9',
-    fontSize:   9,
+    fontSize:   8.5,
     fontWeight: '700',
-    lineHeight: 12,
+    lineHeight: 11,
   },
 
   label: {
-    fontSize:    10.5,
-    fontWeight:  '400',
-    color:       INACTIVE,
-    marginTop:   3,
+    fontSize:      10,
+    fontWeight:    '500',
+    color:         DUST,
     letterSpacing: 0.1,
   },
   labelActive: {
-    color:      ACTIVE,
-    fontWeight: '600',
+    color:      SAGE,
+    fontWeight: '700',
   },
 });

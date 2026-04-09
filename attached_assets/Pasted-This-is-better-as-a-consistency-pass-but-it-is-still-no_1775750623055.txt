@@ -1,0 +1,90 @@
+This is better as a consistency pass, but it is still not the level of redesign I asked for.
+
+What you just completed is mostly a palette/token sweep across the app.
+That improves coherence, but it does NOT yet create the stronger stylish + fun identity I want.
+
+So keep this work, but treat it as the base layer only.
+
+==================================================
+WHAT IS STILL MISSING
+==================================================
+
+The app is now more unified, but it still lacks:
+
+- a distinctive visual point of view
+- stronger personality
+- more expressive composition
+- more playful premium energy
+- memorable hero moments
+- stylish fun
+
+This still feels like a better-colored product, not a more charismatic one.
+
+==================================================
+NEXT PASS OBJECTIVE
+==================================================
+
+I want an expressive identity pass.
+
+Not just color changes.
+Not just softer corners.
+Not just nicer borders.
+
+I want more substantial visual moves in the UI itself.
+
+==================================================
+WHERE TO FOCUS
+==================================================
+
+Prioritize the most visible surfaces:
+
+1. home / for you hero cards
+2. onboarding welcome and onboarding card layouts
+3. login / signup composition
+4. walkthrough overlay / explainer card styling
+5. tab bar / header treatment
+6. empty states / loaders / transitional states
+
+==================================================
+WHAT TO CHANGE
+==================================================
+
+1. CARD COMPOSITION
+- make core cards feel more designed, less generic stacked rectangles
+- introduce stronger hierarchy within cards
+- use layering, framing, overlap, or asymmetry where tasteful
+- make featured content feel featured
+
+2. TYPOGRAPHY HIERARCHY
+- stronger hero headers
+- more expressive section titles
+- better contrast between headline/body/meta
+- more charisma in key screens
+
+3. SHAPE LANGUAGE
+- a more distinctive visual language than "rounded rectangle everywhere"
+- still elegant, but more memorable
+- identify where special card forms or framing can create identity
+
+4. MOTION / FUN
+- tasteful playful motion in places where it adds delight
+- more expressive reveal/load/transition behavior
+- not busy, but more alive
+
+5. TAB / HOME PRESENCE
+- the tab shells and home surfaces still feel too structurally plain
+- make the main app feel more premium and playful, not just the auth screens
+
+==================================================
+IMPORTANT
+==================================================
+
+Do not just do another app-wide token sweep.
+Do not just tweak colors again.
+I want meaningful visual redesign moves.
+
+Before coding, tell me:
+1. why this last pass still reads as mostly a palette pass
+2. what bigger UI/composition changes you will make now
+3. which exact screens/components will show the most visible change
+4. how you will make the app feel more stylish and fun, not just warmer

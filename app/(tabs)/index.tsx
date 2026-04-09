@@ -124,16 +124,18 @@ function shortFinishDate(iso: string): string {
 
 function SectionLabel({ children }: { children: string }) {
   return (
-    <Text style={{
-      fontSize: 11,
-      fontWeight: '700',
-      color: '#9e958d',
-      letterSpacing: 0.9,
-      textTransform: 'uppercase',
-      marginBottom: 12,
-    }}>
-      {children}
-    </Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 8 }}>
+      <View style={{ width: 14, height: 1.5, backgroundColor: '#7b9e7e', borderRadius: 1 }} />
+      <Text style={{
+        fontSize: 10.5,
+        fontWeight: '700',
+        color: '#9e958d',
+        letterSpacing: 1.1,
+        textTransform: 'uppercase',
+      }}>
+        {children}
+      </Text>
+    </View>
   );
 }
 
@@ -630,15 +632,27 @@ export default function HomeScreen() {
       }
     >
       {/* ── Hero heading ── */}
-      <View style={{ marginBottom: 28 }}>
+      <View style={{ marginBottom: 32 }}>
         <Text style={{
-          fontSize: 20,
+          fontSize: 11,
           fontWeight: '600',
-          color: '#78716c',
-          letterSpacing: -0.2,
+          color: '#9e958d',
+          letterSpacing: 1.2,
+          textTransform: 'uppercase',
+          marginBottom: 4,
+        }}>
+          {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+        </Text>
+        <Text style={{
+          fontSize: 32,
+          fontWeight: '800',
+          color: '#231f1b',
+          letterSpacing: -1,
+          lineHeight: 38,
         }}>
           {greeting ? `Hi, ${greeting}` : 'Home'}
         </Text>
+        <View style={{ width: 28, height: 2.5, backgroundColor: '#7b9e7e', marginTop: 10, borderRadius: 2 }} />
       </View>
 
       {/* ── 1. Continue Reading ── */}
@@ -669,34 +683,40 @@ export default function HomeScreen() {
               >
                 <View style={{
                   backgroundColor: '#fefcf9',
-                  borderRadius: 16,
-                  padding: 16,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  shadowColor: '#000',
-                  shadowOpacity: 0.06,
-                  shadowRadius: 8,
-                  shadowOffset: { width: 0, height: 2 },
-                  elevation: 2,
-                  borderLeftWidth: 3,
-                  borderLeftColor: accentColor,
+                  borderRadius: 18,
+                  overflow: 'hidden',
+                  shadowColor: '#231f1b',
+                  shadowOpacity: 0.08,
+                  shadowRadius: 14,
+                  shadowOffset: { width: 0, height: 4 },
+                  elevation: 3,
                 }}>
-                  <CoverThumb url={cr.cover_url} externalId={cr.external_id} title={cr.title} width={56} height={82} />
-                  <View style={{ flex: 1, marginLeft: 16 }}>
-                    <Text style={{
-                      fontSize: 16, fontWeight: '700', color: '#231f1b', lineHeight: 22, marginBottom: 3,
-                    }} numberOfLines={2}>{cr.title}</Text>
-                    <Text style={{ fontSize: 13, color: '#78716c', marginBottom: 12 }} numberOfLines={1}>
-                      {cr.author}
-                    </Text>
+                  {/* Sage top accent stripe */}
+                  <View style={{ height: 3, backgroundColor: accentColor === '#ede9e4' ? '#7b9e7e' : accentColor }} />
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', padding: 16 }}>
+                    {/* Cover — larger, given more presence */}
+                    <CoverThumb url={cr.cover_url} externalId={cr.external_id} title={cr.title} width={68} height={100} />
+                    <View style={{ flex: 1, marginLeft: 16, paddingTop: 2 }}>
+                      <Text style={{
+                        fontSize: 17, fontWeight: '800', color: '#231f1b', lineHeight: 23, marginBottom: 4, letterSpacing: -0.3,
+                      }} numberOfLines={2}>{cr.title}</Text>
+                      <Text style={{ fontSize: 12, color: '#9e958d', marginBottom: 16, fontWeight: '500' }} numberOfLines={1}>
+                        {cr.author}
+                      </Text>
                     {(cr.current_page || cr.page_count) ? (
                       <>
+                        {/* Progress % as a bold callout */}
+                        {progressPct(cr) > 0 && (
+                          <Text style={{ fontSize: 22, fontWeight: '800', color: '#231f1b', letterSpacing: -0.5, lineHeight: 26, marginBottom: 6 }}>
+                            {Math.round(progressPct(cr) * 100)}<Text style={{ fontSize: 13, fontWeight: '500', color: '#9e958d' }}>%</Text>
+                          </Text>
+                        )}
                         <View style={{
-                          height: 3, backgroundColor: '#ede9e4', borderRadius: 2, marginBottom: 6, overflow: 'hidden',
+                          height: 4, backgroundColor: '#ede9e4', borderRadius: 2, marginBottom: 5, overflow: 'hidden',
                         }}>
                           {progressPct(cr) > 0 && (
                             <View style={{
-                              height: 3, width: `${progressPct(cr) * 100}%`, backgroundColor: '#231f1b', borderRadius: 2,
+                              height: 4, width: `${progressPct(cr) * 100}%`, backgroundColor: '#7b9e7e', borderRadius: 2,
                             }} />
                           )}
                         </View>
@@ -705,9 +725,9 @@ export default function HomeScreen() {
                     ) : (
                       <Text style={{ fontSize: 11, color: '#9e958d' }}>In progress</Text>
                     )}
-                  </View>
-                  <Text style={{ fontSize: 20, color: '#ede9e4', marginLeft: 8 }}>›</Text>
-                </View>
+                    </View>{/* close flex:1 text column */}
+                  </View>{/* close inner row */}
+                </View>{/* close card container */}
               </TouchableOpacity>
             );
           })() : (

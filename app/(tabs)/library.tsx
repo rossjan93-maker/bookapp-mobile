@@ -3,6 +3,7 @@ import { fetchGoogleBooksCoverUrl } from '../../lib/googleBooks';
 import { repairBooksMetadata } from '../../lib/metadataRepair';
 import { registerCacheClearer } from '../../lib/tabCache';
 import { ActivityIndicator, FlatList, Modal, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
@@ -13,7 +14,6 @@ import { findSeriesForBook } from '../../lib/seriesCatalog';
 import { triggerRecPrewarm } from '../../lib/recPrewarm';
 import { registerWtTarget, useWalkthrough } from '../../lib/walkthroughEngine';
 import { WtDemoLibrary } from '../../components/walkthrough/WtDemoLibrary';
-import { TabScreenHeader } from '../../components/TabScreenHeader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -141,6 +141,7 @@ registerCacheClearer(() => { _libCache = null; }, 'bookData');
 const VALID_FILTERS = new Set<FilterKey>(['all', 'want_to_read', 'reading', 'finished', 'dnf']);
 
 export default function LibraryScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { initialFilter } = useLocalSearchParams<{ initialFilter?: string }>();
   const [currentUserId, setCurrentUserId] = useState<string | null>(() => _libCache?.userId ?? null);
@@ -669,24 +670,6 @@ export default function LibraryScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#f5f1ec' }}>
-      <TabScreenHeader
-        title="Library"
-        rightAction={
-          <TouchableOpacity
-            onPress={() => router.push('/add-book')}
-            style={{
-              flexDirection:    'row',
-              alignItems:       'center',
-              backgroundColor:  '#231f1b',
-              borderRadius:     8,
-              paddingHorizontal: 14,
-              paddingVertical:  8,
-            }}
-          >
-            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>+ Add</Text>
-          </TouchableOpacity>
-        }
-      />
     <FlatList
       data={displayedItems}
       keyExtractor={item => isYearSeparator(item) ? item.key : item.id}
@@ -696,7 +679,37 @@ export default function LibraryScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
       }
       ListHeaderComponent={
-        <View ref={libTargetRef} style={{ paddingTop: 8 }}>
+        <View ref={libTargetRef} style={{ paddingTop: insets.top + 8 }}>
+          {/* ── Hero header ── */}
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginBottom: 4 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{
+                fontSize: 32,
+                fontWeight: '800',
+                color: '#231f1b',
+                letterSpacing: -1,
+                lineHeight: 38,
+              }}>Library</Text>
+              <Text style={{ fontSize: 12, color: '#9e958d', fontWeight: '500', marginTop: 3 }}>
+                {items.length > 0 ? `${items.length} book${items.length === 1 ? '' : 's'}` : ''}
+              </Text>
+              <View style={{ width: 28, height: 2.5, backgroundColor: '#7b9e7e', marginTop: 10, borderRadius: 2 }} />
+            </View>
+            <TouchableOpacity
+              onPress={() => router.push('/add-book')}
+              style={{
+                flexDirection:    'row',
+                alignItems:       'center',
+                backgroundColor:  '#231f1b',
+                borderRadius:     20,
+                paddingHorizontal: 16,
+                paddingVertical:  9,
+                marginBottom: 4,
+              }}
+            >
+              <Text style={{ color: '#f5f1ec', fontSize: 13, fontWeight: '700', letterSpacing: 0.2 }}>+ Add</Text>
+            </TouchableOpacity>
+          </View>
           {contextSubtitle && (
             <Text style={{ fontSize: 13, color: '#9e958d', marginBottom: 18 }}>
               {contextSubtitle}
@@ -733,14 +746,14 @@ export default function LibraryScreen() {
                       paddingVertical: 7,
                       borderRadius: 20,
                       borderWidth: 1,
-                      backgroundColor: active ? '#231f1b' : readingAccent ? '#eff6ff' : 'transparent',
-                      borderColor:     active ? '#231f1b' : readingAccent ? '#bfdbfe' : '#ede9e4',
+                      backgroundColor: active ? '#7b9e7e' : readingAccent ? '#e6f0e6' : 'transparent',
+                      borderColor:     active ? '#7b9e7e' : readingAccent ? '#a8d0aa' : '#ede9e4',
                     }}
                   >
                     <Text style={{
                       fontSize: 13,
                       fontWeight: active ? '600' : '400',
-                      color: active ? '#fff' : '#78716c',
+                      color: active ? '#fff' : '#6b635c',
                     }}>
                       {f.label}{count}
                     </Text>

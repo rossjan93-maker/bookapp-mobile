@@ -334,19 +334,19 @@ export function RecCard({
       overflow: 'hidden',
       ...(featured ? { borderWidth: 1, borderColor: '#ede9e4' } : {}),
     }}>
-      {featured && <View style={{ height: 3, backgroundColor: '#231f1b' }} />}
+      {featured && <View style={{ height: 3, backgroundColor: '#7b9e7e' }} />}
 
       <TouchableOpacity
         onPress={handleCardPress}
         activeOpacity={0.75}
-        style={{ padding: 12, flexDirection: 'row', alignItems: 'flex-start' }}
+        style={{ padding: featured ? 14 : 12, flexDirection: 'row', alignItems: 'flex-start' }}
       >
         <CoverThumb
           url={book.cover_url}
           externalId={book.external_id}
           title={book.title}
-          width={featured ? 52 : 44}
-          height={featured ? 76 : 64}
+          width={featured ? 72 : 44}
+          height={featured ? 106 : 64}
         />
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text
@@ -444,14 +444,23 @@ export function RecCard({
             return null;
           })()}
 
-          {collapsedReason && (
+          {collapsedReason && (featured ? (
+            <View style={{ marginTop: 4, borderLeftWidth: 2, borderLeftColor: '#7b9e7e', paddingLeft: 8 }}>
+              <Text
+                style={{ fontSize: 13, fontStyle: 'italic', color: '#6b635c', lineHeight: 18, marginBottom: 2 }}
+                numberOfLines={3}
+              >
+                {collapsedReason}
+              </Text>
+            </View>
+          ) : (
             <Text
               style={{ fontSize: 13, fontWeight: '600', color: '#231f1b', lineHeight: 18, marginBottom: 2 }}
               numberOfLines={2}
             >
               {collapsedReason}
             </Text>
-          )}
+          ))}
         </View>
       </TouchableOpacity>
 
