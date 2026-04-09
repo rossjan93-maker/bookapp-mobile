@@ -9,6 +9,13 @@ Not specified.
 ## System Architecture
 The application is developed using React Native with Expo Router for navigation and web compatibility. Supabase provides the backend infrastructure, including authentication, PostgreSQL database management, and Row Level Security (RLS). TypeScript ensures type safety throughout the application.
 
+**Metadata Architecture (Phase 1 — Provider-Agnostic Layer):**
+- `lib/metadataProvider.ts` — canonical provider abstraction. Defines `BookMetadataProvider` interface, `ProviderBookResult` (normalized canonical shape), `CoverState` (explicit fallback signal), `GoogleBooksProvider` (first adapter implementation), `recordProviderLink()` (upsert to book_source_links), `selectBestCover()` (ranked cover selection), `deriveMetadataConfidence()` (isbn13 > title+author > low).
+- `lib/metadataRepair.ts` — self-healing two-phase OL→GB repair. Now writes `cover_source`, `metadata_confidence`, records provider links to `book_source_links`, uses `selectBestCover` for cover selection, logs all repair activity with `[REPAIR]` prefix.
+- `lib/bookEnrichment.ts` — cache-aware enrichment pipeline. Now logs cache hits/misses (`[ENRICHMENT]` prefix) and GB background fetch outcomes.
+- `lib/googleBooks.ts` — isolated GB API functions (unchanged — no app code imports GB directly; all access goes through metadataRepair or bookEnrichment).
+- Schema: `books.cover_source` (text), `books.metadata_confidence` (text check: high/medium/low), `book_source_links.raw_payload` (jsonb), `book_source_links.last_fetched_at` (timestamptz), `book_source_links.fetch_status` (text check: success/failed/rate_limited). Migration: `supabase/migrations/20260409000000_provider_link_hardening.sql`.
+
 **Key Features:**
 - **Book Search & Recommendations:** Users can search for books using a hybrid Google Books + Open Library retrieval system. Recommendations can be sent to friends.
 - **Library Management:** Users can track reading status (want to read, reading, finished, DNF) and rate completed books.

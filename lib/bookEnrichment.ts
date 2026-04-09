@@ -298,7 +298,14 @@ export async function loadEnrichmentBatch(
       .in('external_id', externalIds)
       .gte('cached_at', cutoff);
 
-    if (error) return result;   // table not yet created — degrade gracefully
+    if (error) {
+      console.log(`[ENRICHMENT] loadEnrichmentBatch db error — ${error.message}`);
+      return result;   // table not yet created — degrade gracefully
+    }
+
+    const hits = (data ?? []).length;
+    const misses = externalIds.length - hits;
+    console.log(`[ENRICHMENT] cache batch — requested=${externalIds.length} hits=${hits} misses=${misses}`);
 
     for (const row of ((data ?? []) as EnrichmentCacheRow[])) {
       result.set(row.external_id, {
@@ -395,6 +402,7 @@ export async function getEnrichmentForCandidates(
   // Language and popularity are unknown at this stage; both degrade safely:
   //   language = undefined  → hygiene keeps the book (conservative, not exclusionary)
   //   popularity = {}       → enrichment_bonus uses 0 (no inflation, no penalty)
+  console.log(`[ENRICHMENT] warming cache for ${uncached.length} uncached candidate(s)`);
   const localProfiles = uncached.map(
     book => buildEnrichmentProfile(book.external_id!, book, null)
   );
@@ -411,10 +419,16 @@ export async function getEnrichmentForCandidates(
   Promise.all(
     uncached.map(async (book): Promise<BookEnrichmentProfile> => {
       const gb = await fetchGBEnrichmentData(book.title, book.author);
+      if (gb) {
+        console.log(`[ENRICHMENT] GB fetch ok — "${book.title}" lang=${gb.language ?? '?'} rating=${gb.averageRating ?? '?'}`);
+      } else {
+        console.log(`[ENRICHMENT] GB fetch returned null for "${book.title}"`);
+      }
       return buildEnrichmentProfile(book.external_id!, book, gb);
     })
   ).then(freshProfiles => {
     persistEnrichmentBatch(client, freshProfiles).catch(() => {});
+    console.log(`[ENRICHMENT] persisted ${freshProfiles.length} enrichment profile(s) to cache`);
   }).catch(() => {});
 
   return result;

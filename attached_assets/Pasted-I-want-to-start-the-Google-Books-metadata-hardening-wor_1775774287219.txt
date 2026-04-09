@@ -1,0 +1,127 @@
+I want to start the Google Books / metadata hardening work properly, beginning with architecture, not surface-level integration.
+
+Your task is to implement the foundation for a provider-agnostic metadata layer in Readstack.
+
+Goal
+Readstack must have its own canonical book model and must not become structurally dependent on Google Books. External providers should enrich our books, not define them.
+
+What I want built now
+Phase 1 only. Do not try to build every downstream feature yet.
+
+Please implement the following:
+
+1. Canonical book identity foundation
+Create or extend the database/data model so Readstack has its own canonical book record, separate from any one provider.
+
+I want a structure equivalent to:
+
+books
+- id (internal UUID)
+- canonical_title
+- canonical_author
+- isbn_10
+- isbn_13
+- work_key
+- edition_key
+- primary_cover_url
+- cover_source
+- description
+- description_source
+- metadata_confidence
+- created_at
+- updated_at
+
+book_provider_links
+- id
+- book_id
+- provider (google_books for now, but architect for more later)
+- provider_volume_id
+- raw_payload
+- last_fetched_at
+- fetch_status
+- created_at
+- updated_at
+
+If parts of this already exist, do not duplicate them blindly. Reconcile against the current schema and evolve it cleanly.
+
+2. Provider abstraction layer
+Build a provider-agnostic metadata interface in code.
+
+I do not want Google Books logic scattered throughout the app.
+
+Create a clean adapter/service pattern so the app can call something like:
+- searchBooks(query)
+- getBookByProviderId(provider, id)
+- enrichCanonicalBook(book)
+- normalizeProviderBook(payload)
+
+Google Books can be the first provider implementation, but the app should depend on the abstraction, not directly on Google-shaped fields.
+
+3. Safe fallback rules in the UI/data flow
+Implement the base rules so core app UX does not depend on external metadata being present.
+
+Rules:
+- If no cover is available, return a fallback state the UI can render cleanly
+- If no description is available, do not break the screen or reserve awkward empty space
+- If provider fetch fails, the app should still render from canonical/local data
+- If metadata confidence is low, do not aggressively overwrite canonical fields
+- Recommendations, library, and onboarding must not fail just because provider metadata is incomplete
+
+You do not need to redesign every screen right now, but I want the underlying handling and return shapes in place.
+
+4. Initial Google Books adapter
+Implement the first provider adapter for Google Books using the new abstraction.
+
+Requirements:
+- normalize Google Books payload into our provider-agnostic shape
+- store provider linkage in book_provider_links
+- persist raw payload for debugging / future reprocessing
+- only map fields we actually trust
+- do not assume description or image links are always present
+- do not make Google Books the only source of truth for whether a book exists
+
+5. Cover reliability groundwork
+Implement the first step of cover hardening:
+- choose the best available cover URL from provider data
+- persist it onto the canonical book record if appropriate
+- do not repeatedly refetch the same asset unnecessarily
+- return a clean fallback signal when a usable cover is unavailable
+
+Do not build a full CDN/proxy layer yet unless it is already trivial in the current architecture. This phase is about correct structure first.
+
+6. Instrumentation / observability hooks
+Add lightweight logging or tracking around provider activity:
+- fetch success/failure
+- missing cover
+- missing description
+- provider link creation/update
+- cache hit vs live fetch if caching already exists
+
+I want enough instrumentation to validate behavior during testing.
+
+Constraints
+- Do not break current onboarding, recommendations, or library flows
+- Do not create a giant speculative system
+- Keep the implementation minimal but architecturally correct
+- Prefer incremental migration over destructive rewrites
+- If current code already has overlapping book metadata logic, refactor toward the new pattern instead of layering duplicate logic on top
+
+What I need back from you
+When done, give me a precise implementation report with:
+
+1. What files changed
+2. What schema/migration changes were made
+3. The exact provider abstraction you introduced
+4. How Google Books now plugs into it
+5. What fallback logic now exists
+6. Any areas you intentionally deferred
+7. How I should test this end to end
+8. Runtime proof:
+   - sample logs
+   - example data shape
+   - confirmation that existing app flows still work
+
+Important
+Do not just describe a plan. Make the changes.
+
+Also, before coding, inspect the existing schema and current metadata/recommendation/library flows so you fit this into the real codebase rather than inventing a parallel system.
