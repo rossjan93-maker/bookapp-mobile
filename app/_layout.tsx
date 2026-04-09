@@ -156,23 +156,38 @@ export default function RootLayout() {
         // Fallback: needsOnboarding=true sends the user to onboarding, which is
         // the correct safe default for any recreated or genuinely new account.
         try {
-          // Check if a profile row already exists BEFORE ensureProfile runs.
-          // In the delete→recreate path the new UUID will have no profile yet.
-          console.log('[WARM_BOOT] preProfile select start');
-          const { data: preProfile } = await withTimeout(
-            supabase.from('profiles').select('id, onboarding_completed').eq('id', newSession.user.id).maybeSingle(),
-            8000,
-            'preProfile select',
-          );
-          console.log('[WARM_BOOT] profile pre-exists=', !!preProfile, 'existing onboarding_completed=', preProfile?.onboarding_completed ?? null);
+          // ── Step 1: fetch pre-existing profile row + kick off local stage read
+          // Both run in parallel — localStage is AsyncStorage (fast but non-zero).
+          // preProfile already selects onboarding_completed so we reuse it below
+          // and avoid a separate checkOnboardingCompleted round-trip.
+          console.log('[WARM_BOOT] preProfile + localStage parallel start');
+          const meta = newSession.user.user_metadata;
+          const [preProfileRes, localStage] = await Promise.all([
+            withTimeout(
+              supabase.from('profiles').select('id, onboarding_completed').eq('id', newSession.user.id).maybeSingle(),
+              8000,
+              'preProfile select',
+            ),
+            withTimeout(readOnboardingStage(), 3000, 'readOnboardingStage'),
+          ]);
+          const preProfile = preProfileRes.data;
+          console.log('[WARM_BOOT] preProfile=', !!preProfile, 'onboarding_completed=', preProfile?.onboarding_completed ?? null, 'localStage=', localStage);
 
-          if (!preProfile) {
-            // No pre-existing row → brand-new or recreated account on this device.
-            console.log('[DELETE_TRACE] recreated account signup start — no existing profile for userId=', newSession.user.id.slice(0, 8));
+          // ── Fast path: if local state already says done, resolve immediately
+          // and upsert the profile row in the background — no need to block.
+          const locallyDone = localStage === 'done';
+          const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup';
+          if (locallyDone || midFlow) {
+            console.log('[WARM_BOOT] localStage fast path — needsOnboarding=', !locallyDone && !midFlow);
+            setNeedsOnboarding(false);
+            // Upsert in background so profile row exists; errors are non-blocking.
+            ensureProfile(newSession.user.id, newSession.user.email ?? '', meta?.first_name, meta?.last_name)
+              .catch(e => console.warn('[WARM_BOOT] background ensureProfile error:', e));
+            return;
           }
 
+          // ── Step 2: upsert profile row (only blocks when we don't have fast path)
           console.log('[WARM_BOOT] ensureProfile start');
-          const meta = newSession.user.user_metadata;
           await ensureProfile(
             newSession.user.id,
             newSession.user.email ?? '',
@@ -180,31 +195,12 @@ export default function RootLayout() {
             meta?.last_name,
           );
 
-          // Re-fetch the row to confirm upsert landed and log the result.
-          console.log('[WARM_BOOT] postProfile select start');
-          const { data: postProfile } = await withTimeout(
-            supabase.from('profiles').select('id, onboarding_completed').eq('id', newSession.user.id).maybeSingle(),
-            8000,
-            'postProfile select',
-          );
-          console.log('[WARM_BOOT] profile fetch result — exists=', !!postProfile, 'onboarding_completed=', postProfile?.onboarding_completed ?? null);
-
-          const completed = await checkOnboardingCompleted(newSession.user.id);
-          console.log('[WARM_BOOT] onboarding_completed=', completed);
-
-          if (completed) {
-            console.log('[WARM_BOOT] needsOnboarding=', false);
-            setNeedsOnboarding(false);
-          } else {
-            console.log('[WARM_BOOT] localStage start');
-            const localStage  = await withTimeout(readOnboardingStage(), 3000, 'readOnboardingStage');
-            const locallyDone = localStage === 'done';
-            const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup';
-            const result      = !midFlow && !locallyDone;
-            console.log('[WARM_BOOT] localStage=', localStage, 'locallyDone=', locallyDone, 'midFlow=', midFlow);
-            console.log('[WARM_BOOT] needsOnboarding=', result);
-            setNeedsOnboarding(result);
-          }
+          // ── Step 3: routing decision — use preProfile.onboarding_completed
+          // already fetched in Step 1; no extra round-trip needed.
+          const completed = preProfile?.onboarding_completed === true;
+          const result    = !completed && !locallyDone && !midFlow;
+          console.log('[WARM_BOOT] onboarding_completed=', completed, 'needsOnboarding=', result);
+          setNeedsOnboarding(result);
 
           console.log('[WARM_BOOT] app shell ready — routing guard will now fire');
 

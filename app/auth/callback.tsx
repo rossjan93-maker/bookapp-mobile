@@ -1,64 +1,25 @@
 /**
  * app/auth/callback.tsx
  *
- * Diagnostic-first auth callback screen.
- * Renders a Bootstrap Diagnostic panel from the very first frame with
- * individual substep rows so we can see exactly which step hangs.
+ * Post-OAuth landing screen.
  *
- * Layout: plain View(flex:1) → fixed header + ScrollView body.
- * Never uses ScrollView+justifyContent:center (clips content on Android).
+ * Two parallel paths race to navigate:
+ *  A) BootstrapContext (Phase C) — _layout.tsx resolves needsOnboarding and
+ *     this screen navigates immediately. This is the fast path.
+ *  B) runProbe — independent substep chain that navigates if Phase C hasn't
+ *     fired yet. Runs minimal sequential queries, parallelised where possible.
+ *
+ * The diagnostic panel and debug buttons have been removed for production.
  */
-import { useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  ScrollView,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Text, View } from 'react-native';
 import { BookStackLoader } from '../../components/BookStackLoader';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { readOnboardingStage } from '../../lib/onboardingStage';
 import { useBootstrap } from '../_layout';
 
-// ─── Module-level mount counter ──────────────────────────────────────────────
-let _mountCount = 0;
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-type S = 'pending' | 'ok' | 'fail' | 'skip';
-
-type DiagState = {
-  codeExchange:           S;
-  sessionLive:            S;
-  preProfile:             S;
-  ensureProfile:          S;
-  checkOnboardingCompleted: S;
-  localStage:             S;
-  needsOnboarding:        S;
-  routeDecision:          string;
-  lastError:              string | null;
-  timerElapsed:           number;
-  mountCount:             number;
-  stalled:                boolean;
-};
-
-const INIT: DiagState = {
-  codeExchange:             'pending',
-  sessionLive:              'pending',
-  preProfile:               'pending',
-  ensureProfile:            'pending',
-  checkOnboardingCompleted: 'pending',
-  localStage:               'pending',
-  needsOnboarding:          'pending',
-  routeDecision:            'pending',
-  lastError:                null,
-  timerElapsed:             0,
-  mountCount:               0,
-  stalled:                  false,
-};
-
-// ─── Timeout wrapper ──────────────────────────────────────────────────────────
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
     p,
@@ -68,434 +29,126 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   ]);
 }
 
-// ─── DiagRow ──────────────────────────────────────────────────────────────────
-function DiagRow({ label, value }: { label: string; value: string }) {
-  const isOk   = value === 'ok';
-  const isBad  = value === 'fail';
-  const isSkip = value === 'skip';
-  const color  = isOk ? '#15803d' : isBad ? '#dc2626' : isSkip ? '#b45309' : '#1c1917';
-  return (
-    <View style={{
-      flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-      paddingVertical: 8, paddingHorizontal: 12,
-      borderBottomWidth: 1, borderBottomColor: '#e7e5e4', minHeight: 36,
-    }}>
-      <Text style={{ fontSize: 13, color: '#44403c', fontFamily: 'monospace', flex: 1 }}>
-        {label}
-      </Text>
-      <Text style={{ fontSize: 13, fontWeight: '800', color, fontFamily: 'monospace' }}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-// ─── Screen ───────────────────────────────────────────────────────────────────
 export default function AuthCallbackScreen() {
-  const { code }  = useLocalSearchParams<{ code?: string }>();
-  const router    = useRouter();
+  const { code }    = useLocalSearchParams<{ code?: string }>();
+  const router      = useRouter();
+  const insets      = useSafeAreaInsets();
   const { session, needsOnboarding: ctxOnboarding } = useBootstrap();
-
-  const [diag,     setDiag]     = useState<DiagState>(INIT);
-  const [retrying, setRetrying] = useState(false);
 
   const navigatedRef  = useRef(false);
   const probeStarted  = useRef(false);
 
-  // ── Mount / unmount ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    _mountCount += 1;
-    console.log('[WARM_BOOT] callback mounted count=', _mountCount);
-    setDiag(d => ({ ...d, mountCount: _mountCount }));
-    return () => console.log('[WARM_BOOT] callback unmounted count=', _mountCount);
-  }, []);
-
-  // ── 1-second elapsed ticker ─────────────────────────────────────────────────
-  useEffect(() => {
-    const iv = setInterval(() =>
-      setDiag(d => ({ ...d, timerElapsed: d.timerElapsed + 1 })), 1000);
-    return () => clearInterval(iv);
-  }, []);
-
-  // ── 15-second stall marker ──────────────────────────────────────────────────
-  useEffect(() => {
-    const t = setTimeout(() => {
-      if (navigatedRef.current) return;
-      console.warn('[WARM_BOOT] overall 15s timeout fired — bootstrap never completed');
-      setDiag(d => ({
-        ...d,
-        stalled:   true,
-        lastError: d.lastError ?? 'Bootstrap did not complete within 15 s',
-      }));
-    }, 15000);
-    return () => clearTimeout(t);
-  }, []);
-
   // ── Phase A: code exchange (only when `code` param is present) ─────────────
   useEffect(() => {
-    if (!supabase) {
-      setDiag(d => ({ ...d, codeExchange: 'fail', lastError: 'Supabase client not configured' }));
-      return;
-    }
-    if (!code) {
-      // No code param — Supabase SDK may have already handled the exchange
-      // via the deep-link handler in _layout.tsx. Mark as skip; we'll
-      // update to ok once session arrives via auth listener.
-      console.log('[WARM_BOOT] no code param — exchange will come via auth listener');
-      setDiag(d => ({ ...d, codeExchange: 'skip' }));
-      return;
-    }
-
-    console.log('[WARM_BOOT] exchangeCodeForSession start — code=', code.slice(0, 8) + '…');
-    withTimeout(
-      supabase.auth.exchangeCodeForSession(code),
-      10000,
-      'exchangeCodeForSession',
-    )
-      .then(({ data, error: err }) => {
-        if (err) {
-          console.warn('[WARM_BOOT] exchangeCodeForSession failed:', err.message);
-          setDiag(d => ({ ...d, codeExchange: 'fail', lastError: err.message }));
-          return;
-        }
-        const uid = data.session?.user?.id ?? 'none';
-        console.log('[WARM_BOOT] exchangeCodeForSession success — userId=', uid.slice(0, 8));
-        setDiag(d => ({ ...d, codeExchange: 'ok' }));
+    if (!supabase || !code) return;
+    console.log('[CALLBACK] exchangeCodeForSession start');
+    withTimeout(supabase.auth.exchangeCodeForSession(code), 10000, 'exchangeCodeForSession')
+      .then(({ error }) => {
+        if (error) console.warn('[CALLBACK] exchangeCodeForSession failed:', error.message);
+        else       console.log('[CALLBACK] exchangeCodeForSession ok');
       })
-      .catch((e: Error) => {
-        console.warn('[WARM_BOOT] exchangeCodeForSession threw:', e.message);
-        setDiag(d => ({ ...d, codeExchange: 'fail', lastError: e.message }));
-      });
+      .catch((e: Error) => console.warn('[CALLBACK] exchangeCodeForSession threw:', e.message));
   }, [code]);
 
-  // ── Phase B: session arrives (via either path) → run substep probe ─────────
-  //
-  // session goes through three states on a fresh auth callback:
-  //   undefined  → bootstrap not yet started (initial value, ignore)
-  //   null       → getSession() cold-start returned null before auth listener fires
-  //                (this is NORMAL — NOT a failure)
-  //   Session    → auth listener fired with real session
-  //
-  // We must NOT mark failure on null, because that is always the cold-start
-  // transient. Only escalate to fail if session was previously ok (revoked).
+  // ── Phase B: session live → start probe as backup ──────────────────────────
   useEffect(() => {
-    if (session === undefined) return;
-
-    if (session === null) {
-      // Transient cold-start null. Show it honestly in diag but do NOT set
-      // lastError or mark codeExchange/session as fail — we're still waiting.
-      console.log('[WARM_BOOT] session=null (cold-start transient — waiting for auth listener)');
-      setDiag(d => ({
-        ...d,
-        // Only escalate if we were previously ok (session revoked mid-flow).
-        sessionLive: d.sessionLive === 'ok' ? 'fail' : 'pending',
-        lastError:   d.sessionLive === 'ok' ? 'Session revoked during callback' : d.lastError,
-      }));
-      return;
-    }
-
-    // Real active session — from auth listener or from exchangeCodeForSession.
-    // Whatever codeExchange was (pending/skip/fail from the cold-start null
-    // window), the presence of a session proves the exchange succeeded somewhere.
-    console.log('[WARM_BOOT] session active — userId=', session.user.id.slice(0, 8));
-    setDiag(d => ({
-      ...d,
-      sessionLive:  'ok',
-      codeExchange: 'ok',     // session proves exchange succeeded
-      lastError:    null,     // clear any transient errors from cold-start window
-    }));
-
+    if (session === undefined || session === null) return;
     if (probeStarted.current) return;
     probeStarted.current = true;
+    console.log('[CALLBACK] session live — starting probe backup');
     runProbe(session.user.id);
   }, [session]);
 
-  // ── Phase C: BootstrapContext needsOnboarding resolved ────────────────────
-  // _layout.tsx finishes its own bootstrap and publishes needsOnboarding via
-  // BootstrapContext. Navigate immediately when both session and needsOnboarding
-  // are confirmed — this is the fast happy path and avoids waiting for the
-  // probe to finish all its substeps on its own.
+  // ── Phase C: BootstrapContext resolved — fast path ─────────────────────────
   useEffect(() => {
     if (ctxOnboarding === undefined) return;
-    if (session === undefined || session === null) return;
-
-    const val: S = ctxOnboarding ? 'ok' : 'fail'; // ok = "yes needs onboarding"
-    setDiag(d => ({ ...d, needsOnboarding: val }));
-
+    if (!session) return;
     if (navigatedRef.current) return;
     navigatedRef.current = true;
     const route = ctxOnboarding ? '/onboarding' : '/';
-    console.log('[WARM_BOOT] ctx bootstrap resolved — routing to', route);
+    console.log('[CALLBACK] ctx fast path → ', route);
     router.replace(route as '/onboarding' | '/');
   }, [ctxOnboarding, session]);
 
-  // ── Probe: run each bootstrap substep with individual timeouts ─────────────
+  // ── Probe: minimal sequential fallback ─────────────────────────────────────
   async function runProbe(userId: string) {
-    if (!supabase) {
-      setDiag(d => ({ ...d, lastError: 'Supabase client not configured' }));
-      return;
-    }
-
-    // ── preProfile ────────────────────────────────────────────────────────────
-    let preProfileData: { id: string; onboarding_completed: boolean | null } | null = null;
+    if (!supabase) return;
     try {
-      console.log('[WARM_BOOT] preProfile start');
-      const res = await withTimeout(
-        supabase.from('profiles').select('id, onboarding_completed').eq('id', userId).maybeSingle(),
-        8000,
-        'preProfile',
-      );
-      console.log('[WARM_BOOT] preProfile result data=', res.data, 'error=', res.error?.message ?? null);
-      if (res.error) {
-        setDiag(d => ({ ...d, preProfile: 'fail', lastError: 'preProfile: ' + res.error!.message }));
+      // Parallel: fetch profile row + local stage simultaneously
+      console.log('[CALLBACK] probe: parallel preProfile + localStage');
+      const [profileRes, localStage] = await Promise.all([
+        withTimeout(
+          supabase.from('profiles').select('id, onboarding_completed').eq('id', userId).maybeSingle(),
+          8000,
+          'probe:preProfile',
+        ),
+        withTimeout(readOnboardingStage(), 3000, 'probe:localStage'),
+      ]);
+
+      const locallyDone = localStage === 'done';
+      const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup';
+
+      // Fast path: if local state is clear, route immediately and upsert in background
+      if (locallyDone || midFlow) {
+        console.log('[CALLBACK] probe: localStage fast path → /');
+        navigate(false);
+        // Profile upsert in background — non-blocking
+        supabase.from('profiles').upsert(
+          { id: userId },
+          { onConflict: 'id', ignoreDuplicates: true },
+        ).then(() => console.log('[CALLBACK] probe: background upsert done'));
         return;
       }
-      preProfileData = res.data;
-      setDiag(d => ({ ...d, preProfile: 'ok' }));
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.warn('[WARM_BOOT] preProfile threw:', msg);
-      setDiag(d => ({ ...d, preProfile: 'fail', lastError: msg }));
-      return;
-    }
 
-    // ── ensureProfile (upsert) ────────────────────────────────────────────────
-    try {
+      // Upsert profile row (only blocks when local state is unknown)
       const { data: { session: s } } = await supabase.auth.getSession();
-      const meta            = s?.user?.user_metadata ?? {};
-      const emailPrefix     = (s?.user?.email ?? '').split('@')[0] || 'user';
-      const idSuffix        = userId.replace(/-/g, '').slice(0, 6);
-      const fallbackUsername = `${emailPrefix}_${idSuffix}`;
-      const upsertData: Record<string, unknown> = { id: userId, username: fallbackUsername };
-      if (meta.first_name) upsertData.first_name = meta.first_name;
-      if (meta.last_name)  upsertData.last_name  = meta.last_name;
-
-      console.log('[WARM_BOOT] ensureProfile start');
-      const res = await withTimeout(
-        supabase.from('profiles').upsert(upsertData, { onConflict: 'id', ignoreDuplicates: true }),
+      const meta = s?.user?.user_metadata ?? {};
+      const emailPrefix = (s?.user?.email ?? '').split('@')[0] || 'user';
+      const idSuffix    = userId.replace(/-/g, '').slice(0, 6);
+      await withTimeout(
+        supabase.from('profiles').upsert(
+          { id: userId, username: `${emailPrefix}_${idSuffix}`, ...meta.first_name ? { first_name: meta.first_name } : {}, ...meta.last_name ? { last_name: meta.last_name } : {} },
+          { onConflict: 'id', ignoreDuplicates: true },
+        ),
         8000,
-        'ensureProfile',
+        'probe:ensureProfile',
       );
-      console.log('[WARM_BOOT] ensureProfile result data=', res.data, 'error=', res.error?.message ?? null);
-      if (res.error) {
-        setDiag(d => ({ ...d, ensureProfile: 'fail', lastError: 'ensureProfile: ' + res.error!.message }));
-        // don't return — try to continue; upsert may fail on recreated rows
-      } else {
-        setDiag(d => ({ ...d, ensureProfile: 'ok' }));
-      }
+
+      // Use the onboarding_completed from the pre-fetched row — no extra query
+      const completed  = profileRes.data?.onboarding_completed === true;
+      const needsOb    = !completed && !locallyDone && !midFlow;
+      console.log('[CALLBACK] probe: onboarding_completed=', completed, 'needsOnboarding=', needsOb);
+      navigate(needsOb);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.warn('[WARM_BOOT] ensureProfile threw:', msg);
-      setDiag(d => ({ ...d, ensureProfile: 'fail', lastError: msg }));
-      // don't return — try to proceed
+      console.warn('[CALLBACK] probe threw — defaulting to onboarding:', msg);
+      navigate(true);
     }
+  }
 
-    // ── checkOnboardingCompleted ──────────────────────────────────────────────
-    let onboardingDoneDB = false;
-    try {
-      console.log('[WARM_BOOT] checkOnboardingCompleted start');
-      const res = await withTimeout(
-        supabase.from('profiles').select('onboarding_completed').eq('id', userId).maybeSingle(),
-        8000,
-        'checkOnboardingCompleted',
-      );
-      console.log('[WARM_BOOT] checkOnboardingCompleted result data=', res.data, 'error=', res.error?.message ?? null);
-      if (res.error) {
-        setDiag(d => ({ ...d, checkOnboardingCompleted: 'fail', lastError: 'checkOnboarding: ' + res.error!.message }));
-      } else {
-        onboardingDoneDB = res.data?.onboarding_completed === true;
-        setDiag(d => ({ ...d, checkOnboardingCompleted: 'ok' }));
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.warn('[WARM_BOOT] checkOnboardingCompleted threw:', msg);
-      setDiag(d => ({ ...d, checkOnboardingCompleted: 'fail', lastError: msg }));
-      // continue — fall through to localStage
-    }
-
-    // ── localStage ────────────────────────────────────────────────────────────
-    let locallyDone = false;
-    let midFlow     = false;
-    try {
-      console.log('[WARM_BOOT] localStage start');
-      const stage = await withTimeout(readOnboardingStage(), 3000, 'localStage');
-      console.log('[WARM_BOOT] localStage result', stage);
-      locallyDone = stage === 'done';
-      midFlow     = stage === 'walkthrough' || stage === 'final_setup';
-      setDiag(d => ({ ...d, localStage: 'ok' }));
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.warn('[WARM_BOOT] localStage threw:', msg);
-      setDiag(d => ({ ...d, localStage: 'fail', lastError: msg }));
-      // continue — default to needs onboarding
-    }
-
-    // ── needsOnboarding + routeDecision ───────────────────────────────────────
-    const needsOb = !onboardingDoneDB && !locallyDone && !midFlow;
-    const route   = needsOb ? '/onboarding' : '/';
-    console.log('[WARM_BOOT] routeDecision result needsOnboarding=', needsOb, 'route=', route);
-
-    setDiag(d => ({
-      ...d,
-      needsOnboarding: needsOb ? 'ok' : 'fail', // ok = "yes, needs onboarding"
-      routeDecision:   route,
-    }));
-
-    // Navigate (if not already done by BootstrapContext path)
+  function navigate(needsOnboarding: boolean) {
     if (navigatedRef.current) return;
     navigatedRef.current = true;
-    console.log('[WARM_BOOT] probe routing to', route);
+    const route = needsOnboarding ? '/onboarding' : '/';
+    console.log('[CALLBACK] probe routing to', route);
     router.replace(route as '/onboarding' | '/');
   }
 
-  // ── Retry: re-run probe from scratch ────────────────────────────────────────
-  async function handleRetry() {
-    if (!supabase) return;
-    setRetrying(true);
-    probeStarted.current = false;
-    navigatedRef.current = false;
-    setDiag(d => ({
-      ...INIT,
-      codeExchange: d.codeExchange, // preserve what we know
-      sessionLive:  d.sessionLive,
-      timerElapsed: d.timerElapsed,
-      mountCount:   d.mountCount,
-    }));
-    try {
-      const { data } = await supabase.auth.getSession();
-      if (data.session) {
-        probeStarted.current = true;
-        setDiag(d => ({ ...d, sessionLive: 'ok', codeExchange: d.codeExchange === 'pending' ? 'ok' : d.codeExchange }));
-        await runProbe(data.session.user.id);
-      } else {
-        setDiag(d => ({ ...d, sessionLive: 'fail', lastError: 'Retry: no active session' }));
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setDiag(d => ({ ...d, lastError: 'Retry threw: ' + msg }));
-    }
-    setRetrying(false);
-  }
-
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Render: clean branded loading screen ───────────────────────────────────
   return (
-    <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
-
-      {/* Fixed header ──────────────────────────────────────────────────────── */}
-      <View style={{
-        backgroundColor:   diag.stalled ? '#fef2f2' : '#faf9f7',
-        paddingTop:        72,
-        paddingBottom:     20,
-        alignItems:        'center',
-        borderBottomWidth: 2,
-        borderBottomColor: diag.stalled ? '#fca5a5' : '#d6d3d1',
+    <View style={{ flex: 1, backgroundColor: '#faf9f7', alignItems: 'center', justifyContent: 'center' }}>
+      <BookStackLoader size="lg" />
+      <Text style={{
+        fontSize: 17, fontWeight: '700', color: '#1c1917',
+        marginTop: 20, letterSpacing: -0.3,
       }}>
-        {diag.stalled
-          ? <ActivityIndicator size="large" color="#dc2626" />
-          : <BookStackLoader size="sm" />
-        }
-        <Text style={{
-          fontSize: 16, fontWeight: '700', marginTop: 12,
-          color: diag.stalled ? '#dc2626' : '#1c1917', letterSpacing: -0.3,
-        }}>
-          {diag.stalled ? 'STALLED — see below' : 'Signing you in…'}
-        </Text>
-        <Text style={{ fontSize: 10, color: '#a8a29e', marginTop: 4, letterSpacing: 0.2 }}>
-          DEBUG: auth-callback-diag-v3-race-fix
-        </Text>
-      </View>
-
-      {/* Scrollable diagnostic body ────────────────────────────────────────── */}
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 16, paddingBottom: 48 }}
-        keyboardShouldPersistTaps="handled"
-      >
-
-        {/* Diagnostic panel */}
-        <View style={{
-          backgroundColor: '#ffffff',
-          borderRadius: 10, borderWidth: 2, borderColor: '#1c1917',
-          overflow: 'hidden', marginBottom: 14,
-        }}>
-          <View style={{ backgroundColor: '#1c1917', paddingVertical: 6, paddingHorizontal: 12 }}>
-            <Text style={{ fontSize: 11, fontWeight: '800', color: '#fff', letterSpacing: 0.8, textTransform: 'uppercase' }}>
-              Bootstrap Diagnostic V2
-            </Text>
-          </View>
-          <DiagRow label="codeExchange"            value={diag.codeExchange} />
-          <DiagRow label="session"                 value={diag.sessionLive} />
-          <DiagRow label="preProfile"              value={diag.preProfile} />
-          <DiagRow label="ensureProfile"           value={diag.ensureProfile} />
-          <DiagRow label="checkOnboardingDone"     value={diag.checkOnboardingCompleted} />
-          <DiagRow label="localStage"              value={diag.localStage} />
-          <DiagRow label="needsOnboarding"         value={diag.needsOnboarding} />
-          <DiagRow label="routeDecision"           value={diag.routeDecision} />
-          <DiagRow label="timerElapsed"            value={diag.timerElapsed + 's'} />
-          <DiagRow label="mountCount"              value={String(diag.mountCount)} />
-        </View>
-
-        {/* lastError — always rendered */}
-        <View style={{
-          backgroundColor: diag.lastError ? '#fef2f2' : '#f5f5f4',
-          borderRadius: 8, padding: 12, marginBottom: 18,
-          borderWidth: 1, borderColor: diag.lastError ? '#fca5a5' : '#e7e5e4',
-          minHeight: 52,
-        }}>
-          <Text style={{ fontSize: 11, fontWeight: '800', marginBottom: 3,
-            color: diag.lastError ? '#991b1b' : '#a8a29e' }}>
-            lastError
-          </Text>
-          <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: 'monospace',
-            color: diag.lastError ? '#b91c1c' : '#a8a29e' }}>
-            {diag.lastError ?? 'none'}
-          </Text>
-        </View>
-
-        {/* Retry */}
-        <TouchableOpacity
-          onPress={handleRetry} disabled={retrying}
-          style={{
-            backgroundColor: '#1c1917', borderRadius: 10,
-            paddingVertical: 15, alignItems: 'center',
-            marginBottom: 10, opacity: retrying ? 0.55 : 1,
-          }}
-        >
-          {retrying
-            ? <ActivityIndicator color="#fff" size="small" />
-            : <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>Retry</Text>}
-        </TouchableOpacity>
-
-        {/* Back to sign in */}
-        <TouchableOpacity
-          onPress={() => router.replace('/login')}
-          style={{
-            borderWidth: 2, borderColor: '#1c1917',
-            borderRadius: 10, paddingVertical: 15,
-            alignItems: 'center', marginBottom: 10,
-          }}
-        >
-          <Text style={{ color: '#1c1917', fontSize: 15, fontWeight: '700' }}>Back to sign in</Text>
-        </TouchableOpacity>
-
-        {/* Debug fallback */}
-        <TouchableOpacity
-          onPress={() => {
-            console.warn('[WARM_BOOT] debug-forced navigation to /onboarding');
-            navigatedRef.current = true;
-            router.replace('/onboarding');
-          }}
-          style={{
-            borderWidth: 2, borderColor: '#d97706', borderRadius: 10,
-            paddingVertical: 15, alignItems: 'center', backgroundColor: '#fffbeb',
-          }}
-        >
-          <Text style={{ color: '#92400e', fontSize: 14, fontWeight: '700' }}>
-            [DEBUG] Continue to onboarding
-          </Text>
-        </TouchableOpacity>
-
-      </ScrollView>
+        Signing you in…
+      </Text>
+      <Text style={{
+        fontSize: 13, color: '#a8a29e', marginTop: 6,
+      }}>
+        Just a moment
+      </Text>
     </View>
   );
 }

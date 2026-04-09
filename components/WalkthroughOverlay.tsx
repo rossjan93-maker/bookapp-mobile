@@ -480,64 +480,87 @@ function CoachCard({
     ]).start();
   }, [step]);
 
-  // Compute position: prefer just below the focal card, fall back above if
-  // there is enough vertical room, then clamp to a bottom anchor so the coach
-  // card is always fully visible regardless of focal card position or screen size.
-  //
-  // SAFE_BOT accounts for the tab bar AND the device/browser bottom inset.
-  // SAFE_TOP accounts for the status bar / notch so the card never slides behind it.
-  const GAP       = 2;
+  // ── Arrow geometry constants ─────────────────────────────────────────────────
+  const ARROW_H       = 14;   // fill triangle height (matches borderBottomWidth: 14)
+  const ARROW_HALF_W  = 12;   // half of 24px base
+  const ARROW_TIP_GAP = 4;    // visual gap between arrow tip and the referenced element
+
   const SIDE      = 20;
   const SAFE_BOT  = TAB_BAR_H + Math.max(insets.bottom, 8);
   const SAFE_TOP  = Math.max(insets.top, 8);
 
+  // ── Per-step anchor: exact book cover thumbnail centerline ───────────────────
+  //
+  // The arrow tip aims at the COVER IMAGE center within each focal card, not the
+  // abstract card bottom edge. This produces a consistent, intentional connection:
+  // the explainer always points at the book — the specific element being described.
+  //
+  // Values are geometric offsets from rect.y / rect.x derived from each focal card's
+  // internal layout: padding + preceding elements + half cover height.
+  //
+  //   Home      — 14px padding, 44×64px cover. Center: y+46, x+36
+  //   Recommend — 3px stripe + 12px padding, 52×76px cover. Center: y+53, x+38
+  //   Library   — 14px padding, 44×64px cover. Center: y+46, x+36
+  //   Inbox     — 16px padding + 24px "From Alex" header, 48×70px cover. Center: y+75, x+40
+  //
+  function computeAnchor(s: WtStep, r: TargetRect): { x: number; y: number } {
+    switch (s) {
+      case 'home':
+        return { x: r.x + 14 + 22, y: r.y + 14 + 32 };
+      case 'recommend':
+        return { x: r.x + 12 + 26, y: r.y + 3 + 12 + 38 };
+      case 'library':
+        return { x: r.x + 14 + 22, y: r.y + 14 + 32 };
+      case 'inbox':
+        return { x: r.x + 16 + 24, y: r.y + 16 + 24 + 35 };
+      default:
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    }
+  }
+
   let positionStyle: object;
-  let arrowAbove: boolean;  // true  = upward triangle at top of card   (coach is BELOW focal)
-                            // false = downward triangle at bottom of card (coach is ABOVE focal)
-  let showArrow = true;     // hidden in bottom-anchor fallback (no focal card in sight)
+  let arrowAbove: boolean;  // true  = upward triangle at top of card   (coach is BELOW anchor)
+                            // false = downward triangle at bottom of card (coach is ABOVE anchor)
+  let showArrow = true;
+  let arrowLeft = CARD_W / 2 - ARROW_HALF_W;
 
   if (cardRect) {
-    // ── Option A: below the focal card ───────────────────────────────────────
-    const belowTop  = cardRect.y + cardRect.height + GAP;
+    const anchor = computeAnchor(step, cardRect);
+
+    // Coach below: top = anchor.y + TIP_GAP + ARROW_H
+    // Arrow tip will land at anchor.y + TIP_GAP — just below the cover center.
+    const belowTop  = anchor.y + ARROW_TIP_GAP + ARROW_H;
     const fitsBelow = belowTop + COACH_H_EST < winH - SAFE_BOT;
 
-    // ── Option B: above the focal card ───────────────────────────────────────
-    // Only viable if the coach card's top edge clears the status bar.
-    const coachTopIfAbove = cardRect.y - GAP - COACH_H_EST;
+    // Coach above: bottom edge sits ARROW_TIP_GAP + ARROW_H above anchor.y
+    // Arrow downward tip will land at anchor.y - TIP_GAP — just above cover center.
+    const coachTopIfAbove = anchor.y - ARROW_TIP_GAP - ARROW_H - COACH_H_EST;
     const fitsAbove       = coachTopIfAbove > SAFE_TOP;
 
     if (fitsBelow) {
       positionStyle = { top: belowTop, left: SIDE, right: SIDE };
-      arrowAbove    = true;   // coach is BELOW → upward arrow points at card above
+      arrowAbove    = true;   // upward arrow points at cover above
     } else if (fitsAbove) {
-      // Position coach above the focal card.
-      // `bottom` = distance from the bottom of the container to the coach card's
-      //   bottom edge, which should sit at (cardRect.y - GAP) from the screen top.
-      // bottom = winH - (cardRect.y - GAP) = winH - cardRect.y + GAP
-      const aboveBottom = winH - cardRect.y + GAP;
+      // bottom = distance from container bottom to coach card bottom edge
+      const aboveBottom = winH - anchor.y + ARROW_TIP_GAP + ARROW_H;
       positionStyle = { bottom: aboveBottom, left: SIDE, right: SIDE };
-      arrowAbove    = false;  // coach is ABOVE → downward arrow points at card below
+      arrowAbove    = false;  // downward arrow points at cover below
     } else {
-      // ── Option C: bottom anchor (fallback) ───────────────────────────────
-      // Neither above nor below fits — typically the focal card spans a large
-      // portion of the screen (e.g. Inbox on small devices or with browser chrome).
-      // Anchor the coach card just above the tab bar so it is always fully visible.
+      // Fallback: neither fits (very small screen / large focal card)
       positionStyle = { bottom: SAFE_BOT + 8, left: SIDE, right: SIDE };
       arrowAbove    = true;
-      showArrow     = false; // arrow would point at nothing meaningful
+      showArrow     = false;
     }
+
+    // Arrow X — aim at the cover thumbnail center (per-step anchor.x),
+    // converted to local coach card coordinates.
+    arrowLeft = Math.max(16, Math.min(CARD_W - 44, anchor.x - SIDE - ARROW_HALF_W));
   } else {
-    // No rect yet — anchor at bottom (readiness gate not yet triggered)
+    // No rect yet — anchor at bottom (readiness gate not triggered)
     positionStyle = { bottom: SAFE_BOT + 8, left: SIDE, right: SIDE };
     arrowAbove    = true;
     showArrow     = false;
   }
-
-  // Arrow horizontal position — aim at the card center, clamped inside coach bounds.
-  // Offset by half the arrow base (12px = half of 24px) to center the triangle.
-  const arrowLeft = cardRect
-    ? Math.max(16, Math.min(CARD_W - 44, (cardRect.x + cardRect.width / 2) - SIDE - 12))
-    : CARD_W / 2 - 12;
 
   return (
     <Animated.View
