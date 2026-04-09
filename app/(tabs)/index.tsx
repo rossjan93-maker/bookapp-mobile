@@ -333,9 +333,6 @@ export default function HomeScreen() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  // ── Goal progress bar animation ──────────────────────────────────────────────
-  // Animates the fill from 0 → actual% whenever the reading-goal data settles.
-  const barFillAnim = useRef(new Animated.Value(0)).current;
 
   // Refs so we can write to the cache after all setters have been called
   // (state is async; refs give us the live values within the async load).
@@ -368,20 +365,6 @@ export default function HomeScreen() {
     return () => clearTimeout(t);
   }, [feedLoading, wtStep]);
 
-  // Animate progress bar whenever the goal data settles.
-  // Uses raw state values (available before the loading guard) rather than the
-  // derived goalActualPct (which is computed after the early return).
-  useEffect(() => {
-    if (feedLoading || !yearlyGoal || yearlyGoal <= 0) return;
-    const pct = Math.min(100, Math.round((booksThisYear.length / yearlyGoal) * 100));
-    Animated.timing(barFillAnim, {
-      toValue:         pct,
-      duration:        900,
-      delay:           120,
-      easing:          Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [feedLoading, yearlyGoal, booksThisYear.length]);
 
   async function loadAll() {
     const t0 = Date.now();
@@ -676,8 +659,6 @@ export default function HomeScreen() {
   const goalExpectedByNow  = yearlyGoal ? Math.floor((goalDayOfYear / 365) * yearlyGoal) : 0;
   const goalSurplus        = Math.max(0, booksThisYear.length - goalExpectedByNow);
   const goalDeficit        = Math.max(0, goalExpectedByNow - booksThisYear.length);
-  const goalActualPct      = yearlyGoal ? Math.min(100, Math.round((booksThisYear.length / yearlyGoal) * 100)) : 0;
-  const goalExpectedPct    = yearlyGoal ? Math.min(100, Math.round((goalExpectedByNow / yearlyGoal) * 100)) : 0;
   const goalIsAhead        = goalSurplus >= 2;
   const goalIsBehind       = goalDeficit >= 2;
   const goalProjected: number | null =
@@ -938,51 +919,35 @@ export default function HomeScreen() {
                 );
               })()}
 
-              {/* ── 3. Premium progress bar ── */}
+              {/* ── 3. Book-grid progress bar ── */}
               {(() => {
-                const fillColor = goalIsAhead ? '#7b9e7e' : goalIsBehind ? '#e8a44a' : '#231f1b';
+                const total    = yearlyGoal ?? 0;
+                const read     = booksThisYear.length;
+                const expected = goalExpectedByNow;
                 return (
-                  <View style={{ marginBottom: 18 }}>
-                    <View style={{
-                      height: 10,
-                      backgroundColor: '#ede9e4',
-                      borderRadius: 99,
-                      overflow: 'visible',
-                    }}>
-                      {/* Fill */}
-                      <Animated.View style={{
-                        position: 'absolute',
-                        top: 0, left: 0, bottom: 0,
-                        width: barFillAnim.interpolate({
-                          inputRange:  [0, 100],
-                          outputRange: ['0%', '100%'],
-                          extrapolate: 'clamp',
-                        }),
-                        backgroundColor: fillColor,
-                        borderRadius: 99,
-                      }} />
-                      {/* Expected-now marker: dot with white border at the pace position */}
-                      {goalExpectedPct > 3 && goalExpectedPct < 97 && (
-                        <View style={{
-                          position: 'absolute',
-                          left: `${goalExpectedPct}%`,
-                          top: -1,
-                          width: 12,
-                          height: 12,
-                          borderRadius: 6,
-                          backgroundColor: goalActualPct >= goalExpectedPct ? 'rgba(255,255,255,0.7)' : '#c4b5a5',
-                          borderWidth: 2,
-                          borderColor: '#fefcf9',
-                          marginLeft: -6,
-                          zIndex: 2,
-                        }} />
-                      )}
-                    </View>
-                    {/* Axis labels */}
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
-                      <Text style={{ fontSize: 10, color: '#c4b5a5', letterSpacing: 0.2 }}>START</Text>
-                      <Text style={{ fontSize: 10, color: '#c4b5a5', letterSpacing: 0.2 }}>GOAL</Text>
-                    </View>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 3, marginBottom: 18 }}>
+                    {Array.from({ length: total }).map((_, i) => {
+                      const isRead   = i < read;
+                      const isBehind = !isRead && i < expected;
+                      const spineCol = isRead ? '#5a8a5e' : isBehind ? '#c4853a' : '#d6cec7';
+                      const bodyCol  = isRead ? '#7b9e7e' : isBehind ? '#e8a44a' : '#ede9e4';
+                      return (
+                        <View
+                          key={i}
+                          style={{
+                            width: 14, height: 18,
+                            flexDirection: 'row',
+                            borderRadius: 2,
+                            overflow: 'hidden',
+                          }}
+                        >
+                          {/* Spine */}
+                          <View style={{ width: 3, backgroundColor: spineCol }} />
+                          {/* Pages */}
+                          <View style={{ flex: 1, backgroundColor: bodyCol }} />
+                        </View>
+                      );
+                    })}
                   </View>
                 );
               })()}
