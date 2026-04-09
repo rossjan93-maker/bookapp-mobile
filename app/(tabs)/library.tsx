@@ -723,7 +723,7 @@ export default function LibraryScreen() {
                 marginBottom: 4,
               }}
             >
-              <Text style={{ color: '#f5f1ec', fontSize: 13, fontWeight: '700', letterSpacing: 0.2 }}>+ Add</Text>
+              <Text style={{ color: '#f5f1ec', fontSize: 13, fontWeight: '700', letterSpacing: 0.2 }}>+ Add book</Text>
             </TouchableOpacity>
           </View>
           {/* ── Search bar ── */}
@@ -749,7 +749,7 @@ export default function LibraryScreen() {
               ref={searchInputRef}
               value={searchQuery}
               onChangeText={setSearchQuery}
-              placeholder="Search by title or author…"
+              placeholder="Search your library"
               placeholderTextColor="#c4b5a5"
               style={{ flex: 1, fontSize: 14, color: '#231f1b', padding: 0 }}
               returnKeyType="search"
@@ -1337,11 +1337,27 @@ export default function LibraryScreen() {
           <View style={{ paddingTop: 60, paddingHorizontal: 24, alignItems: 'center' }}>
             <Ionicons name="search-outline" size={32} color="#c4b5a5" style={{ marginBottom: 12 }} />
             <Text style={{ fontSize: 16, fontWeight: '700', color: '#231f1b', marginBottom: 6, textAlign: 'center' }}>
-              No books found
+              Not in your library
             </Text>
-            <Text style={{ fontSize: 14, color: '#9e958d', textAlign: 'center', lineHeight: 21 }}>
-              Nothing matches <Text style={{ color: '#231f1b', fontStyle: 'italic' }}>"{searchQuery.trim()}"</Text>
+            <Text style={{ fontSize: 14, color: '#9e958d', textAlign: 'center', lineHeight: 21, marginBottom: 24 }}>
+              Nothing matching <Text style={{ color: '#231f1b', fontStyle: 'italic' }}>"{searchQuery.trim()}"</Text>{' '}
+              was found in your library.
             </Text>
+            <TouchableOpacity
+              onPress={() => { setSearchQuery(''); router.push('/add-book'); }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                backgroundColor: '#231f1b',
+                borderRadius: 12,
+                paddingVertical: 13,
+                paddingHorizontal: 22,
+              }}
+            >
+              <Ionicons name="search-outline" size={14} color="#f5f1ec" />
+              <Text style={{ color: '#f5f1ec', fontSize: 14, fontWeight: '700' }}>Search all books to add it</Text>
+            </TouchableOpacity>
           </View>
         ) : items.length === 0 && activeFilter === 'all' ? (
           <View ref={libEmptyRef} style={{ paddingTop: 36, paddingHorizontal: 24 }}>

@@ -1,0 +1,95 @@
+I want to refine the search/add experience in the Library tab to avoid user confusion.
+
+Current issue:
+The inline search bar is for searching within the user’s existing library.
+The +Add button is for searching all books and adding a new one.
+That separation is logical, but I want to make sure the UX makes the difference crystal clear.
+
+==================================================
+OBJECTIVE
+==================================================
+
+Keep Library search and global add/search as separate functions, but make the intent of each one obvious and streamlined.
+
+I do NOT want users wondering:
+- “Am I searching my library or all books?”
+- “Why didn’t this result show up?”
+- “What does +Add actually do?”
+
+==================================================
+WHAT I WANT
+==================================================
+
+1. LIBRARY SEARCH SHOULD BE EXPLICIT
+The inline search bar in Library should clearly communicate that it only searches the user’s library.
+
+Please update the search UX so this is obvious through:
+- placeholder copy
+- surrounding context
+- visual hierarchy
+- or supporting text if needed
+
+Direction:
+The search bar should read more like:
+- “Search your library”
+- or another clearer equivalent
+
+2. +ADD BUTTON SHOULD BE CLEARER
+The +Add button should clearly communicate that it opens a search/add flow for books outside the existing library.
+
+Consider whether the label should be:
+- “+ Add book”
+- or another clearer version
+
+The goal is to make it obvious that this is the path for finding and adding new books, not filtering the current library.
+
+3. BRIDGE THE TWO FLOWS
+If a user searches their library and finds nothing, I want the empty state to help them move naturally into the add flow.
+
+For example:
+- “Not in your library.”
+- “Search all books to add it.”
+- with a CTA/button that opens the global add/search experience
+
+This should feel elegant and helpful, not like an error.
+
+==================================================
+UX PRINCIPLE
+==================================================
+
+I do NOT want to merge library search and global search into one field right now.
+
+I want:
+- library search = local filter of owned books
+- add/search all books = separate catalog search flow
+
+Unless you see a very strong reason otherwise, keep those scopes separate.
+
+==================================================
+WHAT TO AUDIT BEFORE CODING
+==================================================
+
+Please review:
+1. the current Library search bar copy and placement
+2. the current +Add button label and behavior
+3. the no-results state during library search
+4. what changes would best reduce scope confusion without overcomplicating the screen
+
+==================================================
+WHAT I WANT IMPLEMENTED
+==================================================
+
+- clearer Library-search placeholder/copy
+- clearer +Add button labeling
+- search-empty state that bridges into global add/search
+- preserve the existing fast client-side library search behavior
+- keep the experience polished and native to the app
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- users immediately understand the difference between library search and add/search-all
+- library search still feels fast and lightweight
+- +Add feels like the obvious path for finding books not already in the library
+- empty search results guide users forward instead of dead-ending them
