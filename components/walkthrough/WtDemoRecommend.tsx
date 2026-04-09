@@ -10,14 +10,14 @@ export function WtDemoRecommend() {
   return (
     <View style={{ marginBottom: 36 }}>
       <Text style={{
-        fontSize: 11, fontWeight: '700', color: '#a8a29e',
+        fontSize: 11, fontWeight: '700', color: '#9e958d',
         letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 12,
       }}>
         For You
       </Text>
 
       <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', flex: 1 }}>
+        <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', flex: 1 }}>
           Picked for you
         </Text>
       </View>
@@ -28,12 +28,12 @@ export function WtDemoRecommend() {
         ref={ref}
         onLayout={onLayout}
         style={{
-          backgroundColor: '#fff',
+          backgroundColor: '#fefcf9',
           borderRadius: 14,
           marginBottom: 8,
           borderWidth: 1,
-          borderColor: '#e7e5e4',
-          shadowColor: '#1c1917',
+          borderColor: '#ede9e4',
+          shadowColor: '#231f1b',
           shadowOpacity: 0.22,
           shadowRadius: 22,
           shadowOffset: { width: 0, height: 8 },
@@ -42,7 +42,7 @@ export function WtDemoRecommend() {
           opacity: 0,
         }}
       >
-        <View style={{ height: 3, backgroundColor: '#1c1917' }} />
+        <View style={{ height: 3, backgroundColor: '#231f1b' }} />
 
         <View style={{ padding: 12, flexDirection: 'row', alignItems: 'flex-start' }}>
           <CoverThumb
@@ -54,7 +54,7 @@ export function WtDemoRecommend() {
 
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={{
-              fontSize: 15, fontWeight: '700', color: '#1c1917',
+              fontSize: 15, fontWeight: '700', color: '#231f1b',
               lineHeight: 21, marginBottom: 3,
             }} numberOfLines={2}>
               Project Hail Mary
@@ -77,7 +77,7 @@ export function WtDemoRecommend() {
             </View>
 
             <Text style={{
-              fontSize: 13, fontWeight: '600', color: '#1c1917',
+              fontSize: 13, fontWeight: '600', color: '#231f1b',
               lineHeight: 18, marginBottom: 2,
             }} numberOfLines={2}>
               Long-form science with immersive pacing
@@ -97,7 +97,7 @@ export function WtDemoRecommend() {
               borderRightWidth: 1, borderRightColor: '#f0eeeb',
             }}
           >
-            <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917' }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b' }}>
               Want to Read
             </Text>
           </TouchableOpacity>

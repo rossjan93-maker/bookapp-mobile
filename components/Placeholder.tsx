@@ -2,8 +2,8 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, Text, View, ViewStyle } from 'react-native';
 
 const FILL  = '#e8e5e1';
-const FILL2 = '#f0ede9';
-const BG    = '#faf9f7';
+const FILL2 = '#ede9e4';
+const BG    = '#f5f1ec';
 
 // ── Pulse ──────────────────────────────────────────────────────────────────────
 // Wraps children in a repeating opacity animation so all contained placeholder
@@ -68,12 +68,12 @@ export function RecCardSkeleton({ featured = false }: { featured?: boolean }) {
   const coverH = featured ? 76 : 64;
   return (
     <Pulse style={{
-      backgroundColor: '#fff',
+      backgroundColor: '#fefcf9',
       borderRadius: 12,
       marginBottom: 8,
       overflow: 'hidden',
       borderWidth: 1,
-      borderColor: '#f0ede9',
+      borderColor: '#ede9e4',
     }}>
       {featured && <Box w="100%" h={3} r={0} c={FILL} />}
       <View style={{ padding: 12, flexDirection: 'row', alignItems: 'flex-start' }}>
@@ -85,7 +85,7 @@ export function RecCardSkeleton({ featured = false }: { featured?: boolean }) {
         </View>
       </View>
       <View style={{
-        borderTopWidth: 1, borderTopColor: '#f0ede9',
+        borderTopWidth: 1, borderTopColor: '#ede9e4',
         height: 44, flexDirection: 'row', alignItems: 'center',
         paddingHorizontal: 12, gap: 16,
       }}>
@@ -105,12 +105,12 @@ export function RecCardSkeleton({ featured = false }: { featured?: boolean }) {
 export function DescriptionSkeleton() {
   return (
     <Pulse style={{
-      backgroundColor: '#fff',
+      backgroundColor: '#fefcf9',
       borderRadius: 14,
       padding: 18,
       marginBottom: 20,
       borderWidth: 1,
-      borderColor: '#f0ede8',
+      borderColor: '#ede9e4',
     }}>
       <Box w={48} h={11} r={4} c={FILL2} style={{ marginBottom: 10 }} />
       <View style={{ gap: 8 }}>
@@ -152,13 +152,13 @@ export function ProgressCardSkeleton() {
 function ReadingCardSkeleton() {
   return (
     <Pulse style={{
-      backgroundColor: '#fff',
+      backgroundColor: '#fefcf9',
       borderRadius: 16,
       padding: 16,
       flexDirection: 'row',
       alignItems: 'center',
       borderLeftWidth: 3,
-      borderLeftColor: '#e7e5e4',
+      borderLeftColor: '#ede9e4',
       shadowColor: '#000',
       shadowOpacity: 0.06,
       shadowRadius: 8,
@@ -184,7 +184,7 @@ function ReadingCardSkeleton() {
 function GoalCardSkeleton() {
   return (
     <Pulse style={{
-      backgroundColor: '#fff',
+      backgroundColor: '#fefcf9',
       borderRadius: 14,
       paddingHorizontal: 16,
       paddingVertical: 14,
@@ -267,9 +267,9 @@ export function HomeScreenSkeleton() {
       {/* Timeline */}
       <SectionLabelSkeleton label="Timeline" />
       <ActivityRowSkeleton />
-      <View style={{ height: 1, backgroundColor: '#f5f5f4' }} />
+      <View style={{ height: 1, backgroundColor: '#ede9e4' }} />
       <ActivityRowSkeleton />
-      <View style={{ height: 1, backgroundColor: '#f5f5f4' }} />
+      <View style={{ height: 1, backgroundColor: '#ede9e4' }} />
       <ActivityRowSkeleton />
     </View>
   );
@@ -289,7 +289,7 @@ export function ProfileScreenSkeleton() {
         paddingTop: 48,
         paddingBottom: 28,
         borderBottomWidth: 1,
-        borderBottomColor: '#f0ede8',
+        borderBottomColor: '#ede9e4',
       }}>
         <Pulse style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
           {/* Avatar circle */}
@@ -308,7 +308,7 @@ export function ProfileScreenSkeleton() {
       {/* Reading Goal card */}
       <View style={{ paddingHorizontal: 24, marginTop: 24 }}>
         <Pulse style={{
-          backgroundColor: '#fff',
+          backgroundColor: '#fefcf9',
           borderRadius: 14,
           padding: 16,
           shadowColor: '#000',
@@ -327,7 +327,7 @@ export function ProfileScreenSkeleton() {
       {/* Taste profile card */}
       <View style={{ paddingHorizontal: 24, marginTop: 14 }}>
         <Pulse style={{
-          backgroundColor: '#fff',
+          backgroundColor: '#fefcf9',
           borderRadius: 14,
           padding: 16,
           shadowColor: '#000',
@@ -345,7 +345,7 @@ export function ProfileScreenSkeleton() {
       {/* Reading intelligence card */}
       <View style={{ paddingHorizontal: 24, marginTop: 14, marginBottom: 28 }}>
         <Pulse style={{
-          backgroundColor: '#fff',
+          backgroundColor: '#fefcf9',
           borderRadius: 14,
           padding: 18,
           shadowColor: '#000',
@@ -365,7 +365,7 @@ export function ProfileScreenSkeleton() {
       <View style={{ paddingHorizontal: 24 }}>
         <SectionLabelSkeleton label="Friends" />
         <Pulse style={{
-          backgroundColor: '#fff',
+          backgroundColor: '#fefcf9',
           borderRadius: 14,
           overflow: 'hidden',
           shadowColor: '#000',
@@ -383,7 +383,7 @@ export function ProfileScreenSkeleton() {
                 paddingVertical: 13,
                 paddingHorizontal: 16,
                 borderTopWidth: i > 0 ? 1 : 0,
-                borderTopColor: '#f5f5f4',
+                borderTopColor: '#ede9e4',
               }}
             >
               <Box w={36} h={36} r={18} style={{ marginRight: 12 }} />
@@ -421,7 +421,7 @@ export function InboxScreenSkeleton() {
         <Pulse
           key={i}
           style={{
-            backgroundColor: '#fffbf5',
+            backgroundColor: '#fefcf9',
             borderRadius: 14,
             borderLeftWidth: 3,
             borderLeftColor: '#e7d5b8',
@@ -464,7 +464,7 @@ export function LibraryScreenSkeleton() {
         flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
         paddingTop: 24, paddingBottom: 16,
       }}>
-        <Text style={{ fontSize: 28, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, lineHeight: 34 }}>
+        <Text style={{ fontSize: 28, fontWeight: '800', color: '#231f1b', letterSpacing: -0.5, lineHeight: 34 }}>
           Library
         </Text>
         <Pulse>
@@ -480,13 +480,13 @@ export function LibraryScreenSkeleton() {
       </Pulse>
 
       {/* Divider */}
-      <View style={{ height: 1, backgroundColor: '#f5f5f4' }} />
+      <View style={{ height: 1, backgroundColor: '#ede9e4' }} />
 
       {/* Book rows */}
       {[0, 1, 2, 3, 4].map(i => (
         <React.Fragment key={i}>
           <LibraryRowSkeleton />
-          {i < 4 && <View style={{ height: 1, backgroundColor: '#f5f5f4' }} />}
+          {i < 4 && <View style={{ height: 1, backgroundColor: '#ede9e4' }} />}
         </React.Fragment>
       ))}
     </View>

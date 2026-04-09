@@ -81,7 +81,7 @@ export function GuidedActionBanner() {
         marginHorizontal:  0,
         marginBottom:      16,
         marginTop:         8,
-        backgroundColor:   '#1c1917',
+        backgroundColor:   '#231f1b',
         borderRadius:      CARD.borderRadius,
         paddingVertical:   CARD.paddingVertical,
         paddingHorizontal: CARD.paddingHorizontal,
@@ -95,12 +95,12 @@ export function GuidedActionBanner() {
         elevation:         3,
       }}
     >
-      <Ionicons name="information-circle-outline" size={19} color="#a8a29e" />
+      <Ionicons name="information-circle-outline" size={19} color="#9e958d" />
       <View style={{ flex: 1 }}>
-        <Text style={{ color: '#faf9f7', fontSize: 13, fontWeight: '600', lineHeight: 18 }}>
+        <Text style={{ color: '#f5f1ec', fontSize: 13, fontWeight: '600', lineHeight: 18 }}>
           Save, dismiss, or tap "More like this"
         </Text>
-        <Text style={{ color: '#a8a29e', fontSize: 12, lineHeight: 17, marginTop: 2 }}>
+        <Text style={{ color: '#9e958d', fontSize: 12, lineHeight: 17, marginTop: 2 }}>
           Every choice tunes your future picks
         </Text>
       </View>
@@ -188,7 +188,7 @@ export function GuidedLibraryBanner({ onDismiss }: { onDismiss: () => void }) {
         onPress={onDismiss}
         activeOpacity={0.9}
         style={{
-          backgroundColor:   '#1c1917',
+          backgroundColor:   '#231f1b',
           borderRadius:      CARD.borderRadius,
           paddingVertical:   CARD.paddingVertical,
           paddingHorizontal: CARD.paddingHorizontal,
@@ -202,12 +202,12 @@ export function GuidedLibraryBanner({ onDismiss }: { onDismiss: () => void }) {
           elevation:         3,
         }}
       >
-        <Ionicons name="library-outline" size={18} color="#a8a29e" />
+        <Ionicons name="library-outline" size={18} color="#9e958d" />
         <View style={{ flex: 1 }}>
-          <Text style={{ color: '#faf9f7', fontSize: 13, fontWeight: '600' }}>
+          <Text style={{ color: '#f5f1ec', fontSize: 13, fontWeight: '600' }}>
             Your saved books are in Library
           </Text>
-          <Text style={{ color: '#a8a29e', fontSize: 12, marginTop: 1 }}>
+          <Text style={{ color: '#9e958d', fontSize: 12, marginTop: 1 }}>
             Tap Library below to explore
           </Text>
         </View>

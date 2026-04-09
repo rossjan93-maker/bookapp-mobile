@@ -323,7 +323,7 @@ export function RecCard({
     <Animated.View style={{
       opacity,
       transform: [{ translateY: cardTranslateY }, { scale: cardScale }],
-      backgroundColor: '#fff',
+      backgroundColor: '#fefcf9',
       borderRadius: 14,
       marginBottom: 8,
       shadowColor: '#000',
@@ -332,9 +332,9 @@ export function RecCard({
       shadowOffset: { width: 0, height: featured ? 2 : 1 },
       elevation: featured ? 2 : 1,
       overflow: 'hidden',
-      ...(featured ? { borderWidth: 1, borderColor: '#e7e5e4' } : {}),
+      ...(featured ? { borderWidth: 1, borderColor: '#ede9e4' } : {}),
     }}>
-      {featured && <View style={{ height: 3, backgroundColor: '#1c1917' }} />}
+      {featured && <View style={{ height: 3, backgroundColor: '#231f1b' }} />}
 
       <TouchableOpacity
         onPress={handleCardPress}
@@ -350,7 +350,7 @@ export function RecCard({
         />
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text
-            style={{ fontSize: 15, fontWeight: '700', color: '#1c1917', lineHeight: 21, marginBottom: 3 }}
+            style={{ fontSize: 15, fontWeight: '700', color: '#231f1b', lineHeight: 21, marginBottom: 3 }}
             numberOfLines={2}
           >
             {book.title}
@@ -363,9 +363,9 @@ export function RecCard({
             {(() => {
               const tier  = book.confidence;
               const label = tier === 'high' ? 'Top pick' : tier === 'medium' ? 'Good fit' : 'Explore';
-              const bg    = tier === 'high' ? '#f0fdf4' : tier === 'medium' ? '#f8f8f7' : '#fafaf9';
-              const col   = tier === 'high' ? '#15803d' : tier === 'medium' ? '#57534e' : '#a8a29e';
-              const bord  = tier === 'high' ? '#bbf7d0' : tier === 'medium' ? '#e7e5e4' : '#e7e5e4';
+              const bg    = tier === 'high' ? '#f0fdf4' : tier === 'medium' ? '#f8f8f7' : '#f5f1ec';
+              const col   = tier === 'high' ? '#15803d' : tier === 'medium' ? '#57534e' : '#9e958d';
+              const bord  = tier === 'high' ? '#bbf7d0' : tier === 'medium' ? '#ede9e4' : '#ede9e4';
               return (
                 <View style={{
                   backgroundColor: bg, borderWidth: 1, borderColor: bord,
@@ -379,10 +379,10 @@ export function RecCard({
             })()}
             {isExpert && (
               <View style={{
-                backgroundColor: '#1c1917', borderRadius: 4,
+                backgroundColor: '#231f1b', borderRadius: 4,
                 paddingHorizontal: 5, paddingVertical: 2,
               }}>
-                <Text style={{ fontSize: 9, fontWeight: '700', color: '#faf9f7', letterSpacing: 0.4 }}>
+                <Text style={{ fontSize: 9, fontWeight: '700', color: '#f5f1ec', letterSpacing: 0.4 }}>
                   EXPERT PICK
                 </Text>
               </View>
@@ -403,7 +403,7 @@ export function RecCard({
                     style={{
                       opacity:      isCurrent ? 1 : 0.38,
                       borderWidth:  isCurrent ? 1.5 : 0,
-                      borderColor:  '#1c1917',
+                      borderColor:  '#231f1b',
                       borderRadius: 4,
                     }}
                   >
@@ -414,7 +414,7 @@ export function RecCard({
                           width:           isCurrent ? 34 : 27,
                           height:          isCurrent ? 50 : 42,
                           borderRadius:    3,
-                          backgroundColor: '#e7e5e4',
+                          backgroundColor: '#ede9e4',
                         }}
                       />
                     ) : (
@@ -446,7 +446,7 @@ export function RecCard({
 
           {collapsedReason && (
             <Text
-              style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', lineHeight: 18, marginBottom: 2 }}
+              style={{ fontSize: 13, fontWeight: '600', color: '#231f1b', lineHeight: 18, marginBottom: 2 }}
               numberOfLines={2}
             >
               {collapsedReason}
@@ -462,7 +462,7 @@ export function RecCard({
           disabled={pendingAction}
           style={{ flex: 1, paddingVertical: 14, paddingHorizontal: 14, justifyContent: 'center', borderRightWidth: 1, borderRightColor: '#f0eeeb' }}
         >
-          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917' }}>Want to Read</Text>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b' }}>Want to Read</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -486,7 +486,7 @@ export function RecCard({
       {confirmState && (
         <Animated.View style={{
           position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: confirmState === 'save' ? '#f0fdf4' : confirmState === 'dismiss' ? '#f5f5f4' : '#faf5ff',
+          backgroundColor: confirmState === 'save' ? '#f0fdf4' : confirmState === 'dismiss' ? '#ede9e4' : '#faf5ff',
           borderRadius: 14,
           justifyContent: 'center',
           alignItems: 'center',
@@ -502,7 +502,7 @@ export function RecCard({
           ) : confirmState === 'dismiss' ? (
             <>
               <Text style={{ fontSize: 15, fontWeight: '700', color: '#78716c' }}>Skipped</Text>
-              <Text style={{ fontSize: 12, color: '#a8a29e' }}>We'll note this preference</Text>
+              <Text style={{ fontSize: 12, color: '#9e958d' }}>We'll note this preference</Text>
             </>
           ) : (
             <>
@@ -544,23 +544,23 @@ export function UndoToast({ book, onUndo }: { book: ScoredBook; onUndo: () => vo
       transform: [{ translateY }],
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: '#1c1917',
+      backgroundColor: '#231f1b',
       borderRadius: 10,
       paddingHorizontal: 14,
       paddingVertical: 10,
       marginBottom: 8,
       gap: 8,
     }}>
-      <Text style={{ flex: 1, fontSize: 12, color: '#a8a29e' }} numberOfLines={1}>
+      <Text style={{ flex: 1, fontSize: 12, color: '#9e958d' }} numberOfLines={1}>
         Skipped{' '}
-        <Text style={{ color: '#e7e5e4', fontWeight: '600' }}>"{book.title}"</Text>
+        <Text style={{ color: '#ede9e4', fontWeight: '600' }}>"{book.title}"</Text>
       </Text>
       <TouchableOpacity
         onPress={onUndo}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         style={{ backgroundColor: '#292524', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 5 }}
       >
-        <Text style={{ fontSize: 12, fontWeight: '700', color: '#faf9f7' }}>Undo</Text>
+        <Text style={{ fontSize: 12, fontWeight: '700', color: '#f5f1ec' }}>Undo</Text>
       </TouchableOpacity>
     </Animated.View>
   );
@@ -571,17 +571,17 @@ export function UndoToast({ book, onUndo }: { book: ScoredBook; onUndo: () => vo
 export function RecSkeletonCard() {
   return (
     <View style={{
-      backgroundColor: '#fff', borderRadius: 14, padding: 16,
+      backgroundColor: '#fefcf9', borderRadius: 14, padding: 16,
       marginBottom: 8, height: 110,
       shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 4,
       shadowOffset: { width: 0, height: 1 }, elevation: 1,
     }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
-        <View style={{ width: 44, height: 64, backgroundColor: '#f5f5f4', borderRadius: 6 }} />
+        <View style={{ width: 44, height: 64, backgroundColor: '#ede9e4', borderRadius: 6 }} />
         <View style={{ flex: 1, gap: 8 }}>
-          <View style={{ height: 14, backgroundColor: '#f5f5f4', borderRadius: 6, width: '72%' }} />
-          <View style={{ height: 11, backgroundColor: '#f5f5f4', borderRadius: 6, width: '48%' }} />
-          <View style={{ height: 11, backgroundColor: '#f5f5f4', borderRadius: 6, width: '88%' }} />
+          <View style={{ height: 14, backgroundColor: '#ede9e4', borderRadius: 6, width: '72%' }} />
+          <View style={{ height: 11, backgroundColor: '#ede9e4', borderRadius: 6, width: '48%' }} />
+          <View style={{ height: 11, backgroundColor: '#ede9e4', borderRadius: 6, width: '88%' }} />
         </View>
       </View>
     </View>
@@ -652,7 +652,7 @@ function AssemblingCardSilhouette({
     <Animated.View style={{
       transform:       [{ translateY }],
       opacity,
-      backgroundColor: '#fff',
+      backgroundColor: '#fefcf9',
       borderRadius:    14,
       padding:         12,
       marginBottom:    8,
@@ -747,7 +747,7 @@ export function DeckAssemblingLoader() {
       <Animated.Text style={{
         fontSize:    14,
         fontWeight:  '600',
-        color:       '#1c1917',
+        color:       '#231f1b',
         marginBottom: 14,
         opacity:     titleOp,
       }}>

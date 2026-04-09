@@ -73,7 +73,7 @@ function SectionLabel({ children }: { children: string }) {
     <Text style={{
       fontSize: 11,
       fontWeight: '700',
-      color: '#a8a29e',
+      color: '#9e958d',
       letterSpacing: 0.9,
       textTransform: 'uppercase',
       marginBottom: 12,
@@ -212,15 +212,15 @@ export default function FriendDetailScreen() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#faf9f7' }}>
-        <ActivityIndicator color="#a8a29e" />
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f1ec' }}>
+        <ActivityIndicator color="#9e958d" />
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#faf9f7' }}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#f5f1ec' }}>
         <Text style={{ color: '#b91c1c', fontSize: 14, textAlign: 'center' }}>{error}</Text>
       </View>
     );
@@ -238,7 +238,7 @@ export default function FriendDetailScreen() {
         style={{
           paddingVertical: 13,
           borderBottomWidth: 1,
-          borderBottomColor: '#f5f5f4',
+          borderBottomColor: '#ede9e4',
           flexDirection: 'row',
           alignItems: 'flex-start',
         }}
@@ -247,15 +247,15 @@ export default function FriendDetailScreen() {
           width: 6,
           height: 6,
           borderRadius: 3,
-          backgroundColor: '#d6d3d1',
+          backgroundColor: '#ede9e4',
           marginTop: 8,
           marginRight: 12,
           flexShrink: 0,
         }} />
-        <Text style={{ fontSize: 14, color: '#1c1917', lineHeight: 21, flex: 1, marginRight: 12 }}>
+        <Text style={{ fontSize: 14, color: '#231f1b', lineHeight: 21, flex: 1, marginRight: 12 }}>
           {text}
         </Text>
-        <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 4, flexShrink: 0 }}>
+        <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 4, flexShrink: 0 }}>
           {relativeTime(event.created_at)}
         </Text>
       </View>
@@ -266,7 +266,7 @@ export default function FriendDetailScreen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: '#faf9f7' }}
+      style={{ flex: 1, backgroundColor: '#f5f1ec' }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 48 }}
     >
       {/* ── Back ── */}
@@ -278,18 +278,18 @@ export default function FriendDetailScreen() {
           width: 68,
           height: 68,
           borderRadius: 34,
-          backgroundColor: '#f0ede8',
+          backgroundColor: '#ede9e4',
           alignItems: 'center',
           justifyContent: 'center',
           marginBottom: 14,
         }}>
           <Text style={{ fontSize: 28, fontWeight: '700', color: '#57534e' }}>{initial}</Text>
         </View>
-        <Text style={{ fontSize: 24, fontWeight: '800', color: '#1c1917', letterSpacing: -0.3, marginBottom: 6 }}>
+        <Text style={{ fontSize: 24, fontWeight: '800', color: '#231f1b', letterSpacing: -0.3, marginBottom: 6 }}>
           {displayName}
         </Text>
         {totalExchanged > 0 && (
-          <Text style={{ fontSize: 13, color: '#a8a29e' }}>
+          <Text style={{ fontSize: 13, color: '#9e958d' }}>
             {totalExchanged === 1
               ? '1 recommendation exchanged'
               : `${totalExchanged} recommendations exchanged`}
@@ -297,9 +297,9 @@ export default function FriendDetailScreen() {
         )}
         {totalExchanged === 0 && (
           <>
-            <Text style={{ fontSize: 13, color: '#a8a29e', marginBottom: 6 }}>No recommendations yet</Text>
+            <Text style={{ fontSize: 13, color: '#9e958d', marginBottom: 6 }}>No recommendations yet</Text>
             <TouchableOpacity onPress={() => router.push('/(tabs)/search')}>
-              <Text style={{ fontSize: 13, color: '#a8a29e' }}>
+              <Text style={{ fontSize: 13, color: '#9e958d' }}>
                 Recommend a book to {friendFirstName} →
               </Text>
             </TouchableOpacity>
@@ -317,34 +317,34 @@ export default function FriendDetailScreen() {
             {/* From them → you */}
             <View style={{
               flex: 1,
-              backgroundColor: '#fff',
+              backgroundColor: '#fefcf9',
               borderRadius: 14,
               padding: 16,
               borderWidth: 1,
-              borderColor: '#e7e5e4',
+              borderColor: '#ede9e4',
             }}>
               <Text style={{
                 fontSize: 11,
                 fontWeight: '700',
-                color: '#a8a29e',
+                color: '#9e958d',
                 letterSpacing: 0.6,
                 textTransform: 'uppercase',
                 marginBottom: 12,
               }}>
                 {friendFirstName} → You
               </Text>
-              <Text style={{ fontSize: 30, fontWeight: '800', color: '#1c1917', marginBottom: 2 }}>
+              <Text style={{ fontSize: 30, fontWeight: '800', color: '#231f1b', marginBottom: 2 }}>
                 {stats.recsSentToMe}
               </Text>
-              <Text style={{ fontSize: 12, color: '#a8a29e', marginBottom: stats.recsSentToMe > 0 ? 12 : 0 }}>
+              <Text style={{ fontSize: 12, color: '#9e958d', marginBottom: stats.recsSentToMe > 0 ? 12 : 0 }}>
                 {stats.recsSentToMe === 1 ? 'sent' : 'sent'}
               </Text>
               {stats.recsSentToMe > 0 && (
-                <View style={{ borderTopWidth: 1, borderTopColor: '#f5f5f4', paddingTop: 10 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#1c1917' }}>
+                <View style={{ borderTopWidth: 1, borderTopColor: '#ede9e4', paddingTop: 10 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#231f1b' }}>
                     {stats.iFinished}
                   </Text>
-                  <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 1 }}>
+                  <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 1 }}>
                     you read
                   </Text>
                   <Text style={{ fontSize: 11, color: '#78716c', marginTop: 4, fontWeight: '500' }}>
@@ -361,34 +361,34 @@ export default function FriendDetailScreen() {
             {/* From you → them */}
             <View style={{
               flex: 1,
-              backgroundColor: '#fff',
+              backgroundColor: '#fefcf9',
               borderRadius: 14,
               padding: 16,
               borderWidth: 1,
-              borderColor: '#e7e5e4',
+              borderColor: '#ede9e4',
             }}>
               <Text style={{
                 fontSize: 11,
                 fontWeight: '700',
-                color: '#a8a29e',
+                color: '#9e958d',
                 letterSpacing: 0.6,
                 textTransform: 'uppercase',
                 marginBottom: 12,
               }}>
                 You → {friendFirstName}
               </Text>
-              <Text style={{ fontSize: 30, fontWeight: '800', color: '#1c1917', marginBottom: 2 }}>
+              <Text style={{ fontSize: 30, fontWeight: '800', color: '#231f1b', marginBottom: 2 }}>
                 {stats.recsSentToThem}
               </Text>
-              <Text style={{ fontSize: 12, color: '#a8a29e', marginBottom: stats.recsSentToThem > 0 ? 12 : 0 }}>
+              <Text style={{ fontSize: 12, color: '#9e958d', marginBottom: stats.recsSentToThem > 0 ? 12 : 0 }}>
                 {stats.recsSentToThem === 1 ? 'sent' : 'sent'}
               </Text>
               {stats.recsSentToThem > 0 && (
-                <View style={{ borderTopWidth: 1, borderTopColor: '#f5f5f4', paddingTop: 10 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#1c1917' }}>
+                <View style={{ borderTopWidth: 1, borderTopColor: '#ede9e4', paddingTop: 10 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#231f1b' }}>
                     {stats.theyFinished}
                   </Text>
-                  <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 1 }}>
+                  <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 1 }}>
                     they read
                   </Text>
                   <Text style={{ fontSize: 11, color: '#78716c', marginTop: 4, fontWeight: '500' }}>
@@ -406,12 +406,12 @@ export default function FriendDetailScreen() {
           {/* Landing rate insight */}
           {landingInsight() && (
             <View style={{
-              backgroundColor: '#fff',
+              backgroundColor: '#fefcf9',
               borderRadius: 10,
               paddingHorizontal: 14,
               paddingVertical: 11,
               borderWidth: 1,
-              borderColor: '#f0ede8',
+              borderColor: '#ede9e4',
               borderLeftWidth: 3,
               borderLeftColor: '#d4a574',
             }}>
@@ -434,14 +434,14 @@ export default function FriendDetailScreen() {
             if (!insight) return null;
             return (
               <View style={{
-                backgroundColor: '#faf9f7',
+                backgroundColor: '#f5f1ec',
                 borderRadius: 10,
                 paddingHorizontal: 14,
                 paddingVertical: 11,
                 borderWidth: 1,
-                borderColor: '#e7e5e4',
+                borderColor: '#ede9e4',
                 borderLeftWidth: 3,
-                borderLeftColor: '#d6d3d1',
+                borderLeftColor: '#ede9e4',
                 marginTop: 8,
               }}>
                 <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
@@ -457,7 +457,7 @@ export default function FriendDetailScreen() {
       <View>
         <SectionLabel>Recent Activity</SectionLabel>
         {activity.length === 0 ? (
-          <Text style={{ color: '#a8a29e', fontSize: 14 }}>No recent activity.</Text>
+          <Text style={{ color: '#9e958d', fontSize: 14 }}>No recent activity.</Text>
         ) : (
           <>
             {exchangeEvents.length > 0 && (
@@ -465,7 +465,7 @@ export default function FriendDetailScreen() {
                 <Text style={{
                   fontSize: 11,
                   fontWeight: '600',
-                  color: '#a8a29e',
+                  color: '#9e958d',
                   letterSpacing: 0.5,
                   textTransform: 'uppercase',
                   marginBottom: 6,
@@ -480,7 +480,7 @@ export default function FriendDetailScreen() {
                 <Text style={{
                   fontSize: 11,
                   fontWeight: '600',
-                  color: '#a8a29e',
+                  color: '#9e958d',
                   letterSpacing: 0.5,
                   textTransform: 'uppercase',
                   marginBottom: 6,

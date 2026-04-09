@@ -447,7 +447,7 @@ export default function ScanScreen() {
   // ── Header ─────────────────────────────────────────────────────────────────
   const header = (
     <View style={[s.header, { paddingTop: insets.top + 8 }]}>
-      <BackButton onPress={() => router.back()} color="#1c1917" />
+      <BackButton onPress={() => router.back()} color="#231f1b" />
       <Text style={s.headerTitle}>Scan a book</Text>
       <View style={{ width: 40 }} />
     </View>
@@ -462,7 +462,7 @@ export default function ScanScreen() {
         <View style={s.root}>
           {header}
           <View style={s.centred}>
-            <ActivityIndicator size="large" color="#1c1917" />
+            <ActivityIndicator size="large" color="#231f1b" />
           </View>
         </View>
       );
@@ -472,7 +472,7 @@ export default function ScanScreen() {
         <View style={s.root}>
           {header}
           <View style={s.centred}>
-            <Ionicons name="camera-outline" size={48} color="#a8a29e" />
+            <Ionicons name="camera-outline" size={48} color="#9e958d" />
             <Text style={s.emptyTitle}>Camera access needed</Text>
             <Text style={s.emptyBody}>
               Allow camera access so you can scan a book's barcode in the store.
@@ -546,7 +546,7 @@ export default function ScanScreen() {
       <View style={s.root}>
         {header}
         <View style={s.centred}>
-          <ActivityIndicator size="large" color="#1c1917" style={{ marginBottom: 16 }} />
+          <ActivityIndicator size="large" color="#231f1b" style={{ marginBottom: 16 }} />
           <Text style={s.loadingText}>{loadingText}</Text>
         </View>
       </View>
@@ -559,7 +559,7 @@ export default function ScanScreen() {
       <View style={s.root}>
         {header}
         <View style={s.centred}>
-          <Ionicons name="search-outline" size={48} color="#a8a29e" />
+          <Ionicons name="search-outline" size={48} color="#9e958d" />
           <Text style={s.emptyTitle}>Book not found</Text>
           <Text style={s.emptyBody}>
             {scannedISBN
@@ -584,7 +584,7 @@ export default function ScanScreen() {
       <View style={s.root}>
         {header}
         <View style={s.centred}>
-          <Ionicons name="warning-outline" size={48} color="#a8a29e" />
+          <Ionicons name="warning-outline" size={48} color="#9e958d" />
           <Text style={s.emptyTitle}>Something went wrong</Text>
           <Text style={s.emptyBody}>{errorMsg ?? 'Please try again.'}</Text>
           <Pressable style={s.primaryBtn} onPress={handleScanAnother}>
@@ -612,7 +612,7 @@ export default function ScanScreen() {
             <TextInput
               style={s.input}
               placeholder="e.g. 9780525559474"
-              placeholderTextColor="#a8a29e"
+              placeholderTextColor="#9e958d"
               value={manualIsbn}
               onChangeText={setManualIsbn}
               keyboardType="numeric"
@@ -631,7 +631,7 @@ export default function ScanScreen() {
             <TextInput
               style={s.input}
               placeholder="Book title"
-              placeholderTextColor="#a8a29e"
+              placeholderTextColor="#9e958d"
               value={manualTitle}
               onChangeText={setManualTitle}
               returnKeyType="next"
@@ -641,7 +641,7 @@ export default function ScanScreen() {
             <TextInput
               style={s.input}
               placeholder="Author name"
-              placeholderTextColor="#a8a29e"
+              placeholderTextColor="#9e958d"
               value={manualAuthor}
               onChangeText={setManualAuthor}
               returnKeyType="search"
@@ -692,7 +692,7 @@ export default function ScanScreen() {
               />
             ) : (
               <View style={[s.cover, s.coverPlaceholder]}>
-                <Ionicons name="book-outline" size={32} color="#a8a29e" />
+                <Ionicons name="book-outline" size={32} color="#9e958d" />
               </View>
             )}
             <View style={s.bookMeta}>
@@ -793,7 +793,7 @@ export default function ScanScreen() {
             style={{
               marginHorizontal: 20,
               marginBottom: 8,
-              backgroundColor: '#1c1917',
+              backgroundColor: '#231f1b',
               borderRadius: 10,
               paddingHorizontal: 14,
               paddingVertical: 10,
@@ -802,8 +802,8 @@ export default function ScanScreen() {
               gap: 10,
             }}
           >
-            <Ionicons name="information-circle" size={16} color="#a8a29e" />
-            <Text style={{ flex: 1, fontSize: 13, color: '#e7e5e4', lineHeight: 18 }}>
+            <Ionicons name="information-circle" size={16} color="#9e958d" />
+            <Text style={{ flex: 1, fontSize: 13, color: '#ede9e4', lineHeight: 18 }}>
               Save books you want to read, or tap "More like this" to refine your taste profile.
             </Text>
             <Ionicons name="close" size={14} color="#78716c" />
@@ -873,7 +873,7 @@ const SCAN_HINTS: string[] = [
 const s = StyleSheet.create({
   root: {
     flex:            1,
-    backgroundColor: '#faf9f7',
+    backgroundColor: '#f5f1ec',
   },
   header: {
     flexDirection:  'row',
@@ -882,8 +882,8 @@ const s = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom:     14,
     borderBottomWidth: 1,
-    borderBottomColor: '#e7e5e4',
-    backgroundColor:   '#faf9f7',
+    borderBottomColor: '#ede9e4',
+    backgroundColor:   '#f5f1ec',
   },
   headerBack: {
     width: 40,
@@ -892,7 +892,7 @@ const s = StyleSheet.create({
   headerTitle: {
     fontSize:   17,
     fontWeight: '600',
-    color:      '#1c1917',
+    color:      '#231f1b',
   },
   centred: {
     flex:           1,
@@ -904,7 +904,7 @@ const s = StyleSheet.create({
   emptyTitle: {
     fontSize:   18,
     fontWeight: '600',
-    color:      '#1c1917',
+    color:      '#231f1b',
     textAlign:  'center',
     marginTop:  8,
   },
@@ -1001,12 +1001,12 @@ const s = StyleSheet.create({
   },
   input: {
     borderWidth:     1,
-    borderColor:     '#e7e5e4',
+    borderColor:     '#ede9e4',
     borderRadius:    10,
     paddingHorizontal: 14,
     paddingVertical:   13,
     fontSize:        16,
-    color:           '#1c1917',
+    color:           '#231f1b',
     backgroundColor: '#fff',
   },
   orRow: {
@@ -1018,11 +1018,11 @@ const s = StyleSheet.create({
   orLine: {
     flex:            1,
     height:          1,
-    backgroundColor: '#e7e5e4',
+    backgroundColor: '#ede9e4',
   },
   orText: {
     fontSize: 13,
-    color:    '#a8a29e',
+    color:    '#9e958d',
   },
   manualError: {
     color:     '#b91c1c',
@@ -1032,7 +1032,7 @@ const s = StyleSheet.create({
 
   // ── Buttons (shared) ────────────────────────────────────────────────────────
   primaryBtn: {
-    backgroundColor: '#1c1917',
+    backgroundColor: '#231f1b',
     borderRadius:    12,
     paddingVertical: 15,
     alignItems:      'center',
@@ -1066,8 +1066,8 @@ const s = StyleSheet.create({
     paddingBottom:     12,
     gap:               10,
     borderTopWidth:    1,
-    borderTopColor:    '#e7e5e4',
-    backgroundColor:   '#faf9f7',
+    borderTopColor:    '#ede9e4',
+    backgroundColor:   '#f5f1ec',
   },
   bookCard: {
     flexDirection: 'row',
@@ -1077,7 +1077,7 @@ const s = StyleSheet.create({
     borderRadius:  14,
     padding:       14,
     borderWidth:   1,
-    borderColor:   '#e7e5e4',
+    borderColor:   '#ede9e4',
   },
   cover: {
     width:        80,
@@ -1086,7 +1086,7 @@ const s = StyleSheet.create({
     flexShrink:   0,
   },
   coverPlaceholder: {
-    backgroundColor: '#f5f5f4',
+    backgroundColor: '#ede9e4',
     alignItems:      'center',
     justifyContent:  'center',
   },
@@ -1098,7 +1098,7 @@ const s = StyleSheet.create({
   bookTitle: {
     fontSize:   16,
     fontWeight: '700',
-    color:      '#1c1917',
+    color:      '#231f1b',
     lineHeight: 22,
   },
   bookAuthor: {
@@ -1108,7 +1108,7 @@ const s = StyleSheet.create({
   },
   bookPages: {
     fontSize:  13,
-    color:     '#a8a29e',
+    color:     '#9e958d',
     marginTop: 4,
   },
   verdictSection: {
@@ -1117,14 +1117,14 @@ const s = StyleSheet.create({
   verdictQuestion: {
     fontSize:      12,
     fontWeight:    '600',
-    color:         '#a8a29e',
+    color:         '#9e958d',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
   verdictHeadline: {
     fontSize:   22,
     fontWeight: '700',
-    color:      '#1c1917',
+    color:      '#231f1b',
     lineHeight: 30,
   },
   verdictRow: {
@@ -1148,15 +1148,15 @@ const s = StyleSheet.create({
   scoreNumber: {
     fontSize:   22,
     fontWeight: '700',
-    color:      '#1c1917',
+    color:      '#231f1b',
   },
   scoreSlash: {
     fontSize: 15,
-    color:    '#a8a29e',
+    color:    '#9e958d',
   },
   confidenceSep: {
     fontSize: 13,
-    color:    '#a8a29e',
+    color:    '#9e958d',
   },
   confidenceBit: {
     fontSize: 13,
@@ -1170,19 +1170,19 @@ const s = StyleSheet.create({
   whySectionLabel: {
     fontSize:      12,
     fontWeight:    '600',
-    color:         '#a8a29e',
+    color:         '#9e958d',
     textTransform: 'uppercase',
     letterSpacing: 0.7,
     marginBottom:  10,
   },
   divider: {
     height:          1,
-    backgroundColor: '#e7e5e4',
+    backgroundColor: '#ede9e4',
     marginVertical:  20,
   },
   lowSignalCard: {
     flexDirection:   'row',
-    backgroundColor: '#f5f5f4',
+    backgroundColor: '#ede9e4',
     borderRadius:    10,
     padding:         14,
     marginBottom:    16,
@@ -1206,14 +1206,14 @@ const s = StyleSheet.create({
     width:           7,
     height:          7,
     borderRadius:    4,
-    backgroundColor: '#1c1917',
+    backgroundColor: '#231f1b',
     marginTop:       7,
     flexShrink:      0,
   },
   reasonText: {
     flex:      1,
     fontSize:  15,
-    color:     '#1c1917',
+    color:     '#231f1b',
     lineHeight: 22,
   },
   cautionCard: {
@@ -1247,7 +1247,7 @@ const s = StyleSheet.create({
     paddingVertical: 15,
   },
   actionBtnPrimary: {
-    backgroundColor: '#1c1917',
+    backgroundColor: '#231f1b',
   },
   actionBtnPrimaryText: {
     color:      '#fff',
@@ -1264,7 +1264,7 @@ const s = StyleSheet.create({
     borderRadius:    12,
     paddingVertical: 13,
     borderWidth:     1,
-    borderColor:     '#e7e5e4',
+    borderColor:     '#ede9e4',
     backgroundColor: '#fff',
   },
   actionBtnSecondaryText: {
@@ -1298,7 +1298,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius:    12,
     borderWidth:     1,
-    borderColor:     '#e7e5e4',
+    borderColor:     '#ede9e4',
     backgroundColor: '#fff',
   },
   scanAnotherText: {

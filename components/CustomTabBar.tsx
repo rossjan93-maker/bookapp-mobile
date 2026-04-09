@@ -18,9 +18,10 @@ const TABS: TabConfig[] = [
   { name: 'profile', label: 'Profile', icon: 'person-outline',   iconFocused: 'person'   },
 ];
 
-const ACTIVE   = '#1c1917';
-const INACTIVE = '#a8a29e';
-const PILL_BG  = '#f0efee';
+const ACTIVE   = '#231f1b';
+const INACTIVE = '#9e958d';
+const SAGE     = '#7b9e7e';
+const PILL_BG  = '#ede9e4';
 
 export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
@@ -58,7 +59,7 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
             activeOpacity={0.7}
             style={styles.tab}
           >
-            {/* Active indicator dot */}
+            {/* Active indicator dot — sage green when focused */}
             <View style={styles.dotRow}>
               <View style={[styles.dot, isFocused && styles.dotActive]} />
             </View>
@@ -97,9 +98,9 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
 const styles = StyleSheet.create({
   container: {
     flexDirection:   'row',
-    backgroundColor: '#fafaf9',
+    backgroundColor: '#fefcf9',
     borderTopWidth:  StyleSheet.hairlineWidth,
-    borderTopColor:  '#d6d3d1',
+    borderTopColor:  '#ede9e4',
     paddingTop:      8,
   },
   tab: {
@@ -109,7 +110,6 @@ const styles = StyleSheet.create({
     paddingTop:     0,
   },
 
-  // Indicator dot above icon
   dotRow: {
     height:         5,
     justifyContent: 'center',
@@ -120,14 +120,13 @@ const styles = StyleSheet.create({
     width:           0,
     height:          0,
     borderRadius:    2,
-    backgroundColor: ACTIVE,
+    backgroundColor: SAGE,
   },
   dotActive: {
     width:  20,
     height: 3,
   },
 
-  // Icon area
   iconWrap: {
     position: 'relative',
   },
@@ -142,12 +141,11 @@ const styles = StyleSheet.create({
     backgroundColor: PILL_BG,
   },
 
-  // Badge
   badge: {
     position:        'absolute',
     top:             -3,
     right:           -2,
-    backgroundColor: '#1c1917',
+    backgroundColor: '#231f1b',
     borderRadius:    8,
     minWidth:        16,
     height:          16,
@@ -156,13 +154,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   badgeText: {
-    color:      '#fff',
+    color:      '#fefcf9',
     fontSize:   9,
     fontWeight: '700',
     lineHeight: 12,
   },
 
-  // Label
   label: {
     fontSize:    10.5,
     fontWeight:  '400',

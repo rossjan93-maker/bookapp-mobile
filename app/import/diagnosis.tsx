@@ -33,7 +33,7 @@ function ProgressDots({ total, current }: { total: number; current: number }) {
             width: i === current ? 20 : 6,
             height: 6,
             borderRadius: 3,
-            backgroundColor: i <= current ? '#1c1917' : '#e7e5e4',
+            backgroundColor: i <= current ? '#231f1b' : '#ede9e4',
           }}
         />
       ))}
@@ -49,17 +49,17 @@ function HypothesisCard({ hyp }: { hyp: TasteHypothesis }) {
       padding: 16,
       marginBottom: 10,
       borderLeftWidth: 3,
-      borderLeftColor: hyp.confidence === 'strong' ? '#1c1917' : '#d6d3d1',
+      borderLeftColor: hyp.confidence === 'strong' ? '#231f1b' : '#ede9e4',
       shadowColor: '#000',
       shadowOpacity: 0.04,
       shadowRadius: 6,
       shadowOffset: { width: 0, height: 1 },
       elevation: 1,
     }}>
-      <Text style={{ fontSize: 14, color: '#1c1917', lineHeight: 20 }}>
+      <Text style={{ fontSize: 14, color: '#231f1b', lineHeight: 20 }}>
         {hyp.statement}
       </Text>
-      <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 6 }}>
+      <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 6 }}>
         {hyp.confidence === 'strong' ? 'Strong signal' : 'Working hypothesis'}
       </Text>
     </View>
@@ -119,9 +119,9 @@ export default function DiagnosisScreen() {
 
   if (step === 'loading') {
     return (
-      <View style={{ flex: 1, backgroundColor: '#faf9f7', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator color="#1c1917" />
-        <Text style={{ fontSize: 14, color: '#a8a29e', marginTop: 12 }}>
+      <View style={{ flex: 1, backgroundColor: '#f5f1ec', justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator color="#231f1b" />
+        <Text style={{ fontSize: 14, color: '#9e958d', marginTop: 12 }}>
           Analysing your reading history…
         </Text>
       </View>
@@ -133,12 +133,12 @@ export default function DiagnosisScreen() {
   if (step === 'hypotheses') {
     return (
       <ScrollView
-        style={{ flex: 1, backgroundColor: '#faf9f7' }}
+        style={{ flex: 1, backgroundColor: '#f5f1ec' }}
         contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 56, paddingBottom: 60 }}
       >
         <BackButton onPress={() => router.back()} style={{ marginBottom: 24 }} />
 
-        <Text style={{ fontSize: 28, fontWeight: '800', color: '#1c1917', letterSpacing: -0.5, marginBottom: 6 }}>
+        <Text style={{ fontSize: 28, fontWeight: '800', color: '#231f1b', letterSpacing: -0.5, marginBottom: 6 }}>
           What we think we know
         </Text>
         <Text style={{ fontSize: 14, color: '#78716c', lineHeight: 20, marginBottom: 28 }}>
@@ -161,7 +161,7 @@ export default function DiagnosisScreen() {
           hypotheses.map(h => <HypothesisCard key={h.slug} hyp={h} />)
         )}
 
-        <View style={{ marginTop: 8, marginBottom: 24, padding: 14, backgroundColor: '#f5f5f4', borderRadius: 12 }}>
+        <View style={{ marginTop: 8, marginBottom: 24, padding: 14, backgroundColor: '#ede9e4', borderRadius: 12 }}>
           <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
             Next, we'll ask you 5 quick questions to test these hypotheses and sharpen your profile.
           </Text>
@@ -170,7 +170,7 @@ export default function DiagnosisScreen() {
         <TouchableOpacity
           onPress={() => setStep('questions')}
           style={{
-            backgroundColor: '#1c1917',
+            backgroundColor: '#231f1b',
             borderRadius: 14,
             paddingVertical: 16,
             alignItems: 'center',
@@ -185,7 +185,7 @@ export default function DiagnosisScreen() {
           onPress={() => router.back()}
           style={{ marginTop: 16, alignItems: 'center', paddingVertical: 12 }}
         >
-          <Text style={{ fontSize: 14, color: '#a8a29e' }}>Skip for now</Text>
+          <Text style={{ fontSize: 14, color: '#9e958d' }}>Skip for now</Text>
         </TouchableOpacity>
       </ScrollView>
     );
@@ -196,14 +196,14 @@ export default function DiagnosisScreen() {
   if (step === 'questions') {
     const question = DIAGNOSIS_QUESTIONS[questionIdx];
     return (
-      <View style={{ flex: 1, backgroundColor: '#faf9f7', paddingHorizontal: 24, paddingTop: 56 }}>
+      <View style={{ flex: 1, backgroundColor: '#f5f1ec', paddingHorizontal: 24, paddingTop: 56 }}>
         <ProgressDots total={DIAGNOSIS_QUESTIONS.length} current={questionIdx} />
 
-        <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 16 }}>
+        <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 16 }}>
           Question {questionIdx + 1} of {DIAGNOSIS_QUESTIONS.length}
         </Text>
 
-        <Text style={{ fontSize: 22, fontWeight: '700', color: '#1c1917', lineHeight: 30, marginBottom: 36 }}>
+        <Text style={{ fontSize: 22, fontWeight: '700', color: '#231f1b', lineHeight: 30, marginBottom: 36 }}>
           {question.text}
         </Text>
 
@@ -215,7 +215,7 @@ export default function DiagnosisScreen() {
             padding: 20,
             marginBottom: 12,
             borderWidth: 1,
-            borderColor: '#e7e5e4',
+            borderColor: '#ede9e4',
             shadowColor: '#000',
             shadowOpacity: 0.04,
             shadowRadius: 6,
@@ -223,7 +223,7 @@ export default function DiagnosisScreen() {
             elevation: 1,
           }}
         >
-          <Text style={{ fontSize: 16, color: '#1c1917', lineHeight: 22 }}>
+          <Text style={{ fontSize: 16, color: '#231f1b', lineHeight: 22 }}>
             {question.options[0]}
           </Text>
         </TouchableOpacity>
@@ -236,7 +236,7 @@ export default function DiagnosisScreen() {
             padding: 20,
             marginBottom: 24,
             borderWidth: 1,
-            borderColor: '#e7e5e4',
+            borderColor: '#ede9e4',
             shadowColor: '#000',
             shadowOpacity: 0.04,
             shadowRadius: 6,
@@ -244,7 +244,7 @@ export default function DiagnosisScreen() {
             elevation: 1,
           }}
         >
-          <Text style={{ fontSize: 16, color: '#1c1917', lineHeight: 22 }}>
+          <Text style={{ fontSize: 16, color: '#231f1b', lineHeight: 22 }}>
             {question.options[1]}
           </Text>
         </TouchableOpacity>
@@ -260,7 +260,7 @@ export default function DiagnosisScreen() {
           }}
           style={{ alignItems: 'center', paddingVertical: 8 }}
         >
-          <Text style={{ fontSize: 13, color: '#a8a29e' }}>Skip this question</Text>
+          <Text style={{ fontSize: 13, color: '#9e958d' }}>Skip this question</Text>
         </TouchableOpacity>
       </View>
     );
@@ -274,7 +274,7 @@ export default function DiagnosisScreen() {
   const nextAt = profile?.nextTierAt ?? 5;
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#faf9f7', paddingHorizontal: 24, paddingTop: 56 }}>
+    <View style={{ flex: 1, backgroundColor: '#f5f1ec', paddingHorizontal: 24, paddingTop: 56 }}>
       <View style={{
         backgroundColor: '#fff',
         borderRadius: 20,
@@ -288,7 +288,7 @@ export default function DiagnosisScreen() {
         elevation: 3,
       }}>
         <Text style={{ fontSize: 36, marginBottom: 16 }}>✓</Text>
-        <Text style={{ fontSize: 20, fontWeight: '700', color: '#1c1917', textAlign: 'center', marginBottom: 8 }}>
+        <Text style={{ fontSize: 20, fontWeight: '700', color: '#231f1b', textAlign: 'center', marginBottom: 8 }}>
           Profile updated
         </Text>
         <Text style={{ fontSize: 14, color: '#78716c', textAlign: 'center', lineHeight: 20 }}>
@@ -306,15 +306,15 @@ export default function DiagnosisScreen() {
           <Text style={{ fontSize: 12, fontWeight: '600', color: '#57534e', marginBottom: 8 }}>
             Signals collected
           </Text>
-          <View style={{ height: 4, backgroundColor: '#e7e5e4', borderRadius: 2, overflow: 'hidden', marginBottom: 6 }}>
+          <View style={{ height: 4, backgroundColor: '#ede9e4', borderRadius: 2, overflow: 'hidden', marginBottom: 6 }}>
             <View style={{
               height: 4,
               width: `${Math.min(100, Math.round((signalCount / nextAt) * 100))}%`,
-              backgroundColor: '#1c1917',
+              backgroundColor: '#231f1b',
               borderRadius: 2,
             }} />
           </View>
-          <Text style={{ fontSize: 12, color: '#a8a29e' }}>
+          <Text style={{ fontSize: 12, color: '#9e958d' }}>
             {signalCount} of {nextAt} signals to next tier
           </Text>
         </View>
@@ -323,7 +323,7 @@ export default function DiagnosisScreen() {
       <TouchableOpacity
         onPress={() => router.replace('/(tabs)')}
         style={{
-          backgroundColor: '#1c1917',
+          backgroundColor: '#231f1b',
           borderRadius: 14,
           paddingVertical: 16,
           alignItems: 'center',

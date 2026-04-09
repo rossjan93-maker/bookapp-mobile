@@ -127,7 +127,7 @@ function SectionLabel({ children }: { children: string }) {
     <Text style={{
       fontSize: 11,
       fontWeight: '700',
-      color: '#a8a29e',
+      color: '#9e958d',
       letterSpacing: 0.9,
       textTransform: 'uppercase',
       marginBottom: 12,
@@ -143,7 +143,7 @@ function InitialAvatar({ name }: { name: string }) {
       width: 36,
       height: 36,
       borderRadius: 18,
-      backgroundColor: '#e7e5e4',
+      backgroundColor: '#ede9e4',
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 12,
@@ -579,11 +579,11 @@ export default function HomeScreen() {
 
   function homeCardBorderColor(cr: CurrentRead, goal: number | null): string {
     const pageCount = cr.page_count;
-    if (!goal || !pageCount || pageCount <= 0) return '#d6d3d1';
+    if (!goal || !pageCount || pageCount <= 0) return '#ede9e4';
     const { state } = computePagePacing(cr.current_page ?? 0, pageCount, cr.started_at, goal);
     if (state === 'ahead' || state === 'on_pace') return '#86efac';
     if (state === 'behind') return '#fcd34d';
-    return '#d6d3d1';
+    return '#ede9e4';
   }
 
   function progressLabel(cr: CurrentRead): string {
@@ -613,7 +613,7 @@ export default function HomeScreen() {
   if (wtStep === 'home') {
     return (
       <ScrollView
-        style={{ backgroundColor: '#faf9f7' }}
+        style={{ backgroundColor: '#f5f1ec' }}
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: insets.top + 16, paddingBottom: 40 }}
       >
         <WtDemoHome greeting={greeting} />
@@ -623,7 +623,7 @@ export default function HomeScreen() {
 
   return (
     <ScrollView
-      style={{ backgroundColor: '#faf9f7' }}
+      style={{ backgroundColor: '#f5f1ec' }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: insets.top + 16, paddingBottom: 40 }}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
@@ -668,7 +668,7 @@ export default function HomeScreen() {
                 })}
               >
                 <View style={{
-                  backgroundColor: '#fff',
+                  backgroundColor: '#fefcf9',
                   borderRadius: 16,
                   padding: 16,
                   flexDirection: 'row',
@@ -684,7 +684,7 @@ export default function HomeScreen() {
                   <CoverThumb url={cr.cover_url} externalId={cr.external_id} title={cr.title} width={56} height={82} />
                   <View style={{ flex: 1, marginLeft: 16 }}>
                     <Text style={{
-                      fontSize: 16, fontWeight: '700', color: '#1c1917', lineHeight: 22, marginBottom: 3,
+                      fontSize: 16, fontWeight: '700', color: '#231f1b', lineHeight: 22, marginBottom: 3,
                     }} numberOfLines={2}>{cr.title}</Text>
                     <Text style={{ fontSize: 13, color: '#78716c', marginBottom: 12 }} numberOfLines={1}>
                       {cr.author}
@@ -692,21 +692,21 @@ export default function HomeScreen() {
                     {(cr.current_page || cr.page_count) ? (
                       <>
                         <View style={{
-                          height: 3, backgroundColor: '#e7e5e4', borderRadius: 2, marginBottom: 6, overflow: 'hidden',
+                          height: 3, backgroundColor: '#ede9e4', borderRadius: 2, marginBottom: 6, overflow: 'hidden',
                         }}>
                           {progressPct(cr) > 0 && (
                             <View style={{
-                              height: 3, width: `${progressPct(cr) * 100}%`, backgroundColor: '#1c1917', borderRadius: 2,
+                              height: 3, width: `${progressPct(cr) * 100}%`, backgroundColor: '#231f1b', borderRadius: 2,
                             }} />
                           )}
                         </View>
-                        <Text style={{ fontSize: 11, color: '#a8a29e' }}>{progressLabel(cr)}</Text>
+                        <Text style={{ fontSize: 11, color: '#9e958d' }}>{progressLabel(cr)}</Text>
                       </>
                     ) : (
-                      <Text style={{ fontSize: 11, color: '#a8a29e' }}>In progress</Text>
+                      <Text style={{ fontSize: 11, color: '#9e958d' }}>In progress</Text>
                     )}
                   </View>
-                  <Text style={{ fontSize: 20, color: '#d6d3d1', marginLeft: 8 }}>›</Text>
+                  <Text style={{ fontSize: 20, color: '#ede9e4', marginLeft: 8 }}>›</Text>
                 </View>
               </TouchableOpacity>
             );
@@ -745,7 +745,7 @@ export default function HomeScreen() {
                     })}
                   >
                     <View style={{
-                      backgroundColor: '#fff',
+                      backgroundColor: '#fefcf9',
                       borderRadius: 14,
                       padding: 14,
                       width: 220,
@@ -761,7 +761,7 @@ export default function HomeScreen() {
                         <CoverThumb url={cr.cover_url} externalId={cr.external_id} title={cr.title} width={44} height={64} />
                         <View style={{ flex: 1, marginLeft: 10 }}>
                           <Text numberOfLines={2} style={{
-                            fontSize: 14, fontWeight: '700', color: '#1c1917', lineHeight: 19, marginBottom: 3,
+                            fontSize: 14, fontWeight: '700', color: '#231f1b', lineHeight: 19, marginBottom: 3,
                           }}>{cr.title}</Text>
                           <Text numberOfLines={1} style={{ fontSize: 12, color: '#78716c' }}>{cr.author}</Text>
                         </View>
@@ -769,18 +769,18 @@ export default function HomeScreen() {
                       {hasProgress ? (
                         <>
                           <View style={{
-                            height: 3, backgroundColor: '#e7e5e4', borderRadius: 2, overflow: 'hidden', marginBottom: 4,
+                            height: 3, backgroundColor: '#ede9e4', borderRadius: 2, overflow: 'hidden', marginBottom: 4,
                           }}>
                             <View style={{
-                              height: 3, width: `${pct ?? 0}%`, backgroundColor: '#1c1917', borderRadius: 2,
+                              height: 3, width: `${pct ?? 0}%`, backgroundColor: '#231f1b', borderRadius: 2,
                             }} />
                           </View>
-                          <Text style={{ fontSize: 10, color: '#a8a29e', marginBottom: pacingNote ? 5 : 0 }}>
+                          <Text style={{ fontSize: 10, color: '#9e958d', marginBottom: pacingNote ? 5 : 0 }}>
                             {progressLabel(cr)}
                           </Text>
                         </>
                       ) : (
-                        <Text style={{ fontSize: 10, color: '#a8a29e', marginBottom: pacingNote ? 5 : 0 }}>
+                        <Text style={{ fontSize: 10, color: '#9e958d', marginBottom: pacingNote ? 5 : 0 }}>
                           In progress
                         </Text>
                       )}
@@ -808,7 +808,7 @@ export default function HomeScreen() {
           >
           <TouchableOpacity activeOpacity={0.8} onPress={() => setGoalExpanded(e => !e)}>
             <View style={{
-              backgroundColor: '#fff',
+              backgroundColor: '#fefcf9',
               borderRadius: 16,
               padding: 18,
               shadowColor: '#000',
@@ -820,9 +820,9 @@ export default function HomeScreen() {
               {/* ── 1. Headline + directional icon ── */}
               <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 24, fontWeight: '800', color: '#1c1917', letterSpacing: -0.6 }}>
+                  <Text style={{ fontSize: 24, fontWeight: '800', color: '#231f1b', letterSpacing: -0.6 }}>
                     {booksThisYear.length}
-                    <Text style={{ fontSize: 15, fontWeight: '400', color: '#a8a29e' }}> / {yearlyGoal} books</Text>
+                    <Text style={{ fontSize: 15, fontWeight: '400', color: '#9e958d' }}> / {yearlyGoal} books</Text>
                   </Text>
                 </View>
                 <Text style={{ fontSize: 22, color: goalDirColor, marginLeft: 10, marginTop: 3 }}>
@@ -838,7 +838,7 @@ export default function HomeScreen() {
               {/* ── 3. Goal-aware progress bar ── */}
               <View style={{
                 height: 7,
-                backgroundColor: '#e7e5e4',
+                backgroundColor: '#ede9e4',
                 borderRadius: 4,
                 marginBottom: 14,
                 overflow: 'hidden',
@@ -850,7 +850,7 @@ export default function HomeScreen() {
                     outputRange: ['0%', '100%'],
                     extrapolate: 'clamp',
                   }),
-                  backgroundColor: '#1c1917',
+                  backgroundColor: '#231f1b',
                   borderRadius: 4,
                 }} />
                 {goalExpectedPct > 0 && goalExpectedPct < 100 && (
@@ -877,7 +877,7 @@ export default function HomeScreen() {
               {/* ── 5. Compact pace chip + expand indicator ── */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                 {yearAvgPace !== null ? (
-                  <Text style={{ fontSize: 11, color: '#a8a29e' }}>
+                  <Text style={{ fontSize: 11, color: '#9e958d' }}>
                     {`~${yearAvgPace} pages/day · ${goalIsAhead ? 'Ahead of pace' : goalIsBehind ? 'Behind pace' : 'On pace'}`}
                   </Text>
                 ) : <View />}
@@ -894,7 +894,7 @@ export default function HomeScreen() {
 
           {goalExpanded && (
             <View style={{
-              backgroundColor: '#fff',
+              backgroundColor: '#fefcf9',
               borderRadius: 14,
               marginTop: 8,
               overflow: 'hidden',
@@ -906,7 +906,7 @@ export default function HomeScreen() {
             }}>
               {booksThisYear.length === 0 ? (
                 <View style={{ padding: 18 }}>
-                  <Text style={{ fontSize: 13, color: '#a8a29e', lineHeight: 20 }}>
+                  <Text style={{ fontSize: 13, color: '#9e958d', lineHeight: 20 }}>
                     No books finished yet this year.{'\n'}Keep reading — you've got this.
                   </Text>
                 </View>
@@ -932,7 +932,7 @@ export default function HomeScreen() {
                       paddingVertical: 10,
                       paddingHorizontal: 14,
                       borderTopWidth: idx > 0 ? 1 : 0,
-                      borderTopColor: '#f5f5f4',
+                      borderTopColor: '#ede9e4',
                     }}
                   >
                     <CoverThumb
@@ -943,10 +943,10 @@ export default function HomeScreen() {
                       height={46}
                     />
                     <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917' }} numberOfLines={1}>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#231f1b' }} numberOfLines={1}>
                         {book.title}
                       </Text>
-                      <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 1 }} numberOfLines={1}>
+                      <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 1 }} numberOfLines={1}>
                         {book.author}
                       </Text>
                     </View>
@@ -978,7 +978,7 @@ export default function HomeScreen() {
             style={{ marginBottom: 12 }}
           >
             <View style={{
-              backgroundColor: '#fff',
+              backgroundColor: '#fefcf9',
               borderRadius: 14,
               paddingHorizontal: 16,
               paddingVertical: 14,
@@ -992,23 +992,23 @@ export default function HomeScreen() {
             }}>
               <View style={{
                 width: 38, height: 38, borderRadius: 19,
-                backgroundColor: '#f5f5f4',
+                backgroundColor: '#ede9e4',
                 alignItems: 'center', justifyContent: 'center',
                 marginRight: 12,
               }}>
                 <Text style={{ fontSize: 18 }}>📬</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', marginBottom: 1 }}>
                   {pendingRecCount === 1
                     ? '1 recommendation waiting'
                     : `${pendingRecCount} recommendations waiting`}
                 </Text>
-                <Text style={{ fontSize: 12, color: '#a8a29e' }}>
+                <Text style={{ fontSize: 12, color: '#9e958d' }}>
                   See what your friends picked for you
                 </Text>
               </View>
-              <Text style={{ fontSize: 18, color: '#d6d3d1' }}>›</Text>
+              <Text style={{ fontSize: 18, color: '#ede9e4' }}>›</Text>
             </View>
           </TouchableOpacity>
         )}
@@ -1018,7 +1018,7 @@ export default function HomeScreen() {
             <Text style={{ color: '#b91c1c', fontSize: 14, marginBottom: 10 }}>{feedError}</Text>
             <TouchableOpacity
               onPress={() => { setFeedError(null); loadAll(); }}
-              style={{ alignSelf: 'flex-start', borderWidth: 1, borderColor: '#d6d3d1', borderRadius: 8, paddingVertical: 7, paddingHorizontal: 14 }}
+              style={{ alignSelf: 'flex-start', borderWidth: 1, borderColor: '#ede9e4', borderRadius: 8, paddingVertical: 7, paddingHorizontal: 14 }}
             >
               <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500' }}>Try again</Text>
             </TouchableOpacity>
@@ -1028,7 +1028,7 @@ export default function HomeScreen() {
             ref={(!currentReads.length && !(yearlyGoal && yearlyGoal > 0)) ? homeTargetRef : undefined}
             onLayout={(!currentReads.length && !(yearlyGoal && yearlyGoal > 0)) ? measureHomeContent : undefined}
             style={{
-              backgroundColor: '#fff',
+              backgroundColor: '#fefcf9',
               borderRadius: 14,
               padding: 24,
               alignItems: 'center',
@@ -1039,7 +1039,7 @@ export default function HomeScreen() {
               elevation: 1,
             }}
           >
-            <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
+            <Text style={{ color: '#9e958d', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
               Nothing yet.{'\n'}Finish or rate a book to get started.
             </Text>
           </View>
@@ -1056,7 +1056,7 @@ export default function HomeScreen() {
               const card = (
                 <View
                   style={{
-                    backgroundColor: '#fff',
+                    backgroundColor: '#fefcf9',
                     borderRadius: 14,
                     padding: 16,
                     marginBottom: 10,
@@ -1077,17 +1077,17 @@ export default function HomeScreen() {
                     height={58}
                   />
                   <View style={{ flex: 1, marginLeft: 14 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 2 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', marginBottom: 2 }}>
                       {actor}{' '}
                       <Text style={{ fontWeight: '400', color: '#57534e' }}>{verb}</Text>
                     </Text>
                     {title ? (
-                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', lineHeight: 20, marginBottom: 2 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', lineHeight: 20, marginBottom: 2 }}>
                         {title}
                       </Text>
                     ) : null}
                     {author ? (
-                      <Text style={{ fontSize: 12, color: '#a8a29e', marginBottom: 4 }}>
+                      <Text style={{ fontSize: 12, color: '#9e958d', marginBottom: 4 }}>
                         {author}
                       </Text>
                     ) : null}
@@ -1129,7 +1129,7 @@ export default function HomeScreen() {
               <Text
                 onPress={() => router.push('/(tabs)/notes')}
                 style={{
-                  color: '#a8a29e',
+                  color: '#9e958d',
                   fontSize: 13,
                   textAlign: 'center',
                   marginTop: 8,
@@ -1152,14 +1152,14 @@ export default function HomeScreen() {
           placeholder="Search by username…"
           autoCapitalize="none"
           autoCorrect={false}
-          placeholderTextColor="#a8a29e"
+          placeholderTextColor="#9e958d"
           style={{
-            backgroundColor: '#fff',
+            backgroundColor: '#fefcf9',
             borderRadius: 12,
             paddingHorizontal: 14,
             paddingVertical: 12,
             fontSize: 15,
-            color: '#1c1917',
+            color: '#231f1b',
             marginBottom: 10,
             shadowColor: '#000',
             shadowOpacity: 0.04,
@@ -1176,12 +1176,12 @@ export default function HomeScreen() {
         )}
 
         {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
-          <Text style={{ color: '#a8a29e', marginBottom: 16, fontSize: 14 }}>No users found.</Text>
+          <Text style={{ color: '#9e958d', marginBottom: 16, fontSize: 14 }}>No users found.</Text>
         )}
 
         {searchResults.length > 0 && (
           <View style={{
-            backgroundColor: '#fff',
+            backgroundColor: '#fefcf9',
             borderRadius: 14,
             shadowColor: '#000',
             shadowOpacity: 0.04,
@@ -1204,15 +1204,15 @@ export default function HomeScreen() {
                     paddingVertical: 12,
                     paddingHorizontal: 16,
                     borderBottomWidth: idx < searchResults.length - 1 ? 1 : 0,
-                    borderBottomColor: '#f5f5f4',
+                    borderBottomColor: '#ede9e4',
                   }}
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <InitialAvatar name={getDisplayName(result)} />
                     <View>
-                      <Text style={{ fontSize: 15, color: '#1c1917' }}>{getDisplayName(result)}</Text>
+                      <Text style={{ fontSize: 15, color: '#231f1b' }}>{getDisplayName(result)}</Text>
                       {(result.first_name || result.last_name) && (
-                        <Text style={{ fontSize: 12, color: '#a8a29e' }}>@{result.username}</Text>
+                        <Text style={{ fontSize: 12, color: '#9e958d' }}>@{result.username}</Text>
                       )}
                     </View>
                   </View>
@@ -1225,14 +1225,14 @@ export default function HomeScreen() {
                       style={{
                         paddingHorizontal: 14,
                         paddingVertical: 7,
-                        backgroundColor: addingId !== null ? '#d6d3d1' : '#1c1917',
+                        backgroundColor: addingId !== null ? '#ede9e4' : '#231f1b',
                         borderRadius: 8,
                       }}
                     >
                       <Text style={{ color: '#fff', fontSize: 13, fontWeight: '500' }}>Add</Text>
                     </TouchableOpacity>
                   ) : rel === 'pending' ? (
-                    <Text style={{ color: '#a8a29e', fontSize: 13 }}>Pending</Text>
+                    <Text style={{ color: '#9e958d', fontSize: 13 }}>Pending</Text>
                   ) : (
                     <Text style={{ color: '#78716c', fontSize: 13 }}>Friends</Text>
                   )}
@@ -1243,10 +1243,10 @@ export default function HomeScreen() {
         )}
 
         {acceptedFriends.length === 0 ? (
-          <Text style={{ color: '#a8a29e', fontSize: 14, marginBottom: 16 }}>No friends yet.</Text>
+          <Text style={{ color: '#9e958d', fontSize: 14, marginBottom: 16 }}>No friends yet.</Text>
         ) : (
           <View style={{
-            backgroundColor: '#fff',
+            backgroundColor: '#fefcf9',
             borderRadius: 14,
             shadowColor: '#000',
             shadowOpacity: 0.04,
@@ -1274,19 +1274,19 @@ export default function HomeScreen() {
                   paddingVertical: 13,
                   paddingHorizontal: 16,
                   borderBottomWidth: idx < acceptedFriends.length - 1 ? 1 : 0,
-                  borderBottomColor: '#f5f5f4',
+                  borderBottomColor: '#ede9e4',
                 }}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                   <InitialAvatar name={getDisplayName(friend)} />
                   <View>
-                    <Text style={{ fontSize: 15, color: '#1c1917' }}>{getDisplayName(friend)}</Text>
+                    <Text style={{ fontSize: 15, color: '#231f1b' }}>{getDisplayName(friend)}</Text>
                     {(friend.first_name || friend.last_name) && (
-                      <Text style={{ fontSize: 12, color: '#a8a29e' }}>@{friend.username}</Text>
+                      <Text style={{ fontSize: 12, color: '#9e958d' }}>@{friend.username}</Text>
                     )}
                   </View>
                 </View>
-                <Text style={{ fontSize: 18, color: '#d6d3d1', marginRight: 2 }}>›</Text>
+                <Text style={{ fontSize: 18, color: '#ede9e4', marginRight: 2 }}>›</Text>
               </TouchableOpacity>
             ))}
           </View>

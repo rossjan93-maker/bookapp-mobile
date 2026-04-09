@@ -9,5 +9,5 @@ export default function ImportSettingsScreen() {
     router.replace('/import/goodreads');
   }, []);
 
-  return <View style={{ flex: 1, backgroundColor: '#faf9f7' }} />;
+  return <View style={{ flex: 1, backgroundColor: '#f5f1ec' }} />;
 }

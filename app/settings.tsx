@@ -23,7 +23,7 @@ function SectionHeader({ children }: { children: string }) {
     <Text style={{
       fontSize: 11,
       fontWeight: '700',
-      color: '#a8a29e',
+      color: '#9e958d',
       letterSpacing: 0.9,
       textTransform: 'uppercase',
       marginBottom: 8,
@@ -38,7 +38,7 @@ function SectionHeader({ children }: { children: string }) {
 function SettingsCard({ children }: { children: React.ReactNode }) {
   return (
     <View style={{
-      backgroundColor: '#fff',
+      backgroundColor: '#fefcf9',
       borderRadius: 14,
       overflow: 'hidden',
       shadowColor: '#000',
@@ -60,7 +60,7 @@ function SettingsRow({ last, children }: { last?: boolean; children: React.React
       paddingHorizontal: 16,
       paddingVertical: 14,
       borderBottomWidth: last ? 0 : 1,
-      borderBottomColor: '#f5f5f4',
+      borderBottomColor: '#ede9e4',
       minHeight: 52,
     }}>
       {children}
@@ -88,8 +88,8 @@ function CardFooter({ children }: { children: React.ReactNode }) {
       paddingHorizontal: 16,
       paddingVertical: 10,
       borderTopWidth: 1,
-      borderTopColor: '#f5f5f4',
-      backgroundColor: '#faf9f7',
+      borderTopColor: '#ede9e4',
+      backgroundColor: '#f5f1ec',
     }}>
       {children}
     </View>
@@ -116,7 +116,7 @@ function SaveButton({
       disabled={isDisabled}
       style={{
         marginTop: 10,
-        backgroundColor: saved ? '#15803d' : isDisabled ? '#d6d3d1' : '#1c1917',
+        backgroundColor: saved ? '#15803d' : isDisabled ? '#ede9e4' : '#231f1b',
         borderRadius: 10,
         paddingVertical: 13,
         alignItems: 'center',
@@ -363,7 +363,7 @@ export default function SettingsScreen() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#faf9f7' }}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f1ec' }}>
         <ActivityIndicator color="#78716c" />
       </View>
     );
@@ -371,7 +371,7 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: '#faf9f7' }}
+      style={{ flex: 1, backgroundColor: '#f5f1ec' }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 60 }}
       keyboardShouldPersistTaps="handled"
     >
@@ -380,13 +380,13 @@ export default function SettingsScreen() {
       <Text style={{
         fontSize: 28,
         fontWeight: '800',
-        color: '#1c1917',
+        color: '#231f1b',
         letterSpacing: -0.5,
         marginBottom: 4,
       }}>
         Settings
       </Text>
-      <Text style={{ fontSize: 13, color: '#a8a29e', lineHeight: 20 }}>
+      <Text style={{ fontSize: 13, color: '#9e958d', lineHeight: 20 }}>
         Profile, reading goals, and preferences.
       </Text>
 
@@ -395,7 +395,7 @@ export default function SettingsScreen() {
       <SettingsCard>
         <SettingsRow>
           <RowLabel>Username</RowLabel>
-          <Text style={{ fontSize: 15, color: '#a8a29e', paddingVertical: 2 }}>@</Text>
+          <Text style={{ fontSize: 15, color: '#9e958d', paddingVertical: 2 }}>@</Text>
           <TextInput
             value={username}
             onChangeText={v => { setUsername(v); setProfileDirty(true); setProfileSaved(false); setProfileError(null); }}
@@ -403,10 +403,10 @@ export default function SettingsScreen() {
             placeholderTextColor="#c4b5a5"
             autoCapitalize="none"
             autoCorrect={false}
-            style={{ flex: 1, fontSize: 15, color: '#1c1917', paddingVertical: 2, marginLeft: 2 }}
+            style={{ flex: 1, fontSize: 15, color: '#231f1b', paddingVertical: 2, marginLeft: 2 }}
           />
           {usernameStatus === 'checking' && (
-            <ActivityIndicator size="small" color="#a8a29e" style={{ marginLeft: 6 }} />
+            <ActivityIndicator size="small" color="#9e958d" style={{ marginLeft: 6 }} />
           )}
           {usernameStatus === 'available' && (
             <Text style={{ fontSize: 15, color: '#16a34a', marginLeft: 6 }}>✓</Text>
@@ -423,7 +423,7 @@ export default function SettingsScreen() {
             placeholder="First"
             placeholderTextColor="#c4b5a5"
             autoCapitalize="words"
-            style={{ flex: 1, fontSize: 15, color: '#1c1917', paddingVertical: 2 }}
+            style={{ flex: 1, fontSize: 15, color: '#231f1b', paddingVertical: 2 }}
           />
         </SettingsRow>
         <SettingsRow last>
@@ -434,18 +434,18 @@ export default function SettingsScreen() {
             placeholder="Last"
             placeholderTextColor="#c4b5a5"
             autoCapitalize="words"
-            style={{ flex: 1, fontSize: 15, color: '#1c1917', paddingVertical: 2 }}
+            style={{ flex: 1, fontSize: 15, color: '#231f1b', paddingVertical: 2 }}
           />
         </SettingsRow>
         <CardFooter>
           {hasName ? (
-            <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>
+            <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
               Shown as{' '}
               <Text style={{ fontWeight: '600', color: '#57534e' }}>{displayPreview}</Text>
               {' '}to friends across the app.
             </Text>
           ) : (
-            <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>
+            <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
               Add your name — shown to friends instead of your username.
             </Text>
           )}
@@ -502,12 +502,12 @@ export default function SettingsScreen() {
             keyboardType="number-pad"
             returnKeyType="done"
             onSubmitEditing={handleSaveGoal}
-            style={{ flex: 1, fontSize: 17, fontWeight: '600', color: '#1c1917', paddingVertical: 2 }}
+            style={{ flex: 1, fontSize: 17, fontWeight: '600', color: '#231f1b', paddingVertical: 2 }}
           />
-          <Text style={{ fontSize: 13, color: '#a8a29e', marginLeft: 8 }}>books / yr</Text>
+          <Text style={{ fontSize: 13, color: '#9e958d', marginLeft: 8 }}>books / yr</Text>
         </SettingsRow>
         <CardFooter>
-          <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>
+          <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
             Books you aim to finish by Dec 31. Drives pacing on your dashboard.
           </Text>
         </CardFooter>
@@ -538,10 +538,10 @@ export default function SettingsScreen() {
           >
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 3 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', marginBottom: 3 }}>
                   Taste & Style
                 </Text>
-                <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>
+                <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
                   Genres, styles, and authors you love
                 </Text>
               </View>
@@ -561,17 +561,17 @@ export default function SettingsScreen() {
         >
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 3 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', marginBottom: 3 }}>
                 Import from Goodreads
               </Text>
-              <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>
+              <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
                 Bring your reading history into readstack
               </Text>
             </View>
             <Text style={{ fontSize: 20, color: '#c4b5a5', marginLeft: 10 }}>›</Text>
           </View>
         </TouchableOpacity>
-        <View style={{ height: 1, backgroundColor: '#f5f5f4', marginHorizontal: 16 }} />
+        <View style={{ height: 1, backgroundColor: '#ede9e4', marginHorizontal: 16 }} />
         <TouchableOpacity
           onPress={() => router.push('/import/repair-dates')}
           activeOpacity={0.75}
@@ -579,10 +579,10 @@ export default function SettingsScreen() {
         >
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 3 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', marginBottom: 3 }}>
                 Repair reading dates
               </Text>
-              <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>
+              <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
                 Fix yearly goal count if old books appear as finished this year
               </Text>
             </View>
@@ -597,18 +597,18 @@ export default function SettingsScreen() {
         {/* Identity info */}
         <View style={{ paddingHorizontal: 16, paddingVertical: 14 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 5 }}>
-            <Text style={{ fontSize: 13, color: '#a8a29e' }}>Username</Text>
+            <Text style={{ fontSize: 13, color: '#9e958d' }}>Username</Text>
             <Text style={{ fontSize: 13, color: '#78716c', fontWeight: '500' }}>@{username}</Text>
           </View>
-          <View style={{ height: 1, backgroundColor: '#f5f5f4', marginVertical: 2 }} />
+          <View style={{ height: 1, backgroundColor: '#ede9e4', marginVertical: 2 }} />
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 5 }}>
-            <Text style={{ fontSize: 13, color: '#a8a29e' }}>Email</Text>
+            <Text style={{ fontSize: 13, color: '#9e958d' }}>Email</Text>
             <Text style={{ fontSize: 13, color: '#78716c', fontWeight: '500' }}>{email ?? '—'}</Text>
           </View>
         </View>
 
         {/* Sign out */}
-        <View style={{ height: 1, backgroundColor: '#f5f5f4' }} />
+        <View style={{ height: 1, backgroundColor: '#ede9e4' }} />
         <TouchableOpacity
           onPress={handleSignOut}
           style={{ paddingHorizontal: 16, paddingVertical: 15 }}
@@ -619,7 +619,7 @@ export default function SettingsScreen() {
         {/* Delete account — collapsed trigger */}
         {!deleteExpanded && (
           <>
-            <View style={{ height: 1, backgroundColor: '#f5f5f4' }} />
+            <View style={{ height: 1, backgroundColor: '#ede9e4' }} />
             <TouchableOpacity
               onPress={() => {
                 setDeleteExpanded(true);
@@ -629,7 +629,7 @@ export default function SettingsScreen() {
               }}
               style={{ paddingHorizontal: 16, paddingVertical: 15 }}
             >
-              <Text style={{ fontSize: 14, color: '#a8a29e', fontWeight: '400' }}>Delete Account…</Text>
+              <Text style={{ fontSize: 14, color: '#9e958d', fontWeight: '400' }}>Delete Account…</Text>
             </TouchableOpacity>
           </>
         )}
@@ -637,7 +637,7 @@ export default function SettingsScreen() {
         {/* Delete account — expanded confirmation */}
         {deleteExpanded && (
           <>
-            <View style={{ height: 1, backgroundColor: '#f5f5f4' }} />
+            <View style={{ height: 1, backgroundColor: '#ede9e4' }} />
             <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 18 }}>
               <Text style={{
                 fontSize: 13,
@@ -670,12 +670,12 @@ export default function SettingsScreen() {
                 placeholderTextColor="#c4b5a5"
                 style={{
                   borderWidth: 1,
-                  borderColor: deleteConfirm.toUpperCase() === 'DELETE' ? '#b91c1c' : '#e7e5e4',
+                  borderColor: deleteConfirm.toUpperCase() === 'DELETE' ? '#b91c1c' : '#ede9e4',
                   borderRadius: 8,
                   padding: 11,
                   fontSize: 15,
-                  color: '#1c1917',
-                  backgroundColor: '#fff',
+                  color: '#231f1b',
+                  backgroundColor: '#fefcf9',
                   marginBottom: 4,
                   letterSpacing: 1,
                 }}
@@ -698,11 +698,11 @@ export default function SettingsScreen() {
                   style={{
                     flex: 1,
                     borderWidth: 1,
-                    borderColor: '#e7e5e4',
+                    borderColor: '#ede9e4',
                     borderRadius: 9,
                     paddingVertical: 11,
                     alignItems: 'center',
-                    backgroundColor: '#fff',
+                    backgroundColor: '#fefcf9',
                   }}
                 >
                   <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500' }}>Cancel</Text>
@@ -716,7 +716,7 @@ export default function SettingsScreen() {
                     borderRadius: 9,
                     paddingVertical: 11,
                     alignItems: 'center',
-                    backgroundColor: deleteConfirm.trim().toUpperCase() === 'DELETE' ? '#b91c1c' : '#e7e5e4',
+                    backgroundColor: deleteConfirm.trim().toUpperCase() === 'DELETE' ? '#b91c1c' : '#ede9e4',
                   }}
                 >
                   {deletingAccount ? (
@@ -725,7 +725,7 @@ export default function SettingsScreen() {
                     <Text style={{
                       fontSize: 13,
                       fontWeight: '600',
-                      color: deleteConfirm.trim().toUpperCase() === 'DELETE' ? '#fff' : '#a8a29e',
+                      color: deleteConfirm.trim().toUpperCase() === 'DELETE' ? '#fff' : '#9e958d',
                     }}>
                       Delete Account
                     </Text>

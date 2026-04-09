@@ -120,7 +120,7 @@ function SectionLabel({ children }: { children: string }) {
     <Text style={{
       fontSize: 11,
       fontWeight: '700',
-      color: '#a8a29e',
+      color: '#9e958d',
       letterSpacing: 0.9,
       textTransform: 'uppercase',
       marginBottom: 12,
@@ -150,7 +150,7 @@ function StatusPill({ status }: { status: string }) {
 // ─── Card shell ───────────────────────────────────────────────────────────────
 
 const CARD_STYLE = {
-  backgroundColor: '#fff', borderRadius: 12, overflow: 'hidden' as const,
+  backgroundColor: '#fefcf9', borderRadius: 12, overflow: 'hidden' as const,
   shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6,
   shadowOffset: { width: 0, height: 2 }, elevation: 2,
 };
@@ -222,26 +222,26 @@ function SkeletonCard() {
         <View style={{ width: 44, height: 64, borderRadius: 5, backgroundColor: '#e8e5e1' }} />
         <View style={{ marginLeft: 12, flex: 1, gap: 7 }}>
           <View style={{ height: 14, width: '65%', backgroundColor: '#e8e5e1', borderRadius: 6 }} />
-          <View style={{ height: 11, width: '42%', backgroundColor: '#f0ede9', borderRadius: 5 }} />
-          <View style={{ height: 11, width: '80%', backgroundColor: '#f0ede9', borderRadius: 5 }} />
+          <View style={{ height: 11, width: '42%', backgroundColor: '#ede9e4', borderRadius: 5 }} />
+          <View style={{ height: 11, width: '80%', backgroundColor: '#ede9e4', borderRadius: 5 }} />
         </View>
       </View>
       {/* Action bar — mirrors RecCard's Want to Read / Not for me / More like this structure */}
-      <View style={{ borderTopWidth: 1, borderTopColor: '#f0ede9', flexDirection: 'row', alignItems: 'stretch' }}>
+      <View style={{ borderTopWidth: 1, borderTopColor: '#ede9e4', flexDirection: 'row', alignItems: 'stretch' }}>
         <View style={{
           flex: 1, paddingVertical: 14, paddingHorizontal: 14, justifyContent: 'center',
-          borderRightWidth: 1, borderRightColor: '#f0ede9',
+          borderRightWidth: 1, borderRightColor: '#ede9e4',
         }}>
           <View style={{ width: '60%', height: 11, borderRadius: 5, backgroundColor: '#e8e5e1' }} />
         </View>
         <View style={{
           paddingVertical: 14, paddingHorizontal: 13, justifyContent: 'center', alignItems: 'center',
-          borderRightWidth: 1, borderRightColor: '#f0ede9',
+          borderRightWidth: 1, borderRightColor: '#ede9e4',
         }}>
-          <View style={{ width: 56, height: 11, borderRadius: 5, backgroundColor: '#f0ede9' }} />
+          <View style={{ width: 56, height: 11, borderRadius: 5, backgroundColor: '#ede9e4' }} />
         </View>
         <View style={{ paddingVertical: 14, paddingHorizontal: 13, justifyContent: 'center', alignItems: 'center' }}>
-          <View style={{ width: 64, height: 11, borderRadius: 5, backgroundColor: '#f0ede9' }} />
+          <View style={{ width: 64, height: 11, borderRadius: 5, backgroundColor: '#ede9e4' }} />
         </View>
       </View>
     </Animated.View>
@@ -283,7 +283,7 @@ function TagPanel({
         return (
           <View key={groupLabel} style={{ marginBottom: 14 }}>
             <Text style={{
-              fontSize: 11, fontWeight: '700', color: '#a8a29e',
+              fontSize: 11, fontWeight: '700', color: '#9e958d',
               letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 8,
             }}>
               {groupLabel}
@@ -298,8 +298,8 @@ function TagPanel({
                     onPress={() => toggle(tag, isLiked ? 'liked' : 'disliked')}
                     style={{
                       paddingHorizontal: 11, paddingVertical: 6, borderRadius: 20,
-                      backgroundColor: isSel ? '#1c1917' : '#f5f5f4',
-                      borderWidth: 1, borderColor: isSel ? '#1c1917' : '#e7e5e4',
+                      backgroundColor: isSel ? '#231f1b' : '#ede9e4',
+                      borderWidth: 1, borderColor: isSel ? '#231f1b' : '#ede9e4',
                     }}
                   >
                     <Text style={{
@@ -329,17 +329,17 @@ function BookRow({ book, rating, small }: { book: BookToRate | BookToTag; rating
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       <CoverThumb url={book.cover_url} externalId={book.external_id} title={book.title} width={cW} height={cH} />
       <View style={{ flex: 1, marginLeft: 10 }}>
-        <Text style={{ fontSize: small ? 13 : 14, fontWeight: '600', color: '#1c1917', lineHeight: small ? 18 : 20 }} numberOfLines={1}>
+        <Text style={{ fontSize: small ? 13 : 14, fontWeight: '600', color: '#231f1b', lineHeight: small ? 18 : 20 }} numberOfLines={1}>
           {book.title}
         </Text>
-        <Text style={{ fontSize: 11, color: '#a8a29e', marginTop: 1 }} numberOfLines={1}>
+        <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 1 }} numberOfLines={1}>
           {book.author}
         </Text>
       </View>
       {rating != null && rating > 0 && (
         <View style={{ flexDirection: 'row', gap: 1 }}>
           {[1, 2, 3, 4, 5].map(s => (
-            <Text key={s} style={{ fontSize: 11, color: s <= rating ? '#f59e0b' : '#e7e5e4' }}>★</Text>
+            <Text key={s} style={{ fontSize: 11, color: s <= rating ? '#f59e0b' : '#ede9e4' }}>★</Text>
           ))}
         </View>
       )}
@@ -363,7 +363,7 @@ function ActionRow({
         onPress={onSecondary}
         style={{
           flex: 1, paddingVertical: 10, borderRadius: 8,
-          borderWidth: 1, borderColor: '#e7e5e4', alignItems: 'center',
+          borderWidth: 1, borderColor: '#ede9e4', alignItems: 'center',
         }}
       >
         <Text style={{ fontSize: 13, color: '#78716c' }}>{secondaryLabel}</Text>
@@ -374,7 +374,7 @@ function ActionRow({
         disabled={loading}
         style={{
           flex: 2, paddingVertical: 10, borderRadius: 8,
-          backgroundColor: '#1c1917', alignItems: 'center',
+          backgroundColor: '#231f1b', alignItems: 'center',
         }}
       >
         {loading
@@ -479,7 +479,7 @@ function RateCard({ book, onComplete }: RateCardProps) {
       <View style={{
         paddingVertical: 9, paddingHorizontal: 12,
         borderBottomWidth: mode !== 'rate' ? 1 : 0,
-        borderBottomColor: '#f5f5f4',
+        borderBottomColor: '#ede9e4',
       }}>
         <BookRow book={book} rating={mode !== 'rate' ? rating : undefined} small />
 
@@ -495,14 +495,14 @@ function RateCard({ book, onComplete }: RateCardProps) {
               >
                 <Text style={{
                   fontSize: 22,
-                  color: star <= (pendingRating || rating) ? '#f59e0b' : '#d6d3d1',
+                  color: star <= (pendingRating || rating) ? '#f59e0b' : '#ede9e4',
                 }}>★</Text>
               </TouchableOpacity>
             ))}
             {saving && (
               <ActivityIndicator
                 size="small"
-                color="#a8a29e"
+                color="#9e958d"
                 style={{ marginLeft: 8, alignSelf: 'center' }}
               />
             )}
@@ -519,7 +519,7 @@ function RateCard({ book, onComplete }: RateCardProps) {
         }}>
           {mode === 'notes' && (
             <>
-              <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', marginBottom: 10 }}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#231f1b', marginBottom: 10 }}>
                 What worked or didn't?
               </Text>
               <TextInput
@@ -530,10 +530,10 @@ function RateCard({ book, onComplete }: RateCardProps) {
                 multiline
                 numberOfLines={3}
                 style={{
-                  backgroundColor: '#faf9f7', borderRadius: 10,
+                  backgroundColor: '#f5f1ec', borderRadius: 10,
                   paddingHorizontal: 12, paddingVertical: 10,
-                  fontSize: 14, color: '#1c1917',
-                  borderWidth: 1, borderColor: '#e7e5e4',
+                  fontSize: 14, color: '#231f1b',
+                  borderWidth: 1, borderColor: '#ede9e4',
                   marginBottom: 12, minHeight: 72, textAlignVertical: 'top',
                 }}
               />
@@ -643,12 +643,12 @@ function TagCard({ book, onComplete }: TagCardProps) {
         style={{
           padding: 12,
           borderBottomWidth: expanded ? 1 : 0,
-          borderBottomColor: '#f5f5f4',
+          borderBottomColor: '#ede9e4',
         }}
       >
         <BookRow book={book} small />
         {!expanded && (
-          <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 5, paddingLeft: 38 }}>
+          <Text style={{ fontSize: 12, color: '#9e958d', marginTop: 5, paddingLeft: 38 }}>
             Tap to add reactions ›
           </Text>
         )}
@@ -665,10 +665,10 @@ function TagCard({ book, onComplete }: TagCardProps) {
             multiline
             numberOfLines={2}
             style={{
-              backgroundColor: '#faf9f7', borderRadius: 10,
+              backgroundColor: '#f5f1ec', borderRadius: 10,
               paddingHorizontal: 12, paddingVertical: 10,
-              fontSize: 14, color: '#1c1917',
-              borderWidth: 1, borderColor: '#e7e5e4',
+              fontSize: 14, color: '#231f1b',
+              borderWidth: 1, borderColor: '#ede9e4',
               marginBottom: 16, minHeight: 60, textAlignVertical: 'top',
             }}
           />
@@ -1388,7 +1388,7 @@ export default function RecommendationsScreen() {
 
   if (step === 'entry') {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#faf9f7' }}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f1ec' }}>
         <RecEntryScreen
           onDone={() => {
             // Tour is already 'done' when RecEntryScreen shows — no advance needed
@@ -1421,7 +1421,7 @@ export default function RecommendationsScreen() {
       (tasteProfile?.tier ?? 0) >= 1 &&
       (tasteProfile?.strongSignalCount ?? 0) === 0;
     return (
-      <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
+      <View style={{ flex: 1, backgroundColor: '#f5f1ec' }}>
         <TabScreenHeader
           title="For You"
           rightAction={
@@ -1429,17 +1429,17 @@ export default function RecommendationsScreen() {
               onPress={() => router.push('/scan' as any)}
               hitSlop={12}
               style={{
-                backgroundColor: '#f5f5f4',
+                backgroundColor: '#ede9e4',
                 borderRadius:    22,
                 padding:         10,
               }}
             >
-              <Ionicons name="barcode-outline" size={22} color="#1c1917" />
+              <Ionicons name="barcode-outline" size={22} color="#231f1b" />
             </Pressable>
           }
         />
       <ScrollView
-        style={{ flex: 1, backgroundColor: '#faf9f7' }}
+        style={{ flex: 1, backgroundColor: '#f5f1ec' }}
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 48 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
@@ -1506,14 +1506,14 @@ export default function RecommendationsScreen() {
                       borderLeftWidth: 3, borderLeftColor: '#f59e0b',
                     }}>
                       <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917' }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b' }}>
                           Refine your taste
                         </Text>
                         <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>
                           Ratings are our strongest signal
                         </Text>
                       </View>
-                      <Text style={{ fontSize: 11, color: '#a8a29e' }}>
+                      <Text style={{ fontSize: 11, color: '#9e958d' }}>
                         {booksToRate.length + booksToTag.length} book{booksToRate.length + booksToTag.length !== 1 ? 's' : ''}
                       </Text>
                     </View>
@@ -1539,7 +1539,7 @@ export default function RecommendationsScreen() {
                   <TouchableOpacity
                     onPress={() => router.push('/import/diagnosis')}
                     style={{
-                      backgroundColor: '#fff',
+                      backgroundColor: '#fefcf9',
                       borderRadius: 12,
                       padding: 14,
                       flexDirection: 'row',
@@ -1553,20 +1553,20 @@ export default function RecommendationsScreen() {
                   >
                     <View style={{
                       width: 36, height: 36, borderRadius: 18,
-                      backgroundColor: '#f5f5f4',
+                      backgroundColor: '#ede9e4',
                       alignItems: 'center', justifyContent: 'center', marginRight: 12,
                     }}>
                       <Text style={{ fontSize: 18 }}>⟲</Text>
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b' }}>
                         Analyse imported history
                       </Text>
-                      <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 2 }}>
+                      <Text style={{ fontSize: 12, color: '#9e958d', marginTop: 2 }}>
                         Answer 5 questions to sharpen your profile
                       </Text>
                     </View>
-                    <Text style={{ fontSize: 16, color: '#d6d3d1' }}>›</Text>
+                    <Text style={{ fontSize: 16, color: '#ede9e4' }}>›</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -1585,10 +1585,10 @@ export default function RecommendationsScreen() {
               {/* ── Both empty: unified card with prompt + CTA ── */}
               {incomingRecs.length === 0 && sentRecs.length === 0 && (
                 <View style={{
-                  backgroundColor: '#fff',
+                  backgroundColor: '#fefcf9',
                   borderRadius: 12,
                   borderWidth: 1,
-                  borderColor: '#e7e5e4',
+                  borderColor: '#ede9e4',
                   overflow: 'hidden',
                 }}>
                   <View style={{ padding: 14 }}>
@@ -1598,7 +1598,7 @@ export default function RecommendationsScreen() {
                     <TouchableOpacity
                       onPress={() => setStep('search')}
                       style={{
-                        backgroundColor: '#1c1917',
+                        backgroundColor: '#231f1b',
                         borderRadius: 10,
                         paddingVertical: 11,
                         alignItems: 'center',
@@ -1619,7 +1619,7 @@ export default function RecommendationsScreen() {
                     FROM FRIENDS
                   </Text>
                   <View style={{
-                    backgroundColor: '#fff', borderRadius: 14, overflow: 'hidden',
+                    backgroundColor: '#fefcf9', borderRadius: 14, overflow: 'hidden',
                     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6,
                     shadowOffset: { width: 0, height: 1 }, elevation: 1, marginBottom: 20,
                   }}>
@@ -1648,12 +1648,12 @@ export default function RecommendationsScreen() {
                         style={{
                           flexDirection: 'row', alignItems: 'center', padding: 13,
                           borderBottomWidth: idx < incomingRecs.length - 1 ? 1 : 0,
-                          borderBottomColor: '#f5f5f4',
+                          borderBottomColor: '#ede9e4',
                         }}
                       >
                         <CoverThumb url={rec.book?.cover_url} externalId={rec.book?.external_id} title={rec.book?.title ?? ''} width={34} height={50} />
                         <View style={{ flex: 1, marginLeft: 12 }}>
-                          <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }} numberOfLines={1}>{rec.book?.title ?? ''}</Text>
+                          <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b' }} numberOfLines={1}>{rec.book?.title ?? ''}</Text>
                           <Text style={{ fontSize: 12, color: '#78716c', marginTop: 2 }} numberOfLines={1}>from {getFirstName(rec.sender)}</Text>
                         </View>
                         <StatusPill status={rec.status} />
@@ -1661,7 +1661,7 @@ export default function RecommendationsScreen() {
                     ))}
                     <TouchableOpacity
                       onPress={() => router.push('/(tabs)/notes')}
-                      style={{ padding: 13, alignItems: 'center', borderTopWidth: 1, borderTopColor: '#f5f5f4' }}
+                      style={{ padding: 13, alignItems: 'center', borderTopWidth: 1, borderTopColor: '#ede9e4' }}
                     >
                       <Text style={{ fontSize: 13, color: '#78716c', fontWeight: '500' }}>See all in inbox →</Text>
                     </TouchableOpacity>
@@ -1676,15 +1676,15 @@ export default function RecommendationsScreen() {
                     YOU SENT
                   </Text>
                   <View style={{
-                    backgroundColor: '#fff', borderRadius: 14, overflow: 'hidden',
+                    backgroundColor: '#fefcf9', borderRadius: 14, overflow: 'hidden',
                     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6,
                     shadowOffset: { width: 0, height: 1 }, elevation: 1, marginBottom: 16,
                   }}>
                     {sentRecs.map((rec, idx) => (
-                      <View key={rec.id} style={{ flexDirection: 'row', alignItems: 'center', padding: 13, borderBottomWidth: idx < sentRecs.length - 1 ? 1 : 0, borderBottomColor: '#f5f5f4' }}>
+                      <View key={rec.id} style={{ flexDirection: 'row', alignItems: 'center', padding: 13, borderBottomWidth: idx < sentRecs.length - 1 ? 1 : 0, borderBottomColor: '#ede9e4' }}>
                         <CoverThumb url={rec.book?.cover_url} externalId={rec.book?.external_id} title={rec.book?.title ?? ''} width={34} height={50} />
                         <View style={{ flex: 1, marginLeft: 12 }}>
-                          <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }} numberOfLines={1}>{rec.book?.title ?? ''}</Text>
+                          <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b' }} numberOfLines={1}>{rec.book?.title ?? ''}</Text>
                           <Text style={{ fontSize: 12, color: '#78716c', marginTop: 2 }} numberOfLines={1}>to {getFirstName(rec.to_user)}</Text>
                         </View>
                         <StatusPill status={rec.status} />
@@ -1723,35 +1723,35 @@ export default function RecommendationsScreen() {
 
   if (step === 'search') {
     return (
-      <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
+      <View style={{ flex: 1, backgroundColor: '#f5f1ec' }}>
         <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 4 }}>
           <BackButton onPress={() => setStep('hub')} style={{ marginBottom: 16 }} />
           <Text style={{
             fontSize: 22,
             fontWeight: '800',
-            color: '#1c1917',
+            color: '#231f1b',
             letterSpacing: -0.5,
             marginBottom: 5,
           }}>
             Recommend a Book
           </Text>
-          <Text style={{ fontSize: 14, color: '#a8a29e', marginBottom: 18 }}>
+          <Text style={{ fontSize: 14, color: '#9e958d', marginBottom: 18 }}>
             Pick something worth sharing with a friend.
           </Text>
           <TextInput
             placeholder="Title, author, or keyword…"
-            placeholderTextColor="#a8a29e"
+            placeholderTextColor="#9e958d"
             value={query}
             onChangeText={setQuery}
             autoCapitalize="none"
             autoCorrect={false}
             style={{
-              backgroundColor: '#fff',
+              backgroundColor: '#fefcf9',
               borderRadius: 12,
               paddingHorizontal: 14,
               paddingVertical: 12,
               fontSize: 16,
-              color: '#1c1917',
+              color: '#231f1b',
               marginBottom: 4,
               shadowColor: '#000',
               shadowOpacity: 0.05,
@@ -1761,7 +1761,7 @@ export default function RecommendationsScreen() {
             }}
           />
           {query.length > 0 && query.length < 2 && (
-            <Text style={{ color: '#a8a29e', marginTop: 6, marginBottom: 4, fontSize: 13 }}>
+            <Text style={{ color: '#9e958d', marginTop: 6, marginBottom: 4, fontSize: 13 }}>
               Type at least 2 characters to search.
             </Text>
           )}
@@ -1780,37 +1780,37 @@ export default function RecommendationsScreen() {
               style={{
                 paddingVertical: 11,
                 borderBottomWidth: 1,
-                borderBottomColor: '#f5f5f4',
+                borderBottomColor: '#ede9e4',
                 flexDirection: 'row',
                 alignItems: 'center',
               }}
             >
               <CoverThumb url={item._gbCoverUrl ?? olCoverUrl(item.cover_i, 'S')} title={item.title} width={34} height={50} />
               <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={{ fontWeight: '600', fontSize: 15, color: '#1c1917', lineHeight: 21 }}>
+                <Text style={{ fontWeight: '600', fontSize: 15, color: '#231f1b', lineHeight: 21 }}>
                   {item.title}
                 </Text>
-                <Text style={{ color: '#a8a29e', fontSize: 13, marginTop: 2 }}>
+                <Text style={{ color: '#9e958d', fontSize: 13, marginTop: 2 }}>
                   {item.author_name?.[0] ?? 'Unknown author'}
                 </Text>
               </View>
-              <Text style={{ fontSize: 20, color: '#d6d3d1', marginLeft: 8 }}>›</Text>
+              <Text style={{ fontSize: 20, color: '#ede9e4', marginLeft: 8 }}>›</Text>
             </TouchableOpacity>
           )}
           ListEmptyComponent={
             !searching && searchNoResults ? (
               // Query was strong enough to fire; retrieval found nothing confident.
               <View style={{ marginTop: 16 }}>
-                <Text style={{ color: '#1c1917', fontSize: 14, fontWeight: '600' }}>
+                <Text style={{ color: '#231f1b', fontSize: 14, fontWeight: '600' }}>
                   No strong matches found.
                 </Text>
-                <Text style={{ color: '#a8a29e', fontSize: 13, marginTop: 4 }}>
+                <Text style={{ color: '#9e958d', fontSize: 13, marginTop: 4 }}>
                   Try a more specific title or check your spelling.
                 </Text>
               </View>
             ) : !searching && searchWeakQuery ? (
               // Query typed but too weak / mid-word — don't alarm the user.
-              <Text style={{ color: '#a8a29e', marginTop: 12, fontSize: 14 }}>
+              <Text style={{ color: '#9e958d', marginTop: 12, fontSize: 14 }}>
                 Keep typing…
               </Text>
             ) : query.length === 0 ? (
@@ -1819,7 +1819,7 @@ export default function RecommendationsScreen() {
                 <Text style={{
                   fontSize: 17,
                   fontWeight: '700',
-                  color: '#1c1917',
+                  color: '#231f1b',
                   textAlign: 'center',
                   letterSpacing: -0.3,
                   marginBottom: 8,
@@ -1828,7 +1828,7 @@ export default function RecommendationsScreen() {
                 </Text>
                 <Text style={{
                   fontSize: 14,
-                  color: '#a8a29e',
+                  color: '#9e958d',
                   textAlign: 'center',
                   lineHeight: 22,
                   maxWidth: 260,
@@ -1847,16 +1847,16 @@ export default function RecommendationsScreen() {
 
   if (step === 'friends') {
     return (
-      <View style={{ flex: 1, backgroundColor: '#faf9f7', paddingHorizontal: 20, paddingTop: insets.top + 12 }}>
+      <View style={{ flex: 1, backgroundColor: '#f5f1ec', paddingHorizontal: 20, paddingTop: insets.top + 12 }}>
         <BackButton onPress={() => setStep('search')} label="Search" style={{ marginBottom: 20 }} />
 
         <View style={{
-          backgroundColor: '#fff',
+          backgroundColor: '#fefcf9',
           borderRadius: 14,
           padding: 14,
           marginBottom: 22,
           borderLeftWidth: 3,
-          borderLeftColor: '#1c1917',
+          borderLeftColor: '#231f1b',
           shadowColor: '#000',
           shadowOpacity: 0.05,
           shadowRadius: 6,
@@ -1867,7 +1867,7 @@ export default function RecommendationsScreen() {
         }}>
           <CoverThumb url={selectedBook?.coverUrl} editionKey={selectedBook?.editionKey} title={selectedBook?.title} width={48} height={70} />
           <View style={{ flex: 1, marginLeft: 14 }}>
-            <Text style={{ fontWeight: '700', fontSize: 15, color: '#1c1917', lineHeight: 21 }}>
+            <Text style={{ fontWeight: '700', fontSize: 15, color: '#231f1b', lineHeight: 21 }}>
               {selectedBook?.title}
             </Text>
             <Text style={{ color: '#78716c', fontSize: 13, marginTop: 3 }}>
@@ -1876,7 +1876,7 @@ export default function RecommendationsScreen() {
           </View>
         </View>
 
-        <Text style={{ fontSize: 12, fontWeight: '600', color: '#a8a29e', letterSpacing: 0.4, marginBottom: 7 }}>
+        <Text style={{ fontSize: 12, fontWeight: '600', color: '#9e958d', letterSpacing: 0.4, marginBottom: 7 }}>
           Add a personal note (optional)
         </Text>
         <TextInput
@@ -1886,12 +1886,12 @@ export default function RecommendationsScreen() {
           placeholderTextColor="#c4b5a5"
           maxLength={280}
           style={{
-            backgroundColor: '#fff',
+            backgroundColor: '#fefcf9',
             borderRadius: 12,
             paddingHorizontal: 14,
             paddingVertical: 11,
             fontSize: 14,
-            color: '#1c1917',
+            color: '#231f1b',
             marginBottom: 26,
             shadowColor: '#000',
             shadowOpacity: 0.04,
@@ -1901,7 +1901,7 @@ export default function RecommendationsScreen() {
           }}
         />
 
-        <Text style={{ fontSize: 11, fontWeight: '700', color: '#a8a29e', letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 10 }}>
+        <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 10 }}>
           Send to
         </Text>
 
@@ -1909,17 +1909,17 @@ export default function RecommendationsScreen() {
           <ActivityIndicator color="#78716c" />
         ) : friends.length === 0 ? (
           <View style={{
-            backgroundColor: '#fff',
+            backgroundColor: '#fefcf9',
             borderRadius: 12,
             padding: 22,
             alignItems: 'center',
             borderWidth: 1,
-            borderColor: '#f0ede8',
+            borderColor: '#ede9e4',
           }}>
-            <Text style={{ fontSize: 15, fontWeight: '600', color: '#1c1917', marginBottom: 6, textAlign: 'center' }}>
+            <Text style={{ fontSize: 15, fontWeight: '600', color: '#231f1b', marginBottom: 6, textAlign: 'center' }}>
               No friends yet
             </Text>
-            <Text style={{ color: '#a8a29e', fontSize: 13, textAlign: 'center', lineHeight: 20 }}>
+            <Text style={{ color: '#9e958d', fontSize: 13, textAlign: 'center', lineHeight: 20 }}>
               Add friends from the Home tab to start sending recommendations.
             </Text>
           </View>
@@ -1934,16 +1934,16 @@ export default function RecommendationsScreen() {
                 justifyContent: 'space-between',
                 paddingVertical: 13,
                 borderBottomWidth: 1,
-                borderBottomColor: '#f5f5f4',
+                borderBottomColor: '#ede9e4',
               }}>
-                <Text style={{ fontSize: 15, color: '#1c1917' }}>{getDisplayName(item)}</Text>
+                <Text style={{ fontSize: 15, color: '#231f1b' }}>{getDisplayName(item)}</Text>
                 <TouchableOpacity
                   onPress={() => handleSend(item)}
                   disabled={sendingTo !== null}
                   style={{
                     paddingHorizontal: 16,
                     paddingVertical: 8,
-                    backgroundColor: sendingTo !== null ? '#d6d3d1' : '#1c1917',
+                    backgroundColor: sendingTo !== null ? '#ede9e4' : '#231f1b',
                     borderRadius: 8,
                   }}
                 >
@@ -1964,7 +1964,7 @@ export default function RecommendationsScreen() {
   // ── Step: done ────────────────────────────────────────────────────────────
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#faf9f7', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+    <View style={{ flex: 1, backgroundColor: '#f5f1ec', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
       {sendResult?.ok ? (
         <View style={{
           backgroundColor: '#f0fdf4',
@@ -1977,10 +1977,10 @@ export default function RecommendationsScreen() {
           <Text style={{ fontSize: 11, fontWeight: '700', color: '#15803d', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>
             Sent
           </Text>
-          <Text style={{ fontSize: 16, color: '#1c1917', textAlign: 'center', lineHeight: 24, fontWeight: '600' }}>
+          <Text style={{ fontSize: 16, color: '#231f1b', textAlign: 'center', lineHeight: 24, fontWeight: '600' }}>
             {sendResult.message}
           </Text>
-          <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 6, textAlign: 'center' }}>
+          <Text style={{ fontSize: 13, color: '#9e958d', marginTop: 6, textAlign: 'center' }}>
             They'll see it in their inbox.
           </Text>
         </View>
@@ -2000,7 +2000,7 @@ export default function RecommendationsScreen() {
       )}
       <TouchableOpacity
         onPress={reset}
-        style={{ paddingHorizontal: 24, paddingVertical: 13, backgroundColor: '#1c1917', borderRadius: 12 }}
+        style={{ paddingHorizontal: 24, paddingVertical: 13, backgroundColor: '#231f1b', borderRadius: 12 }}
       >
         <Text style={{ color: '#fff', fontWeight: '600', fontSize: 14 }}>Back to Recommendations</Text>
       </TouchableOpacity>

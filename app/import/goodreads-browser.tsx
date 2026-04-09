@@ -580,7 +580,7 @@ export default function GoodreadsBrowserScreen() {
       {/* ── Overlay: parsing-staging ── */}
       {showStagingOverlay && (
         <View style={styles.overlay}>
-          <ActivityIndicator size="large" color="#1c1917" style={styles.overlaySpinner} />
+          <ActivityIndicator size="large" color="#231f1b" style={styles.overlaySpinner} />
           <Text style={styles.overlayTitle}>Staging your library\u2026</Text>
           <Text style={styles.overlaySubtitle}>
             Matching your books and preparing the preview
@@ -621,7 +621,7 @@ export default function GoodreadsBrowserScreen() {
             onChangeText={setPastedText}
             multiline
             placeholder="Paste your Goodreads export here\u2026"
-            placeholderTextColor="#a8a29e"
+            placeholderTextColor="#9e958d"
             style={[
               styles.pasteInput,
               pastedText.trim().length > 0 && styles.pasteInputActive,
@@ -671,7 +671,7 @@ export default function GoodreadsBrowserScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#faf9f7',
+    backgroundColor: '#f5f1ec',
   },
 
   // Header — paddingTop is applied dynamically via useSafeAreaInsets in JSX
@@ -681,14 +681,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingBottom: 12,
     paddingHorizontal: 16,
-    backgroundColor: '#faf9f7',
+    backgroundColor: '#f5f1ec',
     borderBottomWidth: 1,
-    borderBottomColor: '#e7e5e4',
+    borderBottomColor: '#ede9e4',
   },
   headerTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1c1917',
+    color: '#231f1b',
     letterSpacing: -0.2,
   },
   headerSide: {
@@ -707,11 +707,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f5f5f4',
+    backgroundColor: '#ede9e4',
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e7e5e4',
+    borderBottomColor: '#ede9e4',
   },
   stripSpinner: {
     marginRight: 8,
@@ -751,7 +751,7 @@ const styles = StyleSheet.create({
   overlayTitle: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#1c1917',
+    color: '#231f1b',
     textAlign: 'center',
     letterSpacing: -0.3,
     marginBottom: 8,
@@ -780,14 +780,14 @@ const styles = StyleSheet.create({
   // Fallback overlay (auto-capture-timeout) — paddingTop applied dynamically via useSafeAreaInsets
   fallbackOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#faf9f7',
+    backgroundColor: '#f5f1ec',
     paddingHorizontal: 24,
     paddingBottom: 40,
   },
   fallbackTitle: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#1c1917',
+    color: '#231f1b',
     letterSpacing: -0.3,
     marginBottom: 8,
   },
@@ -801,10 +801,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e7e5e4',
+    borderColor: '#ede9e4',
     padding: 14,
     fontSize: 11,
-    color: '#1c1917',
+    color: '#231f1b',
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     minHeight: 100,
     maxHeight: 180,
@@ -812,10 +812,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   pasteInputActive: {
-    borderColor: '#a8a29e',
+    borderColor: '#9e958d',
   },
   primaryBtn: {
-    backgroundColor: '#1c1917',
+    backgroundColor: '#231f1b',
     borderRadius: 12,
     paddingVertical: 14,
     paddingHorizontal: 24,
@@ -827,13 +827,13 @@ const styles = StyleSheet.create({
     opacity: 0.3,
   },
   primaryBtnText: {
-    color: '#faf9f7',
+    color: '#f5f1ec',
     fontSize: 15,
     fontWeight: '700',
     letterSpacing: -0.2,
   },
   primaryBtnTextDisabled: {
-    color: '#faf9f7',
+    color: '#f5f1ec',
   },
   ghostBtn: {
     paddingVertical: 12,
@@ -854,17 +854,17 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#e7e5e4',
+    backgroundColor: '#ede9e4',
   },
   dividerLabel: {
     marginHorizontal: 12,
     fontSize: 12,
-    color: '#a8a29e',
+    color: '#9e958d',
     fontWeight: '500',
   },
   secondaryBtn: {
     borderWidth: 1,
-    borderColor: '#e7e5e4',
+    borderColor: '#ede9e4',
     borderRadius: 12,
     paddingVertical: 14,
     paddingHorizontal: 24,
@@ -874,7 +874,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   secondaryBtnText: {
-    color: '#1c1917',
+    color: '#231f1b',
     fontSize: 15,
     fontWeight: '600',
     letterSpacing: -0.2,

@@ -7,7 +7,7 @@ import { DEMO_COVERS } from '../../lib/demoCoverUrls';
 function SectionLabel({ children }: { children: string }) {
   return (
     <Text style={{
-      fontSize: 11, fontWeight: '700', color: '#a8a29e',
+      fontSize: 11, fontWeight: '700', color: '#9e958d',
       letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10,
     }}>
       {children}
@@ -22,12 +22,12 @@ export function WtDemoHome({ greeting }: { greeting: string | null }) {
     <>
       <View style={{ marginBottom: 28 }}>
         <Text style={{
-          fontSize: 34, fontWeight: '800', color: '#1c1917',
+          fontSize: 34, fontWeight: '800', color: '#231f1b',
           letterSpacing: -0.8, lineHeight: 40,
         }}>
           {greeting ? `Hi, ${greeting}` : 'Home'}
         </Text>
-        <Text style={{ fontSize: 14, color: '#a8a29e', marginTop: 5 }}>
+        <Text style={{ fontSize: 14, color: '#9e958d', marginTop: 5 }}>
           Currently reading · The Thursday Murder Club
         </Text>
       </View>
@@ -39,12 +39,12 @@ export function WtDemoHome({ greeting }: { greeting: string | null }) {
           ref={ref}
           onLayout={onLayout}
           style={{
-            backgroundColor: '#fff',
+            backgroundColor: '#fefcf9',
             borderRadius: 14,
             padding: 14,
             borderLeftWidth: 3,
             borderLeftColor: '#d4a574',
-            shadowColor: '#1c1917',
+            shadowColor: '#231f1b',
             shadowOpacity: 0.22,
             shadowRadius: 22,
             shadowOffset: { width: 0, height: 8 },
@@ -63,7 +63,7 @@ export function WtDemoHome({ greeting }: { greeting: string | null }) {
             />
             <View style={{ flex: 1, marginLeft: 10 }}>
               <Text style={{
-                fontSize: 14, fontWeight: '700', color: '#1c1917',
+                fontSize: 14, fontWeight: '700', color: '#231f1b',
                 lineHeight: 19, marginBottom: 3,
               }} numberOfLines={2}>
                 The Thursday Murder Club

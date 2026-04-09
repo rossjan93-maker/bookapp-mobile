@@ -24,7 +24,7 @@ function SectionLabel({ children }: { children: string }) {
     <Text style={{
       fontSize: 11,
       fontWeight: '700',
-      color: '#a8a29e',
+      color: '#9e958d',
       letterSpacing: 0.9,
       textTransform: 'uppercase',
       marginBottom: 10,
@@ -64,11 +64,11 @@ function BookRow({
       borderLeftWidth: 3,
       borderLeftColor: isRepair ? '#b45309' : isFlag ? '#6b7280' : '#15803d',
     }}>
-      <Text style={{ fontSize: 15, fontWeight: '700', color: '#1c1917', marginBottom: 2 }}>
+      <Text style={{ fontSize: 15, fontWeight: '700', color: '#231f1b', marginBottom: 2 }}>
         {row.title}
       </Text>
       <Text style={{ fontSize: 13, color: '#78716c', marginBottom: 6 }}>{row.author}</Text>
-      <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18 }}>{row.note}</Text>
+      <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>{row.note}</Text>
 
       {isRepair && (
         <View style={{ marginTop: 8, flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
@@ -86,11 +86,11 @@ function BookRow({
             paddingHorizontal: 12,
             paddingVertical: 7,
             borderRadius: 8,
-            backgroundColor: clearing ? '#f5f5f4' : '#fef3c7',
+            backgroundColor: clearing ? '#ede9e4' : '#fef3c7',
             alignSelf: 'flex-start',
           }}
         >
-          <Text style={{ fontSize: 12, fontWeight: '600', color: clearing ? '#a8a29e' : '#92400e' }}>
+          <Text style={{ fontSize: 12, fontWeight: '600', color: clearing ? '#9e958d' : '#92400e' }}>
             {clearing ? 'Excluding…' : 'Exclude from this year (date unknown)'}
           </Text>
         </TouchableOpacity>
@@ -185,7 +185,7 @@ export default function RepairDatesScreen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: '#faf9f7' }}
+      style={{ flex: 1, backgroundColor: '#f5f1ec' }}
       contentContainerStyle={{ paddingHorizontal: 22, paddingTop: 56, paddingBottom: 60 }}
     >
       <BackButton onPress={() => router.back()} style={{ marginBottom: 28 }} />
@@ -193,7 +193,7 @@ export default function RepairDatesScreen() {
       <Text style={{
         fontSize: 26,
         fontWeight: '800',
-        color: '#1c1917',
+        color: '#231f1b',
         letterSpacing: -0.4,
         marginBottom: 6,
       }}>
@@ -207,8 +207,8 @@ export default function RepairDatesScreen() {
       {/* ── Loading spinner (auto-runs on mount) ── */}
       {!report && loading && (
         <View style={{ alignItems: 'center', paddingVertical: 40 }}>
-          <ActivityIndicator color="#1c1917" size="large" />
-          <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 14 }}>Scanning your library…</Text>
+          <ActivityIndicator color="#231f1b" size="large" />
+          <Text style={{ fontSize: 13, color: '#9e958d', marginTop: 14 }}>Scanning your library…</Text>
         </View>
       )}
 
@@ -232,17 +232,17 @@ export default function RepairDatesScreen() {
               <Text style={{ fontSize: 26, fontWeight: '800', color: totalBroken > 0 ? '#b45309' : '#15803d' }}>
                 {totalBroken}
               </Text>
-              <Text style={{ fontSize: 11, color: '#a8a29e', textAlign: 'center', marginTop: 2 }}>needs fix</Text>
+              <Text style={{ fontSize: 11, color: '#9e958d', textAlign: 'center', marginTop: 2 }}>needs fix</Text>
             </View>
             <View style={{ flex: 1, alignItems: 'center' }}>
               <Text style={{ fontSize: 26, fontWeight: '800', color: totalFlagged > 0 ? '#6b7280' : '#15803d' }}>
                 {totalFlagged}
               </Text>
-              <Text style={{ fontSize: 11, color: '#a8a29e', textAlign: 'center', marginTop: 2 }}>needs review</Text>
+              <Text style={{ fontSize: 11, color: '#9e958d', textAlign: 'center', marginTop: 2 }}>needs review</Text>
             </View>
             <View style={{ flex: 1, alignItems: 'center' }}>
               <Text style={{ fontSize: 26, fontWeight: '800', color: '#15803d' }}>{totalOk}</Text>
-              <Text style={{ fontSize: 11, color: '#a8a29e', textAlign: 'center', marginTop: 2 }}>correct</Text>
+              <Text style={{ fontSize: 11, color: '#9e958d', textAlign: 'center', marginTop: 2 }}>correct</Text>
             </View>
           </View>
 
@@ -251,7 +251,7 @@ export default function RepairDatesScreen() {
             onPress={runAudit}
             style={{ alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 4, marginBottom: 4 }}
           >
-            <Text style={{ fontSize: 13, color: '#a8a29e', textDecorationLine: 'underline' }}>
+            <Text style={{ fontSize: 13, color: '#9e958d', textDecorationLine: 'underline' }}>
               Re-run audit
             </Text>
           </TouchableOpacity>
@@ -291,7 +291,7 @@ export default function RepairDatesScreen() {
                   onPress={applyFix}
                   disabled={repairing}
                   style={{
-                    backgroundColor: repairing ? '#d6d3d1' : '#1c1917',
+                    backgroundColor: repairing ? '#ede9e4' : '#231f1b',
                     borderRadius: 13,
                     paddingVertical: 15,
                     alignItems: 'center',

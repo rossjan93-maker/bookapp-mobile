@@ -14,9 +14,9 @@ const ANIMATE_IN_MS = 260;
 const ANIMATE_OUT_MS = 200;
 
 const VARIANT_BG: Record<ToastVariant, string> = {
-  success: '#1c1917',
+  success: '#231f1b',
   error:   '#991b1b',
-  info:    '#1c1917',
+  info:    '#231f1b',
 };
 
 export function ToastContainer() {

@@ -31,7 +31,7 @@ export function CoverThumb({ url, externalId, editionKey, title, width = 40, hei
 
   if (src) {
     return (
-      <View style={[style, { backgroundColor: '#e7e5e4', overflow: 'hidden' }]}>
+      <View style={[style, { backgroundColor: '#ede9e4', overflow: 'hidden' }]}>
         <Animated.Image
           source={{ uri: src }}
           style={[{ position: 'absolute', top: 0, left: 0, width, height }, { opacity: imgOpacity }]}
@@ -47,12 +47,12 @@ export function CoverThumb({ url, externalId, editionKey, title, width = 40, hei
   const letter = title ? title.trim().charAt(0).toUpperCase() : '';
   if (letter) {
     return (
-      <View style={[style, { backgroundColor: '#e7e5e4', alignItems: 'center', justifyContent: 'center' }]}>
-        <Text style={{ fontSize: Math.round(width * 0.45), fontWeight: '700', color: '#a8a29e' }}>
+      <View style={[style, { backgroundColor: '#ede9e4', alignItems: 'center', justifyContent: 'center' }]}>
+        <Text style={{ fontSize: Math.round(width * 0.45), fontWeight: '700', color: '#9e958d' }}>
           {letter}
         </Text>
       </View>
     );
   }
-  return <View style={[style, { backgroundColor: '#e7e5e4' }]} />;
+  return <View style={[style, { backgroundColor: '#ede9e4' }]} />;
 }

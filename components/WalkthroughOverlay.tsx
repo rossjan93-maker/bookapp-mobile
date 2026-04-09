@@ -184,7 +184,7 @@ function HomeFocalCard({ rect }: { rect: TargetRect }) {
       top:             rect.y,
       left:            rect.x,
       width:           rect.width,
-      backgroundColor: '#fff',
+      backgroundColor: '#fefcf9',
       borderRadius:    14,
       padding:         14,
       borderLeftWidth: 3,
@@ -195,7 +195,7 @@ function HomeFocalCard({ rect }: { rect: TargetRect }) {
       <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
         <CoverThumb url={DEMO_COVERS.thursdayMurderClub} title="The Thursday Murder Club" width={44} height={64} />
         <View style={{ flex: 1, marginLeft: 10 }}>
-          <Text style={{ fontSize: 14, fontWeight: '700', color: '#1c1917', lineHeight: 19, marginBottom: 3 }} numberOfLines={2}>
+          <Text style={{ fontSize: 14, fontWeight: '700', color: '#231f1b', lineHeight: 19, marginBottom: 3 }} numberOfLines={2}>
             The Thursday Murder Club
           </Text>
           <Text style={{ fontSize: 12, color: '#78716c' }}>Richard Osman</Text>
@@ -212,17 +212,17 @@ function RecommendFocalCard({ rect }: { rect: TargetRect }) {
       top:            rect.y,
       left:           rect.x,
       width:          rect.width,
-      backgroundColor: '#fff',
+      backgroundColor: '#fefcf9',
       borderRadius:   14,
       overflow:       'hidden',
       ...FOCAL_CARD_SHADOW,
       transform:      [{ scale: 1.02 }],
     }}>
-      <View style={{ height: 3, backgroundColor: '#1c1917' }} />
+      <View style={{ height: 3, backgroundColor: '#231f1b' }} />
       <View style={{ padding: 12, flexDirection: 'row', alignItems: 'flex-start' }}>
         <CoverThumb url={DEMO_COVERS.projectHailMary} title="Project Hail Mary" width={52} height={76} />
         <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={{ fontSize: 15, fontWeight: '700', color: '#1c1917', lineHeight: 21, marginBottom: 3 }} numberOfLines={2}>
+          <Text style={{ fontSize: 15, fontWeight: '700', color: '#231f1b', lineHeight: 21, marginBottom: 3 }} numberOfLines={2}>
             Project Hail Mary
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 6 }}>
@@ -231,14 +231,14 @@ function RecommendFocalCard({ rect }: { rect: TargetRect }) {
               <Text style={{ fontSize: 9, fontWeight: '700', color: '#15803d', letterSpacing: 0.3 }}>TOP PICK</Text>
             </View>
           </View>
-          <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', lineHeight: 18 }} numberOfLines={2}>
+          <Text style={{ fontSize: 13, fontWeight: '600', color: '#231f1b', lineHeight: 18 }} numberOfLines={2}>
             Long-form science with immersive pacing
           </Text>
         </View>
       </View>
       <View style={{ borderTopWidth: 1, borderTopColor: '#f0eeeb', flexDirection: 'row' }}>
         <TouchableOpacity activeOpacity={0.7} style={{ flex: 1, paddingVertical: 13, paddingHorizontal: 14, justifyContent: 'center', borderRightWidth: 1, borderRightColor: '#f0eeeb' }}>
-          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917' }}>Want to Read</Text>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b' }}>Want to Read</Text>
         </TouchableOpacity>
         <TouchableOpacity activeOpacity={0.7} style={{ paddingVertical: 13, paddingHorizontal: 12, justifyContent: 'center', alignItems: 'center', borderRightWidth: 1, borderRightColor: '#f0eeeb' }}>
           <Text style={{ fontSize: 12, color: '#78716c', fontWeight: '500' }}>Not for me</Text>
@@ -258,7 +258,7 @@ function LibraryFocalCard({ rect }: { rect: TargetRect }) {
       top:            rect.y,
       left:           rect.x,
       width:          rect.width,
-      backgroundColor: '#fff',
+      backgroundColor: '#fefcf9',
       borderRadius:   14,
       borderLeftWidth: 3,
       borderLeftColor: '#3b82f6',
@@ -269,16 +269,16 @@ function LibraryFocalCard({ rect }: { rect: TargetRect }) {
       <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
         <CoverThumb url={DEMO_COVERS.midnightLibrary} title="The Midnight Library" width={44} height={64} />
         <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={{ fontSize: 14, fontWeight: '700', color: '#1c1917', lineHeight: 19, marginBottom: 3 }} numberOfLines={2}>
+          <Text style={{ fontSize: 14, fontWeight: '700', color: '#231f1b', lineHeight: 19, marginBottom: 3 }} numberOfLines={2}>
             The Midnight Library
           </Text>
           <Text style={{ fontSize: 12, color: '#78716c' }}>Matt Haig</Text>
         </View>
       </View>
-      <View style={{ height: 3, backgroundColor: '#e7e5e4', borderRadius: 2, overflow: 'hidden', marginTop: 10, marginBottom: 4 }}>
+      <View style={{ height: 3, backgroundColor: '#ede9e4', borderRadius: 2, overflow: 'hidden', marginTop: 10, marginBottom: 4 }}>
         <View style={{ height: 3, width: '34%', backgroundColor: '#3b82f6', borderRadius: 2 }} />
       </View>
-      <Text style={{ fontSize: 10, color: '#a8a29e' }}>Page 145 of 432 · 34%</Text>
+      <Text style={{ fontSize: 10, color: '#9e958d' }}>Page 145 of 432 · 34%</Text>
     </View>
   );
 }
@@ -304,19 +304,19 @@ function InboxFocalCard({ rect }: { rect: TargetRect }) {
       <View style={{ flexDirection: 'row', marginBottom: 12 }}>
         <CoverThumb url={DEMO_COVERS.normalPeople} title="Normal People" width={48} height={70} />
         <View style={{ flex: 1, marginLeft: 14 }}>
-          <Text style={{ fontWeight: '700', fontSize: 16, color: '#1c1917', lineHeight: 22, marginBottom: 3 }}>
+          <Text style={{ fontWeight: '700', fontSize: 16, color: '#231f1b', lineHeight: 22, marginBottom: 3 }}>
             Normal People
           </Text>
           <Text style={{ color: '#78716c', fontSize: 13 }}>Sally Rooney</Text>
         </View>
       </View>
-      <View style={{ backgroundColor: '#fffbf2', borderTopWidth: 1, borderTopColor: '#f0ede8', paddingTop: 10, paddingHorizontal: 10, paddingBottom: 8, borderRadius: 6, marginBottom: 14 }}>
+      <View style={{ backgroundColor: '#fffbf2', borderTopWidth: 1, borderTopColor: '#ede9e4', paddingTop: 10, paddingHorizontal: 10, paddingBottom: 8, borderRadius: 6, marginBottom: 14 }}>
         <Text style={{ fontSize: 13, color: '#57534e', fontStyle: 'italic', lineHeight: 20 }}>
           "You need to read this. Trust me."
         </Text>
       </View>
-      <TouchableOpacity activeOpacity={0.8} style={{ alignSelf: 'flex-start', paddingHorizontal: 16, paddingVertical: 9, backgroundColor: '#1c1917', borderRadius: 8 }}>
-        <Text style={{ color: '#faf9f7', fontSize: 13, fontWeight: '700' }}>Want to Read</Text>
+      <TouchableOpacity activeOpacity={0.8} style={{ alignSelf: 'flex-start', paddingHorizontal: 16, paddingVertical: 9, backgroundColor: '#231f1b', borderRadius: 8 }}>
+        <Text style={{ color: '#f5f1ec', fontSize: 13, fontWeight: '700' }}>Want to Read</Text>
       </TouchableOpacity>
     </View>
   );
@@ -404,7 +404,7 @@ function InScreenHotspot({
           height:       RING,
           borderRadius: RING / 2,
           borderWidth:  1.5,
-          borderColor:  '#faf9f7',
+          borderColor:  '#f5f1ec',
           transform:    [{ scale: ring1Scale }],
           opacity:      ring1Opacity,
         }}
@@ -417,7 +417,7 @@ function InScreenHotspot({
           height:       RING,
           borderRadius: RING / 2,
           borderWidth:  1.5,
-          borderColor:  '#faf9f7',
+          borderColor:  '#f5f1ec',
           transform:    [{ scale: ring2Scale }],
           opacity:      ring2Opacity,
         }}
@@ -427,8 +427,8 @@ function InScreenHotspot({
           width:           DOT,
           height:          DOT,
           borderRadius:    DOT / 2,
-          backgroundColor: '#faf9f7',
-          shadowColor:     '#faf9f7',
+          backgroundColor: '#f5f1ec',
+          shadowColor:     '#f5f1ec',
           shadowOpacity:   0.6,
           shadowRadius:    5,
           shadowOffset:    { width: 0, height: 0 },

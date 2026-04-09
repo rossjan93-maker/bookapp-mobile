@@ -42,7 +42,7 @@ function SectionLabel({ children }: { children: string }) {
     <Text style={{
       fontSize: 11,
       fontWeight: '700',
-      color: '#a8a29e',
+      color: '#9e958d',
       letterSpacing: 0.9,
       textTransform: 'uppercase',
       marginBottom: 12,
@@ -53,7 +53,7 @@ function SectionLabel({ children }: { children: string }) {
 }
 
 function Divider() {
-  return <View style={{ height: 1, backgroundColor: '#f0ede8', marginBottom: 24, marginTop: 4 }} />;
+  return <View style={{ height: 1, backgroundColor: '#ede9e4', marginBottom: 24, marginTop: 4 }} />;
 }
 
 // ─── Module-level session cache ───────────────────────────────────────────────
@@ -244,7 +244,7 @@ export default function InboxScreen() {
         <Text style={{ color: '#b91c1c', textAlign: 'center', fontSize: 14, marginBottom: 18 }}>{error}</Text>
         <TouchableOpacity
           onPress={() => { setError(null); setLoading(true); loadNotes(); }}
-          style={{ backgroundColor: '#1c1917', borderRadius: 10, paddingVertical: 11, paddingHorizontal: 24 }}
+          style={{ backgroundColor: '#231f1b', borderRadius: 10, paddingVertical: 11, paddingHorizontal: 24 }}
         >
           <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Try again</Text>
         </TouchableOpacity>
@@ -275,10 +275,10 @@ export default function InboxScreen() {
   if (wtStep === 'inbox') return <WtDemoInbox />;
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
+    <View style={{ flex: 1, backgroundColor: '#f5f1ec' }}>
       <TabScreenHeader title="Inbox" />
     <ScrollView
-      style={{ flex: 1, backgroundColor: '#faf9f7' }}
+      style={{ flex: 1, backgroundColor: '#f5f1ec' }}
       contentContainerStyle={
         items.length === 0
           ? { flex: 1, paddingHorizontal: 20, paddingTop: 8 }
@@ -291,7 +291,7 @@ export default function InboxScreen() {
       {/* ── Empty state ── */}
       {items.length === 0 && (
         <>
-          <Text style={{ fontSize: 14, color: '#a8a29e', marginBottom: 12 }}>
+          <Text style={{ fontSize: 14, color: '#9e958d', marginBottom: 12 }}>
             Your recommendations from friends
           </Text>
           {/* Flex wrapper keeps the card vertically centred; the ref is on the
@@ -304,7 +304,7 @@ export default function InboxScreen() {
               onLayout={measureInboxContent}
               style={{
                 width: '100%',
-                backgroundColor: '#fff',
+                backgroundColor: '#fefcf9',
                 borderRadius: 16,
                 padding: 28,
                 alignItems: 'center',
@@ -314,19 +314,19 @@ export default function InboxScreen() {
                 shadowOffset: { width: 0, height: 2 },
                 elevation: 2,
                 borderWidth: 1,
-                borderColor: '#e7e5e4',
+                borderColor: '#ede9e4',
               }}
             >
-              <Text style={{ fontSize: 17, fontWeight: '700', color: '#1c1917', marginBottom: 8, textAlign: 'center' }}>
+              <Text style={{ fontSize: 17, fontWeight: '700', color: '#231f1b', marginBottom: 8, textAlign: 'center' }}>
                 Nothing here yet
               </Text>
-              <Text style={{ color: '#a8a29e', fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 20 }}>
+              <Text style={{ color: '#9e958d', fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 20 }}>
                 When a friend recommends a book,{'\n'}it will show up here.
               </Text>
               <TouchableOpacity
                 onPress={() => router.push('/(tabs)/')}
                 style={{
-                  backgroundColor: '#1c1917',
+                  backgroundColor: '#231f1b',
                   borderRadius: 10,
                   paddingVertical: 11,
                   paddingHorizontal: 22,
@@ -342,7 +342,7 @@ export default function InboxScreen() {
       {/* ── Header ── */}
       {items.length > 0 && (
       <View style={{ marginBottom: 20 }}>
-        <Text style={{ fontSize: 14, color: '#a8a29e' }}>
+        <Text style={{ fontSize: 14, color: '#9e958d' }}>
           {newItems.length > 0
             ? `${newItems.length} ${newItems.length === 1 ? 'book' : 'books'} waiting for you`
             : 'All caught up'}
@@ -358,7 +358,7 @@ export default function InboxScreen() {
             <View
               key={item.id}
               style={{
-                backgroundColor: '#fffbf5',
+                backgroundColor: '#fefcf9',
                 borderRadius: 14,
                 borderLeftWidth: 3,
                 borderLeftColor: '#d4a574',
@@ -395,7 +395,7 @@ export default function InboxScreen() {
                     height={70}
                   />
                   <View style={{ flex: 1, marginLeft: 14 }}>
-                    <Text style={{ fontWeight: '700', fontSize: 16, color: '#1c1917', lineHeight: 22, marginBottom: 3 }}>
+                    <Text style={{ fontWeight: '700', fontSize: 16, color: '#231f1b', lineHeight: 22, marginBottom: 3 }}>
                       {item.book?.title ?? '—'}
                     </Text>
                     <Text style={{ color: '#78716c', fontSize: 13 }}>
@@ -407,7 +407,7 @@ export default function InboxScreen() {
                   <View style={{
                     backgroundColor: '#fffbf2',
                     borderTopWidth: 1,
-                    borderTopColor: '#f0ede8',
+                    borderTopColor: '#ede9e4',
                     marginTop: 12,
                     paddingTop: 10,
                     paddingHorizontal: 10,
@@ -427,7 +427,7 @@ export default function InboxScreen() {
                   alignSelf: 'flex-start',
                   paddingHorizontal: 16,
                   paddingVertical: 9,
-                  backgroundColor: savingId === item.id ? '#d6d3d1' : '#1c1917',
+                  backgroundColor: savingId === item.id ? '#ede9e4' : '#231f1b',
                   borderRadius: 8,
                 }}
               >
@@ -500,7 +500,7 @@ function RecRow({ item, onPress }: { item: InboxItem; onPress: () => void }) {
       style={{
         paddingVertical: 14,
         borderBottomWidth: 1,
-        borderBottomColor: '#f5f5f4',
+        borderBottomColor: '#ede9e4',
         flexDirection: 'row',
         alignItems: 'flex-start',
       }}
@@ -513,19 +513,19 @@ function RecRow({ item, onPress }: { item: InboxItem; onPress: () => void }) {
         height={58}
       />
       <View style={{ flex: 1, marginLeft: 14 }}>
-        <Text style={{ fontWeight: '700', fontSize: 15, color: '#1c1917', marginBottom: 2, lineHeight: 21 }}>
+        <Text style={{ fontWeight: '700', fontSize: 15, color: '#231f1b', marginBottom: 2, lineHeight: 21 }}>
           {item.book?.title ?? '—'}
         </Text>
         <Text style={{ color: '#78716c', fontSize: 13, marginBottom: 3 }}>
           {item.book?.author ?? '—'}
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Text style={{ color: '#a8a29e', fontSize: 12 }}>
+          <Text style={{ color: '#9e958d', fontSize: 12 }}>
             from {getFirstName(item.sender)}
           </Text>
           {chip && (
             <View style={{
-              backgroundColor: '#f5f5f4',
+              backgroundColor: '#ede9e4',
               borderRadius: 8,
               paddingHorizontal: 7,
               paddingVertical: 2,
@@ -540,7 +540,7 @@ function RecRow({ item, onPress }: { item: InboxItem; onPress: () => void }) {
           </Text>
         ) : null}
       </View>
-      <Text style={{ fontSize: 16, color: '#d6d3d1', marginTop: 2, marginLeft: 8 }}>›</Text>
+      <Text style={{ fontSize: 16, color: '#ede9e4', marginTop: 2, marginLeft: 8 }}>›</Text>
     </TouchableOpacity>
   );
 }

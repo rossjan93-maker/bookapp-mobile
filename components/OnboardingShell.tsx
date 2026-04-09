@@ -50,11 +50,11 @@ export const OB = {
 
 // ─── Palette (mirrors app-wide tokens) ────────────────────────────────────────
 
-const INK  = '#1c1917';
-const MUTED = '#a8a29e';
+const INK  = '#231f1b';
+const MUTED = '#9e958d';
 const DIM   = '#c4bfb9';
-const BORD  = '#e7e5e4';
-const BG    = '#faf9f7';
+const BORD  = '#ede9e4';
+const BG    = '#f5f1ec';
 
 // ─── Step dots ────────────────────────────────────────────────────────────────
 // Pill-shaped dots indicating which major step within the intake flow the

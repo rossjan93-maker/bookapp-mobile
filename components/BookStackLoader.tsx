@@ -83,7 +83,7 @@ function FlatBook({
         ],
         opacity,
         // Subtle shadow under each book for depth
-        shadowColor:   '#1c1917',
+        shadowColor:   '#231f1b',
         shadowOpacity: 0.18,
         shadowRadius:  4,
         shadowOffset:  { width: 0, height: 2 },

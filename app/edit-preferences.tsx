@@ -29,7 +29,7 @@ function SectionLabel({ children }: { children: string }) {
     <Text style={{
       fontSize: 11,
       fontWeight: '700',
-      color: '#a8a29e',
+      color: '#9e958d',
       letterSpacing: 0.9,
       textTransform: 'uppercase',
       marginBottom: 12,
@@ -63,7 +63,7 @@ function ChipGroup({
               paddingVertical: 8,
               borderRadius: 20,
               borderWidth: 1.5,
-              borderColor: active ? activeColor : '#e7e5e4',
+              borderColor: active ? activeColor : '#ede9e4',
               backgroundColor: active ? activeColor + '22' : '#fff',
             }}
           >
@@ -148,7 +148,7 @@ export default function EditPreferencesScreen() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#faf9f7' }}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f1ec' }}>
         <ActivityIndicator color="#78716c" />
       </View>
     );
@@ -156,7 +156,7 @@ export default function EditPreferencesScreen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: '#faf9f7' }}
+      style={{ flex: 1, backgroundColor: '#f5f1ec' }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 60, paddingBottom: 56 }}
       keyboardShouldPersistTaps="handled"
     >
@@ -165,13 +165,13 @@ export default function EditPreferencesScreen() {
       <Text style={{
         fontSize: 28,
         fontWeight: '800',
-        color: '#1c1917',
+        color: '#231f1b',
         letterSpacing: -0.5,
         marginBottom: 6,
       }}>
         Reading Taste
       </Text>
-      <Text style={{ fontSize: 14, color: '#a8a29e', marginBottom: 32, lineHeight: 21 }}>
+      <Text style={{ fontSize: 14, color: '#9e958d', marginBottom: 32, lineHeight: 21 }}>
         Tell us what you enjoy. This helps us understand your taste — and will power fit insights for books you're considering.
       </Text>
 
@@ -181,7 +181,7 @@ export default function EditPreferencesScreen() {
         options={GENRES}
         selected={favoriteGenres}
         onToggle={val => setFavoriteGenres(prev => toggle(prev, val))}
-        activeColor="#1c1917"
+        activeColor="#231f1b"
       />
 
       {/* ── Genres I skip ── */}
@@ -220,9 +220,9 @@ export default function EditPreferencesScreen() {
           value={favoriteAuthors}
           onChangeText={setFavoriteAuthors}
           placeholder="e.g. Kazuo Ishiguro, Toni Morrison, Elena Ferrante"
-          placeholderTextColor="#a8a29e"
+          placeholderTextColor="#9e958d"
           multiline
-          style={{ fontSize: 14, color: '#1c1917', lineHeight: 22, minHeight: 56 }}
+          style={{ fontSize: 14, color: '#231f1b', lineHeight: 22, minHeight: 56 }}
         />
       </View>
 
@@ -231,7 +231,7 @@ export default function EditPreferencesScreen() {
         onPress={handleSave}
         disabled={saving || saveSuccess}
         style={{
-          backgroundColor: saveSuccess ? '#15803d' : saving ? '#d6d3d1' : '#1c1917',
+          backgroundColor: saveSuccess ? '#15803d' : saving ? '#ede9e4' : '#231f1b',
           borderRadius: 13,
           paddingVertical: 16,
           alignItems: 'center',
@@ -247,7 +247,7 @@ export default function EditPreferencesScreen() {
       </TouchableOpacity>
 
       {favoriteGenres.length === 0 && avoidGenres.length === 0 && readingStyles.length === 0 && !favoriteAuthors && (
-        <Text style={{ fontSize: 12, color: '#a8a29e', textAlign: 'center', marginTop: 16, lineHeight: 18 }}>
+        <Text style={{ fontSize: 12, color: '#9e958d', textAlign: 'center', marginTop: 16, lineHeight: 18 }}>
           No selections yet — tap any chip above to start building your taste profile.
         </Text>
       )}

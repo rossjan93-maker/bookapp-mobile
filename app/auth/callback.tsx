@@ -136,16 +136,16 @@ export default function AuthCallbackScreen() {
 
   // ── Render: clean branded loading screen ───────────────────────────────────
   return (
-    <View style={{ flex: 1, backgroundColor: '#faf9f7', alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ flex: 1, backgroundColor: '#f5f1ec', alignItems: 'center', justifyContent: 'center' }}>
       <BookStackLoader size="lg" />
       <Text style={{
-        fontSize: 17, fontWeight: '700', color: '#1c1917',
+        fontSize: 17, fontWeight: '700', color: '#231f1b',
         marginTop: 20, letterSpacing: -0.3,
       }}>
         Signing you in…
       </Text>
       <Text style={{
-        fontSize: 13, color: '#a8a29e', marginTop: 6,
+        fontSize: 13, color: '#9e958d', marginTop: 6,
       }}>
         Just a moment
       </Text>

@@ -338,20 +338,20 @@ export default function AddBookScreen() {
     const hasQuery = trimmed.length >= 2;
 
     return (
-      <View style={{ flex: 1, backgroundColor: '#faf9f7' }}>
+      <View style={{ flex: 1, backgroundColor: '#f5f1ec' }}>
         {/* ── Header ── */}
         <View style={{ paddingHorizontal: 20, paddingTop: 60, paddingBottom: 12 }}>
           <BackButton onPress={() => router.back()} style={{ marginBottom: 20 }} />
           <Text style={{
             fontSize: 28,
             fontWeight: '800',
-            color: '#1c1917',
+            color: '#231f1b',
             letterSpacing: -0.5,
             marginBottom: 5,
           }}>
             Add to Library
           </Text>
-          <Text style={{ fontSize: 14, color: '#a8a29e', marginBottom: 14 }}>
+          <Text style={{ fontSize: 14, color: '#9e958d', marginBottom: 14 }}>
             Find a book to track, or add one manually.
           </Text>
           <TouchableOpacity
@@ -359,7 +359,7 @@ export default function AddBookScreen() {
             style={{ marginBottom: 16 }}
             activeOpacity={0.7}
           >
-            <Text style={{ fontSize: 13, color: '#a8a29e' }}>
+            <Text style={{ fontSize: 13, color: '#9e958d' }}>
               Already on Goodreads?{' '}
               <Text style={{ color: '#78716c', textDecorationLine: 'underline' }}>
                 Import your whole library →
@@ -370,17 +370,17 @@ export default function AddBookScreen() {
             value={query}
             onChangeText={text => { setQuery(text); setShowManual(false); }}
             placeholder="Title, author, or keyword…"
-            placeholderTextColor="#a8a29e"
+            placeholderTextColor="#9e958d"
             autoFocus
             autoCapitalize="none"
             autoCorrect={false}
             style={{
-              backgroundColor: '#fff',
+              backgroundColor: '#fefcf9',
               borderRadius: 12,
               paddingHorizontal: 14,
               paddingVertical: 12,
               fontSize: 15,
-              color: '#1c1917',
+              color: '#231f1b',
               shadowColor: '#000',
               shadowOpacity: 0.05,
               shadowRadius: 4,
@@ -412,29 +412,29 @@ export default function AddBookScreen() {
                   alignItems: 'center',
                   paddingVertical: 11,
                   borderBottomWidth: 1,
-                  borderBottomColor: '#f5f5f4',
+                  borderBottomColor: '#ede9e4',
                 }}
               >
                 <CoverThumb url={coverUrl} title={item.title} width={34} height={50} />
                 <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={{ fontSize: 15, fontWeight: '600', color: '#1c1917', lineHeight: 21 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: '#231f1b', lineHeight: 21 }}>
                     {item.title}
                   </Text>
-                  <Text style={{ fontSize: 13, color: '#a8a29e', marginTop: 2 }}>
+                  <Text style={{ fontSize: 13, color: '#9e958d', marginTop: 2 }}>
                     {item.author_name?.[0] ?? 'Unknown author'}
                   </Text>
                 </View>
-                <Text style={{ fontSize: 20, color: '#d6d3d1', marginLeft: 8 }}>›</Text>
+                <Text style={{ fontSize: 20, color: '#ede9e4', marginLeft: 8 }}>›</Text>
               </TouchableOpacity>
             );
           }}
           ListEmptyComponent={
             !searching && hasQuery && noResults ? (
-              <Text style={{ color: '#a8a29e', fontSize: 14, paddingVertical: 10 }}>
+              <Text style={{ color: '#9e958d', fontSize: 14, paddingVertical: 10 }}>
                 No results. Try a different title or add manually below.
               </Text>
             ) : !searching && hasQuery && weakQuery ? (
-              <Text style={{ color: '#a8a29e', fontSize: 14, paddingVertical: 10 }}>
+              <Text style={{ color: '#9e958d', fontSize: 14, paddingVertical: 10 }}>
                 Keep typing…
               </Text>
             ) : !hasQuery && !showManual ? (
@@ -442,7 +442,7 @@ export default function AddBookScreen() {
                 <View style={{ alignItems: 'center', marginBottom: 20 }}>
                   <Text style={{
                     fontSize: 13,
-                    color: '#a8a29e',
+                    color: '#9e958d',
                     lineHeight: 20,
                     textAlign: 'center',
                   }}>
@@ -455,7 +455,7 @@ export default function AddBookScreen() {
                   alignItems: 'center',
                   marginBottom: 20,
                 }}>
-                  <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
+                  <View style={{ flex: 1, height: 1, backgroundColor: '#ede9e4' }} />
                   <Text style={{
                     fontSize: 12,
                     color: '#c4b5a5',
@@ -464,20 +464,20 @@ export default function AddBookScreen() {
                   }}>
                     or
                   </Text>
-                  <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
+                  <View style={{ flex: 1, height: 1, backgroundColor: '#ede9e4' }} />
                 </View>
 
                 <TouchableOpacity
                   onPress={() => setShowManual(true)}
                   style={{
-                    backgroundColor: '#fff',
+                    backgroundColor: '#fefcf9',
                     borderRadius: 14,
                     paddingVertical: 18,
                     paddingHorizontal: 18,
                     flexDirection: 'row',
                     alignItems: 'center',
                     borderWidth: 1,
-                    borderColor: '#e7e5e4',
+                    borderColor: '#ede9e4',
                     shadowColor: '#000',
                     shadowOpacity: 0.03,
                     shadowRadius: 4,
@@ -490,16 +490,16 @@ export default function AddBookScreen() {
                     <Text style={{
                       fontSize: 15,
                       fontWeight: '600',
-                      color: '#1c1917',
+                      color: '#231f1b',
                       marginBottom: 2,
                     }}>
                       Add manually
                     </Text>
-                    <Text style={{ fontSize: 13, color: '#a8a29e', lineHeight: 18 }}>
+                    <Text style={{ fontSize: 13, color: '#9e958d', lineHeight: 18 }}>
                       Enter the title and author yourself
                     </Text>
                   </View>
-                  <Text style={{ fontSize: 20, color: '#d6d3d1' }}>›</Text>
+                  <Text style={{ fontSize: 20, color: '#ede9e4' }}>›</Text>
                 </TouchableOpacity>
               </View>
             ) : null
@@ -524,7 +524,7 @@ export default function AddBookScreen() {
             marginHorizontal: 20,
             marginTop: 8,
             marginBottom: 24,
-            backgroundColor: '#fff',
+            backgroundColor: '#fefcf9',
             borderRadius: 14,
             padding: 18,
             shadowColor: '#000',
@@ -536,7 +536,7 @@ export default function AddBookScreen() {
             <Text style={{
               fontSize: 11,
               fontWeight: '700',
-              color: '#a8a29e',
+              color: '#9e958d',
               letterSpacing: 0.9,
               textTransform: 'uppercase',
               marginBottom: 16,
@@ -547,13 +547,13 @@ export default function AddBookScreen() {
               value={manualTitle}
               onChangeText={setManualTitle}
               placeholder="Book title *"
-              placeholderTextColor="#a8a29e"
+              placeholderTextColor="#9e958d"
               style={{
                 borderBottomWidth: 1,
-                borderBottomColor: '#f5f5f4',
+                borderBottomColor: '#ede9e4',
                 paddingVertical: 10,
                 fontSize: 15,
-                color: '#1c1917',
+                color: '#231f1b',
                 marginBottom: 12,
               }}
             />
@@ -561,13 +561,13 @@ export default function AddBookScreen() {
               value={manualAuthor}
               onChangeText={setManualAuthor}
               placeholder="Author (optional)"
-              placeholderTextColor="#a8a29e"
+              placeholderTextColor="#9e958d"
               style={{
                 borderBottomWidth: 1,
-                borderBottomColor: '#f5f5f4',
+                borderBottomColor: '#ede9e4',
                 paddingVertical: 10,
                 fontSize: 15,
-                color: '#1c1917',
+                color: '#231f1b',
                 marginBottom: 20,
               }}
             />
@@ -575,14 +575,14 @@ export default function AddBookScreen() {
               onPress={selectManual}
               disabled={!manualTitle.trim()}
               style={{
-                backgroundColor: manualTitle.trim() ? '#1c1917' : '#e7e5e4',
+                backgroundColor: manualTitle.trim() ? '#231f1b' : '#ede9e4',
                 borderRadius: 10,
                 paddingVertical: 13,
                 alignItems: 'center',
               }}
             >
               <Text style={{
-                color: manualTitle.trim() ? '#fff' : '#a8a29e',
+                color: manualTitle.trim() ? '#fff' : '#9e958d',
                 fontSize: 14,
                 fontWeight: '600',
               }}>
@@ -600,7 +600,7 @@ export default function AddBookScreen() {
   if (step === 'confirm') {
     return (
       <ScrollView
-        style={{ flex: 1, backgroundColor: '#faf9f7' }}
+        style={{ flex: 1, backgroundColor: '#f5f1ec' }}
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 60, paddingBottom: 48 }}
         keyboardShouldPersistTaps="handled"
       >
@@ -609,26 +609,26 @@ export default function AddBookScreen() {
         <Text style={{
           fontSize: 22,
           fontWeight: '800',
-          color: '#1c1917',
+          color: '#231f1b',
           letterSpacing: -0.4,
           marginBottom: 4,
         }}>
           Add to Library
         </Text>
-        <Text style={{ fontSize: 14, color: '#a8a29e', marginBottom: 22 }}>
+        <Text style={{ fontSize: 14, color: '#9e958d', marginBottom: 22 }}>
           Choose where this book fits in your reading.
         </Text>
 
         {/* Book preview card */}
         <View style={{
-          backgroundColor: '#fff',
+          backgroundColor: '#fefcf9',
           borderRadius: 14,
           padding: 16,
           flexDirection: 'row',
           alignItems: 'center',
           marginBottom: 32,
           borderLeftWidth: 3,
-          borderLeftColor: '#1c1917',
+          borderLeftColor: '#231f1b',
           shadowColor: '#000',
           shadowOpacity: 0.05,
           shadowRadius: 6,
@@ -647,7 +647,7 @@ export default function AddBookScreen() {
             <Text style={{
               fontSize: 16,
               fontWeight: '700',
-              color: '#1c1917',
+              color: '#231f1b',
               lineHeight: 22,
               marginBottom: 4,
             }}>
@@ -673,7 +673,7 @@ export default function AddBookScreen() {
         <Text style={{
           fontSize: 11,
           fontWeight: '700',
-          color: '#a8a29e',
+          color: '#9e958d',
           letterSpacing: 0.9,
           textTransform: 'uppercase',
           marginBottom: 14,
@@ -696,19 +696,19 @@ export default function AddBookScreen() {
                   paddingVertical: 14,
                   paddingHorizontal: 16,
                   borderWidth: 1.5,
-                  borderColor: active ? opt.activeText : '#e7e5e4',
+                  borderColor: active ? opt.activeText : '#ede9e4',
                 }}
               >
                 <View style={{ flex: 1 }}>
                   <Text style={{
                     fontSize: 15,
                     fontWeight: '600',
-                    color: active ? opt.activeText : '#1c1917',
+                    color: active ? opt.activeText : '#231f1b',
                     marginBottom: 2,
                   }}>
                     {opt.label}
                   </Text>
-                  <Text style={{ fontSize: 13, color: active ? opt.activeText : '#a8a29e' }}>
+                  <Text style={{ fontSize: 13, color: active ? opt.activeText : '#9e958d' }}>
                     {opt.desc}
                   </Text>
                 </View>
@@ -726,7 +726,7 @@ export default function AddBookScreen() {
             <Text style={{
               fontSize: 11,
               fontWeight: '700',
-              color: '#a8a29e',
+              color: '#9e958d',
               letterSpacing: 0.9,
               textTransform: 'uppercase',
               marginBottom: 14,
@@ -745,9 +745,9 @@ export default function AddBookScreen() {
                         paddingVertical: 10,
                         paddingHorizontal: 16,
                         borderRadius: 10,
-                        backgroundColor: active ? '#1c1917' : '#fff',
+                        backgroundColor: active ? '#231f1b' : '#fff',
                         borderWidth: 1,
-                        borderColor: active ? '#1c1917' : '#e7e5e4',
+                        borderColor: active ? '#231f1b' : '#ede9e4',
                       }}
                     >
                       <Text style={{
@@ -769,14 +769,14 @@ export default function AddBookScreen() {
           onPress={handleSave}
           disabled={saving}
           style={{
-            backgroundColor: saving ? '#e7e5e4' : '#1c1917',
+            backgroundColor: saving ? '#ede9e4' : '#231f1b',
             borderRadius: 14,
             paddingVertical: 16,
             alignItems: 'center',
           }}
         >
           <Text style={{
-            color: saving ? '#a8a29e' : '#fff',
+            color: saving ? '#9e958d' : '#fff',
             fontSize: 16,
             fontWeight: '700',
             letterSpacing: 0.2,
@@ -793,7 +793,7 @@ export default function AddBookScreen() {
   return (
     <View style={{
       flex: 1,
-      backgroundColor: '#faf9f7',
+      backgroundColor: '#f5f1ec',
       alignItems: 'center',
       justifyContent: 'center',
       paddingHorizontal: 32,
@@ -807,7 +807,7 @@ export default function AddBookScreen() {
       <Text style={{
         fontSize: 20,
         fontWeight: '700',
-        color: '#1c1917',
+        color: '#231f1b',
         textAlign: 'center',
         marginBottom: 10,
         letterSpacing: -0.3,
@@ -828,16 +828,16 @@ export default function AddBookScreen() {
         <TouchableOpacity
           onPress={resetAndAddAnother}
           style={{
-            backgroundColor: '#fff',
+            backgroundColor: '#fefcf9',
             borderRadius: 12,
             paddingVertical: 13,
             paddingHorizontal: 28,
             borderWidth: 1,
-            borderColor: '#e7e5e4',
+            borderColor: '#ede9e4',
             marginBottom: 16,
           }}
         >
-          <Text style={{ fontSize: 15, fontWeight: '600', color: '#1c1917' }}>
+          <Text style={{ fontSize: 15, fontWeight: '600', color: '#231f1b' }}>
             Add another book
           </Text>
         </TouchableOpacity>

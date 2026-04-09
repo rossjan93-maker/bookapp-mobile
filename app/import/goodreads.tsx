@@ -73,7 +73,7 @@ function ScreenContainer({ children }: { children: React.ReactNode }) {
   const insets = useSafeAreaInsets();
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: '#faf9f7' }}
+      style={{ flex: 1, backgroundColor: '#f5f1ec' }}
       contentContainerStyle={{ paddingHorizontal: 24, paddingTop: insets.top + 16, paddingBottom: 60 }}
       keyboardShouldPersistTaps="handled"
     >
@@ -88,7 +88,7 @@ function PageTitle({ children }: { children: string }) {
     <Text style={{
       fontSize: 28,
       fontWeight: '800',
-      color: '#1c1917',
+      color: '#231f1b',
       letterSpacing: -0.5,
       marginBottom: 6,
     }}>
@@ -110,7 +110,7 @@ function SectionLabel({ children }: { children: string }) {
     <Text style={{
       fontSize: 11,
       fontWeight: '700',
-      color: '#a8a29e',
+      color: '#9e958d',
       letterSpacing: 0.9,
       textTransform: 'uppercase',
       marginBottom: 10,
@@ -211,21 +211,21 @@ function StatRow({
       paddingHorizontal: 18,
       paddingVertical: 15,
       borderBottomWidth: last ? 0 : 1,
-      borderBottomColor: '#f5f5f4',
+      borderBottomColor: '#ede9e4',
     }}>
       <Text style={{
         fontSize: 26,
         fontWeight: '800',
-        color: accent ?? '#1c1917',
+        color: accent ?? '#231f1b',
         minWidth: 52,
         letterSpacing: -0.5,
       }}>
         {count}
       </Text>
       <View style={{ flex: 1, marginLeft: 12 }}>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>{label}</Text>
+        <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b' }}>{label}</Text>
         {sublabel ? (
-          <Text style={{ fontSize: 12, color: '#a8a29e', marginTop: 2, lineHeight: 17 }}>{sublabel}</Text>
+          <Text style={{ fontSize: 12, color: '#9e958d', marginTop: 2, lineHeight: 17 }}>{sublabel}</Text>
         ) : null}
       </View>
     </View>
@@ -245,9 +245,9 @@ function ReviewRow({ title, author, reason, last }: {
       paddingHorizontal: 18,
       paddingVertical: 13,
       borderBottomWidth: last ? 0 : 1,
-      borderBottomColor: '#f5f5f4',
+      borderBottomColor: '#ede9e4',
     }}>
-      <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917', marginBottom: 2 }} numberOfLines={1}>
+      <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', marginBottom: 2 }} numberOfLines={1}>
         {title}
       </Text>
       <Text style={{ fontSize: 12, color: '#78716c', marginBottom: reason ? 4 : 0 }} numberOfLines={1}>
@@ -273,7 +273,7 @@ function ResetButton({ onPress, label }: { onPress: () => void; label: string })
         paddingVertical: 13,
         borderRadius: 12,
         borderWidth: 1,
-        borderColor: '#e7e5e4',
+        borderColor: '#ede9e4',
         alignItems: 'center',
       }}
     >
@@ -337,15 +337,15 @@ function IdleView({
           onChangeText={onPastedTextChange}
           multiline
           placeholder="Paste your Goodreads export here…"
-          placeholderTextColor="#a8a29e"
+          placeholderTextColor="#9e958d"
           style={{
             backgroundColor: '#fff',
             borderRadius: 12,
             borderWidth: 1,
-            borderColor: pastedText.trim().length > 0 ? '#d4a574' : '#e7e5e4',
+            borderColor: pastedText.trim().length > 0 ? '#d4a574' : '#ede9e4',
             padding: 14,
             fontSize: 11,
-            color: '#1c1917',
+            color: '#231f1b',
             fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
             height: 110,
             textAlignVertical: 'top',
@@ -356,7 +356,7 @@ function IdleView({
           onPress={onSubmitPaste}
           disabled={pastedText.trim().length < 10}
           style={{
-            backgroundColor: pastedText.trim().length >= 10 ? '#1c1917' : '#f5f5f4',
+            backgroundColor: pastedText.trim().length >= 10 ? '#231f1b' : '#ede9e4',
             borderRadius: 12,
             paddingVertical: 14,
             alignItems: 'center',
@@ -364,7 +364,7 @@ function IdleView({
           }}
         >
           <Text style={{
-            color: pastedText.trim().length >= 10 ? '#fff' : '#a8a29e',
+            color: pastedText.trim().length >= 10 ? '#fff' : '#9e958d',
             fontSize: 15,
             fontWeight: '600',
           }}>
@@ -373,23 +373,23 @@ function IdleView({
         </TouchableOpacity>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
-          <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
-          <Text style={{ fontSize: 11, fontWeight: '500', color: '#a8a29e', marginHorizontal: 10 }}>
+          <View style={{ flex: 1, height: 1, backgroundColor: '#ede9e4' }} />
+          <Text style={{ fontSize: 11, fontWeight: '500', color: '#9e958d', marginHorizontal: 10 }}>
             or if a file downloaded
           </Text>
-          <View style={{ flex: 1, height: 1, backgroundColor: '#e7e5e4' }} />
+          <View style={{ flex: 1, height: 1, backgroundColor: '#ede9e4' }} />
         </View>
 
         <TouchableOpacity
           onPress={isWeb ? onPickFile : onPickNativeFile}
           style={{
-            backgroundColor: '#f5f5f4',
+            backgroundColor: '#ede9e4',
             borderRadius: 10,
             paddingVertical: 13,
             alignItems: 'center',
           }}
         >
-          <Text style={{ color: '#1c1917', fontSize: 14, fontWeight: '600' }}>
+          <Text style={{ color: '#231f1b', fontSize: 14, fontWeight: '600' }}>
             Choose CSV File
           </Text>
         </TouchableOpacity>
@@ -407,7 +407,7 @@ function IdleView({
       {/* ── Platform picker ── */}
       <View style={{
         flexDirection: 'row',
-        backgroundColor: '#f5f5f4',
+        backgroundColor: '#ede9e4',
         borderRadius: 10,
         padding: 3,
         marginBottom: 20,
@@ -432,7 +432,7 @@ function IdleView({
             <Text style={{
               fontSize: 13,
               fontWeight: platform === p ? '700' : '500',
-              color: platform === p ? '#1c1917' : '#78716c',
+              color: platform === p ? '#231f1b' : '#78716c',
             }}>
               {p === 'goodreads' ? 'Goodreads' : 'StoryGraph'}
             </Text>
@@ -451,7 +451,7 @@ function IdleView({
             borderLeftColor: '#f59e0b',
             marginBottom: 20,
           }}>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 3 }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', marginBottom: 3 }}>
               Direct import coming soon
             </Text>
             <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
@@ -460,21 +460,21 @@ function IdleView({
           </View>
           <Card>
             <View style={{ padding: 18 }}>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 14 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', marginBottom: 14 }}>
                 How to export your library
               </Text>
               {storygraphSteps.map((step, i) => (
                 <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: i < storygraphSteps.length - 1 ? 14 : 0 }}>
                   <View style={{
                     width: 22, height: 22, borderRadius: 11,
-                    backgroundColor: '#f5f5f4',
+                    backgroundColor: '#ede9e4',
                     alignItems: 'center', justifyContent: 'center',
                     marginRight: 12, marginTop: 1, flexShrink: 0,
                   }}>
                     <Text style={{ fontSize: 11, fontWeight: '700', color: '#78716c' }}>{i + 1}</Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#1c1917', lineHeight: 20 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#231f1b', lineHeight: 20 }}>
                       {step.label}
                     </Text>
                     <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18, marginTop: 2 }}>
@@ -489,7 +489,7 @@ function IdleView({
             onPress={() => Linking.openURL(STORYGRAPH_EXPORT_URL)}
             style={{
               marginTop: 20,
-              backgroundColor: '#1c1917',
+              backgroundColor: '#231f1b',
               borderRadius: 12,
               paddingVertical: 15,
               alignItems: 'center',
@@ -500,7 +500,7 @@ function IdleView({
             </Text>
           </TouchableOpacity>
           <View style={{ marginTop: 12, alignItems: 'center', paddingHorizontal: 8 }}>
-            <Text style={{ fontSize: 11, color: '#a8a29e', marginBottom: 4, textAlign: 'center' }}>
+            <Text style={{ fontSize: 11, color: '#9e958d', marginBottom: 4, textAlign: 'center' }}>
               Or copy this link into your browser:
             </Text>
             <Text selectable style={{ fontSize: 12, color: '#57534e', textAlign: 'center' }}>
@@ -517,7 +517,7 @@ function IdleView({
           <Text style={{
             fontSize: 20,
             fontWeight: '800',
-            color: '#1c1917',
+            color: '#231f1b',
             letterSpacing: -0.3,
             marginBottom: 8,
           }}>
@@ -537,7 +537,7 @@ function IdleView({
             onPress={onOpenBrowser}
             disabled={!onOpenBrowser}
             style={{
-              backgroundColor: '#1c1917',
+              backgroundColor: '#231f1b',
               borderRadius: 14,
               paddingVertical: 17,
               alignItems: 'center',
@@ -557,7 +557,7 @@ function IdleView({
           {/* C. Browser expectation copy */}
           <Text style={{
             fontSize: 11,
-            color: '#a8a29e',
+            color: '#9e958d',
             textAlign: 'center',
             lineHeight: 16,
             marginBottom: 36,
@@ -568,13 +568,13 @@ function IdleView({
           {/* D. Other ways to import — always visible, clearly secondary */}
           <View style={{
             borderTopWidth: 1,
-            borderTopColor: '#e7e5e4',
+            borderTopColor: '#ede9e4',
             paddingTop: 20,
           }}>
             <Text style={{
               fontSize: 11,
               fontWeight: '700',
-              color: '#a8a29e',
+              color: '#9e958d',
               letterSpacing: 0.8,
               textTransform: 'uppercase',
               marginBottom: 14,
@@ -585,17 +585,17 @@ function IdleView({
             <TouchableOpacity
               onPress={onPickNativeFile}
               style={{
-                backgroundColor: '#f5f5f4',
+                backgroundColor: '#ede9e4',
                 borderRadius: 10,
                 paddingVertical: 13,
                 alignItems: 'center',
                 marginBottom: 16,
               }}
             >
-              <Text style={{ color: '#1c1917', fontSize: 14, fontWeight: '600' }}>
+              <Text style={{ color: '#231f1b', fontSize: 14, fontWeight: '600' }}>
                 Choose CSV File
               </Text>
-              <Text style={{ color: '#a8a29e', fontSize: 11, marginTop: 2 }}>
+              <Text style={{ color: '#9e958d', fontSize: 11, marginTop: 2 }}>
                 If you already exported from Goodreads
               </Text>
             </TouchableOpacity>
@@ -605,15 +605,15 @@ function IdleView({
               onChangeText={onPastedTextChange}
               multiline
               placeholder="Or paste your Goodreads export text here…"
-              placeholderTextColor="#a8a29e"
+              placeholderTextColor="#9e958d"
               style={{
                 backgroundColor: '#fff',
                 borderRadius: 12,
                 borderWidth: 1,
-                borderColor: pastedText.trim().length > 0 ? '#d4a574' : '#e7e5e4',
+                borderColor: pastedText.trim().length > 0 ? '#d4a574' : '#ede9e4',
                 padding: 14,
                 fontSize: 11,
-                color: '#1c1917',
+                color: '#231f1b',
                 fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
                 height: 90,
                 textAlignVertical: 'top',
@@ -624,14 +624,14 @@ function IdleView({
               onPress={onSubmitPaste}
               disabled={pastedText.trim().length < 10}
               style={{
-                backgroundColor: pastedText.trim().length >= 10 ? '#1c1917' : '#f5f5f4',
+                backgroundColor: pastedText.trim().length >= 10 ? '#231f1b' : '#ede9e4',
                 borderRadius: 10,
                 paddingVertical: 12,
                 alignItems: 'center',
               }}
             >
               <Text style={{
-                color: pastedText.trim().length >= 10 ? '#fff' : '#a8a29e',
+                color: pastedText.trim().length >= 10 ? '#fff' : '#9e958d',
                 fontSize: 14,
                 fontWeight: '600',
               }}>
@@ -653,7 +653,7 @@ function IdleView({
             borderLeftColor: '#d4a574',
             marginBottom: 16,
           }}>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 3 }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', marginBottom: 3 }}>
               Do this in Safari or Chrome — not the Goodreads app
             </Text>
             <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
@@ -664,7 +664,7 @@ function IdleView({
           {/* Bookmarklet: set up once helper */}
           <View style={{
             backgroundColor: '#fff', borderRadius: 14,
-            borderWidth: 1.5, borderColor: '#1c1917', padding: 18,
+            borderWidth: 1.5, borderColor: '#231f1b', padding: 18,
             marginBottom: 16,
           }}>
             <View style={{
@@ -679,7 +679,7 @@ function IdleView({
                 SET UP ONCE
               </Text>
             </View>
-            <Text style={{ fontSize: 15, fontWeight: '800', color: '#1c1917', marginBottom: 6 }}>
+            <Text style={{ fontSize: 15, fontWeight: '800', color: '#231f1b', marginBottom: 6 }}>
               readstack browser helper
             </Text>
             <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 19, marginBottom: 14 }}>
@@ -692,15 +692,15 @@ function IdleView({
                 href={BOOKMARKLET_HREF}
                 accessibilityRole="link"
                 style={{
-                  backgroundColor: '#f5f5f4',
+                  backgroundColor: '#ede9e4',
                   borderRadius: 8,
                   paddingVertical: 10,
                   paddingHorizontal: 20,
                   fontSize: 13,
                   fontWeight: '700',
-                  color: '#1c1917',
+                  color: '#231f1b',
                   borderWidth: 1,
-                  borderColor: '#e7e5e4',
+                  borderColor: '#ede9e4',
                   cursor: 'grab',
                 } as any}
               >
@@ -716,7 +716,7 @@ function IdleView({
             onPress={() => Linking.openURL(GOODREADS_EXPORT_URL)}
             style={{
               marginTop: 16,
-              backgroundColor: '#1c1917',
+              backgroundColor: '#231f1b',
               borderRadius: 12,
               paddingVertical: 15,
               alignItems: 'center',
@@ -727,7 +727,7 @@ function IdleView({
             </Text>
           </TouchableOpacity>
           <View style={{ marginTop: 6, alignItems: 'center' }}>
-            <Text selectable style={{ fontSize: 11, color: '#a8a29e' }}>
+            <Text selectable style={{ fontSize: 11, color: '#9e958d' }}>
               goodreads.com/review/import
             </Text>
           </View>
@@ -739,9 +739,9 @@ function IdleView({
       {/* ── Reset entry point (Goodreads only) ── */}
       {platform === 'goodreads' && (
         <View style={{ marginTop: 36, alignItems: 'center' }}>
-          <View style={{ height: 1, backgroundColor: '#e7e5e4', width: '100%', marginBottom: 20 }} />
+          <View style={{ height: 1, backgroundColor: '#ede9e4', width: '100%', marginBottom: 20 }} />
           <TouchableOpacity onPress={onResetRequest} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <Text style={{ fontSize: 13, color: '#a8a29e' }}>
+            <Text style={{ fontSize: 13, color: '#9e958d' }}>
               Reset Goodreads import
             </Text>
           </TouchableOpacity>
@@ -819,13 +819,13 @@ function ProgressView({ stages }: { stages: ProgressStage[] }) {
       paddingVertical: 40,
     }}>
       {/* Spinner */}
-      <ActivityIndicator size="large" color="#1c1917" style={{ marginBottom: 36 }} />
+      <ActivityIndicator size="large" color="#231f1b" style={{ marginBottom: 36 }} />
 
       {/* Current stage headline */}
       <Text style={{
         fontSize: 22,
         fontWeight: '700',
-        color: '#1c1917',
+        color: '#231f1b',
         textAlign: 'center',
         marginBottom: 6,
         letterSpacing: -0.3,
@@ -834,7 +834,7 @@ function ProgressView({ stages }: { stages: ProgressStage[] }) {
       </Text>
       <Text style={{
         fontSize: 13,
-        color: '#a8a29e',
+        color: '#9e958d',
         textAlign: 'center',
         marginBottom: 44,
       }}>
@@ -852,7 +852,7 @@ function ProgressView({ stages }: { stages: ProgressStage[] }) {
               {isDone ? (
                 <View style={{
                   width: 22, height: 22, borderRadius: 11,
-                  backgroundColor: '#e7e5e4',
+                  backgroundColor: '#ede9e4',
                   alignItems: 'center', justifyContent: 'center',
                   marginRight: 12, flexShrink: 0,
                 }}>
@@ -861,16 +861,16 @@ function ProgressView({ stages }: { stages: ProgressStage[] }) {
               ) : isActive ? (
                 <View style={{
                   width: 22, height: 22, borderRadius: 11,
-                  backgroundColor: '#1c1917',
+                  backgroundColor: '#231f1b',
                   alignItems: 'center', justifyContent: 'center',
                   marginRight: 12, flexShrink: 0,
                 }}>
-                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#faf9f7' }} />
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#f5f1ec' }} />
                 </View>
               ) : (
                 <View style={{
                   width: 22, height: 22, borderRadius: 11,
-                  borderWidth: 1.5, borderColor: '#e7e5e4',
+                  borderWidth: 1.5, borderColor: '#ede9e4',
                   marginRight: 12, flexShrink: 0,
                 }} />
               )}
@@ -878,7 +878,7 @@ function ProgressView({ stages }: { stages: ProgressStage[] }) {
                 flex: 1,
                 fontSize: 14,
                 fontWeight: isActive ? '600' : '400',
-                color: isDone ? '#a8a29e' : isActive ? '#1c1917' : '#d6d3d1',
+                color: isDone ? '#9e958d' : isActive ? '#231f1b' : '#ede9e4',
               }}>
                 {stage.label}
               </Text>
@@ -892,7 +892,7 @@ function ProgressView({ stages }: { stages: ProgressStage[] }) {
         width: '100%',
         maxWidth: 300,
         height: 2,
-        backgroundColor: '#e7e5e4',
+        backgroundColor: '#ede9e4',
         borderRadius: 1,
         marginTop: 24,
         overflow: 'hidden',
@@ -900,7 +900,7 @@ function ProgressView({ stages }: { stages: ProgressStage[] }) {
         <View style={{
           height: 2,
           width: `${pctInt}%` as unknown as number,
-          backgroundColor: '#1c1917',
+          backgroundColor: '#231f1b',
           borderRadius: 1,
         }} />
       </View>
@@ -970,8 +970,8 @@ function StagedView({
               />
             ))}
             {summary.reviewRows.length > 20 && (
-              <View style={{ paddingHorizontal: 18, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#f5f5f4' }}>
-                <Text style={{ fontSize: 12, color: '#a8a29e' }}>
+              <View style={{ paddingHorizontal: 18, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#ede9e4' }}>
+                <Text style={{ fontSize: 12, color: '#9e958d' }}>
                   +{summary.reviewRows.length - 20} more rows cannot be imported
                 </Text>
               </View>
@@ -985,7 +985,7 @@ function StagedView({
           onPress={onImport}
           style={{
             marginTop: 28,
-            backgroundColor: '#1c1917',
+            backgroundColor: '#231f1b',
             borderRadius: 12,
             paddingVertical: 15,
             alignItems: 'center',
@@ -1074,8 +1074,8 @@ function CompleteView({
               />
             ))}
             {result.reviewRows.length > 20 && (
-              <View style={{ paddingHorizontal: 18, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#f5f5f4' }}>
-                <Text style={{ fontSize: 12, color: '#a8a29e' }}>
+              <View style={{ paddingHorizontal: 18, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#ede9e4' }}>
+                <Text style={{ fontSize: 12, color: '#9e958d' }}>
                   +{result.reviewRows.length - 20} more rows were skipped
                 </Text>
               </View>
@@ -1089,7 +1089,7 @@ function CompleteView({
         onPress={onGoToLibrary}
         style={{
           marginTop: 28,
-          backgroundColor: '#1c1917',
+          backgroundColor: '#231f1b',
           borderRadius: 12,
           paddingVertical: 15,
           alignItems: 'center',
@@ -1123,7 +1123,7 @@ function ConfirmResetView({
 
       <Card>
         <View style={{ padding: 18 }}>
-          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 10 }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', marginBottom: 10 }}>
             What gets reset
           </Text>
           {[
@@ -1132,16 +1132,16 @@ function ConfirmResetView({
             'You can upload a fresh Goodreads CSV immediately after.',
           ].map((item, i) => (
             <View key={i} style={{ flexDirection: 'row', marginBottom: 8 }}>
-              <Text style={{ color: '#a8a29e', marginRight: 8, marginTop: 1 }}>·</Text>
+              <Text style={{ color: '#9e958d', marginRight: 8, marginTop: 1 }}>·</Text>
               <Text style={{ flex: 1, fontSize: 13, color: '#57534e', lineHeight: 20 }}>
                 {item}
               </Text>
             </View>
           ))}
 
-          <View style={{ height: 1, backgroundColor: '#e7e5e4', marginVertical: 14 }} />
+          <View style={{ height: 1, backgroundColor: '#ede9e4', marginVertical: 14 }} />
 
-          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1c1917', marginBottom: 10 }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', marginBottom: 10 }}>
             What is preserved
           </Text>
           {[
@@ -1151,7 +1151,7 @@ function ConfirmResetView({
             'Your ratings, notes, friendships, and yearly goal.',
           ].map((item, i) => (
             <View key={i} style={{ flexDirection: 'row', marginBottom: 8 }}>
-              <Text style={{ color: '#a8a29e', marginRight: 8, marginTop: 1 }}>·</Text>
+              <Text style={{ color: '#9e958d', marginRight: 8, marginTop: 1 }}>·</Text>
               <Text style={{ flex: 1, fontSize: 13, color: '#57534e', lineHeight: 20 }}>
                 {item}
               </Text>
@@ -1164,7 +1164,7 @@ function ConfirmResetView({
         onPress={onConfirm}
         style={{
           marginTop: 24,
-          backgroundColor: '#1c1917',
+          backgroundColor: '#231f1b',
           borderRadius: 12,
           paddingVertical: 15,
           alignItems: 'center',
@@ -1182,7 +1182,7 @@ function ConfirmResetView({
           paddingVertical: 13,
           borderRadius: 12,
           borderWidth: 1,
-          borderColor: '#e7e5e4',
+          borderColor: '#ede9e4',
           alignItems: 'center',
         }}
       >
@@ -1213,13 +1213,13 @@ function ResetDoneView({
           {result.removed > 0 && (
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
               <Text style={{ fontSize: 14, color: '#57534e' }}>Books removed</Text>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>{result.removed}</Text>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b' }}>{result.removed}</Text>
             </View>
           )}
           {result.preserved > 0 && (
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
               <Text style={{ fontSize: 14, color: '#57534e' }}>Native books kept</Text>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: '#1c1917' }}>{result.preserved}</Text>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b' }}>{result.preserved}</Text>
             </View>
           )}
           {result.removed === 0 && result.preserved === 0 && (
@@ -1227,7 +1227,7 @@ function ResetDoneView({
               No Goodreads-imported books were found. Everything looks clean.
             </Text>
           )}
-          <Text style={{ fontSize: 12, color: '#a8a29e', lineHeight: 18, marginTop: 4 }}>
+          <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18, marginTop: 4 }}>
             Import history and staging data cleared.
           </Text>
         </View>
@@ -1237,7 +1237,7 @@ function ResetDoneView({
         onPress={onImportNow}
         style={{
           marginTop: 24,
-          backgroundColor: '#1c1917',
+          backgroundColor: '#231f1b',
           borderRadius: 12,
           paddingVertical: 15,
           alignItems: 'center',
@@ -1270,7 +1270,7 @@ function ErrorView({ message, onReset }: { message: string; onReset: () => void 
       <TouchableOpacity
         onPress={onReset}
         style={{
-          backgroundColor: '#1c1917',
+          backgroundColor: '#231f1b',
           borderRadius: 12,
           paddingVertical: 13,
           alignItems: 'center',

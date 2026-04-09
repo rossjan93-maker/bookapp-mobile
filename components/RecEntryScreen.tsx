@@ -79,11 +79,11 @@ async function markRecEntrySeen(): Promise<void> {
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
-const BG   = '#faf9f7';
-const INK  = '#1c1917';
-const MUTED = '#a8a29e';
+const BG   = '#f5f1ec';
+const INK  = '#231f1b';
+const MUTED = '#9e958d';
 const SUB  = '#78716c';
-const BORD = '#e7e5e4';
+const BORD = '#ede9e4';
 const GRN  = '#15803d';
 
 // ─── Quick-intake types ───────────────────────────────────────────────────────
@@ -385,7 +385,7 @@ function EntryOptions({
         onPress={onIntake}
         activeOpacity={0.8}
         style={{
-          backgroundColor: '#fff',
+          backgroundColor: '#fefcf9',
           borderRadius:    18,
           borderWidth:     1.5,
           borderColor:     BORD,
@@ -398,7 +398,7 @@ function EntryOptions({
       >
         <View style={{
           width: 46, height: 46, borderRadius: 23,
-          backgroundColor: '#f5f5f4',
+          backgroundColor: '#ede9e4',
           alignItems: 'center', justifyContent: 'center',
           marginTop: 1,
         }}>
@@ -477,7 +477,7 @@ function IntakeGenres({
     >
       {/* Fiction / Nonfiction / Both tab strip */}
       <View style={{ paddingHorizontal: OB.padH, marginBottom: 12 }}>
-        <View style={{ flexDirection: 'row', backgroundColor: '#f5f5f4', borderRadius: 10, padding: 3 }}>
+        <View style={{ flexDirection: 'row', backgroundColor: '#ede9e4', borderRadius: 10, padding: 3 }}>
           {splitOpts.map(opt => (
             <TouchableOpacity
               key={opt.key}
@@ -624,7 +624,7 @@ function IntakeTaste({
             >
               <View style={{
                 width: 38, height: 38, borderRadius: 19,
-                backgroundColor: '#f5f5f4',
+                backgroundColor: '#ede9e4',
                 alignItems: 'center', justifyContent: 'center',
               }}>
                 <Ionicons name={opt.icon} size={18} color={isBoth ? MUTED : INK} />
@@ -693,7 +693,7 @@ function IntakeAnchor({
       <View style={{ paddingHorizontal: OB.padH, marginBottom: 12 }}>
         <View style={{
           flexDirection: 'row', alignItems: 'center',
-          backgroundColor: '#fff', borderRadius: 12,
+          backgroundColor: '#fefcf9', borderRadius: 12,
           borderWidth: 1.5, borderColor: BORD,
           paddingHorizontal: 12, gap: 8,
         }}>
@@ -724,7 +724,7 @@ function IntakeAnchor({
           {selected.cover ? (
             <Image source={{ uri: selected.cover }} style={{ width: 40, height: 60, borderRadius: 4 }} resizeMode="cover" />
           ) : (
-            <View style={{ width: 40, height: 60, borderRadius: 4, backgroundColor: '#f5f5f4' }} />
+            <View style={{ width: 40, height: 60, borderRadius: 4, backgroundColor: '#ede9e4' }} />
           )}
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 14, fontWeight: '700', color: INK }}>{selected.title}</Text>
@@ -757,7 +757,7 @@ function IntakeAnchor({
               {item.cover ? (
                 <Image source={{ uri: item.cover }} style={{ width: 36, height: 52, borderRadius: 4 }} resizeMode="cover" />
               ) : (
-                <View style={{ width: 36, height: 52, borderRadius: 4, backgroundColor: '#f5f5f4' }} />
+                <View style={{ width: 36, height: 52, borderRadius: 4, backgroundColor: '#ede9e4' }} />
               )}
               <View style={{ flex: 1 }}>
                 <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: '600', color: INK }}>{item.title}</Text>

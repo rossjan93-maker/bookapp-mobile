@@ -8,21 +8,21 @@ export function WtDemoInbox() {
   const { ref, onLayout } = useWalkthroughTarget('inbox_content');
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#faf9f7', paddingHorizontal: 20, paddingTop: 24 }}>
+    <View style={{ flex: 1, backgroundColor: '#f5f1ec', paddingHorizontal: 20, paddingTop: 24 }}>
       <View style={{ marginBottom: 24 }}>
         <Text style={{
-          fontSize: 28, fontWeight: '800', color: '#1c1917',
+          fontSize: 28, fontWeight: '800', color: '#231f1b',
           letterSpacing: -0.5, marginBottom: 5,
         }}>
           Inbox
         </Text>
-        <Text style={{ fontSize: 14, color: '#a8a29e' }}>
+        <Text style={{ fontSize: 14, color: '#9e958d' }}>
           Your recommendations from friends
         </Text>
       </View>
 
       <Text style={{
-        fontSize: 11, fontWeight: '700', color: '#a8a29e',
+        fontSize: 11, fontWeight: '700', color: '#9e958d',
         letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10,
       }}>
         New · 1
@@ -41,7 +41,7 @@ export function WtDemoInbox() {
           borderLeftColor: '#d4a574',
           padding: 16,
           marginBottom: 10,
-          shadowColor: '#1c1917',
+          shadowColor: '#231f1b',
           shadowOpacity: 0.22,
           shadowRadius: 22,
           shadowOffset: { width: 0, height: 8 },
@@ -67,7 +67,7 @@ export function WtDemoInbox() {
           />
           <View style={{ flex: 1, marginLeft: 14 }}>
             <Text style={{
-              fontWeight: '700', fontSize: 16, color: '#1c1917',
+              fontWeight: '700', fontSize: 16, color: '#231f1b',
               lineHeight: 22, marginBottom: 3,
             }}>
               Normal People
@@ -80,7 +80,7 @@ export function WtDemoInbox() {
 
         <View style={{
           backgroundColor: '#fffbf2',
-          borderTopWidth: 1, borderTopColor: '#f0ede8',
+          borderTopWidth: 1, borderTopColor: '#ede9e4',
           paddingTop: 10, paddingHorizontal: 10,
           paddingBottom: 8, borderRadius: 6, marginBottom: 14,
         }}>
@@ -96,10 +96,10 @@ export function WtDemoInbox() {
           style={{
             alignSelf: 'flex-start',
             paddingHorizontal: 16, paddingVertical: 9,
-            backgroundColor: '#1c1917', borderRadius: 8,
+            backgroundColor: '#231f1b', borderRadius: 8,
           }}
         >
-          <Text style={{ color: '#faf9f7', fontSize: 13, fontWeight: '700' }}>
+          <Text style={{ color: '#f5f1ec', fontSize: 13, fontWeight: '700' }}>
             Want to Read
           </Text>
         </TouchableOpacity>

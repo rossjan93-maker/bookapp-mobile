@@ -48,7 +48,7 @@ export default function OnboardingQuestionsPage() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#faf9f7' }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f1ec' }}>
       <RecEntryScreen
         initialPhase="intake_genres"
         onDone={handleDone}
