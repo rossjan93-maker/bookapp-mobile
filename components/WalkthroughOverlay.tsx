@@ -174,17 +174,6 @@ const FOCAL_CARD_SHADOW = {
   elevation:     20,
 };
 
-// HOME_PROGRESS_TRIM: height of the progress bar + text + bottom padding that is
-// excluded from the HomeFocalCard overlay render.  The measurement target in
-// WtDemoHome includes the full card (progress bar included), so this constant
-// is subtracted when computing the coach card's Y position — ensuring the arrow
-// tip lands at the bottom of the book-identity zone (cover + title + author),
-// not in the progress bar area at the bottom of the full card.
-//
-// Breakdown: progress bar 3px + marginBottom 4px + text ~13px + bottom pad 14px = 34px
-// We use 30 to keep a small intentional buffer at the card bottom edge.
-const HOME_PROGRESS_TRIM = 30;
-
 function HomeFocalCard({ rect }: { rect: TargetRect }) {
   return (
     // The focal card shows only the book-identity section (cover + title + author).
@@ -538,16 +527,9 @@ function CoachCard({
     // Arrow tip Y when coach is below: coachTop - ARROW_H = cardBottom + GAP - ARROW_H
     //   With GAP=14, ARROW_H=14 → tip lands exactly at cardBottom. Clean contact.
     //
-    // Home-specific: the measurement rect (from WtDemoHome) includes the progress
-    // bar + "Page X of Y" text, but HomeFocalCard renders only the cover+title row.
-    // Subtracting HOME_PROGRESS_TRIM aligns the coach card to the VISUAL bottom of
-    // the focal card (cover zone) rather than the measurement-rect bottom (progress
-    // zone).  No other step is affected.
-    //
     // Coach below:
-    const homeAdjust    = step === 'home' ? HOME_PROGRESS_TRIM : 0;
-    const belowTop      = cardRect.y + cardRect.height - homeAdjust + GAP;
-    const fitsBelow     = belowTop + COACH_H_EST < winH - SAFE_BOT;
+    const belowTop  = cardRect.y + cardRect.height + GAP;
+    const fitsBelow = belowTop + COACH_H_EST < winH - SAFE_BOT;
 
     // Coach above:
     const coachTopAbove = cardRect.y - GAP - COACH_H_EST;

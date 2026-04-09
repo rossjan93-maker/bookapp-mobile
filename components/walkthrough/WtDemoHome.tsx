@@ -54,7 +54,7 @@ export function WtDemoHome({ greeting }: { greeting: string | null }) {
             opacity: 0,
           }}
         >
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
             <CoverThumb
               url={DEMO_COVERS.thursdayMurderClub}
               title="The Thursday Murder Club"
@@ -74,18 +74,6 @@ export function WtDemoHome({ greeting }: { greeting: string | null }) {
             </View>
           </View>
 
-          <View style={{
-            height: 3, backgroundColor: '#e7e5e4',
-            borderRadius: 2, overflow: 'hidden', marginBottom: 4,
-          }}>
-            <View style={{
-              height: 3, width: '63%',
-              backgroundColor: '#1c1917', borderRadius: 2,
-            }} />
-          </View>
-          <Text style={{ fontSize: 10, color: '#a8a29e' }}>
-            Page 270 of 382 · 63%
-          </Text>
         </View>
       </View>
     </>
