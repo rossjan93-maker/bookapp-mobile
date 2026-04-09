@@ -919,35 +919,35 @@ export default function HomeScreen() {
                 );
               })()}
 
-              {/* ── 3. Book-grid progress bar ── */}
+              {/* ── 3. Bookshelf progress bar ── */}
               {(() => {
                 const total    = yearlyGoal ?? 0;
                 const read     = booksThisYear.length;
                 const expected = goalExpectedByNow;
+                // Deterministic height sequence — cycles so order is always consistent
+                const H = [28, 20, 34, 22, 30, 18, 26, 32, 24, 30, 20, 34, 22, 28, 18, 32];
                 return (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 3, marginBottom: 18 }}>
-                    {Array.from({ length: total }).map((_, i) => {
-                      const isRead   = i < read;
-                      const isBehind = !isRead && i < expected;
-                      const spineCol = isRead ? '#5a8a5e' : isBehind ? '#c4853a' : '#d6cec7';
-                      const bodyCol  = isRead ? '#7b9e7e' : isBehind ? '#e8a44a' : '#ede9e4';
-                      return (
-                        <View
-                          key={i}
-                          style={{
-                            width: 14, height: 18,
-                            flexDirection: 'row',
-                            borderRadius: 2,
-                            overflow: 'hidden',
-                          }}
-                        >
-                          {/* Spine */}
-                          <View style={{ width: 3, backgroundColor: spineCol }} />
-                          {/* Pages */}
-                          <View style={{ flex: 1, backgroundColor: bodyCol }} />
-                        </View>
-                      );
-                    })}
+                  <View style={{ marginBottom: 18 }}>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: 2 }}>
+                      {Array.from({ length: total }).map((_, i) => {
+                        const isRead   = i < read;
+                        const isBehind = !isRead && i < expected;
+                        const color    = isRead ? '#7b9e7e' : isBehind ? '#e8a44a' : '#d6cec7';
+                        return (
+                          <View
+                            key={i}
+                            style={{
+                              width: 5,
+                              height: H[i % H.length],
+                              backgroundColor: color,
+                              borderRadius: 1.5,
+                            }}
+                          />
+                        );
+                      })}
+                    </View>
+                    {/* Shelf */}
+                    <View style={{ height: 1.5, backgroundColor: '#c4b5a5', marginTop: 2, borderRadius: 1 }} />
                   </View>
                 );
               })()}
