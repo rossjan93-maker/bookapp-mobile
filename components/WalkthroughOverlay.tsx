@@ -174,22 +174,36 @@ const FOCAL_CARD_SHADOW = {
   elevation:     20,
 };
 
+// HOME_PROGRESS_TRIM: height of the progress bar + text + bottom padding that is
+// excluded from the HomeFocalCard overlay render.  The measurement target in
+// WtDemoHome includes the full card (progress bar included), so this constant
+// is subtracted when computing the coach card's Y position — ensuring the arrow
+// tip lands at the bottom of the book-identity zone (cover + title + author),
+// not in the progress bar area at the bottom of the full card.
+//
+// Breakdown: progress bar 3px + marginBottom 4px + text ~13px + bottom pad 14px = 34px
+// We use 30 to keep a small intentional buffer at the card bottom edge.
+const HOME_PROGRESS_TRIM = 30;
+
 function HomeFocalCard({ rect }: { rect: TargetRect }) {
   return (
+    // The focal card shows only the book-identity section (cover + title + author).
+    // Progress bar and "Page X of Y" text are intentionally omitted so the arrow
+    // points unambiguously at the book, not at reading progress metadata.
     <View style={{
-      position:       'absolute',
-      top:            rect.y,
-      left:           rect.x,
-      width:          rect.width,
+      position:        'absolute',
+      top:             rect.y,
+      left:            rect.x,
+      width:           rect.width,
       backgroundColor: '#fff',
-      borderRadius:   14,
-      padding:        14,
+      borderRadius:    14,
+      padding:         14,
       borderLeftWidth: 3,
       borderLeftColor: '#d4a574',
       ...FOCAL_CARD_SHADOW,
-      transform:      [{ scale: 1.02 }],
+      transform:       [{ scale: 1.02 }],
     }}>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
         <CoverThumb url={DEMO_COVERS.thursdayMurderClub} title="The Thursday Murder Club" width={44} height={64} />
         <View style={{ flex: 1, marginLeft: 10 }}>
           <Text style={{ fontSize: 14, fontWeight: '700', color: '#1c1917', lineHeight: 19, marginBottom: 3 }} numberOfLines={2}>
@@ -198,10 +212,6 @@ function HomeFocalCard({ rect }: { rect: TargetRect }) {
           <Text style={{ fontSize: 12, color: '#78716c' }}>Richard Osman</Text>
         </View>
       </View>
-      <View style={{ height: 3, backgroundColor: '#e7e5e4', borderRadius: 2, overflow: 'hidden', marginBottom: 4 }}>
-        <View style={{ height: 3, width: '63%', backgroundColor: '#1c1917', borderRadius: 2 }} />
-      </View>
-      <Text style={{ fontSize: 10, color: '#a8a29e' }}>Page 270 of 382 · 63%</Text>
     </View>
   );
 }
@@ -528,8 +538,15 @@ function CoachCard({
     // Arrow tip Y when coach is below: coachTop - ARROW_H = cardBottom + GAP - ARROW_H
     //   With GAP=14, ARROW_H=14 → tip lands exactly at cardBottom. Clean contact.
     //
+    // Home-specific: the measurement rect (from WtDemoHome) includes the progress
+    // bar + "Page X of Y" text, but HomeFocalCard renders only the cover+title row.
+    // Subtracting HOME_PROGRESS_TRIM aligns the coach card to the VISUAL bottom of
+    // the focal card (cover zone) rather than the measurement-rect bottom (progress
+    // zone).  No other step is affected.
+    //
     // Coach below:
-    const belowTop      = cardRect.y + cardRect.height + GAP;
+    const homeAdjust    = step === 'home' ? HOME_PROGRESS_TRIM : 0;
+    const belowTop      = cardRect.y + cardRect.height - homeAdjust + GAP;
     const fitsBelow     = belowTop + COACH_H_EST < winH - SAFE_BOT;
 
     // Coach above:
