@@ -1,0 +1,56 @@
+This is a good Phase 1 architecture pass, and I want to continue from here.
+
+But I do not want to treat this as complete yet. I want proof at the behavior level, not just boot-level proof.
+
+Next task: validate the new metadata provider layer end to end in the live Supabase-backed environment.
+
+Please do the following:
+
+1. Apply the migration in the real Supabase project and confirm the schema is live
+I want explicit confirmation that these columns now exist:
+- books.cover_source
+- books.metadata_confidence
+- book_source_links.raw_payload
+- book_source_links.last_fetched_at
+- book_source_links.fetch_status
+
+2. Prove the real write path works
+Pick one real book in my library that is missing metadata and run it through the repair/enrichment flow.
+Then show me:
+- the before state
+- the app/runtime logs during repair
+- the after state in Supabase
+- the exact row written to book_source_links
+I want to see that cover_source, metadata_confidence, raw_payload, last_fetched_at, and fetch_status are actually persisted.
+
+3. Prove fallback behavior works
+Test and show evidence for:
+- no cover returned
+- no description returned
+- provider fetch failure
+In each case I want confirmation that:
+- the UI still renders cleanly
+- no broken empty block appears
+- no recommendation/library/onboarding flow fails
+
+4. Prove low-confidence metadata does not overwrite strong canonical data
+Create or find one case where canonical book fields are already populated well, but provider confidence is low.
+Show that low-confidence provider metadata does not clobber the existing canonical title/author/description.
+
+5. Show me the exact overwrite rules now in code
+I want a concise explanation of:
+- which fields can be filled when empty
+- which fields can be upgraded
+- which fields are protected from overwrite
+- how confidence affects those decisions
+
+6. Keep scope tight
+Do not move on to CDN/proxy, secondary provider support, or broad UI redesign yet.
+This round is only about proving the architecture works correctly and safely.
+
+What I want back:
+- exact files changed in this validation pass
+- screenshots or copied query results from Supabase proving the writes
+- concrete runtime logs
+- one example each of success path, missing-cover path, missing-description path, and failed-fetch path
+- confirmation that existing app flows still work after migration
