@@ -924,29 +924,35 @@ export default function HomeScreen() {
                 const total    = yearlyGoal ?? 0;
                 const read     = booksThisYear.length;
                 const expected = goalExpectedByNow;
-                // Deterministic height sequence — cycles so order is always consistent
+                // Deterministic height sequence — 16-step cycle, 18–34px range
                 const H = [28, 20, 34, 22, 30, 18, 26, 32, 24, 30, 20, 34, 22, 28, 18, 32];
+                // Two books get a slight tilt — positions chosen to feel naturally messy
+                const tiltA = 3;
+                const tiltB = total > 8 ? Math.floor(total * 0.62) : 7;
                 return (
                   <View style={{ marginBottom: 18 }}>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: 2 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2 }}>
                       {Array.from({ length: total }).map((_, i) => {
                         const isRead   = i < read;
                         const isBehind = !isRead && i < expected;
                         const color    = isRead ? '#7b9e7e' : isBehind ? '#e8a44a' : '#d6cec7';
+                        const h        = H[i % H.length];
+                        const rotate   = i === tiltA ? '7deg' : i === tiltB ? '-6deg' : '0deg';
                         return (
                           <View
                             key={i}
                             style={{
-                              width: 5,
-                              height: H[i % H.length],
+                              flex: 1,
+                              height: h,
                               backgroundColor: color,
                               borderRadius: 1.5,
+                              transform: [{ rotate }],
                             }}
                           />
                         );
                       })}
                     </View>
-                    {/* Shelf */}
+                    {/* Shelf line */}
                     <View style={{ height: 1.5, backgroundColor: '#c4b5a5', marginTop: 2, borderRadius: 1 }} />
                   </View>
                 );
