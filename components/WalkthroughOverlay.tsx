@@ -649,21 +649,14 @@ function CoachCard({
         </>
       )}
 
-      {/* Step progress dots + skip */}
+      {/* Sage accent stripe */}
+      <View style={{ height: 3, borderRadius: 2, backgroundColor: '#7b9e7e', marginBottom: 14 }} />
+
+      {/* Step counter + skip */}
       <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-        <View style={{ flex: 1, flexDirection: 'row', gap: 5 }}>
-          {Array.from({ length: totalSteps }).map((_, i) => (
-            <View
-              key={i}
-              style={{
-                width:           i === stepIdx ? 18 : 5,
-                height:          4,
-                borderRadius:    2,
-                backgroundColor: i <= stepIdx ? '#231f1b' : '#ddd8d2',
-              }}
-            />
-          ))}
-        </View>
+        <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 1.2, textTransform: 'uppercase' }}>
+          {String(stepIdx + 1).padStart(2, '0')} / {String(totalSteps).padStart(2, '0')}
+        </Text>
         <TouchableOpacity
           onPress={onSkip}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -677,12 +670,12 @@ function CoachCard({
       {/* Title */}
       <Text
         style={{
-          fontSize:     15,
-          fontWeight:   '700',
-          color:        '#231f1b',
-          lineHeight:   21,
-          marginBottom: 5,
-          letterSpacing: -0.2,
+          fontSize:      16,
+          fontWeight:    '800',
+          color:         '#231f1b',
+          lineHeight:    22,
+          marginBottom:  6,
+          letterSpacing: -0.4,
         }}
       >
         {def.title}
@@ -712,7 +705,7 @@ function CoachCard({
         }}
       >
         <Text style={{ color: '#f5f1ec', fontSize: 13, fontWeight: '700', letterSpacing: 0.1 }}>
-          {def.ctaLabel}
+          {def.ctaLabel} →
         </Text>
       </TouchableOpacity>
     </Animated.View>

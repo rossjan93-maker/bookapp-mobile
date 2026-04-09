@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -124,14 +125,39 @@ function isResendRateLimitError(error: { message?: string; status?: number } | n
 const INPUT: object = {
   width: '100%' as const,
   borderWidth: 1,
-  borderColor: '#ede9e4',
+  borderColor: '#e8e3dc',
   borderRadius: 12,
   padding: 14,
   fontSize: 15,
   color: '#231f1b',
-  backgroundColor: '#fefcf9',
+  backgroundColor: '#f5f1ec',
   marginBottom: 10,
 };
+
+// ─── Book glyph mark — 3 stacked horizontal spines, static identity mark ─────
+function BookGlyph() {
+  return (
+    <View style={{ alignItems: 'center', marginBottom: 16 }}>
+      {[
+        { w: 28, c: '#7b9e7e', dx:  1 },
+        { w: 36, c: '#b5c4b1', dx: -2 },
+        { w: 44, c: '#c9bdb0', dx:  1 },
+      ].map((b, i) => (
+        <View
+          key={i}
+          style={{
+            width:           b.w,
+            height:          6,
+            borderRadius:    2,
+            backgroundColor: b.c,
+            marginBottom:    i < 2 ? 3 : 0,
+            transform:       [{ translateX: b.dx }],
+          }}
+        />
+      ))}
+    </View>
+  );
+}
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
 export default function LoginScreen() {
@@ -481,6 +507,21 @@ export default function LoginScreen() {
   const inTabMode   = mode === 'signin' || mode === 'signup';
   const inEmailMode = mode === 'forgot'  || mode === 'resend';
 
+  // ── Entrance animations ───────────────────────────────────────────────────────
+  const headerOpacity = useRef(new Animated.Value(0)).current;
+  const headerSlide   = useRef(new Animated.Value(-14)).current;
+  const formOpacity   = useRef(new Animated.Value(0)).current;
+  const formSlide     = useRef(new Animated.Value(22)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(headerOpacity, { toValue: 1, duration: 520, useNativeDriver: false }),
+      Animated.timing(headerSlide,   { toValue: 0, duration: 520, useNativeDriver: false }),
+      Animated.timing(formOpacity,   { toValue: 1, duration: 600, delay: 140, useNativeDriver: false }),
+      Animated.timing(formSlide,     { toValue: 0, duration: 600, delay: 140, useNativeDriver: false }),
+    ]).start();
+  }, []);
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: '#f5f1ec' }}
@@ -499,74 +540,89 @@ export default function LoginScreen() {
       keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
       showsVerticalScrollIndicator={false}
     >
-      {/* ── App name ─────────────────────────────────────────────────────────── */}
-      <Text style={{
-        fontSize: 28,
-        fontWeight: '800',
-        color: '#231f1b',
-        letterSpacing: -0.6,
-        marginBottom: 8,
+      {/* ── App header — animated entrance ────────────────────────────────────── */}
+      <Animated.View style={{
+        alignItems:  'center',
+        marginBottom: inTabMode ? (mode === 'signup' ? 20 : 28) : 22,
+        opacity:     headerOpacity,
+        transform:   [{ translateY: headerSlide }],
       }}>
-        readstack
-      </Text>
-      <Text style={{ fontSize: 14, color: '#9e958d', marginBottom: inTabMode ? (mode === 'signup' ? 10 : 36) : 28 }}>
-        Your reading, together.
-      </Text>
-
-      {/* ── Goodreads nudge (signup only) ────────────────────────────────────── */}
-      {mode === 'signup' && (
-        <Text style={{ fontSize: 12, color: '#a09588', marginBottom: 28, textAlign: 'center', lineHeight: 18 }}>
-          Already on Goodreads? You can import your library right after signing up.
+        <BookGlyph />
+        <Text style={{
+          fontSize:      46,
+          fontWeight:    '800',
+          color:         '#231f1b',
+          letterSpacing: -1.5,
+          lineHeight:    52,
+          marginBottom:  6,
+        }}>
+          readstack
         </Text>
-      )}
+        <View style={{ width: 32, height: 3, borderRadius: 2, backgroundColor: '#7b9e7e', marginBottom: 10 }} />
+        <Text style={{ fontSize: 12, color: '#9e958d', letterSpacing: 0.8, textTransform: 'uppercase' }}>
+          your reading, together.
+        </Text>
+        {mode === 'signup' && (
+          <Text style={{ fontSize: 12, color: '#a09588', marginTop: 12, textAlign: 'center', lineHeight: 18, maxWidth: 260 }}>
+            Already on Goodreads? You can import your library right after signing up.
+          </Text>
+        )}
+      </Animated.View>
+
+      {/* ── Form card — floats above the ivory background ─────────────────────── */}
+      <Animated.View style={{
+        width:           '100%',
+        backgroundColor: '#fefcf9',
+        borderRadius:    24,
+        paddingHorizontal: 22,
+        paddingTop:      22,
+        paddingBottom:   24,
+        shadowColor:     '#231f1b',
+        shadowOpacity:   0.07,
+        shadowRadius:    24,
+        shadowOffset:    { width: 0, height: 8 },
+        elevation:       5,
+        opacity:         formOpacity,
+        transform:       [{ translateY: formSlide }],
+      }}>
 
       {/* ── Secondary flow label ─────────────────────────────────────────────── */}
       {inEmailMode && (
         <Text style={{
-          fontSize: 13,
-          fontWeight: '600',
-          color: '#6b635c',
+          fontSize:     20,
+          fontWeight:   '800',
+          color:        '#231f1b',
+          letterSpacing: -0.5,
           marginBottom: 18,
-          alignSelf: 'flex-start',
+          alignSelf:    'flex-start',
         }}>
-          {mode === 'forgot' ? 'Reset your password' : 'Resend confirmation email'}
+          {mode === 'forgot' ? 'Reset your password' : 'Resend confirmation'}
         </Text>
       )}
 
-      {/* ── Mode toggle (signin / signup) ────────────────────────────────────── */}
+      {/* ── Mode toggle — editorial underline tabs ────────────────────────────── */}
       {inTabMode && (
-        <View style={{
-          flexDirection: 'row',
-          backgroundColor: '#ede9e2',
-          borderRadius: 12,
-          padding: 3,
-          marginBottom: 24,
-          width: '100%',
-        }}>
+        <View style={{ flexDirection: 'row', gap: 24, marginBottom: 22 }}>
           {(['signin', 'signup'] as const).map(m => (
             <TouchableOpacity
               key={m}
               onPress={() => switchMode(m)}
-              style={{
-                flex: 1,
-                paddingVertical: 9,
-                borderRadius: 10,
-                backgroundColor: mode === m ? '#fefcf9' : 'transparent',
-                alignItems: 'center',
-                shadowColor: mode === m ? '#000' : 'transparent',
-                shadowOpacity: mode === m ? 0.06 : 0,
-                shadowRadius: mode === m ? 4 : 0,
-                shadowOffset: { width: 0, height: 1 },
-                elevation: mode === m ? 1 : 0,
-              }}
+              hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
             >
               <Text style={{
-                fontSize: 14,
-                fontWeight: mode === m ? '600' : '400',
-                color: mode === m ? '#231f1b' : '#6b635c',
+                fontSize:      17,
+                fontWeight:    mode === m ? '700' : '400',
+                color:         mode === m ? '#231f1b' : '#9e958d',
+                letterSpacing: mode === m ? -0.3 : 0,
               }}>
-                {m === 'signin' ? 'Sign In' : 'Create Account'}
+                {m === 'signin' ? 'Sign in' : 'Create account'}
               </Text>
+              <View style={{
+                height:          2,
+                borderRadius:    1,
+                backgroundColor: mode === m ? '#7b9e7e' : 'transparent',
+                marginTop:       5,
+              }} />
             </TouchableOpacity>
           ))}
         </View>
@@ -585,10 +641,10 @@ export default function LoginScreen() {
               alignItems:       'center',
               justifyContent:   'center',
               borderWidth:      1,
-              borderColor:      '#ede9e4',
+              borderColor:      '#e8e3dc',
               borderRadius:     12,
               paddingVertical:  13,
-              backgroundColor:  '#fefcf9',
+              backgroundColor:  '#f5f1ec',
               gap:              10,
               opacity:          socialLoading !== null || loading ? 0.65 : 1,
             }}
@@ -699,9 +755,9 @@ export default function LoginScreen() {
             flexDirection: 'row',
             alignItems: 'center',
             borderWidth: 1,
-            borderColor: '#ede9e4',
+            borderColor: '#e8e3dc',
             borderRadius: 12,
-            backgroundColor: '#fefcf9',
+            backgroundColor: '#f5f1ec',
             marginBottom: 10,
             paddingHorizontal: 13,
           }}>
@@ -740,9 +796,9 @@ export default function LoginScreen() {
           flexDirection: 'row',
           alignItems: 'center',
           borderWidth: 1,
-          borderColor: '#ede9e4',
+          borderColor: '#e8e3dc',
           borderRadius: 12,
-          backgroundColor: '#fefcf9',
+          backgroundColor: '#f5f1ec',
           marginBottom: 10,
           paddingRight: 4,
         }}>
@@ -775,9 +831,9 @@ export default function LoginScreen() {
           flexDirection: 'row',
           alignItems: 'center',
           borderWidth: 1,
-          borderColor: '#ede9e4',
+          borderColor: '#e8e3dc',
           borderRadius: 12,
-          backgroundColor: '#fefcf9',
+          backgroundColor: '#f5f1ec',
           marginBottom: 18,
           paddingRight: 4,
         }}>
@@ -826,11 +882,11 @@ export default function LoginScreen() {
             alignItems: 'center',
           }}
         >
-          <Text style={{ color: '#f5f1ec', fontSize: 15, fontWeight: '700' }}>
-            {mode === 'signin'  ? 'Sign In' :
-             mode === 'signup'  ? 'Create Account' :
-             mode === 'forgot'  ? (emailSent ? 'Link sent' : 'Send reset link') :
-             (emailSent ? 'Email sent' : 'Resend confirmation')}
+          <Text style={{ color: '#f5f1ec', fontSize: 15, fontWeight: '700', letterSpacing: -0.2 }}>
+            {mode === 'signin'  ? 'Sign in →' :
+             mode === 'signup'  ? 'Create account →' :
+             mode === 'forgot'  ? (emailSent ? 'Link sent ✓' : 'Send reset link →') :
+             (emailSent ? 'Email sent ✓' : 'Resend confirmation →')}
           </Text>
         </TouchableOpacity>
       )}
@@ -850,6 +906,8 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
       )}
+
+      </Animated.View>{/* end form card */}
 
       {/* ── Status message ────────────────────────────────────────────────────── */}
       {status !== '' && !duplicateEmail && !emailConfirmPending && !signUpRateLimited && (

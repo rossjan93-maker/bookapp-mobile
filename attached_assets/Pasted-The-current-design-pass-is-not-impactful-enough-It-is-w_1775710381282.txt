@@ -1,0 +1,132 @@
+The current design pass is not impactful enough.
+
+It is warmer, but it still feels too restrained and not distinctive enough.
+This app needs to feel:
+- stylish
+- premium
+- playful
+- fun
+- memorable
+- curated
+
+Not childish.
+Not gimmicky.
+Not generic SaaS.
+Not just beige luxury.
+
+The direction I want is:
+premium editorial + playful sophistication.
+
+==================================================
+WHAT IS NOT WORKING
+==================================================
+
+The current pass feels mostly like token tweaking:
+- warmer palette
+- softer corners
+- nicer buttons
+
+That is not enough.
+
+It still lacks:
+- personality
+- charm
+- visual surprise
+- stronger identity
+- fun
+
+I want a bigger leap in feel.
+
+==================================================
+NEW DESIGN DIRECTION
+==================================================
+
+The app should feel like:
+- a beautifully curated reading world
+- stylish and taste-driven
+- premium, but not stiff
+- feminine in a modern, confident way
+- playful in motion and composition
+- delightful to move through
+
+Think:
+- editorial
+- expressive
+- bookish
+- fashion-adjacent
+- charming
+- polished
+
+==================================================
+WHAT TO CHANGE
+==================================================
+
+I want a more substantial redesign pass focused on:
+
+1. SHAPE LANGUAGE
+- make cards feel more distinctive
+- less generic rounded rectangles everywhere
+- introduce more interesting composition, layering, framing, or silhouette
+- keep it elegant, but not plain
+
+2. TYPOGRAPHY
+- stronger headline moments
+- more expressive hierarchy
+- make key screens feel designed, not just styled
+- auth and onboarding should feel much more charismatic
+
+3. MOTION / DELIGHT
+- add tasteful playful motion where appropriate
+- loading, onboarding, transitions, reveals, empty states
+- not busy, but more alive
+
+4. VISUAL ACCENTS
+- introduce subtle original visual motifs tied to books/reading/stacking/curation
+- make the app feel memorable
+- not brand-copying, not decorative clutter
+
+5. FUN
+- right now it feels serious and polished, but not fun
+- I want more joy and charm in the experience
+- the app should feel like something people want to spend time in
+
+==================================================
+WHERE TO APPLY THIS FIRST
+==================================================
+
+Start with the highest-visibility surfaces:
+1. onboarding
+2. login / sign-up
+3. walkthrough overlay
+4. tab home surfaces / hero cards / key cards
+5. loading and transitional states
+
+==================================================
+IMPORTANT GUARDRAILS
+==================================================
+
+Do NOT:
+- make it childish
+- make it loud
+- make it tacky
+- make it overly decorative
+- copy a specific luxury brand
+
+Do:
+- make it feel original
+- make it feel stylish and premium
+- make it feel more fun and emotionally engaging
+- make the design system noticeably more distinctive
+
+==================================================
+BEFORE CODING
+==================================================
+
+Tell me:
+1. why the current pass still feels too subtle
+2. what bigger visual moves you will make
+3. what “stylish + fun” means in concrete UI terms for this app
+4. which screens/components will get the most noticeable redesign
+5. how you will increase personality without losing polish
+
+Then implement a more substantial redesign pass.

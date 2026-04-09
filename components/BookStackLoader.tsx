@@ -117,8 +117,8 @@ export function BookStackLoader({ size = 'lg' }: { size?: 'sm' | 'lg' }) {
   const breatheAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    const STAGGER  = 180;   // ms between each book dropping in
-    const DURATION = 380;   // ms for each book to settle
+    const STAGGER  = 140;   // ms between each book dropping in
+    const DURATION = 420;   // ms for each book to settle
 
     // Each book: delay + drop. Easing.out gives the natural deceleration of
     // something settling under gravity — heavier feel than a linear slide.
@@ -128,7 +128,7 @@ export function BookStackLoader({ size = 'lg' }: { size?: 'sm' | 'lg' }) {
         Animated.timing(buildAnims[i], {
           toValue:         1,
           duration:        DURATION,
-          easing:          Easing.out(Easing.quad),
+          easing:          Easing.out(Easing.back(1.6)),
           useNativeDriver: false,
         }),
       ])
@@ -142,14 +142,14 @@ export function BookStackLoader({ size = 'lg' }: { size?: 'sm' | 'lg' }) {
       Animated.loop(
         Animated.sequence([
           Animated.timing(breatheAnim, {
-            toValue:         1.018,
-            duration:        1400,
+            toValue:         1.04,
+            duration:        1600,
             easing:          Easing.inOut(Easing.sin),
             useNativeDriver: false,
           }),
           Animated.timing(breatheAnim, {
             toValue:         1.0,
-            duration:        1400,
+            duration:        1600,
             easing:          Easing.inOut(Easing.sin),
             useNativeDriver: false,
           }),

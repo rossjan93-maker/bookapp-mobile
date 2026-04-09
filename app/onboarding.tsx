@@ -153,10 +153,10 @@ export default function OnboardingScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
               <Text
                 style={{
-                  fontSize:      42,
+                  fontSize:      50,
                   fontWeight:    '800',
                   color:         INK,
-                  letterSpacing: -1,
+                  letterSpacing: -1.5,
                 }}
               >
                 readstack
@@ -177,15 +177,16 @@ export default function OnboardingScreen() {
             {/* Editorial tagline */}
             <Text
               style={{
-                fontSize:      17,
+                fontSize:      14,
                 color:         SUB,
-                lineHeight:    26,
+                lineHeight:    22,
                 textAlign:     'center',
-                letterSpacing: 0.1,
-                maxWidth:      280,
+                letterSpacing: 0.6,
+                textTransform: 'uppercase',
+                maxWidth:      240,
               }}
             >
-              Your reading, together.
+              your reading, together.
             </Text>
           </Animated.View>
         </View>
@@ -209,8 +210,8 @@ export default function OnboardingScreen() {
               alignItems:      'center',
             }}
           >
-            <Text style={{ color: BG, fontSize: 16, fontWeight: '800', letterSpacing: 0.2 }}>
-              Show me around →
+            <Text style={{ color: BG, fontSize: 16, fontWeight: '800', letterSpacing: -0.2 }}>
+              Let's go →
             </Text>
           </TouchableOpacity>
         </Animated.View>
