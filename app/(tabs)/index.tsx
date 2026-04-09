@@ -680,15 +680,6 @@ export default function HomeScreen() {
   const goalExpectedPct    = yearlyGoal ? Math.min(100, Math.round((goalExpectedByNow / yearlyGoal) * 100)) : 0;
   const goalIsAhead        = goalSurplus >= 2;
   const goalIsBehind       = goalDeficit >= 2;
-  const goalDirIcon        = goalIsAhead ? '↑' : goalIsBehind ? '↓' : '→';
-  const goalDirColor       = goalIsAhead ? '#15803d' : goalIsBehind ? '#d97706' : '#78716c';
-  const goalStatusText     = goalIsAhead
-    ? `You're ${goalSurplus} book${goalSurplus !== 1 ? 's' : ''} ahead of pace`
-    : goalIsBehind
-    ? `You're ${goalDeficit} book${goalDeficit !== 1 ? 's' : ''} behind pace`
-    : goalExpectedByNow === 0
-    ? 'Keep reading to build your pace'
-    : "You're right on pace";
   const goalProjected: number | null =
     booksThisYear.length > 0 && goalDayOfYear >= 14
       ? Math.round(booksThisYear.length / (goalDayOfYear / 365))
@@ -913,55 +904,88 @@ export default function HomeScreen() {
               shadowOffset: { width: 0, height: 2 },
               elevation: 2,
             }}>
-              {/* ── 1. Headline + directional icon ── */}
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 24, fontWeight: '800', color: '#231f1b', letterSpacing: -0.6 }}>
-                    {booksThisYear.length}
-                    <Text style={{ fontSize: 15, fontWeight: '400', color: '#9e958d' }}> / {yearlyGoal} books</Text>
-                  </Text>
-                </View>
-                <Text style={{ fontSize: 22, color: goalDirColor, marginLeft: 10, marginTop: 3 }}>
-                  {goalDirIcon}
+              {/* ── 1. Headline ── */}
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12 }}>
+                <Text style={{ fontSize: 24, fontWeight: '800', color: '#231f1b', letterSpacing: -0.6 }}>
+                  {booksThisYear.length}
+                  <Text style={{ fontSize: 15, fontWeight: '400', color: '#9e958d' }}> / {yearlyGoal} books</Text>
                 </Text>
               </View>
 
-              {/* ── 2. Status statement ── */}
-              <Text style={{ fontSize: 13, color: goalDirColor, fontWeight: '500', marginBottom: 14 }}>
-                {goalStatusText}
-              </Text>
-
-              {/* ── 3. Goal-aware progress bar ── */}
-              <View style={{
-                height: 7,
-                backgroundColor: '#ede9e4',
-                borderRadius: 4,
-                marginBottom: 14,
-                overflow: 'hidden',
-              }}>
-                <Animated.View style={{
-                  height: 7,
-                  width: barFillAnim.interpolate({
-                    inputRange:  [0, 100],
-                    outputRange: ['0%', '100%'],
-                    extrapolate: 'clamp',
-                  }),
-                  backgroundColor: '#231f1b',
-                  borderRadius: 4,
-                }} />
-                {goalExpectedPct > 0 && goalExpectedPct < 100 && (
+              {/* ── 2. Pace status badge ── */}
+              {(() => {
+                const isAhead  = goalIsAhead;
+                const isBehind = goalIsBehind;
+                const bg     = isAhead ? '#f0fdf4' : isBehind ? '#fffbeb' : '#f5f3ef';
+                const border  = isAhead ? '#bbf7d0' : isBehind ? '#fde68a' : '#e2ddd9';
+                const color   = isAhead ? '#15803d' : isBehind ? '#92400e' : '#6b635c';
+                const symbol  = isAhead ? '↑' : isBehind ? '↓' : '→';
+                const label   = isAhead
+                  ? `${goalSurplus} book${goalSurplus !== 1 ? 's' : ''} ahead`
+                  : isBehind
+                  ? `${goalDeficit} book${goalDeficit !== 1 ? 's' : ''} behind`
+                  : goalExpectedByNow === 0 ? 'Just getting started' : 'Right on pace';
+                return (
                   <View style={{
-                    position: 'absolute',
-                    left: `${goalExpectedPct}%`,
-                    top: 0,
-                    bottom: 0,
-                    width: 2,
-                    backgroundColor: goalActualPct >= goalExpectedPct
-                      ? 'rgba(255,255,255,0.55)'
-                      : 'rgba(0,0,0,0.22)',
-                  }} />
-                )}
-              </View>
+                    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
+                    backgroundColor: bg, borderWidth: 1, borderColor: border,
+                    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
+                    marginBottom: 18, gap: 5,
+                  }}>
+                    <Text style={{ fontSize: 12, color, fontWeight: '700' }}>{symbol}</Text>
+                    <Text style={{ fontSize: 12, color, fontWeight: '600' }}>{label}</Text>
+                  </View>
+                );
+              })()}
+
+              {/* ── 3. Premium progress bar ── */}
+              {(() => {
+                const fillColor = goalIsAhead ? '#7b9e7e' : goalIsBehind ? '#e8a44a' : '#231f1b';
+                return (
+                  <View style={{ marginBottom: 18 }}>
+                    <View style={{
+                      height: 10,
+                      backgroundColor: '#ede9e4',
+                      borderRadius: 99,
+                      overflow: 'visible',
+                    }}>
+                      {/* Fill */}
+                      <Animated.View style={{
+                        position: 'absolute',
+                        top: 0, left: 0, bottom: 0,
+                        width: barFillAnim.interpolate({
+                          inputRange:  [0, 100],
+                          outputRange: ['0%', '100%'],
+                          extrapolate: 'clamp',
+                        }),
+                        backgroundColor: fillColor,
+                        borderRadius: 99,
+                      }} />
+                      {/* Expected-now marker: dot with white border at the pace position */}
+                      {goalExpectedPct > 3 && goalExpectedPct < 97 && (
+                        <View style={{
+                          position: 'absolute',
+                          left: `${goalExpectedPct}%`,
+                          top: -1,
+                          width: 12,
+                          height: 12,
+                          borderRadius: 6,
+                          backgroundColor: goalActualPct >= goalExpectedPct ? 'rgba(255,255,255,0.7)' : '#c4b5a5',
+                          borderWidth: 2,
+                          borderColor: '#fefcf9',
+                          marginLeft: -6,
+                          zIndex: 2,
+                        }} />
+                      )}
+                    </View>
+                    {/* Axis labels */}
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
+                      <Text style={{ fontSize: 10, color: '#c4b5a5', letterSpacing: 0.2 }}>START</Text>
+                      <Text style={{ fontSize: 10, color: '#c4b5a5', letterSpacing: 0.2 }}>GOAL</Text>
+                    </View>
+                  </View>
+                );
+              })()}
 
               {/* ── 4. Finish projection ── */}
               {goalProjected !== null && (
@@ -970,11 +994,11 @@ export default function HomeScreen() {
                 </Text>
               )}
 
-              {/* ── 5. Compact pace chip + expand indicator ── */}
+              {/* ── 5. Footer: pace rate + expand ── */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                 {yearAvgPace !== null ? (
                   <Text style={{ fontSize: 11, color: '#9e958d' }}>
-                    {`~${yearAvgPace} pages/day · ${goalIsAhead ? 'Ahead of pace' : goalIsBehind ? 'Behind pace' : 'On pace'}`}
+                    {`~${yearAvgPace} pages/day`}
                   </Text>
                 ) : <View />}
                 {booksThisYear.length > 0 && (

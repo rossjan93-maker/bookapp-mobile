@@ -1,0 +1,88 @@
+I want to refine the Reading Goal card on Home.
+
+Overall:
+I like almost everything about this component except the progress bar and the way the pace status is expressed.
+
+Right now the progress bar feels cheap / generic.
+The “You’re right on pace” line also needs a stronger visual treatment so users can immediately tell whether they are:
+- ahead of pace
+- on pace
+- behind pace
+
+==================================================
+WHAT I WANT
+==================================================
+
+1. UPGRADE THE PROGRESS BAR
+The current bar feels too flat and utilitarian.
+
+I want it to feel more premium and designed.
+
+Possible directions:
+- a more refined meter style
+- better track/fill treatment
+- more intentional end caps / shape
+- subtle depth or layering
+- richer fill behavior
+- cleaner animation if animation exists
+
+Important:
+- do NOT make it look like a fitness app or analytics dashboard
+- do NOT make it glossy or gimmicky
+- it should feel elegant, premium, and bookish
+
+2. MAKE PACE STATUS VISUALLY DISTINCT
+The pace line needs to stand out more.
+
+I want a clearly differentiated treatment for:
+- ahead of pace
+- on pace
+- behind pace
+
+This can be through:
+- color
+- iconography
+- chip/badge treatment
+- subtle accent container
+- or another elegant signal
+
+But it must be clearly scannable.
+A user should instantly understand their status.
+
+Direction:
+- ahead of pace = positive, satisfying, premium
+- on pace = balanced, calm, confident
+- behind pace = gentle but noticeable, not alarming
+
+3. KEEP THE CARD PREMIUM
+I do NOT want this to feel overly functional or dashboard-like.
+It should still feel stylish and curated.
+
+==================================================
+WHAT TO REVIEW BEFORE CODING
+==================================================
+
+Please audit:
+1. the current progress bar implementation
+2. the current pace-status line treatment
+3. what exactly makes the bar feel cheap right now
+4. what premium progress-bar treatment you will use instead
+5. how you will visually distinguish ahead / on / behind pace
+
+==================================================
+WHAT I WANT IMPLEMENTED
+==================================================
+
+- improved premium progress bar design
+- improved status treatment for pace states
+- maintain strong readability
+- keep the rest of the Reading Goal card intact unless a small supporting adjustment is needed
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- progress bar feels premium, not generic
+- pace status is immediately recognizable
+- ahead / on / behind pace are clearly differentiated
+- card still feels elegant and cohesive with the app
