@@ -327,225 +327,195 @@ export function RecCard({
 
   const collapsedReason = buildExplanation(book, hasSeriesMeta);
 
-  const CARD_H = 168;
-  const COVER_W = featured ? 122 : 48;
-  const COVER_H = featured ? CARD_H : 70;
-
-  const variantBadge = (() => {
-    const bd = book._score_breakdown;
-    const isStarter      = bd.series_label === 'series_starter' || bd.saga_label === 'saga_entry';
-    const isContinuation = bd.series_label === 'series_continuation' || bd.saga_label === 'saga_continuation' || bd.saga_label === 'saga_next_series';
-    const isAuthorMatch  = !isStarter && !isContinuation && (bd.author_books_read ?? 0) >= 2;
-    if (isStarter)      return <VariantBadge label="Start here"      bg="#fef3c7" color="#92400e" />;
-    if (isContinuation) return <VariantBadge label="Continue series" bg="#f0fdf4" color="#166534" />;
-    if (isAuthorMatch)  return <VariantBadge label="Author match"    bg="#f5f3ff" color="#5b21b6" />;
-    return null;
-  })();
-
-  const confidenceDot = (() => {
-    const tier = book.confidence;
-    const col = tier === 'high' ? '#7b9e7e' : tier === 'medium' ? '#c4b5a5' : '#d6cec7';
-    return <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: col, marginRight: 5, marginTop: 1 }} />;
-  })();
-
   return (
     <Animated.View style={{
       opacity,
       transform: [{ translateY: cardTranslateY }, { scale: cardScale }],
       backgroundColor: '#fefcf9',
-      borderRadius: featured ? 22 : 14,
+      borderRadius: 14,
       marginBottom: 8,
-      shadowColor: '#231f1b',
-      shadowOpacity: featured ? 0.10 : 0.04,
-      shadowRadius: featured ? 18 : 6,
-      shadowOffset: { width: 0, height: featured ? 5 : 1 },
-      elevation: featured ? 4 : 1,
+      shadowColor: '#000',
+      shadowOpacity: featured ? 0.07 : 0.04,
+      shadowRadius: featured ? 10 : 6,
+      shadowOffset: { width: 0, height: featured ? 2 : 1 },
+      elevation: featured ? 2 : 1,
       overflow: 'hidden',
+      ...(featured ? { borderWidth: 1, borderColor: '#ede9e4' } : {}),
     }}>
+      {featured && <View style={{ height: 3, backgroundColor: '#7b9e7e' }} />}
 
-      {/* ── Card body ── */}
       <TouchableOpacity
         onPress={handleCardPress}
-        activeOpacity={0.78}
-        style={featured
-          ? { flexDirection: 'row', height: CARD_H }
-          : { flexDirection: 'row', alignItems: 'flex-start', padding: 12 }
-        }
+        activeOpacity={0.75}
+        style={{ padding: featured ? 14 : 12, flexDirection: 'row', alignItems: 'flex-start' }}
       >
-        {featured ? (
-          <>
-            {/* LEFT: text column — sits in full height */}
-            <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, justifyContent: 'space-between' }}>
-              <View>
-                <Text
-                  style={{ fontSize: 17, fontWeight: '800', color: '#231f1b', lineHeight: 23, letterSpacing: -0.4, marginBottom: 4 }}
-                  numberOfLines={2}
-                >
-                  {book.title}
-                </Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-                  {confidenceDot}
-                  <Text style={{ fontSize: 12, color: '#9e958d', flex: 1 }} numberOfLines={1}>{book.author}</Text>
-                  {isExpert && (
-                    <View style={{ backgroundColor: '#231f1b', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 }}>
-                      <Text style={{ fontSize: 9, fontWeight: '700', color: '#f5f1ec', letterSpacing: 0.4 }}>EXPERT</Text>
-                    </View>
-                  )}
-                </View>
-                {variantBadge}
-              </View>
-              {/* Pull-quote reason */}
-              {collapsedReason ? (
-                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 4 }}>
-                  <Text style={{ fontSize: 22, color: '#7b9e7e', lineHeight: 22, marginTop: -2, fontWeight: '700' }}>"</Text>
-                  <Text
-                    style={{ flex: 1, fontSize: 13, fontStyle: 'italic', color: '#6b635c', lineHeight: 19 }}
-                    numberOfLines={3}
-                  >
-                    {collapsedReason}
+        <CoverThumb
+          url={book.cover_url}
+          externalId={book.external_id}
+          title={book.title}
+          width={featured ? 72 : 44}
+          height={featured ? 106 : 64}
+        />
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text
+            style={{ fontSize: 15, fontWeight: '700', color: '#231f1b', lineHeight: 21, marginBottom: 3 }}
+            numberOfLines={2}
+          >
+            {book.title}
+          </Text>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 6 }}>
+            <Text style={{ fontSize: 12, color: '#78716c', flex: 1 }} numberOfLines={1}>
+              {book.author}
+            </Text>
+            {(() => {
+              const tier  = book.confidence;
+              const label = tier === 'high' ? 'Top pick' : tier === 'medium' ? 'Good fit' : 'Explore';
+              const bg    = tier === 'high' ? '#f0fdf4' : tier === 'medium' ? '#f8f8f7' : '#f5f1ec';
+              const col   = tier === 'high' ? '#15803d' : tier === 'medium' ? '#57534e' : '#9e958d';
+              const bord  = tier === 'high' ? '#bbf7d0' : tier === 'medium' ? '#ede9e4' : '#ede9e4';
+              return (
+                <View style={{
+                  backgroundColor: bg, borderWidth: 1, borderColor: bord,
+                  borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2,
+                }}>
+                  <Text style={{ fontSize: 9, fontWeight: '700', color: col, letterSpacing: 0.3 }}>
+                    {label.toUpperCase()}
                   </Text>
                 </View>
-              ) : null}
-            </View>
-            {/* RIGHT: cover — flush right, full height */}
-            <CoverThumb
-              url={book.cover_url}
-              externalId={book.external_id}
-              title={book.title}
-              width={COVER_W}
-              height={COVER_H}
-              radius={0}
-            />
-          </>
-        ) : (
-          <>
-            {/* Non-featured: cover left, text right (unchanged) */}
-            <CoverThumb
-              url={book.cover_url}
-              externalId={book.external_id}
-              title={book.title}
-              width={COVER_W}
-              height={COVER_H}
-            />
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text
-                style={{ fontSize: 14, fontWeight: '700', color: '#231f1b', lineHeight: 20, marginBottom: 3 }}
-                numberOfLines={2}
-              >
-                {book.title}
-              </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 5 }}>
-                {confidenceDot}
-                <Text style={{ fontSize: 12, color: '#9e958d', flex: 1 }} numberOfLines={1}>{book.author}</Text>
+              );
+            })()}
+            {isExpert && (
+              <View style={{
+                backgroundColor: '#231f1b', borderRadius: 4,
+                paddingHorizontal: 5, paddingVertical: 2,
+              }}>
+                <Text style={{ fontSize: 9, fontWeight: '700', color: '#f5f1ec', letterSpacing: 0.4 }}>
+                  EXPERT PICK
+                </Text>
               </View>
-              {variantBadge}
-              {hasSeriesMeta && (
-                <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 5, marginBottom: 6 }}>
-                  {catalogMeta!.orderedBooks.map((b, i) => {
-                    const isCurrent = (i + 1) === seriesPos;
-                    const cover     = seriesCovers[i];
-                    const coverUri  = cover?.coverId
-                      ? `https://covers.openlibrary.org/b/id/${cover.coverId}-S.jpg`
-                      : null;
-                    return (
-                      <View key={`${b.title}-${i}`} style={{ opacity: isCurrent ? 1 : 0.38, borderWidth: isCurrent ? 1.5 : 0, borderColor: '#231f1b', borderRadius: 4 }}>
-                        {coverUri ? (
-                          <Image source={{ uri: coverUri }} style={{ width: isCurrent ? 34 : 27, height: isCurrent ? 50 : 42, borderRadius: 3, backgroundColor: '#ede9e4' }} />
-                        ) : (
-                          <View style={{ width: isCurrent ? 34 : 27, height: isCurrent ? 50 : 42, borderRadius: 3, backgroundColor: '#ece9e4', borderWidth: 1, borderColor: '#e0dbd4' }} />
-                        )}
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
-              {collapsedReason ? (
-                <Text style={{ fontSize: 12, color: '#6b635c', lineHeight: 17 }} numberOfLines={2}>{collapsedReason}</Text>
-              ) : null}
+            )}
+          </View>
+
+          {hasSeriesMeta && (
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 5, marginBottom: 8 }}>
+              {catalogMeta!.orderedBooks.map((b, i) => {
+                const isCurrent = (i + 1) === seriesPos;
+                const cover     = seriesCovers[i];
+                const coverUri  = cover?.coverId
+                  ? `https://covers.openlibrary.org/b/id/${cover.coverId}-S.jpg`
+                  : null;
+                return (
+                  <View
+                    key={`${b.title}-${i}`}
+                    style={{
+                      opacity:      isCurrent ? 1 : 0.38,
+                      borderWidth:  isCurrent ? 1.5 : 0,
+                      borderColor:  '#231f1b',
+                      borderRadius: 4,
+                    }}
+                  >
+                    {coverUri ? (
+                      <Image
+                        source={{ uri: coverUri }}
+                        style={{
+                          width:           isCurrent ? 34 : 27,
+                          height:          isCurrent ? 50 : 42,
+                          borderRadius:    3,
+                          backgroundColor: '#ede9e4',
+                        }}
+                      />
+                    ) : (
+                      <View style={{
+                        width:           isCurrent ? 34 : 27,
+                        height:          isCurrent ? 50 : 42,
+                        borderRadius:    3,
+                        backgroundColor: '#ece9e4',
+                        borderWidth:     1,
+                        borderColor:     '#e0dbd4',
+                      }} />
+                    )}
+                  </View>
+                );
+              })}
             </View>
-          </>
-        )}
+          )}
+
+          {(() => {
+            const bd = book._score_breakdown;
+            const isStarter      = bd.series_label === 'series_starter' || bd.saga_label === 'saga_entry';
+            const isContinuation = bd.series_label === 'series_continuation' || bd.saga_label === 'saga_continuation' || bd.saga_label === 'saga_next_series';
+            const isAuthorMatch  = !isStarter && !isContinuation && (bd.author_books_read ?? 0) >= 2;
+            if (isStarter)      return <VariantBadge label="Start here"      bg="#fef3c7" color="#92400e" />;
+            if (isContinuation) return <VariantBadge label="Continue series" bg="#f0fdf4" color="#166534" />;
+            if (isAuthorMatch)  return <VariantBadge label="Author match"    bg="#f5f3ff" color="#5b21b6" />;
+            return null;
+          })()}
+
+          {collapsedReason && (featured ? (
+            <View style={{ marginTop: 4, borderLeftWidth: 2, borderLeftColor: '#7b9e7e', paddingLeft: 8 }}>
+              <Text
+                style={{ fontSize: 13, fontStyle: 'italic', color: '#6b635c', lineHeight: 18, marginBottom: 2 }}
+                numberOfLines={3}
+              >
+                {collapsedReason}
+              </Text>
+            </View>
+          ) : (
+            <Text
+              style={{ fontSize: 13, fontWeight: '600', color: '#231f1b', lineHeight: 18, marginBottom: 2 }}
+              numberOfLines={2}
+            >
+              {collapsedReason}
+            </Text>
+          ))}
+        </View>
       </TouchableOpacity>
 
-      {/* ── Action bar — stacked for featured, row for stack cards ── */}
-      {featured ? (
-        <View style={{ borderTopWidth: 1, borderTopColor: '#ede9e4' }}>
-          {/* Primary: full-width save button */}
-          <View style={{ position: 'relative', overflow: 'hidden' }}>
-            <TouchableOpacity
-              onPress={handleSavePress}
-              disabled={pendingAction}
-              style={{
-                backgroundColor: '#231f1b',
-                paddingVertical: 16,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Text style={{ fontSize: 15, fontWeight: '700', color: '#f5f1ec', letterSpacing: 0.2 }}>
-                Want to Read →
-              </Text>
-            </TouchableOpacity>
-            {/* Bloom overlay */}
-            <Animated.View
-              pointerEvents="none"
-              style={{
-                position: 'absolute',
-                alignSelf: 'center',
-                top: '50%',
-                marginTop: -30,
-                width: 60,
-                height: 60,
-                borderRadius: 30,
-                backgroundColor: '#7b9e7e',
-                opacity: bloomAnim.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0, 0.45, 0] }),
-                transform: [{ scale: bloomAnim.interpolate({ inputRange: [0, 1], outputRange: [0.3, 4] }) }],
-              }}
-            />
-          </View>
-          {/* Secondary: two ghost buttons */}
-          <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#ede9e4' }}>
-            <TouchableOpacity
-              onPress={handleDismissPress}
-              disabled={pendingAction}
-              style={{ flex: 1, paddingVertical: 12, alignItems: 'center', borderRightWidth: 1, borderRightColor: '#ede9e4' }}
-            >
-              <Text style={{ fontSize: 12, color: '#9e958d', fontWeight: '500' }}>Not for me</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleMoreLikeThisPress}
-              disabled={pendingAction}
-              style={{ flex: 1, paddingVertical: 12, alignItems: 'center' }}
-            >
-              <Text style={{ fontSize: 12, color: '#9e958d', fontWeight: '500' }}>More like this</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ) : (
-        <View style={{ borderTopWidth: 1, borderTopColor: '#f0eeeb', flexDirection: 'row', alignItems: 'stretch' }}>
+      {/* ── Action bar ── */}
+      <View style={{ borderTopWidth: 1, borderTopColor: '#f0eeeb', flexDirection: 'row', alignItems: 'stretch' }}>
+        {/* Save button — bloom overlay lives here */}
+        <View style={{ flex: 1, overflow: 'hidden', borderRightWidth: 1, borderRightColor: '#f0eeeb' }}>
           <TouchableOpacity
             onPress={handleSavePress}
             disabled={pendingAction}
-            style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 14, justifyContent: 'center', borderRightWidth: 1, borderRightColor: '#f0eeeb' }}
+            style={{ paddingVertical: 14, paddingHorizontal: 14, justifyContent: 'center' }}
           >
-            <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b' }}>Save</Text>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b' }}>Want to Read</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handleDismissPress}
-            disabled={pendingAction}
-            style={{ paddingVertical: 12, paddingHorizontal: 13, justifyContent: 'center', alignItems: 'center', borderRightWidth: 1, borderRightColor: '#f0eeeb' }}
-          >
-            <Text style={{ fontSize: 12, color: '#9e958d', fontWeight: '500' }}>Skip</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handleMoreLikeThisPress}
-            disabled={pendingAction}
-            style={{ paddingVertical: 12, paddingHorizontal: 13, justifyContent: 'center', alignItems: 'center' }}
-          >
-            <Text style={{ fontSize: 12, fontWeight: '500', color: '#9e958d' }}>More like this</Text>
-          </TouchableOpacity>
+          <Animated.View
+            style={{
+              position: 'absolute',
+              alignSelf: 'center',
+              top: '50%',
+              marginTop: -30,
+              width: 60,
+              height: 60,
+              borderRadius: 30,
+              backgroundColor: '#7b9e7e',
+              pointerEvents: 'none',
+              opacity: bloomAnim.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0, 0.4, 0] }),
+              transform: [{ scale: bloomAnim.interpolate({ inputRange: [0, 1], outputRange: [0.2, 3.5] }) }],
+            }}
+          />
         </View>
-      )}
+
+        <TouchableOpacity
+          onPress={handleDismissPress}
+          disabled={pendingAction}
+          style={{ paddingVertical: 14, paddingHorizontal: 13, justifyContent: 'center', alignItems: 'center', borderRightWidth: 1, borderRightColor: '#f0eeeb' }}
+        >
+          <Text style={{ fontSize: 12, color: '#78716c', fontWeight: '500' }}>Not for me</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={handleMoreLikeThisPress}
+          disabled={pendingAction}
+          style={{ paddingVertical: 14, paddingHorizontal: 13, justifyContent: 'center', alignItems: 'center' }}
+        >
+          <Text style={{ fontSize: 12, fontWeight: '500', color: '#78716c' }}>More like this</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Confirm overlay — fades in via confirmOpacity */}
       {confirmState && (
