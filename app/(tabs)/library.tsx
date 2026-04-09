@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchGoogleBooksCoverUrl } from '../../lib/googleBooks';
 import { repairBooksMetadata } from '../../lib/metadataRepair';
 import { registerCacheClearer } from '../../lib/tabCache';
-import { ActivityIndicator, FlatList, Modal, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, Keyboard, Modal, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
@@ -174,6 +175,8 @@ export default function LibraryScreen() {
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
   const [hasGoodreadsImport, setHasGoodreadsImport] = useState<boolean | null>(() => _libCache?.hasGoodreadsImport ?? null);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<TextInput>(null);
 
   // ── Walkthrough target measurement ──────────────────────────────────────────
   // Measures the FlatList header (title + filter bar) once loading completes.
@@ -545,6 +548,16 @@ export default function LibraryScreen() {
 
   // ── Derived state ─────────────────────────────────────────────────────────
 
+  const searchActive     = searchQuery.trim().length > 0;
+  const searchNormalized = searchQuery.toLowerCase().trim();
+  const searchResults: UserBook[] = searchActive
+    ? items.filter(item => {
+        const title  = (item.book?.title  ?? '').toLowerCase();
+        const author = (item.book?.author ?? '').toLowerCase();
+        return title.includes(searchNormalized) || author.includes(searchNormalized);
+      })
+    : [];
+
   const readingCount  = items.filter(i => i.status === 'reading').length;
   const filteredItems = activeFilter === 'all' ? items : items.filter(i => i.status === activeFilter);
 
@@ -560,6 +573,9 @@ export default function LibraryScreen() {
   // but appended below Phase 1 items so no already-visible row reshuffles mid-session.
   // The boundary is erased on the next pull-to-refresh or cold load (full resort).
   const displayedItems: ListItem[] = (() => {
+    // When search is active: flat unified result list, no grouping
+    if (searchActive) return searchResults;
+
     // Partition helpers — only active while a Phase 2 boundary exists.
     const p1ids = _libPhase1Ids;
     const p1 = p1ids ? filteredItems.filter(i =>  p1ids.has(i.id)) : filteredItems;
@@ -710,14 +726,53 @@ export default function LibraryScreen() {
               <Text style={{ color: '#f5f1ec', fontSize: 13, fontWeight: '700', letterSpacing: 0.2 }}>+ Add</Text>
             </TouchableOpacity>
           </View>
-          {contextSubtitle && (
+          {/* ── Search bar ── */}
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={() => searchInputRef.current?.focus()}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: '#fefcf9',
+              borderRadius: 14,
+              borderWidth: 1,
+              borderColor: '#ede9e4',
+              paddingHorizontal: 13,
+              paddingVertical: 11,
+              marginTop: 16,
+              marginBottom: 14,
+              gap: 8,
+            }}
+          >
+            <Ionicons name="search-outline" size={16} color="#9e958d" />
+            <TextInput
+              ref={searchInputRef}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search by title or author…"
+              placeholderTextColor="#c4b5a5"
+              style={{ flex: 1, fontSize: 14, color: '#231f1b', padding: 0 }}
+              returnKeyType="search"
+              onSubmitEditing={() => Keyboard.dismiss()}
+            />
+            {searchActive && (
+              <TouchableOpacity
+                hitSlop={10}
+                onPress={() => { setSearchQuery(''); searchInputRef.current?.blur(); }}
+              >
+                <Ionicons name="close-circle" size={17} color="#c4b5a5" />
+              </TouchableOpacity>
+            )}
+          </TouchableOpacity>
+
+          {!searchActive && contextSubtitle && (
             <Text style={{ fontSize: 13, color: '#9e958d', marginBottom: 18 }}>
               {contextSubtitle}
             </Text>
           )}
 
           {/* ── Filter chip bar ── */}
-          {items.length > 0 && (
+          {!searchActive && items.length > 0 && (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -794,7 +849,7 @@ export default function LibraryScreen() {
           )}
 
           {/* ── Sort toggle (Reading: 2+ books; Finished: 2+ books) ── */}
-          {filteredItems.length > 1 && (activeFilter === 'reading' || activeFilter === 'finished') && (
+          {!searchActive && filteredItems.length > 1 && (activeFilter === 'reading' || activeFilter === 'finished') && (
             <View style={{
               flexDirection: 'row',
               alignItems: 'center',
@@ -843,7 +898,7 @@ export default function LibraryScreen() {
           )}
 
           {/* ── Avg pace summary (finished filter only) ── */}
-          {activeFilter === 'finished' && avgPace !== null && (
+          {!searchActive && activeFilter === 'finished' && avgPace !== null && (
             <View style={{
               flexDirection: 'row',
               alignItems: 'center',
@@ -856,7 +911,7 @@ export default function LibraryScreen() {
           )}
 
           {/* ── Divider ── */}
-          {items.length > 0 && activeFilter !== 'reading' && (
+          {!searchActive && items.length > 0 && activeFilter !== 'reading' && (
             <View style={{ height: 1, backgroundColor: '#ede9e4' }} />
           )}
         </View>
@@ -1278,7 +1333,17 @@ export default function LibraryScreen() {
         );
       }}
       ListEmptyComponent={
-        items.length === 0 && activeFilter === 'all' ? (
+        searchActive ? (
+          <View style={{ paddingTop: 60, paddingHorizontal: 24, alignItems: 'center' }}>
+            <Ionicons name="search-outline" size={32} color="#c4b5a5" style={{ marginBottom: 12 }} />
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#231f1b', marginBottom: 6, textAlign: 'center' }}>
+              No books found
+            </Text>
+            <Text style={{ fontSize: 14, color: '#9e958d', textAlign: 'center', lineHeight: 21 }}>
+              Nothing matches <Text style={{ color: '#231f1b', fontStyle: 'italic' }}>"{searchQuery.trim()}"</Text>
+            </Text>
+          </View>
+        ) : items.length === 0 && activeFilter === 'all' ? (
           <View ref={libEmptyRef} style={{ paddingTop: 36, paddingHorizontal: 24 }}>
             {/* Heading + value prop */}
             <Text style={{ fontSize: 22, fontWeight: '800', color: '#231f1b', marginBottom: 8, letterSpacing: -0.4 }}>
