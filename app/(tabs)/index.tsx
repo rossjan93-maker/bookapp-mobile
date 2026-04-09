@@ -122,20 +122,135 @@ function shortFinishDate(iso: string): string {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
+function timeGreeting(): string {
+  const h = new Date().getHours();
+  if (h >= 5  && h < 12) return 'Good morning';
+  if (h >= 12 && h < 17) return 'Good afternoon';
+  if (h >= 17 && h < 21) return 'Good evening';
+  return 'Good night';
+}
+
 function SectionLabel({ children }: { children: string }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 8 }}>
-      <View style={{ width: 14, height: 1.5, backgroundColor: '#7b9e7e', borderRadius: 1 }} />
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16, gap: 10 }}>
       <Text style={{
-        fontSize: 10.5,
+        fontSize: 10,
         fontWeight: '700',
         color: '#9e958d',
-        letterSpacing: 1.1,
+        letterSpacing: 1.6,
         textTransform: 'uppercase',
       }}>
         {children}
       </Text>
+      <View style={{ flex: 1, height: 1, backgroundColor: '#ede9e4' }} />
     </View>
+  );
+}
+
+type HeroReadCardProps = {
+  book: CurrentRead;
+  yearlyGoal: number | null;
+  onPress: () => void;
+  accentColor: string;
+};
+
+function HeroReadCard({ book, onPress, accentColor }: HeroReadCardProps) {
+  const barAnim = useRef(new Animated.Value(0)).current;
+  const cardAnim = useRef(new Animated.Value(0)).current;
+
+  const pct = (book.current_page && book.page_count && book.page_count > 0)
+    ? Math.min(1, book.current_page / book.page_count)
+    : 0;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(cardAnim, {
+        toValue: 1,
+        duration: 380,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(barAnim, {
+        toValue: pct * 100,
+        duration: 550,
+        delay: 180,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }),
+    ]).start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const cardHeight = 172;
+  const coverWidth = 114;
+  const sageColor = accentColor === '#ede9e4' ? '#7b9e7e' : accentColor;
+
+  return (
+    <Animated.View style={{
+      opacity: cardAnim,
+      transform: [{ translateY: cardAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }],
+    }}>
+      <TouchableOpacity activeOpacity={0.82} onPress={onPress}>
+        <View style={{
+          backgroundColor: '#fefcf9',
+          borderRadius: 22,
+          overflow: 'hidden',
+          shadowColor: '#231f1b',
+          shadowOpacity: 0.11,
+          shadowRadius: 20,
+          shadowOffset: { width: 0, height: 6 },
+          elevation: 5,
+          height: cardHeight,
+        }}>
+          <View style={{ flexDirection: 'row', flex: 1 }}>
+            {/* Cover — flush left, full height */}
+            <CoverThumb
+              url={book.cover_url}
+              externalId={book.external_id}
+              title={book.title}
+              width={coverWidth}
+              height={cardHeight - 5}
+              radius={0}
+            />
+            {/* Info column */}
+            <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 18, paddingBottom: 10, justifyContent: 'space-between' }}>
+              <View>
+                <Text
+                  style={{ fontSize: 16, fontWeight: '800', color: '#231f1b', letterSpacing: -0.4, lineHeight: 22, marginBottom: 5 }}
+                  numberOfLines={3}
+                >
+                  {book.title}
+                </Text>
+                <Text style={{ fontSize: 12, color: '#9e958d', fontWeight: '500' }} numberOfLines={1}>
+                  {book.author}
+                </Text>
+              </View>
+              <View>
+                {pct > 0 ? (
+                  <Text style={{ fontSize: 30, fontWeight: '900', color: '#231f1b', letterSpacing: -1, lineHeight: 34 }}>
+                    {Math.round(pct * 100)}
+                    <Text style={{ fontSize: 13, fontWeight: '400', color: '#9e958d', letterSpacing: 0 }}>%</Text>
+                  </Text>
+                ) : null}
+                <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 1, fontStyle: 'italic' }}>
+                  {pct > 0
+                    ? (book.page_count ? `p. ${book.current_page} of ${book.page_count}` : 'in progress')
+                    : 'just started'}
+                </Text>
+              </View>
+            </View>
+          </View>
+          {/* Full-width animated progress bar at base */}
+          <View style={{ height: 5, backgroundColor: '#ede9e4' }}>
+            <Animated.View style={{
+              height: 5,
+              width: barAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'], extrapolate: 'clamp' }),
+              backgroundColor: sageColor,
+            }} />
+          </View>
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
 
@@ -632,33 +747,39 @@ export default function HomeScreen() {
       }
     >
       {/* ── Hero heading ── */}
-      <View style={{ marginBottom: 32 }}>
+      <View style={{ marginBottom: 34 }}>
         <Text style={{
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: '600',
-          color: '#9e958d',
-          letterSpacing: 1.2,
+          color: '#c4b5a5',
+          letterSpacing: 1.4,
           textTransform: 'uppercase',
-          marginBottom: 4,
+          marginBottom: 6,
         }}>
           {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
         </Text>
         <Text style={{
-          fontSize: 32,
-          fontWeight: '800',
+          fontSize: 38,
+          fontWeight: '900',
           color: '#231f1b',
-          letterSpacing: -1,
-          lineHeight: 38,
+          letterSpacing: -1.5,
+          lineHeight: 43,
         }}>
-          {greeting ? `Hi, ${greeting}` : 'Home'}
+          {greeting ? `${timeGreeting()},\n${greeting}` : timeGreeting()}
         </Text>
-        <View style={{ width: 28, height: 2.5, backgroundColor: '#7b9e7e', marginTop: 10, borderRadius: 2 }} />
+        {currentReads.length > 0 && (
+          <Text style={{ fontSize: 13, color: '#7b9e7e', fontWeight: '600', marginTop: 8, letterSpacing: 0.1 }}>
+            {currentReads.length === 1
+              ? 'Reading 1 book right now'
+              : `Reading ${currentReads.length} books right now`}
+          </Text>
+        )}
       </View>
 
       {/* ── 1. Continue Reading ── */}
       {currentReads.length > 0 && (
         <View style={{ marginBottom: 32 }}>
-          <SectionLabel>Continue Reading</SectionLabel>
+          <SectionLabel>Reading Now</SectionLabel>
 
           {/* Walkthrough ref wraps only the card(s), not the section label */}
           <View ref={homeTargetRef} onLayout={measureHomeContent}>
@@ -666,8 +787,11 @@ export default function HomeScreen() {
             const cr = currentReads[0];
             const accentColor = homeCardBorderColor(cr, yearlyGoal);
             return (
-              <TouchableOpacity
-                activeOpacity={0.8}
+              <HeroReadCard
+                key={cr.id}
+                book={cr}
+                yearlyGoal={yearlyGoal}
+                accentColor={accentColor}
                 onPress={() => router.push({
                   pathname: '/book/[id]',
                   params: {
@@ -680,55 +804,7 @@ export default function HomeScreen() {
                     startedAt: cr.started_at ?? '',
                   },
                 })}
-              >
-                <View style={{
-                  backgroundColor: '#fefcf9',
-                  borderRadius: 18,
-                  overflow: 'hidden',
-                  shadowColor: '#231f1b',
-                  shadowOpacity: 0.08,
-                  shadowRadius: 14,
-                  shadowOffset: { width: 0, height: 4 },
-                  elevation: 3,
-                }}>
-                  {/* Sage top accent stripe */}
-                  <View style={{ height: 3, backgroundColor: accentColor === '#ede9e4' ? '#7b9e7e' : accentColor }} />
-                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', padding: 16 }}>
-                    {/* Cover — larger, given more presence */}
-                    <CoverThumb url={cr.cover_url} externalId={cr.external_id} title={cr.title} width={68} height={100} />
-                    <View style={{ flex: 1, marginLeft: 16, paddingTop: 2 }}>
-                      <Text style={{
-                        fontSize: 17, fontWeight: '800', color: '#231f1b', lineHeight: 23, marginBottom: 4, letterSpacing: -0.3,
-                      }} numberOfLines={2}>{cr.title}</Text>
-                      <Text style={{ fontSize: 12, color: '#9e958d', marginBottom: 16, fontWeight: '500' }} numberOfLines={1}>
-                        {cr.author}
-                      </Text>
-                    {(cr.current_page || cr.page_count) ? (
-                      <>
-                        {/* Progress % as a bold callout */}
-                        {progressPct(cr) > 0 && (
-                          <Text style={{ fontSize: 22, fontWeight: '800', color: '#231f1b', letterSpacing: -0.5, lineHeight: 26, marginBottom: 6 }}>
-                            {Math.round(progressPct(cr) * 100)}<Text style={{ fontSize: 13, fontWeight: '500', color: '#9e958d' }}>%</Text>
-                          </Text>
-                        )}
-                        <View style={{
-                          height: 4, backgroundColor: '#ede9e4', borderRadius: 2, marginBottom: 5, overflow: 'hidden',
-                        }}>
-                          {progressPct(cr) > 0 && (
-                            <View style={{
-                              height: 4, width: `${progressPct(cr) * 100}%`, backgroundColor: '#7b9e7e', borderRadius: 2,
-                            }} />
-                          )}
-                        </View>
-                        <Text style={{ fontSize: 11, color: '#9e958d' }}>{progressLabel(cr)}</Text>
-                      </>
-                    ) : (
-                      <Text style={{ fontSize: 11, color: '#9e958d' }}>In progress</Text>
-                    )}
-                    </View>{/* close flex:1 text column */}
-                  </View>{/* close inner row */}
-                </View>{/* close card container */}
-              </TouchableOpacity>
+              />
             );
           })() : (
             <ScrollView
@@ -1078,48 +1154,52 @@ export default function HomeScreen() {
                   style={{
                     backgroundColor: '#fefcf9',
                     borderRadius: 14,
-                    padding: 16,
-                    marginBottom: 10,
-                    shadowColor: '#000',
-                    shadowOpacity: 0.05,
-                    shadowRadius: 6,
-                    shadowOffset: { width: 0, height: 1 },
+                    paddingVertical: 14,
+                    paddingLeft: 16,
+                    paddingRight: 14,
+                    marginBottom: 8,
+                    shadowColor: '#231f1b',
+                    shadowOpacity: 0.04,
+                    shadowRadius: 8,
+                    shadowOffset: { width: 0, height: 2 },
                     elevation: 1,
                     flexDirection: 'row',
                     alignItems: 'center',
                   }}
                 >
-                  <CoverThumb
-                    url={event.book?.cover_url}
-                    externalId={event.book?.external_id}
-                    title={event.book?.title}
-                    width={40}
-                    height={58}
-                  />
-                  <View style={{ flex: 1, marginLeft: 14 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', marginBottom: 2 }}>
-                      {actor}{' '}
-                      <Text style={{ fontWeight: '400', color: '#57534e' }}>{verb}</Text>
+                  {/* Text on LEFT — actor name immediately visible */}
+                  <View style={{ flex: 1, marginRight: 12 }}>
+                    <Text style={{ fontSize: 12, color: '#9e958d', marginBottom: 3 }}>
+                      <Text style={{ fontWeight: '700', color: '#6b635c' }}>{actor}</Text>
+                      {' '}{verb}
                     </Text>
                     {title ? (
-                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', lineHeight: 20, marginBottom: 2 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#231f1b', lineHeight: 20, letterSpacing: -0.2 }} numberOfLines={2}>
                         {title}
                       </Text>
                     ) : null}
                     {author ? (
-                      <Text style={{ fontSize: 12, color: '#9e958d', marginBottom: 4 }}>
+                      <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2 }} numberOfLines={1}>
                         {author}
                       </Text>
                     ) : null}
                     {event.rating != null ? (
-                      <Text style={{ fontSize: 12, color: '#78716c', marginBottom: 4 }}>
-                        {'★'.repeat(event.rating)}{'☆'.repeat(5 - event.rating)} · {event.rating}/5
+                      <Text style={{ fontSize: 12, color: '#7b9e7e', marginTop: 3, fontWeight: '600' }}>
+                        {'★'.repeat(event.rating)}{'☆'.repeat(5 - event.rating)}
                       </Text>
                     ) : null}
-                    <Text style={{ fontSize: 11, color: '#c4b5a5' }}>
+                    <Text style={{ fontSize: 10, color: '#c4b5a5', marginTop: 4 }}>
                       {relativeTime(event.created_at)}
                     </Text>
                   </View>
+                  {/* Cover on RIGHT */}
+                  <CoverThumb
+                    url={event.book?.cover_url}
+                    externalId={event.book?.external_id}
+                    title={event.book?.title}
+                    width={38}
+                    height={54}
+                  />
                 </View>
               );
 

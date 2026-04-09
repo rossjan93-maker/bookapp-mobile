@@ -15,7 +15,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { TabScreenHeader } from '../../components/TabScreenHeader';
 import { supabase } from '../../lib/supabase';
 import { scoreAndFilterBooks, mergeBookResults } from '../../lib/searchRanking';
 import { expandAlias } from '../../lib/searchAliases';
@@ -117,16 +116,18 @@ function olCoverUrl(coverId?: number, size: 'S' | 'M' = 'M'): string | null {
 
 function SectionLabel({ children }: { children: string }) {
   return (
-    <Text style={{
-      fontSize: 11,
-      fontWeight: '700',
-      color: '#9e958d',
-      letterSpacing: 0.9,
-      textTransform: 'uppercase',
-      marginBottom: 12,
-    }}>
-      {children}
-    </Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16, gap: 10 }}>
+      <Text style={{
+        fontSize: 10,
+        fontWeight: '700',
+        color: '#9e958d',
+        letterSpacing: 1.6,
+        textTransform: 'uppercase',
+      }}>
+        {children}
+      </Text>
+      <View style={{ flex: 1, height: 1, backgroundColor: '#ede9e4' }} />
+    </View>
   );
 }
 
@@ -1422,29 +1423,41 @@ export default function RecommendationsScreen() {
       (tasteProfile?.strongSignalCount ?? 0) === 0;
     return (
       <View style={{ flex: 1, backgroundColor: '#f5f1ec' }}>
-        <TabScreenHeader
-          title="For You"
-          rightAction={
-            <Pressable
-              onPress={() => router.push('/scan' as any)}
-              hitSlop={12}
-              style={{
-                backgroundColor: '#ede9e4',
-                borderRadius:    22,
-                padding:         10,
-              }}
-            >
-              <Ionicons name="barcode-outline" size={22} color="#231f1b" />
-            </Pressable>
-          }
-        />
       <ScrollView
         style={{ flex: 1, backgroundColor: '#f5f1ec' }}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 48 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: insets.top + 8, paddingBottom: 48 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
         }
       >
+
+        {/* ── Hero header ── */}
+        <View style={{ marginBottom: 28 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{
+                fontSize: 38,
+                fontWeight: '900',
+                color: '#231f1b',
+                letterSpacing: -1.5,
+                lineHeight: 43,
+              }}>For You</Text>
+              <Text style={{ fontSize: 13, color: '#9e958d', fontStyle: 'italic', marginTop: 6, lineHeight: 18 }}>
+                {tasteProfile?.label
+                  ? `Picked for ${tasteProfile.label.toLowerCase().includes('reader') ? 'you' : 'a ' + tasteProfile.label.toLowerCase()}`
+                  : 'Picked based on your taste'}
+              </Text>
+              <View style={{ width: 28, height: 2.5, backgroundColor: '#7b9e7e', marginTop: 10, borderRadius: 2 }} />
+            </View>
+            <Pressable
+              onPress={() => router.push('/scan' as any)}
+              hitSlop={12}
+              style={{ backgroundColor: '#ede9e4', borderRadius: 22, padding: 10, marginTop: 4 }}
+            >
+              <Ionicons name="barcode-outline" size={22} color="#231f1b" />
+            </Pressable>
+          </View>
+        </View>
 
         {hubLoading ? (
           <View style={{ gap: 8 }}>

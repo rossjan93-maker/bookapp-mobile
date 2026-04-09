@@ -8,6 +8,7 @@ type Props = {
   title?: string | null;
   width?: number;
   height?: number;
+  radius?: number;
 };
 
 function deriveCoverUrl(externalId: string, editionKey?: string | null): string | null {
@@ -19,9 +20,9 @@ function deriveCoverUrl(externalId: string, editionKey?: string | null): string 
   return `https://covers.openlibrary.org/w/olid/${match[1]}-M.jpg`;
 }
 
-export function CoverThumb({ url, externalId, editionKey, title, width = 40, height = 58 }: Props) {
+export function CoverThumb({ url, externalId, editionKey, title, width = 40, height = 58, radius = 5 }: Props) {
   const imgOpacity = useRef(new Animated.Value(0)).current;
-  const style = { width, height, borderRadius: 5 } as const;
+  const style = { width, height, borderRadius: radius };
   const derived = externalId
     ? deriveCoverUrl(externalId, editionKey)
     : editionKey
