@@ -31,7 +31,7 @@ const BOOKS: BookDef[] = [
   { color: '#b5c4b1', nudgeX: -3,   rotate: -0.8 },   // muted sage
   { color: '#d6d0c8', nudgeX:  2,   rotate:  0.6 },   // light linen
   { color: '#c2bab0', nudgeX: -1,   rotate: -0.5 },   // soft taupe
-  { color: '#15803d', nudgeX:  2,   rotate:  0.9 },   // green accent — top
+  { color: '#7b9e7e', nudgeX:  2,   rotate:  0.9 },   // muted sage — top
 ];
 
 // ─── Sizes ────────────────────────────────────────────────────────────────────
@@ -99,7 +99,7 @@ function FlatBook({
           right:           bookW * 0.06,
           height:          1,
           borderRadius:    1,
-          backgroundColor: def.color === '#15803d'
+          backgroundColor: def.color === '#7b9e7e'
             ? 'rgba(255,255,255,0.22)'
             : 'rgba(255,255,255,0.55)',
         }}

@@ -1,0 +1,117 @@
+I want to explore a stronger premium design direction for the app.
+
+Important framing:
+I do NOT want direct copying of any luxury brand, trademarks, monograms, signature patterns, or obviously derivative brand codes.
+
+What I do want is a luxury-inspired design language:
+- premium
+- editorial
+- warm
+- refined
+- slightly feminine
+- taste-driven
+- less tech utility, more designed object
+
+The goal is for readstack to feel like a curated luxury reading product, not a generic bookshelf app.
+
+==================================================
+DESIGN DIRECTION
+==================================================
+
+Please restyle the app using a more premium editorial system with these characteristics:
+
+1. COLOR SYSTEM
+- warm ivory / cream base instead of stark cold white
+- rich espresso / soft charcoal text instead of harsh black
+- warm taupe / stone neutrals
+- restrained muted green as a supporting accent
+- optional very subtle champagne / muted gold note if used sparingly
+- no flashy metallic gimmicks
+- no loud saturation
+
+2. TYPOGRAPHY
+- stronger editorial hierarchy
+- more elegant headers
+- cleaner spacing and rhythm
+- body text still highly readable
+- avoid overly clinical or default-app typography feel
+- make the app feel more curated and elevated
+
+3. CARD / CONTAINER SYSTEM
+- cards should feel more refined and premium
+- softer corners
+- better spacing
+- lighter, cleaner borders
+- more intentional shadows / depth
+- less boxy / utility-first
+- more visual breathing room
+
+4. BUTTONS / CONTROLS
+- primary buttons should feel richer and more premium
+- secondary buttons should feel elegant, not generic outlined system buttons
+- improve tactile feel and polish
+- avoid chunky or overly enterprise-looking controls
+
+5. OVERALL MOOD
+- quiet luxury
+- editorial femininity
+- premium reading culture
+- tasteful restraint
+- not decorative for decoration’s sake
+- not overtly “fashion brand”
+- not gimmicky
+
+==================================================
+WHERE TO APPLY THIS FIRST
+==================================================
+
+Start with the most visible surfaces:
+
+1. onboarding
+2. auth / login / sign-up
+3. top-level tab shells and key cards
+4. loaders / empty states / walkthrough overlay
+
+I do NOT need every obscure screen redesigned first.
+I want the core visual language upgraded in the highest-visibility user flows.
+
+==================================================
+WHAT I WANT BEFORE CODING
+==================================================
+
+Please first audit the current design system and tell me:
+
+1. what the current color/typography/card/button system is
+2. what feels too utilitarian or generic right now
+3. what exact design tokens you would introduce/change
+4. what screens/components you would update first
+5. how you will make it feel more premium and slightly feminine without becoming cliché or derivative
+
+Then implement a first-pass premium editorial redesign.
+
+==================================================
+IMPORTANT GUARDRAILS
+==================================================
+
+Do NOT:
+- copy any specific luxury brand assets
+- use monograms
+- use checker/canvas patterns
+- mimic an identifiable brand system
+- overdo gold or ornament
+- make it look costume-y or theme-y
+
+Do:
+- create an original luxury-inspired system
+- focus on warmth, refinement, typography, spacing, and restraint
+- make it feel expensive through taste, not through obvious decoration
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- app feels more premium, warm, and editorial
+- visual identity feels more curated and elevated
+- slightly feminine tone comes through in restraint and polish
+- onboarding/auth feel distinctly more special
+- core cards/buttons/loaders feel less generic and more designed

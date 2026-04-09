@@ -563,17 +563,17 @@ function CoachCard({
       style={{
         position:        'absolute',
         ...positionStyle,
-        backgroundColor: '#faf9f7',
-        borderRadius:    12,
+        backgroundColor: '#f5f1ec',
+        borderRadius:    18,
         borderWidth:     1,
-        borderColor:     'rgba(0,0,0,0.09)',
-        padding:         12,
+        borderColor:     'rgba(0,0,0,0.07)',
+        padding:         16,
         opacity:         fade,
         transform:       [{ translateY: slideIn }],
-        shadowColor:     '#000',
-        shadowOpacity:   0.07,
-        shadowRadius:    8,
-        shadowOffset:    { width: 0, height: 3 },
+        shadowColor:     '#231f1b',
+        shadowOpacity:   0.09,
+        shadowRadius:    14,
+        shadowOffset:    { width: 0, height: 4 },
         elevation:       6,
       }}
     >
@@ -611,7 +611,7 @@ function CoachCard({
               borderLeftWidth:   12, borderRightWidth:  12,
               borderBottomWidth: 14,
               borderLeftColor:  'transparent', borderRightColor: 'transparent',
-              borderBottomColor: '#faf9f7',
+              borderBottomColor: '#f5f1ec',
             }}
           />
         </>
@@ -643,23 +643,23 @@ function CoachCard({
               borderLeftWidth:  12, borderRightWidth:  12,
               borderTopWidth:   14,
               borderLeftColor: 'transparent', borderRightColor: 'transparent',
-              borderTopColor:  '#faf9f7',
+              borderTopColor:  '#f5f1ec',
             }}
           />
         </>
       )}
 
       {/* Step progress dots + skip */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-        <View style={{ flex: 1, flexDirection: 'row', gap: 4 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+        <View style={{ flex: 1, flexDirection: 'row', gap: 5 }}>
           {Array.from({ length: totalSteps }).map((_, i) => (
             <View
               key={i}
               style={{
-                width:           i === stepIdx ? 16 : 5,
+                width:           i === stepIdx ? 18 : 5,
                 height:          4,
                 borderRadius:    2,
-                backgroundColor: i <= stepIdx ? '#1c1917' : '#e7e5e4',
+                backgroundColor: i <= stepIdx ? '#231f1b' : '#ddd8d2',
               }}
             />
           ))}
@@ -668,7 +668,7 @@ function CoachCard({
           onPress={onSkip}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
-          <Text style={{ fontSize: 11, color: '#a8a29e', fontWeight: '500' }}>
+          <Text style={{ fontSize: 11, color: '#9e958d', fontWeight: '500', letterSpacing: 0.2 }}>
             Skip tour
           </Text>
         </TouchableOpacity>
@@ -677,11 +677,12 @@ function CoachCard({
       {/* Title */}
       <Text
         style={{
-          fontSize:     14,
-          fontWeight:   '600',
-          color:        '#1c1917',
-          lineHeight:   20,
-          marginBottom: 4,
+          fontSize:     15,
+          fontWeight:   '700',
+          color:        '#231f1b',
+          lineHeight:   21,
+          marginBottom: 5,
+          letterSpacing: -0.2,
         }}
       >
         {def.title}
@@ -690,10 +691,10 @@ function CoachCard({
       {/* Body */}
       <Text
         style={{
-          fontSize:     12,
-          color:        '#78716c',
-          lineHeight:   17,
-          marginBottom: 12,
+          fontSize:     13,
+          color:        '#6b635c',
+          lineHeight:   20,
+          marginBottom: 14,
         }}
       >
         {def.body}
@@ -704,13 +705,13 @@ function CoachCard({
         onPress={onNext}
         activeOpacity={0.82}
         style={{
-          backgroundColor: '#1c1917',
-          borderRadius:    10,
-          paddingVertical: 10,
+          backgroundColor: '#231f1b',
+          borderRadius:    12,
+          paddingVertical: 12,
           alignItems:      'center',
         }}
       >
-        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>
+        <Text style={{ color: '#f5f1ec', fontSize: 13, fontWeight: '700', letterSpacing: 0.1 }}>
           {def.ctaLabel}
         </Text>
       </TouchableOpacity>

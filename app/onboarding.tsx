@@ -39,10 +39,10 @@ import { BookStackLoader } from '../components/BookStackLoader';
 
 // ─── Palette — matches app-wide tokens ────────────────────────────────────────
 
-const BG    = '#faf9f7';   // warm off-white (real app background)
-const INK   = '#1c1917';   // near-black ink
-const SUB   = '#78716c';   // warm gray subtext
-const GREEN = '#15803d';   // forest green accent
+const BG    = '#f5f1ec';   // rich warm ivory
+const INK   = '#231f1b';   // warm near-black
+const SUB   = '#6b635c';   // warm stone subtext
+const SAGE  = '#7b9e7e';   // muted warm sage accent
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
@@ -169,7 +169,7 @@ export default function OnboardingScreen() {
                 width:           44,
                 height:          3,
                 borderRadius:    2,
-                backgroundColor: GREEN,
+                backgroundColor: SAGE,
                 marginBottom:    20,
               }}
             />
@@ -204,7 +204,7 @@ export default function OnboardingScreen() {
             activeOpacity={0.85}
             style={{
               backgroundColor: INK,
-              borderRadius:    16,
+              borderRadius:    14,
               paddingVertical: 17,
               alignItems:      'center',
             }}

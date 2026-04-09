@@ -31,11 +31,11 @@ import { readOnboardingStage, writeOnboardingStage } from '../lib/onboardingStag
 import { useOnboardingBridge } from './_layout';
 import { supabase } from '../lib/supabase';
 
-const BG  = '#faf9f7';
-const INK = '#1c1917';
-const SUB = '#78716c';
-const MUT = '#a8a29e';
-const BOR = '#e7e5e4';
+const BG  = '#f5f1ec';
+const INK = '#231f1b';
+const SUB = '#6b635c';
+const MUT = '#9e958d';
+const BOR = '#ede9e4';
 
 // ─── Shared helper ────────────────────────────────────────────────────────────
 // Write onboarding_completed=true to the profiles table.
@@ -138,7 +138,7 @@ export default function OnboardingImportPage() {
                 width:           i === 3 ? 24 : 6,
                 height:          6,
                 borderRadius:    3,
-                backgroundColor: i === 3 ? INK : '#d6d3d1',
+                backgroundColor: i === 3 ? INK : '#d8d0c8',
               }}
             />
           ))}
@@ -205,12 +205,12 @@ export default function OnboardingImportPage() {
             }}>
               Import my library
             </Text>
-            <Text style={{ fontSize: 12, color: '#c4bfb9' }}>
+            <Text style={{ fontSize: 12, color: '#b8afa6' }}>
               Goodreads · StoryGraph · others
             </Text>
           </View>
 
-          <Ionicons name="chevron-forward" size={18} color="#78716c" />
+          <Ionicons name="chevron-forward" size={18} color="#9e958d" />
         </TouchableOpacity>
 
         {/* Secondary row */}
