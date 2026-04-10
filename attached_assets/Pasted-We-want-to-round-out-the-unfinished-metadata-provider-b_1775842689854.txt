@@ -1,0 +1,52 @@
+We want to round out the unfinished metadata/provider block rather than start a new major lane.
+
+Focus on the remaining four items:
+1. cached cover pipeline
+2. terms / attribution readiness
+3. usage / quota monitoring
+4. secondary provider readiness
+
+Do this in the right order and keep it practical.
+
+Phase 1 — Cached cover pipeline
+I want you to inspect the current cover flow and propose/implement the minimum viable cached cover strategy for Readstack.
+
+Requirements:
+- define the current cover render order and where it is fragile
+- add a deliberate cached/known-good cover path where appropriate
+- avoid repeatedly relying on weak live third-party URLs when a stable result is already known
+- keep the implementation lightweight and compatible with the current provider/source model
+- do not overbuild a full CDN system unless it is clearly justified
+
+Phase 2 — Terms / attribution readiness
+I want a concrete review of what needs to be true for our current Google Books / Open Library usage.
+Do not hand-wave this.
+Produce a concise internal note covering:
+- what data we display
+- what we store
+- what attribution may be required
+- any risks/constraints for production use
+- what remains unresolved
+
+Phase 3 — Usage / quota monitoring
+Build the next practical layer beyond session-only health logs.
+I want durable enough monitoring to understand:
+- provider request volume
+- success/failure rates
+- missing-cover / missing-summary rates
+- any meaningful cache-hit behavior once the cover strategy is in place
+Keep it lean.
+
+Phase 4 — Secondary provider readiness
+Do a narrow audit of whether the current abstraction is actually ready for another metadata provider.
+Tell me:
+- what is already clean
+- what would still be sticky
+- what we should do now so future provider expansion is easy
+
+What I want back:
+- exact files changed
+- what is now truly completed vs still deferred
+- any schema changes
+- runtime proof where applicable
+- a short recommended close-out checklist for this backlog block

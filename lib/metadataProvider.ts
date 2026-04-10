@@ -249,23 +249,167 @@ class GoogleBooksProviderImpl implements BookMetadataProvider {
   }
 }
 
-// ── Singleton instance ────────────────────────────────────────────────────────
+// =============================================================================
+// Open Library Provider (Phase 2 adapter)
+// =============================================================================
+// Wraps the Open Library search.json API under the BookMetadataProvider
+// interface so future code can call it uniformly alongside Google Books.
+//
+// Current wiring in metadataRepair uses lib/openLibrary.ts directly
+// (for fetchOLMeta / searchOLWork which go deeper than search.json).
+// This adapter covers the search surface — it is registered in the provider
+// registry so getProvider('open_library') returns a functional implementation.
+//
+// Sticky points before full integration into the repair loop:
+//   - OL search.json first_sentence is short and often absent; fetchOLMeta
+//     /works/{OLID}.json returns a richer description.  The repair loop should
+//     continue calling fetchOLMeta directly until a proper OL adapter that
+//     calls the works endpoint is written.
+//   - OL has no official rate limit but should be called conservatively.
+//     A quotaMonitor equivalent for OL is a future item.
+//   - cover_i from search.json is the cover image ID; it maps to
+//     covers.openlibrary.org/b/id/{cover_i}-M.jpg — already within the
+//     ALLOWED_COVER_HOSTS allowlist in coverCredibility.ts.
+// =============================================================================
 
-const _googleBooksProvider = new GoogleBooksProviderImpl();
+class OpenLibraryProviderImpl implements BookMetadataProvider {
+  name = 'open_library';
+
+  normalize(rawItem: unknown): ProviderBookResult | null {
+    type OLDoc = {
+      key?:                    string;
+      title?:                  string;
+      author_name?:            string[];
+      isbn?:                   string[];
+      cover_i?:                number;
+      number_of_pages_median?: number;
+      first_sentence?:         { value?: string } | string;
+    };
+    const doc = rawItem as OLDoc | null;
+    if (!doc?.title) return null;
+
+    const author  = (doc.author_name ?? [])[0] ?? '';
+    const isbns   = doc.isbn ?? [];
+    const isbn_13 = isbns.find(i => i.length === 13) ?? null;
+    const isbn_10 = isbns.find(i => i.length === 10) ?? null;
+
+    const cover_url = doc.cover_i && doc.cover_i > 0
+      ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
+      : null;
+
+    let description: string | null = null;
+    const fs = doc.first_sentence;
+    const fsStr = typeof fs === 'string' ? fs : (fs as { value?: string })?.value;
+    if (typeof fsStr === 'string' && fsStr.length >= MIN_DESCRIPTION_LENGTH) {
+      description = fsStr;
+    }
+
+    const page_count =
+      typeof doc.number_of_pages_median === 'number' &&
+      doc.number_of_pages_median >= MIN_CREDIBLE_PAGES
+        ? doc.number_of_pages_median
+        : null;
+
+    const confidence: 'high' | 'medium' | 'low' =
+      isbn_13 || isbn_10 ? 'high' : author ? 'medium' : 'low';
+
+    return {
+      title:       doc.title,
+      author,
+      cover_url,
+      description,
+      page_count,
+      isbn_13,
+      isbn_10,
+      provider:    'open_library',
+      provider_id: doc.key ?? null,
+      raw_payload: rawItem,
+      confidence,
+    };
+  }
+
+  async search(query: string): Promise<ProviderBookResult[]> {
+    if (!query.trim()) return [];
+    const fields = 'key,title,author_name,isbn,cover_i,number_of_pages_median,first_sentence';
+    const url =
+      `https://openlibrary.org/search.json` +
+      `?q=${encodeURIComponent(query)}&limit=10&fields=${fields}`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const data = await res.json() as { docs?: unknown[] };
+      if (!Array.isArray(data.docs)) return [];
+      const results = data.docs
+        .map(item => this.normalize(item))
+        .filter((r): r is ProviderBookResult => r !== null);
+      console.log(`[METADATA] open_library search("${query.slice(0, 30)}") → ${results.length} results`);
+      return results;
+    } catch {
+      return [];
+    }
+  }
+
+  async getById(id: string): Promise<ProviderBookResult | null> {
+    // id = "/works/OL12345W"
+    if (!id) return null;
+    const olid = id.startsWith('/works/') ? id.slice(7) : id;
+    const url  = `https://openlibrary.org/works/${olid}.json`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const data = await res.json() as {
+        title?:          string;
+        key?:            string;
+        covers?:         number[];
+        number_of_pages?: number;
+        first_sentence?: { value?: string } | string;
+      };
+      const doc = {
+        key:                    data.key ?? id,
+        title:                  data.title,
+        author_name:            [] as string[],
+        cover_i:                Array.isArray(data.covers) && (data.covers[0] ?? 0) > 0
+                                  ? data.covers[0]
+                                  : undefined,
+        number_of_pages_median: typeof data.number_of_pages === 'number'
+                                  ? data.number_of_pages
+                                  : undefined,
+        first_sentence:         data.first_sentence,
+      };
+      const result = this.normalize(doc);
+      if (result) {
+        console.log(`[METADATA] open_library getById("${id}") → "${result.title}"`);
+      }
+      return result;
+    } catch {
+      return null;
+    }
+  }
+}
+
+// ── Singleton instances ───────────────────────────────────────────────────────
+
+const _googleBooksProvider  = new GoogleBooksProviderImpl();
+const _openLibraryProvider  = new OpenLibraryProviderImpl();
 
 // ── Provider registry / factory ───────────────────────────────────────────────
 
 const _registry: Record<string, BookMetadataProvider> = {
-  google_books: _googleBooksProvider,
+  google_books:  _googleBooksProvider,
+  open_library:  _openLibraryProvider,
 };
 
 export function getProvider(name: string): BookMetadataProvider | null {
   return _registry[name] ?? null;
 }
 
-// Typed overload for known provider names (Phase 1 only has google_books)
+// Typed accessors for known provider names
 export function googleBooksProvider(): BookMetadataProvider {
   return _googleBooksProvider;
+}
+
+export function openLibraryProvider(): BookMetadataProvider {
+  return _openLibraryProvider;
 }
 
 // =============================================================================

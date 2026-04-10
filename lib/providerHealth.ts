@@ -26,6 +26,7 @@
 export type ProviderName = 'google_books' | 'open_library' | 'goodreads';
 export type ProviderOutcome = 'success' | 'failed' | 'rate_limited' | 'skipped';
 export type MissingField = 'cover' | 'description' | 'page_count';
+export type CacheHitKind = 'cover_url' | 'repair_skip';
 
 // ── Internal counters ─────────────────────────────────────────────────────────
 
@@ -42,9 +43,15 @@ type MissingStats = {
   page_count:  number;
 };
 
+type CacheHitStats = {
+  cover_url:    number;   // CoverThumb skipped a known-failed derived URL
+  repair_skip:  number;   // metadataRepair skipped a book already attempted this session
+};
+
 type HealthState = {
   providers:      Record<ProviderName, ProviderStats>;
   missing:        MissingStats;
+  cacheHits:      CacheHitStats;
   sessionStart:   number;
   lastEventAt:    number | null;
 };
@@ -59,7 +66,8 @@ const _health: HealthState = {
     open_library: makeProviderStats(),
     goodreads:    makeProviderStats(),
   },
-  missing: { cover: 0, description: 0, page_count: 0 },
+  missing:    { cover: 0, description: 0, page_count: 0 },
+  cacheHits:  { cover_url: 0, repair_skip: 0 },
   sessionStart: Date.now(),
   lastEventAt:  null,
 };
@@ -91,13 +99,25 @@ export function recordMissingField(field: MissingField): void {
   _health.lastEventAt = Date.now();
 }
 
+/**
+ * Record a session-cache hit that avoided a provider call.
+ *
+ * @param kind - 'cover_url'   : CoverThumb skipped a known-failed derived OL URL
+ *             - 'repair_skip' : metadataRepair skipped a book already attempted this session
+ */
+export function recordCacheHit(kind: CacheHitKind): void {
+  _health.cacheHits[kind] += 1;
+  _health.lastEventAt = Date.now();
+}
+
 // ── Public read API ───────────────────────────────────────────────────────────
 
 export type ProviderHealthSnapshot = {
-  providers:    Record<ProviderName, ProviderStats>;
-  missing:      MissingStats;
-  sessionStart: number;
-  lastEventAt:  number | null;
+  providers:     Record<ProviderName, ProviderStats>;
+  missing:       MissingStats;
+  cacheHits:     CacheHitStats;
+  sessionStart:  number;
+  lastEventAt:   number | null;
   uptimeSeconds: number;
 };
 
@@ -112,9 +132,10 @@ export function getProviderHealth(): ProviderHealthSnapshot {
       open_library: { ..._health.providers.open_library },
       goodreads:    { ..._health.providers.goodreads    },
     },
-    missing:      { ..._health.missing },
-    sessionStart: _health.sessionStart,
-    lastEventAt:  _health.lastEventAt,
+    missing:       { ..._health.missing },
+    cacheHits:     { ..._health.cacheHits },
+    sessionStart:  _health.sessionStart,
+    lastEventAt:   _health.lastEventAt,
     uptimeSeconds: Math.round((Date.now() - _health.sessionStart) / 1000),
   };
 }
@@ -156,6 +177,8 @@ export function logProviderHealthSummary(): void {
 
   const missingTotal =
     snap.missing.cover + snap.missing.description + snap.missing.page_count;
+  const cacheTotal =
+    snap.cacheHits.cover_url + snap.cacheHits.repair_skip;
 
   console.log(
     '[HEALTH] ─────────────────────────────────────',
@@ -167,6 +190,9 @@ export function logProviderHealthSummary(): void {
       ` desc=${snap.missing.description}` +
       ` pages=${snap.missing.page_count}` +
       ` total=${missingTotal}`,
+    `\n[HEALTH] cache_hits: cover_url=${snap.cacheHits.cover_url}` +
+      ` repair_skip=${snap.cacheHits.repair_skip}` +
+      ` total=${cacheTotal}`,
     '\n[HEALTH] ─────────────────────────────────────',
   );
 }
@@ -179,7 +205,8 @@ export function resetProviderHealth(): void {
   _health.providers.google_books = makeProviderStats();
   _health.providers.open_library = makeProviderStats();
   _health.providers.goodreads    = makeProviderStats();
-  _health.missing = { cover: 0, description: 0, page_count: 0 };
+  _health.missing   = { cover: 0, description: 0, page_count: 0 };
+  _health.cacheHits = { cover_url: 0, repair_skip: 0 };
   _health.sessionStart = Date.now();
   _health.lastEventAt  = null;
 }

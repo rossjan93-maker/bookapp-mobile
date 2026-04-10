@@ -46,8 +46,11 @@ import { shouldUpgradeCover } from './coverUpgrade';
 import {
   recordProviderOutcome,
   recordMissingField,
+  recordCacheHit,
   logProviderHealthSummary,
 } from './providerHealth';
+import { wasCoverAttempted, markCoverAttempted } from './coverCache';
+import { recordGbCall, logQuotaSnapshot } from './quotaMonitor';
 
 export type RepairResult = {
   covered:   number;
@@ -202,7 +205,27 @@ export async function repairBooksMetadata(
         (!hasPages && !foundPages) ||
         needGbForProvenance;
 
-      if (needGb && t) {
+      // ── Session-level repair deduplication ───────────────────────────────
+      // If this book was already attempted for a cover this session and nothing
+      // was found, skip the GB call.  Avoids burning quota on books known to
+      // have no online cover until the next app restart.
+      const skipGbForCover = !hasCover && wasCoverAttempted(bookId);
+      if (skipGbForCover) {
+        recordCacheHit('repair_skip');
+        if (__DEV__) {
+          console.log(`[REPAIR] skipping GB cover attempt for "${t}" — already tried this session`);
+        }
+      }
+
+      const needGbAdjusted =
+        needGb &&
+        // When the only reason to call GB is a missing cover, and we already
+        // tried this session, skip entirely.
+        !(!hasCover && skipGbForCover && hasDesc && hasPages && !needGbForProvenance);
+
+      if (needGbAdjusted && t) {
+        // Record quota usage before the actual network call.
+        await recordGbCall();
         const gb = await fetchGoogleBooksMetadata({
           isbn13: (book.isbn13 as string | null) ?? null,
           isbn:   (book.isbn   as string | null) ?? null,
@@ -373,6 +396,11 @@ export async function repairBooksMetadata(
       if (stillNoDesc)  recordMissingField('description');
       if (stillNoPages) recordMissingField('page_count');
 
+      // Mark books with no cover so subsequent repair passes skip the GB call.
+      // Books that just gained a cover (patch.cover_url) are NOT marked —
+      // they'll be filtered out by `cover_url.is.null` in the next fetch anyway.
+      if (stillNoCover) markCoverAttempted(bookId);
+
     } catch (err) {
       console.log(`[REPAIR] error processing book ${book.id} — ${String(err)}`);
     }
@@ -380,5 +408,6 @@ export async function repairBooksMetadata(
 
   console.log(`[REPAIR] done — covered=${covered} described=${described} subjected=${subjected} paged=${paged} total=${total}`);
   logProviderHealthSummary();
+  await logQuotaSnapshot();
   return { covered, described, subjected, paged, total };
 }

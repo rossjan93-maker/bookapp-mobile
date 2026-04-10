@@ -1,6 +1,10 @@
 import { useState, useRef } from 'react';
 import { Animated, Text, View } from 'react-native';
 import { isCredibleCoverUrl } from '../lib/coverCredibility';
+import {
+  isCoverUrlKnownFailed,
+  markCoverUrlFailed,
+} from '../lib/coverCache';
 
 // ── Design tokens (kept local — no runtime import needed) ─────────────────────
 const DUST   = '#9e958d';
@@ -71,11 +75,16 @@ export function CoverThumb({
   const style = { width, height, borderRadius: radius };
 
   // Derive URL from externalId / editionKey when no explicit url is given.
-  const derived = externalId
+  // Derived OL URLs are live CDN requests that can 404 silently; we use the
+  // session-level coverCache to avoid re-attempting URLs that already failed.
+  const derivedRaw = externalId
     ? deriveCoverUrl(externalId, editionKey)
     : editionKey
     ? `https://covers.openlibrary.org/b/olid/${editionKey}-M.jpg`
     : null;
+
+  // Skip a derived URL that already 404'd in this session.
+  const derived = derivedRaw && isCoverUrlKnownFailed(derivedRaw) ? null : derivedRaw;
 
   const rawSrc = url || derived;
 
@@ -102,7 +111,11 @@ export function CoverThumb({
               useNativeDriver: true,
             }).start()
           }
-          onError={() => setImgFailed(true)}
+          onError={() => {
+            // Cache this URL so re-renders of the same book skip the attempt.
+            markCoverUrlFailed(src);
+            setImgFailed(true);
+          }}
         />
         {/* Placeholder background visible during fade-in */}
       </View>
