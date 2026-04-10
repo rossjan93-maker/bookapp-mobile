@@ -157,7 +157,6 @@ function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | n
   return null;
 }
 
-type SeriesCover = { olKey: string; coverId: number | null; title: string };
 
 // ─── VariantBadge ─────────────────────────────────────────────────────────────
 function VariantBadge({ label, bg, color }: { label: string; bg: string; color: string }) {
@@ -200,10 +199,10 @@ export function RecCard({
   const confirmOpacity = useRef(new Animated.Value(0)).current;
   const bloomAnim      = useRef(new Animated.Value(0)).current;
 
-  const [moreDone, setMoreDone]           = useState(false);
-  const [pendingAction, setPendingAction] = useState(false);
-  const [confirmState, setConfirmState]   = useState<'save' | 'more' | 'dismiss' | null>(null);
-  const [seriesCovers, setSeriesCovers]   = useState<SeriesCover[]>([]);
+  const [moreDone, setMoreDone]             = useState(false);
+  const [pendingAction, setPendingAction]   = useState(false);
+  const [confirmState, setConfirmState]     = useState<'save' | 'more' | 'dismiss' | null>(null);
+  const [seriesImgErrors, setSeriesImgErrors] = useState<Record<number, true>>({});
   const impressionFired = useRef(false);
 
   useEffect(() => {
@@ -212,40 +211,6 @@ export function RecCard({
       onImpression();
       if (__DEV__) console.log('[REC_CONFIDENCE]', `book_id=${book.id}`, `score=${book.score}`, `tier=${book.confidence}`);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    const sn = book._score_breakdown.series_name;
-    const sp = book._score_breakdown.series_position;
-    if (!sn || sp == null) return;
-    const meta = getSeriesCatalog(sn);
-    if (!meta) return;
-    const BAD_EDITION = /collection|omnibus|boxed|box set|complete works|anthology/i;
-    const fetchCover = async (b: { title: string; author: string }): Promise<SeriesCover | null> => {
-      try {
-        const url = [
-          'https://openlibrary.org/search.json',
-          `?title=${encodeURIComponent(b.title)}`,
-          `&author=${encodeURIComponent(b.author)}`,
-          '&fields=key,title,cover_i&limit=5',
-        ].join('');
-        const data: { docs?: Array<{ key: string; cover_i?: number; title?: string }> } =
-          await fetch(url).then(r => r.json());
-        const docs  = data.docs ?? [];
-        const clean = docs.find(d => d.cover_i != null && !BAD_EDITION.test(d.title ?? ''));
-        if (!clean || clean.cover_i == null) return null;
-        return { olKey: clean.key, coverId: clean.cover_i, title: clean.title ?? b.title };
-      } catch { return null; }
-    };
-    let cancelled = false;
-    Promise.all(meta.orderedBooks.map(fetchCover)).then(results => {
-      if (cancelled) return;
-      setSeriesCovers(results.map((r, i): SeriesCover =>
-        r ?? { olKey: `placeholder-${i}`, coverId: null, title: meta.orderedBooks[i].title }
-      ));
-    });
-    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -436,10 +401,11 @@ export function RecCard({
           {hasSeriesMeta && (
             <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 5, marginBottom: 8 }}>
               {catalogMeta!.orderedBooks.map((b, i) => {
-                const isCurrent = (i + 1) === seriesPos;
-                const cover     = seriesCovers[i];
-                const coverUri  = cover?.coverId
-                  ? `https://covers.openlibrary.org/b/id/${cover.coverId}-S.jpg`
+                const isCurrent  = (i + 1) === seriesPos;
+                const w          = isCurrent ? 34 : 27;
+                const h          = isCurrent ? 50 : 42;
+                const coverUri   = b.olCoverId && !seriesImgErrors[i]
+                  ? `https://covers.openlibrary.org/b/id/${b.olCoverId}-S.jpg`
                   : null;
                 return (
                   <View
@@ -454,22 +420,29 @@ export function RecCard({
                     {coverUri ? (
                       <Image
                         source={{ uri: coverUri }}
+                        onError={() => setSeriesImgErrors(prev => ({ ...prev, [i]: true }))}
                         style={{
-                          width:           isCurrent ? 34 : 27,
-                          height:          isCurrent ? 50 : 42,
+                          width:           w,
+                          height:          h,
                           borderRadius:    3,
                           backgroundColor: '#ede9e4',
                         }}
                       />
                     ) : (
                       <View style={{
-                        width:           isCurrent ? 34 : 27,
-                        height:          isCurrent ? 50 : 42,
+                        width:           w,
+                        height:          h,
                         borderRadius:    3,
-                        backgroundColor: '#ece9e4',
+                        backgroundColor: '#ede9e4',
                         borderWidth:     1,
                         borderColor:     '#e0dbd4',
-                      }} />
+                        alignItems:      'center',
+                        justifyContent:  'center',
+                      }}>
+                        <Text style={{ fontSize: 7, color: '#9e958d', textAlign: 'center', paddingHorizontal: 2 }} numberOfLines={3}>
+                          {b.title}
+                        </Text>
+                      </View>
                     )}
                   </View>
                 );

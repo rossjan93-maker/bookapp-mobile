@@ -20,8 +20,9 @@
 // It is better to show NO series than to show an inaccurate one.
 
 export type SeriesBook = {
-  title:  string;
-  author: string;
+  title:      string;
+  author:     string;
+  olCoverId?: number; // Canonical OL cover ID — looked up offline, stored to avoid runtime CORS issues
 };
 
 export type SeriesCatalogEntry = {
@@ -39,9 +40,9 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Farseer Trilogy',
     total:        3,
     orderedBooks: [
-      { title: "Assassin's Apprentice", author: 'Robin Hobb' },
-      { title: 'Royal Assassin',        author: 'Robin Hobb' },
-      { title: "Assassin's Quest",      author: 'Robin Hobb' },
+      { title: "Assassin's Apprentice", author: 'Robin Hobb', olCoverId: 4915230 },
+      { title: 'Royal Assassin',        author: 'Robin Hobb', olCoverId: 2177291 },
+      { title: "Assassin's Quest",      author: 'Robin Hobb', olCoverId: 368112 },
     ],
   },
 
@@ -49,9 +50,9 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Liveship Traders Trilogy',
     total:        3,
     orderedBooks: [
-      { title: 'Ship of Magic',   author: 'Robin Hobb' },
-      { title: 'Mad Ship',        author: 'Robin Hobb' },
-      { title: 'Ship of Destiny', author: 'Robin Hobb' },
+      { title: 'Ship of Magic',   author: 'Robin Hobb', olCoverId: 372583 },
+      { title: 'Mad Ship',        author: 'Robin Hobb', olCoverId: 368046 },
+      { title: 'Ship of Destiny', author: 'Robin Hobb', olCoverId: 8314580 },
     ],
   },
 
@@ -59,9 +60,9 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Tawny Man Trilogy',
     total:        3,
     orderedBooks: [
-      { title: "Fool's Errand", author: 'Robin Hobb' },
-      { title: 'Golden Fool',   author: 'Robin Hobb' },
-      { title: "Fool's Fate",   author: 'Robin Hobb' },
+      { title: "Fool's Errand", author: 'Robin Hobb', olCoverId: 373090 },
+      { title: 'Golden Fool',   author: 'Robin Hobb', olCoverId: 373091 },
+      { title: "Fool's Fate",   author: 'Robin Hobb', olCoverId: 374007 },
     ],
   },
 
@@ -69,10 +70,10 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Rain Wilds Chronicles',
     total:        4,
     orderedBooks: [
-      { title: 'Dragon Keeper',    author: 'Robin Hobb' },
-      { title: 'Dragon Haven',     author: 'Robin Hobb' },
-      { title: 'City of Dragons',  author: 'Robin Hobb' },
-      { title: 'Blood of Dragons', author: 'Robin Hobb' },
+      { title: 'Dragon Keeper',    author: 'Robin Hobb', olCoverId: 6680847 },
+      { title: 'Dragon Haven',     author: 'Robin Hobb', olCoverId: 6298448 },
+      { title: 'City of Dragons',  author: 'Robin Hobb', olCoverId: 7254797 },
+      { title: 'Blood of Dragons', author: 'Robin Hobb', olCoverId: 7284727 },
     ],
   },
 
@@ -80,9 +81,9 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Fitz and the Fool Trilogy',
     total:        3,
     orderedBooks: [
-      { title: "Fool's Assassin", author: 'Robin Hobb' },
-      { title: "Fool's Quest",    author: 'Robin Hobb' },
-      { title: "Assassin's Fate", author: 'Robin Hobb' },
+      { title: "Fool's Assassin", author: 'Robin Hobb', olCoverId: 10107391 },
+      { title: "Fool's Quest",    author: 'Robin Hobb', olCoverId: 13172508 },
+      { title: "Assassin's Fate", author: 'Robin Hobb', olCoverId: 8417258 },
     ],
   },
 
@@ -91,9 +92,9 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Mistborn',
     total:        3,
     orderedBooks: [
-      { title: 'The Final Empire',      author: 'Brandon Sanderson' },
-      { title: 'The Well of Ascension', author: 'Brandon Sanderson' },
-      { title: 'The Hero of Ages',      author: 'Brandon Sanderson' },
+      { title: 'The Final Empire',      author: 'Brandon Sanderson', olCoverId: 14658160 },
+      { title: 'The Well of Ascension', author: 'Brandon Sanderson', olCoverId: 14658341 },
+      { title: 'The Hero of Ages',      author: 'Brandon Sanderson', olCoverId: 14658094 },
     ],
   },
 
@@ -101,10 +102,10 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Mistborn: Wax and Wayne',
     total:        4,
     orderedBooks: [
-      { title: 'The Alloy of Law',      author: 'Brandon Sanderson' },
-      { title: 'Shadows of Self',       author: 'Brandon Sanderson' },
-      { title: 'The Bands of Mourning', author: 'Brandon Sanderson' },
-      { title: 'The Lost Metal',        author: 'Brandon Sanderson' },
+      { title: 'The Alloy of Law',      author: 'Brandon Sanderson', olCoverId: 14658081 },
+      { title: 'Shadows of Self',       author: 'Brandon Sanderson', olCoverId: 14658321 },
+      { title: 'The Bands of Mourning', author: 'Brandon Sanderson', olCoverId: 14658335 },
+      { title: 'The Lost Metal',        author: 'Brandon Sanderson', olCoverId: 14658507 },
     ],
   },
 
@@ -112,10 +113,10 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'The Stormlight Archive',
     total:        5,
     orderedBooks: [
-      { title: 'The Way of Kings',   author: 'Brandon Sanderson' },
-      { title: 'Words of Radiance',  author: 'Brandon Sanderson' },
-      { title: 'Oathbringer',        author: 'Brandon Sanderson' },
-      { title: 'Rhythm of War',      author: 'Brandon Sanderson' },
+      { title: 'The Way of Kings',   author: 'Brandon Sanderson', olCoverId: 14658316 },
+      { title: 'Words of Radiance',  author: 'Brandon Sanderson', olCoverId: 14658334 },
+      { title: 'Oathbringer',        author: 'Brandon Sanderson', olCoverId: 14658111 },
+      { title: 'Rhythm of War',      author: 'Brandon Sanderson', olCoverId: 14658361 },
       { title: 'The Wind and Truth', author: 'Brandon Sanderson' },
     ],
   },
@@ -124,10 +125,10 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Skyward',
     total:        4,
     orderedBooks: [
-      { title: 'Skyward',   author: 'Brandon Sanderson' },
-      { title: 'Starsight', author: 'Brandon Sanderson' },
-      { title: 'Cytonic',   author: 'Brandon Sanderson' },
-      { title: 'Defiant',   author: 'Brandon Sanderson' },
+      { title: 'Skyward',   author: 'Brandon Sanderson', olCoverId: 14658323 },
+      { title: 'Starsight', author: 'Brandon Sanderson', olCoverId: 14662078 },
+      { title: 'Cytonic',   author: 'Brandon Sanderson', olCoverId: 14658369 },
+      { title: 'Defiant',   author: 'Brandon Sanderson', olCoverId: 13815273 },
     ],
   },
 
@@ -138,11 +139,11 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Throne of Glass',
     total:        7,
     orderedBooks: [
-      { title: 'Throne of Glass',   author: 'Sarah J. Maas' },
-      { title: 'Crown of Midnight', author: 'Sarah J. Maas' },
-      { title: 'Heir of Fire',      author: 'Sarah J. Maas' },
-      { title: 'Queen of Shadows',  author: 'Sarah J. Maas' },
-      { title: 'Empire of Storms',  author: 'Sarah J. Maas' },
+      { title: 'Throne of Glass',   author: 'Sarah J. Maas', olCoverId: 13312488 },
+      { title: 'Crown of Midnight', author: 'Sarah J. Maas', olCoverId: 14348029 },
+      { title: 'Heir of Fire',      author: 'Sarah J. Maas', olCoverId: 9318480 },
+      { title: 'Queen of Shadows',  author: 'Sarah J. Maas', olCoverId: 7994583 },
+      { title: 'Empire of Storms',  author: 'Sarah J. Maas', olCoverId: 14349313 },
     ],
   },
 
@@ -150,11 +151,11 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'A Court of Thorns and Roses',
     total:        5,
     orderedBooks: [
-      { title: 'A Court of Thorns and Roses',    author: 'Sarah J. Maas' },
-      { title: 'A Court of Mist and Fury',       author: 'Sarah J. Maas' },
-      { title: 'A Court of Wings and Ruin',      author: 'Sarah J. Maas' },
-      { title: 'A Court of Frost and Starlight', author: 'Sarah J. Maas' },
-      { title: 'A Court of Silver Flames',       author: 'Sarah J. Maas' },
+      { title: 'A Court of Thorns and Roses',    author: 'Sarah J. Maas', olCoverId: 8738585 },
+      { title: 'A Court of Mist and Fury',       author: 'Sarah J. Maas', olCoverId: 14315081 },
+      { title: 'A Court of Wings and Ruin',      author: 'Sarah J. Maas', olCoverId: 8506724 },
+      { title: 'A Court of Frost and Starlight', author: 'Sarah J. Maas', olCoverId: 8569939 },
+      { title: 'A Court of Silver Flames',       author: 'Sarah J. Maas', olCoverId: 10643508 },
     ],
   },
 
@@ -162,9 +163,9 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Crescent City',
     total:        3,
     orderedBooks: [
-      { title: 'House of Earth and Blood',  author: 'Sarah J. Maas' },
-      { title: 'House of Sky and Breath',   author: 'Sarah J. Maas' },
-      { title: 'House of Flame and Shadow', author: 'Sarah J. Maas' },
+      { title: 'House of Earth and Blood',  author: 'Sarah J. Maas', olCoverId: 9289603 },
+      { title: 'House of Sky and Breath',   author: 'Sarah J. Maas', olCoverId: 10327411 },
+      { title: 'House of Flame and Shadow', author: 'Sarah J. Maas', olCoverId: 13525139 },
     ],
   },
 
@@ -174,11 +175,11 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'A Song of Ice and Fire',
     total:        5,
     orderedBooks: [
-      { title: 'A Game of Thrones',    author: 'George R. R. Martin' },
-      { title: 'A Clash of Kings',     author: 'George R. R. Martin' },
-      { title: 'A Storm of Swords',    author: 'George R. R. Martin' },
-      { title: 'A Feast for Crows',    author: 'George R. R. Martin' },
-      { title: 'A Dance with Dragons', author: 'George R. R. Martin' },
+      { title: 'A Game of Thrones',    author: 'George R. R. Martin', olCoverId: 9269962 },
+      { title: 'A Clash of Kings',     author: 'George R. R. Martin', olCoverId: 8231751 },
+      { title: 'A Storm of Swords',    author: 'George R. R. Martin', olCoverId: 15124196 },
+      { title: 'A Feast for Crows',    author: 'George R. R. Martin', olCoverId: 6501256 },
+      { title: 'A Dance with Dragons', author: 'George R. R. Martin', olCoverId: 11298743 },
     ],
   },
 
@@ -187,9 +188,9 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Shadow and Bone',
     total:        3,
     orderedBooks: [
-      { title: 'Shadow and Bone', author: 'Leigh Bardugo' },
-      { title: 'Siege and Storm', author: 'Leigh Bardugo' },
-      { title: 'Ruin and Rising', author: 'Leigh Bardugo' },
+      { title: 'Shadow and Bone', author: 'Leigh Bardugo', olCoverId: 13816048 },
+      { title: 'Siege and Storm', author: 'Leigh Bardugo', olCoverId: 10297781 },
+      { title: 'Ruin and Rising', author: 'Leigh Bardugo', olCoverId: 12667421 },
     ],
   },
 
@@ -197,8 +198,8 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Six of Crows',
     total:        2,
     orderedBooks: [
-      { title: 'Six of Crows',    author: 'Leigh Bardugo' },
-      { title: 'Crooked Kingdom', author: 'Leigh Bardugo' },
+      { title: 'Six of Crows',    author: 'Leigh Bardugo', olCoverId: 12667417 },
+      { title: 'Crooked Kingdom', author: 'Leigh Bardugo', olCoverId: 12667428 },
     ],
   },
 
@@ -206,8 +207,8 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'King of Scars',
     total:        2,
     orderedBooks: [
-      { title: 'King of Scars',  author: 'Leigh Bardugo' },
-      { title: 'Rule of Wolves', author: 'Leigh Bardugo' },
+      { title: 'King of Scars',  author: 'Leigh Bardugo', olCoverId: 12714913 },
+      { title: 'Rule of Wolves', author: 'Leigh Bardugo', olCoverId: 10394566 },
     ],
   },
 
@@ -216,9 +217,9 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'The Folk of the Air',
     total:        3,
     orderedBooks: [
-      { title: 'The Cruel Prince',     author: 'Holly Black' },
-      { title: 'The Wicked King',      author: 'Holly Black' },
-      { title: 'The Queen of Nothing', author: 'Holly Black' },
+      { title: 'The Cruel Prince',     author: 'Holly Black', olCoverId: 8361789 },
+      { title: 'The Wicked King',      author: 'Holly Black', olCoverId: 8361788 },
+      { title: 'The Queen of Nothing', author: 'Holly Black', olCoverId: 9146990 },
     ],
   },
 
@@ -226,7 +227,7 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'The Stolen Heir',
     total:        2,
     orderedBooks: [
-      { title: 'The Stolen Heir',                      author: 'Holly Black' },
+      { title: 'The Stolen Heir',                      author: 'Holly Black', olCoverId: 13122196 },
       { title: 'The Prisoner of the Castle of Unrest', author: 'Holly Black' },
     ],
   },
@@ -236,11 +237,11 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'The Plated Prisoner',
     total:        5,
     orderedBooks: [
-      { title: 'Gild',  author: 'Raven Kennedy' },
-      { title: 'Glint', author: 'Raven Kennedy' },
-      { title: 'Gleam', author: 'Raven Kennedy' },
-      { title: 'Glow',  author: 'Raven Kennedy' },
-      { title: 'Gold',  author: 'Raven Kennedy' },
+      { title: 'Gild',  author: 'Raven Kennedy', olCoverId: 13290449 },
+      { title: 'Glint', author: 'Raven Kennedy', olCoverId: 13614818 },
+      { title: 'Gleam', author: 'Raven Kennedy', olCoverId: 14667127 },
+      { title: 'Glow',  author: 'Raven Kennedy', olCoverId: 15152413 },
+      { title: 'Gold',  author: 'Raven Kennedy', olCoverId: 14668980 },
     ],
   },
 
@@ -249,9 +250,9 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'The Empyrean',
     total:        3,
     orderedBooks: [
-      { title: 'Fourth Wing', author: 'Rebecca Yarros' },
-      { title: 'Iron Flame',  author: 'Rebecca Yarros' },
-      { title: 'Onyx Storm',  author: 'Rebecca Yarros' },
+      { title: 'Fourth Wing', author: 'Rebecca Yarros', olCoverId: 14407898 },
+      { title: 'Iron Flame',  author: 'Rebecca Yarros', olCoverId: 14405746 },
+      { title: 'Onyx Storm',  author: 'Rebecca Yarros', olCoverId: 14826089 },
     ],
   },
 
@@ -260,10 +261,10 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Hawthorne and Horowitz',
     total:        4,
     orderedBooks: [
-      { title: 'The Word is Murder',    author: 'Anthony Horowitz' },
-      { title: 'The Sentence is Death', author: 'Anthony Horowitz' },
-      { title: 'A Line to Kill',        author: 'Anthony Horowitz' },
-      { title: 'Close to Death',        author: 'Anthony Horowitz' },
+      { title: 'The Word is Murder',    author: 'Anthony Horowitz', olCoverId: 9155652 },
+      { title: 'The Sentence is Death', author: 'Anthony Horowitz', olCoverId: 8598870 },
+      { title: 'A Line to Kill',        author: 'Anthony Horowitz', olCoverId: 11422612 },
+      { title: 'Close to Death',        author: 'Anthony Horowitz', olCoverId: 14606602 },
     ],
   },
 
@@ -271,8 +272,8 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Susan Ryeland',
     total:        2,
     orderedBooks: [
-      { title: 'Magpie Murders',    author: 'Anthony Horowitz' },
-      { title: 'Moonflower Murders',author: 'Anthony Horowitz' },
+      { title: 'Magpie Murders',    author: 'Anthony Horowitz', olCoverId: 8189045 },
+      { title: 'Moonflower Murders',author: 'Anthony Horowitz', olCoverId: 10096871 },
     ],
   },
 
@@ -281,10 +282,10 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Winter Street',
     total:        4,
     orderedBooks: [
-      { title: 'Winter Street',   author: 'Elin Hilderbrand' },
-      { title: 'Winter Stroll',   author: 'Elin Hilderbrand' },
-      { title: 'Winter Storms',   author: 'Elin Hilderbrand' },
-      { title: 'Winter Solstice', author: 'Elin Hilderbrand' },
+      { title: 'Winter Street',   author: 'Elin Hilderbrand', olCoverId: 8994580 },
+      { title: 'Winter Stroll',   author: 'Elin Hilderbrand', olCoverId: 10414609 },
+      { title: 'Winter Storms',   author: 'Elin Hilderbrand', olCoverId: 9139654 },
+      { title: 'Winter Solstice', author: 'Elin Hilderbrand', olCoverId: 8861679 },
     ],
   },
 
@@ -292,8 +293,8 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Paradise',
     total:        3,
     orderedBooks: [
-      { title: 'Winter in Paradise',       author: 'Elin Hilderbrand' },
-      { title: 'What Happens in Paradise', author: 'Elin Hilderbrand' },
+      { title: 'Winter in Paradise',       author: 'Elin Hilderbrand', olCoverId: 8813208 },
+      { title: 'What Happens in Paradise', author: 'Elin Hilderbrand', olCoverId: 8945090 },
       { title: 'Here in Paradise',         author: 'Elin Hilderbrand' },
     ],
   },
@@ -303,9 +304,9 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Slammed',
     total:        3,
     orderedBooks: [
-      { title: 'Slammed',          author: 'Colleen Hoover' },
-      { title: 'Point of Retreat', author: 'Colleen Hoover' },
-      { title: 'This Girl',        author: 'Colleen Hoover' },
+      { title: 'Slammed',          author: 'Colleen Hoover', olCoverId: 12852065 },
+      { title: 'Point of Retreat', author: 'Colleen Hoover', olCoverId: 7590980 },
+      { title: 'This Girl',        author: 'Colleen Hoover', olCoverId: 13459261 },
     ],
   },
 
@@ -313,8 +314,8 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Hopeless',
     total:        2,
     orderedBooks: [
-      { title: 'Hopeless',    author: 'Colleen Hoover' },
-      { title: 'Losing Hope', author: 'Colleen Hoover' },
+      { title: 'Hopeless',    author: 'Colleen Hoover', olCoverId: 10549926 },
+      { title: 'Losing Hope', author: 'Colleen Hoover', olCoverId: 9326787 },
     ],
   },
 
@@ -322,8 +323,8 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'It Ends with Us',
     total:        2,
     orderedBooks: [
-      { title: 'It Ends with Us',   author: 'Colleen Hoover' },
-      { title: 'It Starts with Us', author: 'Colleen Hoover' },
+      { title: 'It Ends with Us',   author: 'Colleen Hoover', olCoverId: 10473609 },
+      { title: 'It Starts with Us', author: 'Colleen Hoover', olCoverId: 12749873 },
     ],
   },
 
@@ -332,11 +333,11 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Harry Potter',
     total:        7,
     orderedBooks: [
-      { title: "Harry Potter and the Sorcerer's Stone",  author: 'J.K. Rowling' },
-      { title: 'Harry Potter and the Chamber of Secrets',author: 'J.K. Rowling' },
-      { title: 'Harry Potter and the Prisoner of Azkaban',author:'J.K. Rowling' },
-      { title: 'Harry Potter and the Goblet of Fire',    author: 'J.K. Rowling' },
-      { title: 'Harry Potter and the Order of the Phoenix',author:'J.K. Rowling'},
+      { title: "Harry Potter and the Sorcerer's Stone",  author: 'J.K. Rowling', olCoverId: 276518 },
+      { title: 'Harry Potter and the Chamber of Secrets',author: 'J.K. Rowling', olCoverId: 15158664 },
+      { title: 'Harry Potter and the Prisoner of Azkaban',author:'J.K. Rowling', olCoverId: 10580435 },
+      { title: 'Harry Potter and the Goblet of Fire',    author: 'J.K. Rowling', olCoverId: 12059372 },
+      { title: 'Harry Potter and the Order of the Phoenix',author:'J.K. Rowling', olCoverId: 15158666},
     ],
   },
 
@@ -345,8 +346,8 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Villains',
     total:        2,
     orderedBooks: [
-      { title: 'Vicious',  author: 'V.E. Schwab' },
-      { title: 'Vengeful', author: 'V.E. Schwab' },
+      { title: 'Vicious',  author: 'V.E. Schwab', olCoverId: 7410937 },
+      { title: 'Vengeful', author: 'V.E. Schwab', olCoverId: 8843140 },
     ],
   },
 
@@ -354,9 +355,9 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'Shades of Magic',
     total:        3,
     orderedBooks: [
-      { title: 'A Darker Shade of Magic', author: 'V.E. Schwab' },
-      { title: 'A Gathering of Shadows',  author: 'V.E. Schwab' },
-      { title: 'A Conjuring of Light',    author: 'V.E. Schwab' },
+      { title: 'A Darker Shade of Magic', author: 'V.E. Schwab', olCoverId: 7410930 },
+      { title: 'A Gathering of Shadows',  author: 'V.E. Schwab', olCoverId: 7990183 },
+      { title: 'A Conjuring of Light',    author: 'V.E. Schwab', olCoverId: 7990184 },
     ],
   },
 
@@ -366,11 +367,11 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'The Wheel of Time',
     total:        14,
     orderedBooks: [
-      { title: 'The Eye of the World',  author: 'Robert Jordan' },
-      { title: 'The Great Hunt',        author: 'Robert Jordan' },
-      { title: 'The Dragon Reborn',     author: 'Robert Jordan' },
-      { title: 'The Shadow Rising',     author: 'Robert Jordan' },
-      { title: 'The Fires of Heaven',   author: 'Robert Jordan' },
+      { title: 'The Eye of the World',  author: 'Robert Jordan', olCoverId: 980232 },
+      { title: 'The Great Hunt',        author: 'Robert Jordan', olCoverId: 182352 },
+      { title: 'The Dragon Reborn',     author: 'Robert Jordan', olCoverId: 603239 },
+      { title: 'The Shadow Rising',     author: 'Robert Jordan', olCoverId: 603240 },
+      { title: 'The Fires of Heaven',   author: 'Robert Jordan', olCoverId: 603821 },
     ],
   },
 
@@ -380,8 +381,8 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'The Kingkiller Chronicle',
     total:        3,
     orderedBooks: [
-      { title: 'The Name of the Wind', author: 'Patrick Rothfuss' },
-      { title: "The Wise Man's Fear",  author: 'Patrick Rothfuss' },
+      { title: 'The Name of the Wind', author: 'Patrick Rothfuss', olCoverId: 11480483 },
+      { title: "The Wise Man's Fear",  author: 'Patrick Rothfuss', olCoverId: 8294024 },
     ],
   },
 
@@ -390,11 +391,11 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'The Mortal Instruments',
     total:        6,
     orderedBooks: [
-      { title: 'City of Bones',         author: 'Cassandra Clare' },
-      { title: 'City of Ashes',         author: 'Cassandra Clare' },
-      { title: 'City of Glass',         author: 'Cassandra Clare' },
-      { title: 'City of Fallen Angels', author: 'Cassandra Clare' },
-      { title: 'City of Lost Souls',    author: 'Cassandra Clare' },
+      { title: 'City of Bones',         author: 'Cassandra Clare', olCoverId: 10121449 },
+      { title: 'City of Ashes',         author: 'Cassandra Clare', olCoverId: 8783750 },
+      { title: 'City of Glass',         author: 'Cassandra Clare', olCoverId: 10397651 },
+      { title: 'City of Fallen Angels', author: 'Cassandra Clare', olCoverId: 8200331 },
+      { title: 'City of Lost Souls',    author: 'Cassandra Clare', olCoverId: 8200328 },
     ],
   },
 
@@ -402,9 +403,9 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     displayName:  'The Infernal Devices',
     total:        3,
     orderedBooks: [
-      { title: 'Clockwork Angel',    author: 'Cassandra Clare' },
-      { title: 'Clockwork Prince',   author: 'Cassandra Clare' },
-      { title: 'Clockwork Princess', author: 'Cassandra Clare' },
+      { title: 'Clockwork Angel',    author: 'Cassandra Clare', olCoverId: 6582736 },
+      { title: 'Clockwork Prince',   author: 'Cassandra Clare', olCoverId: 6934916 },
+      { title: 'Clockwork Princess', author: 'Cassandra Clare', olCoverId: 9042989 },
     ],
   },
 };
