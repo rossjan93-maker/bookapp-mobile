@@ -64,12 +64,34 @@ function rewriteReasonText(raw: string, laneLabel: string | null): string | null
   if (alignsM) return `Strong match for ${alignsM[1].toLowerCase()}.`;
 
   // ── "Matches your appreciation for X" ─────────────────────────────────
+  // Turn the fragment into a complete sentence that reads as a quality statement.
   const appreciationM = raw.match(/^Matches your appreciation for (.+)$/i);
-  if (appreciationM) return `Built around ${appreciationM[1].toLowerCase()}.`;
+  if (appreciationM) return `Strong ${appreciationM[1].toLowerCase()} — a quality you consistently rate highly.`;
 
   // ── "Readers note strong X — which fits your profile" ─────────────────
+  // Map trait names to natural quality phrases so the sentence is grammatical.
   const readersM = raw.match(/^Readers note strong (.+?) — which fits your profile$/i);
-  if (readersM) return `Notably ${readersM[1].toLowerCase()} — fits your taste.`;
+  if (readersM) {
+    const TRAIT_QUALITY: Record<string, string> = {
+      pacing:            'its pace',
+      suspense:          'its tension',
+      emotionality:      'its emotional depth',
+      worldbuilding:     'its world-building',
+      literary_prose:    'its prose',
+      insight:           'its insight',
+      originality:       'its originality',
+      romance_intensity: 'its romantic intensity',
+      practicality:      'its practical value',
+    };
+    const traitKey = readersM[1].toLowerCase();
+    const quality  = TRAIT_QUALITY[traitKey] ?? `its ${traitKey}`;
+    return `Readers especially praise ${quality} — a quality you consistently rate highly.`;
+  }
+
+  // ── "Covers themes of X and Y that appear in books you've loved" ───────
+  // Subject overlap reason — pass through as-is (already good copy).
+  const subjectM = raw.match(/^Covers themes of (.+) that appear in books you've loved$/i);
+  if (subjectM) return `Covers themes of ${subjectM[1]} that appear in books you've loved.`;
 
   // ── "Falls within X — a genre you consistently enjoy" (expertRec path) ─
   const fallsM = raw.match(/^Falls within (.+?) — a genre you consistently enjoy$/i);
@@ -109,6 +131,26 @@ const GENERIC_LANE_REASONS = new Set([
   'Fits the horror fiction you have consistently enjoyed',
 ]);
 
+// CoG fit_explanation strings from fitClassifier that describe the user's lane
+// rather than what is specific or notable about the book itself.  When a more
+// specific trait or subject reason is available as reasons[1], it should be
+// preferred over these lane-level summaries.
+const GENERIC_COG_EXPLANATIONS = new Set([
+  // buildCoreExplanation() — one per dominant lane
+  'Feels closest to the romantic fantasy series you return to most',
+  'Fits the fantasy and speculative fiction you return to most',
+  'Matches the twisty, readable suspense you return to most often',
+  'Aligns with the emotionally driven romance you consistently enjoy',
+  'Feels close to the contemporary, character-driven fiction you consistently enjoy',
+  'Sits at the heart of the narrative nonfiction you read most',
+  'Aligns with the literary fiction you consistently pick up',
+  'Fits the dark, atmospheric fiction you return to consistently',
+  // Generic fallbacks
+  'Strongly aligned with your most repeated reading patterns',
+  'A reasonable next read that sits near your reading center',
+  'A reasonable match based on your reading patterns',
+]);
+
 const EXPLANATION_LANE_LABELS: Record<DeterministicLane, string> = {
   romantasy:            'romantic fantasy',
   scifi_fantasy:        'fantasy and speculative fiction',
@@ -121,9 +163,22 @@ const EXPLANATION_LANE_LABELS: Record<DeterministicLane, string> = {
 };
 
 // Build a single behavior-driven explanation anchored to ONE concrete user signal.
+//
+// Priority order:
+//   1. Saga / series position — navigation cue beats everything.
+//   2. Specific reasons[1] when reasons[0] is a generic lane/CoG summary.
+//   3. Specific reasons[0] — e.g. named-author fit_explanation or trait match.
+//   4. Author loyalty (only when no specific reason is available above).
+//   5. Generic reasons[0] as last resort (lane fallback copy).
+//
+// The core_fit + laneLabel shortcut has been removed.  Specific fit_explanations
+// from the CoG classifier (e.g. "a consistent favorite — lands exactly in your
+// romantic fantasy reading") are now surfaced directly rather than being silenced
+// by a generic "A strong fit for your taste in X" override.
 function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | null {
   const bd = book._score_breakdown;
 
+  // ── Saga / series (highest priority — positional cue) ───────────────────────
   if (bd.saga_label && bd.saga_name) {
     switch (bd.saga_label) {
       case 'saga_entry':
@@ -155,35 +210,56 @@ function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | n
     ? (EXPLANATION_LANE_LABELS[bd.book_lane as DeterministicLane] ?? null)
     : null;
 
-  // ── Book-specific reason (reasons[1] when reasons[0] is a generic lane string) ──
-  // LANE_REASON is always prepended as reasons[0], repeating for every book in the
-  // same lane.  reasons[1] holds the book-specific trait/subject match and is much
-  // more distinctive.  Prefer it over the repeating lane string.
-  const hasLaneReason0 = book.reasons.length > 0 && GENERIC_LANE_REASONS.has(book.reasons[0]);
-  if (book.reasons.length > 1 && hasLaneReason0) {
-    const specific = capitalize(stripAuthorPrefix(book.reasons[1], book.author));
+  const r0 = book.reasons.length > 0 ? book.reasons[0] : null;
+  const r1 = book.reasons.length > 1 ? book.reasons[1] : null;
+
+  // A reason is "generic" when it describes the user's lane pattern rather than
+  // anything specific or notable about this book.  GENERIC_LANE_REASONS covers
+  // the old per-lane template strings; GENERIC_COG_EXPLANATIONS covers the CoG
+  // classifier's lane-level summaries (buildCoreExplanation output).
+  const r0IsGeneric = r0 !== null && (
+    GENERIC_LANE_REASONS.has(r0) || GENERIC_COG_EXPLANATIONS.has(r0)
+  );
+
+  // ── Prefer reasons[1] when reasons[0] is a generic lane/CoG summary ─────────
+  // reasons[1] holds a book-specific trait or subject signal (pacing, themes, etc.)
+  // that is far more distinctive than a lane-wide summary.
+  if (r0IsGeneric && r1 !== null) {
+    const specific = capitalize(stripAuthorPrefix(r1, book.author));
     const rewritten = rewriteReasonText(specific, laneLabel);
     if (rewritten != null) return rewritten;
   }
 
-  // ── Author loyalty — varied by depth of reading history ─────────────────────
+  // ── Use reasons[0] when it's specific ───────────────────────────────────────
+  // Named-author strings like "a consistent favorite — lands exactly in your
+  // romantic fantasy reading" come from the CoG classifier and are already
+  // strong, specific copy.  Strip the "By {Author}, " prefix (author is shown
+  // on the card) and pass through the rest.
+  if (r0 !== null && !r0IsGeneric) {
+    const cleaned  = capitalize(stripAuthorPrefix(r0, book.author));
+    const rewritten = rewriteReasonText(cleaned, laneLabel);
+    if (rewritten != null) return rewritten;
+  }
+
+  // ── Author loyalty — only when no specific reason is available ───────────────
   const authorCount = bd.author_books_read ?? 0;
   if (authorCount >= 5) {
     return `Deep into ${book.author}'s catalog — this fits your pattern.`;
   }
   if (authorCount >= 2) {
-    return `Another strong read from ${book.author}.`;
+    return laneLabel
+      ? `Consistent ${laneLabel} from an author you keep returning to.`
+      : `Another strong read from ${book.author}.`;
   }
 
-  // ── Core fit fallback ────────────────────────────────────────────────────────
-  if (bd.fit_class === 'core_fit' && laneLabel) {
-    return `A strong fit for your taste in ${laneLabel}.`;
-  }
-
-  // ── Lane reason or other reason string ──────────────────────────────────────
-  if (book.reasons.length > 0) {
-    const raw = capitalize(stripAuthorPrefix(book.reasons[0], book.author));
-    return rewriteReasonText(raw, laneLabel);
+  // ── Generic reasons[0] as last resort ───────────────────────────────────────
+  // If r0 is generic, prefer the laneLabel shortform over the verbose CoG string.
+  if (r0 !== null) {
+    if (r0IsGeneric) {
+      return laneLabel ? `A strong fit for your taste in ${laneLabel}.` : null;
+    }
+    const cleaned = capitalize(stripAuthorPrefix(r0, book.author));
+    return rewriteReasonText(cleaned, laneLabel);
   }
 
   return null;

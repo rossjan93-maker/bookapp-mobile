@@ -311,6 +311,10 @@ const LANE_REASON: Record<DeterministicLane, string> = {
   horror:               'Fits the horror fiction you have consistently enjoyed',
 };
 
+// Set of LANE_REASON values for O(1) lookup — used by the CoG reason rewrite
+// to filter out generic lane-level reasons that would crowd out specific trait reasons.
+const LANE_REASON_VALUES = new Set(Object.values(LANE_REASON));
+
 // Commercial lanes — used for the modern-commercial-prior boost in Step 7
 const COMMERCIAL_LANES = new Set<DeterministicLane>([
   'romantasy', 'contemporary_fiction', 'modern_suspense', 'romance',
@@ -1369,6 +1373,26 @@ export function scoreBookForUser(
     const overlapBonus  = Math.min(STEP1_OVERLAP_MAX, overlapCount * 0.02);
     if (overlapBonus > 0) {
       s1_trait = Math.min(STEP1_CAP, s1_trait + overlapBonus);
+      // Generate a subject-level reason when the overlap is meaningful (≥2 subjects).
+      // These are more book-specific than lane-level strings and surface topic alignment
+      // the user won't otherwise see in the explanation.
+      if (overlapCount >= 2 && reasons.length < 2) {
+        // Filter to subjects that are reader-friendly: long enough, not purely
+        // bibliographic noise (language markers, format tags, etc.).
+        const SKIP_SUBJECTS = new Set([
+          'fiction', 'english', 'american', 'british', 'literature',
+          'books', 'novels', 'short stories', 'open library', 'nonfiction',
+        ]);
+        const goodOverlap = [...bookSubjNorm]
+          .filter(s => likedSubjNorm.has(s) && s.length >= 8 && !SKIP_SUBJECTS.has(s))
+          .slice(0, 2);
+        if (goodOverlap.length >= 1) {
+          const themeList = goodOverlap.length === 2
+            ? `${goodOverlap[0]} and ${goodOverlap[1]}`
+            : goodOverlap[0];
+          reasons.push(`Covers themes of ${themeList} that appear in books you've loved`);
+        }
+      }
     }
   }
 
@@ -1746,17 +1770,20 @@ export function getRankedRecs(
     const adjustedScore = Math.max(0, book.score + fitResult.cog_score_delta);
     book.score = +adjustedScore.toFixed(3);
 
-    // Explanation principle: one strong, specific reason beats two near-duplicates.
-    // For core_fit, the CoG explanation already captures lane/author context —
-    // appending the old lane reason creates redundancy. For adjacent/stretch,
-    // keep one existing reason as context alongside the CoG explanation.
-    if (fitResult.fit_class === 'core_fit' && fitResult.fit_explanation) {
-      book.reasons = [fitResult.fit_explanation];
-    } else if (fitResult.fit_class !== 'reject' && fitResult.fit_explanation) {
+    // Explanation principle: the CoG fit_explanation provides market-position context,
+    // while the scoring reasons carry book-specific trait / subject signals.
+    // Preserve one trait-level reason alongside the fit_explanation so that
+    // buildExplanation() can choose the most specific and honest copy to show.
+    //
+    // LANE_REASON strings are discarded here — they are lane-wide generics that
+    // duplicate what the CoG explanation already captures. Trait and subject
+    // overlap reasons are kept as reasons[1] for the display layer to prefer.
+    if (fitResult.fit_class !== 'reject' && fitResult.fit_explanation) {
       const existingReasons = book.reasons ?? [];
+      const traitReasons = existingReasons.filter(r => !LANE_REASON_VALUES.has(r));
       book.reasons = [
         fitResult.fit_explanation,
-        ...existingReasons.slice(0, 1),
+        ...traitReasons.slice(0, 1),
       ].filter((r, i, arr) => arr.indexOf(r) === i);
     }
 
