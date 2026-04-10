@@ -25,13 +25,32 @@ const AUDIT_USER_ID = '78d5d2c4-d513-4747-b77f-52898c2dd4a8';
 const FEED_LIMIT    = 20;
 
 // ── Supabase client ───────────────────────────────────────────────────────────
+// Prefers SUPABASE_SERVICE_ROLE_KEY (bypasses RLS — required to read user data
+// from a Node.js script).  Falls back to the publishable anon key, which works
+// only if RLS grants anon read for the tables being queried.
+//
+// To set the service role key without committing it:
+//   export SUPABASE_SERVICE_ROLE_KEY="<your-key>"
+//   npx tsx scripts/explanation_audit.ts
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
-const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? '';
+const srk         = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+const anonKey     = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? '';
+const supabaseKey = srk || anonKey;
+
 if (!supabaseUrl || !supabaseKey) {
-  console.error('❌  Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY');
+  console.error('❌  Missing EXPO_PUBLIC_SUPABASE_URL and credentials.');
+  console.error('    Set SUPABASE_SERVICE_ROLE_KEY (preferred) or EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY');
   process.exit(1);
 }
+
+if (srk) {
+  console.log('🔑  Using service role key — RLS bypassed');
+} else {
+  console.warn('⚠️   Using anon key — RLS is active; user data may be empty.');
+  console.warn('    Set SUPABASE_SERVICE_ROLE_KEY to run a real audit.');
+}
+
 const client = createClient(supabaseUrl, supabaseKey);
 
 // ── Simulated buildExplanation() ─────────────────────────────────────────────
@@ -353,20 +372,30 @@ async function run() {
     const quality  = classifyExplanation(newText);
     counts[quality]++;
 
+    // Pipeline classifier result (authoritative — comes from classifyExplanationQuality()
+    // in recommender.ts and is stored in _score_breakdown.explanation_quality).
+    const pipelineEQ: string = bd?.explanation_quality ?? 'unset';
+
     const changed = newText !== oldText;
     if (changed) changedCards.push({ rank, title: book.title, before: oldText ?? '(null)', after: newText ?? '(null)' });
 
-    const ql = quality === 'STRONG' ? '✅ STRONG    ' : quality === 'ACCEPTABLE' ? '🔵 ACCEPTABLE' : quality === 'NULL' ? '⬛ NULL       ' : '🔴 WEAK      ';
+    const qlLabel = (q: string) =>
+      q === 'STRONG' || q === 'strong'       ? '✅ STRONG    '
+      : q === 'ACCEPTABLE' || q === 'acceptable' ? '🔵 ACCEPTABLE'
+      : q === 'NULL'                              ? '⬛ NULL       '
+      : q === 'unset'                             ? '⚪ UNSET      '
+      :                                            '🔴 WEAK      ';
     const deltaIcon = changed ? ' ↑' : '';
 
     console.log(`\n  #${String(rank).padEnd(2)} [${book.score.toFixed(3)}] ${book.title}`);
     console.log(`      Author: ${book.author}`);
-    console.log(`      fit_class: ${bd?.fit_class ?? '—'}  lane: ${bd?.book_lane ?? '—'}  author_reads: ${bd?.author_books_read ?? 0}`);
+    console.log(`      fit_class: ${bd?.fit_class ?? '—'}  lane: ${bd?.book_lane ?? '—'}  rep_author: ${bd?.repeated_author_match ? 'yes' : 'no'}  author_reads: ${bd?.author_books_read ?? 0}`);
     console.log(`      reasons[0]: ${book.reasons[0] ?? '(none)'}`);
     console.log(`      reasons[1]: ${book.reasons[1] ?? '(none)'}`);
-    console.log(`      ${ql}${deltaIcon}  "${newText ?? '(null)'}"`);
+    console.log(`      pipeline eq: ${qlLabel(pipelineEQ)}  (classifier in recommender.ts)`);
+    console.log(`      audit sim:   ${qlLabel(quality)}${deltaIcon}  "${newText ?? '(null)'}"`);
     if (changed) {
-      console.log(`              BEFORE: "${oldText ?? '(null)'}"`);
+      console.log(`                   BEFORE: "${oldText ?? '(null)'}"`);
     }
   }
 

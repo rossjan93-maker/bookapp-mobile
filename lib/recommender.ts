@@ -2948,24 +2948,48 @@ export async function getPersonalizedRecsWithExpert(
     console.log('[FC1_TOP10]', JSON.stringify(top20.slice(0, 10)));
     console.log('[FC2_TOP20]', JSON.stringify(top20.slice(10, 20)));
 
-    // ── BLOCK D: Final top 10 (one per log call) ──────────────────────────
-    baseResult.recs.slice(0, 10).forEach((r, i) => {
+    // ── BLOCK D: Final ranked feed — top 15 (one per log call) ───────────
+    baseResult.recs.slice(0, 15).forEach((r, i) => {
       const bd = r._score_breakdown;
       console.log(`[FD${i+1}]`, JSON.stringify({
         rank:    i + 1,
         title:   r.title.slice(0, 30),
         author:  r.author,
         score:   r.score,
-        source:  r._source,
-        reason:  r._retrieval_reason,
         lane:    detectBookLane(r),
+        fit:     bd.fit_class ?? null,
+        cog_d:   bd.cog_score_delta ?? null,
+        eq:      bd.explanation_quality ?? 'unset',
+        r0:      (r.reasons[0] ?? '').slice(0, 55),
+        r1:      (r.reasons[1] ?? '').slice(0, 45),
         trait:   bd.trait_alignment,
         genre_b: bd.genre_bonus,
-        cog_d:   bd.cog_score_delta ?? null,
+        rep_auth: bd.repeated_author_match ?? false,
         flags:   bd.audit_flags,
-        fit:     bd.fit_class ?? null,
       }));
     });
+
+    // ── BLOCK E: Explanation quality summary across full feed ─────────────
+    const eqCounts = { strong: 0, acceptable: 0, weak: 0, unset: 0 };
+    for (const r of baseResult.recs) {
+      const q = r._score_breakdown.explanation_quality ?? 'unset';
+      (eqCounts as any)[q] = ((eqCounts as any)[q] ?? 0) + 1;
+    }
+    const weakTitles = baseResult.recs
+      .filter(r => r._score_breakdown.explanation_quality === 'weak')
+      .map(r => r.title.slice(0, 25));
+    const unsetTitles = baseResult.recs
+      .filter(r => !r._score_breakdown.explanation_quality)
+      .map(r => r.title.slice(0, 25));
+    console.log('[FE_EQ_SUMMARY]', JSON.stringify({
+      total:      baseResult.recs.length,
+      strong:     eqCounts.strong,
+      acceptable: eqCounts.acceptable,
+      weak:       eqCounts.weak,
+      unset:      eqCounts.unset,
+      weak_titles:  weakTitles,
+      unset_titles: unsetTitles,
+    }));
   }
 
   // ── Step 2: Expert access decision ───────────────────────────────────────
