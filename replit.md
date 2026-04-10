@@ -16,6 +16,16 @@ The application is developed using React Native with Expo Router for navigation 
 - `lib/googleBooks.ts` — isolated GB API functions (unchanged — no app code imports GB directly; all access goes through metadataRepair or bookEnrichment).
 - Schema: `books.cover_source` (text), `books.metadata_confidence` (text check: high/medium/low), `book_source_links.raw_payload` (jsonb), `book_source_links.last_fetched_at` (timestamptz), `book_source_links.fetch_status` (text check: success/failed/rate_limited). Migration: `supabase/migrations/20260409000000_provider_link_hardening.sql`.
 
+**Phase 1 Reading Progress / Pacing Depth (complete — pending migration apply):**
+- `lib/streaks.ts` — `computeStreaks()` (current streak + longest streak from session dates; grace window allows yesterday-ending streaks); `localDateString()` (YYYY-MM-DD local date, avoids UTC drift). `StreakPill` shown on Home when current streak ≥ 2 days.
+- `lib/pacing.ts` extended — `ReadState` type (`active` ≤14 days / `paused` 15–60 days / `stalled` >60 days); `inferReadState()` (uses `progress_updated_at` or `started_at` fallback); `SessionRow` type; `computeSessionPacing()` (session-based pace from reading_sessions; strength: strong ≥5 / moderate 3–4 / weak 1–2; uses calendar-day rate for honest estimates); `formatProjectedFinish()` (human-readable finish projection).
+- `lib/userBookActions.ts` — `saveCurrentPage()` now auto-derives a `reading_sessions` row on forward progress: `session_date` = local YYYY-MM-DD string, pages_read = delta, duration_minutes null (no timer). Regressions skip session creation but still log to progress_events.
+- `lib/devInspector.ts` — `__rs.pacing(userBookId)` and `__rs.streaks()` exposed for developer inspection.
+- `supabase/migrations/20260411000000_reading_sessions.sql` — `reading_sessions` table (user_id, book_id, user_book_id, session_date, started_page, ended_page, pages_read, duration_minutes); RLS + two indexes. **Needs manual apply in Supabase dashboard.**
+- Home screen: `HomeSnapshot` carries `sessionsByBook` + `currentStreak`; `HeroReadCard` shows session-based projected finish + read state; `StreakPill` renders below Reading Now cards.
+- Library screen: reading cards now use `inferReadState()` — shows "Stalled — been a while" (amber) or "Paused for now" (stone) instead of the previous raw `isStale` check.
+- Recommendation classifier: `classifyExplanationQuality()` takes `traitAlignment` (4th param); `SINGLE_TRAIT_STRONG_FLOOR = 0.25` constant gates single-trait STRONG vs `acceptable_specific`.
+
 **Key Features:**
 - **Book Search & Recommendations:** Users can search for books using a hybrid Google Books + Open Library retrieval system. Recommendations can be sent to friends.
 - **Library Management:** Users can track reading status (want to read, reading, finished, DNF) and rate completed books.

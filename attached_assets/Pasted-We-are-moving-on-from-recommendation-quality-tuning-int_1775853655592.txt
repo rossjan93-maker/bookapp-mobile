@@ -1,0 +1,131 @@
+We are moving on from recommendation-quality tuning into reading progress / pacing depth.
+
+I want Readstack to evolve from simple progress tracking into reader-state intelligence.
+
+Goal
+Make the app understand not just what a user is reading, but how they actually read:
+- pace
+- consistency
+- momentum
+- stalled vs active reads
+- projected finish timing
+- reading streaks
+- adaptive progress insights
+
+Do not overbuild. Start with the minimum strong foundation that unlocks the rest.
+
+What I want built now
+Phase 1 only. Focus on the core data model, logic, and first product surfaces.
+
+1. Reading session foundation
+Design and implement a reading session model that can support:
+- user_id
+- book_id
+- session date/time
+- starting page
+- ending page
+- pages read in session
+- optional duration_minutes if available
+- created_at
+
+Requirements:
+- sessions should be append-only
+- page progress should remain internally consistent
+- do not allow impossible regressions silently
+- support books without page_count gracefully
+
+2. Progress integrity and state model
+I want a cleaner distinction between:
+- active read
+- paused read
+- probably abandoned read
+- finished read
+
+Define practical logic for this using the data we already have plus the new session model.
+
+Requirements:
+- do not rely only on shelf/status labels
+- infer useful state from recency and progress behavior where possible
+- keep the logic simple and explainable
+- be conservative with “abandoned” style states
+
+3. Personal pacing engine
+Implement the first version of a pacing engine that estimates:
+- current book pace
+- user’s typical pace
+- projected finish date
+- ahead / on track / behind / stalled state
+
+Requirements:
+- use actual reading behavior where available
+- do not fake precision
+- fall back gracefully when data is sparse
+- distinguish between strong estimate vs weak estimate
+- make the logic book-aware where possible, but keep v1 simple
+
+4. Streak logic
+Implement:
+- current reading streak
+- longest reading streak
+
+Requirements:
+- define clearly what counts as a reading day
+- use reading session activity and/or meaningful page progress
+- avoid streak inflation from trivial/no-op updates
+
+5. First product surfaces
+Add the first user-facing outputs for this system.
+
+I want at least:
+- a more intelligent reading progress panel on Home or Library
+- projected finish timing where justified
+- ahead / on track / behind / stalled language
+- current streak + longest streak surfaced somewhere appropriate
+
+Requirements:
+- the UX should feel calm and premium, not like homework
+- avoid guilt-inducing productivity language
+- do not clutter the screen with too many numbers
+- prefer a few strong states over a lot of weak metrics
+
+6. Dev/debug visibility
+Add a lightweight way to inspect the new pacing/session model in dev.
+
+I want to be able to understand:
+- which books are considered active/paused/stalled
+- how pace was estimated
+- how streak was calculated
+- what projected finish date is based on
+
+Keep this simple — console output or a dev inspector is fine.
+
+Product framing to follow
+This should feel like:
+- reflective
+- quietly smart
+- encouraging
+
+It should NOT feel like:
+- homework
+- punitive productivity tracking
+- empty gamification
+
+Design principles
+- build the durable foundation first
+- keep the data model clean
+- make state logic explainable
+- prefer evidence from real reading behavior over static assumptions
+- do not overbuild advanced analytics in phase 1
+
+What I need back
+When done, give me:
+1. exact files changed
+2. schema changes / migrations
+3. the reading session model you introduced
+4. the pacing/state/streak rules
+5. what user-facing UI changed
+6. runtime proof with realistic examples
+7. what you intentionally deferred to phase 2
+
+Important
+Before coding, inspect the current progress model, reading history model, and any existing pace/streak-related logic so this integrates with the real app rather than creating a parallel system.

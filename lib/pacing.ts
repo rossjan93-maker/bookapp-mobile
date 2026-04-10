@@ -1,4 +1,194 @@
 /**
+ * Pacing, read-state inference, and session-based projected finish.
+ *
+ * Sections:
+ *   A. ReadState — infers active / paused / stalled from recency
+ *   B. Session-based pacing — estimates pace + projected finish from real sessions
+ *   C. Date-based pacing (goal-relative, existing)
+ *   D. Page-based pacing (goal-relative, existing)
+ *   E. Momentum helpers (existing)
+ *   F. Completed-book pace metrics (existing)
+ *   G. Year-to-date goal progress (existing)
+ */
+
+// =============================================================================
+// A. Read-state inference
+// =============================================================================
+
+/**
+ * The inferred momentum state of a currently-reading book.
+ *
+ * These are orthogonal to the shelf label (status = 'reading').  A book can be
+ * labelled "reading" for months with no actual page progress — the read state
+ * surfaces that gap with honest, non-punitive language.
+ *
+ * Thresholds (conservative — do not label stalled prematurely):
+ *   active  — progress_updated_at within the last 14 calendar days
+ *   paused  — 15 – 60 days since last progress update
+ *   stalled — > 60 days since last progress update OR the book has been
+ *             in "reading" status for > 60 days with no page progress at all
+ *
+ * Non-reading statuses pass through directly so callers can use a single type.
+ */
+export type ReadState =
+  | 'active'
+  | 'paused'
+  | 'stalled'
+  | 'finished'
+  | 'dnf'
+  | 'want_to_read';
+
+const ACTIVE_THRESHOLD_DAYS  = 14;
+const PAUSED_THRESHOLD_DAYS  = 60;
+
+/**
+ * Infer the read state of a single user_books row.
+ *
+ * For currently-reading books the anchor for recency is:
+ *   1. progress_updated_at  (best — reflects actual page updates)
+ *   2. started_at           (fallback — book was moved to "reading" but no page logged yet)
+ *
+ * If neither anchor is available the book is treated as active (just started).
+ */
+export function inferReadState(params: {
+  status:            string;
+  progressUpdatedAt: string | null | undefined;
+  startedAt:         string | null | undefined;
+  currentPage:       number | null | undefined;
+}): ReadState {
+  const { status, progressUpdatedAt, startedAt, currentPage } = params;
+
+  if (status === 'finished')     return 'finished';
+  if (status === 'dnf')         return 'dnf';
+  if (status === 'want_to_read') return 'want_to_read';
+
+  // status === 'reading'
+  const anchor = progressUpdatedAt ?? startedAt;
+  if (!anchor) return 'active'; // brand-new start, no data yet
+
+  const daysSince = Math.floor((Date.now() - new Date(anchor).getTime()) / 86_400_000);
+
+  // Special case: book in "reading" with no page logged and started long ago.
+  // Use the started_at anchor — it is the only signal we have.
+  if (!currentPage && !progressUpdatedAt && startedAt) {
+    const daysSinceStart = Math.floor((Date.now() - new Date(startedAt).getTime()) / 86_400_000);
+    if (daysSinceStart > PAUSED_THRESHOLD_DAYS) return 'stalled';
+    if (daysSinceStart > ACTIVE_THRESHOLD_DAYS) return 'paused';
+    return 'active';
+  }
+
+  if (daysSince <= ACTIVE_THRESHOLD_DAYS) return 'active';
+  if (daysSince <= PAUSED_THRESHOLD_DAYS) return 'paused';
+  return 'stalled';
+}
+
+/** Human-readable label for a read state in UI context. */
+export function readStateLabel(state: ReadState): string {
+  switch (state) {
+    case 'active':       return 'Active';
+    case 'paused':       return 'Paused';
+    case 'stalled':      return 'Stalled';
+    case 'finished':     return 'Finished';
+    case 'dnf':          return 'Did not finish';
+    case 'want_to_read': return 'Want to read';
+  }
+}
+
+// =============================================================================
+// B. Session-based pacing (uses real reading_sessions data)
+// =============================================================================
+
+export type SessionRow = {
+  session_date: string; // YYYY-MM-DD
+  pages_read:   number;
+};
+
+export type SessionPacingResult = {
+  /** Actual reading velocity: total pages read / calendar days since first session. */
+  pagesPerDay: number;
+  /** Pages remaining in the book. */
+  pagesLeft: number;
+  /** Projected finish date at the current velocity. */
+  estimatedFinish: Date;
+  /**
+   * Confidence in this estimate:
+   *   strong   — ≥ 5 sessions (reliable pattern)
+   *   moderate — 3 – 4 sessions (emerging pattern)
+   *   weak     — 1 – 2 sessions (very early, treat as directional only)
+   */
+  strength: 'strong' | 'moderate' | 'weak';
+};
+
+/**
+ * Estimate reading pace and projected finish from real session history.
+ *
+ * Uses the calendar-day rate (total pages / calendar days since first session)
+ * rather than "pages per reading day" — this gives an honest estimate that
+ * automatically accounts for non-reading days without requiring the caller to
+ * model reading frequency separately.
+ *
+ * Returns null when:
+ *   - No sessions with positive pages_read
+ *   - Page count or current page are unavailable
+ *   - Book is already finished (pagesLeft === 0)
+ *   - First session was less than 12 h ago (too little signal)
+ */
+export function computeSessionPacing(
+  sessions:    SessionRow[],
+  currentPage: number,
+  pageCount:   number,
+): SessionPacingResult | null {
+  if (!sessions.length || pageCount <= 0 || currentPage <= 0) return null;
+
+  // Only count sessions with actual forward progress.
+  const activeSessions = sessions.filter(s => s.pages_read > 0);
+  if (!activeSessions.length) return null;
+
+  const totalPages = activeSessions.reduce((sum, s) => sum + s.pages_read, 0);
+  if (totalPages <= 0) return null;
+
+  // Calendar days elapsed from the earliest session date to today.
+  const dates      = activeSessions.map(s => s.session_date).sort();
+  const firstDate  = new Date(dates[0]);
+  const msElapsed  = Date.now() - firstDate.getTime();
+  if (msElapsed < 12 * 60 * 60 * 1000) return null; // < 12 h — too new
+
+  const calendarDaysElapsed = Math.max(1, msElapsed / 86_400_000);
+  const pagesPerDay         = totalPages / calendarDaysElapsed;
+  if (pagesPerDay <= 0) return null;
+
+  const pagesLeft = Math.max(0, pageCount - currentPage);
+  if (pagesLeft === 0) return null;
+
+  const daysToFinish   = pagesLeft / pagesPerDay;
+  const estimatedFinish = new Date(Date.now() + daysToFinish * 86_400_000);
+
+  const strength: 'strong' | 'moderate' | 'weak' =
+    activeSessions.length >= 5 ? 'strong' :
+    activeSessions.length >= 3 ? 'moderate' : 'weak';
+
+  return {
+    pagesPerDay:     Math.round(pagesPerDay * 10) / 10,
+    pagesLeft,
+    estimatedFinish,
+    strength,
+  };
+}
+
+/**
+ * Compact display string for a projected finish date.
+ * Omits the year when it matches the current year.
+ *
+ * e.g. "Apr 29" or "Jan 3, 2027"
+ */
+export function formatProjectedFinish(date: Date): string {
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return sameYear
+    ? date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/**
  * Pacing helpers for yearly reading goal tracking.
  *
  * Two models:

@@ -23,6 +23,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { validateCoverUrl, coverCredibilityLabel } from './coverCredibility';
 import { logProviderHealthSummary } from './providerHealth';
+import { inferReadState, computeSessionPacing, formatProjectedFinish, type SessionRow } from './pacing';
+import { computeStreaks } from './streaks';
 
 const PREFIX = '[INSPECTOR]';
 
@@ -151,6 +153,149 @@ export async function inspectCredibilityRejections(client: SupabaseClient): Prom
   }
 }
 
+// ── Pacing + state inspection ─────────────────────────────────────────────────
+
+/**
+ * Inspect session data, read state, and projected finish for a given user_book.
+ * Usage:  __rs.pacing('<user_book_id>')
+ *
+ * Logs:
+ *   - Read state inference (active / paused / stalled)
+ *   - All reading_sessions rows (date, pages, cumulative total)
+ *   - Session-based pace and projected finish when data is sufficient
+ */
+export async function inspectPacing(
+  client: SupabaseClient,
+  userBookId: string,
+): Promise<void> {
+  // Fetch user_books row for state inference
+  const { data: ub, error: ubErr } = await client
+    .from('user_books')
+    .select('status, started_at, finished_at, current_page, progress_updated_at, book_id, book:books(title, author, page_count)')
+    .eq('id', userBookId)
+    .single();
+
+  if (ubErr || !ub) {
+    console.log(`${PREFIX} pacing — user_book not found (${userBookId.slice(0, 8)})`);
+    return;
+  }
+
+  const book = ub.book as { title?: string; author?: string; page_count?: number | null } | null;
+  console.log(`${PREFIX} pacing — "${book?.title ?? '?'}" by ${book?.author ?? '?'}`);
+  console.log(`  user_book_id: ${userBookId.slice(0, 8)}`);
+  console.log(`  status: ${ub.status}  current_page: ${ub.current_page ?? 'n/a'}  page_count: ${book?.page_count ?? 'n/a'}`);
+  console.log(`  started_at: ${ub.started_at ?? 'n/a'}  progress_updated_at: ${ub.progress_updated_at ?? 'n/a'}`);
+
+  const readState = inferReadState({
+    status:            ub.status,
+    progressUpdatedAt: ub.progress_updated_at,
+    startedAt:         ub.started_at,
+    currentPage:       ub.current_page,
+  });
+  console.log(`  read_state: ${readState}`);
+
+  // Fetch sessions
+  const { data: sessions, error: sessErr } = await client
+    .from('reading_sessions')
+    .select('session_date, started_page, ended_page, pages_read, created_at')
+    .eq('user_book_id', userBookId)
+    .order('session_date', { ascending: true })
+    .order('created_at',   { ascending: true });
+
+  if (sessErr) {
+    console.log(`  sessions — fetch error: ${sessErr.message}`);
+    return;
+  }
+
+  const rows = (sessions ?? []) as Array<{
+    session_date: string; started_page: number; ended_page: number; pages_read: number; created_at: string;
+  }>;
+
+  if (!rows.length) {
+    console.log('  sessions — none recorded yet (no forward page updates since migration)');
+    return;
+  }
+
+  let cumulative = 0;
+  console.log(`  sessions (${rows.length}):`);
+  for (const s of rows) {
+    cumulative += s.pages_read;
+    console.log(
+      `    ${s.session_date}  pp.${s.started_page}→${s.ended_page}` +
+      `  +${s.pages_read} pages  (cumulative: ${cumulative})`,
+    );
+  }
+
+  const pageCount = book?.page_count;
+  const pacing = (pageCount && ub.current_page)
+    ? computeSessionPacing(
+        rows.map(r => ({ session_date: r.session_date, pages_read: r.pages_read })),
+        ub.current_page,
+        pageCount,
+      )
+    : null;
+
+  if (!pacing) {
+    console.log('  pace estimate — unavailable (insufficient page data)');
+    return;
+  }
+
+  console.log(
+    `  pace estimate (${pacing.strength}):` +
+    `  ${pacing.pagesPerDay} ppd  →  ~${pacing.pagesLeft} pages left` +
+    `  →  finish ${formatProjectedFinish(pacing.estimatedFinish)}`,
+  );
+}
+
+/**
+ * Inspect reading streaks for the signed-in user.
+ * Usage:  __rs.streaks()
+ *
+ * Logs current streak, longest streak, and the last 10 reading days.
+ */
+export async function inspectStreaks(client: SupabaseClient): Promise<void> {
+  const { data: { user } } = await client.auth.getUser();
+  if (!user) {
+    console.log(`${PREFIX} streaks — not signed in`);
+    return;
+  }
+
+  const { data, error } = await client
+    .from('reading_sessions')
+    .select('session_date, pages_read')
+    .eq('user_id', user.id)
+    .gt('pages_read', 0)
+    .order('session_date', { ascending: true });
+
+  if (error) {
+    console.log(`${PREFIX} streaks — fetch error: ${error.message}`);
+    return;
+  }
+
+  const rows = (data ?? []) as Array<{ session_date: string; pages_read: number }>;
+  if (!rows.length) {
+    console.log(`${PREFIX} streaks — no sessions recorded yet (reading_sessions table is empty for this user)`);
+    return;
+  }
+
+  const dates  = rows.map(r => r.session_date);
+  const result = computeStreaks(dates);
+
+  console.log(`${PREFIX} streaks — current: ${result.current} day${result.current !== 1 ? 's' : ''}  |  longest: ${result.longest} day${result.longest !== 1 ? 's' : ''}`);
+
+  // Count pages per day
+  const pagesByDay = new Map<string, number>();
+  for (const r of rows) {
+    pagesByDay.set(r.session_date, (pagesByDay.get(r.session_date) ?? 0) + r.pages_read);
+  }
+
+  const uniqueDays = [...new Set(dates)].sort().slice(-10);
+  console.log(`  last ${uniqueDays.length} reading day(s):`);
+  for (const d of uniqueDays) {
+    console.log(`    ${d}  ${pagesByDay.get(d) ?? 0} pages`);
+  }
+}
+
 // ── Global registration ────────────────────────────────────────────────────────
 
 /**
@@ -170,6 +315,8 @@ export function mountDevInspector(client: SupabaseClient): void {
     summaries:   () => inspectMissingSummaries(client),
     credibility: () => inspectCredibilityRejections(client),
     health:      () => logProviderHealthSummary(),
+    pacing:      (userBookId: string) => inspectPacing(client, userBookId),
+    streaks:     () => inspectStreaks(client),
     all:         async () => {
       await inspectMissingCovers(client);
       await inspectMissingSummaries(client);
@@ -181,6 +328,6 @@ export function mountDevInspector(client: SupabaseClient): void {
   (globalThis as unknown as Record<string, unknown>).__rs = rs;
 
   console.log(
-    `${PREFIX} mounted → __rs.{covers, summaries, credibility, health, all}`,
+    `${PREFIX} mounted → __rs.{covers, summaries, credibility, health, pacing, streaks, all}`,
   );
 }

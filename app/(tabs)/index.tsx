@@ -19,7 +19,8 @@ import { registerCacheClearer } from '../../lib/tabCache';
 import { CoverThumb } from '../../components/CoverThumb';
 import { HomeScreenSkeleton } from '../../components/Placeholder';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
-import { computePagePacing, computeUserAvgPace } from '../../lib/pacing';
+import { computePagePacing, computeUserAvgPace, inferReadState, computeSessionPacing, formatProjectedFinish, type SessionRow, type ReadState } from '../../lib/pacing';
+import { computeStreaks } from '../../lib/streaks';
 import { showToast } from '../../lib/toast';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -148,13 +149,15 @@ function SectionLabel({ children }: { children: string }) {
 }
 
 type HeroReadCardProps = {
-  book: CurrentRead;
-  yearlyGoal: number | null;
-  onPress: () => void;
-  accentColor: string;
+  book:            CurrentRead;
+  yearlyGoal:      number | null;
+  onPress:         () => void;
+  accentColor:     string;
+  projectedFinish: string | null;
+  readState:       ReadState;
 };
 
-function HeroReadCard({ book, onPress, accentColor }: HeroReadCardProps) {
+function HeroReadCard({ book, onPress, accentColor, projectedFinish, readState }: HeroReadCardProps) {
   const barAnim = useRef(new Animated.Value(0)).current;
   const cardAnim = useRef(new Animated.Value(0)).current;
 
@@ -181,9 +184,26 @@ function HeroReadCard({ book, onPress, accentColor }: HeroReadCardProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const cardHeight = 172;
-  const coverWidth = 114;
-  const sageColor = accentColor === '#ede9e4' ? '#7b9e7e' : accentColor;
+  // Card height grows slightly when we have a projected-finish or state line.
+  const hasExtraLine  = !!(projectedFinish || readState === 'paused' || readState === 'stalled');
+  const cardHeight    = hasExtraLine ? 192 : 172;
+  const coverWidth    = 114;
+  const sageColor     = accentColor === '#ede9e4' ? '#7b9e7e' : accentColor;
+
+  // Determine the extra-line content.
+  // Priority: projected finish > stalled > paused (active shows nothing)
+  const extraLine: { text: string; color: string } | null = (() => {
+    if (projectedFinish) {
+      return { text: `Finish ~${projectedFinish}`, color: '#9e958d' };
+    }
+    if (readState === 'stalled') {
+      return { text: 'Stalled — pick it back up?', color: '#b08d57' };
+    }
+    if (readState === 'paused') {
+      return { text: 'Paused for a while', color: '#9e958d' };
+    }
+    return null;
+  })();
 
   return (
     <Animated.View style={{
@@ -237,6 +257,11 @@ function HeroReadCard({ book, onPress, accentColor }: HeroReadCardProps) {
                     ? (book.page_count ? `p. ${book.current_page} of ${book.page_count}` : 'in progress')
                     : 'just started'}
                 </Text>
+                {extraLine && (
+                  <Text style={{ fontSize: 11, color: extraLine.color, marginTop: 4, fontStyle: 'italic' }}>
+                    {extraLine.text}
+                  </Text>
+                )}
               </View>
             </View>
           </View>
@@ -251,6 +276,29 @@ function HeroReadCard({ book, onPress, accentColor }: HeroReadCardProps) {
         </View>
       </TouchableOpacity>
     </Animated.View>
+  );
+}
+
+/** A subtle streak indicator shown below the Reading Now section. */
+function StreakPill({ days }: { days: number }) {
+  if (days < 2) return null;
+  return (
+    <View style={{
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 10,
+      gap: 5,
+    }}>
+      <View style={{
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: '#7b9e7e',
+      }} />
+      <Text style={{ fontSize: 12, color: '#7b9e7e', fontWeight: '600' }}>
+        {days} days reading in a row
+      </Text>
+    </View>
   );
 }
 
@@ -288,6 +336,8 @@ type HomeSnapshot = {
   feed:            FeedEvent[];
   friendships:     FriendshipRow[];
   fetchedAt:       number;
+  sessionsByBook:  Record<string, SessionRow[]>;
+  currentStreak:   number;
 };
 
 let _homeCache: HomeSnapshot | null = null;
@@ -334,6 +384,10 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
 
+  // Session data for pacing + streak
+  const [sessionsByBook, setSessionsByBook] = useState<Record<string, SessionRow[]>>(() => _homeCache?.sessionsByBook ?? {});
+  const [currentStreak,  setCurrentStreak]  = useState<number>(() => _homeCache?.currentStreak ?? 0);
+
   // Refs so we can write to the cache after all setters have been called
   // (state is async; refs give us the live values within the async load).
   const _crRef    = useRef<CurrentRead[]>([]);
@@ -342,6 +396,8 @@ export default function HomeScreen() {
   const _byRef    = useRef<YearBook[]>([]);
   const _feedRef  = useRef<FeedEvent[]>([]);
   const _fsRef    = useRef<FriendshipRow[]>([]);
+  const _sbRef    = useRef<Record<string, SessionRow[]>>({});
+  const _csRef    = useRef<number>(0);
 
   // ── Walkthrough target measurement ──────────────────────────────────────────
   // Measure the first primary content section once data is loaded.
@@ -389,13 +445,14 @@ export default function HomeScreen() {
 
     // ── Parallel fetch: friendships + all user-specific data at once ────────────
     // Previously: loadFriendships() was awaited alone, blocking everything else.
-    // Now: all 4 queries start simultaneously. Feed is kicked off once friend IDs
+    // Now: all queries start simultaneously. Feed is kicked off once friend IDs
     // are known, but the dashboard content is unblocked from the start.
     const [friendshipRows] = await Promise.all([
       loadFriendships(user.id),
       loadCurrentRead(user.id),
       loadPendingRecs(user.id),
       loadBooksThisYear(user.id),
+      loadSessionData(user.id),
     ]);
 
     // Dashboard is ready — clear the loading gate (if it was set on cold start)
@@ -424,6 +481,8 @@ export default function HomeScreen() {
       feed:            _feedRef.current,
       friendships:     _fsRef.current,
       fetchedAt:       Date.now(),
+      sessionsByBook:  _sbRef.current,
+      currentStreak:   _csRef.current,
     };
   }
 
@@ -573,6 +632,59 @@ export default function HomeScreen() {
     });
     setBooksThisYear(mapped);
     _byRef.current = mapped;
+  }
+
+  // ── Session data: reading_sessions for streak + per-book pacing ───────────────
+  // Fetches the last 90 days of sessions for the current user.
+  // Used for:
+  //   - Reading streak computation (all books, all days)
+  //   - Per-book session-based projected finish (grouped by user_book_id)
+
+  async function loadSessionData(uid: string) {
+    if (!supabase) return;
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 86_400_000)
+      .toISOString()
+      .split('T')[0];
+
+    const { data } = await supabase
+      .from('reading_sessions')
+      .select('user_book_id, session_date, pages_read')
+      .eq('user_id', uid)
+      .gte('session_date', ninetyDaysAgo)
+      .order('session_date', { ascending: true });
+
+    const rows = (data ?? []) as Array<{
+      user_book_id: string;
+      session_date: string;
+      pages_read: number;
+    }>;
+
+    const byBook: Record<string, SessionRow[]> = {};
+    const allDates: string[] = [];
+
+    for (const r of rows) {
+      if (r.pages_read > 0) {
+        allDates.push(r.session_date);
+        if (!byBook[r.user_book_id]) byBook[r.user_book_id] = [];
+        byBook[r.user_book_id].push({
+          session_date: r.session_date,
+          pages_read:   r.pages_read,
+        });
+      }
+    }
+
+    const streak = computeStreaks(allDates);
+
+    setSessionsByBook(byBook);
+    _sbRef.current = byBook;
+    setCurrentStreak(streak.current);
+    _csRef.current = streak.current;
+
+    if (__DEV__ && (streak.current > 0 || rows.length > 0)) {
+      console.log(
+        `[PACING] sessions loaded — ${rows.length} rows  |  streak: ${streak.current}d current / ${computeStreaks(allDates).longest}d longest`,
+      );
+    }
   }
 
   // ── Search ───────────────────────────────────────────────────────────────────
@@ -756,14 +868,27 @@ export default function HomeScreen() {
           {/* Walkthrough ref wraps only the card(s), not the section label */}
           <View ref={homeTargetRef} onLayout={measureHomeContent}>
           {currentReads.length === 1 ? (() => {
-            const cr = currentReads[0];
+            const cr         = currentReads[0];
             const accentColor = homeCardBorderColor(cr, yearlyGoal);
+            const crReadState = inferReadState({
+              status:            'reading',
+              progressUpdatedAt: null,          // not fetched on home; use started_at only
+              startedAt:         cr.started_at,
+              currentPage:       cr.current_page,
+            });
+            const crSessions = sessionsByBook[cr.id] ?? [];
+            const crPacing   = (cr.current_page && cr.page_count)
+              ? computeSessionPacing(crSessions, cr.current_page, cr.page_count)
+              : null;
+            const crProjFinish = crPacing ? formatProjectedFinish(crPacing.estimatedFinish) : null;
             return (
               <HeroReadCard
                 key={cr.id}
                 book={cr}
                 yearlyGoal={yearlyGoal}
                 accentColor={accentColor}
+                projectedFinish={crProjFinish}
+                readState={crReadState}
                 onPress={() => router.push({
                   pathname: '/book/[id]',
                   params: {
@@ -791,10 +916,13 @@ export default function HomeScreen() {
                 const pct = hasProgress
                   ? Math.min(100, Math.round((cr.current_page! / cr.page_count!) * 100))
                   : null;
-                const hasPacingData = !!(yearlyGoal && cr.page_count && cr.page_count > 0);
-                const pacingNote = hasPacingData
-                  ? computePagePacing(cr.current_page ?? 0, cr.page_count!, cr.started_at, yearlyGoal!).note
+                const crSessions   = sessionsByBook[cr.id] ?? [];
+                const crPacing     = (cr.current_page && cr.page_count)
+                  ? computeSessionPacing(crSessions, cr.current_page, cr.page_count)
                   : null;
+                const crProjFinish = crPacing ? formatProjectedFinish(crPacing.estimatedFinish) : null;
+                const crState = inferReadState({ status: 'reading', progressUpdatedAt: null, startedAt: cr.started_at, currentPage: cr.current_page });
+                const subLine = crProjFinish ? `~${crProjFinish}` : crState === 'stalled' ? 'Stalled' : crState === 'paused' ? 'Paused' : null;
                 return (
                   <TouchableOpacity
                     key={cr.id}
@@ -843,17 +971,17 @@ export default function HomeScreen() {
                               height: 3, width: `${pct ?? 0}%`, backgroundColor: '#231f1b', borderRadius: 2,
                             }} />
                           </View>
-                          <Text style={{ fontSize: 10, color: '#9e958d', marginBottom: pacingNote ? 5 : 0 }}>
+                          <Text style={{ fontSize: 10, color: '#9e958d', marginBottom: subLine ? 4 : 0 }}>
                             {progressLabel(cr)}
                           </Text>
                         </>
                       ) : (
-                        <Text style={{ fontSize: 10, color: '#9e958d', marginBottom: pacingNote ? 5 : 0 }}>
+                        <Text style={{ fontSize: 10, color: '#9e958d', marginBottom: subLine ? 4 : 0 }}>
                           In progress
                         </Text>
                       )}
-                      {pacingNote && (
-                        <Text style={{ fontSize: 10, color: '#78716c' }}>{pacingNote}</Text>
+                      {subLine && (
+                        <Text style={{ fontSize: 10, color: '#9e958d', fontStyle: 'italic' }}>{subLine}</Text>
                       )}
                     </View>
                   </TouchableOpacity>
@@ -862,6 +990,7 @@ export default function HomeScreen() {
             </ScrollView>
           )}
           </View>{/* close homeTargetRef wrapper */}
+          <StreakPill days={currentStreak} />
         </View>
       )}
 

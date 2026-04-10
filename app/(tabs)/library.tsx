@@ -10,7 +10,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { LibraryScreenSkeleton } from '../../components/Placeholder';
-import { computePagePacing, computeDatePacing, formatLastUpdated, computeBookPace, formatPaceChip, computeUserAvgPace } from '../../lib/pacing';
+import { computePagePacing, computeDatePacing, formatLastUpdated, computeBookPace, formatPaceChip, computeUserAvgPace, inferReadState } from '../../lib/pacing';
 import { transitionStatus, saveCurrentPage } from '../../lib/userBookActions';
 import { findSeriesForBook } from '../../lib/seriesCatalog';
 import { triggerRecPrewarm } from '../../lib/recPrewarm';
@@ -1004,10 +1004,12 @@ export default function LibraryScreen() {
           })();
           const pacingNote     = hasProgress ? borderPacing?.note ?? null : datePacing?.note ?? null;
           const lastUpdatedText = formatLastUpdated(item.progress_updated_at);
-          const daysSinceUpdate = item.progress_updated_at
-            ? Math.floor((Date.now() - new Date(item.progress_updated_at).getTime()) / 86_400_000)
-            : null;
-          const isStale = daysSinceUpdate != null && daysSinceUpdate > 3;
+          const readState = inferReadState({
+            status:            item.status,
+            progressUpdatedAt: item.progress_updated_at,
+            startedAt:         item.started_at,
+            currentPage:       item.current_page,
+          });
 
           return (
             <View>
@@ -1108,9 +1110,14 @@ export default function LibraryScreen() {
                       {lastUpdatedText}
                     </Text>
                   )}
-                  {isStale && (
-                    <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2, fontStyle: 'italic' }}>
-                      Pick this back up?
+                  {readState === 'stalled' && (
+                    <Text style={{ fontSize: 11, color: '#b08d57', marginTop: 3, fontStyle: 'italic' }}>
+                      Stalled — been a while
+                    </Text>
+                  )}
+                  {readState === 'paused' && (
+                    <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 3, fontStyle: 'italic' }}>
+                      Paused for now
                     </Text>
                   )}
                 </View>

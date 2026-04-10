@@ -13,6 +13,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { localDateString } from './streaks';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -391,8 +392,16 @@ export async function restoreBook(
 }
 
 /**
- * Save an updated current_page to user_books and append a
- * reading_progress_events history row (fire-and-forget insert).
+ * Save an updated current_page to user_books and append both:
+ *   1. reading_progress_events row  — lightweight page snapshot (always)
+ *   2. reading_sessions row          — richer session record (forward progress only)
+ *
+ * A session is derived automatically from the delta between the previous page
+ * and the new page.  Regressions (newPage < currentPage) are silently rejected
+ * for sessions but still permitted in the progress snapshot — they remain
+ * visible in the events log so the data is never lost.
+ *
+ * sessions are fire-and-forget (non-blocking) to keep the UX snappy.
  */
 export async function saveCurrentPage(
   supabase: SupabaseClient,
@@ -413,10 +422,32 @@ export async function saveCurrentPage(
 
   if (error) return { error: 'Could not save — try again.' };
 
+  // ── Append reading_progress_events row (any page change) ──────────────────
   if (newPage !== currentPage) {
     supabase
       .from('reading_progress_events')
       .insert({ user_book_id: userBookId, book_id: bookId, user_id: userId, page: newPage })
+      .then(() => {});
+  }
+
+  // ── Derive and insert a reading_sessions row (forward progress only) ──────
+  // startedPage defaults to 0 when this is the first page update.
+  const startedPage = currentPage ?? 0;
+  const pagesRead   = newPage - startedPage;
+
+  if (pagesRead > 0) {
+    supabase
+      .from('reading_sessions')
+      .insert({
+        user_id:      userId,
+        book_id:      bookId,
+        user_book_id: userBookId,
+        session_date: localDateString(new Date()),
+        started_page: startedPage,
+        ended_page:   newPage,
+        pages_read:   pagesRead,
+        // duration_minutes: null — not tracked in v1
+      })
       .then(() => {});
   }
 
