@@ -1985,7 +1985,39 @@ export default function BookDetailScreen() {
               </View>
             )}
           </View>
-        ) : null}
+        ) : (
+          /* ── Premium no-summary fallback ─────────────────────────────────────
+             Intentional typographic state — looks editorial, not empty.
+             Only shown after the enrichment pipeline has run (metaLoading=false)
+             and genuinely found nothing to display.                          */
+          <View style={{
+            backgroundColor: '#fefcf9',
+            borderRadius: 14,
+            padding: 18,
+            marginBottom: 20,
+            borderWidth: 1,
+            borderColor: '#ede9e4',
+          }}>
+            <Text style={{
+              fontSize: 11,
+              fontWeight: '700',
+              color: '#9e958d',
+              letterSpacing: 0.9,
+              textTransform: 'uppercase',
+              marginBottom: 10,
+            }}>
+              About
+            </Text>
+            <Text style={{
+              fontSize: 14,
+              fontStyle: 'italic',
+              color: '#9e958d',
+              lineHeight: 22,
+            }}>
+              No summary available for this edition.
+            </Text>
+          </View>
+        )}
 
         {/* ── Taste Match — status-gated, preference-aware ── */}
         {externalId && (!localStatus || localStatus === 'want_to_read' || localStatus === 'sent' || localStatus === 'saved') ? (

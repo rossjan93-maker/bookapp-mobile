@@ -42,6 +42,11 @@ import {
   deriveMetadataConfidence,
   type CoverCandidate,
 } from './metadataProvider';
+import {
+  recordProviderOutcome,
+  recordMissingField,
+  logProviderHealthSummary,
+} from './providerHealth';
 
 export type RepairResult = {
   covered:   number;
@@ -206,11 +211,13 @@ export async function repairBooksMetadata(
 
         if (gb.cover_url || gb.description || gb.page_count) {
           gbFetchStatus = 'success';
+          recordProviderOutcome('google_books', 'success');
           if (gb.volume_id) gbVolumeId = gb.volume_id;
           if (gb.cover_url)  gbCoverUrl = gb.cover_url;
           if (!hasDesc  && !foundDesc  && gb.description) foundDesc  = gb.description;
           if (!hasPages && !foundPages && gb.page_count)  foundPages = gb.page_count;
         } else {
+          recordProviderOutcome('google_books', 'failed');
           console.log(`[REPAIR] google_books returned no useful fields for "${t}"`);
         }
 
@@ -328,11 +335,22 @@ export async function repairBooksMetadata(
         total++;
         console.log(`[REPAIR] patched "${t}" — fields: ${Object.keys(patch).join(', ')}`);
       }
+
+      // ── Missing-field telemetry (recorded once per book) ───────────────────
+      // Only count books that genuinely have no cover/desc/pages after repair.
+      const stillNoCover = !hasCover && !patch.cover_url;
+      const stillNoDesc  = !hasDesc  && !foundDesc;
+      const stillNoPages = !hasPages && !foundPages;
+      if (stillNoCover) recordMissingField('cover');
+      if (stillNoDesc)  recordMissingField('description');
+      if (stillNoPages) recordMissingField('page_count');
+
     } catch (err) {
       console.log(`[REPAIR] error processing book ${book.id} — ${String(err)}`);
     }
   }
 
   console.log(`[REPAIR] done — covered=${covered} described=${described} subjected=${subjected} paged=${paged} total=${total}`);
+  logProviderHealthSummary();
   return { covered, described, subjected, paged, total };
 }
