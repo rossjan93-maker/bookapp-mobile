@@ -170,6 +170,13 @@ export type ScoreBreakdown = {
   saga_series_index?: number | null;   // 0-based index of this series in the saga's ordered list
   saga_label?:        'saga_entry' | 'saga_continuation' | 'saga_next_series' | 'saga_skip_ahead' | null;
   author_books_read?: number;          // finished books by this author — for explanation strings only
+  // ── Explanation quality (populated in getRankedRecs, after CoG rewrite) ───
+  // Based on the evidence actually present in the final reasons[] array —
+  // not on score. Used to sort WEAK cards to the back of the discovery feed.
+  //   strong     — book-specific trait, subject, enrichment, or confirmed-author signal
+  //   acceptable — some signal present (feedback, genre affinity, adjacent context)
+  //   weak       — only generic lane/CoG summary; no book-specific signal at all
+  explanation_quality?: 'strong' | 'acceptable' | 'weak';
 };
 
 export type ScoredBook = CandidateBook & {
@@ -314,6 +321,101 @@ const LANE_REASON: Record<DeterministicLane, string> = {
 // Set of LANE_REASON values for O(1) lookup — used by the CoG reason rewrite
 // to filter out generic lane-level reasons that would crowd out specific trait reasons.
 const LANE_REASON_VALUES = new Set(Object.values(LANE_REASON));
+
+// ── Explanation quality classifier ────────────────────────────────────────────
+//
+// Classifies each recommendation by the strength of the evidence behind its
+// explanation — not by score alone. Classification happens immediately after the
+// CoG rewrite (when reasons[] is finalised) and is stored in _score_breakdown.
+// The composition engine uses it to sort WEAK cards to the back of the visible
+// feed while still keeping them in the pool (so the feed never starves).
+//
+//   strong     — book-specific trait, subject, enrichment, or confirmed-author
+//                signal exists; buildExplanation() in RecCard produces specific copy
+//   acceptable — some non-trivial signal: feedback, genre affinity, or a
+//                market-position-specific (non-generic) adjacent explanation
+//   weak       — only a generic lane/CoG summary; no book-specific signal at all;
+//                buildExplanation() would fall back to lane-level copy such as
+//                "A strong fit for your taste in romantic fantasy."
+
+// Lane-level fit_explanation strings from buildCoreExplanation() in fitClassifier.ts.
+// These describe the user's reading lane rather than anything specific to this book.
+// Must be kept in sync with GENERIC_COG_EXPLANATIONS in components/RecCard.tsx.
+const GENERIC_FIT_EXPLANATION_SET = new Set([
+  'Feels closest to the romantic fantasy series you return to most',
+  'Fits the fantasy and speculative fiction you return to most',
+  'Matches the twisty, readable suspense you return to most often',
+  'Aligns with the emotionally driven romance you consistently enjoy',
+  'Feels close to the contemporary, character-driven fiction you consistently enjoy',
+  'Sits at the heart of the narrative nonfiction you read most',
+  'Aligns with the literary fiction you consistently pick up',
+  'Fits the dark, atmospheric fiction you return to consistently',
+  'Strongly aligned with your most repeated reading patterns',
+  'A reasonable next read that sits near your reading center',
+  'A reasonable match based on your reading patterns',
+]);
+
+// Prefixes of reasons[1] strings that indicate a book-specific signal was found.
+// These come from scoreBookForUser() Steps 1a (traits), 1b (subject overlap), and
+// 5 (enrichment consensus) — concrete measured alignments, not genre generalisations.
+const STRONG_REASON_PREFIXES = [
+  'Aligns with your preference for',   // Step 1a: ≥2 trait matches
+  'Matches your appreciation for',     // Step 1a: 1 trait match
+  'Readers note strong',               // Step 5:  enrichment consensus trait
+  'Covers themes of',                  // Step 1b: subject overlap (≥2 subjects)
+];
+
+export type ExplanationQuality = 'strong' | 'acceptable' | 'weak';
+
+function classifyExplanationQuality(
+  reasons: string[],
+  fitClass: string,
+  repeatedAuthorMatch: boolean,
+): ExplanationQuality {
+  const r0 = reasons[0] ?? null;
+  const r1 = reasons[1] ?? null;
+
+  // ── STRONG ─────────────────────────────────────────────────────────────────
+  // Repeated author confirmed as core fit: author evidence AND lane alignment
+  // both fire — the strongest possible signal; user has returned to this author
+  // and the book sits squarely in their dominant lane.
+  if (repeatedAuthorMatch && fitClass === 'core_fit') return 'strong';
+
+  // Book-specific trait / subject / enrichment signal in reasons[1].
+  if (r1 !== null && STRONG_REASON_PREFIXES.some(p => r1.startsWith(p))) return 'strong';
+
+  // Named-author fit_explanation in r0: "By {Author}, a consistent favorite…"
+  // These come from buildAuthorCoreExplanation() and carry real author-repeat evidence.
+  if (r0 !== null && r0.startsWith('By ')) return 'strong';
+
+  // ── ACCEPTABLE ─────────────────────────────────────────────────────────────
+  // Repeated author that didn't reach CORE (lane or market didn't fully confirm).
+  // Still a real signal — user has returned to this author, just in an adjacent
+  // context where lane evidence doesn't confirm it as a dominant-lane match.
+  if (repeatedAuthorMatch) return 'acceptable';
+
+  // Explicit feedback: user asked for more books like another → behavioural signal.
+  if (r1 === 'Similar to books you asked for more of') return 'acceptable';
+
+  // Genre affinity: a measured (weak) genre preference from Step 3.
+  if (r1 === 'Fits a genre you consistently enjoy') return 'acceptable';
+
+  // Non-generic adjacent fit_explanation in r0.
+  // Strings from buildAdjacentExplanation() — e.g. "Closer to the thriller and
+  // suspense you read most" or "Shares the romantic fantasy energy of the books
+  // you enjoy most" — are market-position-specific and give honest context even
+  // without a trait reason. Exclude "By …" (handled above) and strings already
+  // in GENERIC_FIT_EXPLANATION_SET (lane-level generalisations).
+  if (r0 !== null && !GENERIC_FIT_EXPLANATION_SET.has(r0) && !r0.startsWith('By ')) {
+    return 'acceptable';
+  }
+
+  // ── WEAK ───────────────────────────────────────────────────────────────────
+  // r0 is a generic lane/CoG summary and r1 adds no specific signal.
+  // The only justification is the book's genre or lane — not any measured
+  // alignment with the user's actual reading choices or preferences.
+  return 'weak';
+}
 
 // Commercial lanes — used for the modern-commercial-prior boost in Step 7
 const COMMERCIAL_LANES = new Set<DeterministicLane>([
@@ -1787,6 +1889,15 @@ export function getRankedRecs(
       ].filter((r, i, arr) => arr.indexOf(r) === i);
     }
 
+    // Classify explanation quality based on the evidence in the finalised reasons[].
+    // Happens here — after reasons are set — so the classification reflects exactly
+    // what buildExplanation() in RecCard.tsx will surface to the user.
+    const explanationQuality = classifyExplanationQuality(
+      book.reasons,
+      fitResult.fit_class,
+      fitResult.repeated_author_match,
+    );
+
     // Extend _score_breakdown with CoG fields + presentation annotation
     book._score_breakdown = {
       ...book._score_breakdown,
@@ -1798,6 +1909,7 @@ export function getRankedRecs(
       exception_dependency:  fitResult.exception_dependency,
       cog_score_delta:       fitResult.cog_score_delta,
       final_score:           book.score,
+      explanation_quality:   explanationQuality,
       // Presentation-only: how many of this author's books the user has read.
       // Used by the explanation string generator — zero scoring impact.
       author_books_read:     authorReadCounts.get(book.author.toLowerCase().trim()) ?? 0,
@@ -2215,10 +2327,44 @@ export function getRankedRecs(
     }
   }
 
-  // Sort final set by display score descending and assign ranks.
-  // Phase 1 seeds that scored lower than Phase 2 additions will appear
-  // further down the visible list — that is correct behaviour.
-  composed.sort((a, b) => b.score - a.score);
+  // Sort final set: explanation quality tier first (strong → acceptable → weak),
+  // then by display score descending within each tier.
+  //
+  // This is the demotion gate for weak-evidence cards. WEAK books remain in
+  // the composed set (starvation-safe — they were composed normally through
+  // Phase 2 / Phase 3), but they appear at the back of the visible feed
+  // regardless of their raw score. A card with only a generic lane justification
+  // never occupies a prime slot ahead of one with real book-specific evidence.
+  //
+  // Phase 1 seeds that scored lower than Phase 2 additions will appear further
+  // down within their tier — that is correct behaviour.
+  const explanationTier = (q: string | undefined): number =>
+    q === 'strong' ? 0 : q === 'acceptable' ? 1 : 2;
+
+  composed.sort((a, b) => {
+    const ta = explanationTier(a._score_breakdown.explanation_quality);
+    const tb = explanationTier(b._score_breakdown.explanation_quality);
+    if (ta !== tb) return ta - tb;
+    return b.score - a.score;
+  });
+
+  if (__DEV__) {
+    const byTier = { strong: 0, acceptable: 0, weak: 0 };
+    for (const b of composed) {
+      const q = (b._score_breakdown.explanation_quality ?? 'weak') as keyof typeof byTier;
+      byTier[q]++;
+    }
+    console.log(
+      `[EXP_QUALITY] composed set — strong: ${byTier.strong}, acceptable: ${byTier.acceptable}, weak: ${byTier.weak}`
+    );
+    const weakCards = composed.filter(b => b._score_breakdown.explanation_quality === 'weak');
+    if (weakCards.length > 0) {
+      console.log(
+        `[EXP_QUALITY] Demoted to back: ${weakCards.map(b => `"${b.title}"`).join(', ')}`
+      );
+    }
+  }
+
   const diverse = composed.map(
     (b, i) => ({ ...b, _debug: { pool_size: poolSize, rank: i + 1 } })
   );
