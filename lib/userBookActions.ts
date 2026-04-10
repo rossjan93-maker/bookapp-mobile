@@ -427,7 +427,9 @@ export async function saveCurrentPage(
     supabase
       .from('reading_progress_events')
       .insert({ user_book_id: userBookId, book_id: bookId, user_id: userId, page: newPage })
-      .then(() => {});
+      .then(({ error: evtErr }) => {
+        if (evtErr) console.warn('[SESSION] progress_events insert failed:', evtErr.message, evtErr.code);
+      });
   }
 
   // ── Derive and insert a reading_sessions row (forward progress only) ──────
@@ -436,19 +438,27 @@ export async function saveCurrentPage(
   const pagesRead   = newPage - startedPage;
 
   if (pagesRead > 0) {
-    supabase
+    const sessionPayload = {
+      user_id:      userId,
+      book_id:      bookId,
+      user_book_id: userBookId,
+      session_date: localDateString(new Date()),
+      started_page: startedPage,
+      ended_page:   newPage,
+      pages_read:   pagesRead,
+      duration_minutes: null as number | null,
+    };
+    console.log('[SESSION] inserting reading_sessions row:', JSON.stringify(sessionPayload));
+    const { error: sessionErr } = await supabase
       .from('reading_sessions')
-      .insert({
-        user_id:      userId,
-        book_id:      bookId,
-        user_book_id: userBookId,
-        session_date: localDateString(new Date()),
-        started_page: startedPage,
-        ended_page:   newPage,
-        pages_read:   pagesRead,
-        // duration_minutes: null — not tracked in v1
-      })
-      .then(() => {});
+      .insert(sessionPayload);
+    if (sessionErr) {
+      console.warn('[SESSION] reading_sessions insert FAILED:', sessionErr.message, '| code:', sessionErr.code, '| details:', sessionErr.details, '| hint:', sessionErr.hint);
+    } else {
+      console.log('[SESSION] reading_sessions row written ✓');
+    }
+  } else {
+    console.log('[SESSION] skipping session row — no forward progress (pagesRead=', pagesRead, ')');
   }
 
   return { error: null };
