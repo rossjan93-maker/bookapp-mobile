@@ -242,6 +242,30 @@ export async function repairBooksMetadata(
         } else {
           console.log(`[REPAIR] no cover available for "${t}"`);
         }
+      } else if (coverSrcExists && !book.cover_source) {
+        // Book already has a cover (e.g. from Goodreads import) but cover_source was
+        // never recorded.  Infer from URL pattern — GB and OL URLs are deterministic.
+        // If GB confirmed a match this session, that also establishes google_books as
+        // a valid source regardless of whether the URL came from import.
+        const existingUrl = String(book.cover_url ?? '');
+        if (
+          existingUrl.includes('books.google.com') ||
+          existingUrl.includes('googleapis.com/books')
+        ) {
+          patch.cover_source = 'google_books';
+          console.log(`[REPAIR] cover_source='google_books' inferred from existing URL for "${t}"`);
+        } else if (
+          existingUrl.includes('covers.openlibrary.org')
+        ) {
+          patch.cover_source = 'open_library';
+          console.log(`[REPAIR] cover_source='open_library' inferred from existing URL for "${t}"`);
+        } else if (gbVolumeId) {
+          // Existing cover came from another source (e.g. Goodreads CDN), but GB
+          // confirmed this is the right book.  Record google_books as a confirmed
+          // provider — the cover_url itself is not replaced.
+          patch.cover_source = 'google_books';
+          console.log(`[REPAIR] cover_source='google_books' from GB match (cover URL preserved) for "${t}"`);
+        }
       }
 
       // ── Collect OL-sourced fields — only write columns that exist ──────────

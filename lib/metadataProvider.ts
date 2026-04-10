@@ -295,7 +295,7 @@ export async function recordProviderLink(
           last_fetched_at: status === 'success' ? now : undefined,
           fetch_status:    status,
         },
-        { onConflict: 'source,source_book_id', ignoreDuplicates: false },
+        { onConflict: 'book_id,source', ignoreDuplicates: false },
       );
 
     if (error) {
