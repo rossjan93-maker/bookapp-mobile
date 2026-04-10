@@ -358,22 +358,21 @@ const GENERIC_FIT_EXPLANATION_SET = new Set([
   'A reasonable match based on your reading patterns',
 ]);
 
-// Prefixes of reasons[1] strings that indicate a book-specific signal was found.
-// These come from scoreBookForUser() Steps 1a (traits), 1b (subject overlap), and
-// 5 (enrichment consensus) — concrete measured alignments, not genre generalisations.
-const STRONG_REASON_PREFIXES = [
-  'Aligns with your preference for',   // Step 1a: ≥2 trait matches
-  'Matches your appreciation for',     // Step 1a: 1 trait match
-  'Readers note strong',               // Step 5:  enrichment consensus trait
-  'Covers themes of',                  // Step 1b: subject overlap (≥2 subjects)
-];
 
 export type ExplanationQuality = 'strong' | 'acceptable_specific' | 'acceptable_generic' | 'weak';
 
+// Minimum trait_alignment score required for a single-trait reason ("Matches your
+// appreciation for …") to qualify as STRONG rather than acceptable_specific.
+// A single trait match at low confidence is a coincidence, not a pattern.
+// Multi-trait reasons ("Aligns with your preference for …") are unconditionally STRONG
+// because they require ≥2 independent trait matches.
+const SINGLE_TRAIT_STRONG_FLOOR = 0.25;
+
 function classifyExplanationQuality(
-  reasons: string[],
-  fitClass: string,
+  reasons:             string[],
+  fitClass:            string,
   repeatedAuthorMatch: boolean,
+  traitAlignment:      number,   // raw trait_alignment from ScoreBreakdown
 ): ExplanationQuality {
   const r0 = reasons[0] ?? null;
   const r1 = reasons[1] ?? null;
@@ -384,8 +383,34 @@ function classifyExplanationQuality(
   // and the book sits squarely in their dominant lane.
   if (repeatedAuthorMatch && fitClass === 'core_fit') return 'strong';
 
-  // Book-specific trait / subject / enrichment signal in reasons[1].
-  if (r1 !== null && STRONG_REASON_PREFIXES.some(p => r1.startsWith(p))) return 'strong';
+  // Book-specific signal in reasons[1] — split by prefix to allow score-gating
+  // on the weaker single-trait prefix:
+  //
+  // (a) "Aligns with your preference for …" — Step 1a ≥2 trait matches.
+  //     Multiple independent evidence signals → unconditionally STRONG.
+  //
+  // (b) "Readers note strong …" — Step 5 enrichment consensus trait.
+  //     Market-sourced agreement on a trait → unconditionally STRONG.
+  //
+  // (c) "Covers themes of …" — Step 1b subject overlap ≥2 subjects.
+  //     Two subject matches is a real measured alignment → unconditionally STRONG.
+  //
+  // (d) "Matches your appreciation for …" — Step 1a exactly 1 trait match.
+  //     A single trait at low score is a coincidence, not a pattern.
+  //     Only STRONG when trait_alignment >= SINGLE_TRAIT_STRONG_FLOOR (0.25).
+  //     Below the floor → acceptable_specific (real signal, insufficient depth).
+  if (r1 !== null) {
+    if (
+      r1.startsWith('Aligns with your preference for') ||
+      r1.startsWith('Readers note strong')            ||
+      r1.startsWith('Covers themes of')
+    ) {
+      return 'strong';
+    }
+    if (r1.startsWith('Matches your appreciation for')) {
+      return traitAlignment >= SINGLE_TRAIT_STRONG_FLOOR ? 'strong' : 'acceptable_specific';
+    }
+  }
 
   // Named-author fit_explanation in r0: "By {Author}, a consistent favorite…"
   // These come from buildAuthorCoreExplanation() and carry real author-repeat evidence.
@@ -1907,6 +1932,7 @@ export function getRankedRecs(
       book.reasons,
       fitResult.fit_class,
       fitResult.repeated_author_match,
+      book._score_breakdown.trait_alignment,
     );
 
     // Extend _score_breakdown with CoG fields + presentation annotation
