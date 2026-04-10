@@ -924,36 +924,66 @@ export default function HomeScreen() {
                 const total    = yearlyGoal ?? 0;
                 const read     = booksThisYear.length;
                 const expected = goalExpectedByNow;
-                // Deterministic height sequence — 16-step cycle, 18–34px range
-                const H = [28, 20, 34, 22, 30, 18, 26, 32, 24, 30, 20, 34, 22, 28, 18, 32];
-                // Two books get a slight tilt — positions chosen to feel naturally messy
-                const tiltA = 3;
-                const tiltB = total > 8 ? Math.floor(total * 0.62) : 7;
+                // Deterministic height sequence — 16-step cycle, 18–36px range
+                const H = [28, 20, 36, 22, 31, 18, 26, 33, 24, 30, 19, 35, 23, 29, 18, 32];
+                // Tilted books — 4 positions chosen to feel naturally lived-in
+                const TILTS: Record<number, string> = {
+                  [3]:                             '8deg',
+                  [total > 8 ? Math.floor(total * 0.3)  : 5]:  '-5deg',
+                  [total > 8 ? Math.floor(total * 0.62) : 7]:  '6deg',
+                  [total > 8 ? Math.floor(total * 0.85) : 10]: '-7deg',
+                };
                 return (
                   <View style={{ marginBottom: 18 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 1.5 }}>
                       {Array.from({ length: total }).map((_, i) => {
                         const isRead   = i < read;
                         const isBehind = !isRead && i < expected;
-                        const color    = isRead ? '#7b9e7e' : isBehind ? '#e8a44a' : '#d6cec7';
+                        const spine    = isRead ? '#7b9e7e' : isBehind ? '#e8a44a' : '#cec6be';
                         const h        = H[i % H.length];
-                        const rotate   = i === tiltA ? '7deg' : i === tiltB ? '-6deg' : '0deg';
+                        const rotate   = TILTS[i] ?? '0deg';
                         return (
                           <View
                             key={i}
                             style={{
-                              flex: 1,
-                              height: h,
-                              backgroundColor: color,
-                              borderRadius: 1.5,
-                              transform: [{ rotate }],
+                              flex:            1,
+                              height:          h,
+                              backgroundColor: spine,
+                              borderTopLeftRadius:  2,
+                              borderTopRightRadius: 2,
+                              borderRadius:    1,
+                              transform:       [{ rotate }],
+                              overflow:        'hidden',
                             }}
-                          />
+                          >
+                            {/* Page-top edge — light strip at crown of spine */}
+                            <View style={{ height: 2.5, backgroundColor: 'rgba(255,255,255,0.32)' }} />
+                            {/* Left spine highlight — catches shelf light */}
+                            <View style={{
+                              position:        'absolute',
+                              left:            0,
+                              top:             0,
+                              bottom:          0,
+                              width:           '38%',
+                              backgroundColor: 'rgba(255,255,255,0.13)',
+                            }} />
+                            {/* Right shadow edge — depth between books */}
+                            <View style={{
+                              position:        'absolute',
+                              right:           0,
+                              top:             0,
+                              bottom:          0,
+                              width:           1,
+                              backgroundColor: 'rgba(0,0,0,0.11)',
+                            }} />
+                          </View>
                         );
                       })}
                     </View>
-                    {/* Shelf line */}
-                    <View style={{ height: 1.5, backgroundColor: '#c4b5a5', marginTop: 2, borderRadius: 1 }} />
+                    {/* Shelf surface */}
+                    <View style={{ height: 3, backgroundColor: '#b8a898', marginTop: 1, borderRadius: 1 }} />
+                    {/* Shelf drop-shadow */}
+                    <View style={{ height: 1.5, backgroundColor: '#a3917f', opacity: 0.4, borderRadius: 1 }} />
                   </View>
                 );
               })()}
