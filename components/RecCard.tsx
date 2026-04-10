@@ -49,6 +49,45 @@ function capitalize(s: string): string {
   return s.length > 0 ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
+// ── Reason text rewriter ───────────────────────────────────────────────────────
+// Maps known system-generated reason strings to natural, reader-facing copy.
+// Returns null when the source string is too weak to surface (caller renders nothing).
+// Only handles strings with known patterns — unknown strings pass through unchanged.
+function rewriteReasonText(raw: string, laneLabel: string | null): string | null {
+  // ── Generic lane fallback ─────────────────────────────────────────────────
+  if (raw === 'Fits a genre you consistently enjoy') {
+    return laneLabel ? `A natural fit for your taste in ${laneLabel}.` : null;
+  }
+
+  // ── "Aligns with your preference for X and Y" ──────────────────────────
+  const alignsM = raw.match(/^Aligns with your preference for (.+)$/i);
+  if (alignsM) return `Strong match for ${alignsM[1].toLowerCase()}.`;
+
+  // ── "Matches your appreciation for X" ─────────────────────────────────
+  const appreciationM = raw.match(/^Matches your appreciation for (.+)$/i);
+  if (appreciationM) return `Built around ${appreciationM[1].toLowerCase()}.`;
+
+  // ── "Readers note strong X — which fits your profile" ─────────────────
+  const readersM = raw.match(/^Readers note strong (.+?) — which fits your profile$/i);
+  if (readersM) return `Notably ${readersM[1].toLowerCase()} — fits your taste.`;
+
+  // ── "Falls within X — a genre you consistently enjoy" (expertRec path) ─
+  const fallsM = raw.match(/^Falls within (.+?) — a genre you consistently enjoy$/i);
+  if (fallsM) return laneLabel ? `A natural fit for your taste in ${laneLabel}.` : 'A genre you love.';
+
+  // ── "Themes (X, Y) align with your reading history" ───────────────────
+  const themesM = raw.match(/^Themes? \((.+?)\) align with your reading history$/i);
+  if (themesM) return `Themes of ${themesM[1]} run through it.`;
+
+  // ── "Touches on X, which occasionally appears in your reading" ─────────
+  // Suppress — too weak a signal to surface as an explanation.
+  const touchesM = raw.match(/^Touches on (.+?), which occasionally appears in your reading$/i);
+  if (touchesM) return laneLabel ? `Fits your taste in ${laneLabel}.` : null;
+
+  // ── Pass all other strings through unchanged ───────────────────────────
+  return raw;
+}
+
 // Returns a naturally articled reference to a series/saga name for inline use.
 function naturalArticle(name: string): string {
   if (/^(a|an)\s+/i.test(name)) return name;
@@ -112,10 +151,7 @@ function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | n
 
   if (book.reasons.length > 0) {
     const raw = capitalize(stripAuthorPrefix(book.reasons[0], book.author));
-    if (raw === 'Fits a genre you consistently enjoy' && laneLabel) {
-      return `A consistent pick for your taste in ${laneLabel}.`;
-    }
-    return raw;
+    return rewriteReasonText(raw, laneLabel);
   }
 
   return null;
