@@ -251,11 +251,18 @@ const WEAK_PATTERNS = [
   /sits near your reading center/i,
 ];
 
-function classifyExplanation(text: string | null): 'STRONG' | 'ACCEPTABLE' | 'WEAK' | 'NULL' {
+// Text-based classifier used when _score_breakdown.explanation_quality is absent
+// (pipeline did not run, or this is an older cached result).
+// NOTE: this function can't distinguish acceptable_specific from acceptable_generic
+// from text alone (it doesn't have access to reasons[] metadata). In live audits
+// with the pipeline running, pipelineEQ from _score_breakdown is authoritative.
+function classifyExplanation(text: string | null): 'STRONG' | 'ACCEPTABLE_SPECIFIC' | 'ACCEPTABLE_GENERIC' | 'WEAK' | 'NULL' {
   if (!text) return 'NULL';
   if (STRONG_PATTERNS.some(p => p.test(text))) return 'STRONG';
   if (WEAK_PATTERNS.some(p => p.test(text)))   return 'WEAK';
-  return 'ACCEPTABLE';
+  // Without reasons[] metadata, treat all ACCEPTABLE as ACCEPTABLE_GENERIC
+  // (the conservative fallback — the pipeline may promote some to ACCEPTABLE_SPECIFIC)
+  return 'ACCEPTABLE_GENERIC';
 }
 
 // ── BEFORE simulation (pre-change logic) ─────────────────────────────────────
@@ -359,8 +366,20 @@ async function run() {
   // ── Card-by-card audit ────────────────────────────────────────────────────
   h1('CARD-BY-CARD EXPLANATION AUDIT');
 
-  const counts = { STRONG: 0, ACCEPTABLE: 0, WEAK: 0, NULL: 0 };
+  // Counts are driven by the pipeline's authoritative classifier when available,
+  // falling back to the text-based simulation for unset cards.
+  const counts = { STRONG: 0, ACCEPTABLE_SPECIFIC: 0, ACCEPTABLE_GENERIC: 0, WEAK: 0, NULL: 0 };
   const changedCards: { rank: number; title: string; before: string; after: string }[] = [];
+
+  const qlLabel = (q: string) => {
+    const n = q.toLowerCase();
+    if (n === 'strong')              return '✅ STRONG             ';
+    if (n === 'acceptable_specific') return '🔵 ACCEPTABLE_SPECIFIC';
+    if (n === 'acceptable_generic')  return '🔹 ACCEPTABLE_GENERIC ';
+    if (n === 'null')                return '⬛ NULL                ';
+    if (n === 'unset')               return '⚪ UNSET               ';
+    return                                  '🔴 WEAK                ';
+  };
 
   for (let i = 0; i < recs.length; i++) {
     const book = recs[i];
@@ -369,22 +388,20 @@ async function run() {
 
     const newText  = simulateBuildExplanation(book);
     const oldText  = simulateOldBuildExplanation(book);
-    const quality  = classifyExplanation(newText);
-    counts[quality]++;
 
-    // Pipeline classifier result (authoritative — comes from classifyExplanationQuality()
-    // in recommender.ts and is stored in _score_breakdown.explanation_quality).
+    // Pipeline classifier is authoritative; use text-based sim only as fallback.
     const pipelineEQ: string = bd?.explanation_quality ?? 'unset';
+    const simQuality = classifyExplanation(newText);
+
+    // Accumulate using pipeline value when set, sim value otherwise.
+    const countKey = pipelineEQ !== 'unset'
+      ? pipelineEQ.toUpperCase().replace(/-/g, '_') as keyof typeof counts
+      : simQuality;
+    if (countKey in counts) counts[countKey]++;
 
     const changed = newText !== oldText;
     if (changed) changedCards.push({ rank, title: book.title, before: oldText ?? '(null)', after: newText ?? '(null)' });
 
-    const qlLabel = (q: string) =>
-      q === 'STRONG' || q === 'strong'       ? '✅ STRONG    '
-      : q === 'ACCEPTABLE' || q === 'acceptable' ? '🔵 ACCEPTABLE'
-      : q === 'NULL'                              ? '⬛ NULL       '
-      : q === 'unset'                             ? '⚪ UNSET      '
-      :                                            '🔴 WEAK      ';
     const deltaIcon = changed ? ' ↑' : '';
 
     console.log(`\n  #${String(rank).padEnd(2)} [${book.score.toFixed(3)}] ${book.title}`);
@@ -392,8 +409,8 @@ async function run() {
     console.log(`      fit_class: ${bd?.fit_class ?? '—'}  lane: ${bd?.book_lane ?? '—'}  rep_author: ${bd?.repeated_author_match ? 'yes' : 'no'}  author_reads: ${bd?.author_books_read ?? 0}`);
     console.log(`      reasons[0]: ${book.reasons[0] ?? '(none)'}`);
     console.log(`      reasons[1]: ${book.reasons[1] ?? '(none)'}`);
-    console.log(`      pipeline eq: ${qlLabel(pipelineEQ)}  (classifier in recommender.ts)`);
-    console.log(`      audit sim:   ${qlLabel(quality)}${deltaIcon}  "${newText ?? '(null)'}"`);
+    console.log(`      pipeline eq: ${qlLabel(pipelineEQ)}  (authoritative — recommender.ts)`);
+    console.log(`      text sim:    ${qlLabel(simQuality)}${deltaIcon}  "${newText ?? '(null)'}"`);
     if (changed) {
       console.log(`                   BEFORE: "${oldText ?? '(null)'}"`);
     }
@@ -402,12 +419,14 @@ async function run() {
   // ── Summary ───────────────────────────────────────────────────────────────
   h1('SUMMARY');
 
-  h2('Explanation quality distribution');
-  console.log(`  ✅ STRONG:     ${counts.STRONG}  cards`);
-  console.log(`  🔵 ACCEPTABLE: ${counts.ACCEPTABLE}  cards`);
-  console.log(`  🔴 WEAK:       ${counts.WEAK}  cards`);
-  console.log(`  ⬛ NULL:        ${counts.NULL}  cards`);
+  h2('Explanation quality distribution (pipeline-authoritative)');
+  console.log(`  ✅ STRONG:              ${counts.STRONG}  cards`);
+  console.log(`  🔵 ACCEPTABLE_SPECIFIC: ${counts.ACCEPTABLE_SPECIFIC}  cards   (author repeat non-core, explicit feedback)`);
+  console.log(`  🔹 ACCEPTABLE_GENERIC:  ${counts.ACCEPTABLE_GENERIC}  cards   (genre affinity, adjacency context only)`);
+  console.log(`  🔴 WEAK:                ${counts.WEAK}  cards`);
+  console.log(`  ⬛ NULL:                 ${counts.NULL}  cards`);
   console.log(`\n  Total: ${recs.length} cards`);
+  console.log(`  Feed order: STRONG → ACCEPTABLE_SPECIFIC → ACCEPTABLE_GENERIC → WEAK`);
   console.log(`  Improvement rate: ${changedCards.length} cards changed from old logic`);
 
   if (changedCards.length > 0) {
@@ -419,19 +438,40 @@ async function run() {
     }
   }
 
-  h2('Weak / Null cards — need attention');
-  const needsWork = recs.filter((b, i) => {
+  h2('Weak / Null cards — need attention (sorted to back of feed)');
+  const needsWork = recs.filter(b => {
+    const eq = (b._score_breakdown as any)?.explanation_quality;
+    if (eq) return eq === 'weak';
     const q = classifyExplanation(simulateBuildExplanation(b));
     return q === 'WEAK' || q === 'NULL';
   });
   if (needsWork.length === 0) {
-    console.log('  ✅ None — all cards have acceptable or strong explanations.');
+    console.log('  ✅ None — all cards are acceptable_generic or better.');
   } else {
     for (const b of needsWork) {
       const bd = b._score_breakdown as any;
       console.log(`\n  ${b.title} — ${b.author}`);
       console.log(`    fit_class: ${bd?.fit_class}  lane: ${bd?.book_lane}  score: ${b.score.toFixed(3)}`);
       console.log(`    reasons: ${JSON.stringify(b.reasons)}`);
+      console.log(`    text: "${simulateBuildExplanation(b)}"`);
+    }
+  }
+
+  h2('ACCEPTABLE_GENERIC cards — sorted below ACCEPTABLE_SPECIFIC');
+  const genericCards = recs.filter(b => {
+    const eq = (b._score_breakdown as any)?.explanation_quality;
+    if (eq) return eq === 'acceptable_generic';
+    const q = classifyExplanation(simulateBuildExplanation(b));
+    return q === 'ACCEPTABLE_GENERIC';
+  });
+  if (genericCards.length === 0) {
+    console.log('  ✅ None — no cards relying solely on genre affinity or adjacency context.');
+  } else {
+    for (const b of genericCards) {
+      const bd = b._score_breakdown as any;
+      console.log(`\n  ${b.title} — ${b.author}`);
+      console.log(`    fit_class: ${bd?.fit_class}  lane: ${bd?.book_lane}  score: ${b.score.toFixed(3)}`);
+      console.log(`    reasons[0]: ${b.reasons[0] ?? '(none)'}  reasons[1]: ${b.reasons[1] ?? '(none)'}`);
       console.log(`    text: "${simulateBuildExplanation(b)}"`);
     }
   }

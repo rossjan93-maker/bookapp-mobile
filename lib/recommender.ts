@@ -172,11 +172,14 @@ export type ScoreBreakdown = {
   author_books_read?: number;          // finished books by this author — for explanation strings only
   // ── Explanation quality (populated in getRankedRecs, after CoG rewrite) ───
   // Based on the evidence actually present in the final reasons[] array —
-  // not on score. Used to sort WEAK cards to the back of the discovery feed.
-  //   strong     — book-specific trait, subject, enrichment, or confirmed-author signal
-  //   acceptable — some signal present (feedback, genre affinity, adjacent context)
-  //   weak       — only generic lane/CoG summary; no book-specific signal at all
-  explanation_quality?: 'strong' | 'acceptable' | 'weak';
+  // not on score. Used to tier the final discovery feed sort.
+  //
+  //   strong              — book-specific trait, subject, enrichment, or confirmed-author signal
+  //   acceptable_specific — user-history-specific evidence: author repeat (non-core) or
+  //                         explicit feedback signal
+  //   acceptable_generic  — broad signal only: genre affinity or adjacent market-position context
+  //   weak                — only a generic lane/CoG summary; no measured user alignment at all
+  explanation_quality?: 'strong' | 'acceptable_specific' | 'acceptable_generic' | 'weak';
 };
 
 export type ScoredBook = CandidateBook & {
@@ -365,7 +368,7 @@ const STRONG_REASON_PREFIXES = [
   'Covers themes of',                  // Step 1b: subject overlap (≥2 subjects)
 ];
 
-export type ExplanationQuality = 'strong' | 'acceptable' | 'weak';
+export type ExplanationQuality = 'strong' | 'acceptable_specific' | 'acceptable_generic' | 'weak';
 
 function classifyExplanationQuality(
   reasons: string[],
@@ -388,26 +391,34 @@ function classifyExplanationQuality(
   // These come from buildAuthorCoreExplanation() and carry real author-repeat evidence.
   if (r0 !== null && r0.startsWith('By ')) return 'strong';
 
-  // ── ACCEPTABLE ─────────────────────────────────────────────────────────────
-  // Repeated author that didn't reach CORE (lane or market didn't fully confirm).
-  // Still a real signal — user has returned to this author, just in an adjacent
-  // context where lane evidence doesn't confirm it as a dominant-lane match.
-  if (repeatedAuthorMatch) return 'acceptable';
+  // ── ACCEPTABLE_SPECIFIC ────────────────────────────────────────────────────
+  // Concrete user-history evidence, but not strong enough for STRONG:
+  //
+  // (a) Author repeat outside core fit — user has returned to this author, but
+  //     the book is in an adjacent lane so lane evidence doesn't confirm dominant
+  //     alignment. The author repeat is still a genuine measured signal.
+  if (repeatedAuthorMatch) return 'acceptable_specific';
 
-  // Explicit feedback: user asked for more books like another → behavioural signal.
-  if (r1 === 'Similar to books you asked for more of') return 'acceptable';
+  // (b) Explicit feedback: user asked for more books like another title.
+  //     This is a direct behavioural signal — the user manually expressed intent.
+  if (r1 === 'Similar to books you asked for more of') return 'acceptable_specific';
 
-  // Genre affinity: a measured (weak) genre preference from Step 3.
-  if (r1 === 'Fits a genre you consistently enjoy') return 'acceptable';
+  // ── ACCEPTABLE_GENERIC ─────────────────────────────────────────────────────
+  // Broad signal only — no book-specific or user-history-specific evidence:
+  //
+  // (a) Genre affinity: a measured (weak) genre preference from Step 3.
+  //     The user reads this genre, but nothing specific to this book or this
+  //     user's demonstrated choices says it's a strong fit.
+  if (r1 === 'Fits a genre you consistently enjoy') return 'acceptable_generic';
 
-  // Non-generic adjacent fit_explanation in r0.
-  // Strings from buildAdjacentExplanation() — e.g. "Closer to the thriller and
-  // suspense you read most" or "Shares the romantic fantasy energy of the books
-  // you enjoy most" — are market-position-specific and give honest context even
-  // without a trait reason. Exclude "By …" (handled above) and strings already
-  // in GENERIC_FIT_EXPLANATION_SET (lane-level generalisations).
+  // (b) Non-generic adjacent fit_explanation in r0.
+  //     Strings from buildAdjacentExplanation() give market-position context
+  //     (e.g. "Closer to the thriller and suspense you read most") but carry
+  //     no book-specific or user-history measurement. They're honest adjacency
+  //     framing, not evidence. Exclude "By …" (already handled above) and
+  //     GENERIC_FIT_EXPLANATION_SET strings (already handled in WEAK).
   if (r0 !== null && !GENERIC_FIT_EXPLANATION_SET.has(r0) && !r0.startsWith('By ')) {
-    return 'acceptable';
+    return 'acceptable_generic';
   }
 
   // ── WEAK ───────────────────────────────────────────────────────────────────
@@ -2338,8 +2349,15 @@ export function getRankedRecs(
   //
   // Phase 1 seeds that scored lower than Phase 2 additions will appear further
   // down within their tier — that is correct behaviour.
-  const explanationTier = (q: string | undefined): number =>
-    q === 'strong' ? 0 : q === 'acceptable' ? 1 : 2;
+  // 4-tier sort: STRONG (0) > acceptable_specific (1) > acceptable_generic (2) > WEAK (3)
+  // Within each tier, higher raw score ranks first.
+  // Composition is unchanged — this only reorders the already-composed set.
+  const explanationTier = (q: string | undefined): number => {
+    if (q === 'strong')              return 0;
+    if (q === 'acceptable_specific') return 1;
+    if (q === 'acceptable_generic')  return 2;
+    return 3; // 'weak' or unset
+  };
 
   composed.sort((a, b) => {
     const ta = explanationTier(a._score_breakdown.explanation_quality);
@@ -2349,15 +2367,24 @@ export function getRankedRecs(
   });
 
   if (__DEV__) {
-    const byTier = { strong: 0, acceptable: 0, weak: 0 };
+    const byTier = { strong: 0, acceptable_specific: 0, acceptable_generic: 0, weak: 0 };
     for (const b of composed) {
       const q = (b._score_breakdown.explanation_quality ?? 'weak') as keyof typeof byTier;
-      byTier[q]++;
+      if (q in byTier) byTier[q]++;
     }
     console.log(
-      `[EXP_QUALITY] composed set — strong: ${byTier.strong}, acceptable: ${byTier.acceptable}, weak: ${byTier.weak}`
+      `[EXP_QUALITY] strong: ${byTier.strong}` +
+      `  acc_specific: ${byTier.acceptable_specific}` +
+      `  acc_generic: ${byTier.acceptable_generic}` +
+      `  weak: ${byTier.weak}`
     );
-    const weakCards = composed.filter(b => b._score_breakdown.explanation_quality === 'weak');
+    const genericCards = composed.filter(b => b._score_breakdown.explanation_quality === 'acceptable_generic');
+    const weakCards    = composed.filter(b => b._score_breakdown.explanation_quality === 'weak');
+    if (genericCards.length > 0) {
+      console.log(
+        `[EXP_QUALITY] acc_generic: ${genericCards.map(b => `"${b.title}"`).join(', ')}`
+      );
+    }
     if (weakCards.length > 0) {
       console.log(
         `[EXP_QUALITY] Demoted to back: ${weakCards.map(b => `"${b.title}"`).join(', ')}`
@@ -2970,7 +2997,7 @@ export async function getPersonalizedRecsWithExpert(
     });
 
     // ── BLOCK E: Explanation quality summary across full feed ─────────────
-    const eqCounts = { strong: 0, acceptable: 0, weak: 0, unset: 0 };
+    const eqCounts = { strong: 0, acceptable_specific: 0, acceptable_generic: 0, weak: 0, unset: 0 };
     for (const r of baseResult.recs) {
       const q = r._score_breakdown.explanation_quality ?? 'unset';
       (eqCounts as any)[q] = ((eqCounts as any)[q] ?? 0) + 1;
@@ -2982,11 +3009,12 @@ export async function getPersonalizedRecsWithExpert(
       .filter(r => !r._score_breakdown.explanation_quality)
       .map(r => r.title.slice(0, 25));
     console.log('[FE_EQ_SUMMARY]', JSON.stringify({
-      total:      baseResult.recs.length,
-      strong:     eqCounts.strong,
-      acceptable: eqCounts.acceptable,
-      weak:       eqCounts.weak,
-      unset:      eqCounts.unset,
+      total:               baseResult.recs.length,
+      strong:              eqCounts.strong,
+      acc_specific:        eqCounts.acceptable_specific,
+      acc_generic:         eqCounts.acceptable_generic,
+      weak:                eqCounts.weak,
+      unset:               eqCounts.unset,
       weak_titles:  weakTitles,
       unset_titles: unsetTitles,
     }));
