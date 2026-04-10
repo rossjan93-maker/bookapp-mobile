@@ -495,6 +495,29 @@ export function getAllSeriesCatalog(): Readonly<Record<string, SeriesCatalogEntr
   return SERIES_CATALOG;
 }
 
+// ── Dev-time guard: warn about catalog entries missing olCoverId ──────────────
+// Runs once at module load.  In production __DEV__ is false so this is a no-op.
+// If you add a new series entry and forget olCoverId, you will see this log
+// immediately in the Metro console when the app boots.
+if (typeof __DEV__ !== 'undefined' && __DEV__) {
+  const missing: string[] = [];
+  for (const [seriesName, entry] of Object.entries(SERIES_CATALOG)) {
+    for (const book of entry.orderedBooks) {
+      if (book.olCoverId == null) {
+        missing.push(`  [${seriesName}] "${book.title}" — ${book.author}`);
+      }
+    }
+  }
+  if (missing.length > 0) {
+    console.warn(
+      `[SERIES_CATALOG] ${missing.length} book${missing.length !== 1 ? 's' : ''} missing olCoverId` +
+      ` — strip will show text fallback for those slots.\n` +
+      `Run: npx tsx scripts/check_series_covers.ts\n` +
+      missing.join('\n'),
+    );
+  }
+}
+
 // Normalise a title or author string for catalog matching:
 // lowercase, strip smart quotes and apostrophes, collapse non-alnum to spaces.
 function normForMatch(s: string): string {
