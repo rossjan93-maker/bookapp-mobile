@@ -38,6 +38,29 @@ const MIN_CREDIBLE_PAGES = 30;
 
 const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms));
 
+// Strip Unicode diacritics and lowercase — used for author comparison only.
+// "Renée Carlino" and "Renee Carlino" should compare equal.
+function normalizeForCompare(s: string): string {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
+// True when at least 50% of the meaningful words from `storedAuthor` appear
+// in any result author string after diacritic normalization.
+// Used by the title-only fallback to avoid accepting a same-title different-author book.
+// Returns true when either side is empty/unknown (unverifiable — accept conservatively).
+function authorApproxMatches(storedAuthor: string, resultAuthors: string[]): boolean {
+  if (!storedAuthor || resultAuthors.length === 0) return true;
+  const normStored = normalizeForCompare(storedAuthor);
+  const storedWords = normStored.split(/\s+/).filter(w => w.length > 2);
+  if (storedWords.length === 0) return true;
+  for (const ra of resultAuthors) {
+    const normResult = normalizeForCompare(ra);
+    const hits = storedWords.filter(w => normResult.includes(w)).length;
+    if (hits / storedWords.length >= 0.5) return true;
+  }
+  return false;
+}
+
 function significantWords(text: string): string[] {
   return text
     .toLowerCase()
@@ -155,26 +178,34 @@ export async function fetchGoogleBooksCoverUrl(opts: {
 
   const keyParam = API_KEY ? `&key=${API_KEY}` : '';
 
-  const strategies: Array<{ q: string; skipTitleCheck: boolean }> = [];
+  type GBCoverStrategy = { q: string; skipTitleCheck: boolean; checkAuthor: boolean };
+  const strategies: GBCoverStrategy[] = [];
 
   if (isbn13?.trim()) {
-    strategies.push({ q: `isbn:${isbn13.trim()}`, skipTitleCheck: true });
+    strategies.push({ q: `isbn:${isbn13.trim()}`, skipTitleCheck: true, checkAuthor: false });
   } else if (isbn?.trim()) {
-    strategies.push({ q: `isbn:${isbn.trim()}`, skipTitleCheck: true });
+    strategies.push({ q: `isbn:${isbn.trim()}`, skipTitleCheck: true, checkAuthor: false });
   }
 
   const authorTrimmed = author.slice(0, 40).trim();
   const skipAuthor    = !authorTrimmed || /^unknown\s+author$/i.test(authorTrimmed);
+
+  // Primary: title + author
   for (const variant of titleSearchVariants(title)) {
-    const parts = [`intitle:${variant.slice(0, 50).trim()}`];
-    if (!skipAuthor) parts.push(`inauthor:${authorTrimmed}`);
-    strategies.push({ q: parts.join(' '), skipTitleCheck: false });
+    if (!skipAuthor) {
+      strategies.push({ q: `intitle:${variant.slice(0, 50).trim()} inauthor:${authorTrimmed}`, skipTitleCheck: false, checkAuthor: false });
+    }
   }
 
-  for (const { q, skipTitleCheck } of strategies) {
+  // Fallback: title-only with diacritic-insensitive author post-check
+  for (const variant of titleSearchVariants(title)) {
+    strategies.push({ q: `intitle:${variant.slice(0, 50).trim()}`, skipTitleCheck: false, checkAuthor: !skipAuthor });
+  }
+
+  for (const { q, skipTitleCheck, checkAuthor } of strategies) {
     const url =
       `https://www.googleapis.com/books/v1/volumes` +
-      `?q=${encodeURIComponent(q)}&maxResults=3&langRestrict=en&printType=books&fields=items(volumeInfo(title%2CimageLinks(thumbnail%2CsmallThumbnail)))${keyParam}`;
+      `?q=${encodeURIComponent(q)}&maxResults=3&langRestrict=en&printType=books&fields=items(volumeInfo(title%2Cauthors%2CimageLinks(thumbnail%2CsmallThumbnail)))${keyParam}`;
     const res = await gbFetch(url);
     if (res.rateLimited) break; // quota exhausted — stop all strategies
     if (!res.ok) continue;
@@ -183,9 +214,10 @@ export async function fetchGoogleBooksCoverUrl(opts: {
     if (!Array.isArray(data.items) || data.items.length === 0) continue;
 
     for (const item of data.items) {
-      const vi = (item as { volumeInfo?: { title?: string; imageLinks?: { thumbnail?: string; smallThumbnail?: string } } })?.volumeInfo;
+      const vi = (item as { volumeInfo?: { title?: string; authors?: string[]; imageLinks?: { thumbnail?: string; smallThumbnail?: string } } })?.volumeInfo;
       if (!vi) continue;
       if (!skipTitleCheck && !titleMatches(title, vi.title ?? '')) continue;
+      if (checkAuthor && !authorApproxMatches(author, vi.authors ?? [])) continue;
 
       const thumbnail: unknown = vi.imageLinks?.thumbnail ?? vi.imageLinks?.smallThumbnail;
       if (typeof thumbnail === 'string' && thumbnail.length > 0) {
@@ -227,25 +259,43 @@ export async function fetchGoogleBooksMetadata(opts: {
 
   const keyParam = API_KEY ? `&key=${API_KEY}` : '';
 
-  const strategies: Array<{ q: string; skipTitleCheck: boolean }> = [];
+  // ── Strategy building ────────────────────────────────────────────────────────
+  // `checkAuthor` is set on title-only fallback strategies so we can verify
+  // the result author against the stored author (diacritic-insensitive) before
+  // accepting — guards against same-title different-author books (e.g. two
+  // books both titled "Before We Were Strangers" by different authors).
+
+  type GBStrategy = { q: string; skipTitleCheck: boolean; checkAuthor: boolean };
+  const strategies: GBStrategy[] = [];
+
   if (isbn13?.trim()) {
-    strategies.push({ q: `isbn:${isbn13.trim()}`, skipTitleCheck: true });
+    strategies.push({ q: `isbn:${isbn13.trim()}`, skipTitleCheck: true, checkAuthor: false });
   } else if (isbn?.trim()) {
-    strategies.push({ q: `isbn:${isbn.trim()}`, skipTitleCheck: true });
+    strategies.push({ q: `isbn:${isbn.trim()}`, skipTitleCheck: true, checkAuthor: false });
   }
+
   const authorTrimmed = author.slice(0, 40).trim();
   const skipAuthor    = !authorTrimmed || /^unknown\s+author$/i.test(authorTrimmed);
+
+  // Primary: title + author (most specific — fewest false positives)
   for (const variant of titleSearchVariants(title)) {
-    const parts = [`intitle:${variant.slice(0, 50).trim()}`];
-    if (!skipAuthor) parts.push(`inauthor:${authorTrimmed}`);
-    strategies.push({ q: parts.join(' '), skipTitleCheck: false });
+    if (!skipAuthor) {
+      strategies.push({ q: `intitle:${variant.slice(0, 50).trim()} inauthor:${authorTrimmed}`, skipTitleCheck: false, checkAuthor: false });
+    }
+  }
+
+  // Fallback: title-only variants (activated when author-qualified searches return nothing,
+  // e.g. author name stored without diacritics while GB indexes it with diacritics).
+  // Each uses authorApproxMatches() — diacritic-insensitive — as a post-filter.
+  for (const variant of titleSearchVariants(title)) {
+    strategies.push({ q: `intitle:${variant.slice(0, 50).trim()}`, skipTitleCheck: false, checkAuthor: !skipAuthor });
   }
 
   // NOTE: `id` is included in the fields param so we get the real GB volume ID.
   // This is the canonical identifier for book_source_links.source_book_id.
-  const fields = 'items(id,volumeInfo(title,imageLinks(thumbnail,smallThumbnail),description,pageCount))';
+  const fields = 'items(id,volumeInfo(title,authors,imageLinks(thumbnail,smallThumbnail),description,pageCount))';
 
-  for (const { q, skipTitleCheck } of strategies) {
+  for (const { q, skipTitleCheck, checkAuthor } of strategies) {
     const url =
       `https://www.googleapis.com/books/v1/volumes` +
       `?q=${encodeURIComponent(q)}&maxResults=3&langRestrict=en&printType=books&fields=${encodeURIComponent(fields)}${keyParam}`;
@@ -257,10 +307,17 @@ export async function fetchGoogleBooksMetadata(opts: {
     if (!Array.isArray(data.items) || data.items.length === 0) continue;
 
     for (const item of data.items) {
-      const typedItem = item as { id?: string; volumeInfo?: { title?: string; imageLinks?: { thumbnail?: string; smallThumbnail?: string }; description?: unknown; pageCount?: unknown } };
+      const typedItem = item as { id?: string; volumeInfo?: { title?: string; authors?: string[]; imageLinks?: { thumbnail?: string; smallThumbnail?: string }; description?: unknown; pageCount?: unknown } };
       const vi = typedItem?.volumeInfo;
       if (!vi) continue;
       if (!skipTitleCheck && !titleMatches(title, vi.title ?? '')) continue;
+
+      // For title-only fallback: reject items whose author clearly doesn't match.
+      // This prevents accepting a same-title book by a different author.
+      if (checkAuthor && !authorApproxMatches(author, vi.authors ?? [])) {
+        console.log(`[GB] title-only fallback: author mismatch — result="${(vi.authors ?? [])[0] ?? ''}" stored="${author}" — skipping`);
+        continue;
+      }
 
       const thumbnail: unknown = vi.imageLinks?.thumbnail ?? vi.imageLinks?.smallThumbnail;
       if (typeof thumbnail === 'string' && thumbnail.length > 0) {
@@ -283,6 +340,7 @@ export async function fetchGoogleBooksMetadata(opts: {
         if (typeof typedItem.id === 'string' && typedItem.id.length > 0) {
           result.volume_id = typedItem.id;
         }
+        console.log(`[GB] fetchGoogleBooksMetadata — matched "${vi.title}" id=${result.volume_id ?? 'none'} strategy="${checkAuthor ? 'title-only-fallback' : 'author-qualified'}"`);
         return result;
       }
     }
