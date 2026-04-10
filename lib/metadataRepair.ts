@@ -186,6 +186,7 @@ export async function repairBooksMetadata(
 
         if (gb.cover_url || gb.description || gb.page_count) {
           gbFetchStatus = 'success';
+          if (gb.volume_id) gbVolumeId = gb.volume_id;
           if (gb.cover_url)  gbCoverUrl = gb.cover_url;
           if (!hasDesc  && !foundDesc  && gb.description) foundDesc  = gb.description;
           if (!hasPages && !foundPages && gb.page_count)  foundPages = gb.page_count;
@@ -193,13 +194,27 @@ export async function repairBooksMetadata(
           console.log(`[REPAIR] google_books returned no useful fields for "${t}"`);
         }
 
-        // Record provider link regardless of result (logs fetch attempts)
+        // Record provider link regardless of result (logs fetch attempts).
+        // source_book_id MUST be a real GB volume ID (from gb.volume_id) when
+        // available.  For failed fetches where no volume was matched, fall back
+        // to the book's ISBN (stable per book), then a bookid: sentinel.
+        // A title fragment is never an acceptable identifier.
         if (book.id) {
+          const sourceBookId =
+            gbVolumeId ??
+            (book.isbn13 as string | null) ??
+            (book.isbn   as string | null) ??
+            `bookid:${bookId}`;
+
+          if (!gbVolumeId) {
+            console.log(`[REPAIR] no GB volume ID for "${t}" — logging attempt with sourceBookId=${sourceBookId}`);
+          }
+
           recordProviderLink(
             supabase,
             bookId,
             'google_books',
-            String(book.isbn13 ?? book.isbn ?? t.slice(0, 20)),
+            sourceBookId,
             { title: t, author: a, result: gb },
             gbFetchStatus,
           ).catch(() => {});

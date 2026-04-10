@@ -208,6 +208,11 @@ export type GoogleBooksMetadata = {
   cover_url:   string | null;
   description: string | null;
   page_count:  number | null;
+  /** The real Google Books volume ID (e.g. "XfFvDwAAQBAJ").
+   *  Non-null when the API returned a matched item; null when no match was found.
+   *  This is the canonical source_book_id for book_source_links — never use
+   *  a title fragment or ISBN as a substitute for this field. */
+  volume_id:   string | null;
 };
 
 export async function fetchGoogleBooksMetadata(opts: {
@@ -216,7 +221,7 @@ export async function fetchGoogleBooksMetadata(opts: {
   title:   string;
   author:  string;
 }): Promise<GoogleBooksMetadata> {
-  const result: GoogleBooksMetadata = { cover_url: null, description: null, page_count: null };
+  const result: GoogleBooksMetadata = { cover_url: null, description: null, page_count: null, volume_id: null };
   const { isbn13, isbn, title, author } = opts;
   if (!title.trim()) return result;
 
@@ -236,10 +241,14 @@ export async function fetchGoogleBooksMetadata(opts: {
     strategies.push({ q: parts.join(' '), skipTitleCheck: false });
   }
 
+  // NOTE: `id` is included in the fields param so we get the real GB volume ID.
+  // This is the canonical identifier for book_source_links.source_book_id.
+  const fields = 'items(id,volumeInfo(title,imageLinks(thumbnail,smallThumbnail),description,pageCount))';
+
   for (const { q, skipTitleCheck } of strategies) {
     const url =
       `https://www.googleapis.com/books/v1/volumes` +
-      `?q=${encodeURIComponent(q)}&maxResults=3&langRestrict=en&printType=books&fields=items(volumeInfo(title%2CimageLinks(thumbnail%2CsmallThumbnail)%2Cdescription%2CpageCount))${keyParam}`;
+      `?q=${encodeURIComponent(q)}&maxResults=3&langRestrict=en&printType=books&fields=${encodeURIComponent(fields)}${keyParam}`;
     const res = await gbFetch(url);
     if (res.rateLimited) break; // quota exhausted — stop all strategies
     if (!res.ok) continue;
@@ -248,7 +257,8 @@ export async function fetchGoogleBooksMetadata(opts: {
     if (!Array.isArray(data.items) || data.items.length === 0) continue;
 
     for (const item of data.items) {
-      const vi = (item as { volumeInfo?: { title?: string; imageLinks?: { thumbnail?: string; smallThumbnail?: string }; description?: unknown; pageCount?: unknown } })?.volumeInfo;
+      const typedItem = item as { id?: string; volumeInfo?: { title?: string; imageLinks?: { thumbnail?: string; smallThumbnail?: string }; description?: unknown; pageCount?: unknown } };
+      const vi = typedItem?.volumeInfo;
       if (!vi) continue;
       if (!skipTitleCheck && !titleMatches(title, vi.title ?? '')) continue;
 
@@ -267,8 +277,12 @@ export async function fetchGoogleBooksMetadata(opts: {
         result.page_count = pc;
       }
 
-      // If this item gave us at least one field, commit to it and stop.
+      // If this item gave us at least one field, capture its volume ID and commit.
       if (result.cover_url || result.description || result.page_count) {
+        // Capture the real GB volume ID — this is the canonical source_book_id.
+        if (typeof typedItem.id === 'string' && typedItem.id.length > 0) {
+          result.volume_id = typedItem.id;
+        }
         return result;
       }
     }
