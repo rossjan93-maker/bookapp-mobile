@@ -29,6 +29,7 @@ type CurrentRead = {
   id: string;
   book_id: string;
   started_at: string | null;
+  progress_updated_at: string | null;
   current_page: number | null;
   title: string;
   author: string;
@@ -550,7 +551,7 @@ export default function HomeScreen() {
         .single(),
       supabase
         .from('user_books')
-        .select('id, book_id, started_at, current_page, book:books(title, author, cover_url, external_id, page_count)')
+        .select('id, book_id, started_at, progress_updated_at, current_page, book:books(title, author, cover_url, external_id, page_count)')
         .eq('user_id', uid)
         .eq('status', 'reading')
         .is('deleted_at', null)
@@ -577,15 +578,16 @@ export default function HomeScreen() {
     const mapped = rows.map(r => {
       const b = r.book as any;
       return {
-        id:           r.id,
-        book_id:      r.book_id,
-        started_at:   r.started_at ?? null,
-        current_page: r.current_page ?? null,
-        title:        b?.title ?? '',
-        author:       b?.author ?? '',
-        cover_url:    b?.cover_url ?? null,
-        external_id:  b?.external_id ?? null,
-        page_count:   b?.page_count ?? null,
+        id:                   r.id,
+        book_id:              r.book_id,
+        started_at:           r.started_at           ?? null,
+        progress_updated_at:  r.progress_updated_at  ?? null,
+        current_page:         r.current_page         ?? null,
+        title:                b?.title               ?? '',
+        author:               b?.author              ?? '',
+        cover_url:            b?.cover_url           ?? null,
+        external_id:          b?.external_id         ?? null,
+        page_count:           b?.page_count          ?? null,
       };
     });
     setCurrentReads(mapped);
@@ -872,7 +874,7 @@ export default function HomeScreen() {
             const accentColor = homeCardBorderColor(cr, yearlyGoal);
             const crReadState = inferReadState({
               status:            'reading',
-              progressUpdatedAt: null,          // not fetched on home; use started_at only
+              progressUpdatedAt: cr.progress_updated_at,
               startedAt:         cr.started_at,
               currentPage:       cr.current_page,
             });
@@ -921,7 +923,7 @@ export default function HomeScreen() {
                   ? computeSessionPacing(crSessions, cr.current_page, cr.page_count)
                   : null;
                 const crProjFinish = crPacing ? formatProjectedFinish(crPacing.estimatedFinish) : null;
-                const crState = inferReadState({ status: 'reading', progressUpdatedAt: null, startedAt: cr.started_at, currentPage: cr.current_page });
+                const crState = inferReadState({ status: 'reading', progressUpdatedAt: cr.progress_updated_at, startedAt: cr.started_at, currentPage: cr.current_page });
                 const subLine = crProjFinish ? `~${crProjFinish}` : crState === 'stalled' ? 'Stalled' : crState === 'paused' ? 'Paused' : null;
                 return (
                   <TouchableOpacity
