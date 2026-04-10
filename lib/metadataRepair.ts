@@ -74,11 +74,13 @@ export async function repairBooksMetadata(
   let confColExists   = true;
 
   // Attempt 1: full (all optional columns)
+  // cover_source.is.null is included so books with all content fields present but
+  // missing provenance (e.g. imported before the column existed) still get repaired.
   const { data: c1, error: e1 } = await supabase
     .from('books')
     .select('id, isbn13, isbn, title, author, external_id, cover_url, cover_source, metadata_confidence, description, subjects, page_count')
     .in('id', ids)
-    .or('cover_url.is.null,description.is.null,subjects.is.null,page_count.is.null');
+    .or('cover_url.is.null,description.is.null,subjects.is.null,page_count.is.null,cover_source.is.null');
 
   if (!e1) {
     candidates = (c1 ?? []) as Record<string, unknown>[];
@@ -148,6 +150,15 @@ export async function repairBooksMetadata(
       let gbCoverUrl:    string | null = null;
       let gbFetchStatus: 'success' | 'failed' | 'rate_limited' = 'failed';
 
+      // Extract the Google Books volume ID embedded in a google books cover URL.
+      // e.g. "https://books.google.com/books/content?id=FMAvBgAAQBAJ&..." → "FMAvBgAAQBAJ"
+      // Returns null if the URL is not a GB URL or has no id param.
+      function extractGbVolumeIdFromUrl(url: string): string | null {
+        if (!url.includes('books.google.com') && !url.includes('googleapis.com/books')) return null;
+        const match = url.match(/[?&]id=([A-Za-z0-9_-]+)/);
+        return match ? match[1] : null;
+      }
+
       // ── Phase 1: Open Library ────────────────────────────────────────────
       const rawExtId = (book.external_id as string | null) ?? null;
       let resolvedExtId: string | null = isOLId(rawExtId) ? rawExtId : null;
@@ -171,10 +182,19 @@ export async function repairBooksMetadata(
       }
 
       // ── Phase 2: Google Books ─────────────────────────────────────────────
+      // We also trigger GB when provenance is missing (cover_source=null) and the
+      // existing cover URL is NOT a GB URL (so we can't extract the volume ID from it).
+      // If the cover IS a GB URL we extract the volume ID without an API call (below).
+      const existingCoverUrl      = String(book.cover_url ?? '');
+      const existingCoverGbId     = extractGbVolumeIdFromUrl(existingCoverUrl);
+      const needGbForProvenance   =
+        coverSrcExists && !book.cover_source && hasCover && !existingCoverGbId;
+
       const needGb =
         !hasCover ||
         (!hasDesc  && !foundDesc) ||
-        (!hasPages && !foundPages);
+        (!hasPages && !foundPages) ||
+        needGbForProvenance;
 
       if (needGb && t) {
         const gb = await fetchGoogleBooksMetadata({
@@ -243,28 +263,48 @@ export async function repairBooksMetadata(
           console.log(`[REPAIR] no cover available for "${t}"`);
         }
       } else if (coverSrcExists && !book.cover_source) {
-        // Book already has a cover (e.g. from Goodreads import) but cover_source was
-        // never recorded.  Infer from URL pattern — GB and OL URLs are deterministic.
-        // If GB confirmed a match this session, that also establishes google_books as
-        // a valid source regardless of whether the URL came from import.
-        const existingUrl = String(book.cover_url ?? '');
-        if (
-          existingUrl.includes('books.google.com') ||
-          existingUrl.includes('googleapis.com/books')
-        ) {
+        // Book already has a cover but cover_source was never recorded.
+        // This happens when the cover was written before the cover_source column
+        // existed (pre-migration) or via an import path that bypassed provenance.
+        //
+        // Three sub-cases, in priority order:
+        //
+        // A) Existing cover URL is a Google Books URL.
+        //    → Extract the volume ID directly from the URL (no API call needed).
+        //    → Set cover_source='google_books' + write a success provenance row.
+        //
+        // B) Existing cover URL is an Open Library URL.
+        //    → Set cover_source='open_library'.
+        //    → No book_source_links row needed (OL provenance is tracked via external_id).
+        //
+        // C) Cover is from another source (e.g. Goodreads CDN) AND GB matched this
+        //    session (needGbForProvenance=true → gbVolumeId is now populated).
+        //    → Set cover_source='google_books' as the confirmed metadata provider.
+        //    → recordProviderLink already called in Phase 2 above with the volume ID.
+
+        if (existingCoverGbId) {
+          // Case A: GB cover URL — extract volume ID, write provenance atomically.
           patch.cover_source = 'google_books';
-          console.log(`[REPAIR] cover_source='google_books' inferred from existing URL for "${t}"`);
-        } else if (
-          existingUrl.includes('covers.openlibrary.org')
-        ) {
+          console.log(`[REPAIR] cover_source='google_books' from existing GB URL for "${t}" (volume_id=${existingCoverGbId})`);
+          if (book.id) {
+            recordProviderLink(
+              supabase,
+              bookId,
+              'google_books',
+              existingCoverGbId,
+              { title: t, author: a, source: 'url_extraction', cover_url: existingCoverUrl },
+              'success',
+            ).catch(() => {});
+          }
+        } else if (existingCoverUrl.includes('covers.openlibrary.org')) {
+          // Case B: Open Library cover URL.
           patch.cover_source = 'open_library';
-          console.log(`[REPAIR] cover_source='open_library' inferred from existing URL for "${t}"`);
+          console.log(`[REPAIR] cover_source='open_library' from existing OL URL for "${t}"`);
         } else if (gbVolumeId) {
-          // Existing cover came from another source (e.g. Goodreads CDN), but GB
-          // confirmed this is the right book.  Record google_books as a confirmed
-          // provider — the cover_url itself is not replaced.
+          // Case C: Non-GB cover + GB confirmed match this session.
+          // recordProviderLink was already called in Phase 2 with the real volume ID.
           patch.cover_source = 'google_books';
-          console.log(`[REPAIR] cover_source='google_books' from GB match (cover URL preserved) for "${t}"`);
+          console.log(`[REPAIR] cover_source='google_books' from GB match (cover URL preserved) for "${t}" (volume_id=${gbVolumeId})`);
         }
       }
 
