@@ -95,6 +95,20 @@ function naturalArticle(name: string): string {
   return `the ${name}`;
 }
 
+// Per-lane reason strings that are prepended to every book in the lane.
+// These repeat across cards and should be deprioritised in favour of
+// book-specific reasons when those are available in reasons[1+].
+const GENERIC_LANE_REASONS = new Set([
+  'Feels adjacent to the fantasy series you repeatedly complete',
+  'Fits your pattern of emotionally driven contemporary fiction',
+  'Matches the twisty, readable suspense you rate highly',
+  'Sits close to the narrative nonfiction you consistently enjoy',
+  'Aligns with the literary fiction that appears in your reading history',
+  'Fits the speculative fiction you return to most often',
+  'Similar to the emotionally driven romance you rate highly',
+  'Fits the horror fiction you have consistently enjoyed',
+]);
+
 const EXPLANATION_LANE_LABELS: Record<DeterministicLane, string> = {
   romantasy:            'romantic fantasy',
   scifi_fantasy:        'fantasy and speculative fiction',
@@ -137,18 +151,36 @@ function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | n
     }
   }
 
-  const authorCount = bd.author_books_read ?? 0;
-  if (authorCount >= 2) {
-    return `Another strong read from ${book.author}`;
-  }
-
   const laneLabel = bd.book_lane
     ? (EXPLANATION_LANE_LABELS[bd.book_lane as DeterministicLane] ?? null)
     : null;
+
+  // ── Book-specific reason (reasons[1] when reasons[0] is a generic lane string) ──
+  // LANE_REASON is always prepended as reasons[0], repeating for every book in the
+  // same lane.  reasons[1] holds the book-specific trait/subject match and is much
+  // more distinctive.  Prefer it over the repeating lane string.
+  const hasLaneReason0 = book.reasons.length > 0 && GENERIC_LANE_REASONS.has(book.reasons[0]);
+  if (book.reasons.length > 1 && hasLaneReason0) {
+    const specific = capitalize(stripAuthorPrefix(book.reasons[1], book.author));
+    const rewritten = rewriteReasonText(specific, laneLabel);
+    if (rewritten != null) return rewritten;
+  }
+
+  // ── Author loyalty — varied by depth of reading history ─────────────────────
+  const authorCount = bd.author_books_read ?? 0;
+  if (authorCount >= 5) {
+    return `Deep into ${book.author}'s catalog — this fits your pattern.`;
+  }
+  if (authorCount >= 2) {
+    return `Another strong read from ${book.author}.`;
+  }
+
+  // ── Core fit fallback ────────────────────────────────────────────────────────
   if (bd.fit_class === 'core_fit' && laneLabel) {
     return `A strong fit for your taste in ${laneLabel}.`;
   }
 
+  // ── Lane reason or other reason string ──────────────────────────────────────
   if (book.reasons.length > 0) {
     const raw = capitalize(stripAuthorPrefix(book.reasons[0], book.author));
     return rewriteReasonText(raw, laneLabel);
@@ -371,10 +403,32 @@ export function RecCard({
             </Text>
             {(() => {
               const tier  = book.confidence;
-              const label = tier === 'high' ? 'Top pick' : tier === 'medium' ? 'Good fit' : 'Explore';
-              const bg    = tier === 'high' ? '#f0fdf4' : tier === 'medium' ? '#f8f8f7' : '#f5f1ec';
-              const col   = tier === 'high' ? '#15803d' : tier === 'medium' ? '#57534e' : '#9e958d';
-              const bord  = tier === 'high' ? '#bbf7d0' : tier === 'medium' ? '#ede9e4' : '#ede9e4';
+              const bd2   = book._score_breakdown;
+              const isStarterBadge      = bd2.series_label === 'series_starter' || bd2.saga_label === 'saga_entry';
+              const isContinuationBadge = bd2.series_label === 'series_continuation' || bd2.saga_label === 'saga_continuation' || bd2.saga_label === 'saga_next_series';
+
+              // Series action labels absorb the confidence tier — cleaner hierarchy:
+              // "Start here" / "Continue" > "Top pick" > "Good fit" > "Explore"
+              const label = isStarterBadge      ? 'Start here'
+                          : isContinuationBadge ? 'Continue'
+                          : tier === 'high'     ? 'Top pick'
+                          : tier === 'medium'   ? 'Good fit'
+                          :                      'Explore';
+              const bg    = isStarterBadge      ? '#fffbeb'
+                          : isContinuationBadge ? '#f0fdf4'
+                          : tier === 'high'     ? '#f0fdf4'
+                          : tier === 'medium'   ? '#f8f8f7'
+                          :                      '#f5f1ec';
+              const col   = isStarterBadge      ? '#92400e'
+                          : isContinuationBadge ? '#166534'
+                          : tier === 'high'     ? '#15803d'
+                          : tier === 'medium'   ? '#57534e'
+                          :                      '#9e958d';
+              const bord  = isStarterBadge      ? '#fde68a'
+                          : isContinuationBadge ? '#bbf7d0'
+                          : tier === 'high'     ? '#bbf7d0'
+                          : tier === 'medium'   ? '#ede9e4'
+                          :                      '#ede9e4';
               return (
                 <View style={{
                   backgroundColor: bg, borderWidth: 1, borderColor: bord,
@@ -455,9 +509,9 @@ export function RecCard({
             const isStarter      = bd.series_label === 'series_starter' || bd.saga_label === 'saga_entry';
             const isContinuation = bd.series_label === 'series_continuation' || bd.saga_label === 'saga_continuation' || bd.saga_label === 'saga_next_series';
             const isAuthorMatch  = !isStarter && !isContinuation && (bd.author_books_read ?? 0) >= 2;
-            if (isStarter)      return <VariantBadge label="Start here"      bg="#fef3c7" color="#92400e" />;
-            if (isContinuation) return <VariantBadge label="Continue series" bg="#f0fdf4" color="#166534" />;
-            if (isAuthorMatch)  return <VariantBadge label="Author match"    bg="#f5f3ff" color="#5b21b6" />;
+            // "Start here" and "Continue" now appear in the confidence badge (top row).
+            // Only "Author match" still needs its own badge here.
+            if (isAuthorMatch) return <VariantBadge label="Author match" bg="#f5f3ff" color="#5b21b6" />;
             return null;
           })()}
 
