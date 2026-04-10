@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchGoogleBooksCoverUrl } from '../../lib/googleBooks';
 import { repairBooksMetadata } from '../../lib/metadataRepair';
 import { registerCacheClearer } from '../../lib/tabCache';
+import { mountDevInspector } from '../../lib/devInspector';
 import { ActivityIndicator, FlatList, Keyboard, Modal, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -206,6 +207,13 @@ export default function LibraryScreen() {
     const t = setTimeout(measureLibContent, 120);
     return () => clearTimeout(t);
   }, [loading, wtStep]);
+
+  // Dev inspector — mounts __rs on globalThis for browser console access.
+  // __rs.covers() / __rs.summaries() / __rs.credibility() / __rs.health() / __rs.all()
+  useEffect(() => {
+    if (!__DEV__ || !supabase) return;
+    mountDevInspector(supabase);
+  }, []);
 
   // Background cover enrichment for any book in this library load with no
   // cover_url. Fails quietly; updates local state as each cover resolves.

@@ -22,7 +22,6 @@ import {
   ActivityIndicator,
   Animated,
   FlatList,
-  Image,
   Keyboard,
   SafeAreaView,
   ScrollView,
@@ -35,6 +34,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
+import { CoverThumb } from './CoverThumb';
 import { OB, OnboardingShell, StepDots, SubProgressBar } from './OnboardingShell';
 import {
   reEntryShown,
@@ -721,11 +721,7 @@ function IntakeAnchor({
           borderWidth: 1.5, borderColor: GRN + '44',
           padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12,
         }}>
-          {selected.cover ? (
-            <Image source={{ uri: selected.cover }} style={{ width: 40, height: 60, borderRadius: 4 }} resizeMode="cover" />
-          ) : (
-            <View style={{ width: 40, height: 60, borderRadius: 4, backgroundColor: '#ede9e4' }} />
-          )}
+          <CoverThumb url={selected.cover} title={selected.title} width={40} height={60} />
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 14, fontWeight: '700', color: INK }}>{selected.title}</Text>
             <Text style={{ fontSize: 12, color: SUB, marginTop: 2 }}>{selected.author}</Text>
@@ -754,11 +750,7 @@ function IntakeAnchor({
                 borderBottomWidth: 1, borderBottomColor: BORD, gap: 12,
               }}
             >
-              {item.cover ? (
-                <Image source={{ uri: item.cover }} style={{ width: 36, height: 52, borderRadius: 4 }} resizeMode="cover" />
-              ) : (
-                <View style={{ width: 36, height: 52, borderRadius: 4, backgroundColor: '#ede9e4' }} />
-              )}
+              <CoverThumb url={item.cover} title={item.title} width={36} height={52} />
               <View style={{ flex: 1 }}>
                 <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: '600', color: INK }}>{item.title}</Text>
                 <Text numberOfLines={1} style={{ fontSize: 12, color: SUB, marginTop: 2 }}>{item.author}</Text>

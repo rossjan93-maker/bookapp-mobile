@@ -42,6 +42,7 @@ import {
   deriveMetadataConfidence,
   type CoverCandidate,
 } from './metadataProvider';
+import { shouldUpgradeCover } from './coverUpgrade';
 import {
   recordProviderOutcome,
   recordMissingField,
@@ -312,6 +313,33 @@ export async function repairBooksMetadata(
           // recordProviderLink was already called in Phase 2 with the real volume ID.
           patch.cover_source = 'google_books';
           console.log(`[REPAIR] cover_source='google_books' from GB match (cover URL preserved) for "${t}" (volume_id=${gbVolumeId})`);
+        }
+      } else if (coverSrcExists && book.cover_source && gbCoverUrl) {
+        // ── Cover upgrade evaluation ─────────────────────────────────────────
+        // The book already has a cover AND we fetched a new GB cover this session.
+        // Apply the conservative upgrade policy from lib/coverUpgrade.ts.
+        // Only ISBN-matched GB covers can trigger an upgrade; title-only matches
+        // are never sufficient to replace an existing cover.
+        const hasIsbn   = !!(book.isbn13 || book.isbn);
+        const candidate = {
+          url:        gbCoverUrl,
+          source:     'google_books' as const,
+          confidence: (hasIsbn ? 'high' : 'medium') as 'high' | 'medium' | 'low',
+        };
+        const decision = shouldUpgradeCover(
+          book.cover_source as string,
+          (book as { metadata_confidence?: string | null }).metadata_confidence ?? null,
+          candidate,
+        );
+        if (decision.upgrade) {
+          patch.cover_url    = gbCoverUrl;
+          patch.cover_source = 'google_books';
+          covered++;
+          console.log(`[REPAIR] cover UPGRADED for "${t}" — ${decision.reason}`);
+        } else {
+          if (__DEV__) {
+            console.log(`[REPAIR] cover upgrade skipped for "${t}" — ${decision.reason}`);
+          }
         }
       }
 
