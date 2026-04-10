@@ -121,6 +121,7 @@ export default function BookDetailScreen() {
   // Enriched cover: set when Book Detail hydration finds a cover not present at
   // navigation time (e.g. imported books that had no cover in the DB yet).
   const [enrichedCoverUrl, setEnrichedCoverUrl] = useState<string | null>(null);
+  const [metaFromGb, setMetaFromGb]             = useState(false);
 
   // User reading history: rating, finished date, review, private note.
   // Fetched directly from user_books on open so it's always current.
@@ -363,6 +364,10 @@ export default function BookDetailScreen() {
       const dbSubjects: string[] = row?.subjects ?? [];
       const dbPages   = row?.page_count ?? null;
       const dbCover   = row?.cover_url  ?? null;
+      // Attribution: mark as Google Books sourced if the stored cover URL is a GB URL.
+      if (dbCover && (dbCover.includes('books.google.com') || dbCover.includes('googleapis.com'))) {
+        setMetaFromGb(true);
+      }
       // Prefer DB external_id (authoritative) over route param.
       // Only treat the value as a usable OL identifier when it starts with /works/OL.
       // Goodreads-prefixed values ("goodreads:{id}") from the old import path are
@@ -456,6 +461,10 @@ export default function BookDetailScreen() {
               subjects:    prev?.subjects    ?? [],
               pageCount:   prev?.pageCount   ?? gb.page_count  ?? null,
             }));
+          }
+          // Attribution: GB was called and returned at least one useful field.
+          if (gb.cover_url || gb.description || gb.page_count) {
+            setMetaFromGb(true);
           }
         }
       }
@@ -1983,6 +1992,16 @@ export default function BookDetailScreen() {
                   ))}
                 </View>
               </View>
+            )}
+            {metaFromGb && (
+              <Text style={{
+                fontSize: 11,
+                color: '#9e958d',
+                marginTop: 14,
+                textAlign: 'right',
+              }}>
+                Book data from Google Books
+              </Text>
             )}
           </View>
         ) : (
