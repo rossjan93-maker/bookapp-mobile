@@ -439,26 +439,26 @@ export async function saveCurrentPage(
 
   if (pagesRead > 0) {
     const sessionPayload = {
-      user_id:      userId,
-      book_id:      bookId,
-      user_book_id: userBookId,
-      session_date: localDateString(new Date()),
-      started_page: startedPage,
-      ended_page:   newPage,
-      pages_read:   pagesRead,
+      user_id:          userId,
+      book_id:          bookId,
+      user_book_id:     userBookId,
+      session_date:     localDateString(new Date()),
+      started_page:     startedPage,
+      ended_page:       newPage,
+      pages_read:       pagesRead,
       duration_minutes: null as number | null,
     };
-    console.log('[SESSION] inserting reading_sessions row:', JSON.stringify(sessionPayload));
+    if (__DEV__) console.log('[SESSION] inserting reading_sessions row:', JSON.stringify(sessionPayload));
     const { error: sessionErr } = await supabase
       .from('reading_sessions')
       .insert(sessionPayload);
-    if (sessionErr) {
-      console.warn('[SESSION] reading_sessions insert FAILED:', sessionErr.message, '| code:', sessionErr.code, '| details:', sessionErr.details, '| hint:', sessionErr.hint);
-    } else {
-      console.log('[SESSION] reading_sessions row written ✓');
+    if (__DEV__) {
+      if (sessionErr) {
+        console.warn('[SESSION] reading_sessions insert FAILED:', sessionErr.message, '| code:', sessionErr.code, '| details:', sessionErr.details, '| hint:', sessionErr.hint);
+      } else {
+        console.log('[SESSION] reading_sessions row written ✓');
+      }
     }
-  } else {
-    console.log('[SESSION] skipping session row — no forward progress (pagesRead=', pagesRead, ')');
   }
 
   return { error: null };

@@ -490,6 +490,46 @@ export function computeUserAvgPace(
 }
 
 // ---------------------------------------------------------------------------
+// Monthly reading stats (used by home screen + future reading wraps)
+// ---------------------------------------------------------------------------
+
+export type MonthlyStats = {
+  /** Total pages logged this calendar month. */
+  pagesThisMonth: number;
+  /** Distinct reading days this calendar month. */
+  readingDaysThisMonth: number;
+  /** Number of individual sessions logged this month. */
+  sessionsThisMonth: number;
+};
+
+/**
+ * Aggregate session-level reading stats for the current calendar month.
+ *
+ * Designed to be the base data layer for monthly and yearly reading wraps.
+ * Only sessions with pages_read > 0 are counted.
+ *
+ * @param sessions — SessionRow[] from reading_sessions (may cover 90 days or more)
+ * @param today    — override for testing; defaults to new Date()
+ */
+export function computeMonthlyStats(
+  sessions: Array<{ session_date: string; pages_read: number }>,
+  today?: Date,
+): MonthlyStats {
+  const ref         = today ?? new Date();
+  const monthPrefix = `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, '0')}`;
+
+  const monthRows = sessions.filter(
+    s => s.session_date.startsWith(monthPrefix) && s.pages_read > 0,
+  );
+
+  return {
+    pagesThisMonth:      monthRows.reduce((sum, s) => sum + s.pages_read, 0),
+    readingDaysThisMonth: new Set(monthRows.map(s => s.session_date)).size,
+    sessionsThisMonth:   monthRows.length,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Year-to-date goal progress
 // ---------------------------------------------------------------------------
 

@@ -19,7 +19,7 @@ import { registerCacheClearer } from '../../lib/tabCache';
 import { CoverThumb } from '../../components/CoverThumb';
 import { HomeScreenSkeleton } from '../../components/Placeholder';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
-import { computePagePacing, computeUserAvgPace, inferReadState, computeSessionPacing, formatProjectedFinish, type SessionRow, type ReadState } from '../../lib/pacing';
+import { computePagePacing, computeUserAvgPace, inferReadState, computeSessionPacing, formatProjectedFinish, computeMonthlyStats, type SessionRow, type ReadState, type MonthlyStats } from '../../lib/pacing';
 import { computeStreaks } from '../../lib/streaks';
 import { showToast } from '../../lib/toast';
 
@@ -156,9 +156,10 @@ type HeroReadCardProps = {
   accentColor:     string;
   projectedFinish: string | null;
   readState:       ReadState;
+  pacingStrength?: 'strong' | 'moderate' | 'weak';
 };
 
-function HeroReadCard({ book, onPress, accentColor, projectedFinish, readState }: HeroReadCardProps) {
+function HeroReadCard({ book, onPress, accentColor, projectedFinish, readState, pacingStrength }: HeroReadCardProps) {
   const barAnim = useRef(new Animated.Value(0)).current;
   const cardAnim = useRef(new Animated.Value(0)).current;
 
@@ -195,7 +196,10 @@ function HeroReadCard({ book, onPress, accentColor, projectedFinish, readState }
   // Priority: projected finish > stalled > paused (active shows nothing)
   const extraLine: { text: string; color: string } | null = (() => {
     if (projectedFinish) {
-      return { text: `Finish ~${projectedFinish}`, color: '#9e958d' };
+      // Tone varies with how confident we are in the pace estimate.
+      if (pacingStrength === 'weak')     return { text: `~${projectedFinish} · early days`, color: '#b8aca0' };
+      if (pacingStrength === 'strong')   return { text: `Finish ~${projectedFinish}`,       color: '#6b635c' };
+      /* moderate / undefined */         return { text: `Finish ~${projectedFinish}`,       color: '#9e958d' };
     }
     if (readState === 'stalled') {
       return { text: 'Stalled — pick it back up?', color: '#b08d57' };
@@ -280,25 +284,40 @@ function HeroReadCard({ book, onPress, accentColor, projectedFinish, readState }
   );
 }
 
-/** A subtle streak indicator shown below the Reading Now section. */
-function StreakPill({ days }: { days: number }) {
-  if (days < 2) return null;
+/**
+ * Subtle streak + consistency surface below the Reading Now section.
+ *
+ * Shows up to two lines:
+ *   1. Active streak  — only when ≥ 2 consecutive reading days
+ *   2. Month context  — "N days this month" when ≥ 3 distinct reading days
+ *
+ * Tone: reflective, not gamified. No trophies, no fire emojis.
+ */
+function StreakPill({ days, longest, monthlyDays }: { days: number; longest: number; monthlyDays: number }) {
+  const showStreak  = days >= 2;
+  const showMonthly = monthlyDays >= 3;
+  if (!showStreak && !showMonthly) return null;
+
+  const streakLabel = (() => {
+    if (!showStreak) return null;
+    // Add "best: N" context only when longest streak is materially higher (≥ 7 days).
+    const addBest = longest >= 7 && longest > days;
+    return addBest ? `${days} day streak · best: ${longest}` : `${days} days reading in a row`;
+  })();
+
   return (
-    <View style={{
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginTop: 10,
-      gap: 5,
-    }}>
-      <View style={{
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-        backgroundColor: '#7b9e7e',
-      }} />
-      <Text style={{ fontSize: 12, color: '#7b9e7e', fontWeight: '600' }}>
-        {days} days reading in a row
-      </Text>
+    <View style={{ marginTop: 10, gap: 3 }}>
+      {streakLabel && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#7b9e7e' }} />
+          <Text style={{ fontSize: 12, color: '#7b9e7e', fontWeight: '600' }}>{streakLabel}</Text>
+        </View>
+      )}
+      {showMonthly && (
+        <Text style={{ fontSize: 11, color: '#9e958d', marginLeft: 11 }}>
+          {monthlyDays} reading {monthlyDays === 1 ? 'day' : 'days'} this month
+        </Text>
+      )}
     </View>
   );
 }
@@ -339,6 +358,8 @@ type HomeSnapshot = {
   fetchedAt:       number;
   sessionsByBook:  Record<string, SessionRow[]>;
   currentStreak:   number;
+  longestStreak:   number;
+  monthlyStats:    MonthlyStats | null;
 };
 
 let _homeCache: HomeSnapshot | null = null;
@@ -388,6 +409,8 @@ export default function HomeScreen() {
   // Session data for pacing + streak
   const [sessionsByBook, setSessionsByBook] = useState<Record<string, SessionRow[]>>(() => _homeCache?.sessionsByBook ?? {});
   const [currentStreak,  setCurrentStreak]  = useState<number>(() => _homeCache?.currentStreak ?? 0);
+  const [longestStreak,  setLongestStreak]  = useState<number>(() => _homeCache?.longestStreak ?? 0);
+  const [monthlyStats,   setMonthlyStats]   = useState<MonthlyStats | null>(() => _homeCache?.monthlyStats ?? null);
 
   // Refs so we can write to the cache after all setters have been called
   // (state is async; refs give us the live values within the async load).
@@ -399,6 +422,8 @@ export default function HomeScreen() {
   const _fsRef    = useRef<FriendshipRow[]>([]);
   const _sbRef    = useRef<Record<string, SessionRow[]>>({});
   const _csRef    = useRef<number>(0);
+  const _lsRef    = useRef<number>(0);
+  const _msRef    = useRef<MonthlyStats | null>(null);
 
   // ── Walkthrough target measurement ──────────────────────────────────────────
   // Measure the first primary content section once data is loaded.
@@ -484,6 +509,8 @@ export default function HomeScreen() {
       fetchedAt:       Date.now(),
       sessionsByBook:  _sbRef.current,
       currentStreak:   _csRef.current,
+      longestStreak:   _lsRef.current,
+      monthlyStats:    _msRef.current,
     };
   }
 
@@ -675,16 +702,21 @@ export default function HomeScreen() {
       }
     }
 
-    const streak = computeStreaks(allDates);
+    const streak  = computeStreaks(allDates);
+    const monthly = computeMonthlyStats(rows);
 
     setSessionsByBook(byBook);
     _sbRef.current = byBook;
     setCurrentStreak(streak.current);
     _csRef.current = streak.current;
+    setLongestStreak(streak.longest);
+    _lsRef.current = streak.longest;
+    setMonthlyStats(monthly);
+    _msRef.current = monthly;
 
     if (__DEV__ && (streak.current > 0 || rows.length > 0)) {
       console.log(
-        `[PACING] sessions loaded — ${rows.length} rows  |  streak: ${streak.current}d current / ${computeStreaks(allDates).longest}d longest`,
+        `[PACING] sessions loaded — ${rows.length} rows  |  streak: ${streak.current}d current / ${streak.longest}d longest  |  month: ${monthly.readingDaysThisMonth}d / ${monthly.pagesThisMonth}pp`,
       );
     }
   }
@@ -891,6 +923,7 @@ export default function HomeScreen() {
                 accentColor={accentColor}
                 projectedFinish={crProjFinish}
                 readState={crReadState}
+                pacingStrength={crPacing?.strength}
                 onPress={() => router.push({
                   pathname: '/book/[id]',
                   params: {
@@ -992,7 +1025,11 @@ export default function HomeScreen() {
             </ScrollView>
           )}
           </View>{/* close homeTargetRef wrapper */}
-          <StreakPill days={currentStreak} />
+          <StreakPill
+            days={currentStreak}
+            longest={longestStreak}
+            monthlyDays={monthlyStats?.readingDaysThisMonth ?? 0}
+          />
         </View>
       )}
 

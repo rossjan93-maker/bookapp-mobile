@@ -31,6 +31,7 @@ type UserBook = {
   finished_at: string | null;
   current_page: number | null;
   progress_updated_at: string | null;
+  taste_tags: Record<string, any> | null;
   book: {
     title: string;
     author: string;
@@ -269,7 +270,7 @@ export default function LibraryScreen() {
         .single(),
       supabase
         .from('user_books')
-        .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, book:books(title, author, cover_url, external_id, page_count)')
+        .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, taste_tags, book:books(title, author, cover_url, external_id, page_count)')
         .eq('user_id', user.id)
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
@@ -286,7 +287,7 @@ export default function LibraryScreen() {
       usedFallback = true;
       p1Result = await supabase
         .from('user_books')
-        .select('id, book_id, status, started_at, finished_at, progress_updated_at, book:books(title, author, cover_url, external_id)')
+        .select('id, book_id, status, started_at, finished_at, progress_updated_at, taste_tags, book:books(title, author, cover_url, external_id)')
         .eq('user_id', user.id)
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
@@ -330,7 +331,7 @@ export default function LibraryScreen() {
           // May have more — fetch from offset 50 onwards
           let remResult = await supabase!
             .from('user_books')
-            .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, book:books(title, author, cover_url, external_id, page_count)')
+            .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, taste_tags, book:books(title, author, cover_url, external_id, page_count)')
             .eq('user_id', user.id)
             .is('deleted_at', null)
             .order('created_at', { ascending: false })
@@ -340,7 +341,7 @@ export default function LibraryScreen() {
           if (remResult.error && !usedFallback) {
             remResult = await supabase!
               .from('user_books')
-              .select('id, book_id, status, started_at, finished_at, progress_updated_at, book:books(title, author, cover_url, external_id)')
+              .select('id, book_id, status, started_at, finished_at, progress_updated_at, taste_tags, book:books(title, author, cover_url, external_id)')
               .eq('user_id', user.id)
               .is('deleted_at', null)
               .order('created_at', { ascending: false })
@@ -456,19 +457,19 @@ export default function LibraryScreen() {
     setSavingTaste(true);
     const tags = { liked, didnt_work: disliked };
 
-    // Temporary debug logs — remove once confirmed working
-    console.log('[taste_tags] row id:', rowId);
-    console.log('[taste_tags] payload:', JSON.stringify(tags));
+    if (__DEV__) {
+      console.log('[taste_tags] row id:', rowId);
+      console.log('[taste_tags] payload:', JSON.stringify(tags));
+    }
 
     const { error } = await supabase
       .from('user_books')
       .update({ taste_tags: tags })
       .eq('id', rowId);
 
-    if (error) {
-      console.warn('[taste_tags] Supabase error:', error.message, error.code);
-    } else {
-      console.log('[taste_tags] saved successfully');
+    if (__DEV__) {
+      if (error) console.warn('[taste_tags] Supabase error:', error.message, error.code);
+      else        console.log('[taste_tags] saved successfully');
     }
 
     if (!error && currentUserId) {
@@ -479,6 +480,38 @@ export default function LibraryScreen() {
     setPendingTasteUserBookId(null);
     setLikedTags([]);
     setDislikedTags([]);
+  }
+
+  /**
+   * Save (or skip) a DNF reason into taste_tags.dnf_reason.
+   * Merges with any existing taste_tags so we never clobber liked/disliked tags.
+   * Passing null reason = user tapped Skip.
+   */
+  async function saveDnfReason(userBookId: string, reason: string | null) {
+    if (reason && supabase) {
+      const existing = items.find(it => it.id === userBookId)?.taste_tags ?? {};
+      const merged   = { ...existing, dnf_reason: reason };
+      supabase
+        .from('user_books')
+        .update({ taste_tags: merged })
+        .eq('id', userBookId)
+        .then(({ error }) => {
+          if (__DEV__) {
+            if (error) console.warn('[DNF] reason save failed:', error.message);
+            else        console.log('[DNF] reason saved:', reason);
+          }
+          if (!error) {
+            setItems(prev =>
+              prev.map(it =>
+                it.id === userBookId
+                  ? { ...it, taste_tags: merged }
+                  : it,
+              ),
+            );
+          }
+        });
+    }
+    setPendingFeedback(null);
   }
 
   async function handleUpdateStatus(userBook: UserBook, newStatus: UserBookStatus) {
@@ -1124,7 +1157,12 @@ export default function LibraryScreen() {
               </TouchableOpacity>
 
               {/* Unified action area */}
-              {hasPendingRating ? (
+              {hasPendingRating && pendingFeedback?.status === 'dnf' ? (
+                <DnfReasonChips
+                  onSelect={r => saveDnfReason(item.id, r)}
+                  onSkip={() => setPendingFeedback(null)}
+                />
+              ) : hasPendingRating ? (
                 <View style={{ marginTop: 2 }}>
                   <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 8 }}>How would you rate it?</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -1293,6 +1331,11 @@ export default function LibraryScreen() {
                         {new Date(item.finished_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                       </Text>
                     )}
+                    {item.status === 'dnf' && item.taste_tags?.dnf_reason && (
+                      <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2, fontStyle: 'italic' }}>
+                        {DNF_REASON_LABELS[item.taste_tags.dnf_reason as string] ?? item.taste_tags.dnf_reason}
+                      </Text>
+                    )}
                     {item.status === 'finished' && (() => {
                       const bp = computeBookPace(item.started_at, item.finished_at, item.book?.page_count);
                       if (!bp) return null;
@@ -1315,7 +1358,14 @@ export default function LibraryScreen() {
               </View>
             </TouchableOpacity>
 
-            {hasPendingRating ? (
+            {hasPendingRating && pendingFeedback?.status === 'dnf' ? (
+              <View style={{ marginLeft: 58, marginTop: 6 }}>
+                <DnfReasonChips
+                  onSelect={r => saveDnfReason(item.id, r)}
+                  onSkip={() => setPendingFeedback(null)}
+                />
+              </View>
+            ) : hasPendingRating ? (
               <View style={{ marginLeft: 58, marginTop: 6 }}>
                 <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 8 }}>How would you rate it?</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -1625,6 +1675,61 @@ export default function LibraryScreen() {
 }
 
 // ─── Micro button components ──────────────────────────────────────────────────
+
+// ─── DNF reason capture ───────────────────────────────────────────────────────
+
+const DNF_REASONS: Array<{ key: string; label: string }> = [
+  { key: 'not_for_me',        label: 'Not for me'         },
+  { key: 'wrong_time',        label: 'Wrong time'          },
+  { key: 'life_interruption', label: 'Life got in the way' },
+  { key: 'too_slow',          label: 'Too slow / dense'    },
+];
+
+const DNF_REASON_LABELS: Record<string, string> = Object.fromEntries(
+  DNF_REASONS.map(r => [r.key, r.label]),
+);
+
+/**
+ * Soft reason capture for DNF books.
+ * Tone: reflective. No guilt, no judgment — all reasons are equally valid.
+ */
+function DnfReasonChips({ onSelect, onSkip }: { onSelect: (reason: string) => void; onSkip: () => void }) {
+  return (
+    <View style={{ marginTop: 4 }}>
+      <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 8 }}>
+        Why did you stop? (optional)
+      </Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+        {DNF_REASONS.map(r => (
+          <TouchableOpacity
+            key={r.key}
+            onPress={() => onSelect(r.key)}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            style={{
+              borderWidth: 1,
+              borderColor: '#d6cfc8',
+              borderRadius: 20,
+              paddingHorizontal: 11,
+              paddingVertical: 5,
+              backgroundColor: '#fefcf9',
+            }}
+          >
+            <Text style={{ fontSize: 12, color: '#6b635c' }}>{r.label}</Text>
+          </TouchableOpacity>
+        ))}
+        <TouchableOpacity
+          onPress={onSkip}
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          style={{ paddingHorizontal: 4, paddingVertical: 5 }}
+        >
+          <Text style={{ fontSize: 12, color: '#9e958d' }}>Skip</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+// ─── Buttons ──────────────────────────────────────────────────────────────────
 
 function PrimaryButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled: boolean }) {
   return (
