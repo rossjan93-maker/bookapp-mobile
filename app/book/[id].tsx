@@ -23,6 +23,7 @@ import { computeDatePacing, computePagePacing, estimatePaceFinish, formatLastUpd
 import { fetchGoogleBooksMetadata } from '../../lib/googleBooks';
 import { fetchOLMeta, searchOLWork, isOLId } from '../../lib/openLibrary';
 import type { OLMeta } from '../../lib/openLibrary';
+import { deriveContentWarnings, isCoveragePartial } from '../../lib/contentWarnings';
 import { transitionStatus, editUserBook, softDeleteBook, restoreSnapshot, saveCurrentPage } from '../../lib/userBookActions';
 import type { UserBookStatus, BookSnapshot, FinishedDateInput, StartedDateInput } from '../../lib/userBookActions';
 import { useUndoBar } from '../../lib/useUndoBar';
@@ -39,9 +40,10 @@ import { EvidenceTagsRow } from '../../components/RecCard';
 // size.  Cleared implicitly on JS context restart (app kill / hard reload).
 
 type BookMetaEntry = {
-  description: string | null;
-  subjects:    string[];
-  pageCount:   number | null;
+  description:     string | null;
+  subjects:        string[];
+  pageCount:       number | null;
+  contentWarnings: string[];
 };
 
 const _bookMetaCache = new Map<string, BookMetaEntry>();
@@ -82,6 +84,84 @@ function SectionLabel({ children }: { children: string }) {
     }}>
       {children}
     </Text>
+  );
+}
+
+// ─── ContentWarnings ──────────────────────────────────────────────────────────
+
+type ContentWarningsProps = {
+  warnings:    string[];
+  subjects:    string[];
+  expanded:    boolean;
+  onToggle:    () => void;
+};
+
+function ContentWarnings({ warnings, subjects, expanded, onToggle }: ContentWarningsProps) {
+  if (!warnings || warnings.length === 0) return null;
+
+  const showIncompleteNote = isCoveragePartial(subjects);
+
+  return (
+    <View style={{
+      backgroundColor: '#fefcf9',
+      borderRadius: 14,
+      padding: 18,
+      marginBottom: 20,
+      borderWidth: 1,
+      borderColor: '#ede9e4',
+    }}>
+      <TouchableOpacity
+        onPress={onToggle}
+        activeOpacity={0.7}
+        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+      >
+        <Text style={{
+          fontSize: 11,
+          fontWeight: '700',
+          color: '#9e958d',
+          letterSpacing: 0.9,
+          textTransform: 'uppercase',
+        }}>
+          Heads up
+        </Text>
+        <Text style={{ fontSize: 13, color: '#9e958d' }}>
+          {expanded ? '▲' : '▼'}
+        </Text>
+      </TouchableOpacity>
+
+      {expanded && (
+        <View style={{ marginTop: 12 }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {warnings.map((w, i) => (
+              <View
+                key={i}
+                style={{
+                  backgroundColor: '#f5f1ed',
+                  borderRadius: 20,
+                  paddingHorizontal: 12,
+                  paddingVertical: 5,
+                  borderWidth: 1,
+                  borderColor: '#e6e0d9',
+                }}
+              >
+                <Text style={{ fontSize: 12, color: '#78716c' }}>{w}</Text>
+              </View>
+            ))}
+          </View>
+          {showIncompleteNote && (
+            <Text style={{
+              fontSize: 11,
+              color: '#b5afa9',
+              marginTop: 10,
+              fontStyle: 'italic',
+            }}>
+              Coverage may be incomplete
+            </Text>
+          )}
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -138,8 +218,10 @@ export default function BookDetailScreen() {
   const [avgUserPace, setAvgUserPace]   = useState<number | null>(null);
   // Enriched cover: set when Book Detail hydration finds a cover not present at
   // navigation time (e.g. imported books that had no cover in the DB yet).
-  const [enrichedCoverUrl, setEnrichedCoverUrl] = useState<string | null>(null);
-  const [metaFromGb, setMetaFromGb]             = useState(false);
+  const [enrichedCoverUrl, setEnrichedCoverUrl]       = useState<string | null>(null);
+  const [metaFromGb, setMetaFromGb]                   = useState(false);
+  const [contentWarnings, setContentWarnings]         = useState<string[]>([]);
+  const [warningsExpanded, setWarningsExpanded]       = useState(false);
 
   // User reading history: rating, finished date, review, private note.
   // Fetched directly from user_books on open so it's always current.
@@ -324,6 +406,11 @@ export default function BookDetailScreen() {
   useEffect(() => {
     if (!bookId || !supabase) return;
 
+    // Reset content warnings so stale data from a previously viewed book
+    // never bleeds into the next book (state carries over across navigations).
+    setContentWarnings([]);
+    setWarningsExpanded(false);
+
     // Pre-populate description/subjects/pageCount from session cache so the UI
     // shows content immediately on revisit without waiting for the DB query.
     const _cachedMeta = _bookMetaCache.get(bookId!);
@@ -333,6 +420,9 @@ export default function BookDetailScreen() {
         subjects:    _cachedMeta.subjects,
         pageCount:   _cachedMeta.pageCount,
       });
+      if (_cachedMeta.contentWarnings.length > 0) {
+        setContentWarnings(_cachedMeta.contentWarnings);
+      }
     }
     // Only show the skeleton if there is nothing in the cache yet
     setMetaLoading(!_cachedMeta);
@@ -341,57 +431,76 @@ export default function BookDetailScreen() {
       if (!supabase) return;
 
       // ── 1. Current DB state ──────────────────────────────────────────────
-      // `description` (migration 20260315000004) and `subjects` (20260315000002)
-      // may not exist yet.  Degrade gracefully: full → no description → minimal.
+      // `description` (migration 20260315000004), `subjects` (20260315000002),
+      // and `content_warnings` (20260413000002) may not exist yet.
+      // Degrade gracefully — each column gets its own exists flag so that a
+      // missing content_warnings column does not incorrectly suppress description
+      // persistence or mark descColExists as false.
       type BookRow = {
         cover_url?: string | null;
         description?: string | null;
         subjects?: string[] | null;
+        content_warnings?: string[] | null;
         page_count?: number | null;
         isbn13?: string | null;
         isbn?: string | null;
         external_id?: string | null;
       };
       let row: BookRow | null = null;
-      let descColExists = true;
-      let subjColExists = true;
+      let descColExists     = true;
+      let subjColExists     = true;
+      let warningsColExists = true;
 
-      // Phase 1 fetch — includes external_id so the OL lookup never depends
-      // solely on the route param (which may be absent for non-Library navigation).
+      // Phase 1 fetch — all columns including content_warnings.
       const { data: r1, error: e1 } = await supabase
         .from('books')
-        .select('cover_url, description, subjects, page_count, isbn13, isbn, external_id')
+        .select('cover_url, description, subjects, content_warnings, page_count, isbn13, isbn, external_id')
         .eq('id', bookId!)
         .maybeSingle();
 
       if (!e1) {
         row = r1 as BookRow | null;
       } else {
-        descColExists = false;
-        const { data: r2, error: e2 } = await supabase
+        // content_warnings column may not exist yet — retry without it before
+        // concluding that description is missing (previous bug: e1 failure was
+        // incorrectly attributed to description being absent).
+        warningsColExists = false;
+        const { data: r1b, error: e1b } = await supabase
           .from('books')
-          .select('cover_url, subjects, page_count, isbn13, isbn, external_id')
+          .select('cover_url, description, subjects, page_count, isbn13, isbn, external_id')
           .eq('id', bookId!)
           .maybeSingle();
-        if (!e2) {
-          row = r2 as BookRow | null;
+        if (!e1b) {
+          row = r1b as BookRow | null;
         } else {
-          subjColExists = false;
-          const { data: r3 } = await supabase
+          // description column also absent — continue degrading.
+          descColExists = false;
+          const { data: r2, error: e2 } = await supabase
             .from('books')
-            .select('cover_url, page_count, isbn13, isbn, external_id')
+            .select('cover_url, subjects, page_count, isbn13, isbn, external_id')
             .eq('id', bookId!)
             .maybeSingle();
-          row = r3 as BookRow | null;
+          if (!e2) {
+            row = r2 as BookRow | null;
+          } else {
+            subjColExists = false;
+            const { data: r3 } = await supabase
+              .from('books')
+              .select('cover_url, page_count, isbn13, isbn, external_id')
+              .eq('id', bookId!)
+              .maybeSingle();
+            row = r3 as BookRow | null;
+          }
         }
       }
 
-      const dbIsbn13  = row?.isbn13   ?? null;
-      const dbIsbn    = row?.isbn     ?? null;
-      const dbDesc    = row?.description ?? null;
+      const dbIsbn13          = row?.isbn13   ?? null;
+      const dbIsbn            = row?.isbn     ?? null;
+      const dbDesc            = row?.description ?? null;
       const dbSubjects: string[] = row?.subjects ?? [];
-      const dbPages   = row?.page_count ?? null;
-      const dbCover   = row?.cover_url  ?? null;
+      const dbContentWarnings: string[] = row?.content_warnings ?? [];
+      const dbPages           = row?.page_count ?? null;
+      const dbCover           = row?.cover_url  ?? null;
       // Attribution: mark as Google Books sourced if the stored cover URL is a GB URL.
       if (dbCover && (dbCover.includes('books.google.com') || dbCover.includes('googleapis.com'))) {
         setMetaFromGb(true);
@@ -416,7 +525,21 @@ export default function BookDetailScreen() {
       if (hasCover && hasDesc && hasSubjects && hasPages) {
         const richMeta = { description: dbDesc, subjects: dbSubjects, pageCount: dbPages };
         setOlMeta(richMeta);
-        _cacheBookMeta(bookId!, { description: dbDesc, subjects: dbSubjects, pageCount: dbPages });
+        // Derive content warnings from DB subjects if not already stored.
+        const fastWarnings = dbContentWarnings.length > 0
+          ? dbContentWarnings
+          : deriveContentWarnings(dbSubjects);
+        if (fastWarnings.length > 0) setContentWarnings(fastWarnings);
+        _cacheBookMeta(bookId!, {
+          description: dbDesc,
+          subjects:    dbSubjects,
+          pageCount:   dbPages,
+          contentWarnings: fastWarnings,
+        });
+        // Backfill content_warnings in DB if subjects exist but warnings column was empty.
+        if (dbContentWarnings.length === 0 && fastWarnings.length > 0 && warningsColExists && supabase) {
+          supabase.from('books').update({ content_warnings: fastWarnings }).eq('id', bookId!).then(() => {});
+        }
         setMetaLoading(false);
         return;
       }
@@ -501,12 +624,21 @@ export default function BookDetailScreen() {
       if (foundCover) setEnrichedCoverUrl(foundCover);
       if (foundPages) setPageCount(prev => prev ?? foundPages!);
 
+      // Derive content warnings from the best available subjects.
+      const finalSubjects = foundSubjects.length > 0 ? foundSubjects : dbSubjects;
+      const derivedWarnings = dbContentWarnings.length > 0
+        ? dbContentWarnings
+        : deriveContentWarnings(finalSubjects);
+      if (derivedWarnings.length > 0) setContentWarnings(derivedWarnings);
+
       const patch: Record<string, unknown> = {};
-      if (discoveredExtId)                                      patch.external_id = discoveredExtId;
-      if (foundCover    && !hasCover)                           patch.cover_url   = foundCover;
-      if (foundDesc     && !hasDesc     && descColExists)       patch.description = foundDesc;
-      if (foundSubjects.length > 0      && subjColExists)       patch.subjects    = foundSubjects;
-      if (foundPages    && !hasPages)                           patch.page_count  = foundPages;
+      if (discoveredExtId)                                      patch.external_id     = discoveredExtId;
+      if (foundCover    && !hasCover)                           patch.cover_url       = foundCover;
+      if (foundDesc     && !hasDesc     && descColExists)       patch.description     = foundDesc;
+      if (foundSubjects.length > 0      && subjColExists)       patch.subjects        = foundSubjects;
+      if (foundPages    && !hasPages)                           patch.page_count      = foundPages;
+      if (dbContentWarnings.length === 0 && derivedWarnings.length > 0 && warningsColExists)
+                                                                patch.content_warnings = derivedWarnings;
 
       if (Object.keys(patch).length > 0 && supabase) {
         supabase.from('books').update(patch).eq('id', bookId!).then(() => {});
@@ -515,9 +647,10 @@ export default function BookDetailScreen() {
       // Write whatever was discovered to the session cache so the next visit
       // to this book renders description/subjects immediately with no skeleton.
       _cacheBookMeta(bookId!, {
-        description: foundDesc ?? row?.description ?? null,
-        subjects:    foundSubjects.length > 0 ? foundSubjects : (row?.subjects ?? []),
-        pageCount:   foundPages  ?? row?.page_count ?? null,
+        description:     foundDesc ?? row?.description ?? null,
+        subjects:        finalSubjects,
+        pageCount:       foundPages  ?? row?.page_count ?? null,
+        contentWarnings: derivedWarnings,
       });
 
       setMetaLoading(false);
@@ -2093,6 +2226,17 @@ export default function BookDetailScreen() {
               No summary available for this edition.
             </Text>
           </View>
+        )}
+
+        {/* ── Content Warnings — collapsible "Heads up" section ── */}
+        {/* Hidden when no warnings exist or while metadata is still loading. */}
+        {!metaLoading && contentWarnings.length > 0 && (
+          <ContentWarnings
+            warnings={contentWarnings}
+            subjects={olMeta?.subjects ?? []}
+            expanded={warningsExpanded}
+            onToggle={() => setWarningsExpanded(v => !v)}
+          />
         )}
 
         {/* ── Why this book? — evidence-backed rec context ── */}
