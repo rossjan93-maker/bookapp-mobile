@@ -18,6 +18,8 @@ import { findSeriesForBook, getSeriesCatalog } from '../../lib/seriesCatalog';
 import { triggerRecPrewarm } from '../../lib/recPrewarm';
 import { registerWtTarget, useWalkthrough } from '../../lib/walkthroughEngine';
 import { WtDemoLibrary } from '../../components/walkthrough/WtDemoLibrary';
+import { ShelfRow } from '../../components/ShelfRow';
+import { SHELF_DEFINITIONS } from '../../lib/shelves';
 
 const LIB_VIEW_MODE_KEY = 'libraryViewMode';
 
@@ -36,12 +38,15 @@ type UserBook = {
   current_page: number | null;
   progress_updated_at: string | null;
   taste_tags: Record<string, any> | null;
+  rating: number | null;
+  sentiment: string | null;
   book: {
     title: string;
     author: string;
     cover_url: string | null;
     external_id: string;
     page_count: number | null;
+    subjects: string[] | string | null;
   } | null;
 };
 
@@ -190,6 +195,7 @@ export default function LibraryScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<TextInput>(null);
+  const [activeShelf, setActiveShelf] = useState<string | null>(null);
 
   // ── Walkthrough target measurement ──────────────────────────────────────────
   // Measures the FlatList header (title + filter bar) once loading completes.
@@ -288,7 +294,7 @@ export default function LibraryScreen() {
         .single(),
       supabase
         .from('user_books')
-        .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, taste_tags, book:books(title, author, cover_url, external_id, page_count)')
+        .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, page_count, subjects)')
         .eq('user_id', user.id)
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
@@ -305,7 +311,7 @@ export default function LibraryScreen() {
       usedFallback = true;
       p1Result = await supabase
         .from('user_books')
-        .select('id, book_id, status, started_at, finished_at, progress_updated_at, taste_tags, book:books(title, author, cover_url, external_id)')
+        .select('id, book_id, status, started_at, finished_at, progress_updated_at, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, subjects)')
         .eq('user_id', user.id)
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
@@ -349,7 +355,7 @@ export default function LibraryScreen() {
           // May have more — fetch from offset 50 onwards
           let remResult = await supabase!
             .from('user_books')
-            .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, taste_tags, book:books(title, author, cover_url, external_id, page_count)')
+            .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, page_count, subjects)')
             .eq('user_id', user.id)
             .is('deleted_at', null)
             .order('created_at', { ascending: false })
@@ -359,7 +365,7 @@ export default function LibraryScreen() {
           if (remResult.error && !usedFallback) {
             remResult = await supabase!
               .from('user_books')
-              .select('id, book_id, status, started_at, finished_at, progress_updated_at, taste_tags, book:books(title, author, cover_url, external_id)')
+              .select('id, book_id, status, started_at, finished_at, progress_updated_at, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, subjects)')
               .eq('user_id', user.id)
               .is('deleted_at', null)
               .order('created_at', { ascending: false })
@@ -610,8 +616,17 @@ export default function LibraryScreen() {
 
   const searchActive     = searchQuery.trim().length > 0;
   const searchNormalized = searchQuery.toLowerCase().trim();
+
+  // When a shelf is active, the base pool is the shelf-filtered items;
+  // otherwise it's the full items array (then filtered by status chip).
+  const shelfFilteredItems: UserBook[] = (() => {
+    if (!activeShelf) return items;
+    const def = SHELF_DEFINITIONS.find(d => d.id === activeShelf);
+    return def ? items.filter(def.filter) : items;
+  })();
+
   const searchResults: UserBook[] = searchActive
-    ? items.filter(item => {
+    ? shelfFilteredItems.filter(item => {
         const title  = (item.book?.title  ?? '').toLowerCase();
         const author = (item.book?.author ?? '').toLowerCase();
         return title.includes(searchNormalized) || author.includes(searchNormalized);
@@ -619,7 +634,10 @@ export default function LibraryScreen() {
     : [];
 
   const readingCount  = items.filter(i => i.status === 'reading').length;
-  const filteredItems = activeFilter === 'all' ? items : items.filter(i => i.status === activeFilter);
+  // When shelf is active, status chip filtering is bypassed (chips are hidden).
+  const filteredItems = activeShelf
+    ? shelfFilteredItems
+    : (activeFilter === 'all' ? items : items.filter(i => i.status === activeFilter));
 
   // Sort + ordering:
   //   All filter    → reading first, then finished (finished_at desc), then want-to-read, then dnf.
@@ -666,6 +684,15 @@ export default function LibraryScreen() {
   const displayedItems: ListItem[] = (() => {
     // When search is active: flat unified result list, no grouping
     if (searchActive) return searchResults;
+
+    // When a shelf is active: flat list ordered by recency (no status separators)
+    if (activeShelf) {
+      return [...filteredItems].sort((a, b) => {
+        const aDate = a.progress_updated_at ?? a.started_at ?? a.finished_at ?? '';
+        const bDate = b.progress_updated_at ?? b.started_at ?? b.finished_at ?? '';
+        return bDate.localeCompare(aDate);
+      });
+    }
 
     // Partition helpers — only active while a Phase 2 boundary exists.
     const p1ids = _libPhase1Ids;
@@ -875,6 +902,20 @@ export default function LibraryScreen() {
               </TouchableOpacity>
             </View>
           </View>
+          {/* ── Shelf row ── */}
+          {!searchActive && items.length > 0 && (
+            <View style={{ marginTop: 20, marginHorizontal: -20, paddingHorizontal: 20 }}>
+              <ShelfRow
+                items={items}
+                activeShelf={activeShelf}
+                onSelect={id => {
+                  setActiveShelf(id);
+                  if (id !== null) setActiveFilter('all');
+                }}
+              />
+            </View>
+          )}
+
           {/* ── Search bar ── */}
           <TouchableOpacity
             activeOpacity={1}
@@ -920,8 +961,8 @@ export default function LibraryScreen() {
             </Text>
           )}
 
-          {/* ── Filter chip bar ── */}
-          {!searchActive && items.length > 0 && (
+          {/* ── Filter chip bar — hidden when a shelf is active ── */}
+          {!searchActive && items.length > 0 && !activeShelf && (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -941,6 +982,7 @@ export default function LibraryScreen() {
                   <TouchableOpacity
                     key={f.key}
                     onPress={() => {
+                      setActiveShelf(null);
                       setActiveFilter(f.key);
                       if (f.key === 'finished') setSort('finished_date');
                       else setSort('recent');
@@ -966,6 +1008,34 @@ export default function LibraryScreen() {
               })}
             </ScrollView>
           )}
+
+          {/* ── Active shelf clear affordance ── */}
+          {!searchActive && activeShelf && (() => {
+            const def = SHELF_DEFINITIONS.find(d => d.id === activeShelf);
+            return def ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', paddingBottom: 14, gap: 8 }}>
+                <View style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: '#2e2a26',
+                  borderRadius: 20,
+                  paddingHorizontal: 14,
+                  paddingVertical: 7,
+                  gap: 6,
+                }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#f5f1ec' }}>
+                    {def.label}
+                  </Text>
+                  <TouchableOpacity
+                    hitSlop={10}
+                    onPress={() => setActiveShelf(null)}
+                  >
+                    <Ionicons name="close-circle" size={15} color="#9e958d" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null;
+          })()}
 
           {/* ── Goodreads import banner (shown for users with books who haven't imported) ── */}
           {hasGoodreadsImport === false && items.length > 0 && (
