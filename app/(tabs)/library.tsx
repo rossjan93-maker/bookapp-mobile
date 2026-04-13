@@ -12,7 +12,7 @@ import { CoverThumb } from '../../components/CoverThumb';
 import { LibraryScreenSkeleton } from '../../components/Placeholder';
 import { computePagePacing, computeDatePacing, formatLastUpdated, computeBookPace, formatPaceChip, computeUserAvgPace, inferReadState } from '../../lib/pacing';
 import { transitionStatus, saveCurrentPage } from '../../lib/userBookActions';
-import { findSeriesForBook } from '../../lib/seriesCatalog';
+import { findSeriesForBook, getSeriesCatalog } from '../../lib/seriesCatalog';
 import { triggerRecPrewarm } from '../../lib/recPrewarm';
 import { registerWtTarget, useWalkthrough } from '../../lib/walkthroughEngine';
 import { WtDemoLibrary } from '../../components/walkthrough/WtDemoLibrary';
@@ -44,14 +44,14 @@ type UserBook = {
 type PendingFeedback = { userBookId: string; bookId: string; status: 'finished' | 'dnf'; pendingEventId: string | null };
 
 type YearSeparator    = { __type: 'year_separator'; year: string; key: string; count: number };
-type SetAsideSeparator = { __type: 'set_aside_separator'; key: string };
-type ListItem          = UserBook | YearSeparator | SetAsideSeparator;
+type SectionSeparator = { __type: 'section_separator'; key: string; title: string; subtitle?: string; muted?: boolean };
+type ListItem         = UserBook | YearSeparator | SectionSeparator;
 
 function isYearSeparator(item: ListItem): item is YearSeparator {
   return (item as YearSeparator).__type === 'year_separator';
 }
-function isSetAsideSeparator(item: ListItem): item is SetAsideSeparator {
-  return (item as SetAsideSeparator).__type === 'set_aside_separator';
+function isSectionSeparator(item: ListItem): item is SectionSeparator {
+  return (item as SectionSeparator).__type === 'section_separator';
 }
 
 // Build an accordion-aware list: only books whose year is in expandedYears are
@@ -619,6 +619,37 @@ export default function LibraryScreen() {
   // of their status group, sorted normally. Phase 2 items are sorted within themselves
   // but appended below Phase 1 items so no already-visible row reshuffles mid-session.
   // The boundary is erased on the next pull-to-refresh or cold load (full resort).
+
+  // ── Series context maps — computed from ALL items for continuation detection ──────
+  // _allSeriesCtx: itemId → { seriesName, seriesPosition } for catalog-matched books.
+  // _seriesMaxPos: seriesName → highest reading/finished position seen in the library.
+  // A want-to-read book is a "continuation" when the user has read an earlier book
+  // in the same series (maxDone > 0 and the book's position > maxDone).
+  const _allSeriesCtx = new Map<string, { seriesName: string; seriesPosition: number }>();
+  const _seriesMaxPos = new Map<string, number>();
+  for (const item of items) {
+    const ctx = findSeriesForBook(item.book?.title ?? '', item.book?.author ?? '');
+    if (!ctx) continue;
+    _allSeriesCtx.set(item.id, ctx);
+    if (item.status === 'reading' || item.status === 'finished') {
+      const prev = _seriesMaxPos.get(ctx.seriesName) ?? 0;
+      if (ctx.seriesPosition > prev) _seriesMaxPos.set(ctx.seriesName, ctx.seriesPosition);
+    }
+  }
+  function seriesContinuationLabel(item: UserBook): string | null {
+    if (item.status !== 'want_to_read') return null;
+    const ctx = _allSeriesCtx.get(item.id);
+    if (!ctx) return null;
+    const maxDone = _seriesMaxPos.get(ctx.seriesName) ?? 0;
+    if (maxDone === 0 || ctx.seriesPosition <= maxDone) return null;
+    const catalog = getSeriesCatalog(ctx.seriesName);
+    if (!catalog) return null;
+    return `Book ${ctx.seriesPosition} · ${catalog.displayName}`;
+  }
+  function isSeriesContinuation(item: UserBook): boolean {
+    return seriesContinuationLabel(item) !== null;
+  }
+
   const displayedItems: ListItem[] = (() => {
     // When search is active: flat unified result list, no grouping
     if (searchActive) return searchResults;
@@ -646,30 +677,65 @@ export default function LibraryScreen() {
     });
 
     if (activeFilter === 'all') {
-      // Reading first (operational priority), then finished, want-to-read, DNF.
-      // Within each group: Phase 1 sorted normally, Phase 2 appended below (sorted within itself).
+      // Order: reading → want-to-read (intent) → finished (history) → set aside.
+      // Intent before history: the backlog is more actionable than completed books.
+      // Each group gets a SectionSeparator header; groups with 0 items are skipped.
+      const readingItems: UserBook[] = [
+        ...byRecent(p1.filter(i => i.status === 'reading')),
+        ...byRecent(p2.filter(i => i.status === 'reading')),
+      ];
+      const wtrItems: UserBook[] = [
+        ...p1.filter(i => i.status === 'want_to_read'),
+        ...p2.filter(i => i.status === 'want_to_read'),
+      ];
+      const finishedItems: UserBook[] = [
+        ...byFinished(p1.filter(i => i.status === 'finished')),
+        ...byFinished(p2.filter(i => i.status === 'finished')),
+      ];
       const dnfItems: UserBook[] = [
         ...p1.filter(i => i.status === 'dnf'),
         ...p2.filter(i => i.status === 'dnf'),
       ];
-      const dnfSection: ListItem[] = dnfItems.length > 0
-        ? [{ __type: 'set_aside_separator' as const, key: 'sep_set_aside' }, ...dnfItems]
-        : [];
-      return [
-        ...byRecent(p1.filter(i => i.status === 'reading')),
-        ...byRecent(p2.filter(i => i.status === 'reading')),
-        ...byFinished(p1.filter(i => i.status === 'finished')),
-        ...byFinished(p2.filter(i => i.status === 'finished')),
-        ...p1.filter(i => i.status === 'want_to_read'),
-        ...p2.filter(i => i.status === 'want_to_read'),
-        ...dnfSection,
-      ];
+      const result: ListItem[] = [...readingItems];
+      if (wtrItems.length > 0) {
+        result.push({ __type: 'section_separator', key: 'sep_wtr', title: 'Want to Read' });
+        result.push(...wtrItems);
+      }
+      if (finishedItems.length > 0) {
+        result.push({ __type: 'section_separator', key: 'sep_finished', title: 'Finished', muted: true });
+        result.push(...finishedItems);
+      }
+      if (dnfItems.length > 0) {
+        result.push({ __type: 'section_separator', key: 'sep_set_aside', title: 'Set Aside', subtitle: "Books that didn't land right now" });
+        result.push(...dnfItems);
+      }
+      return result;
     }
     if (activeFilter === 'reading' && sort === 'recent') {
       return [...byRecent(p1), ...byRecent(p2)];
     }
     if (activeFilter === 'reading' && sort === 'progress') {
       return [...byProgress(p1), ...byProgress(p2)];
+    }
+    if (activeFilter === 'want_to_read') {
+      // Surface series continuations at the top so the next book in an in-progress
+      // series is never buried under unrelated backlog items.
+      const all: UserBook[] = [
+        ...p1.filter(i => i.status === 'want_to_read'),
+        ...p2.filter(i => i.status === 'want_to_read'),
+      ];
+      const continuations = all.filter(i => isSeriesContinuation(i));
+      const shelf         = all.filter(i => !isSeriesContinuation(i));
+      if (continuations.length === 0) return all;
+      const result: ListItem[] = [
+        { __type: 'section_separator', key: 'sep_continue', title: 'Continue Reading', subtitle: 'Next in a series you started' },
+        ...continuations,
+      ];
+      if (shelf.length > 0) {
+        result.push({ __type: 'section_separator', key: 'sep_shelf', title: 'On Your Shelf', muted: true });
+        result.push(...shelf);
+      }
+      return result;
     }
     if (activeFilter === 'finished' && sort === 'finished_date') {
       // Full sort here: year-separator groups span both phases, so we need a single
@@ -741,7 +807,7 @@ export default function LibraryScreen() {
     <View style={{ flex: 1, backgroundColor: '#f5f1ec' }}>
     <FlatList
       data={displayedItems}
-      keyExtractor={item => isYearSeparator(item) ? item.key : isSetAsideSeparator(item) ? item.key : item.id}
+      keyExtractor={item => isYearSeparator(item) ? item.key : isSectionSeparator(item) ? item.key : item.id}
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 0, paddingBottom: 40 }}
       refreshControl={
@@ -970,16 +1036,22 @@ export default function LibraryScreen() {
         </View>
       }
       renderItem={({ item, index }) => {
-        // ── Set-aside section header (All filter only) ───────────────────────
-        if (isSetAsideSeparator(item)) {
+        // ── Section separator header (Want to Read / Finished / Set Aside / Continue Reading / On Your Shelf) ──
+        if (isSectionSeparator(item)) {
           return (
-            <View style={{ paddingTop: 22, paddingBottom: 6 }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 1, textTransform: 'uppercase' }}>
-                Set aside
+            <View style={{ paddingTop: index === 0 ? 10 : 22, paddingBottom: 6 }}>
+              <Text style={{
+                fontSize: 11, fontWeight: '700',
+                color: item.muted ? '#c4b5a5' : '#9e958d',
+                letterSpacing: 1, textTransform: 'uppercase',
+              }}>
+                {item.title}
               </Text>
-              <Text style={{ fontSize: 12, color: '#c4b5a5', marginTop: 3 }}>
-                Books that didn't land right now
-              </Text>
+              {item.subtitle ? (
+                <Text style={{ fontSize: 12, color: '#c4b5a5', marginTop: 3 }}>
+                  {item.subtitle}
+                </Text>
+              ) : null}
             </View>
           );
         }
@@ -1042,7 +1114,6 @@ export default function LibraryScreen() {
 
         const hasNonReading        = displayedItems.length > readingCount;
         const showNowReadingHeader = activeFilter === 'all' && index === 0 && isReading && hasNonReading;
-        const showLibraryHeader    = activeFilter === 'all' && index === readingCount && readingCount > 0 && hasNonReading;
 
         // ── Reading row: card style with pacing-state border ──────────────
         if (isReading) {
@@ -1300,11 +1371,6 @@ export default function LibraryScreen() {
         // ── Non-reading row: flat archival style ─────────────────────────────
         return (
           <View>
-            {showLibraryHeader && (
-              <Text style={{ fontSize: 11, fontWeight: '700', color: '#c4b5a5', letterSpacing: 1, textTransform: 'uppercase', marginTop: 16, marginBottom: 8 }}>
-                Library
-              </Text>
-            )}
             <View
               ref={wtStep === 'library' && index === 0 ? firstRowRef : undefined}
               style={{
@@ -1352,6 +1418,14 @@ export default function LibraryScreen() {
                     <Text style={{ color: '#78716c', fontSize: 13 }}>
                       {item.book?.author ?? '—'}
                     </Text>
+                    {(() => {
+                      const label = seriesContinuationLabel(item);
+                      return label ? (
+                        <Text style={{ fontSize: 11, color: '#7b9e7e', marginTop: 3, fontWeight: '500' }}>
+                          {label}
+                        </Text>
+                      ) : null;
+                    })()}
                     {item.finished_at && (item.status === 'finished' || item.status === 'dnf') && (
                       <Text style={{ fontSize: 11, color: '#c4b5a5', marginTop: 3 }}>
                         {new Date(item.finished_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
