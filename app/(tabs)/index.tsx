@@ -1117,52 +1117,6 @@ export default function HomeScreen() {
             monthlyDays={monthlyStats?.readingDaysThisMonth ?? 0}
           />
           <ReaderInsightCard insights={insights} />
-          {/* Monthly wrap entry card — only when there are sessions to show */}
-          {(currentMonthWrap.pagesRead > 0 || currentMonthWrap.readingDays > 0) && (
-            <TouchableOpacity
-              onPress={() => router.push({
-                pathname: '/wrap/month',
-                params: { month: _curMonthPrefix },
-              })}
-              activeOpacity={0.82}
-              style={{ marginTop: 12 }}
-            >
-              <View style={{
-                backgroundColor: '#fefcf9',
-                borderRadius: 14,
-                paddingHorizontal: 16,
-                paddingVertical: 14,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                shadowColor: '#231f1b',
-                shadowOpacity: 0.04,
-                shadowRadius: 6,
-                shadowOffset: { width: 0, height: 1 },
-                elevation: 1,
-              }}>
-                <View>
-                  <Text style={{
-                    fontSize: 9, fontWeight: '700', color: '#9e958d',
-                    letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 3,
-                  }}>
-                    {_wrapToday.toLocaleString('default', { month: 'long' })} · this month
-                  </Text>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#231f1b' }}>
-                    Monthly summary
-                  </Text>
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{
-                    fontSize: 26, fontWeight: '800', color: '#231f1b', letterSpacing: -0.8,
-                  }}>
-                    {currentMonthWrap.pagesRead}
-                  </Text>
-                  <Text style={{ fontSize: 10, color: '#9e958d', marginTop: 1 }}>pages  →</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          )}
         </View>
       )}
 
@@ -1382,39 +1336,77 @@ export default function HomeScreen() {
               )}
             </View>
           )}
-          {/* Year wrap entry card */}
+          </View>{/* close homeTargetRef wrapper */}
+        </View>
+      )}
+
+      {/* ── Reading Insights entry ── */}
+      {(currentMonthWrap.pagesRead > 0 || currentMonthWrap.readingDays > 0 || booksThisYear.length > 0) && (
+        <View style={{ marginBottom: 32 }}>
+          <SectionLabel>Reading Insights</SectionLabel>
           <TouchableOpacity
-            onPress={() => router.push({
-              pathname: '/wrap/year',
-              params: { year: String(_wrapToday.getFullYear()) },
-            })}
+            onPress={() => router.push('/stats')}
             activeOpacity={0.82}
-            style={{ marginTop: 12 }}
           >
             <View style={{
-              backgroundColor: '#231f1b',
-              borderRadius: 14,
-              paddingHorizontal: 16,
-              paddingVertical: 14,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
+              backgroundColor: '#fefcf9',
+              borderRadius: 16,
+              padding: 18,
+              shadowColor: '#231f1b',
+              shadowOpacity: 0.05,
+              shadowRadius: 8,
+              shadowOffset: { width: 0, height: 2 },
+              elevation: 2,
             }}>
-              <View>
-                <Text style={{
-                  fontSize: 9, fontWeight: '700', color: '#4a4340',
-                  letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 3,
-                }}>
-                  Your year in full
-                </Text>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: '#fefcf9' }}>
-                  {_wrapToday.getFullYear()} reading summary
-                </Text>
+              {/* Top row: month pages + year books */}
+              <View style={{ flexDirection: 'row', marginBottom: 14 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{
+                    fontSize: 32, fontWeight: '800', color: '#231f1b',
+                    letterSpacing: -1, lineHeight: 34,
+                  }}>
+                    {currentMonthWrap.pagesRead}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 3 }}>
+                    pages this month
+                  </Text>
+                </View>
+                {booksThisYear.length > 0 && (
+                  <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                    <Text style={{
+                      fontSize: 32, fontWeight: '800', color: '#231f1b',
+                      letterSpacing: -1, lineHeight: 34,
+                    }}>
+                      {booksThisYear.length}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 3 }}>
+                      books this year
+                    </Text>
+                  </View>
+                )}
               </View>
-              <Text style={{ fontSize: 18, color: '#4a4340' }}>→</Text>
+              {/* Bottom row: sub-stats + arrow */}
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingTop: 12,
+                borderTopWidth: 1,
+                borderTopColor: '#ede9e4',
+              }}>
+                <Text style={{ fontSize: 12, color: '#9e958d' }}>
+                  {currentMonthWrap.readingDays > 0
+                    ? `${currentMonthWrap.readingDays} reading ${currentMonthWrap.readingDays === 1 ? 'day' : 'days'}`
+                    : `${_wrapToday.toLocaleString('default', { month: 'long' })} · ${_wrapToday.getFullYear()}`
+                  }
+                  {currentMonthWrap.avgPagesPerReadingDay != null
+                    ? `  ·  ${currentMonthWrap.avgPagesPerReadingDay} pp/day`
+                    : ''}
+                </Text>
+                <Text style={{ fontSize: 13, color: '#c4b5a5' }}>→</Text>
+              </View>
             </View>
           </TouchableOpacity>
-          </View>{/* close homeTargetRef wrapper */}
         </View>
       )}
 
