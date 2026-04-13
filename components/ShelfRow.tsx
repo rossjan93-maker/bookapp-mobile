@@ -8,11 +8,11 @@ type Props = {
   onSelect: (shelfId: string | null) => void;
 };
 
-const CARD_W = 130;
-const CARD_H = 72;
-const THUMB_W = 28;
-const THUMB_H = 40;
-const THUMB_OFFSET = 7;
+const CARD_W      = 132;
+const THUMB_W     = 24;
+const THUMB_H     = 36;
+const THUMB_OFFSET = 6;
+const CARD_PAD    = 12;
 
 export function ShelfRow({ items, activeShelf, onSelect }: Props) {
   const shelves = SHELF_DEFINITIONS.map(def => ({
@@ -24,6 +24,7 @@ export function ShelfRow({ items, activeShelf, onSelect }: Props) {
 
   return (
     <View style={{ marginBottom: 4 }}>
+      {/* Label — no extra paddingHorizontal: the FlatList's own 20px provides it */}
       <Text style={{
         fontSize: 10,
         fontWeight: '700',
@@ -31,23 +32,29 @@ export function ShelfRow({ items, activeShelf, onSelect }: Props) {
         letterSpacing: 1.1,
         textTransform: 'uppercase',
         marginBottom: 10,
-        paddingHorizontal: 20,
       }}>
         Shelves
       </Text>
+
+      {/*
+        ScrollView escapes the FlatList's paddingHorizontal (20px) via
+        marginHorizontal: -20, then restores it via contentContainerStyle
+        paddingHorizontal: 20, so the first card aligns with the left edge
+        of all other library content.
+      */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={{ marginHorizontal: -20 }}
         contentContainerStyle={{
           paddingHorizontal: 20,
-          paddingBottom: 4,
+          paddingBottom: 6,
           flexDirection: 'row',
           gap: 10,
         }}
       >
         {shelves.map(shelf => {
-          const active = activeShelf === shelf.id;
+          const active     = activeShelf === shelf.id;
           const thumbBooks = shelf.books.slice(0, 3);
           const stackWidth = THUMB_W + (thumbBooks.length - 1) * THUMB_OFFSET;
 
@@ -57,51 +64,54 @@ export function ShelfRow({ items, activeShelf, onSelect }: Props) {
               onPress={() => onSelect(active ? null : shelf.id)}
               activeOpacity={0.82}
               style={{
-                width: CARD_W,
-                height: CARD_H,
-                borderRadius: 12,
+                width:           CARD_W,
+                borderRadius:    12,
                 backgroundColor: active ? '#2e2a26' : '#fefcf9',
-                borderWidth: 1,
-                borderColor: active ? '#2e2a26' : '#e8e3dd',
-                padding: 11,
-                justifyContent: 'space-between',
-                shadowColor: '#000',
-                shadowOpacity: active ? 0.14 : 0.05,
-                shadowRadius: active ? 8 : 4,
-                shadowOffset: { width: 0, height: active ? 3 : 1 },
-                elevation: active ? 4 : 1,
+                borderWidth:     1,
+                borderColor:     active ? '#2e2a26' : '#e8e3dd',
+                padding:         CARD_PAD,
+                overflow:        'hidden',
+                shadowColor:     '#000',
+                shadowOpacity:   active ? 0.14 : 0.05,
+                shadowRadius:    active ? 8 : 4,
+                shadowOffset:    { width: 0, height: active ? 3 : 1 },
+                elevation:       active ? 4 : 1,
               }}
             >
-              {/* Bottom accent line */}
+              {/* Bottom accent line — inside overflow:hidden so it clips to borderRadius */}
               {active && (
                 <View style={{
-                  position: 'absolute',
-                  bottom: 0,
-                  left: 14,
-                  right: 14,
-                  height: 2.5,
+                  position:        'absolute',
+                  bottom:          0,
+                  left:            14,
+                  right:           14,
+                  height:          2.5,
                   backgroundColor: '#7b9e7e',
-                  borderRadius: 2,
+                  borderRadius:    2,
                 }} />
               )}
 
-              {/* Top row: stacked cover thumbnails + count badge */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                {/* Stacked thumbnails (deck of cards effect) */}
+              {/* Top row: stacked covers + count badge */}
+              <View style={{
+                flexDirection:  'row',
+                alignItems:     'center',
+                justifyContent: 'space-between',
+              }}>
+                {/* Deck-of-cards thumbnail stack */}
                 <View style={{ width: stackWidth, height: THUMB_H, position: 'relative' }}>
                   {thumbBooks.map((book, idx) => (
                     <View
                       key={book.book?.external_id ?? idx}
                       style={{
-                        position: 'absolute',
-                        left: idx * THUMB_OFFSET,
-                        top: 0,
-                        zIndex: thumbBooks.length - idx,
-                        shadowColor: '#000',
-                        shadowOpacity: 0.12,
-                        shadowRadius: 3,
+                        position:     'absolute',
+                        left:         idx * THUMB_OFFSET,
+                        top:          0,
+                        zIndex:       thumbBooks.length - idx,
+                        shadowColor:  '#000',
+                        shadowOpacity: 0.10,
+                        shadowRadius: 2,
                         shadowOffset: { width: 1, height: 1 },
-                        elevation: thumbBooks.length - idx,
+                        elevation:    thumbBooks.length - idx,
                       }}
                     >
                       <CoverThumb
@@ -110,7 +120,7 @@ export function ShelfRow({ items, activeShelf, onSelect }: Props) {
                         title={book.book?.title}
                         width={THUMB_W}
                         height={THUMB_H}
-                        radius={4}
+                        radius={3}
                       />
                     </View>
                   ))}
@@ -118,17 +128,17 @@ export function ShelfRow({ items, activeShelf, onSelect }: Props) {
 
                 {/* Count badge */}
                 <View style={{
-                  backgroundColor: active ? 'rgba(123,158,126,0.25)' : '#f0ece6',
-                  borderRadius: 10,
+                  backgroundColor:  active ? 'rgba(123,158,126,0.25)' : '#f0ece6',
+                  borderRadius:     10,
                   paddingHorizontal: 7,
-                  paddingVertical: 3,
-                  minWidth: 24,
-                  alignItems: 'center',
+                  paddingVertical:  3,
+                  minWidth:         24,
+                  alignItems:       'center',
                 }}>
                   <Text style={{
-                    fontSize: 11,
+                    fontSize:   11,
                     fontWeight: '700',
-                    color: active ? '#7b9e7e' : '#9e958d',
+                    color:      active ? '#7b9e7e' : '#9e958d',
                   }}>
                     {shelf.books.length}
                   </Text>
@@ -139,11 +149,11 @@ export function ShelfRow({ items, activeShelf, onSelect }: Props) {
               <Text
                 numberOfLines={1}
                 style={{
-                  fontSize: 11,
-                  fontWeight: '600',
-                  color: active ? '#f5f1ec' : '#3d3530',
+                  fontSize:    11,
+                  fontWeight:  '600',
+                  color:       active ? '#f5f1ec' : '#3d3530',
                   letterSpacing: 0.1,
-                  marginTop: 6,
+                  marginTop:   8,
                 }}
               >
                 {shelf.label}

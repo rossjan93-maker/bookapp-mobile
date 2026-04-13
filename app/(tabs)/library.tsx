@@ -919,7 +919,7 @@ export default function LibraryScreen() {
           </View>
           {/* ── Shelf row ── */}
           {!searchActive && items.length > 0 && (
-            <View style={{ marginTop: 20, marginHorizontal: -20, paddingHorizontal: 20 }}>
+            <View style={{ marginTop: 20 }}>
               <ShelfRow
                 items={items}
                 activeShelf={activeShelf}
