@@ -1117,19 +1117,50 @@ export default function HomeScreen() {
             monthlyDays={monthlyStats?.readingDaysThisMonth ?? 0}
           />
           <ReaderInsightCard insights={insights} />
-          {/* "This month →" tap target — only when there are sessions to show */}
+          {/* Monthly wrap entry card — only when there are sessions to show */}
           {(currentMonthWrap.pagesRead > 0 || currentMonthWrap.readingDays > 0) && (
             <TouchableOpacity
               onPress={() => router.push({
                 pathname: '/wrap/month',
                 params: { month: _curMonthPrefix },
               })}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              style={{ alignSelf: 'flex-start', marginTop: 10 }}
+              activeOpacity={0.82}
+              style={{ marginTop: 12 }}
             >
-              <Text style={{ fontSize: 12, color: '#9e958d' }}>
-                This month →
-              </Text>
+              <View style={{
+                backgroundColor: '#fefcf9',
+                borderRadius: 14,
+                paddingHorizontal: 16,
+                paddingVertical: 14,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                shadowColor: '#231f1b',
+                shadowOpacity: 0.04,
+                shadowRadius: 6,
+                shadowOffset: { width: 0, height: 1 },
+                elevation: 1,
+              }}>
+                <View>
+                  <Text style={{
+                    fontSize: 9, fontWeight: '700', color: '#9e958d',
+                    letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 3,
+                  }}>
+                    {_wrapToday.toLocaleString('default', { month: 'long' })} · this month
+                  </Text>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#231f1b' }}>
+                    Monthly summary
+                  </Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={{
+                    fontSize: 26, fontWeight: '800', color: '#231f1b', letterSpacing: -0.8,
+                  }}>
+                    {currentMonthWrap.pagesRead}
+                  </Text>
+                  <Text style={{ fontSize: 10, color: '#9e958d', marginTop: 1 }}>pages  →</Text>
+                </View>
+              </View>
             </TouchableOpacity>
           )}
         </View>
@@ -1351,18 +1382,37 @@ export default function HomeScreen() {
               )}
             </View>
           )}
-          {/* "View year →" quiet link below goal section */}
+          {/* Year wrap entry card */}
           <TouchableOpacity
             onPress={() => router.push({
               pathname: '/wrap/year',
               params: { year: String(_wrapToday.getFullYear()) },
             })}
-            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-            style={{ alignSelf: 'flex-end', marginTop: 10 }}
+            activeOpacity={0.82}
+            style={{ marginTop: 12 }}
           >
-            <Text style={{ fontSize: 12, color: '#9e958d' }}>
-              View {_wrapToday.getFullYear()} →
-            </Text>
+            <View style={{
+              backgroundColor: '#231f1b',
+              borderRadius: 14,
+              paddingHorizontal: 16,
+              paddingVertical: 14,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <View>
+                <Text style={{
+                  fontSize: 9, fontWeight: '700', color: '#4a4340',
+                  letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 3,
+                }}>
+                  Your year in full
+                </Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: '#fefcf9' }}>
+                  {_wrapToday.getFullYear()} reading summary
+                </Text>
+              </View>
+              <Text style={{ fontSize: 18, color: '#4a4340' }}>→</Text>
+            </View>
           </TouchableOpacity>
           </View>{/* close homeTargetRef wrapper */}
         </View>

@@ -1,0 +1,57 @@
+The monthly summary and wrap screens are not good enough.
+
+They are functional, but they feel sterile, flat, and administrative. The app overall needs more energy, delight, warmth, and personality in the UX/UI/design system — especially around reflective surfaces like wraps.
+
+I want a design-first iteration, not a backend/data pass.
+
+Goals:
+- make the app feel more alive, rewarding, and premium
+- make monthly/yearly wraps feel like a story or moment, not a dashboard
+- bring more enthusiasm and emotional payoff into the interface
+- keep the product tasteful, editorial, and literary — not childish or over-gamified
+
+What feels wrong right now:
+- wrap screens are too data-first and static
+- visual hierarchy is weak
+- too much empty space with not enough narrative or emotional payoff
+- Home entry points to wraps feel accidental, not special
+- the overall design language is clean but too muted
+
+What I want you to do:
+1. Redesign the monthly wrap screen
+2. Redesign the yearly wrap screen
+3. Improve the Home entry points into these surfaces
+4. Introduce a more expressive and warm design language where appropriate
+5. Add tasteful delight and stronger editorial personality across these areas
+
+Design direction:
+- editorial
+- tactile
+- warm
+- reflective
+- premium
+- slightly celebratory
+- visually richer, but still calm and elegant
+
+Avoid:
+- generic dashboard feel
+- sterile admin-like layouts
+- childish gamification
+- clutter
+- overly loud color use
+- meaningless animation
+
+For monthly/yearly wraps specifically:
+- make them feel like a narrative or chaptered experience
+- stronger hero moments
+- more visual variation and rhythm
+- one or two standout insights should feel emotionally resonant
+- stats should support the story, not dominate it
+
+What I want back:
+- exact files changed
+- a clear summary of the new design direction
+- screenshots or visual proof
+- what changed in hierarchy, typography, spacing, and interaction
+- any tasteful motion or delight added
+- what you intentionally left restrained

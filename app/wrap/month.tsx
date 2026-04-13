@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
@@ -10,8 +17,20 @@ import {
   type WrapBookRef,
 } from '../../lib/readingWraps';
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
+// ── Tokens ────────────────────────────────────────────────────────────────────
+const INK      = '#231f1b';
+const STONE    = '#6b635c';
+const DUST     = '#9e958d';
+const FAINT    = '#c4b5a5';
+const CREAM    = '#fefcf9';
+const BG       = '#f5f1ec';
+const SAGE     = '#7b9e7e';
+const SAGE_BG  = '#eaf1ea';
+const AMBER    = '#c4956a';
+const AMBER_BG = '#f7efe7';
+const BORDER   = '#ede9e4';
 
+// ── Helpers ────────────────────────────────────────────────────────────────────
 const MONTH_NAMES = [
   'January','February','March','April','May','June',
   'July','August','September','October','November','December',
@@ -29,34 +48,50 @@ function nextMonthPrefix(m: string): string {
   return `${ny}-${String(nm).padStart(2, '0')}-01`;
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
-
-function StatRow({ label, value }: { label: string; value: string }) {
+// ── StatChip ──────────────────────────────────────────────────────────────────
+function StatChip({ label, value, flex }: { label: string; value: string; flex?: number }) {
   return (
     <View style={{
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      paddingVertical: 13,
-      borderBottomWidth: 1,
-      borderBottomColor: '#ede9e4',
+      flex: flex ?? 1,
+      backgroundColor: CREAM,
+      borderRadius: 14,
+      padding: 16,
+      shadowColor: INK,
+      shadowOpacity: 0.04,
+      shadowRadius: 6,
+      shadowOffset: { width: 0, height: 1 },
+      elevation: 1,
     }}>
-      <Text style={{ fontSize: 14, color: '#6b635c' }}>{label}</Text>
-      <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b' }}>{value}</Text>
+      <Text style={{
+        fontSize: 28,
+        fontWeight: '800',
+        color: INK,
+        letterSpacing: -0.8,
+        lineHeight: 32,
+      }}>
+        {value}
+      </Text>
+      <Text style={{ fontSize: 11, color: DUST, marginTop: 5, lineHeight: 15 }}>
+        {label}
+      </Text>
     </View>
   );
 }
 
-// ── Screen ────────────────────────────────────────────────────────────────────
+// ── Thin rule ─────────────────────────────────────────────────────────────────
+function Rule() {
+  return <View style={{ height: 1, backgroundColor: BORDER, marginVertical: 20 }} />;
+}
 
+// ── Screen ────────────────────────────────────────────────────────────────────
 export default function MonthWrapScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { month } = useLocalSearchParams<{ month: string }>();
 
-  const [loading, setLoading]   = useState(true);
-  const [wrap, setWrap]         = useState<MonthlyWrap | null>(null);
-  const [hasData, setHasData]   = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [wrap, setWrap]       = useState<MonthlyWrap | null>(null);
+  const [hasData, setHasData] = useState(false);
 
   const currentYear = new Date().getFullYear();
   const targetYear  = month ? parseInt(month.split('-')[0], 10) : currentYear;
@@ -113,44 +148,73 @@ export default function MonthWrapScreen() {
   const label = month ? formatMonth(month) : '—';
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#f5f1ec' }}>
+    <View style={{ flex: 1, backgroundColor: BG }}>
 
-      {/* ── Header ── */}
+      {/* ── Immersive dark header ── */}
       <View style={{
-        paddingTop:         insets.top + 12,
-        paddingBottom:      16,
-        paddingHorizontal:  20,
-        borderBottomWidth:  1,
-        borderBottomColor:  '#ede9e4',
-        backgroundColor:    '#f5f1ec',
+        backgroundColor: INK,
+        paddingTop:       insets.top + 14,
+        paddingBottom:    40,
+        paddingHorizontal: 24,
       }}>
         <TouchableOpacity
           onPress={() => router.back()}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          style={{ marginBottom: 14 }}
+          style={{ marginBottom: 28 }}
         >
-          <Text style={{ fontSize: 14, color: '#6b635c' }}>← Back</Text>
+          <Text style={{ fontSize: 13, color: '#4a4340' }}>← Back</Text>
         </TouchableOpacity>
-        <Text style={{ fontSize: 10, fontWeight: '700', color: '#9e958d', letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 4 }}>
+
+        <Text style={{
+          fontSize: 9, fontWeight: '700', color: '#4a4340',
+          letterSpacing: 2, textTransform: 'uppercase', marginBottom: 12,
+        }}>
           Reading summary
         </Text>
-        <Text style={{ fontSize: 24, fontWeight: '800', color: '#231f1b', letterSpacing: -0.6 }}>
-          {label}
-        </Text>
+
+        {/* State-based hero */}
+        {!loading && hasData && (
+          <>
+            <Text style={{
+              fontSize: 76,
+              fontWeight: '800',
+              color: CREAM,
+              letterSpacing: -2.5,
+              lineHeight: 76,
+            }}>
+              {wrap!.pagesRead}
+            </Text>
+            <Text style={{ fontSize: 15, color: STONE, marginTop: 10, lineHeight: 22 }}>
+              pages read in {label}
+            </Text>
+          </>
+        )}
+
+        {!loading && !hasData && (
+          <Text style={{
+            fontSize: 28,
+            fontWeight: '700',
+            color: '#3a3330',
+            letterSpacing: -0.5,
+            marginTop: 4,
+          }}>
+            {label}
+          </Text>
+        )}
       </View>
 
       {/* ── Body ── */}
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator color="#9e958d" />
+          <ActivityIndicator color={DUST} />
         </View>
 
       ) : !hasData ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
-          <Text style={{ fontSize: 15, color: '#9e958d', textAlign: 'center', lineHeight: 24 }}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 48 }}>
+          <Text style={{ fontSize: 15, color: DUST, textAlign: 'center', lineHeight: 24 }}>
             Nothing logged in {label}.
           </Text>
-          <Text style={{ fontSize: 13, color: '#c4b5a5', textAlign: 'center', lineHeight: 20, marginTop: 8 }}>
+          <Text style={{ fontSize: 13, color: FAINT, textAlign: 'center', lineHeight: 20, marginTop: 8 }}>
             Sessions will appear here once you start logging pages.
           </Text>
         </View>
@@ -158,123 +222,137 @@ export default function MonthWrapScreen() {
       ) : (
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 48 }}
+          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 56 }}
           showsVerticalScrollIndicator={false}
         >
 
-          {/* ── Hero: pages read ── */}
-          <View style={{
-            backgroundColor: '#fefcf9',
-            borderRadius: 16,
-            padding: 22,
-            marginBottom: 12,
-            shadowColor: '#231f1b',
-            shadowOpacity: 0.04,
-            shadowRadius: 8,
-            shadowOffset: { width: 0, height: 2 },
-            elevation: 1,
-          }}>
-            <Text style={{
-              fontSize: 52,
-              fontWeight: '800',
-              color: '#231f1b',
-              letterSpacing: -1.5,
-              lineHeight: 54,
-            }}>
-              {wrap!.pagesRead}
-            </Text>
-            <Text style={{ fontSize: 13, color: '#9e958d', marginTop: 4 }}>pages read</Text>
-          </View>
-
-          {/* ── Stats card ── */}
-          <View style={{
-            backgroundColor: '#fefcf9',
-            borderRadius: 16,
-            paddingHorizontal: 20,
-            paddingTop: 4,
-            paddingBottom: 4,
-            marginBottom: 12,
-            shadowColor: '#231f1b',
-            shadowOpacity: 0.04,
-            shadowRadius: 8,
-            shadowOffset: { width: 0, height: 2 },
-            elevation: 1,
-          }}>
-            <StatRow
-              label="Reading days"
-              value={wrap!.readingDays === 1 ? '1 day' : `${wrap!.readingDays} days`}
-            />
-            {wrap!.avgPagesPerReadingDay != null && (
-              <StatRow
-                label="Avg pages per day"
-                value={String(wrap!.avgPagesPerReadingDay)}
-              />
-            )}
-            {wrap!.longestSessionPages != null && wrap!.sessionCount > 1 && (
-              <StatRow
-                label="Longest session"
-                value={`${wrap!.longestSessionPages} pages`}
-              />
-            )}
-            {wrap!.longestStreakInMonth >= 2 && (
-              <StatRow
-                label="Longest streak"
-                value={`${wrap!.longestStreakInMonth} days in a row`}
-              />
-            )}
-            {wrap!.sessionCount > 1 && (
-              <StatRow
-                label="Sessions logged"
-                value={String(wrap!.sessionCount)}
-              />
-            )}
-            {wrap!.booksActive > 0 && (
-              <StatRow
-                label={wrap!.booksActive === 1 ? 'Book active' : 'Books active'}
-                value={String(wrap!.booksActive)}
-              />
-            )}
-          </View>
-
-          {/* ── Top book ── (only when multiple books active — otherwise redundant) */}
-          {wrap!.topBook && wrap!.booksActive > 1 && (
-            <View style={{
-              backgroundColor: '#fefcf9',
-              borderRadius: 16,
-              padding: 20,
-              marginBottom: 12,
-              shadowColor: '#231f1b',
-              shadowOpacity: 0.04,
-              shadowRadius: 8,
-              shadowOffset: { width: 0, height: 2 },
-              elevation: 1,
-            }}>
-              <Text style={{
-                fontSize: 10, fontWeight: '700', color: '#9e958d',
-                letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10,
-              }}>
-                Most pages this month
-              </Text>
-              <Text style={{
-                fontSize: 16, fontWeight: '700', color: '#231f1b', marginBottom: 3, lineHeight: 21,
-              }} numberOfLines={2}>
-                {wrap!.topBook.title}
-              </Text>
-              <Text style={{ fontSize: 13, color: '#6b635c' }}>{wrap!.topBook.author}</Text>
-              <Text style={{ fontSize: 12, color: '#9e958d', marginTop: 4 }}>
-                {wrap!.topBook.pagesRead} pages read this month
-              </Text>
+          {/* ── Stat chips — 2 × 2 grid ── */}
+          <View style={{ gap: 8 }}>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <StatChip label="reading days" value={String(wrap!.readingDays)} />
+              {wrap!.avgPagesPerReadingDay != null ? (
+                <StatChip label="avg pages / day" value={String(wrap!.avgPagesPerReadingDay)} />
+              ) : (
+                <View style={{ flex: 1 }} />
+              )}
             </View>
+
+            {(wrap!.longestSessionPages != null || wrap!.sessionCount > 1) && (
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {wrap!.longestSessionPages != null && wrap!.sessionCount > 1 && (
+                  <StatChip label="longest session" value={`${wrap!.longestSessionPages} pp`} />
+                )}
+                {wrap!.sessionCount > 1 && (
+                  <StatChip label="sessions" value={String(wrap!.sessionCount)} />
+                )}
+              </View>
+            )}
+          </View>
+
+          {/* ── Streak callout — only if ≥ 3 days ── */}
+          {wrap!.longestStreakInMonth >= 3 && (
+            <>
+              <Rule />
+              <View style={{
+                flexDirection: 'row',
+                backgroundColor: SAGE_BG,
+                borderRadius: 14,
+                overflow: 'hidden',
+                shadowColor: INK,
+                shadowOpacity: 0.04,
+                shadowRadius: 6,
+                shadowOffset: { width: 0, height: 1 },
+                elevation: 1,
+              }}>
+                <View style={{ width: 4, backgroundColor: SAGE }} />
+                <View style={{ padding: 18, flex: 1 }}>
+                  <Text style={{
+                    fontSize: 9, fontWeight: '700', color: SAGE,
+                    letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 7,
+                  }}>
+                    Streak
+                  </Text>
+                  <Text style={{
+                    fontSize: 24, fontWeight: '800', color: INK,
+                    letterSpacing: -0.6, lineHeight: 28,
+                  }}>
+                    {wrap!.longestStreakInMonth} days in a row
+                  </Text>
+                  <Text style={{ fontSize: 12, color: STONE, marginTop: 4 }}>
+                    Longest reading streak this month
+                  </Text>
+                </View>
+              </View>
+            </>
           )}
 
-          {/* ── See full year link ── */}
+          {/* ── Top book editorial card ── */}
+          {wrap!.topBook && wrap!.booksActive > 1 && (
+            <>
+              <Rule />
+              <View style={{
+                flexDirection: 'row',
+                backgroundColor: AMBER_BG,
+                borderRadius: 14,
+                overflow: 'hidden',
+                shadowColor: INK,
+                shadowOpacity: 0.04,
+                shadowRadius: 6,
+                shadowOffset: { width: 0, height: 1 },
+                elevation: 1,
+              }}>
+                <View style={{ width: 4, backgroundColor: AMBER }} />
+                <View style={{ padding: 18, flex: 1 }}>
+                  <Text style={{
+                    fontSize: 9, fontWeight: '700', color: AMBER,
+                    letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 8,
+                  }}>
+                    Most pages this month
+                  </Text>
+                  <Text style={{
+                    fontSize: 18, fontWeight: '700', color: INK, lineHeight: 23,
+                  }} numberOfLines={2}>
+                    {wrap!.topBook.title}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: STONE, marginTop: 3 }}>
+                    {wrap!.topBook.author}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: DUST, marginTop: 6 }}>
+                    {wrap!.topBook.pagesRead} pages read
+                  </Text>
+                </View>
+              </View>
+            </>
+          )}
+
+          {/* ── Year CTA ── */}
           <TouchableOpacity
             onPress={() => router.push({ pathname: '/wrap/year', params: { year: String(targetYear) } })}
-            style={{ alignItems: 'center', marginTop: 8 }}
+            activeOpacity={0.82}
+            style={{ marginTop: 32 }}
           >
-            <Text style={{ fontSize: 13, color: '#9e958d' }}>
-              See all of {targetYear} →
-            </Text>
+            <View style={{
+              backgroundColor: INK,
+              borderRadius: 14,
+              paddingHorizontal: 20,
+              paddingVertical: 18,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <View>
+                <Text style={{
+                  fontSize: 9, fontWeight: '700', color: '#4a4340',
+                  letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 4,
+                }}>
+                  Your year
+                </Text>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: CREAM }}>
+                  See all of {targetYear}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 18, color: '#4a4340' }}>→</Text>
+            </View>
           </TouchableOpacity>
 
         </ScrollView>
