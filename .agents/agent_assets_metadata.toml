@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "TO2j4RbcjX969hpWX3jBY"
+uri = "file://attached_assets/system-audit-2026-04.md"
+type = "text"
+title = "Readstack System Audit — April 2026"
