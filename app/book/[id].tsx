@@ -1347,8 +1347,11 @@ export default function BookDetailScreen() {
   const effectivePageCount = (selectedEdition?.pageCount) ?? pageCount;
 
   // Cover URL for the hero: prefer the selected edition's OLID-based cover
-  // only when the user has explicitly chosen an edition.
-  const editionCoverUrl = selectedEditionKey
+  // only when the user has explicitly chosen an edition AND that edition has
+  // a cover on OL (coverKey non-null).  When the selected edition has no OL
+  // cover, fall through to enrichedCoverUrl / coverUrl so the canonical art
+  // is preserved rather than showing an OL 404 → typographic fallback.
+  const editionCoverUrl = (selectedEditionKey && selectedEdition?.coverKey)
     ? `https://covers.openlibrary.org/b/olid/${selectedEditionKey}-M.jpg`
     : null;
 
@@ -1542,11 +1545,15 @@ export default function BookDetailScreen() {
             style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 4 }}
           >
             <Text style={{ fontSize: 12, color: '#9e958d' }}>
-              {[
-                displayEdition.publisher,
-                displayEdition.year,
-                displayEdition.pageCount ? `${displayEdition.pageCount} pages` : null,
-              ].filter(Boolean).join(' · ') || 'Unknown edition'}
+              {(() => {
+                const pub = displayEdition.publisher?.toLowerCase().trim();
+                const hasPublisher = !!pub && pub !== 'n/a' && pub !== 'na';
+                return [
+                  hasPublisher ? displayEdition.publisher : null,
+                  displayEdition.year,
+                  displayEdition.pageCount ? `${displayEdition.pageCount} pages` : null,
+                ].filter(Boolean).join(' · ') || 'Unknown edition';
+              })()}
             </Text>
             {editions.length > 1 && (
               <Text style={{ fontSize: 12, color: '#b5a99f', marginLeft: 4 }}>· Change edition</Text>
