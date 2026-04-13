@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { BackButton } from '../../components/BackButton';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -1410,43 +1411,122 @@ export default function BookDetailScreen() {
       keyboardShouldPersistTaps="handled"
     >
       {/* ── Hero cover ── */}
-      <View style={{ backgroundColor: '#ede9e4', alignItems: 'center', paddingTop: 80, paddingBottom: 60 }}>
-        <BackButton
-          onPress={() => safeBack()}
-          style={{
-            position: 'absolute',
-            top: 76,
-            left: 20,
-            zIndex: 10,
-            backgroundColor: 'rgba(255,255,255,0.82)',
-            borderRadius: 20,
-            padding: 5,
-          }}
-        />
-        <CoverThumb
-          url={editionCoverUrl || enrichedCoverUrl || coverUrl || null}
-          externalId={externalId || null}
-          editionKey={selectedEditionKey || null}
-          title={title || null}
-          width={122}
-          height={180}
-        />
-      </View>
+      {(() => {
+        const activeCoverUrl = editionCoverUrl || enrichedCoverUrl || coverUrl || null;
+        const isGoogleBooks = !!(activeCoverUrl && (activeCoverUrl.includes('books.google') || activeCoverUrl.includes('googleapis')));
+        const glowColor = isGoogleBooks
+          ? 'rgba(220, 232, 252, 0.72)'
+          : 'rgba(255, 238, 195, 0.68)';
+        const glowColorMid = isGoogleBooks
+          ? 'rgba(230, 240, 255, 0.30)'
+          : 'rgba(255, 245, 218, 0.28)';
 
-      <View style={{ paddingHorizontal: 24, paddingTop: 28 }}>
+        return (
+          <View style={{ overflow: 'hidden' }}>
+            {/* Base warm-to-cool gradient */}
+            <LinearGradient
+              colors={['#f4f0eb', '#eee9e2']}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={{ paddingTop: 80, paddingBottom: 68, alignItems: 'center' }}
+            >
+              {/* Subtle tonal overlay for surface depth */}
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  top: 0, left: 0, right: 0, bottom: 0,
+                  opacity: 0.045,
+                  backgroundColor: '#7c6e5a',
+                }}
+              />
+
+              {/* Simulated radial glow behind cover — outer ring */}
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  width: 260,
+                  height: 260,
+                  borderRadius: 130,
+                  backgroundColor: glowColorMid,
+                  top: '50%',
+                  left: '50%',
+                  marginTop: -130 + 10,
+                  marginLeft: -130,
+                }}
+              />
+              {/* Simulated radial glow — inner bloom */}
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  width: 160,
+                  height: 160,
+                  borderRadius: 80,
+                  backgroundColor: glowColor,
+                  top: '50%',
+                  left: '50%',
+                  marginTop: -80 + 10,
+                  marginLeft: -80,
+                }}
+              />
+
+              <BackButton
+                onPress={() => safeBack()}
+                style={{
+                  position: 'absolute',
+                  top: 76,
+                  left: 20,
+                  zIndex: 10,
+                  backgroundColor: 'rgba(255,255,255,0.82)',
+                  borderRadius: 20,
+                  padding: 5,
+                }}
+              />
+
+              <CoverThumb
+                url={activeCoverUrl}
+                externalId={externalId || null}
+                editionKey={selectedEditionKey || null}
+                title={title || null}
+                width={122}
+                height={180}
+              />
+            </LinearGradient>
+
+            {/* Bottom fade: hero bleeds into page bg */}
+            <LinearGradient
+              colors={['rgba(238,233,226,0)', '#f5f1ec']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                height: 36,
+              }}
+            />
+          </View>
+        );
+      })()}
+
+      <View style={{ paddingHorizontal: 24, paddingTop: 24 }}>
 
         {/* ── Header: title (dominant) / author (secondary) / badge (own row) ── */}
         <Text style={{
-          fontSize: 28,
+          fontSize: 27,
           fontWeight: '800',
-          color: '#231f1b',
-          letterSpacing: -0.6,
-          lineHeight: 36,
-          marginBottom: 6,
+          color: '#1e1b18',
+          letterSpacing: -0.7,
+          lineHeight: 34,
+          marginBottom: 5,
         }}>
           {title ?? '—'}
         </Text>
-        <Text style={{ fontSize: 15, color: '#78716c', lineHeight: 22, marginBottom: 8 }} numberOfLines={2}>
+        <Text style={{ fontSize: 15, color: '#6e6660', lineHeight: 22, marginBottom: 8 }} numberOfLines={2}>
           {author ?? '—'}
         </Text>
 
