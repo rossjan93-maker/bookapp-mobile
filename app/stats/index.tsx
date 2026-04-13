@@ -20,7 +20,7 @@ import {
   type MonthBreakdown,
 } from '../../lib/readingWraps';
 
-// ── Tokens ────────────────────────────────────────────────────────────────────
+// ── Design tokens ────────────────────────────────────────────────────────────
 const INK      = '#231f1b';
 const STONE    = '#6b635c';
 const DUST     = '#9e958d';
@@ -33,29 +33,159 @@ const SAGE_BG  = '#eaf1ea';
 const AMBER    = '#c4956a';
 const AMBER_BG = '#f7efe7';
 
-const MONTH_NAMES = [
-  'January','February','March','April','May','June',
-  'July','August','September','October','November','December',
-];
-const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTH_NAMES  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const MONTH_ABBREV = ['J','F','M','A','M','J','J','A','S','O','N','D'];
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
-function monthLabel(prefix: string): string {
-  const mm = parseInt(prefix.slice(5, 7), 10) - 1;
-  return MONTH_NAMES[mm] ?? prefix;
+// ── Interpretive functions (pure — derived from real session data only) ───────
+
+interface MonthCtx { monthName: string; dayOfMonth: number; daysInMonth: number; }
+
+// Returns a strong declarative headline that names the character of the month
+function deriveMonthHeadline(wrap: MonthlyWrap, ctx: MonthCtx): string {
+  const { dayOfMonth, daysInMonth, monthName } = ctx;
+  if (wrap.pagesRead === 0) return 'Ready when you are';
+
+  const progress  = dayOfMonth / daysInMonth;
+  const density   = wrap.readingDays / Math.max(dayOfMonth, 1);
+  const ppSess    = wrap.sessionCount > 0 ? wrap.pagesRead / wrap.sessionCount : 0;
+  const isBurst   = wrap.sessionCount <= 2 && ppSess >= 70;
+  const isConsist = density >= 0.38;
+  const streak    = wrap.longestStreakInMonth;
+  const topFrac   = wrap.topBook && wrap.pagesRead > 0 ? wrap.topBook.pagesRead / wrap.pagesRead : 0;
+
+  if (progress <= 0.13) {
+    if (wrap.pagesRead >= 90) return `A strong start to ${monthName}`;
+    if (streak >= 2)          return 'A good beginning';
+    return `${monthName} is just getting started`;
+  }
+  if (streak >= 5)                                  return 'A real reading streak is building';
+  if (streak >= 3 && isConsist)                     return 'Consistent reading this month';
+  if (isBurst && topFrac >= 0.85 && wrap.topBook)   return `Focused on ${wrap.topBook.title}`;
+  if (isBurst)                                      return 'Reading in concentrated sessions';
+  if (isConsist && wrap.pagesRead >= 200)           return `A strong ${monthName}`;
+  if (isConsist)                                    return 'A steady reading rhythm';
+  if (progress >= 0.5 && density < 0.14)            return 'A quieter month so far';
+  if (progress >= 0.3 && density < 0.22)            return 'Momentum is still building';
+  if (topFrac >= 0.85 && wrap.booksActive === 1)    return 'Deep in one book this month';
+  if (wrap.pagesRead >= 200 && progress >= 0.7)     return `A productive ${monthName}`;
+  return 'Your reading month is taking shape';
 }
 
-// ── Reading rhythm calendar (heat-map of days in a month) ─────────────────────
+// One-sentence interpretation of the hero number — explains the "so what"
+function deriveMonthSubline(
+  wrap: MonthlyWrap,
+  ctx: MonthCtx,
+  prevDiff: number | null,
+  prevMonthName: string,
+): string {
+  if (wrap.pagesRead === 0) return '';
+  const { dayOfMonth, daysInMonth, monthName } = ctx;
+  const topFrac  = wrap.topBook && wrap.pagesRead > 0 ? wrap.topBook.pagesRead / wrap.pagesRead : 0;
+  const progress = dayOfMonth / daysInMonth;
+
+  const cmp = prevDiff !== null
+    ? prevDiff > 10   ? ` — ${prevDiff} more than ${prevMonthName}`
+    : prevDiff < -10  ? ` — ${Math.abs(prevDiff)} fewer than ${prevMonthName}`
+    : '' : '';
+
+  if (wrap.sessionCount === 1 && wrap.topBook) {
+    return `${wrap.pagesRead} pages in one session — mostly ${wrap.topBook.title}${cmp}`;
+  }
+  if (wrap.sessionCount === 1) {
+    return `${wrap.pagesRead} pages in one session${cmp}`;
+  }
+  if (topFrac >= 0.78 && wrap.topBook && wrap.booksActive > 1) {
+    return `${wrap.topBook.pagesRead} of those pages from ${wrap.topBook.title}${cmp}`;
+  }
+  if (wrap.booksActive >= 3) {
+    return `Spread across ${wrap.booksActive} books${cmp}`;
+  }
+  if (progress <= 0.2 && wrap.pagesRead >= 60) {
+    return `Early progress for ${monthName}${cmp}`;
+  }
+  if (cmp) {
+    return `${wrap.readingDays} reading ${wrap.readingDays === 1 ? 'day' : 'days'} so far${cmp}`;
+  }
+  return `${wrap.readingDays} of ${dayOfMonth} ${dayOfMonth === 1 ? 'day' : 'days'} with sessions`;
+}
+
+// Short observation about session pattern — what the calendar shape means
+function deriveRhythmInsight(sessions: WrapSession[], wrap: MonthlyWrap, dayOfMonth: number): string | null {
+  if (sessions.length === 0 || wrap.sessionCount === 0) return null;
+
+  const ppSess   = wrap.pagesRead / wrap.sessionCount;
+  const density  = wrap.readingDays / Math.max(dayOfMonth, 1);
+  const streak   = wrap.longestStreakInMonth;
+  const dayNums  = sessions
+    .map(s => parseInt(s.session_date.slice(8, 10), 10))
+    .sort((a, b) => a - b);
+  const span     = dayNums.length > 1 ? dayNums[dayNums.length - 1] - dayNums[0] : 0;
+  const recent   = sessions.filter(s => parseInt(s.session_date.slice(8, 10), 10) > dayOfMonth - 5).length;
+  const isClustered = dayNums.length >= 2 && span <= 6;
+  const isRecent    = recent >= 2 || (recent >= 1 && dayOfMonth <= 5);
+
+  if (streak >= 4)            return 'A consecutive run is defining the rhythm';
+  if (wrap.sessionCount === 1) return 'One focused session has carried the month so far';
+  if (ppSess >= 90)            return 'Sessions have been long and focused';
+  if (ppSess >= 60 && density < 0.35) return 'Reading in concentrated, high-page bursts';
+  if (isClustered && !isRecent) return 'Reading came in a burst — then quieter';
+  if (isClustered)              return 'Reading has been coming in concentrated bursts';
+  if (density >= 0.45)          return 'Reading is spread evenly through the month';
+  if (isRecent && density < 0.3) return 'Reading has picked up in recent days';
+  if (density < 0.18 && dayOfMonth >= 8) return 'A few key sessions have anchored the month';
+  return null;
+}
+
+// Calm next-step thought — never prescriptive, no productivity guilt
+function deriveNextStep(
+  wrap: MonthlyWrap,
+  dayOfMonth: number,
+  daysInMonth: number,
+  activeStreak: number,
+): string | null {
+  if (wrap.pagesRead === 0) return null;
+  const daysLeft = daysInMonth - dayOfMonth;
+  const density  = wrap.readingDays / Math.max(dayOfMonth, 1);
+
+  if (activeStreak === 1)                return 'Read again tomorrow to start a streak';
+  if (activeStreak >= 2 && activeStreak < 5) return `${activeStreak} days in a row — keep the rhythm`;
+  if (activeStreak >= 5)                 return `${activeStreak}-day streak — you're in a real rhythm`;
+  if (daysLeft >= 14 && density < 0.18)  return 'Plenty of month left to build on this';
+  if (daysLeft >= 8 && wrap.pagesRead >= 80) return 'Good position heading into the second half';
+  if (daysLeft <= 6 && wrap.pagesRead >= 100) return 'A strong close is within reach';
+  return null;
+}
+
+// Compute current live streak from a session list
+function computeActiveStreak(sessions: WrapSession[]): number {
+  if (sessions.length === 0) return 0;
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+  const prev = new Date(today);
+  prev.setDate(today.getDate() - 1);
+  const prevStr = prev.toISOString().slice(0, 10);
+  const daySet = new Set(sessions.map(s => s.session_date));
+  if (!daySet.has(todayStr) && !daySet.has(prevStr)) return 0;
+  let streak = 0;
+  const check = new Date(daySet.has(todayStr) ? todayStr : prevStr);
+  for (let i = 0; i < 365; i++) {
+    const s = check.toISOString().slice(0, 10);
+    if (daySet.has(s)) { streak++; check.setDate(check.getDate() - 1); }
+    else break;
+  }
+  return streak;
+}
+
+// ── Reading rhythm calendar (heat-map grid of days) ───────────────────────────
 function ReadingCalendar({ sessions, monthPrefix }: { sessions: WrapSession[]; monthPrefix: string }) {
   const { width } = useWindowDimensions();
-  const contentW = width - 40;
+  const contentW = width - 72; // card has 16px padding each side, screen 20px each side
   const GAP      = 3;
   const DOT      = Math.floor((contentW - 6 * GAP) / 7);
 
   const [yr, mm] = monthPrefix.split('-').map(Number);
   const daysInMonth = new Date(yr, mm, 0).getDate();
-  const firstDow    = new Date(yr, mm - 1, 1).getDay(); // 0 = Sunday
+  const firstDow    = new Date(yr, mm - 1, 1).getDay();
 
   const pagesByDay: Record<number, number> = {};
   for (const s of sessions) {
@@ -63,10 +193,8 @@ function ReadingCalendar({ sessions, monthPrefix }: { sessions: WrapSession[]; m
     pagesByDay[day] = (pagesByDay[day] ?? 0) + s.pages_read;
   }
   const maxPages = Math.max(...Object.values(pagesByDay), 1);
-
   const totalCells = Math.ceil((firstDow + daysInMonth) / 7) * 7;
 
-  // Split into rows of 7
   const rows: Array<Array<{ idx: number; day: number; pages: number }>> = [];
   let row: Array<{ idx: number; day: number; pages: number }> = [];
   for (let i = 0; i < totalCells; i++) {
@@ -101,10 +229,10 @@ function ReadingCalendar({ sessions, monthPrefix }: { sessions: WrapSession[]; m
   );
 }
 
-// ── Monthly column chart (12 bars) ────────────────────────────────────────────
+// ── Year column chart (12 proportional bars) ─────────────────────────────────
 function YearColumns({ months, year }: { months: MonthBreakdown[]; year: number }) {
   const { width } = useWindowDimensions();
-  const availW  = width - 40;
+  const availW  = width - 72;
   const colW    = availW / 12;
   const BAR_MAX = 80;
   const peak    = Math.max(...months.map(m => m.readingDays), 1);
@@ -114,16 +242,15 @@ function YearColumns({ months, year }: { months: MonthBreakdown[]; year: number 
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: BAR_MAX }}>
         {Array.from({ length: 12 }, (_, i) => {
           const prefix = `${year}-${String(i + 1).padStart(2, '0')}`;
-          const md   = months.find(m => m.month === prefix);
-          const days = md?.readingDays ?? 0;
-          const frac = peak > 0 ? days / peak : 0;
-          const barH = days > 0 ? Math.max(4, Math.round(frac * BAR_MAX)) : 0;
-          const isPeak = md && md.readingDays === peak && peak > 0 && days > 0;
+          const md     = months.find(m => m.month === prefix);
+          const days   = md?.readingDays ?? 0;
+          const frac   = peak > 0 ? days / peak : 0;
+          const isPeak = !!(md && md.readingDays === peak && peak > 0 && days > 0);
           return (
             <View key={i} style={{ width: colW, alignItems: 'center' }}>
               <View style={{
                 width:               Math.max(6, colW - 5),
-                height:              barH || 3,
+                height:              days > 0 ? Math.max(4, Math.round(frac * BAR_MAX)) : 3,
                 backgroundColor:     SAGE,
                 borderTopLeftRadius: 3,
                 borderTopRightRadius: 3,
@@ -137,7 +264,7 @@ function YearColumns({ months, year }: { months: MonthBreakdown[]; year: number 
         {MONTH_ABBREV.map((a, i) => {
           const prefix = `${year}-${String(i + 1).padStart(2, '0')}`;
           const md     = months.find(m => m.month === prefix);
-          const isPeak = md && md.readingDays === peak && peak > 0;
+          const isPeak = !!(md && md.readingDays === peak && peak > 0);
           return (
             <View key={i} style={{ width: colW, alignItems: 'center' }}>
               <Text style={{ fontSize: 9, color: isPeak ? SAGE : FAINT, fontWeight: isPeak ? '700' : '400' }}>
@@ -151,8 +278,8 @@ function YearColumns({ months, year }: { months: MonthBreakdown[]; year: number 
   );
 }
 
-// ── Stat quad — 4 small figures in a row ─────────────────────────────────────
-function StatQuad({ items }: { items: Array<{ value: string; label: string }> }) {
+// ── Stat row — 2–3 figures in a horizontal card ───────────────────────────────
+function StatRow({ items }: { items: Array<{ value: string; label: string }> }) {
   return (
     <View style={{
       flexDirection: 'row',
@@ -168,12 +295,13 @@ function StatQuad({ items }: { items: Array<{ value: string; label: string }> })
       {items.map((it, i) => (
         <View key={i} style={{
           flex:            1,
-          padding:         14,
+          paddingVertical: 14,
+          paddingHorizontal: 12,
           borderLeftWidth: i > 0 ? 1 : 0,
           borderLeftColor: BORDER,
           alignItems:      'center',
         }}>
-          <Text style={{ fontSize: 20, fontWeight: '800', color: INK, letterSpacing: -0.5, lineHeight: 24 }}>
+          <Text style={{ fontSize: 22, fontWeight: '800', color: INK, letterSpacing: -0.5, lineHeight: 26 }}>
             {it.value}
           </Text>
           <Text style={{ fontSize: 10, color: DUST, marginTop: 3, textAlign: 'center', lineHeight: 13 }}>
@@ -187,14 +315,14 @@ function StatQuad({ items }: { items: Array<{ value: string; label: string }> })
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 export default function StatsScreen() {
-  const insets       = useSafeAreaInsets();
-  const router       = useRouter();
+  const insets        = useSafeAreaInsets();
+  const router        = useRouter();
   const [tab, setTab] = useState<'month' | 'year'>('month');
 
   const today  = useMemo(() => new Date(), []);
   const year   = today.getFullYear();
-  const month  = today.getMonth() + 1; // 1-based
-  const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
+  const month  = today.getMonth() + 1;
+  const monthPrefix   = `${year}-${String(month).padStart(2, '0')}`;
   const prevMonthNum  = month === 1 ? 12 : month - 1;
   const prevMonthYear = month === 1 ? year - 1 : year;
   const prevPrefix    = `${prevMonthYear}-${String(prevMonthNum).padStart(2, '0')}`;
@@ -212,7 +340,6 @@ export default function StatsScreen() {
       const { data: { user } } = await supabase!.auth.getUser();
       if (!user) return;
 
-      // Sessions: previous month → end of year (covers comparison + full year)
       const fetchFrom = `${prevMonthYear}-${String(prevMonthNum).padStart(2, '0')}-01`;
       const { data: sessRows } = await supabase!
         .from('reading_sessions')
@@ -230,7 +357,6 @@ export default function StatsScreen() {
       }));
       setAllSessions(sessions);
 
-      // Books finished count for the year
       const { count } = await supabase!
         .from('user_books')
         .select('*', { count: 'exact', head: true })
@@ -241,7 +367,6 @@ export default function StatsScreen() {
         .lte('finished_at', `${year}-12-31`);
       setBooksFinished(count ?? 0);
 
-      // Book titles for top-book callout
       const bookIds = [...new Set(sessions.map(s => s.user_book_id).filter(Boolean))] as string[];
       if (bookIds.length > 0) {
         const { data: ubRows } = await supabase!
@@ -260,7 +385,6 @@ export default function StatsScreen() {
     }
   }
 
-  // Derive wraps from fetched sessions
   const curMonthSessions  = allSessions.filter(s => s.session_date.startsWith(monthPrefix));
   const prevMonthSessions = allSessions.filter(s => s.session_date.startsWith(prevPrefix));
   const yearSessions      = allSessions.filter(s => s.session_date.startsWith(String(year)));
@@ -282,6 +406,9 @@ export default function StatsScreen() {
   const prevDiff  = monthWrap.pagesRead > 0 && prevMonthWrap.pagesRead > 0
     ? monthWrap.pagesRead - prevMonthWrap.pagesRead
     : null;
+
+  // Current live streak from month sessions
+  const activeStreak = computeActiveStreak(curMonthSessions);
 
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
@@ -307,7 +434,7 @@ export default function StatsScreen() {
         </Text>
       </View>
 
-      {/* ── Tab bar ── */}
+      {/* ── Tab switcher ── */}
       <View style={{
         flexDirection:    'row',
         paddingHorizontal: 20,
@@ -332,18 +459,13 @@ export default function StatsScreen() {
               elevation:       tab === t ? 0 : 1,
             }}
           >
-            <Text style={{
-              fontSize:   13,
-              fontWeight: '600',
-              color:      tab === t ? CREAM : STONE,
-            }}>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: tab === t ? CREAM : STONE }}>
               {t === 'month' ? monthName : String(year)}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* ── Body ── */}
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator color={DUST} />
@@ -362,7 +484,10 @@ export default function StatsScreen() {
                 monthPrefix={monthPrefix}
                 monthName={monthName}
                 year={year}
+                dayOfMonth={today.getDate()}
+                daysInMonth={new Date(year, month, 0).getDate()}
                 curMonthSessions={curMonthSessions}
+                activeStreak={activeStreak}
               />
             : <YearView
                 wrap={yearWrap}
@@ -378,19 +503,23 @@ export default function StatsScreen() {
 
 // ── Month view ────────────────────────────────────────────────────────────────
 function MonthView({
-  wrap, prevDiff, prevMonthName, monthPrefix, monthName, year, curMonthSessions,
+  wrap, prevDiff, prevMonthName,
+  monthPrefix, monthName, year,
+  dayOfMonth, daysInMonth,
+  curMonthSessions, activeStreak,
 }: {
-  wrap:              MonthlyWrap;
-  prevDiff:          number | null;
-  prevMonthName:     string;
-  monthPrefix:       string;
-  monthName:         string;
-  year:              number;
-  curMonthSessions:  WrapSession[];
+  wrap:             MonthlyWrap;
+  prevDiff:         number | null;
+  prevMonthName:    string;
+  monthPrefix:      string;
+  monthName:        string;
+  year:             number;
+  dayOfMonth:       number;
+  daysInMonth:      number;
+  curMonthSessions: WrapSession[];
+  activeStreak:     number;
 }) {
-  const hasData = wrap.pagesRead > 0;
-
-  if (!hasData) {
+  if (wrap.pagesRead === 0) {
     return (
       <View style={{ alignItems: 'center', paddingTop: 48 }}>
         <Text style={{ fontSize: 15, color: DUST, textAlign: 'center', lineHeight: 24 }}>
@@ -403,60 +532,74 @@ function MonthView({
     );
   }
 
-  // Stat quad items
-  const quadItems: Array<{ value: string; label: string }> = [];
-  quadItems.push({ value: String(wrap.readingDays), label: 'days read' });
-  if (wrap.avgPagesPerReadingDay != null) {
-    quadItems.push({ value: String(wrap.avgPagesPerReadingDay), label: 'avg pp/day' });
+  const ctx: MonthCtx = { monthName, dayOfMonth, daysInMonth };
+
+  // Interpretive layer — all derived from real data
+  const headline      = deriveMonthHeadline(wrap, ctx);
+  const subline       = deriveMonthSubline(wrap, ctx, prevDiff, prevMonthName);
+  const rhythmInsight = deriveRhythmInsight(curMonthSessions, wrap, dayOfMonth);
+  const nextStep      = deriveNextStep(wrap, dayOfMonth, daysInMonth, activeStreak);
+
+  // Stat items: only show figures that earn their place
+  const statItems: Array<{ value: string; label: string }> = [];
+  statItems.push({ value: String(wrap.readingDays), label: 'days read' });
+  // Avg pages: only meaningful with ≥ 2 sessions
+  if (wrap.avgPagesPerReadingDay != null && wrap.sessionCount >= 2) {
+    statItems.push({ value: String(wrap.avgPagesPerReadingDay), label: 'avg pp/day' });
   }
-  if (wrap.longestSessionPages != null && wrap.sessionCount > 1) {
-    quadItems.push({ value: String(wrap.longestSessionPages), label: 'best session' });
+  // Streak: only when it says something (≥ 3 days)
+  if (wrap.longestStreakInMonth >= 3) {
+    statItems.push({ value: `${wrap.longestStreakInMonth}d`, label: 'streak' });
   }
-  if (wrap.longestStreakInMonth >= 2) {
-    quadItems.push({ value: `${wrap.longestStreakInMonth}d`, label: 'streak' });
+  // Best session: only when notably large (≥ 50pp) and there's more than one
+  if (wrap.longestSessionPages != null && wrap.longestSessionPages >= 50 && wrap.sessionCount >= 2) {
+    statItems.push({ value: `${wrap.longestSessionPages}`, label: 'best session' });
   }
-  // Cap at 4
-  const quad = quadItems.slice(0, 4);
+  const visibleStats = statItems.slice(0, 3); // cap at 3
+
+  // Top book: show when multiple books OR when single dominant book is significant
+  const showTopBook = wrap.topBook && (
+    wrap.booksActive > 1 ||
+    (wrap.booksActive === 1 && wrap.topBook.pagesRead >= 40)
+  );
+  const topBookEyebrow = wrap.booksActive > 1 ? 'Most read this month' : 'Reading this month';
 
   return (
-    <View style={{ gap: 0 }}>
+    <View>
 
-      {/* ── Hero row ── */}
-      <View style={{ marginBottom: 20 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-          <View>
-            <Text style={{ fontSize: 9, fontWeight: '700', color: DUST, letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 6 }}>
-              {monthName} {year}
-            </Text>
-            <Text style={{ fontSize: 56, fontWeight: '800', color: INK, letterSpacing: -2, lineHeight: 56 }}>
-              {wrap.pagesRead}
-            </Text>
-            <Text style={{ fontSize: 14, color: STONE, marginTop: 5 }}>pages read</Text>
-          </View>
+      {/* ── Headline + Hero ── */}
+      <View style={{ marginBottom: 24 }}>
+        <Text style={{
+          fontSize:      20,
+          fontWeight:    '700',
+          color:         INK,
+          letterSpacing: -0.3,
+          lineHeight:    26,
+          marginBottom:  16,
+        }}>
+          {headline}
+        </Text>
 
-          {/* Comparison badge */}
-          {prevDiff !== null && (
-            <View style={{
-              backgroundColor: prevDiff >= 0 ? SAGE_BG : '#fff7ed',
-              borderRadius:    10,
-              paddingHorizontal: 10,
-              paddingVertical:   6,
-              alignItems:      'center',
-              marginBottom:    6,
-            }}>
-              <Text style={{
-                fontSize:   13,
-                fontWeight: '700',
-                color:      prevDiff >= 0 ? SAGE : AMBER,
-              }}>
-                {prevDiff >= 0 ? '+' : ''}{prevDiff}
-              </Text>
-              <Text style={{ fontSize: 9, color: DUST, marginTop: 2 }}>
-                vs {prevMonthName}
-              </Text>
-            </View>
-          )}
-        </View>
+        <Text style={{
+          fontSize:      52,
+          fontWeight:    '800',
+          color:         INK,
+          letterSpacing: -2,
+          lineHeight:    52,
+        }}>
+          {wrap.pagesRead}
+        </Text>
+
+        {subline.length > 0 && (
+          <Text style={{
+            fontSize:   14,
+            color:      STONE,
+            marginTop:  8,
+            lineHeight: 20,
+          }}>
+            {subline}
+          </Text>
+        )}
       </View>
 
       {/* ── Reading rhythm calendar ── */}
@@ -464,49 +607,61 @@ function MonthView({
         backgroundColor: CREAM,
         borderRadius:    14,
         padding:         16,
-        marginBottom:    12,
+        marginBottom:    rhythmInsight ? 0 : 16,
         shadowColor:     INK,
         shadowOpacity:   0.04,
         shadowRadius:    6,
         shadowOffset:    { width: 0, height: 1 },
         elevation:       1,
+        borderBottomLeftRadius:  rhythmInsight ? 0 : 14,
+        borderBottomRightRadius: rhythmInsight ? 0 : 14,
       }}>
-        <Text style={{
-          fontSize: 9, fontWeight: '700', color: DUST,
-          letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 12,
-        }}>
-          Reading rhythm
-        </Text>
         <ReadingCalendar sessions={curMonthSessions} monthPrefix={monthPrefix} />
       </View>
 
-      {/* ── Stat quad ── */}
-      {quad.length > 0 && (
-        <View style={{ marginBottom: 12 }}>
-          <StatQuad items={quad} />
+      {/* Rhythm insight sits just below the calendar, connected visually */}
+      {rhythmInsight && (
+        <View style={{
+          backgroundColor: CREAM,
+          borderTopWidth:  1,
+          borderTopColor:  BORDER,
+          paddingHorizontal: 16,
+          paddingVertical:   11,
+          borderBottomLeftRadius:  14,
+          borderBottomRightRadius: 14,
+          marginBottom:    16,
+          shadowColor:     INK,
+          shadowOpacity:   0.04,
+          shadowRadius:    6,
+          shadowOffset:    { width: 0, height: 1 },
+          elevation:       1,
+        }}>
+          <Text style={{ fontSize: 12, color: STONE, lineHeight: 18, fontStyle: 'italic' }}>
+            {rhythmInsight}
+          </Text>
         </View>
       )}
 
-      {/* ── Sessions count note (when single session) ── */}
-      {wrap.sessionCount === 1 && (
-        <Text style={{ fontSize: 12, color: FAINT, textAlign: 'center', marginBottom: 12 }}>
-          1 session logged this month
-        </Text>
+      {/* ── Stat row ── */}
+      {visibleStats.length > 0 && (
+        <View style={{ marginBottom: 16 }}>
+          <StatRow items={visibleStats} />
+        </View>
       )}
 
-      {/* ── Top book callout ── */}
-      {wrap.topBook && wrap.booksActive > 1 && (
+      {/* ── Top book ── */}
+      {showTopBook && wrap.topBook && (
         <View style={{
-          flexDirection:    'row',
-          backgroundColor:  AMBER_BG,
-          borderRadius:     14,
-          overflow:         'hidden',
-          marginBottom:     12,
-          shadowColor:      INK,
-          shadowOpacity:    0.04,
-          shadowRadius:     6,
-          shadowOffset:     { width: 0, height: 1 },
-          elevation:        1,
+          flexDirection:   'row',
+          backgroundColor: AMBER_BG,
+          borderRadius:    14,
+          overflow:        'hidden',
+          marginBottom:    16,
+          shadowColor:     INK,
+          shadowOpacity:   0.04,
+          shadowRadius:    6,
+          shadowOffset:    { width: 0, height: 1 },
+          elevation:       1,
         }}>
           <View style={{ width: 4, backgroundColor: AMBER }} />
           <View style={{ padding: 16, flex: 1 }}>
@@ -514,14 +669,34 @@ function MonthView({
               fontSize: 9, fontWeight: '700', color: AMBER,
               letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 7,
             }}>
-              Most read this month
+              {topBookEyebrow}
             </Text>
             <Text style={{ fontSize: 16, fontWeight: '700', color: INK, lineHeight: 21 }} numberOfLines={2}>
               {wrap.topBook.title}
             </Text>
             <Text style={{ fontSize: 12, color: STONE, marginTop: 2 }}>{wrap.topBook.author}</Text>
-            <Text style={{ fontSize: 11, color: DUST, marginTop: 5 }}>{wrap.topBook.pagesRead} pages this month</Text>
+            <Text style={{ fontSize: 11, color: DUST, marginTop: 5 }}>
+              {wrap.topBook.pagesRead} pages this month
+            </Text>
           </View>
+        </View>
+      )}
+
+      {/* ── Next step — calm, not prescriptive ── */}
+      {nextStep && (
+        <View style={{
+          paddingTop:   16,
+          borderTopWidth: 1,
+          borderTopColor: BORDER,
+        }}>
+          <Text style={{
+            fontSize:   13,
+            color:      STONE,
+            lineHeight: 20,
+            fontStyle:  'italic',
+          }}>
+            {nextStep}
+          </Text>
         </View>
       )}
 
@@ -537,9 +712,7 @@ function YearView({
   year:          number;
   booksFinished: number;
 }) {
-  const hasData = booksFinished > 0 || wrap.pagesRead > 0;
-
-  if (!hasData) {
+  if (booksFinished === 0 && wrap.pagesRead === 0) {
     return (
       <View style={{ alignItems: 'center', paddingTop: 48 }}>
         <Text style={{ fontSize: 15, color: DUST, textAlign: 'center', lineHeight: 24 }}>
@@ -549,36 +722,40 @@ function YearView({
     );
   }
 
-  const quadItems: Array<{ value: string; label: string }> = [];
-  if (wrap.readingDays > 0) quadItems.push({ value: String(wrap.readingDays), label: 'days read' });
-  if (wrap.avgPagesPerReadingDay != null) quadItems.push({ value: String(wrap.avgPagesPerReadingDay), label: 'avg pp/day' });
-  if (wrap.longestStreak >= 2) quadItems.push({ value: `${wrap.longestStreak}d`, label: 'streak' });
-  if (wrap.pagesRead > 0) quadItems.push({ value: wrap.pagesRead.toLocaleString(), label: 'pages' });
-  const quad = quadItems.slice(0, 4);
+  // Year interpretive subline
+  const activeMonths = wrap.monthlyBreakdown.length;
+  const yearSubline = activeMonths >= 2
+    ? `Active reading in ${activeMonths} ${activeMonths === 1 ? 'month' : 'months'} of the year`
+    : wrap.pagesRead > 0
+      ? `${wrap.pagesRead.toLocaleString()} pages · ${wrap.readingDays} reading ${wrap.readingDays === 1 ? 'day' : 'days'}`
+      : '';
+
+  const statItems: Array<{ value: string; label: string }> = [];
+  if (wrap.readingDays > 0)            statItems.push({ value: String(wrap.readingDays), label: 'days read' });
+  if (wrap.avgPagesPerReadingDay != null) statItems.push({ value: String(wrap.avgPagesPerReadingDay), label: 'avg pp/day' });
+  if (wrap.longestStreak >= 3)         statItems.push({ value: `${wrap.longestStreak}d`, label: 'streak' });
+  const visibleStats = statItems.slice(0, 3);
 
   return (
-    <View style={{ gap: 0 }}>
+    <View>
 
       {/* ── Hero ── */}
-      <View style={{ marginBottom: 20 }}>
+      <View style={{ marginBottom: 24 }}>
         <Text style={{
           fontSize: 9, fontWeight: '700', color: DUST,
-          letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 6,
+          letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 12,
         }}>
           {year}
         </Text>
-        <Text style={{
-          fontSize: 56, fontWeight: '800', color: INK,
-          letterSpacing: -2, lineHeight: 56,
-        }}>
+        <Text style={{ fontSize: 52, fontWeight: '800', color: INK, letterSpacing: -2, lineHeight: 52 }}>
           {booksFinished}
         </Text>
-        <Text style={{ fontSize: 14, color: STONE, marginTop: 5 }}>
+        <Text style={{ fontSize: 14, color: STONE, marginTop: 8 }}>
           {booksFinished === 1 ? 'book finished' : 'books finished'}
         </Text>
-        {wrap.pagesRead > 0 && (
-          <Text style={{ fontSize: 12, color: DUST, marginTop: 6 }}>
-            {wrap.pagesRead.toLocaleString()} pages · {wrap.readingDays} reading {wrap.readingDays === 1 ? 'day' : 'days'}
+        {yearSubline.length > 0 && (
+          <Text style={{ fontSize: 13, color: DUST, marginTop: 6, lineHeight: 19 }}>
+            {yearSubline}
           </Text>
         )}
       </View>
@@ -589,7 +766,7 @@ function YearView({
           backgroundColor: CREAM,
           borderRadius:    14,
           padding:         16,
-          marginBottom:    12,
+          marginBottom:    16,
           shadowColor:     INK,
           shadowOpacity:   0.04,
           shadowRadius:    6,
@@ -606,10 +783,10 @@ function YearView({
         </View>
       )}
 
-      {/* ── Stat quad ── */}
-      {quad.length > 0 && (
-        <View style={{ marginBottom: 12 }}>
-          <StatQuad items={quad} />
+      {/* ── Stats ── */}
+      {visibleStats.length > 0 && (
+        <View style={{ marginBottom: 16 }}>
+          <StatRow items={visibleStats} />
         </View>
       )}
 

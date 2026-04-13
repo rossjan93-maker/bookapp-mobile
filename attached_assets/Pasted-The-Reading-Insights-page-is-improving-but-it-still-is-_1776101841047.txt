@@ -1,0 +1,98 @@
+The Reading Insights page is improving, but it still is not impactful enough.
+
+Right now it is mostly describing what happened:
+- pages read
+- reading days
+- a rhythm chart
+- a few stats
+
+That is not enough.
+
+I want this page to move from raw analytics into interpretation, reflection, and gentle guidance.
+
+Core goal
+Make the Reading Insights page answer a bigger question than “what happened?”
+It should help the user feel things like:
+- I’m building momentum
+- I understand my reading habits
+- I’m doing better than I thought
+- this app understands me as a reader
+- I know what to do next
+
+New direction
+Shift the page from “stat dashboard” toward “interpreted reading intelligence.”
+
+What I want changed
+1. Add a strong interpretive headline at the top of the month view
+Examples of the kind of thing I mean:
+- A strong start to April
+- Reading is light, but momentum is building
+- One deep session shaped your month
+- Your rhythm is still forming
+Do not hardcode these exact lines. Generate them from real data and the state of the month.
+
+2. Add a short interpretive subline beneath the hero metric
+This should explain what the month currently means, not just restate the number.
+Examples:
+- 100 pages across 1 reading day, mostly driven by The Two Towers
+- Your reading month is early, but you’ve already made meaningful progress
+- Most of this month’s momentum is coming from one focused session
+
+3. Make the rhythm chart say something
+The chart is currently the strongest visual element, but it still feels descriptive instead of insightful.
+I want a short insight paired with or just below it, such as:
+- You tend to read in concentrated bursts
+- Reading has been light but consistent
+- Your pace usually picks up later in the month
+- This month is being shaped by a few focused sessions
+The insight should be generated from real session behavior, not random flavor text.
+
+4. Add one calm, useful next-step prompt
+Not productivity-guilt. Not “read X pages today.”
+Something softer and more helpful, for example:
+- Another reading day would start a streak
+- At this pace, you could finish The Two Towers by Apr 19
+- You’ve made strong progress on one book — now is a good time to keep momentum
+- Trends are still forming this early in the month
+This should feel like quiet guidance, not pressure.
+
+5. Tie insights back to reader identity where appropriate
+When the data supports it, the page should help the user understand what kind of reader they are being this month.
+Examples:
+- You’re reading in focused, high-page sessions
+- This month is being shaped by one deep read
+- Your reading style is steady rather than frequent
+Again: no hardcoded lines. Generate from real data.
+
+6. Reduce equal-weight stat clutter
+Do not keep adding more metrics just because the data exists.
+Every visible stat or sentence must earn its place by changing meaning, not just adding information.
+If needed, simplify the stat area and give more room to the interpretive layer.
+
+7. Preserve the product tone
+This should feel:
+- reflective
+- calm
+- premium
+- gently encouraging
+- literary/editorial
+
+It should not feel:
+- like a productivity app
+- like a dashboard
+- like a fitness tracker
+- like homework
+- fake-celebratory
+
+Scope
+Focus on the month view first.
+Only improve the year view if the logic naturally carries over cleanly.
+Do not overbuild a giant narrative engine. Keep the logic understandable and grounded in the actual data model we already have.
+
+What I want back
+1. exact files changed
+2. what interpretive logic or insight-generation rules were added
+3. before/after examples using real month states
+4. screenshots or visual proof
+5. what you intentionally simplified or removed
+6. what you would improve next if we keep pushing this page
