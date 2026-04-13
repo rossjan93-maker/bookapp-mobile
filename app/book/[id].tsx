@@ -21,10 +21,10 @@ import { getSeriesCatalog, getSagaForSeries, getAllSagaCatalog, findSeriesForBoo
 import { triggerRecPrewarm } from '../../lib/recPrewarm';
 import { computeDatePacing, computePagePacing, estimatePaceFinish, formatLastUpdated, shortDate, computeBookPace, computeUserAvgPace } from '../../lib/pacing';
 import { fetchGoogleBooksMetadata } from '../../lib/googleBooks';
-import { fetchOLMeta, searchOLWork, isOLId } from '../../lib/openLibrary';
-import type { OLMeta } from '../../lib/openLibrary';
+import { fetchOLMeta, fetchEditions, searchOLWork, isOLId } from '../../lib/openLibrary';
+import type { OLMeta, OLEdition } from '../../lib/openLibrary';
 import { deriveContentWarnings, isCoveragePartial } from '../../lib/contentWarnings';
-import { transitionStatus, editUserBook, softDeleteBook, restoreSnapshot, saveCurrentPage } from '../../lib/userBookActions';
+import { transitionStatus, editUserBook, softDeleteBook, restoreSnapshot, saveCurrentPage, setEditionKey as persistEditionKey } from '../../lib/userBookActions';
 import type { UserBookStatus, BookSnapshot, FinishedDateInput, StartedDateInput } from '../../lib/userBookActions';
 import { useUndoBar } from '../../lib/useUndoBar';
 import { invalidateBookDataCaches } from '../../lib/tabCache';
@@ -253,6 +253,19 @@ export default function BookDetailScreen() {
   const [savingPageCount, setSavingPageCount] = useState(false);
   const [pageCountError, setPageCountError] = useState<string | null>(null);
 
+  // Edition awareness
+  // selectedEditionKey — the OL edition ID the user has explicitly chosen (from user_books.edition_key)
+  // editions — candidate editions fetched from OL for the edition picker
+  // showEditionPicker — controls the edition picker bottom sheet
+  // savingEdition — true while persisting an edition choice
+  const [selectedEditionKey, setSelectedEditionKey] = useState<string | null>(null);
+  const [editions, setEditions]                     = useState<OLEdition[]>([]);
+  const [showEditionPicker, setShowEditionPicker]   = useState(false);
+  const [savingEdition, setSavingEdition]           = useState(false);
+  // pendingEditionKey tracks which edition row is actively being saved so the
+  // loading spinner appears on the tapped row rather than the old selection.
+  const [pendingEditionKey, setPendingEditionKey]   = useState<string | null>(null);
+
   // Edit-history modal state
   const [showEditModal, setShowEditModal] = useState(false);
   const [editRating, setEditRating]       = useState<number | null>(null);
@@ -347,15 +360,42 @@ export default function BookDetailScreen() {
       if (!user) return;
       if (!userId) setUserId(user.id);
 
-      const { data } = await supabase
+      // Select with edition_key; if the column doesn't exist yet (migration
+      // not yet applied) fall back to a query without it.
+      let data: Record<string, unknown> | null = null;
+      const { data: d1, error: e1 } = await supabase
         .from('user_books')
-        .select('id, rating, finished_at, review_body, private_note')
+        .select('id, rating, finished_at, review_body, private_note, edition_key')
         .eq('user_id', user.id)
         .eq('book_id', bookId!)
         .maybeSingle();
+      if (!e1) {
+        data = d1 as Record<string, unknown> | null;
+      } else {
+        // The edition_key column may not exist yet (migration pending).
+        // PostgreSQL "undefined_column" has code 42703; PostgREST surfaces it
+        // as PGRST204 or a message containing "does not exist".
+        // Retry without edition_key only for schema errors; log other causes.
+        const isSchemaError =
+          e1.code === '42703' ||
+          e1.code === 'PGRST204' ||
+          (typeof e1.message === 'string' && e1.message.includes('does not exist'));
+        if (!isSchemaError) {
+          console.warn('[BOOK_DETAIL] user_books select failed unexpectedly:', e1.code, e1.message);
+        }
+        const { data: d2 } = await supabase
+          .from('user_books')
+          .select('id, rating, finished_at, review_body, private_note')
+          .eq('user_id', user.id)
+          .eq('book_id', bookId!)
+          .maybeSingle();
+        data = d2 as Record<string, unknown> | null;
+      }
 
       if (data) {
         if (data.id && !userBookId) setUserBookId(data.id as string);
+        // Restore persisted edition choice
+        if (data.edition_key) setSelectedEditionKey(data.edition_key as string);
         const h = {
           rating:      (data.rating      as number | null) ?? null,
           finishedAt:  (data.finished_at as string | null) ?? null,
@@ -759,6 +799,59 @@ export default function BookDetailScreen() {
     });
     return () => { cancelled = true; };
   }, [userId]);  // eslint-disable-line react-hooks/exhaustive-deps — userId is the only gating signal
+
+  // ── Edition candidates fetch ───────────────────────────────────────────────
+  // Fires once after mount when an OL works ID is available (either from the
+  // route param or from the DB).  Populates the editions array for the picker.
+  // Results are cached per work in lib/openLibrary so revisits are instant.
+  useEffect(() => {
+    if (!bookId) return;
+
+    let cancelled = false;
+
+    async function loadEditions() {
+      // Resolution priority for the OL work ID:
+      //   1. Route param externalId (cheapest — already in memory)
+      //   2. book_source_links where source='openlibrary' (authoritative per task spec)
+      //   3. books.external_id (legacy fallback)
+      let olId: string | null = isOLId(externalId) ? externalId! : null;
+
+      if (!olId && supabase) {
+        // Check book_source_links first — the task spec requires using the OL
+        // work ID stored there.  source_book_id on a source='openlibrary' row
+        // is the /works/OL... key written by the metadata pipeline.
+        const { data: linkRow } = await supabase
+          .from('book_source_links')
+          .select('source_book_id')
+          .eq('book_id', bookId!)
+          .eq('source', 'openlibrary')
+          .maybeSingle();
+        const linkId = (linkRow as { source_book_id?: string | null } | null)?.source_book_id ?? null;
+        if (isOLId(linkId)) olId = linkId;
+      }
+
+      // Fallback: books.external_id (covers books where source_link hasn't been
+      // written yet — e.g. Goodreads imports that went through the old path).
+      if (!olId && supabase) {
+        const { data: booksRow } = await supabase
+          .from('books')
+          .select('external_id')
+          .eq('id', bookId!)
+          .maybeSingle();
+        const rawId = (booksRow as { external_id?: string | null } | null)?.external_id ?? null;
+        if (isOLId(rawId)) olId = rawId;
+      }
+
+      if (!olId || cancelled) return;
+
+      const eds = await fetchEditions(olId);
+      if (!cancelled) setEditions(eds);
+    }
+
+    loadEditions();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookId]);
 
   // ── Series cover fetch ────────────────────────────────────────────────────
   // Fires once on mount when seriesName param is present.
@@ -1208,16 +1301,62 @@ export default function BookDetailScreen() {
     safeBack();
   }
 
+  // ── Edition selection handler ─────────────────────────────────────────────
+
+  async function handleSelectEdition(edition: OLEdition) {
+    if (!supabase || !userBookId || savingEdition) return;
+    setSavingEdition(true);
+    setPendingEditionKey(edition.editionKey);   // track which row shows spinner
+    const key = edition.editionKey;
+    const { error } = await persistEditionKey(supabase, { userBookId, editionKey: key });
+    if (!error) {
+      setSelectedEditionKey(key);
+      // If the chosen edition has a page count, update the local pageCount so
+      // progress % recalculates immediately.  current_page is never touched.
+      if (edition.pageCount) setPageCount(edition.pageCount);
+    }
+    setSavingEdition(false);
+    setPendingEditionKey(null);
+    setShowEditionPicker(false);
+  }
+
+  // ── Derived edition values ────────────────────────────────────────────────
+  // selectedEdition — the OLEdition for an EXPLICIT user choice only.
+  // Null when selectedEditionKey is null (no override in effect).
+  // Never defaults to editions[0] — that would silently change metadata.
+  const selectedEdition: OLEdition | null = selectedEditionKey
+    ? (editions.find(e => e.editionKey === selectedEditionKey) ?? null)
+    : null;
+
+  // displayEdition — used ONLY for the quiet edition-info line beneath author.
+  // Falls back to editions[0] (the "suggested" edition, e.g. most recent English
+  // print) so the line shows context before any explicit choice is made.
+  // This is a UX convenience: "here's what OL thinks you're reading" — not a
+  // factual claim about which edition the user actually holds.
+  // It never influences effectivePageCount, cover, or progress calculations;
+  // those always use selectedEdition (explicit choice only).
+  const displayEdition: OLEdition | null = selectedEdition ?? editions[0] ?? null;
+
+  // effectivePageCount overrides the canonical books.page_count ONLY when
+  // the user has explicitly chosen an edition (selectedEditionKey is set).
+  const effectivePageCount = (selectedEdition?.pageCount) ?? pageCount;
+
+  // Cover URL for the hero: prefer the selected edition's OLID-based cover
+  // only when the user has explicitly chosen an edition.
+  const editionCoverUrl = selectedEditionKey
+    ? `https://covers.openlibrary.org/b/olid/${selectedEditionKey}-M.jpg`
+    : null;
+
   // ── Derived pacing ────────────────────────────────────────────────────────
 
-  const hasPaging       = currentPage != null && pageCount != null && pageCount > 0;
-  const pagePacing      = hasPaging ? computePagePacing(currentPage!, pageCount!, localStartedAt, yearlyGoal) : null;
+  const hasPaging       = currentPage != null && effectivePageCount != null && effectivePageCount > 0;
+  const pagePacing      = hasPaging ? computePagePacing(currentPage!, effectivePageCount!, localStartedAt, yearlyGoal) : null;
   const datePacing      = !hasPaging ? computeDatePacing(localStartedAt, yearlyGoal) : null;
   const pacingState     = pagePacing?.state ?? null;
-  const progressPct     = hasPaging ? Math.min(100, Math.round((currentPage! / pageCount!) * 100)) : null;
+  const progressPct     = hasPaging ? Math.min(100, Math.round((currentPage! / effectivePageCount!) * 100)) : null;
 
   const paceEstimate    = hasPaging
-    ? estimatePaceFinish(currentPage!, pageCount!, localStartedAt)
+    ? estimatePaceFinish(currentPage!, effectivePageCount!, localStartedAt)
     : null;
   const daysSinceUpdate = progressUpdatedAt
     ? Math.floor((Date.now() - new Date(progressUpdatedAt).getTime()) / 86_400_000)
@@ -1284,7 +1423,14 @@ export default function BookDetailScreen() {
             padding: 5,
           }}
         />
-        <CoverThumb url={enrichedCoverUrl || coverUrl || null} externalId={externalId || null} title={title || null} width={122} height={180} />
+        <CoverThumb
+          url={editionCoverUrl || enrichedCoverUrl || coverUrl || null}
+          externalId={externalId || null}
+          editionKey={selectedEditionKey || null}
+          title={title || null}
+          width={122}
+          height={180}
+        />
       </View>
 
       <View style={{ paddingHorizontal: 24, paddingTop: 28 }}>
@@ -1300,9 +1446,31 @@ export default function BookDetailScreen() {
         }}>
           {title ?? '—'}
         </Text>
-        <Text style={{ fontSize: 15, color: '#78716c', lineHeight: 22, marginBottom: 12 }} numberOfLines={2}>
+        <Text style={{ fontSize: 15, color: '#78716c', lineHeight: 22, marginBottom: 8 }} numberOfLines={2}>
           {author ?? '—'}
         </Text>
+
+        {/* ── Edition line — quiet metadata row beneath author ── */}
+        {displayEdition && (
+          <TouchableOpacity
+            onPress={editions.length > 1 ? () => setShowEditionPicker(true) : undefined}
+            activeOpacity={editions.length > 1 ? 0.6 : 1}
+            style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 4 }}
+          >
+            <Text style={{ fontSize: 12, color: '#9e958d' }}>
+              {[
+                displayEdition.publisher,
+                displayEdition.year,
+                displayEdition.pageCount ? `${displayEdition.pageCount} pages` : null,
+              ].filter(Boolean).join(' · ') || 'Unknown edition'}
+            </Text>
+            {editions.length > 1 && (
+              <Text style={{ fontSize: 12, color: '#b5a99f', marginLeft: 4 }}>· Change edition</Text>
+            )}
+          </TouchableOpacity>
+        )}
+        {!displayEdition && <View style={{ marginBottom: 12 }} />}
+
         {badge && (
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
             <View style={{
@@ -1693,7 +1861,7 @@ export default function BookDetailScreen() {
                       }} />
                     </View>
                     <Text style={{ fontSize: 13, color: '#78716c' }}>
-                      Page {currentPage} of {pageCount} · {pagePacing?.pagesLeft ?? 0} left
+                      Page {currentPage} of {effectivePageCount} · {pagePacing?.pagesLeft ?? 0} left
                     </Text>
                   </View>
                 )}
@@ -1704,9 +1872,9 @@ export default function BookDetailScreen() {
                     Finish by {shortDate(paceEstimate.estimatedFinish)} at your current pace
                   </Text>
                 )}
-                {hasPaging && paceEstimate == null && avgUserPace != null && pageCount != null && currentPage != null && pageCount > 0 && (
+                {hasPaging && paceEstimate == null && avgUserPace != null && effectivePageCount != null && currentPage != null && effectivePageCount > 0 && (
                   <Text style={{ fontSize: 13, color: '#9e958d', marginBottom: 14 }}>
-                    Finish by {shortDate(new Date(Date.now() + ((pageCount - currentPage) / avgUserPace) * 86_400_000))} at your usual pace
+                    Finish by {shortDate(new Date(Date.now() + ((effectivePageCount - currentPage) / avgUserPace) * 86_400_000))} at your usual pace
                   </Text>
                 )}
 
@@ -1761,7 +1929,7 @@ export default function BookDetailScreen() {
                 )}
 
                 {/* ── Page count missing prompt ── */}
-                {!pageCount && !editingPageCount && (
+                {!effectivePageCount && !editingPageCount && (
                   <View style={{
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -1791,7 +1959,7 @@ export default function BookDetailScreen() {
                     </TouchableOpacity>
                   </View>
                 )}
-                {!pageCount && editingPageCount && (
+                {!effectivePageCount && editingPageCount && (
                   <View style={{ marginBottom: 14 }}>
                     <Text style={{ fontSize: 12, color: '#78716c', fontWeight: '600', marginBottom: 8 }}>
                       Total pages in this book
@@ -1922,7 +2090,7 @@ export default function BookDetailScreen() {
                 ) : (
                   <View>
                     <Text style={{ fontSize: 12, color: '#78716c', fontWeight: '600', marginBottom: 8 }}>
-                      Current page{pageCount ? ` (of ${pageCount})` : ''}
+                      Current page{effectivePageCount ? ` (of ${effectivePageCount})` : ''}
                     </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                       <TextInput
@@ -2765,6 +2933,151 @@ export default function BookDetailScreen() {
             style={{ alignItems: 'center', paddingVertical: 8 }}
           >
             <Text style={{ fontSize: 13, color: '#9e958d' }}>Skip</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+
+    {/* ── Edition picker bottom sheet ── */}
+    <Modal
+      visible={showEditionPicker}
+      transparent
+      animationType="slide"
+      onRequestClose={() => setShowEditionPicker(false)}
+    >
+      <View style={{
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        justifyContent: 'flex-end',
+      }}>
+        <View style={{
+          backgroundColor: '#fefcf9',
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
+          paddingTop: 20,
+          paddingBottom: 44,
+          maxHeight: '80%',
+        }}>
+          {/* Handle bar */}
+          <View style={{
+            width: 36,
+            height: 4,
+            backgroundColor: '#ede9e4',
+            borderRadius: 2,
+            alignSelf: 'center',
+            marginBottom: 16,
+          }} />
+
+          <Text style={{
+            fontSize: 15,
+            fontWeight: '700',
+            color: '#231f1b',
+            paddingHorizontal: 24,
+            marginBottom: 4,
+          }}>
+            Choose edition
+          </Text>
+          <Text style={{
+            fontSize: 12,
+            color: '#9e958d',
+            paddingHorizontal: 24,
+            marginBottom: 16,
+          }}>
+            Selecting an edition updates the cover and page count for this copy.
+          </Text>
+
+          <ScrollView
+            style={{ maxHeight: 420 }}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8 }}
+            showsVerticalScrollIndicator={false}
+          >
+            {editions.map(ed => {
+              const isSelected = ed.editionKey === selectedEditionKey;
+              const label = [
+                ed.publisher,
+                ed.year,
+                ed.pageCount ? `${ed.pageCount} pages` : null,
+              ].filter(Boolean).join(' · ') || 'Unknown edition';
+
+              return (
+                <TouchableOpacity
+                  key={ed.editionKey}
+                  onPress={() => handleSelectEdition(ed)}
+                  disabled={savingEdition}
+                  activeOpacity={0.7}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 12,
+                    paddingHorizontal: 12,
+                    borderRadius: 12,
+                    marginBottom: 6,
+                    backgroundColor: isSelected ? '#f0fdf4' : '#f5f1ec',
+                    borderWidth: 1.5,
+                    borderColor: isSelected ? '#bbf7d0' : 'transparent',
+                  }}
+                >
+                  {/* Cover thumbnail */}
+                  <View style={{
+                    width: 36,
+                    height: 52,
+                    borderRadius: 4,
+                    overflow: 'hidden',
+                    backgroundColor: '#ede9e4',
+                    marginRight: 12,
+                    flexShrink: 0,
+                  }}>
+                    {ed.coverKey ? (
+                      <Image
+                        source={{ uri: `https://covers.openlibrary.org/b/olid/${ed.coverKey}-S.jpg` }}
+                        style={{ width: 36, height: 52 }}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={{ width: 36, height: 52, backgroundColor: '#e6e0d9' }} />
+                    )}
+                  </View>
+
+                  {/* Edition metadata */}
+                  <View style={{ flex: 1 }}>
+                    <Text style={{
+                      fontSize: 13,
+                      fontWeight: isSelected ? '600' : '400',
+                      color: '#231f1b',
+                      marginBottom: 2,
+                    }} numberOfLines={1}>
+                      {label}
+                    </Text>
+                    {ed.isbn && (
+                      <Text style={{ fontSize: 11, color: '#9e958d' }}>ISBN {ed.isbn}</Text>
+                    )}
+                  </View>
+
+                  {/* Selection indicator */}
+                  {isSelected && !pendingEditionKey && (
+                    <Text style={{ fontSize: 14, color: '#15803d', marginLeft: 8 }}>✓</Text>
+                  )}
+                  {savingEdition && ed.editionKey === pendingEditionKey && (
+                    <ActivityIndicator size="small" color="#9e958d" style={{ marginLeft: 8 }} />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          <TouchableOpacity
+            onPress={() => setShowEditionPicker(false)}
+            style={{
+              marginHorizontal: 24,
+              marginTop: 8,
+              borderWidth: 1,
+              borderColor: '#ede9e4',
+              borderRadius: 10,
+              paddingVertical: 13,
+              alignItems: 'center',
+            }}
+          >
+            <Text style={{ fontSize: 14, color: '#78716c' }}>Cancel</Text>
           </TouchableOpacity>
         </View>
       </View>

@@ -392,6 +392,41 @@ export async function restoreBook(
 }
 
 /**
+ * Read the currently persisted edition key for a user_books row.
+ * Returns null when no edition has been selected or the column is absent.
+ */
+export async function getEditionKey(
+  supabase: SupabaseClient,
+  params: { userBookId: string },
+): Promise<{ editionKey: string | null; error: string | null }> {
+  const { userBookId } = params;
+  const { data, error } = await supabase
+    .from('user_books')
+    .select('edition_key')
+    .eq('id', userBookId)
+    .single();
+  if (error) return { editionKey: null, error: null }; // graceful — column may not exist yet
+  return { editionKey: (data as { edition_key?: string | null })?.edition_key ?? null, error: null };
+}
+
+/**
+ * Persist an Open Library edition key choice to user_books.
+ * Pass null to clear a previously chosen edition.
+ * This does not affect current_page or any other field.
+ */
+export async function setEditionKey(
+  supabase: SupabaseClient,
+  params: { userBookId: string; editionKey: string | null },
+): Promise<{ error: string | null }> {
+  const { userBookId, editionKey } = params;
+  const { error } = await supabase
+    .from('user_books')
+    .update({ edition_key: editionKey })
+    .eq('id', userBookId);
+  return { error: error ? 'Could not save edition.' : null };
+}
+
+/**
  * Save an updated current_page to user_books and append both:
  *   1. reading_progress_events row  — lightweight page snapshot (always)
  *   2. reading_sessions row          — richer session record (forward progress only)
