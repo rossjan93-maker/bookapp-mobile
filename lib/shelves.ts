@@ -10,8 +10,10 @@
  * architectural changes — the ShelfRow component and library screen both
  * derive everything dynamically from this array.
  *
+ * Active shelves: Romantasy, Long Reads, Comfort Reads.
  * Shelves that mirror an existing status chip (reading / dnf) are intentionally
  * excluded — shelves earn their space by crossing axes the chips cannot.
+ * Shelves with 0 matching books are silently dropped by ShelfRow.
  */
 
 export type BookItem = {
@@ -54,13 +56,11 @@ export function matchesSubjects(item: BookItem, keywords: string[]): boolean {
 
 export const SHELF_DEFINITIONS: ShelfDefinition[] = [
   {
-    id: 'quick_wins',
-    label: 'Quick Wins',
+    id: 'romantasy',
+    label: 'Romantasy',
     filter: item =>
-      item.status === 'want_to_read' &&
-      typeof item.book?.page_count === 'number' &&
-      item.book.page_count > 0 &&
-      item.book.page_count <= 250,
+      matchesSubjects(item, ['romance', 'romantic', 'love stories']) &&
+      matchesSubjects(item, ['fantasy', 'magic', 'supernatural', 'paranormal']),
   },
   {
     id: 'long_reads',
@@ -69,32 +69,6 @@ export const SHELF_DEFINITIONS: ShelfDefinition[] = [
       item.status === 'want_to_read' &&
       typeof item.book?.page_count === 'number' &&
       item.book.page_count >= 400,
-  },
-  {
-    id: 'romantasy',
-    label: 'Romantasy',
-    filter: item =>
-      // Romance side: covers "Romance", "Paranormal romance", "Romantic suspense",
-      // "Love stories" (OL's most common romance subject tag), "Romantic fantasy"
-      matchesSubjects(item, ['romance', 'romantic', 'love stories']) &&
-      // Fantasy side: covers "Fantasy fiction" (OL's primary fantasy tag),
-      // "Magic", "Supernatural", "Paranormal" (all common in romantasy books)
-      matchesSubjects(item, ['fantasy', 'magic', 'supernatural', 'paranormal']),
-  },
-  {
-    id: 'nonfiction_ideas',
-    label: 'Nonfiction & Ideas',
-    filter: item =>
-      matchesSubjects(item, [
-        'self-help',
-        'self help',
-        'psychology',
-        'business',
-        'personal development',
-        'productivity',
-        'nonfiction',
-        'non-fiction',
-      ]),
   },
   {
     id: 'comfort_reads',
