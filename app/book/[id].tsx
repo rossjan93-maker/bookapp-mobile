@@ -13,6 +13,7 @@ import {
 import { BackButton } from '../../components/BackButton';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { DescriptionSkeleton, ProgressCardSkeleton } from '../../components/Placeholder';
@@ -87,7 +88,20 @@ function SectionLabel({ children }: { children: string }) {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function BookDetailScreen() {
-  const router = useRouter();
+  const router     = useRouter();
+  const navigation = useNavigation();
+
+  // Safe back: pop the stack if an entry exists, otherwise fall back to the
+  // library tab.  Guards against GO_BACK being dispatched with an empty stack,
+  // which happens on direct URL nav, web hard-refresh, and deep-links.
+  function safeBack() {
+    if (navigation.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)/library');
+    }
+  }
+
   const {
     id: bookId,
     title,
@@ -1034,7 +1048,7 @@ export default function BookDetailScreen() {
       },
       // onAfterDismiss: navigate back only after the 6-second window closes
       // without undo, so the user has the full window to interact with the bar.
-      () => router.back(),
+      () => safeBack(),
     );
   }
 
@@ -1058,7 +1072,7 @@ export default function BookDetailScreen() {
     setPendingDetailRating(null);
     setDetailRating(null);
     if (userId) triggerRecPrewarm(supabase, userId);
-    router.back();
+    safeBack();
   }
 
   // ── Derived pacing ────────────────────────────────────────────────────────
@@ -1126,7 +1140,7 @@ export default function BookDetailScreen() {
       {/* ── Hero cover ── */}
       <View style={{ backgroundColor: '#ede9e4', alignItems: 'center', paddingTop: 80, paddingBottom: 60 }}>
         <BackButton
-          onPress={() => router.back()}
+          onPress={() => safeBack()}
           style={{
             position: 'absolute',
             top: 76,
@@ -2537,7 +2551,7 @@ export default function BookDetailScreen() {
       visible={pendingDetailRating !== null}
       transparent
       animationType="slide"
-      onRequestClose={() => { setPendingDetailRating(null); router.back(); }}
+      onRequestClose={() => { setPendingDetailRating(null); safeBack(); }}
     >
       <View style={{
         flex: 1,
@@ -2603,7 +2617,7 @@ export default function BookDetailScreen() {
             }
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={() => { setPendingDetailRating(null); setDetailRating(null); router.back(); }}
+            onPress={() => { setPendingDetailRating(null); setDetailRating(null); safeBack(); }}
             style={{ alignItems: 'center', paddingVertical: 8 }}
           >
             <Text style={{ fontSize: 13, color: '#9e958d' }}>Skip</Text>
