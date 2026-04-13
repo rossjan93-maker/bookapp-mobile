@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -8,7 +8,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import {
   computeMonthlyWrap,
@@ -372,7 +372,7 @@ export default function StatsScreen() {
   const [bookInfoLookup,   setBookInfoLookup]   = useState<Record<string, BookInfo>>({});
   const [lastFinishedBook, setLastFinishedBook] = useState<{ title: string; finishMonth: string } | null>(null);
 
-  useEffect(() => { load(); }, []);
+  useFocusEffect(useCallback(() => { load(); }, []));
 
   async function load() {
     setLoading(true);
