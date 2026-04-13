@@ -54,13 +54,17 @@ type PendingFeedback = { userBookId: string; bookId: string; status: 'finished' 
 
 type YearSeparator    = { __type: 'year_separator'; year: string; key: string; count: number };
 type SectionSeparator = { __type: 'section_separator'; key: string; title: string; subtitle?: string; muted?: boolean };
-type ListItem         = UserBook | YearSeparator | SectionSeparator;
+type ArchiveSeparator = { __type: 'archive_separator'; key: string; count: number; expanded: boolean };
+type ListItem         = UserBook | YearSeparator | SectionSeparator | ArchiveSeparator;
 
 function isYearSeparator(item: ListItem): item is YearSeparator {
   return (item as YearSeparator).__type === 'year_separator';
 }
 function isSectionSeparator(item: ListItem): item is SectionSeparator {
   return (item as SectionSeparator).__type === 'section_separator';
+}
+function isArchiveSeparator(item: ListItem): item is ArchiveSeparator {
+  return (item as ArchiveSeparator).__type === 'archive_separator';
 }
 
 // Build an accordion-aware list: only books whose year is in expandedYears are
@@ -191,6 +195,9 @@ export default function LibraryScreen() {
   // Accordion state for Finished+chronological mode.
   // Starts empty (all years collapsed). User taps a year row to expand/collapse it.
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
+  // Archive accordion state for the "All" view (Finished + Set Aside section).
+  // Defaults to collapsed; reset on each tab focus.
+  const [archiveExpanded, setArchiveExpanded] = useState(false);
   const [hasGoodreadsImport, setHasGoodreadsImport] = useState<boolean | null>(() => _libCache?.hasGoodreadsImport ?? null);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -425,6 +432,8 @@ export default function LibraryScreen() {
   }
 
   useFocusEffect(useCallback(() => {
+    // Reset archive accordion so each library visit starts with it collapsed.
+    setArchiveExpanded(false);
     // Skip if a fetch is already in progress (rapid tab switches can re-trigger this)
     if (_libLoading) return;
     // Skip re-fetch when cache is fresh — avoids showing stale-while-loading churn
@@ -717,9 +726,9 @@ export default function LibraryScreen() {
     });
 
     if (activeFilter === 'all') {
-      // Order: reading → want-to-read (intent) → finished (history) → set aside.
+      // Order: reading → want-to-read (intent) → archive accordion (finished + set aside).
       // Intent before history: the backlog is more actionable than completed books.
-      // Each group gets a SectionSeparator header; groups with 0 items are skipped.
+      // Finished and Set Aside are collapsed behind an Archive accordion by default.
       const readingItems: UserBook[] = [
         ...byRecent(p1.filter(i => i.status === 'reading')),
         ...byRecent(p2.filter(i => i.status === 'reading')),
@@ -736,18 +745,24 @@ export default function LibraryScreen() {
         ...p1.filter(i => i.status === 'dnf'),
         ...p2.filter(i => i.status === 'dnf'),
       ];
+      const archiveCount = finishedItems.length + dnfItems.length;
       const result: ListItem[] = [...readingItems];
       if (wtrItems.length > 0) {
         result.push({ __type: 'section_separator', key: 'sep_wtr', title: 'Want to Read' });
         result.push(...wtrItems);
       }
-      if (finishedItems.length > 0) {
-        result.push({ __type: 'section_separator', key: 'sep_finished', title: 'Finished', muted: true });
-        result.push(...finishedItems);
-      }
-      if (dnfItems.length > 0) {
-        result.push({ __type: 'section_separator', key: 'sep_set_aside', title: 'Set Aside', subtitle: "Books that didn't land right now" });
-        result.push(...dnfItems);
+      if (archiveCount > 0) {
+        result.push({ __type: 'archive_separator', key: 'sep_archive', count: archiveCount, expanded: archiveExpanded });
+        if (archiveExpanded) {
+          if (finishedItems.length > 0) {
+            result.push({ __type: 'section_separator', key: 'sep_finished', title: 'Finished', muted: true });
+            result.push(...finishedItems);
+          }
+          if (dnfItems.length > 0) {
+            result.push({ __type: 'section_separator', key: 'sep_set_aside', title: 'Set Aside', subtitle: "Books that didn't land right now" });
+            result.push(...dnfItems);
+          }
+        }
       }
       return result;
     }
@@ -1181,7 +1196,7 @@ export default function LibraryScreen() {
     ) : (
     <FlatList
       data={displayedItems}
-      keyExtractor={item => isYearSeparator(item) ? item.key : isSectionSeparator(item) ? item.key : item.id}
+      keyExtractor={item => isYearSeparator(item) ? item.key : isSectionSeparator(item) ? item.key : isArchiveSeparator(item) ? item.key : item.id}
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 0, paddingBottom: 40 }}
       refreshControl={refreshCtrl}
@@ -1204,6 +1219,37 @@ export default function LibraryScreen() {
                 </Text>
               ) : null}
             </View>
+          );
+        }
+
+        // ── Archive accordion row (All view: Finished + Set Aside) ──────────
+        if (isArchiveSeparator(item)) {
+          return (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => setArchiveExpanded(prev => !prev)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingVertical: 14,
+                marginTop: 6,
+                borderBottomWidth: 1,
+                borderBottomColor: '#ede9e4',
+              }}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '700', color: '#231f1b', letterSpacing: -0.2 }}>
+                Archive
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ fontSize: 12, color: '#9e958d' }}>
+                  {item.count} {item.count === 1 ? 'book' : 'books'}
+                </Text>
+                <Text style={{ fontSize: 14, color: '#9e958d' }}>
+                  {item.expanded ? '▾' : '›'}
+                </Text>
+              </View>
+            </TouchableOpacity>
           );
         }
 
