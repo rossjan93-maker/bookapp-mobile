@@ -105,6 +105,9 @@ The application is developed using React Native with Expo Router for navigation 
 - **Anti-Patterns:** Lists behaviors no longer allowed, such as multiple implementations of core behavior, screen-local logic, and loaded content regressing to placeholders.
 - **Priority Lens:** Establishes a hierarchy for evaluating future work: trust, continuity, user effort, and correctness without exposing machinery.
 
+## Pending Migrations (need manual apply via Supabase dashboard SQL editor)
+- `supabase/migrations/20260413000001_rec_snapshots.sql` — creates `rec_snapshots (user_id, external_id)` PK table storing only rendered explanation + evidence_tags[]. RLS: users manage own rows. Written fire-and-forget on RecCard tap; read by book detail as fallback when session cache is empty.
+
 ## External Dependencies
 - **Supabase:** Used for user authentication, PostgreSQL database, and Row Level Security.
 - **Open Library API:** Primary source for book search functionality and metadata.

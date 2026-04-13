@@ -28,6 +28,7 @@ import { useUndoBar } from '../../lib/useUndoBar';
 import { invalidateBookDataCaches } from '../../lib/tabCache';
 import { getRecContext } from '../../lib/recContext';
 import type { RecContext } from '../../lib/recContext';
+import { getRecSnapshot } from '../../lib/recSnapshot';
 import { EvidenceTagsRow } from '../../components/RecCard';
 
 // ─── Book-level enrichment cache ──────────────────────────────────────────────
@@ -166,8 +167,12 @@ export default function BookDetailScreen() {
   const [hasTastePrefs, setHasTastePrefs] = useState<boolean | null>(null);
 
   // Recommendation context — written by RecCard on tap, read here on mount.
-  // Null when user arrived from somewhere other than the rec feed.
-  const [recCtx] = useState<RecContext | null>(() =>
+  // Primary source: synchronous session cache (getRecContext) — populated on
+  // the immediate tap-through, zero latency.
+  // Fallback source: rec_snapshots DB row — populated by a useEffect once
+  // userId resolves, covers restarts / direct nav / session expiry.
+  // Null when no evidence exists for this book for this user.
+  const [recCtx, setRecCtx] = useState<RecContext | null>(() =>
     externalId ? getRecContext(externalId) : null
   );
 
@@ -589,6 +594,24 @@ export default function BookDetailScreen() {
 
     fetchPrefsExistence();
   }, []);
+
+  // ── Rec snapshot fallback — DB read when session cache is empty ───────────
+  // The session cache (getRecContext) is populated synchronously on a fresh
+  // tap-through from the rec feed.  This effect covers cases where that cache
+  // is empty: direct nav, app restart, session expiry, or second visit after
+  // kill-and-reopen.  It fires once when userId resolves.  If the DB has a
+  // persisted snapshot, setRecCtx fills in the "Why this book?" section exactly
+  // as if the user had just tapped the card.
+  useEffect(() => {
+    if (recCtx !== null) return;     // session cache hit — no DB needed
+    if (!userId || !externalId) return;
+
+    let cancelled = false;
+    getRecSnapshot(userId, externalId).then(snap => {
+      if (!cancelled && snap) setRecCtx(snap);
+    });
+    return () => { cancelled = true; };
+  }, [userId]);  // eslint-disable-line react-hooks/exhaustive-deps — userId is the only gating signal
 
   // ── Series cover fetch ────────────────────────────────────────────────────
   // Fires once on mount when seriesName param is present.

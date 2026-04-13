@@ -14,6 +14,7 @@ import type { ScoredBook } from '../lib/recommender';
 import type { DeterministicLane } from '../lib/bookTraits';
 import { getSeriesCatalog } from '../lib/seriesCatalog';
 import { setRecContext } from '../lib/recContext';
+import { persistRecSnapshot } from '../lib/recSnapshot';
 
 // Suppress unused-import warning (fitLabel / fitColor kept for future use)
 void fitLabel; void fitColor;
@@ -505,12 +506,16 @@ export function RecCard({
 
   function handleCardPress() {
     if (pendingAction) return;
-    // Cache rec evidence so book detail can render "Why this book?"
+    // Cache rec evidence so book detail can render "Why this book?".
+    // setRecContext: synchronous session cache for the immediate tap-through.
+    // persistRecSnapshot: durable DB write for restarts / direct nav (fire-and-forget).
     if (book.external_id) {
-      setRecContext(book.external_id, {
+      const recCtxPayload = {
         explanation:  collapsedReason,
         evidenceTags: buildEvidenceTags(book),
-      });
+      };
+      setRecContext(book.external_id, recCtxPayload);
+      persistRecSnapshot(book.external_id, recCtxPayload);
     }
     const sn = book._score_breakdown.series_name;
     const sp = book._score_breakdown.series_position;
