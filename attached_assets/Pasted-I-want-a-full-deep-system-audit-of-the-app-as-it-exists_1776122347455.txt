@@ -1,0 +1,146 @@
+I want a full, deep system audit of the app as it exists right now.
+
+Assume the audience is another technical/product partner who needs a holistic understanding of the product, architecture, current state, tradeoffs, and what has been built so far — without needing to rediscover everything from scratch.
+
+Your job:
+produce a detailed, organized breakdown of the app’s current status so another high-context collaborator can understand:
+- what the product is
+- how it works
+- how it is built
+- what has already been implemented
+- what is still fragile / incomplete / deferred
+- what manual steps or migrations are still required
+- what the most sensible next steps are
+
+I do not want a shallow summary. I want a serious handoff-quality system review.
+
+Please structure your response in this order:
+
+1. Product overview
+- what the app is trying to be
+- current product thesis
+- what makes it different from a generic reading tracker
+- key user journeys currently supported
+
+2. Tech stack and architecture
+- frontend stack
+- backend / database stack
+- key libraries and infrastructure choices
+- how state, navigation, and data fetching work
+- any notable architectural patterns in use
+
+3. Core data model
+For each major table / model / cache layer, explain:
+- what it stores
+- why it exists
+- what currently writes to it
+- what currently reads from it
+- whether it is source-of-truth, cache, or derived
+Include things like:
+- books
+- user_books
+- reading_sessions
+- reading_progress_events
+- book_source_links
+- rec_cache
+- rec_candidate_cache
+- rec_snapshots
+- any other important table or storage layer
+
+4. Metadata / provider architecture
+- how Open Library is used
+- how Google Books is used
+- how metadata enrichment / repair works
+- how cover selection / credibility / upgrades work
+- quota monitoring
+- provider health monitoring
+- attribution requirements
+- current limitations and caveats
+
+5. Recommendation system
+- how recommendations are generated
+- how explanation logic works
+- explanation quality system
+- evidence tags / “Why this?” logic
+- what is session-only vs durable
+- where recommendation intelligence currently surfaces in the product
+- key known limitations
+
+6. Reading progress / pacing / insights system
+- how page logging works
+- how reading_sessions are created
+- how pacing is computed
+- how streaks are computed
+- how monthly/yearly insights work
+- what the Reading Insights screen currently does
+- what is reflective vs what is analytics-driven
+- known caveats (timezone, sparse data, etc.)
+
+7. Library architecture
+- how the library is currently organized
+- current filter model
+- smart shelves / modular shelves
+- archive accordion / archive handling
+- series continuity / series badges
+- what is automatic vs what is user-controlled
+- known weaknesses or future directions
+
+8. Book detail screen
+- what currently appears there
+- edition awareness / edition selection
+- content warnings
+- “Why this book?”
+- hero backdrop / cover-area design
+- how the back navigation was hardened
+- any known caveats still remaining
+
+9. UX / design system direction
+- current visual language
+- what has been intentionally improved
+- what still feels unresolved
+- areas where product feel is strong vs weak
+- how the app currently balances calm / premium / editorial vs utility
+
+10. Migrations / manual steps / operational checklist
+List every manual action still needed from the product owner side, including:
+- migration file names
+- exact SQL if applicable
+- secrets / config requirements
+- anything that still must be applied in Supabase
+- anything that is built in code but not fully activated until a manual step happens
+
+11. Known bugs / caveats / technical debt
+- active bugs still known
+- fragile areas
+- temporary bridges / stopgaps
+- anything that is “good enough for now” but not final
+- anything that could mislead a future contributor if undocumented
+
+12. Deferred backlog / future opportunities
+Group by theme:
+- recommendation system
+- reading insights / wraps
+- library architecture
+- book detail
+- social / book clubs
+- onboarding
+- metadata/providers
+- production readiness
+
+13. Recommended next steps
+Give:
+- the 5 highest-leverage next development moves
+- why each matters
+- what should be done before what
+- what should explicitly not be touched right now
+
+Important instructions:
+- be concrete, not generic
+- reference actual files, modules, and flows where relevant
+- call out what is implemented vs partially implemented vs deferred
+- clearly distinguish source-of-truth from cache from UI-only state
+- clearly identify anything requiring manual migration/setup
+- include honest warnings where the current implementation is a bridge, workaround, or temporary design
+- do not just summarize recent tasks; synthesize the whole app state into one coherent system view
+
+The result should read like a serious internal architecture/product handoff document.
