@@ -63,7 +63,7 @@ export type MonthlyWrap = {
   /** 'YYYY-MM' — the calendar month this wrap covers. */
   month: string;
 
-  /** Total pages logged this month (all sessions with pages_read > 0). */
+  /** Net pages logged this month (forward sessions minus correction events). */
   pagesRead: number;
 
   /** Distinct calendar days with at least one valid session. */
@@ -115,35 +115,45 @@ export function computeMonthlyWrap(
   month: string,
   bookLookup?: Record<string, WrapBookRef>,
 ): MonthlyWrap {
-  const rows = allSessions.filter(
-    s => s.session_date.startsWith(month) && s.pages_read > 0,
-  );
+  const rows = allSessions.filter(s => s.session_date.startsWith(month));
 
-  const pagesRead      = rows.reduce((sum, s) => sum + s.pages_read, 0);
-  const readingDaySet  = new Set(rows.map(s => s.session_date));
+  const pagesRead = rows.reduce((sum, s) => sum + s.pages_read, 0);
+
+  // Reading days: only count dates where net pages > 0 (corrections may zero out a day)
+  const netPagesByDate: Record<string, number> = {};
+  for (const r of rows) {
+    netPagesByDate[r.session_date] = (netPagesByDate[r.session_date] ?? 0) + r.pages_read;
+  }
+  const readingDates   = Object.entries(netPagesByDate).filter(([, net]) => net > 0).map(([d]) => d);
+  const readingDaySet  = new Set(readingDates);
   const readingDays    = readingDaySet.size;
-  const sessionCount   = rows.length;
+
+  // Session count: only forward (positive) sessions are meaningful to the user
+  const posRows      = rows.filter(r => r.pages_read > 0);
+  const sessionCount = posRows.length;
 
   const avgPagesPerReadingDay = readingDays > 0
     ? Math.round(pagesRead / readingDays)
     : null;
 
-  const longestSessionPages = rows.length > 0
-    ? Math.max(...rows.map(r => r.pages_read))
+  const longestSessionPages = posRows.length > 0
+    ? Math.max(...posRows.map(r => r.pages_read))
     : null;
 
-  // ── Per-book aggregations ───────────────────────────────────────────────────
+  // ── Per-book aggregations (net pages per book — resets cancel out) ──────────
   const pagesByBook: Record<string, number> = {};
   for (const r of rows) {
     if (r.user_book_id) {
       pagesByBook[r.user_book_id] = (pagesByBook[r.user_book_id] ?? 0) + r.pages_read;
     }
   }
-  const booksActive = Object.keys(pagesByBook).length;
+  // Only count books with a positive net contribution
+  const netPositiveBooks = Object.entries(pagesByBook).filter(([, net]) => net > 0);
+  const booksActive = netPositiveBooks.length;
 
   let topBook: MonthlyWrap['topBook'] = null;
   if (bookLookup && booksActive > 0) {
-    const topEntry = Object.entries(pagesByBook).sort(([, a], [, b]) => b - a)[0];
+    const topEntry = netPositiveBooks.sort(([, a], [, b]) => b - a)[0];
     if (topEntry) {
       const [topId, topPages] = topEntry;
       const ref = bookLookup[topId];
@@ -235,31 +245,38 @@ export function computeYearlyWrap(
   _bookLookup?: Record<string, WrapBookRef>,
 ): YearlyWrap {
   const yearPrefix = String(year);
-  const yearRows   = allSessions.filter(
-    s => s.session_date.startsWith(yearPrefix) && s.pages_read > 0,
-  );
+  const yearRows   = allSessions.filter(s => s.session_date.startsWith(yearPrefix));
 
   // ── Totals ─────────────────────────────────────────────────────────────────
-  const pagesRead    = yearRows.reduce((sum, s) => sum + s.pages_read, 0);
-  const allDates     = [...new Set(yearRows.map(s => s.session_date))].sort();
-  const readingDays  = allDates.length;
-  const sessionCount = yearRows.length;
+  const pagesRead = yearRows.reduce((sum, s) => sum + s.pages_read, 0);
+
+  // Reading days: only count dates where net pages > 0
+  const netPagesByDate: Record<string, number> = {};
+  for (const r of yearRows) {
+    netPagesByDate[r.session_date] = (netPagesByDate[r.session_date] ?? 0) + r.pages_read;
+  }
+  const allDates    = Object.entries(netPagesByDate).filter(([, net]) => net > 0).map(([d]) => d).sort();
+  const readingDays = allDates.length;
+
+  // Session count: only forward (positive) sessions
+  const sessionCount = yearRows.filter(r => r.pages_read > 0).length;
+
   const avgPagesPerReadingDay = readingDays > 0
     ? Math.round(pagesRead / readingDays)
     : null;
 
   // ── Monthly breakdown ──────────────────────────────────────────────────────
-  // Single-pass aggregation: accumulate totals per month prefix.
-  const monthPagesMap: Record<string, number>    = {};
-  const monthDaySetMap: Record<string, Set<string>> = {};
-  const monthSessionMap: Record<string, number>  = {};
+  // Single-pass aggregation: accumulate net totals per month prefix.
+  const monthPagesMap: Record<string, number>       = {};
+  const monthNetByDate: Record<string, Record<string, number>> = {};
+  const monthSessionMap: Record<string, number>     = {};
 
   for (const r of yearRows) {
     const m = r.session_date.slice(0, 7); // 'YYYY-MM'
-    monthPagesMap[m]    = (monthPagesMap[m] ?? 0) + r.pages_read;
-    monthSessionMap[m]  = (monthSessionMap[m] ?? 0) + 1;
-    if (!monthDaySetMap[m]) monthDaySetMap[m] = new Set();
-    monthDaySetMap[m].add(r.session_date);
+    monthPagesMap[m]   = (monthPagesMap[m] ?? 0) + r.pages_read;
+    if (r.pages_read > 0) monthSessionMap[m] = (monthSessionMap[m] ?? 0) + 1;
+    if (!monthNetByDate[m]) monthNetByDate[m] = {};
+    monthNetByDate[m][r.session_date] = (monthNetByDate[m][r.session_date] ?? 0) + r.pages_read;
   }
 
   const monthlyBreakdown: MonthBreakdown[] = Object.keys(monthPagesMap)
@@ -267,7 +284,7 @@ export function computeYearlyWrap(
     .map(m => ({
       month:        m,
       pagesRead:    monthPagesMap[m],
-      readingDays:  monthDaySetMap[m]?.size ?? 0,
+      readingDays:  Object.values(monthNetByDate[m] ?? {}).filter(net => net > 0).length,
       sessionCount: monthSessionMap[m] ?? 0,
     }));
 

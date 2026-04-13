@@ -388,7 +388,6 @@ export default function StatsScreen() {
         .eq('user_id', user.id)
         .gte('session_date', fetchFrom)
         .lte('session_date', `${year}-12-31`)
-        .gt('pages_read', 0)
         .order('session_date');
 
       const sessions: WrapSession[] = (sessRows ?? []).map(r => ({
@@ -456,6 +455,9 @@ export default function StatsScreen() {
   const prevMonthSessions = allSessions.filter(s => s.session_date.startsWith(prevPrefix));
   const yearSessions      = allSessions.filter(s => s.session_date.startsWith(String(year)));
 
+  // Positive-only views — used by display-layer helpers that should not see correction rows
+  const curMonthPosSessions = curMonthSessions.filter(s => s.pages_read > 0);
+
   // bookInfoLookup is structurally compatible with Record<string, WrapBookRef>
   const bookLookup = bookInfoLookup as Record<string, WrapBookRef>;
 
@@ -476,7 +478,7 @@ export default function StatsScreen() {
   const prevDiff     = monthWrap.pagesRead > 0 && prevMonthWrap.pagesRead > 0
     ? monthWrap.pagesRead - prevMonthWrap.pagesRead
     : null;
-  const activeStreak = computeActiveStreak(curMonthSessions);
+  const activeStreak = computeActiveStreak(curMonthPosSessions);
 
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
@@ -544,7 +546,7 @@ export default function StatsScreen() {
                 year={year}
                 dayOfMonth={today.getDate()}
                 daysInMonth={new Date(year, month, 0).getDate()}
-                curMonthSessions={curMonthSessions}
+                curMonthSessions={curMonthPosSessions}
                 yearSessions={yearSessions}
                 activeStreak={activeStreak}
                 bookInfoLookup={bookInfoLookup}

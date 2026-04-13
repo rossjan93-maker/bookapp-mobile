@@ -432,12 +432,16 @@ export async function saveCurrentPage(
       });
   }
 
-  // ── Derive and insert a reading_sessions row (forward progress only) ──────
+  // ── Derive and insert a reading_sessions row ──────────────────────────────
   // startedPage defaults to 0 when this is the first page update.
+  // Forward progress (pagesRead > 0) inserts a normal session row.
+  // Backward change (pagesRead < 0) inserts a correction row with a negative
+  // pages_read so that analytics can compute net totals correctly and totals
+  // decrease when the user reduces or resets their page.
   const startedPage = currentPage ?? 0;
   const pagesRead   = newPage - startedPage;
 
-  if (pagesRead > 0) {
+  if (pagesRead !== 0) {
     const sessionPayload = {
       user_id:          userId,
       book_id:          bookId,
