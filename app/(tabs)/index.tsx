@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -20,6 +20,7 @@ import { CoverThumb } from '../../components/CoverThumb';
 import { HomeScreenSkeleton } from '../../components/Placeholder';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computePagePacing, computeUserAvgPace, inferReadState, computeSessionPacing, formatProjectedFinish, computeMonthlyStats, type SessionRow, type ReadState, type MonthlyStats } from '../../lib/pacing';
+import { computeMonthlyWrap, computeYearlyWrap, deriveInsights, type WrapSession, type WrapBookRef, type ReaderInsight } from '../../lib/readingWraps';
 import { computeStreaks } from '../../lib/streaks';
 import { showToast } from '../../lib/toast';
 
@@ -322,6 +323,34 @@ function StreakPill({ days, longest, monthlyDays }: { days: number; longest: num
   );
 }
 
+/**
+ * Renders up to 2 calm reader insights below the streak pill.
+ * Each insight is a complete sentence, displayed as a quiet bullet list.
+ * Returns null when there is nothing meaningful to surface.
+ */
+function ReaderInsightCard({ insights }: { insights: ReaderInsight[] }) {
+  if (insights.length === 0) return null;
+  return (
+    <View style={{ marginTop: 10, gap: 5 }}>
+      {insights.map(ins => (
+        <View key={ins.kind} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 7 }}>
+          <View style={{
+            width: 4,
+            height: 4,
+            borderRadius: 2,
+            backgroundColor: '#c4b5a5',
+            marginTop: 7,
+            flexShrink: 0,
+          }} />
+          <Text style={{ fontSize: 12, color: '#6b635c', lineHeight: 18, flex: 1 }}>
+            {ins.text}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function InitialAvatar({ name }: { name: string }) {
   return (
     <View style={{
@@ -424,6 +453,63 @@ export default function HomeScreen() {
   const _csRef    = useRef<number>(0);
   const _lsRef    = useRef<number>(0);
   const _msRef    = useRef<MonthlyStats | null>(null);
+
+  // ── Wrap + insights (pure derivations from already-loaded session state) ─────
+  // These are fast O(n) computations over ≤90 days of session rows so they can
+  // live in useMemo without performance concerns.
+
+  /** Flat session array with user_book_id attached — required by wrap functions. */
+  const allSessions = useMemo<WrapSession[]>(
+    () =>
+      Object.entries(sessionsByBook).flatMap(([ubId, rows]) =>
+        rows.map(r => ({ ...r, user_book_id: ubId })),
+      ),
+    [sessionsByBook],
+  );
+
+  /**
+   * Book reference lookup: user_book_id → { title, author }.
+   * Populated from finished books (booksThisYear) + currently-reading books.
+   * Enables topBook inside wrap summaries without an extra network fetch.
+   */
+  const bookLookup = useMemo<Record<string, WrapBookRef>>(() => {
+    const lookup: Record<string, WrapBookRef> = {};
+    for (const b of booksThisYear) {
+      lookup[b.id] = { title: b.title, author: b.author };
+    }
+    for (const cr of currentReads) {
+      lookup[cr.id] = { title: cr.title, author: cr.author };
+    }
+    return lookup;
+  }, [booksThisYear, currentReads]);
+
+  const _wrapToday        = new Date();
+  const _curMonthPrefix   = `${_wrapToday.getFullYear()}-${String(_wrapToday.getMonth() + 1).padStart(2, '0')}`;
+  const _prevMonthDate    = new Date(_wrapToday.getFullYear(), _wrapToday.getMonth() - 1, 1);
+  const _prevMonthPrefix  = `${_prevMonthDate.getFullYear()}-${String(_prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+
+  const currentMonthWrap = useMemo(
+    () => computeMonthlyWrap(allSessions, _curMonthPrefix, bookLookup),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allSessions, bookLookup],
+  );
+
+  const prevMonthWrap = useMemo(
+    () => computeMonthlyWrap(allSessions, _prevMonthPrefix, bookLookup),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allSessions, bookLookup],
+  );
+
+  const yearlyWrap = useMemo(
+    () => computeYearlyWrap(allSessions, _wrapToday.getFullYear(), booksThisYear.length, bookLookup),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allSessions, booksThisYear.length, bookLookup],
+  );
+
+  const insights = useMemo(
+    () => deriveInsights(currentMonthWrap, prevMonthWrap, yearlyWrap, yearlyGoal),
+    [currentMonthWrap, prevMonthWrap, yearlyWrap, yearlyGoal],
+  );
 
   // ── Walkthrough target measurement ──────────────────────────────────────────
   // Measure the first primary content section once data is loaded.
@@ -1030,6 +1116,7 @@ export default function HomeScreen() {
             longest={longestStreak}
             monthlyDays={monthlyStats?.readingDaysThisMonth ?? 0}
           />
+          <ReaderInsightCard insights={insights} />
         </View>
       )}
 

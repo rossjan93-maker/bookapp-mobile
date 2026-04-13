@@ -16,6 +16,27 @@ The application is developed using React Native with Expo Router for navigation 
 - `lib/googleBooks.ts` — isolated GB API functions (unchanged — no app code imports GB directly; all access goes through metadataRepair or bookEnrichment).
 - Schema: `books.cover_source` (text), `books.metadata_confidence` (text check: high/medium/low), `book_source_links.raw_payload` (jsonb), `book_source_links.last_fetched_at` (timestamptz), `book_source_links.fetch_status` (text check: success/failed/rate_limited). Migration: `supabase/migrations/20260409000000_provider_link_hardening.sql`.
 
+**Phase 3 Reflective Insights Layer (complete):**
+- **`lib/readingWraps.ts`** — new pure-function library, zero I/O, fully testable. Exports:
+  - `WrapSession` (input type — flat session with optional user_book_id)
+  - `WrapBookRef` (title/author stub for book-level aggregations)
+  - `MonthBreakdown` (per-month totals used inside YearlyWrap)
+  - `MonthlyWrap` — pagesRead, readingDays, sessionCount, avgPagesPerReadingDay, longestSessionPages, booksActive, topBook (with book lookup), longestStreakInMonth
+  - `YearlyWrap` — year, booksFinished (accurate, from user_books query), pagesRead/readingDays/sessionCount (session-window derived, may undercount early months), monthlyBreakdown, mostActiveMonth (with label), longestStreak, avgPagesPerReadingDay
+  - `computeMonthlyWrap(allSessions, month, bookLookup?)` — calendar-scoped monthly summary
+  - `computeYearlyWrap(allSessions, year, booksFinished, bookLookup?)` — year-scoped summary, single-pass monthly aggregation
+  - `ReaderInsight` + `InsightKind` types — display-ready insight records (kind, text, strength: notable|mild)
+  - `deriveInsights(currentWrap, prevWrap, yearlyWrap, yearlyGoal, today?)` → up to 2 prioritised `ReaderInsight[]`. Computes: consistency rate (reading days vs days elapsed), session depth (avg pages/day), month-over-month momentum (normalized pace delta vs prev month), best-month-so-far check (vs other months in yearlyBreakdown), year-pace-toward-goal (projected books vs goal). Notable insights sort first; returns empty array if data is too sparse.
+- **`app/(tabs)/index.tsx`** — wired wrap computation from already-loaded state:
+  - `allSessions: WrapSession[]` — useMemo flattening `sessionsByBook` with `user_book_id` attached
+  - `bookLookup: Record<userBookId, WrapBookRef>` — useMemo from `booksThisYear + currentReads` (no extra fetch)
+  - `currentMonthWrap`, `prevMonthWrap` — useMemo monthly wraps for current and prior calendar month
+  - `yearlyWrap` — useMemo from allSessions + booksThisYear.length
+  - `insights: ReaderInsight[]` — useMemo from deriveInsights; empty when not enough data
+  - `ReaderInsightCard` component — renders up to 2 insights as calm bullet-point lines below `StreakPill`. Stone `#6b635c` text, dust dot `#c4b5a5`, 12px/lh18 type. Returns null when empty.
+- **Data coverage note**: session window is 90 days; `yearlyWrap.booksFinished` is accurate (from full-year user_books query); session-derived yearly totals may undercount months earlier than 90 days ago. Noted in type-level JSDoc.
+- **Intentionally deferred**: wrap UI screens (monthly/yearly summary card), yearly wrap "top book" (requires wider session history query), sharing/export, historical multi-year comparison.
+
 **Phase 2 Social Reading Depth (in progress):**
 - **DNF reason capture** (`app/(tabs)/library.tsx`): When a book is marked DNF, a `DnfReasonChips` component replaces the star-rating prompt. Four soft, reflective reason chips: "Not for me", "Wrong time", "Life got in the way", "Too slow / dense". Reason stored as `taste_tags.dnf_reason` (jsonb column — no schema change). `saveDnfReason()` merges with existing `taste_tags` to preserve liked/disliked tags. On subsequent library loads, stored reason shown italicised below DNF book date ("Not for me" etc.) using `DNF_REASON_LABELS` map. `taste_tags` column added to all four `user_books` select queries and to `UserBook` type.
 - **Forecast confidence polish** (`app/(tabs)/index.tsx`): `HeroReadCard` now accepts `pacingStrength?: 'strong' | 'moderate' | 'weak'` prop. Forecast label adapts: weak → `"~Apr 11 · early days"` in `#b8aca0` (light/uncertain); moderate → `"Finish ~Apr 11"` in stone `#9e958d`; strong → `"Finish ~Apr 11"` in darker `#6b635c` (confident). Pacing strength comes from `computeSessionPacing().strength`.
