@@ -26,6 +26,9 @@ import { transitionStatus, editUserBook, softDeleteBook, restoreSnapshot, saveCu
 import type { UserBookStatus, BookSnapshot, FinishedDateInput, StartedDateInput } from '../../lib/userBookActions';
 import { useUndoBar } from '../../lib/useUndoBar';
 import { invalidateBookDataCaches } from '../../lib/tabCache';
+import { getRecContext } from '../../lib/recContext';
+import type { RecContext } from '../../lib/recContext';
+import { EvidenceTagsRow } from '../../components/RecCard';
 
 // ─── Book-level enrichment cache ──────────────────────────────────────────────
 // Module-level Map keyed by book DB id.  Stores the description / subjects /
@@ -159,8 +162,14 @@ export default function BookDetailScreen() {
   const [editNote, setEditNote]           = useState('');
   const [savingEdit, setSavingEdit]       = useState(false);
 
-  // Taste preferences state (used by Taste Match section)
+  // Taste preferences state (used by Why this book? section)
   const [hasTastePrefs, setHasTastePrefs] = useState<boolean | null>(null);
+
+  // Recommendation context — written by RecCard on tap, read here on mount.
+  // Null when user arrived from somewhere other than the rec feed.
+  const [recCtx] = useState<RecContext | null>(() =>
+    externalId ? getRecContext(externalId) : null
+  );
 
   // Series section — cover images for the carousel (populated post-mount).
   // Structure comes synchronously from the static catalog via seriesName param.
@@ -2049,38 +2058,63 @@ export default function BookDetailScreen() {
           </View>
         )}
 
-        {/* ── Taste Match — status-gated, preference-aware ── */}
+        {/* ── Why this book? — evidence-backed rec context ── */}
+        {/* Shown only for unstarted books. Content varies by navigation source:
+            - From rec feed: shows evidence tags + explanation from the recommender.
+            - Direct nav, no prefs: shows "Set your preferences" CTA.
+            - Direct nav, has prefs: section is hidden (no evidence to show). */}
         {externalId && (!localStatus || localStatus === 'want_to_read' || localStatus === 'sent' || localStatus === 'saved') ? (
-          <View style={{
-            backgroundColor: '#f5f1ec',
-            borderRadius: 16,
-            padding: 20,
-            borderWidth: 1,
-            borderColor: '#ede9e4',
-          }}>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: '#231f1b', marginBottom: 4 }}>
-              Your Taste Match
-            </Text>
-            {hasTastePrefs === null ? null : hasTastePrefs ? (
-              <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
-                Once you've built your taste profile, we'll explain how this book fits — or challenges — your reading style.
+          recCtx ? (
+            <View style={{
+              backgroundColor: '#fefcf9',
+              borderRadius: 14,
+              padding: 18,
+              borderWidth: 1,
+              borderColor: '#ede9e4',
+            }}>
+              <Text style={{
+                fontSize: 11,
+                fontWeight: '700',
+                color: '#9e958d',
+                letterSpacing: 0.9,
+                textTransform: 'uppercase',
+                marginBottom: 10,
+              }}>
+                Why this book?
               </Text>
-            ) : (
-              <>
-                <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
-                  Set your reading preferences so we can show you why this book is a good fit.
+              {recCtx.explanation ? (
+                <Text style={{ fontSize: 14, color: '#231f1b', lineHeight: 21, fontWeight: '500' }}>
+                  {recCtx.explanation}
                 </Text>
-                <TouchableOpacity
-                  onPress={() => router.push('/edit-preferences')}
-                  style={{ marginTop: 12 }}
-                >
-                  <Text style={{ fontSize: 13, color: '#78716c', textDecorationLine: 'underline' }}>
-                    Set your preferences →
-                  </Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
+              ) : null}
+              {recCtx.evidenceTags.length > 0 && (
+                <EvidenceTagsRow tags={recCtx.evidenceTags} />
+              )}
+            </View>
+          ) : hasTastePrefs === false ? (
+            <View style={{
+              backgroundColor: '#f5f1ec',
+              borderRadius: 14,
+              padding: 18,
+              borderWidth: 1,
+              borderColor: '#ede9e4',
+            }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 8 }}>
+                Why this book?
+              </Text>
+              <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
+                Set your reading preferences to see why books like this are recommended for you.
+              </Text>
+              <TouchableOpacity
+                onPress={() => router.push('/edit-preferences')}
+                style={{ marginTop: 10 }}
+              >
+                <Text style={{ fontSize: 13, color: '#6b635c', fontWeight: '600' }}>
+                  Set preferences →
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : null
         ) : null}
 
       </View>

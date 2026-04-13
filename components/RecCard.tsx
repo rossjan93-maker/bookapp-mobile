@@ -13,6 +13,7 @@ import { fitLabel, fitColor } from '../lib/recommender';
 import type { ScoredBook } from '../lib/recommender';
 import type { DeterministicLane } from '../lib/bookTraits';
 import { getSeriesCatalog } from '../lib/seriesCatalog';
+import { setRecContext } from '../lib/recContext';
 
 // Suppress unused-import warning (fitLabel / fitColor kept for future use)
 void fitLabel; void fitColor;
@@ -118,7 +119,7 @@ function buildEvidenceTags(book: ScoredBook): string[] {
   return tags.slice(0, 2);
 }
 
-function EvidenceTagsRow({ tags }: { tags: string[] }) {
+export function EvidenceTagsRow({ tags }: { tags: string[] }) {
   if (tags.length === 0) return null;
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
@@ -504,6 +505,13 @@ export function RecCard({
 
   function handleCardPress() {
     if (pendingAction) return;
+    // Cache rec evidence so book detail can render "Why this book?"
+    if (book.external_id) {
+      setRecContext(book.external_id, {
+        explanation:  collapsedReason,
+        evidenceTags: buildEvidenceTags(book),
+      });
+    }
     const sn = book._score_breakdown.series_name;
     const sp = book._score_breakdown.series_position;
     router.push({
