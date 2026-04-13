@@ -22,7 +22,7 @@ import { getSeriesCatalog, getSagaForSeries, getAllSagaCatalog, findSeriesForBoo
 import { triggerRecPrewarm } from '../../lib/recPrewarm';
 import { computeDatePacing, computePagePacing, estimatePaceFinish, formatLastUpdated, shortDate, computeBookPace, computeUserAvgPace } from '../../lib/pacing';
 import { fetchGoogleBooksMetadata } from '../../lib/googleBooks';
-import { fetchOLMeta, fetchEditions, searchOLWork, isOLId } from '../../lib/openLibrary';
+import { fetchOLMeta, fetchEditions, rankEditions, searchOLWork, isOLId } from '../../lib/openLibrary';
 import type { OLMeta, OLEdition } from '../../lib/openLibrary';
 import { deriveContentWarnings, isCoveragePartial } from '../../lib/contentWarnings';
 import { transitionStatus, editUserBook, softDeleteBook, restoreSnapshot, saveCurrentPage, setEditionKey as persistEditionKey } from '../../lib/userBookActions';
@@ -262,6 +262,7 @@ export default function BookDetailScreen() {
   const [selectedEditionKey, setSelectedEditionKey] = useState<string | null>(null);
   const [editions, setEditions]                     = useState<OLEdition[]>([]);
   const [showEditionPicker, setShowEditionPicker]   = useState(false);
+  const [showAllEditions, setShowAllEditions]       = useState(false);
   const [savingEdition, setSavingEdition]           = useState(false);
   // pendingEditionKey tracks which edition row is actively being saved so the
   // loading spinner appears on the tapped row rather than the old selection.
@@ -846,7 +847,10 @@ export default function BookDetailScreen() {
       if (!olId || cancelled) return;
 
       const eds = await fetchEditions(olId);
-      if (!cancelled) setEditions(eds);
+      if (!cancelled) {
+        setEditions(rankEditions(eds, 'eng'));
+        setShowAllEditions(false);
+      }
     }
 
     loadEditions();
@@ -1533,7 +1537,7 @@ export default function BookDetailScreen() {
         {/* ── Edition line — quiet metadata row beneath author ── */}
         {displayEdition && (
           <TouchableOpacity
-            onPress={editions.length > 1 ? () => setShowEditionPicker(true) : undefined}
+            onPress={editions.length > 1 ? () => { setShowAllEditions(false); setShowEditionPicker(true); } : undefined}
             activeOpacity={editions.length > 1 ? 0.6 : 1}
             style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 4 }}
           >
@@ -3066,84 +3070,121 @@ export default function BookDetailScreen() {
             Selecting an edition updates the cover and page count for this copy.
           </Text>
 
-          <ScrollView
-            style={{ maxHeight: 420 }}
-            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8 }}
-            showsVerticalScrollIndicator={false}
-          >
-            {editions.map(ed => {
-              const isSelected = ed.editionKey === selectedEditionKey;
-              const label = [
-                ed.publisher,
-                ed.year,
-                ed.pageCount ? `${ed.pageCount} pages` : null,
-              ].filter(Boolean).join(' · ') || 'Unknown edition';
+          {(() => {
+            // Preferred-language editions: English-tagged or no lang data (ambiguous/likely English).
+            // Always fall back to showing all editions when none pass the language filter
+            // (e.g. purely foreign-language work) so the picker is never empty.
+            const preferredEditions = editions.filter(
+              ed => ed.languages.length === 0 || ed.languages.includes('eng'),
+            );
+            const visibleEditions = (showAllEditions || preferredEditions.length === 0)
+              ? editions
+              : preferredEditions;
+            const hiddenCount = editions.length - preferredEditions.length;
 
-              return (
-                <TouchableOpacity
-                  key={ed.editionKey}
-                  onPress={() => handleSelectEdition(ed)}
-                  disabled={savingEdition}
-                  activeOpacity={0.7}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingVertical: 12,
-                    paddingHorizontal: 12,
-                    borderRadius: 12,
-                    marginBottom: 6,
-                    backgroundColor: isSelected ? '#f0fdf4' : '#f5f1ec',
-                    borderWidth: 1.5,
-                    borderColor: isSelected ? '#bbf7d0' : 'transparent',
-                  }}
-                >
-                  {/* Cover thumbnail */}
-                  <View style={{
-                    width: 36,
-                    height: 52,
-                    borderRadius: 4,
-                    overflow: 'hidden',
-                    backgroundColor: '#ede9e4',
-                    marginRight: 12,
-                    flexShrink: 0,
-                  }}>
-                    {ed.coverKey ? (
-                      <Image
-                        source={{ uri: `https://covers.openlibrary.org/b/olid/${ed.coverKey}-S.jpg` }}
-                        style={{ width: 36, height: 52 }}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View style={{ width: 36, height: 52, backgroundColor: '#e6e0d9' }} />
-                    )}
-                  </View>
+            return (
+              <ScrollView
+                style={{ maxHeight: 420 }}
+                contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8 }}
+                showsVerticalScrollIndicator={false}
+              >
+                {visibleEditions.map(ed => {
+                  const isSelected = ed.editionKey === selectedEditionKey;
+                  const pub = ed.publisher?.toLowerCase().trim();
+                  const hasPublisher = !!pub && pub !== 'n/a' && pub !== 'na';
+                  const label = [
+                    hasPublisher ? ed.publisher : null,
+                    ed.year,
+                    ed.pageCount ? `${ed.pageCount} pages` : null,
+                  ].filter(Boolean).join(' · ') || 'Unknown edition';
 
-                  {/* Edition metadata */}
-                  <View style={{ flex: 1 }}>
-                    <Text style={{
-                      fontSize: 13,
-                      fontWeight: isSelected ? '600' : '400',
-                      color: '#231f1b',
-                      marginBottom: 2,
-                    }} numberOfLines={1}>
-                      {label}
+                  return (
+                    <TouchableOpacity
+                      key={ed.editionKey}
+                      onPress={() => handleSelectEdition(ed)}
+                      disabled={savingEdition}
+                      activeOpacity={0.7}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingVertical: 12,
+                        paddingHorizontal: 12,
+                        borderRadius: 12,
+                        marginBottom: 6,
+                        backgroundColor: isSelected ? '#f0fdf4' : '#f5f1ec',
+                        borderWidth: 1.5,
+                        borderColor: isSelected ? '#bbf7d0' : 'transparent',
+                      }}
+                    >
+                      {/* Cover thumbnail */}
+                      <View style={{
+                        width: 36,
+                        height: 52,
+                        borderRadius: 4,
+                        overflow: 'hidden',
+                        backgroundColor: '#ede9e4',
+                        marginRight: 12,
+                        flexShrink: 0,
+                      }}>
+                        {ed.coverKey ? (
+                          <Image
+                            source={{ uri: `https://covers.openlibrary.org/b/olid/${ed.coverKey}-S.jpg` }}
+                            style={{ width: 36, height: 52 }}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={{ width: 36, height: 52, backgroundColor: '#e6e0d9' }} />
+                        )}
+                      </View>
+
+                      {/* Edition metadata */}
+                      <View style={{ flex: 1 }}>
+                        <Text style={{
+                          fontSize: 13,
+                          fontWeight: isSelected ? '600' : '400',
+                          color: '#231f1b',
+                          marginBottom: 2,
+                        }} numberOfLines={1}>
+                          {label}
+                        </Text>
+                        {ed.isbn && (
+                          <Text style={{ fontSize: 11, color: '#9e958d' }}>ISBN {ed.isbn}</Text>
+                        )}
+                      </View>
+
+                      {/* Selection indicator */}
+                      {isSelected && !pendingEditionKey && (
+                        <Text style={{ fontSize: 14, color: '#15803d', marginLeft: 8 }}>✓</Text>
+                      )}
+                      {savingEdition && ed.editionKey === pendingEditionKey && (
+                        <ActivityIndicator size="small" color="#9e958d" style={{ marginLeft: 8 }} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+
+                {/* Show all editions affordance — only when foreign-language editions are hidden */}
+                {!showAllEditions && hiddenCount > 0 && (
+                  <TouchableOpacity
+                    onPress={() => setShowAllEditions(true)}
+                    activeOpacity={0.7}
+                    style={{
+                      paddingVertical: 12,
+                      paddingHorizontal: 12,
+                      borderRadius: 12,
+                      marginTop: 2,
+                      marginBottom: 6,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, color: '#9e958d' }}>
+                      Show all editions ({editions.length} total, including translations)
                     </Text>
-                    {ed.isbn && (
-                      <Text style={{ fontSize: 11, color: '#9e958d' }}>ISBN {ed.isbn}</Text>
-                    )}
-                  </View>
-
-                  {/* Selection indicator */}
-                  {isSelected && !pendingEditionKey && (
-                    <Text style={{ fontSize: 14, color: '#15803d', marginLeft: 8 }}>✓</Text>
-                  )}
-                  {savingEdition && ed.editionKey === pendingEditionKey && (
-                    <ActivityIndicator size="small" color="#9e958d" style={{ marginLeft: 8 }} />
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+                  </TouchableOpacity>
+                )}
+              </ScrollView>
+            );
+          })()}
 
           <TouchableOpacity
             onPress={() => setShowEditionPicker(false)}

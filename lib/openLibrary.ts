@@ -26,6 +26,9 @@ export type OLMeta = {
 // editionKey is the bare OL edition ID (e.g. "OL12345M"), not the full /books/ path.
 // coverKey is the same as editionKey when the edition has covers — used to build
 // the OLID-based cover URL: covers.openlibrary.org/b/olid/{coverKey}-M.jpg
+// languages is a list of BCP-style language codes extracted from OL's
+// [{key: "/languages/eng"}] array.  Empty array means OL carries no language
+// metadata for this edition — treated as potentially English (not excluded).
 export type OLEdition = {
   editionKey: string;
   publisher:  string | null;
@@ -33,7 +36,42 @@ export type OLEdition = {
   pageCount:  number | null;
   isbn:       string | null;
   coverKey:   string | null;
+  languages:  string[];
 };
+
+/**
+ * Rank editions by language preference and metadata quality.
+ *
+ * Scoring (higher = better):
+ *   +100  language matches preferLang (or edition has no language data — treated
+ *         as ambiguous/English rather than excluded)
+ *   +10   has page count
+ *   + 8   has cover
+ *   + 4   has publisher (non-"n/a")
+ *   + 2   has ISBN
+ *
+ * The 100-point language bonus ensures every preferred-language edition
+ * outranks every foreign-language edition regardless of quality.
+ * Within each language tier, editions sort by descending quality score.
+ */
+export function rankEditions(
+  editions: OLEdition[],
+  preferLang = 'eng',
+): OLEdition[] {
+  function score(ed: OLEdition): number {
+    const langMatch =
+      ed.languages.length === 0 || ed.languages.includes(preferLang) ? 100 : 0;
+    const pub = ed.publisher?.toLowerCase().trim();
+    const hasPublisher = !!pub && pub !== 'n/a' && pub !== 'na';
+    const quality =
+      (ed.pageCount               ? 10 : 0) +
+      (ed.coverKey                ?  8 : 0) +
+      (hasPublisher               ?  4 : 0) +
+      (ed.isbn                    ?  2 : 0);
+    return langMatch + quality;
+  }
+  return [...editions].sort((a, b) => score(b) - score(a));
+}
 
 // Module-level editions cache keyed by OL work ID (e.g. "OL37620917W").
 // Cleared on JS context restart (app kill / hard reload).  Max 40 entries
@@ -213,10 +251,18 @@ export async function fetchEditions(externalId: string): Promise<OLEdition[]> {
       const hasCover = Array.isArray(ed.covers) && ed.covers.length > 0 && (ed.covers[0] as number) > 0;
       const coverKey = hasCover ? editionKey : null;
 
+      // Languages — OL sends [{key: "/languages/eng"}, ...]; extract bare codes.
+      // Editions with no languages array are treated as unknown (not excluded).
+      const languages: string[] = Array.isArray(ed.languages)
+        ? (ed.languages as { key?: string }[])
+            .map(l => (typeof l.key === 'string' ? l.key.replace('/languages/', '') : ''))
+            .filter(Boolean)
+        : [];
+
       // Only include editions that carry at least one useful piece of metadata
       if (!pageCount && !publisher && !year) continue;
 
-      editions.push({ editionKey, publisher, year, pageCount, isbn, coverKey });
+      editions.push({ editionKey, publisher, year, pageCount, isbn, coverKey, languages });
     }
 
     // Cache the result (evict oldest entry when full)
