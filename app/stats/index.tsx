@@ -261,7 +261,7 @@ function ReadingCalendar({ sessions, monthPrefix }: { sessions: WrapSession[]; m
         <View key={ri} style={{ flexDirection: 'row', gap: GAP }}>
           {r.map(({ idx, day, pages }) => {
             const outside = pages === -1;
-            const frac    = outside ? 0 : pages > 0 ? 0.28 + 0.72 * (pages / maxPages) : 0;
+            const frac    = outside ? 0 : pages > 0 ? Math.max(0.14, Math.pow(pages / maxPages, 0.65)) : 0;
             return (
               <View key={idx} style={{
                 width: DOT, height: DOT, borderRadius: 4,
@@ -299,7 +299,7 @@ function YearColumns({ months, year }: { months: MonthBreakdown[]; year: number 
                 height: days > 0 ? Math.max(4, Math.round(frac * BAR_MAX)) : 3,
                 backgroundColor: SAGE,
                 borderTopLeftRadius: 3, borderTopRightRadius: 3,
-                opacity: days > 0 ? (0.3 + 0.7 * frac) : 0.12,
+                opacity: days > 0 ? Math.max(0.12, frac) : 0.06,
               }} />
             </View>
           );
@@ -366,10 +366,11 @@ export default function StatsScreen() {
   const prevMonthYear = month === 1 ? year - 1 : year;
   const prevPrefix    = `${prevMonthYear}-${String(prevMonthNum).padStart(2, '0')}`;
 
-  const [loading,        setLoading]        = useState(true);
-  const [allSessions,    setAllSessions]    = useState<WrapSession[]>([]);
-  const [booksFinished,  setBooksFinished]  = useState(0);
-  const [bookInfoLookup, setBookInfoLookup] = useState<Record<string, BookInfo>>({});
+  const [loading,          setLoading]          = useState(true);
+  const [allSessions,      setAllSessions]      = useState<WrapSession[]>([]);
+  const [booksFinished,    setBooksFinished]    = useState(0);
+  const [bookInfoLookup,   setBookInfoLookup]   = useState<Record<string, BookInfo>>({});
+  const [lastFinishedBook, setLastFinishedBook] = useState<{ title: string; finishMonth: string } | null>(null);
 
   useEffect(() => { load(); }, []);
 
@@ -407,6 +408,25 @@ export default function StatsScreen() {
         .gte('finished_at', `${year}-01-01`)
         .lte('finished_at', `${year}-12-31`);
       setBooksFinished(count ?? 0);
+
+      // Most recently finished book this year — one personal line for year tab
+      const { data: lastFinRows } = await supabase!
+        .from('user_books')
+        .select('finished_at, book:books(title)')
+        .eq('user_id', user.id)
+        .eq('status', 'finished')
+        .is('deleted_at', null)
+        .gte('finished_at', `${year}-01-01`)
+        .lte('finished_at', `${year}-12-31`)
+        .order('finished_at', { ascending: false })
+        .limit(1);
+      const lastFinRow = lastFinRows?.[0];
+      if (lastFinRow?.book) {
+        setLastFinishedBook({
+          title:       (lastFinRow.book as any).title,
+          finishMonth: MONTH_SHORT[new Date(lastFinRow.finished_at).getMonth()],
+        });
+      }
 
       // Book metadata — include page_count for finish projections
       const bookIds = [...new Set(sessions.map(s => s.user_book_id).filter(Boolean))] as string[];
@@ -534,6 +554,7 @@ export default function StatsScreen() {
                 year={year}
                 booksFinished={booksFinished}
                 currentMonth={month}
+                lastFinishedBook={lastFinishedBook}
               />
           }
         </ScrollView>
@@ -565,12 +586,18 @@ function MonthView({
 }) {
   if (wrap.pagesRead === 0) {
     return (
-      <View style={{ alignItems: 'center', paddingTop: 60 }}>
-        <Text style={{ fontSize: 15, color: DUST, textAlign: 'center', lineHeight: 24 }}>
-          Nothing logged in {monthName} yet.
+      <View style={{ paddingTop: 40 }}>
+        <Text style={{
+          fontSize: 56, fontWeight: '900', color: FAINT,
+          letterSpacing: -2, lineHeight: 56,
+        }}>
+          {monthName}
         </Text>
-        <Text style={{ fontSize: 13, color: FAINT, textAlign: 'center', lineHeight: 20, marginTop: 8 }}>
-          Sessions will appear here once you start logging pages.
+        <Text style={{ fontSize: 14, color: DUST, marginTop: 20, lineHeight: 22 }}>
+          No reading sessions yet.
+        </Text>
+        <Text style={{ fontSize: 13, color: FAINT, marginTop: 5, lineHeight: 20 }}>
+          Log a session to see {monthName} take shape.
         </Text>
       </View>
     );
@@ -746,8 +773,12 @@ function MonthView({
 
       {/* ══ Next step — calm, specific guidance ════════════════════════════════ */}
       {nextStep && (
-        <View style={{ paddingTop: 16, borderTopWidth: 1, borderTopColor: BORDER }}>
-          <Text style={{ fontSize: 13, color: STONE, lineHeight: 20, fontStyle: 'italic' }}>
+        <View style={{
+          marginTop: 2, paddingTop: 16, borderTopWidth: 1, borderTopColor: BORDER,
+          flexDirection: 'row', gap: 10,
+        }}>
+          <View style={{ width: 2, backgroundColor: SAGE, borderRadius: 1 }} />
+          <Text style={{ fontSize: 13, color: STONE, lineHeight: 20, fontStyle: 'italic', flex: 1 }}>
             {nextStep}
           </Text>
         </View>
@@ -759,18 +790,28 @@ function MonthView({
 
 // ── Year view ─────────────────────────────────────────────────────────────────
 function YearView({
-  wrap, year, booksFinished, currentMonth,
+  wrap, year, booksFinished, currentMonth, lastFinishedBook,
 }: {
-  wrap:          YearlyWrap;
-  year:          number;
-  booksFinished: number;
-  currentMonth:  number;
+  wrap:             YearlyWrap;
+  year:             number;
+  booksFinished:    number;
+  currentMonth:     number;
+  lastFinishedBook: { title: string; finishMonth: string } | null;
 }) {
   if (booksFinished === 0 && wrap.pagesRead === 0) {
     return (
-      <View style={{ alignItems: 'center', paddingTop: 60 }}>
-        <Text style={{ fontSize: 15, color: DUST, textAlign: 'center', lineHeight: 24 }}>
-          Nothing logged in {year} yet.
+      <View style={{ paddingTop: 40 }}>
+        <Text style={{
+          fontSize: 56, fontWeight: '900', color: FAINT,
+          letterSpacing: -2, lineHeight: 56,
+        }}>
+          {year}
+        </Text>
+        <Text style={{ fontSize: 14, color: DUST, marginTop: 20, lineHeight: 22 }}>
+          No reading logged this year yet.
+        </Text>
+        <Text style={{ fontSize: 13, color: FAINT, marginTop: 5, lineHeight: 20 }}>
+          Log a session to see {year} take shape.
         </Text>
       </View>
     );
@@ -808,8 +849,13 @@ function YearView({
         <Text style={{ fontSize: 14, color: STONE, marginTop: 6 }}>
           {booksFinished === 1 ? 'book finished in ' : 'books finished in '}{year}
         </Text>
+        {lastFinishedBook && booksFinished > 0 && (
+          <Text style={{ fontSize: 12, color: DUST, marginTop: 5, lineHeight: 18 }} numberOfLines={2}>
+            Most recently: {lastFinishedBook.title} · {lastFinishedBook.finishMonth}
+          </Text>
+        )}
         {yearSubline.length > 0 && (
-          <Text style={{ fontSize: 12, color: DUST, marginTop: 6, lineHeight: 18 }}>
+          <Text style={{ fontSize: 12, color: DUST, marginTop: lastFinishedBook && booksFinished > 0 ? 3 : 6, lineHeight: 18 }}>
             {yearSubline}
           </Text>
         )}
