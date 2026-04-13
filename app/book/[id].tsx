@@ -22,7 +22,7 @@ import { computeDatePacing, computePagePacing, estimatePaceFinish, formatLastUpd
 import { fetchGoogleBooksMetadata } from '../../lib/googleBooks';
 import { fetchOLMeta, searchOLWork, isOLId } from '../../lib/openLibrary';
 import type { OLMeta } from '../../lib/openLibrary';
-import { transitionStatus, editUserBook, softDeleteBook, restoreSnapshot } from '../../lib/userBookActions';
+import { transitionStatus, editUserBook, softDeleteBook, restoreSnapshot, saveCurrentPage } from '../../lib/userBookActions';
 import type { UserBookStatus, BookSnapshot, FinishedDateInput, StartedDateInput } from '../../lib/userBookActions';
 import { useUndoBar } from '../../lib/useUndoBar';
 import { invalidateBookDataCaches } from '../../lib/tabCache';
@@ -746,25 +746,36 @@ export default function BookDetailScreen() {
     }
     setProgressError(null);
     setSavingProgress(true);
-    const { error } = await supabase
-      .from('user_books')
-      .update({ current_page: newPage, progress_updated_at: new Date().toISOString() })
-      .eq('id', userBookId);
+
+    // Resolve userId if not yet in state (rare on cold open)
+    const uid = userId ?? (await supabase.auth.getUser()).data.user?.id ?? null;
+
+    // saveCurrentPage writes user_books.current_page + reading_progress_events
+    // + reading_sessions (forward progress only) — stats screen reads sessions
+    let saveErrMsg: string | null = null;
+    if (uid && bookId) {
+      const { error } = await saveCurrentPage(supabase, {
+        userBookId, bookId, userId: uid, newPage, currentPage,
+      });
+      saveErrMsg = error;
+    } else {
+      // Fallback: uid/bookId not yet resolved — bare update, no session row
+      const { error } = await supabase
+        .from('user_books')
+        .update({ current_page: newPage, progress_updated_at: new Date().toISOString() })
+        .eq('id', userBookId);
+      if (error) saveErrMsg = 'Could not save — try again.';
+    }
+
     setSavingProgress(false);
-    if (!error) {
-      if (newPage !== currentPage && userId && bookId) {
-        supabase
-          .from('reading_progress_events')
-          .insert({ user_book_id: userBookId, book_id: bookId, user_id: userId, page: newPage })
-          .then(() => {});
-      }
+    if (!saveErrMsg) {
       setCurrentPage(newPage);
       // Page progress shown on Library and Home cards — invalidate so they re-fetch
       invalidateBookDataCaches();
       setEditingProgress(false);
       Keyboard.dismiss();
     } else {
-      setProgressError('Could not save — try again.');
+      setProgressError(saveErrMsg);
     }
   }
 
