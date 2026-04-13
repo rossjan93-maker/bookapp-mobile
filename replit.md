@@ -28,6 +28,18 @@ The application is developed using React Native with Expo Router for navigation.
 - **Global Rules:** Emphasizes single implementations for core capabilities, preventing UI from leaking internal phases, and preferring stale but usable content over blank.
 - **Contracts:** Detailed contracts for loading, refresh, navigation continuity, action feedback, search, onboarding, book-state integrity, and surface-specific behaviors (Home, Library, etc.).
 
+## Design Token Module
+`lib/tokens.ts` is the single source of truth for the 10-colour Readstack palette. Import as `import * as T from '../lib/tokens'` (adjust path depth as needed). Named exports: `BG`, `INK`, `STONE`, `DUST`, `SAGE`, `SAGE_BG`, `AMBER`, `CREAM`, `BORDER`, `FAINT`. Screen and component files can be migrated to this module incrementally; the token values are identical to the inline hex strings they replace.
+
+## Subject Matching
+`matchesSubjects()` in `lib/shelves.ts` uses word-boundary regex (`\b...\b`) — not substring `includes()`. This applies to smart shelf filtering (Romantasy, Long Reads, Comfort Reads). `contentWarnings.ts` uses the same approach with pre-compiled COMPILED_PATTERNS. Never revert either to `includes()`.
+
+## Edition Filter
+`fetchEditions()` in `lib/openLibrary.ts` requires `pageCount OR publisher` (not just `year`). Year-only OL editions are excluded from the picker.
+
+## Forensic Debug Gate
+`FORENSIC_USER_ID` in `lib/recommender.ts` is set to `''` (empty string). The forensic audit path (`__DEV__ && userId === FORENSIC_USER_ID`) therefore never fires. To enable for local debugging, set it to a specific UUID temporarily — never commit a real UUID here.
+
 ## Pending Migrations (need manual apply via Supabase dashboard SQL editor)
 - `supabase/migrations/20260413000001_rec_snapshots.sql` — creates `rec_snapshots (user_id, external_id)` PK table storing only rendered explanation + evidence_tags[]. RLS: users manage own rows. Written fire-and-forget on RecCard tap; read by book detail as fallback when session cache is empty.
 - `supabase/migrations/20260414000000_user_books_edition_key.sql` — adds `edition_key text` column to `user_books`. Nullable; stores the Open Library edition ID (e.g. "OL12345M") the user has explicitly chosen for their copy. When set, the book detail screen uses this edition's cover and page count instead of the canonical books row values.

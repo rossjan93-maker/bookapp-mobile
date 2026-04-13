@@ -112,7 +112,9 @@ const CACHE_MIN_ROWS = 5;
 const CACHE_VERSION  = 'v5:';
 // User ID to force full live forensic audit (bypasses both caches, emits
 // structured trace logs). Only active in __DEV__ builds.
-const FORENSIC_USER_ID = '986aece4-9461-439c-bff9-3589161b313c';
+// Set to an empty string in production to ensure the forensic path never fires
+// for any real user. Restore a specific UUID locally during deep debugging only.
+const FORENSIC_USER_ID = '';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

@@ -259,8 +259,11 @@ export async function fetchEditions(externalId: string): Promise<OLEdition[]> {
             .filter(Boolean)
         : [];
 
-      // Only include editions that carry at least one useful piece of metadata
-      if (!pageCount && !publisher && !year) continue;
+      // Only include editions that carry meaningful metadata — at minimum a page
+      // count OR a publisher name.  A year alone is not sufficient: it tells
+      // the reader nothing actionable (which printing? which version?) and
+      // produces picker rows that display as bare "1998" entries.
+      if (!pageCount && !publisher) continue;
 
       editions.push({ editionKey, publisher, year, pageCount, isbn, coverKey, languages });
     }

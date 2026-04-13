@@ -37,10 +37,18 @@ export type ShelfDefinition = {
 };
 
 /**
- * Case-insensitive partial-match helper for a book's subjects field.
+ * Word-boundary subject matcher for a book's subjects field.
  * subjects may be a text[] from Postgres (arrives as string[]) or a
  * legacy comma-separated string. Returns true if ANY of the provided
- * keywords appear as a substring of ANY subject string.
+ * keywords match as a whole word (or whole phrase) in ANY subject string.
+ *
+ * Uses \b anchors on both sides to prevent false positives from incidental
+ * substring sequences — e.g. "war" does not match "award", "romance" does
+ * not match "necromancer". Multi-word keywords (e.g. "love stories") are
+ * matched as complete phrases using word boundaries on the outer edges only.
+ *
+ * Special regex characters in keywords are escaped before compilation so
+ * "self-harm" (contains a hyphen) works correctly.
  */
 export function matchesSubjects(item: BookItem, keywords: string[]): boolean {
   const raw = item.book?.subjects;
@@ -50,8 +58,11 @@ export function matchesSubjects(item: BookItem, keywords: string[]): boolean {
     ? raw
     : String(raw).split(/[,;|]+/).map(s => s.trim()).filter(Boolean);
 
-  const lower = subjectList.map(s => s.toLowerCase());
-  return keywords.some(kw => lower.some(s => s.includes(kw.toLowerCase())));
+  return keywords.some(kw => {
+    const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex   = new RegExp(`\\b${escaped}\\b`, 'i');
+    return subjectList.some(s => regex.test(s));
+  });
 }
 
 export const SHELF_DEFINITIONS: ShelfDefinition[] = [
