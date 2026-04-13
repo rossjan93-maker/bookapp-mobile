@@ -3,19 +3,23 @@ import { fetchGoogleBooksCoverUrl } from '../../lib/googleBooks';
 import { repairBooksMetadata } from '../../lib/metadataRepair';
 import { registerCacheClearer } from '../../lib/tabCache';
 import { mountDevInspector } from '../../lib/devInspector';
-import { ActivityIndicator, FlatList, Keyboard, Modal, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, Keyboard, Modal, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { LibraryScreenSkeleton } from '../../components/Placeholder';
+import { LibraryGalleryView } from '../../components/LibraryGalleryView';
 import { computePagePacing, computeDatePacing, formatLastUpdated, computeBookPace, formatPaceChip, computeUserAvgPace, inferReadState } from '../../lib/pacing';
 import { transitionStatus, saveCurrentPage } from '../../lib/userBookActions';
 import { findSeriesForBook, getSeriesCatalog } from '../../lib/seriesCatalog';
 import { triggerRecPrewarm } from '../../lib/recPrewarm';
 import { registerWtTarget, useWalkthrough } from '../../lib/walkthroughEngine';
 import { WtDemoLibrary } from '../../components/walkthrough/WtDemoLibrary';
+
+const LIB_VIEW_MODE_KEY = 'libraryViewMode';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -150,8 +154,10 @@ const VALID_FILTERS = new Set<FilterKey>(['all', 'want_to_read', 'reading', 'fin
 export default function LibraryScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { width: screenWidth } = useWindowDimensions();
   const { initialFilter } = useLocalSearchParams<{ initialFilter?: string }>();
   const [currentUserId, setCurrentUserId] = useState<string | null>(() => _libCache?.userId ?? null);
+  const [viewMode, setViewMode] = useState<'list' | 'gallery'>('list');
   // Seed from _libItems first (survives bookData clears), then timing cache, then empty.
   const [items, setItems]                 = useState<UserBook[]>(() => _libItems ?? _libCache?.items ?? []);
   const [yearlyGoal, setYearlyGoal]       = useState<number | null>(() => _libCache?.yearlyGoal ?? null);
@@ -213,6 +219,13 @@ export default function LibraryScreen() {
     const t = setTimeout(measureLibContent, 120);
     return () => clearTimeout(t);
   }, [loading, wtStep]);
+
+  // Load persisted view mode on mount
+  useEffect(() => {
+    AsyncStorage.getItem(LIB_VIEW_MODE_KEY).then(val => {
+      if (val === 'gallery' || val === 'list') setViewMode(val);
+    });
+  }, []);
 
   // Dev inspector — mounts __rs on globalThis for browser console access.
   // __rs.covers() / __rs.summaries() / __rs.credibility() / __rs.health() / __rs.all()
@@ -803,17 +816,7 @@ export default function LibraryScreen() {
 
   if (wtStep === 'library') return <WtDemoLibrary />;
 
-  return (
-    <View style={{ flex: 1, backgroundColor: '#f5f1ec' }}>
-    <FlatList
-      data={displayedItems}
-      keyExtractor={item => isYearSeparator(item) ? item.key : isSectionSeparator(item) ? item.key : item.id}
-      style={{ flex: 1 }}
-      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 0, paddingBottom: 40 }}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
-      }
-      ListHeaderComponent={
+  const libraryHeaderEl = (
         <View ref={libTargetRef} style={{ paddingTop: insets.top + 8 }}>
           {/* ── Hero header ── */}
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginBottom: 4 }}>
@@ -830,20 +833,47 @@ export default function LibraryScreen() {
               </Text>
               <View style={{ width: 28, height: 2.5, backgroundColor: '#7b9e7e', marginTop: 10, borderRadius: 2 }} />
             </View>
-            <TouchableOpacity
-              onPress={() => router.push('/add-book')}
-              style={{
-                flexDirection:    'row',
-                alignItems:       'center',
-                backgroundColor:  '#231f1b',
-                borderRadius:     20,
-                paddingHorizontal: 16,
-                paddingVertical:  9,
-                marginBottom: 4,
-              }}
-            >
-              <Text style={{ color: '#f5f1ec', fontSize: 13, fontWeight: '700', letterSpacing: 0.2 }}>+ Add book</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              {/* View mode toggle */}
+              {items.length > 0 && !searchActive && (
+                <TouchableOpacity
+                  onPress={() => {
+                    const next = viewMode === 'list' ? 'gallery' : 'list';
+                    setViewMode(next);
+                    AsyncStorage.setItem(LIB_VIEW_MODE_KEY, next);
+                  }}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    borderWidth: 1,
+                    borderColor: '#ede9e4',
+                    backgroundColor: viewMode === 'gallery' ? '#231f1b' : '#fefcf9',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ionicons
+                    name={viewMode === 'gallery' ? 'list' : 'grid-outline'}
+                    size={16}
+                    color={viewMode === 'gallery' ? '#f5f1ec' : '#78716c'}
+                  />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                onPress={() => router.push('/add-book')}
+                style={{
+                  flexDirection:    'row',
+                  alignItems:       'center',
+                  backgroundColor:  '#231f1b',
+                  borderRadius:     20,
+                  paddingHorizontal: 16,
+                  paddingVertical:  9,
+                }}
+              >
+                <Text style={{ color: '#f5f1ec', fontSize: 13, fontWeight: '700', letterSpacing: 0.2 }}>+ Add book</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           {/* ── Search bar ── */}
           <TouchableOpacity
@@ -1034,7 +1064,58 @@ export default function LibraryScreen() {
             <View style={{ height: 1, backgroundColor: '#ede9e4' }} />
           )}
         </View>
-      }
+  );
+
+  const refreshCtrl = (
+    <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
+  );
+
+  return (
+    <View style={{ flex: 1, backgroundColor: '#f5f1ec' }}>
+    {viewMode === 'gallery' && !searchActive ? (
+      <LibraryGalleryView
+        books={filteredItems}
+        filter={activeFilter}
+        sort={sort}
+        screenWidth={screenWidth}
+        ListHeaderComponent={libraryHeaderEl}
+        refreshControl={refreshCtrl}
+        emptyComponent={
+          items.length === 0 ? (
+            <View style={{ paddingTop: 36, paddingHorizontal: 24, alignItems: 'center' }}>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: '#231f1b', marginBottom: 8, textAlign: 'center' }}>
+                {FILTER_EMPTY.all.title}
+              </Text>
+              <Text style={{ fontSize: 14, color: '#9e958d', textAlign: 'center', lineHeight: 22, marginBottom: 24 }}>
+                {FILTER_EMPTY.all.body}
+              </Text>
+              <TouchableOpacity
+                onPress={() => router.push('/add-book')}
+                style={{ backgroundColor: '#231f1b', borderRadius: 12, paddingVertical: 13, paddingHorizontal: 26 }}
+              >
+                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Add your first book</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={{ paddingTop: 48, paddingHorizontal: 24, alignItems: 'center' }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: '#231f1b', marginBottom: 8, textAlign: 'center' }}>
+                {FILTER_EMPTY[activeFilter].title}
+              </Text>
+              <Text style={{ fontSize: 14, color: '#9e958d', textAlign: 'center', lineHeight: 22 }}>
+                {FILTER_EMPTY[activeFilter].body}
+              </Text>
+            </View>
+          )
+        }
+      />
+    ) : (
+    <FlatList
+      data={displayedItems}
+      keyExtractor={item => isYearSeparator(item) ? item.key : isSectionSeparator(item) ? item.key : item.id}
+      style={{ flex: 1 }}
+      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 0, paddingBottom: 40 }}
+      refreshControl={refreshCtrl}
+      ListHeaderComponent={libraryHeaderEl}
       renderItem={({ item, index }) => {
         // ── Section separator header (Want to Read / Finished / Set Aside / Continue Reading / On Your Shelf) ──
         if (isSectionSeparator(item)) {
@@ -1702,6 +1783,7 @@ export default function LibraryScreen() {
         )
       }
     />
+    )}
 
     {/* ── Post-finish taste capture modal ── */}
     <Modal
