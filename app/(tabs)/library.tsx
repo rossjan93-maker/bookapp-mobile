@@ -43,11 +43,15 @@ type UserBook = {
 
 type PendingFeedback = { userBookId: string; bookId: string; status: 'finished' | 'dnf'; pendingEventId: string | null };
 
-type YearSeparator = { __type: 'year_separator'; year: string; key: string; count: number };
-type ListItem      = UserBook | YearSeparator;
+type YearSeparator    = { __type: 'year_separator'; year: string; key: string; count: number };
+type SetAsideSeparator = { __type: 'set_aside_separator'; key: string };
+type ListItem          = UserBook | YearSeparator | SetAsideSeparator;
 
 function isYearSeparator(item: ListItem): item is YearSeparator {
   return (item as YearSeparator).__type === 'year_separator';
+}
+function isSetAsideSeparator(item: ListItem): item is SetAsideSeparator {
+  return (item as SetAsideSeparator).__type === 'set_aside_separator';
 }
 
 // Build an accordion-aware list: only books whose year is in expandedYears are
@@ -156,6 +160,7 @@ export default function LibraryScreen() {
   const [error, setError]                 = useState<string | null>(null);
   const [updatingId, setUpdatingId]       = useState<string | null>(null);
   const [pendingFeedback, setPendingFeedback]           = useState<PendingFeedback | null>(null);
+  const [reasonEditingId, setReasonEditingId]           = useState<string | null>(null);
   // Quick-page-log state (inline progress update on reading cards)
   const [quickLogId, setQuickLogId]       = useState<string | null>(null);
   const [quickLogInput, setQuickLogInput] = useState('');
@@ -512,6 +517,7 @@ export default function LibraryScreen() {
         });
     }
     setPendingFeedback(null);
+    setReasonEditingId(null);
   }
 
   async function handleUpdateStatus(userBook: UserBook, newStatus: UserBookStatus) {
@@ -642,6 +648,13 @@ export default function LibraryScreen() {
     if (activeFilter === 'all') {
       // Reading first (operational priority), then finished, want-to-read, DNF.
       // Within each group: Phase 1 sorted normally, Phase 2 appended below (sorted within itself).
+      const dnfItems: UserBook[] = [
+        ...p1.filter(i => i.status === 'dnf'),
+        ...p2.filter(i => i.status === 'dnf'),
+      ];
+      const dnfSection: ListItem[] = dnfItems.length > 0
+        ? [{ __type: 'set_aside_separator' as const, key: 'sep_set_aside' }, ...dnfItems]
+        : [];
       return [
         ...byRecent(p1.filter(i => i.status === 'reading')),
         ...byRecent(p2.filter(i => i.status === 'reading')),
@@ -649,8 +662,7 @@ export default function LibraryScreen() {
         ...byFinished(p2.filter(i => i.status === 'finished')),
         ...p1.filter(i => i.status === 'want_to_read'),
         ...p2.filter(i => i.status === 'want_to_read'),
-        ...p1.filter(i => i.status === 'dnf'),
-        ...p2.filter(i => i.status === 'dnf'),
+        ...dnfSection,
       ];
     }
     if (activeFilter === 'reading' && sort === 'recent') {
@@ -729,7 +741,7 @@ export default function LibraryScreen() {
     <View style={{ flex: 1, backgroundColor: '#f5f1ec' }}>
     <FlatList
       data={displayedItems}
-      keyExtractor={item => isYearSeparator(item) ? item.key : item.id}
+      keyExtractor={item => isYearSeparator(item) ? item.key : isSetAsideSeparator(item) ? item.key : item.id}
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 0, paddingBottom: 40 }}
       refreshControl={
@@ -958,6 +970,20 @@ export default function LibraryScreen() {
         </View>
       }
       renderItem={({ item, index }) => {
+        // ── Set-aside section header (All filter only) ───────────────────────
+        if (isSetAsideSeparator(item)) {
+          return (
+            <View style={{ paddingTop: 22, paddingBottom: 6 }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 1, textTransform: 'uppercase' }}>
+                Set aside
+              </Text>
+              <Text style={{ fontSize: 12, color: '#c4b5a5', marginTop: 3 }}>
+                Books that didn't land right now
+              </Text>
+            </View>
+          );
+        }
+
         // ── Year-group accordion header ──────────────────────────────────────
         if (isYearSeparator(item)) {
           const isExpanded = expandedYears.has(item.year);
@@ -1001,7 +1027,7 @@ export default function LibraryScreen() {
         const isBlocked  = updatingId !== null;
         const isReading  = item.status === 'reading';
         const badge      = STATUS_BADGE[item.status];
-        const hasButtons = item.status === 'want_to_read' || item.status === 'reading';
+        const hasButtons = item.status === 'want_to_read' || item.status === 'reading' || item.status === 'dnf';
 
         const hasProgress =
           isReading &&
@@ -1331,10 +1357,29 @@ export default function LibraryScreen() {
                         {new Date(item.finished_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                       </Text>
                     )}
-                    {item.status === 'dnf' && item.taste_tags?.dnf_reason && (
-                      <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2, fontStyle: 'italic' }}>
-                        {DNF_REASON_LABELS[item.taste_tags.dnf_reason as string] ?? item.taste_tags.dnf_reason}
-                      </Text>
+                    {item.status === 'dnf' && reasonEditingId !== item.id && (
+                      item.taste_tags?.dnf_reason ? (
+                        <TouchableOpacity
+                          onPress={() => setReasonEditingId(item.id)}
+                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                          style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, alignSelf: 'flex-start' }}
+                        >
+                          <View style={{ backgroundColor: '#ede9e4', borderRadius: 12, paddingHorizontal: 9, paddingVertical: 3 }}>
+                            <Text style={{ fontSize: 11, color: '#6b635c' }}>
+                              {DNF_REASON_LABELS[item.taste_tags.dnf_reason as string] ?? item.taste_tags.dnf_reason}
+                            </Text>
+                          </View>
+                          <Text style={{ fontSize: 11, color: '#c4b5a5', marginLeft: 7 }}>change</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity
+                          onPress={() => setReasonEditingId(item.id)}
+                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                          style={{ marginTop: 6 }}
+                        >
+                          <Text style={{ fontSize: 11, color: '#c4b5a5', fontStyle: 'italic' }}>Add a note</Text>
+                        </TouchableOpacity>
+                      )
                     )}
                     {item.status === 'finished' && (() => {
                       const bp = computeBookPace(item.started_at, item.finished_at, item.book?.page_count);
@@ -1392,6 +1437,19 @@ export default function LibraryScreen() {
                 <OutlineButton label="Mark Finished" onPress={() => handleUpdateStatus(item, 'finished')} disabled={isBlocked} />
                 <DangerButton  label="Set aside"      onPress={() => handleUpdateStatus(item, 'dnf')}      disabled={isBlocked} />
               </View>
+            ) : item.status === 'dnf' ? (
+              reasonEditingId === item.id ? (
+                <View style={{ marginLeft: 58, marginTop: 6 }}>
+                  <DnfReasonChips
+                    onSelect={r => { saveDnfReason(item.id, r); setReasonEditingId(null); }}
+                    onSkip={() => setReasonEditingId(null)}
+                  />
+                </View>
+              ) : (
+                <View style={{ marginLeft: 58, marginTop: 6 }}>
+                  <OutlineButton label="Pick up again" onPress={() => handleUpdateStatus(item, 'want_to_read')} disabled={isBlocked} />
+                </View>
+              )
             ) : null}
           </View>
         </View>
