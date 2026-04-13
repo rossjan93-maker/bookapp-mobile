@@ -49,6 +49,100 @@ function capitalize(s: string): string {
   return s.length > 0 ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
+// ── Evidence tags ─────────────────────────────────────────────────────────────
+//
+// Compact chips derived from score_breakdown signals — not from reason copy.
+// They complement the prose explanation by labeling the TYPE of evidence.
+// Each tag string is 1-3 words and maps to a concrete signal in _score_breakdown
+// or reasons[]. Never decorative — every tag requires a measured signal.
+//
+// Priority order: author_affinity > trait_tag > theme_match > feedback_signal
+// Maximum 2 tags per card.
+
+const TRAIT_TAG_MAP: Record<string, string> = {
+  pacing:            'Pacing',
+  emotionality:      'Emotional depth',
+  worldbuilding:     'World-building',
+  literary_prose:    'Prose',
+  insight:           'Insight',
+  suspense:          'Suspense',
+  originality:       'Originality',
+  romance_intensity: 'Romance',
+  practicality:      'Practical depth',
+};
+
+function extractTraitTag(reasons: string[]): string | null {
+  for (const r of reasons) {
+    const m =
+      r.match(/^Matches your appreciation for (.+)$/i)  ||
+      r.match(/^Readers note strong (.+?) —/i)          ||
+      r.match(/^Aligns with your preference for (.+)$/i);
+    if (m) {
+      const raw = m[1].toLowerCase().trim();
+      for (const [key, label] of Object.entries(TRAIT_TAG_MAP)) {
+        if (raw.includes(key)) return label;
+      }
+    }
+  }
+  return null;
+}
+
+function buildEvidenceTags(book: ScoredBook): string[] {
+  const bd   = book._score_breakdown;
+  const tags: string[] = [];
+
+  // 1. Author affinity — user has previously read 2+ books by this author
+  if ((bd.author_books_read ?? 0) >= 2) {
+    tags.push('Author you read');
+  }
+
+  // 2. Trait match — a specific reader trait is identified and scored
+  if (tags.length < 2 && bd.trait_alignment >= 0.25) {
+    const trait = extractTraitTag(book.reasons);
+    if (trait) tags.push(trait);
+  }
+
+  // 3. Theme / subject overlap — subject-match reason present
+  if (tags.length < 2) {
+    const hasTheme = book.reasons.some(r =>
+      /covers themes of/i.test(r) || /themes?.+align/i.test(r)
+    );
+    if (hasTheme) tags.push('Theme overlap');
+  }
+
+  // 4. Explicit feedback signal — user said "more like this" on similar book
+  if (tags.length < 2 && (bd.feedback_boost ?? 0) > 0) {
+    tags.push('Your feedback');
+  }
+
+  return tags.slice(0, 2);
+}
+
+function EvidenceTagsRow({ tags }: { tags: string[] }) {
+  if (tags.length === 0) return null;
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
+      {tags.map(tag => (
+        <View
+          key={tag}
+          style={{
+            borderWidth:      1,
+            borderColor:      '#d6cfc8',
+            borderRadius:     4,
+            paddingHorizontal: 6,
+            paddingVertical:   2,
+            backgroundColor:  '#f5f1ec',
+          }}
+        >
+          <Text style={{ fontSize: 10, color: '#6b635c', fontWeight: '500', letterSpacing: 0.1 }}>
+            {tag}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 // ── Reason text rewriter ───────────────────────────────────────────────────────
 // Maps known system-generated reason strings to natural, reader-facing copy.
 // Returns null when the source string is too weak to surface (caller renders nothing).
@@ -580,17 +674,6 @@ export function RecCard({
             </View>
           )}
 
-          {(() => {
-            const bd = book._score_breakdown;
-            const isStarter      = bd.series_label === 'series_starter' || bd.saga_label === 'saga_entry';
-            const isContinuation = bd.series_label === 'series_continuation' || bd.saga_label === 'saga_continuation' || bd.saga_label === 'saga_next_series';
-            const isAuthorMatch  = !isStarter && !isContinuation && (bd.author_books_read ?? 0) >= 2;
-            // "Start here" and "Continue" now appear in the confidence badge (top row).
-            // Only "Author match" still needs its own badge here.
-            if (isAuthorMatch) return <VariantBadge label="Author match" bg="#f5f3ff" color="#5b21b6" />;
-            return null;
-          })()}
-
           {collapsedReason && (featured ? (
             <View style={{ marginTop: 4, borderLeftWidth: 2, borderLeftColor: '#7b9e7e', paddingLeft: 8 }}>
               <Text
@@ -608,6 +691,9 @@ export function RecCard({
               {collapsedReason}
             </Text>
           ))}
+
+          {/* Evidence tags — below the prose explanation, never above */}
+          <EvidenceTagsRow tags={buildEvidenceTags(book)} />
         </View>
       </TouchableOpacity>
 

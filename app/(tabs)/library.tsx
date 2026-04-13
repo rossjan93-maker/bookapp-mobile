@@ -86,14 +86,14 @@ const STATUS_LABELS: Record<UserBookStatus, string> = {
   want_to_read: 'Want to Read',
   reading:      'Reading',
   finished:     'Finished',
-  dnf:          'DNF',
+  dnf:          'Set aside',
 };
 
 const STATUS_BADGE: Record<UserBookStatus, { bg: string; text: string }> = {
   want_to_read: { bg: '#f0ece6', text: '#6b635c' },
   reading:      { bg: '#e6f0e6', text: '#4d7f52' },
   finished:     { bg: '#e6f0e6', text: '#4d7f52' },
-  dnf:          { bg: '#fee2e2', text: '#b91c1c' },
+  dnf:          { bg: '#f0ece6', text: '#7d6f63' },
 };
 
 const FILTER_OPTIONS: Array<{ key: FilterKey; label: string }> = [
@@ -101,7 +101,7 @@ const FILTER_OPTIONS: Array<{ key: FilterKey; label: string }> = [
   { key: 'reading',      label: 'Reading'      },
   { key: 'want_to_read', label: 'Want to Read' },
   { key: 'finished',     label: 'Finished'     },
-  { key: 'dnf',          label: 'DNF'          },
+  { key: 'dnf',          label: 'Set aside'    },
 ];
 
 const FILTER_EMPTY: Record<FilterKey, { title: string; body: string }> = {
@@ -109,7 +109,7 @@ const FILTER_EMPTY: Record<FilterKey, { title: string; body: string }> = {
   reading:      { title: 'Not reading anything',   body: 'Start a book from your list, or add something new.' },
   want_to_read: { title: 'Nothing queued up',      body: 'Save books you want to read next.' },
   finished:     { title: 'No finished books yet',  body: 'Finished books will appear here.' },
-  dnf:          { title: 'No abandoned books',     body: 'DNF is always a valid call.' },
+  dnf:          { title: 'Nothing set aside',      body: 'Sometimes a book isn\'t the right fit for now.' },
 };
 
 // ─── Module-level session cache ───────────────────────────────────────────────
@@ -1263,7 +1263,7 @@ export default function LibraryScreen() {
                     </Text>
                   </TouchableOpacity>
                   <OutlineButton label="Finished" onPress={() => handleUpdateStatus(item, 'finished')} disabled={isBlocked} />
-                  <DangerButton  label="DNF"      onPress={() => handleUpdateStatus(item, 'dnf')}      disabled={isBlocked} />
+                  <DangerButton  label="Set aside" onPress={() => handleUpdateStatus(item, 'dnf')}      disabled={isBlocked} />
                 </View>
               )}
             </View>
@@ -1390,7 +1390,7 @@ export default function LibraryScreen() {
               <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginLeft: 58 }}>
                 <PrimaryButton label="Start Reading" onPress={() => handleUpdateStatus(item, 'reading')}  disabled={isBlocked} />
                 <OutlineButton label="Mark Finished" onPress={() => handleUpdateStatus(item, 'finished')} disabled={isBlocked} />
-                <DangerButton  label="DNF"           onPress={() => handleUpdateStatus(item, 'dnf')}      disabled={isBlocked} />
+                <DangerButton  label="Set aside"      onPress={() => handleUpdateStatus(item, 'dnf')}      disabled={isBlocked} />
               </View>
             ) : null}
           </View>

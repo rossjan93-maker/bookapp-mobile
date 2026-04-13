@@ -16,6 +16,26 @@ The application is developed using React Native with Expo Router for navigation 
 - `lib/googleBooks.ts` — isolated GB API functions (unchanged — no app code imports GB directly; all access goes through metadataRepair or bookEnrichment).
 - Schema: `books.cover_source` (text), `books.metadata_confidence` (text check: high/medium/low), `book_source_links.raw_payload` (jsonb), `book_source_links.last_fetched_at` (timestamptz), `book_source_links.fetch_status` (text check: success/failed/rate_limited). Migration: `supabase/migrations/20260409000000_provider_link_hardening.sql`.
 
+**Phase 4 Wrap UI + Evidence Tags + DNF Refinement (complete):**
+- **`app/wrap/month.tsx`** — Monthly wrap screen. Params: `month` (YYYY-MM). Fetches its own `reading_sessions` + book lookup. Shows: pages read (hero), stat rows (reading days, avg pages/day, longest session, streak-in-month, session count, books active), most-read book callout (only when >1 book active), "See all of YEAR →" link to yearly wrap. Sparse state: quiet "Nothing logged in [month]" copy.
+- **`app/wrap/year.tsx`** — Yearly wrap screen. Params: `year` (YYYY). Fetches sessions + `booksFinished` from full-year user_books query. Shows: books finished (hero), summary stat rows (pages, reading days, avg, streak), monthly rhythm bar chart (reading days per month, relative width bars, sage green), most active month callout. Sparse state handled.
+- **Entry points wired into home screen**:
+  - `"This month →"` quiet link below `ReaderInsightCard` — appears only when `currentMonthWrap.pagesRead > 0 || readingDays > 0`; routes to `/wrap/month?month=YYYY-MM`
+  - `"View YEAR →"` quiet link at bottom-right of yearly goal section; routes to `/wrap/year?year=YYYY`; always visible when yearlyGoal is set
+- **`components/RecCard.tsx`** — Evidence tags system:
+  - `buildEvidenceTags(book: ScoredBook): string[]` — derives up to 2 compact tag labels from `_score_breakdown` fields and `reasons[]` array. Priority: author affinity (`author_books_read >= 2` → `"Author you read"`) > trait match (`trait_alignment >= 0.25` + trait in reasons → e.g. `"Pacing"`, `"Emotional depth"`, `"Prose"`, `"World-building"`) > theme overlap (`"Theme overlap"` when subject-match reason present) > feedback signal (`"Your feedback"` when `feedback_boost > 0`).
+  - `EvidenceTagsRow({ tags })` — renders chips below the prose explanation. Stone-bordered, warm BG, 10px text. Returns null when `tags.length === 0`.
+  - Old "Author match" purple `VariantBadge` removed — superseded by evidence tags.
+  - `TRAIT_TAG_MAP` maps raw trait names to display labels (9 traits covered).
+- **`app/(tabs)/library.tsx`** — DNF softened throughout:
+  - `STATUS_LABELS.dnf` → `'Set aside'` (was `'DNF'`)
+  - `STATUS_BADGE.dnf` → warm neutral `{ bg: '#f0ece6', text: '#7d6f63' }` (was alarm red `#fee2e2/#b91c1c`)
+  - Filter tab → `'Set aside'`
+  - Empty state → `'Nothing set aside'` / `'Sometimes a book isn\'t the right fit for now.'` (was `'No abandoned books'` / `'DNF is always a valid call.'`)
+  - Both action buttons (`DangerButton`) in reading and want-to-read rows → `"Set aside"` (was `"DNF"`)
+  - DB status value `'dnf'` unchanged — purely display-layer rename.
+  - `DnfReasonChips` copy and options unchanged (already well-tuned).
+
 **Phase 3 Reflective Insights Layer (complete):**
 - **`lib/readingWraps.ts`** — new pure-function library, zero I/O, fully testable. Exports:
   - `WrapSession` (input type — flat session with optional user_book_id)

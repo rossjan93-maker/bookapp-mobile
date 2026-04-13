@@ -1117,6 +1117,21 @@ export default function HomeScreen() {
             monthlyDays={monthlyStats?.readingDaysThisMonth ?? 0}
           />
           <ReaderInsightCard insights={insights} />
+          {/* "This month →" tap target — only when there are sessions to show */}
+          {(currentMonthWrap.pagesRead > 0 || currentMonthWrap.readingDays > 0) && (
+            <TouchableOpacity
+              onPress={() => router.push({
+                pathname: '/wrap/month',
+                params: { month: _curMonthPrefix },
+              })}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              style={{ alignSelf: 'flex-start', marginTop: 10 }}
+            >
+              <Text style={{ fontSize: 12, color: '#9e958d' }}>
+                This month →
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -1336,6 +1351,19 @@ export default function HomeScreen() {
               )}
             </View>
           )}
+          {/* "View year →" quiet link below goal section */}
+          <TouchableOpacity
+            onPress={() => router.push({
+              pathname: '/wrap/year',
+              params: { year: String(_wrapToday.getFullYear()) },
+            })}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            style={{ alignSelf: 'flex-end', marginTop: 10 }}
+          >
+            <Text style={{ fontSize: 12, color: '#9e958d' }}>
+              View {_wrapToday.getFullYear()} →
+            </Text>
+          </TouchableOpacity>
           </View>{/* close homeTargetRef wrapper */}
         </View>
       )}
