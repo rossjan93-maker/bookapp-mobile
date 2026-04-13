@@ -374,6 +374,8 @@ export function deriveInsights(
 
   // ── 1. Consistency ─────────────────────────────────────────────────────────
   // Only surface when there is meaningful data (≥ 3 reading days this month).
+  // The low-rate bare-count tier ("N days so far") is intentionally omitted —
+  // a plain number without context is not an insight.
   if (currentWrap.readingDays >= 3) {
     const rate = currentWrap.readingDays / daysSoFar;
 
@@ -389,27 +391,24 @@ export function deriveInsights(
         text:     `About every other day — ${currentWrap.readingDays} reading days this month.`,
         strength: 'mild',
       });
-    } else if (currentWrap.readingDays >= 5) {
-      candidates.push({
-        kind:     'consistency',
-        text:     `${currentWrap.readingDays} reading days so far this month.`,
-        strength: 'mild',
-      });
     }
+    // Below 40% rate with fewer than 7 days: not surfaced — too sparse to observe.
   }
 
   // ── 2. Session depth ───────────────────────────────────────────────────────
-  // Only surface when avg is meaningful (≥ 15 pages per reading day).
+  // Only surface when avg is meaningful (≥ 15 pages/day) and habit is established (≥ 3 days).
+  // Phrased around the experience of sitting down to read, not a metric readout.
   if (currentWrap.avgPagesPerReadingDay && currentWrap.avgPagesPerReadingDay >= 15 && currentWrap.readingDays >= 3) {
     candidates.push({
       kind:     'session_depth',
-      text:     `Averaging ${currentWrap.avgPagesPerReadingDay} pages per reading day this month.`,
+      text:     `About ${currentWrap.avgPagesPerReadingDay} pages each time you read this month.`,
       strength: 'mild',
     });
   }
 
   // ── 3. Month-over-month momentum ───────────────────────────────────────────
-  // Compare normalised pace (pages-per-reading-day) to avoid end-of-month bias.
+  // Compare normalised pace (pages-per-reading-day) to avoid partial-month bias.
+  // Avoids evaluative language ("pace is up" → "reading more per day than").
   if (
     prevWrap &&
     prevWrap.readingDays >= 3 &&
@@ -423,19 +422,21 @@ export function deriveInsights(
     if (delta >= 0.2) {
       candidates.push({
         kind:     'momentum_up',
-        text:     `Reading pace is up from ${shortMonthLabel(prevWrap.month)}.`,
+        text:     `Reading more per day than in ${shortMonthLabel(prevWrap.month)}.`,
         strength: 'notable',
       });
     } else if (Math.abs(delta) < 0.2 && currentWrap.pagesRead >= 100) {
       candidates.push({
         kind:     'momentum_steady',
-        text:     `Similar pace to ${shortMonthLabel(prevWrap.month)} — steady going.`,
+        // "steady going" dropped — it reads as a pep talk. Just state the observation.
+        text:     `Similar rhythm to ${shortMonthLabel(prevWrap.month)}.`,
         strength: 'mild',
       });
     }
   }
 
   // ── 4. Best month of the year so far ──────────────────────────────────────
+  // Framed factually ("more reading days than...") rather than as an achievement badge.
   if (yearlyWrap && yearlyWrap.monthlyBreakdown.length >= 2) {
     const currentMonthPrefix = currentWrap.month;
     const otherMonths        = yearlyWrap.monthlyBreakdown.filter(m => m.month !== currentMonthPrefix);
@@ -444,28 +445,31 @@ export function deriveInsights(
     if (currentWrap.readingDays >= 5 && currentWrap.readingDays > bestOtherDays) {
       candidates.push({
         kind:     'best_month_so_far',
-        text:     `Most active reading month of the year so far.`,
+        text:     `More reading days this month than any month this year.`,
         strength: 'notable',
       });
     }
   }
 
-  // ── 5. Year-pace toward goal ───────────────────────────────────────────────
+  // ── 5. Year goal context ───────────────────────────────────────────────────
+  // Shows where the reader stands vs their goal — observation only, no grade.
+  // "On pace for" / "still on track" removed — too productivity-app-like.
+  // Both tiers use the same plain format; strength controls display priority.
   if (yearlyGoal && yearlyGoal > 0 && yearlyWrap && yearlyWrap.booksFinished > 0) {
-    const doy      = dayOfYear(ref);
-    const daysInYr = isLeapYear(ref.getFullYear()) ? 366 : 365;
+    const doy       = dayOfYear(ref);
+    const daysInYr  = isLeapYear(ref.getFullYear()) ? 366 : 365;
     const paceBooks = Math.round((yearlyWrap.booksFinished / doy) * daysInYr);
 
     if (paceBooks >= yearlyGoal) {
       candidates.push({
         kind:     'year_pace',
-        text:     `On pace for ${paceBooks} books this year — goal is ${yearlyGoal}.`,
+        text:     `${yearlyWrap.booksFinished} of ${yearlyGoal} books finished this year.`,
         strength: 'notable',
       });
     } else if (paceBooks >= Math.round(yearlyGoal * 0.7)) {
       candidates.push({
         kind:     'year_pace',
-        text:     `${yearlyWrap.booksFinished} of ${yearlyGoal} books finished — still on track.`,
+        text:     `${yearlyWrap.booksFinished} of ${yearlyGoal} books finished this year.`,
         strength: 'mild',
       });
     }
