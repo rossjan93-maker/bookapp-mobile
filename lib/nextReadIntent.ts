@@ -35,6 +35,13 @@ export type NextReadPace      = 'fast' | 'medium' | 'slow';
 export type NextReadTone      = 'light' | 'balanced' | 'dark';
 export type NextReadIntensity = 'low'  | 'medium'  | 'high';
 
+export type ReadingEnergyMode =
+  | 'light_fun'
+  | 'immersive'
+  | 'deep_demanding'
+  | 'emotionally_heavy'
+  | 'palate_cleanser';
+
 export type NextReadIntent = {
   // Hard filters — narrow the candidate pool before diversity pass.
   // Books that fail any active hard filter are removed from recommendations.
@@ -49,9 +56,10 @@ export type NextReadIntent = {
   // Soft preferences — small score boosts toward matching books.
   // These influence rank within a tier, not between tiers.
   soft: {
-    pace?:      NextReadPace      | null;
-    tone?:      NextReadTone      | null;
-    intensity?: NextReadIntensity | null;
+    pace?:          NextReadPace      | null;
+    tone?:          NextReadTone      | null;
+    intensity?:     NextReadIntensity | null;
+    readingEnergy?: ReadingEnergyMode | null;
   };
 
   // Exclusions — hard removes matching books from the final list.
@@ -83,6 +91,7 @@ export function isIntentActive(intent: NextReadIntent): boolean {
     || !!s.pace
     || !!s.tone
     || !!s.intensity
+    || !!s.readingEnergy
     || !!e.avoid_classics
     || !!e.avoid_dark
     || !!e.avoid_literary
@@ -294,6 +303,17 @@ export function intentSummaryLabel(intent: NextReadIntent): string {
   if (s.tone)      parts.push(s.tone === 'light' ? 'Light' : s.tone === 'dark' ? 'Dark' : '');
   if (s.intensity) parts.push(s.intensity === 'high' ? 'Emotionally intense' : s.intensity === 'low' ? 'Low intensity' : '');
 
+  if (s.readingEnergy) {
+    const ENERGY_LABELS: Record<ReadingEnergyMode, string> = {
+      light_fun:         'Light & fun',
+      immersive:         'Immersive',
+      deep_demanding:    'Deep & demanding',
+      emotionally_heavy: 'Emotionally heavy',
+      palate_cleanser:   'Palate cleanser',
+    };
+    parts.push(ENERGY_LABELS[s.readingEnergy]);
+  }
+
   if (e.avoid_classics)   parts.push('No classics');
   if (e.avoid_dark)       parts.push('No dark');
   if (e.avoid_literary)   parts.push('No literary');
@@ -452,9 +472,10 @@ export function mergeIntents(
       max_page_count:  chips.hard.max_page_count  ?? nl.hard.max_page_count,
     },
     soft: {
-      pace:      chips.soft.pace      ?? nl.soft.pace,
-      tone:      chips.soft.tone      ?? nl.soft.tone,
-      intensity: chips.soft.intensity ?? nl.soft.intensity,
+      pace:          chips.soft.pace          ?? nl.soft.pace,
+      tone:          chips.soft.tone          ?? nl.soft.tone,
+      intensity:     chips.soft.intensity     ?? nl.soft.intensity,
+      readingEnergy: chips.soft.readingEnergy ?? nl.soft.readingEnergy,
     },
     exclude: {
       avoid_classics:   (chips.exclude.avoid_classics   || nl.exclude.avoid_classics)   || undefined,
@@ -514,6 +535,18 @@ const NL_RULES: NLRule[] = [
     apply: i => { addLane(i, 'romance'); i.soft.intensity = 'high'; }, label: 'romance' },
   { patterns: [' nonfiction ', ' non-fiction '],
     apply: i => addLane(i, 'memoir_nonfiction'), label: 'nonfiction' },
+
+  // ── Reading energy / mood preset ──────────────────────────────────────────
+  { patterns: ['light and fun', 'light & fun', 'fun and breezy', 'something light and fun', 'fun easy read', 'light-hearted fun'],
+    apply: i => { i.soft.readingEnergy = 'light_fun'; }, label: 'light & fun' },
+  { patterns: ['get lost in', 'lose myself in', 'immersive world', 'rich world', 'world-building experience', 'deeply immersive', 'fully immersive'],
+    apply: i => { i.soft.readingEnergy = 'immersive'; }, label: 'immersive' },
+  { patterns: ['deep and demanding', 'deep & demanding', 'challenging read', 'dense and literary', 'intellectually demanding', 'mentally demanding', 'requires focus'],
+    apply: i => { i.soft.readingEnergy = 'deep_demanding'; }, label: 'deep & demanding' },
+  { patterns: ['emotionally heavy', 'emotionally draining', 'heavy emotional', 'need a cry', 'emotional gut-punch', 'devastating read', 'need something devastating'],
+    apply: i => { i.soft.readingEnergy = 'emotionally_heavy'; }, label: 'emotionally heavy' },
+  { patterns: ['palate cleanser', 'palette cleanser', 'palate-cleanser', 'change of pace', 'break from heavy', 'refresh my reading', 'cleanse my palate'],
+    apply: i => { i.soft.readingEnergy = 'palate_cleanser'; }, label: 'palate cleanser' },
 
   // ── Pace ─────────────────────────────────────────────────────────────────
   { patterns: ['fast-paced', 'fast paced', 'page-turner', 'page turner', ' gripping ', 'compulsive read', 'addictive read', "can't put down", 'easy to get into', 'unputdownable', 'flows quickly'],
@@ -609,6 +642,17 @@ export function buildIntentSuffix(intent: NextReadIntent): string | null {
   if (s.tone === 'light')  parts.push('lighter mood');
   if (s.tone === 'dark')   parts.push('darker tone request');
   if (s.intensity === 'high') parts.push('emotionally intense preference');
+
+  if (s.readingEnergy) {
+    const ENERGY_SUFFIX: Record<ReadingEnergyMode, string> = {
+      light_fun:         'light & fun mood',
+      immersive:         'immersive mood',
+      deep_demanding:    'deep & demanding mood',
+      emotionally_heavy: 'emotionally heavy mood',
+      palate_cleanser:   'palate cleanser mood',
+    };
+    parts.push(ENERGY_SUFFIX[s.readingEnergy]);
+  }
 
   if (h.standalone_only) parts.push('standalone preference');
   if (h.max_page_count)  parts.push('shorter book preference');

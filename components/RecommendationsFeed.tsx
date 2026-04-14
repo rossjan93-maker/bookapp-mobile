@@ -13,13 +13,20 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { getPersonalizedRecsWithExpert } from '../lib/recommender';
 import type { ScoredBook, QualityGate } from '../lib/recommender';
+import {
+  type NextReadIntent,
+  type ReadingEnergyMode,
+  emptyIntent,
+  isIntentActive,
+  intentSummaryLabel,
+} from '../lib/nextReadIntent';
 import type { TasteProfile } from '../lib/tasteProfile';
 import type { RecEntitlement } from '../lib/recEntitlement';
 import { loadFeedbackContext, persistFeedback } from '../lib/recFeedback';
 import type { FeedbackContext } from '../lib/recFeedback';
 import { getBookTraits } from '../lib/bookTraits';
 import type { ReaderThesis } from '../lib/expertRec';
-import { type RecSessionCache, getRecSession, setRecSession } from '../lib/recSession';
+import { type RecSessionCache, getRecSession, setRecSession, clearRecSession } from '../lib/recSession';
 import { addActedOnIds, loadActedOnIds } from '../lib/recPayloadCache';
 import { GuidedActionBanner } from './OnboardingWalkthrough';
 
@@ -149,6 +156,12 @@ export function RecommendationsFeed({
   const [isFreePreview, setIsFreePreview] = useState(false);
   const [thesisOpen, setThesisOpen]       = useState(false);
   const thesisHeight = useRef(new Animated.Value(0)).current;
+
+  // ── Your Next Read — intent chip state ───────────────────────────────────
+  const [intentPanelOpen, setIntentPanelOpen] = useState(false);
+  const [moodChip, setMoodChip]               = useState<ReadingEnergyMode | null>(null);
+  const activeIntentRef                        = useRef<NextReadIntent | null>(null);
+  const [activeIntentLabel, setActiveIntentLabel] = useState<string>('');
 
   // ── Dismiss/undo ──────────────────────────────────────────────────────────
   const [dismissPending, setDismissPendingUI] = useState<{ book: ScoredBook } | null>(null);
@@ -310,7 +323,8 @@ export function RecommendationsFeed({
       const recResult = await Promise.race([
         getPersonalizedRecsWithExpert(
           supabase, userId, tasteProfile, activeEnt, 12,
-          feedbackCtx, undefined,
+          feedbackCtx,
+          activeIntentRef.current ?? undefined,
           opts?.exhaustionBypass ? { exhaustionBypass: true, clearOLCache: true } : undefined,
         ),
         makePipelineTimeoutRace(),
@@ -555,6 +569,34 @@ export function RecommendationsFeed({
   function handleExplanationOpen(book: ScoredBook) {
     if (!supabase || !userId) return;
     persistFeedback(supabase, userId, book, 'explanation_opened').catch(() => {});
+  }
+
+  // ── Your Next Read — intent apply / clear ─────────────────────────────────
+
+  function handleApplyIntent() {
+    const intent: NextReadIntent = { ...emptyIntent(), soft: { readingEnergy: moodChip || undefined } };
+    if (!isIntentActive(intent)) {
+      handleClearIntent();
+      return;
+    }
+    activeIntentRef.current = intent;
+    setActiveIntentLabel(intentSummaryLabel(intent));
+    setIntentPanelOpen(false);
+    clearAll();
+    clearRecSession();
+    setIsInitialLoading(true);
+    runPipeline({ isBgRefresh: false });
+  }
+
+  function handleClearIntent() {
+    activeIntentRef.current = null;
+    setActiveIntentLabel('');
+    setMoodChip(null);
+    setIntentPanelOpen(false);
+    clearAll();
+    clearRecSession();
+    setIsInitialLoading(true);
+    runPipeline({ isBgRefresh: false });
   }
 
   // ── Display state machine ─────────────────────────────────────────────────
@@ -854,6 +896,138 @@ export function RecommendationsFeed({
               })}
             </>
           )}
+
+          {/* ── Your Next Read — mood / reading energy panel ── */}
+          <View style={{ marginTop: 12 }}>
+            {/* ── Collapsed trigger row ── */}
+            {!intentPanelOpen && (
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => setIntentPanelOpen(true)}
+                style={{
+                  flexDirection: 'row', alignItems: 'center',
+                  paddingVertical: 11, paddingHorizontal: 14,
+                  backgroundColor: activeIntentLabel ? '#eaf1ea' : '#f5f1ec',
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: activeIntentLabel ? '#7b9e7e' : '#ede9e4',
+                }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#9e958d', letterSpacing: 0.6, flex: 1 }}>
+                  {activeIntentLabel
+                    ? `YOUR NEXT READ  ·  ${activeIntentLabel.toUpperCase()}`
+                    : 'YOUR NEXT READ'}
+                </Text>
+                <Text style={{ fontSize: 13, color: '#c4b5a5' }}>›</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* ── Expanded panel ── */}
+            {intentPanelOpen && (
+              <View style={{
+                backgroundColor: '#fefcf9', borderRadius: 14,
+                borderWidth: 1, borderColor: '#ede9e4',
+                overflow: 'hidden',
+              }}>
+                {/* Header */}
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => setIntentPanelOpen(false)}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center',
+                    paddingVertical: 12, paddingHorizontal: 14,
+                    borderBottomWidth: 1, borderBottomColor: '#ede9e4',
+                    backgroundColor: '#f5f1ec',
+                  }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#6b635c', letterSpacing: 0.6, flex: 1 }}>
+                    YOUR NEXT READ
+                  </Text>
+                  <Text style={{ fontSize: 13, color: '#c4b5a5' }}>✕</Text>
+                </TouchableOpacity>
+
+                <View style={{ padding: 14 }}>
+                  {/* Reading energy chip row */}
+                  <Text style={{
+                    fontSize: 10, fontWeight: '700', color: '#9e958d',
+                    letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10,
+                  }}>
+                    Reading energy
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+                    {([
+                      ['light_fun',         'Light & fun'],
+                      ['immersive',         'Immersive'],
+                      ['deep_demanding',    'Deep & demanding'],
+                      ['emotionally_heavy', 'Emotionally heavy'],
+                      ['palate_cleanser',   'Palate cleanser'],
+                    ] as [ReadingEnergyMode, string][]).map(([mode, label]) => {
+                      const active = moodChip === mode;
+                      return (
+                        <TouchableOpacity
+                          key={mode}
+                          activeOpacity={0.7}
+                          onPress={() => setMoodChip(active ? null : mode)}
+                          style={{
+                            paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+                            backgroundColor: active ? '#231f1b' : '#f5f1ec',
+                            borderWidth: 1, borderColor: active ? '#231f1b' : '#ede9e4',
+                          }}
+                        >
+                          <Text style={{
+                            fontSize: 12,
+                            color: active ? '#fff' : '#6b635c',
+                            fontWeight: active ? '600' : '400',
+                          }}>
+                            {label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {/* Action row */}
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={handleApplyIntent}
+                      style={{
+                        flex: 2, paddingVertical: 11, borderRadius: 10,
+                        backgroundColor: '#231f1b', alignItems: 'center',
+                      }}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>
+                        Apply
+                      </Text>
+                    </TouchableOpacity>
+                    {activeIntentLabel ? (
+                      <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={handleClearIntent}
+                        style={{
+                          flex: 1, paddingVertical: 11, borderRadius: 10,
+                          borderWidth: 1, borderColor: '#ede9e4', alignItems: 'center',
+                        }}
+                      >
+                        <Text style={{ fontSize: 13, color: '#78716c' }}>Clear</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => setIntentPanelOpen(false)}
+                        style={{
+                          flex: 1, paddingVertical: 11, borderRadius: 10,
+                          borderWidth: 1, borderColor: '#ede9e4', alignItems: 'center',
+                        }}
+                      >
+                        <Text style={{ fontSize: 13, color: '#78716c' }}>Cancel</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              </View>
+            )}
+          </View>
 
           {/* Undo toast */}
           {dismissPending && (

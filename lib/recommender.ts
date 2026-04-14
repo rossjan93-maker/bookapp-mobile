@@ -2152,9 +2152,50 @@ export function getRankedRecs(
 
       // 3. Soft preference boost (trace-aware)
       const { delta: boost, reasons: boostReasons } = computeIntentBoostWithReasons(book, intent);
-      if (boost !== 0) {
-        book.score = +Math.max(0, book.score + boost).toFixed(3);
-        if (boost > 0) softBoostedCount++;
+
+      // ── Mood preset boost (ConsensusTraits, graceful degradation) ────────────
+      // Uses numeric trait values inferred from subjects/description.
+      // Missing trait data = no boost/penalty (soft signal only).
+      let moodDelta = 0;
+      const moodMode = intent.soft.readingEnergy;
+      if (moodMode) {
+        const enrichment = book.external_id ? enrichmentMap.get(book.external_id) : undefined;
+        const ct = enrichment?.consensus_traits;
+        if (ct) {
+          const MOOD_BOOST = 0.04;
+          if (moodMode === 'light_fun') {
+            if ((ct.emotionality ?? 0.5) < 0.4 && (ct.pacing ?? 0) > 0.6 && (ct.literary_prose ?? 0.5) < 0.4) {
+              moodDelta = MOOD_BOOST;
+              boostReasons.push('light & fun match');
+            }
+          } else if (moodMode === 'immersive') {
+            if ((ct.worldbuilding ?? 0) > 0.5) {
+              moodDelta = MOOD_BOOST;
+              boostReasons.push('immersive world');
+            }
+          } else if (moodMode === 'deep_demanding') {
+            if ((ct.literary_prose ?? 0) > 0.5 || (ct.originality ?? 0) > 0.5) {
+              moodDelta = MOOD_BOOST;
+              boostReasons.push('deep & demanding match');
+            }
+          } else if (moodMode === 'emotionally_heavy') {
+            if ((ct.emotionality ?? 0) > 0.5) {
+              moodDelta = MOOD_BOOST;
+              boostReasons.push('emotionally heavy match');
+            }
+          } else if (moodMode === 'palate_cleanser') {
+            if ((ct.pacing ?? 0) > 0.5 && (ct.emotionality ?? 1) < 0.3 && (ct.literary_prose ?? 1) < 0.3) {
+              moodDelta = MOOD_BOOST;
+              boostReasons.push('palate cleanser match');
+            }
+          }
+        }
+      }
+
+      const totalBoost = Math.max(-0.05, Math.min(0.05, boost + moodDelta));
+      if (totalBoost !== 0) {
+        book.score = +Math.max(0, book.score + totalBoost).toFixed(3);
+        if (totalBoost > 0) softBoostedCount++;
       }
 
       book._intent_trace = {
@@ -2162,7 +2203,7 @@ export function getRankedRecs(
         hard_filter_passes: hardEval.passReasons,
         hard_filter_fails:  [],
         soft_boosts:        boostReasons,
-        score_delta:        boost,
+        score_delta:        totalBoost,
       };
 
       kept.push(book);
