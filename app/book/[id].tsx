@@ -293,6 +293,10 @@ export default function BookDetailScreen() {
   const [seriesCovers, setSeriesCovers]     = useState<SeriesCoverItem[]>([]);
   const [snappedIndex, setSnappedIndex]     = useState<number>(0);
   const seriesScrollRef = useRef<ScrollView>(null);
+  // Per-position user status for the series strip labels.
+  // Map: 1-indexed position → user's status ('reading' | 'finished' | 'want_to_read').
+  // Populated post-mount; empty until the query resolves.
+  const [seriesUserPositions, setSeriesUserPositions] = useState<Map<number, string>>(new Map());
 
   // Saga progress section — per-sub-series completion state.
   // Structure (number of sub-series rows) is synchronous from the static
@@ -971,6 +975,35 @@ export default function BookDetailScreen() {
         setSagaProgress(progress);
       });
   // userId is the resolved user id string; sagaKey is stable per seriesName.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seriesName, userId]);
+
+  // ── Series strip user positions ───────────────────────────────────────────
+  // Fetches user's reading/finished/want-to-read books and maps them to
+  // series positions so the carousel can show per-book state labels.
+  // Reuses the same pattern as the saga progress fetch above.
+  useEffect(() => {
+    if (!seriesName || !userId || !supabase) return;
+    const catalog = getSeriesCatalog(seriesName);
+    if (!catalog) return;
+
+    supabase
+      .from('user_books')
+      .select('status, book:books(title, author)')
+      .eq('user_id', userId)
+      .in('status', ['finished', 'reading', 'want_to_read'])
+      .then(({ data }) => {
+        if (!data) return;
+        const posMap = new Map<number, string>();
+        for (const ub of data as Array<{ status: string; book: { title: string; author: string } | null }>) {
+          const book = ub.book;
+          if (!book) continue;
+          const found = findSeriesForBook(book.title ?? '', book.author ?? '');
+          if (!found || found.seriesName !== seriesName) continue;
+          posMap.set(found.seriesPosition, ub.status);
+        }
+        setSeriesUserPositions(posMap);
+      });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seriesName, userId]);
 
@@ -1807,67 +1840,122 @@ export default function BookDetailScreen() {
                 }
               }}
             >
-              {seriesMeta!.orderedBooks.map((b, i) => {
-                const isCurrent = (i + 1) === seriesPos;
-                const cover     = seriesCovers[i];
-                const coverUri  = cover?.coverId
-                  ? `https://covers.openlibrary.org/b/id/${cover.coverId}-S.jpg`
-                  : null;
-                const coverW = isCurrent ? 54 : 42;
-                const coverH = isCurrent ? 80 : 62;
-                return (
-                  <TouchableOpacity
-                    key={`${b.title}-${i}`}
-                    disabled={isCurrent}
-                    activeOpacity={0.75}
-                    onPress={() => router.push({
-                      pathname: '/book/[id]',
-                      params: {
-                        id:             encodeURIComponent(b.title),
-                        title:          b.title,
-                        author:         b.author,
-                        coverUrl:       coverUri ?? '',
-                        seriesName:     seriesName!,
-                        seriesPosition: String(i + 1),
-                      },
-                    })}
-                    style={{
-                      width:         68,
-                      alignItems:    'center',
-                      justifyContent:'flex-end',
-                      marginRight:   8,
-                      opacity:       isCurrent ? 1 : 0.55,
-                    }}
-                  >
-                    <View style={{
-                      borderWidth:  isCurrent ? 2 : 0,
-                      borderColor:  '#231f1b',
-                      borderRadius: 5,
-                    }}>
-                      {coverUri ? (
-                        <Image
-                          source={{ uri: coverUri }}
-                          style={{
+              {(() => {
+                // Build an effective status map: override the current book's position
+                // with localStatus (post-transition state) if available, so labels
+                // stay correct immediately after the user starts/finishes a book.
+                const effectiveStatuses = new Map(seriesUserPositions);
+                if (seriesPos != null && localStatus) {
+                  effectiveStatuses.set(seriesPos, localStatus);
+                }
+
+                // Highest finished position in the series
+                const finishedEntries = Array.from(effectiveStatuses.entries())
+                  .filter(([_p, s]) => s === 'finished')
+                  .map(([p]) => p);
+                const maxFinishedPos = finishedEntries.length > 0 ? Math.max(...finishedEntries) : 0;
+
+                // Highest actively-reading position in the series
+                const readingEntries = Array.from(effectiveStatuses.entries())
+                  .filter(([_p, s]) => s === 'reading' || s === 'started')
+                  .map(([p]) => p);
+                const maxReadingPos = readingEntries.length > 0 ? Math.max(...readingEntries) : 0;
+
+                // maxProgressPos = furthest position the user has reached (read or reading)
+                const maxProgressPos = Math.max(maxFinishedPos, maxReadingPos);
+
+                function getStripLabel(pos: number): string | null {
+                  // "Reading" is strictly tied to the book currently being viewed.
+                  // Other in-progress series books are not labeled "Reading" here —
+                  // they may get "Next up" if they are the next logical volume.
+                  if (pos === seriesPos && (localStatus === 'reading' || localStatus === 'started')) {
+                    return 'Reading';
+                  }
+                  const status = effectiveStatuses.get(pos);
+                  // Finished or actively-reading (non-current) positions get no label
+                  if (status === 'finished' || status === 'reading' || status === 'started') return null;
+                  // Position 1, series completely untouched — "Start here"
+                  if (pos === 1 && maxProgressPos === 0) return 'Start here';
+                  // First unread/want-to-read position immediately after current progress — "Next up"
+                  if (pos === maxProgressPos + 1 && maxProgressPos > 0 && (!status || status === 'want_to_read')) return 'Next up';
+                  return null;
+                }
+
+                return seriesMeta!.orderedBooks.map((b, i) => {
+                  const pos       = i + 1;
+                  const isCurrent = pos === seriesPos;
+                  const cover     = seriesCovers[i];
+                  const coverUri  = cover?.coverId
+                    ? `https://covers.openlibrary.org/b/id/${cover.coverId}-S.jpg`
+                    : null;
+                  const coverW    = isCurrent ? 54 : 42;
+                  const coverH    = isCurrent ? 80 : 62;
+                  const stripLabel = getStripLabel(pos);
+                  return (
+                    <TouchableOpacity
+                      key={`${b.title}-${i}`}
+                      disabled={isCurrent}
+                      activeOpacity={0.75}
+                      onPress={() => router.push({
+                        pathname: '/book/[id]',
+                        params: {
+                          id:             encodeURIComponent(b.title),
+                          title:          b.title,
+                          author:         b.author,
+                          coverUrl:       coverUri ?? '',
+                          seriesName:     seriesName!,
+                          seriesPosition: String(i + 1),
+                        },
+                      })}
+                      style={{
+                        width:          68,
+                        alignItems:     'center',
+                        justifyContent: 'flex-end',
+                        marginRight:    8,
+                        opacity:        isCurrent ? 1 : 0.55,
+                      }}
+                    >
+                      <View style={{
+                        borderWidth:  isCurrent ? 2 : 0,
+                        borderColor:  '#231f1b',
+                        borderRadius: 5,
+                      }}>
+                        {coverUri ? (
+                          <Image
+                            source={{ uri: coverUri }}
+                            style={{
+                              width:           coverW,
+                              height:          coverH,
+                              borderRadius:    4,
+                              backgroundColor: '#ede9e4',
+                            }}
+                          />
+                        ) : (
+                          <View style={{
                             width:           coverW,
                             height:          coverH,
                             borderRadius:    4,
-                            backgroundColor: '#ede9e4',
-                          }}
-                        />
-                      ) : (
-                        <View style={{
-                          width:           coverW,
-                          height:          coverH,
-                          borderRadius:    4,
-                          backgroundColor: '#ece9e4',
-                          borderWidth:     1,
-                          borderColor:     '#e0dbd4',
-                        }} />
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
+                            backgroundColor: '#ece9e4',
+                            borderWidth:     1,
+                            borderColor:     '#e0dbd4',
+                          }} />
+                        )}
+                      </View>
+                      {stripLabel ? (
+                        <Text style={{
+                          fontSize:   10,
+                          color:      '#9e958d',
+                          marginTop:  5,
+                          textAlign:  'center',
+                          lineHeight: 13,
+                        }}>
+                          {stripLabel}
+                        </Text>
+                      ) : null}
+                    </TouchableOpacity>
+                  );
+                });
+              })()}
             </ScrollView>
 
             {/* Position label */}

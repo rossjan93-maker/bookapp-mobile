@@ -55,7 +55,16 @@ type PendingFeedback = { userBookId: string; bookId: string; status: 'finished' 
 type YearSeparator    = { __type: 'year_separator'; year: string; key: string; count: number };
 type SectionSeparator = { __type: 'section_separator'; key: string; title: string; subtitle?: string; muted?: boolean };
 type ArchiveSeparator = { __type: 'archive_separator'; key: string; count: number; expanded: boolean };
-type ListItem         = UserBook | YearSeparator | SectionSeparator | ArchiveSeparator;
+type SeriesGroupSeparator = {
+  __type:      'series_group_separator';
+  key:         string;
+  seriesName:  string;
+  displayName: string;
+  readCount:   number;
+  total:       number;
+  status:      'in_progress' | 'complete';
+};
+type ListItem = UserBook | YearSeparator | SectionSeparator | ArchiveSeparator | SeriesGroupSeparator;
 
 function isYearSeparator(item: ListItem): item is YearSeparator {
   return (item as YearSeparator).__type === 'year_separator';
@@ -65,6 +74,9 @@ function isSectionSeparator(item: ListItem): item is SectionSeparator {
 }
 function isArchiveSeparator(item: ListItem): item is ArchiveSeparator {
   return (item as ArchiveSeparator).__type === 'archive_separator';
+}
+function isSeriesGroupSeparator(item: ListItem): item is SeriesGroupSeparator {
+  return (item as SeriesGroupSeparator).__type === 'series_group_separator';
 }
 
 // Build an accordion-aware list: only books whose year is in expandedYears are
@@ -661,12 +673,13 @@ export default function LibraryScreen() {
   // The boundary is erased on the next pull-to-refresh or cold load (full resort).
 
   // ── Series context maps — computed from ALL items for continuation detection ──────
-  // _allSeriesCtx: itemId → { seriesName, seriesPosition } for catalog-matched books.
-  // _seriesMaxPos: seriesName → highest reading/finished position seen in the library.
-  // A want-to-read book is a "continuation" when the user has read an earlier book
-  // in the same series (maxDone > 0 and the book's position > maxDone).
+  // _allSeriesCtx:    itemId → { seriesName, seriesPosition } for catalog-matched books.
+  // _seriesMaxPos:    seriesName → highest reading/finished position seen in the library.
+  // _seriesFinishedMax: seriesName → highest FINISHED position (for "Next in series" logic).
+  // _seriesGroupData: series with 2+ reading/finished books → metadata for group header.
   const _allSeriesCtx = new Map<string, { seriesName: string; seriesPosition: number }>();
   const _seriesMaxPos = new Map<string, number>();
+  const _seriesFinishedMax = new Map<string, number>();
   for (const item of items) {
     const ctx = findSeriesForBook(item.book?.title ?? '', item.book?.author ?? '');
     if (!ctx) continue;
@@ -675,19 +688,156 @@ export default function LibraryScreen() {
       const prev = _seriesMaxPos.get(ctx.seriesName) ?? 0;
       if (ctx.seriesPosition > prev) _seriesMaxPos.set(ctx.seriesName, ctx.seriesPosition);
     }
+    if (item.status === 'finished') {
+      const prev = _seriesFinishedMax.get(ctx.seriesName) ?? 0;
+      if (ctx.seriesPosition > prev) _seriesFinishedMax.set(ctx.seriesName, ctx.seriesPosition);
+    }
   }
-  function seriesContinuationLabel(item: UserBook): string | null {
+
+  // Build series group data: series with 2+ reading/finished books qualify for grouping.
+  const _seriesGroupData = new Map<string, {
+    displayName:   string;
+    total:         number;
+    readCount:     number;
+    finishedCount: number;
+    itemIds:       Set<string>;
+  }>();
+  for (const item of items) {
+    if (item.status !== 'reading' && item.status !== 'finished') continue;
+    const ctx = _allSeriesCtx.get(item.id);
+    if (!ctx) continue;
+    const catalog = getSeriesCatalog(ctx.seriesName);
+    if (!catalog) continue;
+    if (!_seriesGroupData.has(ctx.seriesName)) {
+      _seriesGroupData.set(ctx.seriesName, {
+        displayName:   catalog.displayName,
+        total:         catalog.total,
+        readCount:     0,
+        finishedCount: 0,
+        itemIds:       new Set(),
+      });
+    }
+    const g = _seriesGroupData.get(ctx.seriesName)!;
+    g.readCount++;
+    if (item.status === 'finished') g.finishedCount++;
+    g.itemIds.add(item.id);
+  }
+  // Remove singletons — only groups with 2+ books qualify
+  for (const key of Array.from(_seriesGroupData.keys())) {
+    if ((_seriesGroupData.get(key)?.readCount ?? 0) < 2) _seriesGroupData.delete(key);
+  }
+
+  // Build series-grouped list from a book array (for reading/finished tabs).
+  // Injects a SeriesGroupSeparator before the first book of each qualifying series,
+  // then emits all books in that series in catalog order. Non-grouped books stay flat.
+  function buildSeriesGroupedItems(bookList: UserBook[]): ListItem[] {
+    // Collect books per series (only those in bookList)
+    const seriesBooks = new Map<string, UserBook[]>();
+    for (const item of bookList) {
+      const ctx = _allSeriesCtx.get(item.id);
+      if (!ctx || !_seriesGroupData.has(ctx.seriesName)) continue;
+      if (!seriesBooks.has(ctx.seriesName)) seriesBooks.set(ctx.seriesName, []);
+      seriesBooks.get(ctx.seriesName)!.push(item);
+    }
+    const result: ListItem[] = [];
+    const emittedSeries = new Set<string>();
+    for (const item of bookList) {
+      const ctx = _allSeriesCtx.get(item.id);
+      const sName = ctx?.seriesName;
+      if (!sName || !_seriesGroupData.has(sName)) {
+        result.push(item);
+        continue;
+      }
+      if (emittedSeries.has(sName)) continue; // already emitted with the group
+      emittedSeries.add(sName);
+      const g = _seriesGroupData.get(sName)!;
+      const isComplete = g.finishedCount >= g.total;
+      result.push({
+        __type:      'series_group_separator',
+        key:         `series_group_${sName}`,
+        seriesName:  sName,
+        displayName: g.displayName,
+        readCount:   g.readCount,
+        total:       g.total,
+        status:      isComplete ? 'complete' : 'in_progress',
+      } as SeriesGroupSeparator);
+      // Sort group members by catalog position
+      const sorted = [...(seriesBooks.get(sName) ?? [])].sort((a, b) => {
+        const pa = _allSeriesCtx.get(a.id)?.seriesPosition ?? 0;
+        const pb = _allSeriesCtx.get(b.id)?.seriesPosition ?? 0;
+        return pa - pb;
+      });
+      for (const b of sorted) result.push(b);
+    }
+    return result;
+  }
+
+  // Variant of buildGroupedFinished that embeds series grouping within each
+  // expanded year section. Series headers get year-scoped keys to avoid
+  // duplicate FlatList keys when the same series spans multiple finish-years.
+  function buildGroupedFinishedWithSeries(sorted: UserBook[]): ListItem[] {
+    const yearCounts = new Map<string, number>();
+    const booksByYear = new Map<string, UserBook[]>();
+    const yearOrder: string[] = [];
+    for (const book of sorted) {
+      const year = book.finished_at
+        ? String(new Date(book.finished_at).getFullYear())
+        : 'No finish date';
+      yearCounts.set(year, (yearCounts.get(year) ?? 0) + 1);
+      if (!booksByYear.has(year)) {
+        booksByYear.set(year, []);
+        yearOrder.push(year);
+      }
+      booksByYear.get(year)!.push(book);
+    }
+    const result: ListItem[] = [];
+    for (const year of yearOrder) {
+      result.push({ __type: 'year_separator', year, key: `sep_${year}`, count: yearCounts.get(year) ?? 0 } as ListItem);
+      if (expandedYears.has(year)) {
+        // Apply series grouping within this year's books; make separator keys
+        // year-scoped so the same series never produces a duplicate key if it
+        // spans multiple finish-years.
+        const grouped = buildSeriesGroupedItems(booksByYear.get(year)!);
+        for (const it of grouped) {
+          if (isSeriesGroupSeparator(it)) {
+            result.push({ ...it, key: `${it.key}_${year}` } as SeriesGroupSeparator);
+          } else {
+            result.push(it);
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  // Returns a small label for want-to-read books in a catalog series.
+  // "Start here"    — position 1, no finished books in the series yet.
+  // "Next in series" — position N>1 and the user has finished position N-1.
+  // null — any other case (mid-series with gaps, already partially shown, etc.)
+  function seriesLabel(item: UserBook): string | null {
     if (item.status !== 'want_to_read') return null;
     const ctx = _allSeriesCtx.get(item.id);
     if (!ctx) return null;
-    const maxDone = _seriesMaxPos.get(ctx.seriesName) ?? 0;
-    if (maxDone === 0 || ctx.seriesPosition <= maxDone) return null;
     const catalog = getSeriesCatalog(ctx.seriesName);
     if (!catalog) return null;
-    return `Book ${ctx.seriesPosition} · ${catalog.displayName}`;
+    if (ctx.seriesPosition === 1 && (_seriesFinishedMax.get(ctx.seriesName) ?? 0) === 0) {
+      return 'Start here';
+    }
+    const maxFinished = _seriesFinishedMax.get(ctx.seriesName) ?? 0;
+    if (maxFinished > 0 && ctx.seriesPosition === maxFinished + 1) {
+      return 'Next in series';
+    }
+    return null;
+  }
+  function seriesContinuationLabel(item: UserBook): string | null {
+    return seriesLabel(item);
   }
   function isSeriesContinuation(item: UserBook): boolean {
-    return seriesContinuationLabel(item) !== null;
+    if (item.status !== 'want_to_read') return false;
+    const ctx = _allSeriesCtx.get(item.id);
+    if (!ctx) return false;
+    const maxDone = _seriesMaxPos.get(ctx.seriesName) ?? 0;
+    return maxDone > 0 && ctx.seriesPosition > maxDone;
   }
 
   const displayedItems: ListItem[] = (() => {
@@ -729,10 +879,11 @@ export default function LibraryScreen() {
       // Order: reading → want-to-read (intent) → archive accordion (finished + set aside).
       // Intent before history: the backlog is more actionable than completed books.
       // Finished and Set Aside are collapsed behind an Archive accordion by default.
-      const readingItems: UserBook[] = [
+      const readingRaw: UserBook[] = [
         ...byRecent(p1.filter(i => i.status === 'reading')),
         ...byRecent(p2.filter(i => i.status === 'reading')),
       ];
+      const readingItems: ListItem[] = buildSeriesGroupedItems(readingRaw);
       const wtrItems: UserBook[] = [
         ...p1.filter(i => i.status === 'want_to_read'),
         ...p2.filter(i => i.status === 'want_to_read'),
@@ -767,10 +918,10 @@ export default function LibraryScreen() {
       return result;
     }
     if (activeFilter === 'reading' && sort === 'recent') {
-      return [...byRecent(p1), ...byRecent(p2)];
+      return buildSeriesGroupedItems([...byRecent(p1), ...byRecent(p2)]);
     }
     if (activeFilter === 'reading' && sort === 'progress') {
-      return [...byProgress(p1), ...byProgress(p2)];
+      return buildSeriesGroupedItems([...byProgress(p1), ...byProgress(p2)]);
     }
     if (activeFilter === 'want_to_read') {
       // Surface series continuations at the top so the next book in an in-progress
@@ -796,9 +947,51 @@ export default function LibraryScreen() {
       // Full sort here: year-separator groups span both phases, so we need a single
       // ordered array to avoid duplicate year headers. One-time reorder on Phase 2
       // append is acceptable for an explicitly-selected filter.
-      return buildGroupedFinished(byFinished(filteredItems), expandedYears);
+      // buildGroupedFinishedWithSeries applies series grouping within each year
+      // section; series headers receive year-scoped keys to prevent FlatList key
+      // collisions when the same series spans multiple finish-years.
+      return buildGroupedFinishedWithSeries(byFinished(filteredItems));
+    }
+    if (activeFilter === 'finished' && sort === 'recent') {
+      return buildSeriesGroupedItems([...p1.filter(i => i.status === 'finished'), ...p2.filter(i => i.status === 'finished')]);
     }
     return filteredItems;
+  })();
+
+  // Index of the first reading-status UserBook in displayedItems (for "Currently Reading" header).
+  // Series group separators may precede reading books in the all-filter view, so we
+  // cannot assume index 0 is the first reading card.
+  const firstReadingDisplayIdx = displayedItems.findIndex(it =>
+    !isYearSeparator(it) && !isSectionSeparator(it) &&
+    !isArchiveSeparator(it) && !isSeriesGroupSeparator(it) &&
+    (it as UserBook).status === 'reading'
+  );
+
+  // IDs of books that are rendered as part of a series group IN THE CURRENT VIEW.
+  // Derived from displayedItems so indentation/subtitle suppression only applies
+  // when a SeriesGroupSeparator header is actually present in the list.
+  // Uses seriesName from the separator to detect group boundaries precisely —
+  // a book that doesn't belong to the current series resets grouping state.
+  const renderedGroupedIds = (() => {
+    const ids = new Set<string>();
+    let currentSeriesName: string | null = null;
+    for (const it of displayedItems) {
+      if (isSeriesGroupSeparator(it)) {
+        currentSeriesName = it.seriesName;
+      } else if (isYearSeparator(it) || isSectionSeparator(it) || isArchiveSeparator(it)) {
+        currentSeriesName = null;
+      } else if (currentSeriesName) {
+        const ub = it as UserBook;
+        const ctx = _allSeriesCtx.get(ub.id);
+        if (ctx?.seriesName === currentSeriesName) {
+          ids.add(ub.id);
+        } else {
+          // Non-member book ends the current group
+          currentSeriesName = null;
+        }
+      }
+    }
+    return ids;
   })();
 
   const statusCounts: Record<FilterKey, number> = {
@@ -1196,7 +1389,7 @@ export default function LibraryScreen() {
     ) : (
     <FlatList
       data={displayedItems}
-      keyExtractor={item => isYearSeparator(item) ? item.key : isSectionSeparator(item) ? item.key : isArchiveSeparator(item) ? item.key : item.id}
+      keyExtractor={item => isYearSeparator(item) ? item.key : isSectionSeparator(item) ? item.key : isArchiveSeparator(item) ? item.key : isSeriesGroupSeparator(item) ? item.key : item.id}
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 0, paddingBottom: 40 }}
       refreshControl={refreshCtrl}
@@ -1250,6 +1443,42 @@ export default function LibraryScreen() {
                 </Text>
               </View>
             </TouchableOpacity>
+          );
+        }
+
+        // ── Series group header ──────────────────────────────────────────────
+        if (isSeriesGroupSeparator(item)) {
+          return (
+            <View style={{
+              flexDirection:  'row',
+              alignItems:     'center',
+              justifyContent: 'space-between',
+              paddingTop:     index === 0 ? 10 : 24,
+              paddingBottom:  8,
+            }}>
+              <View style={{ flex: 1, marginRight: 10 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', letterSpacing: -0.1 }}>
+                  {item.displayName}
+                </Text>
+                <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2 }}>
+                  {item.readCount} of {item.total} {item.readCount === 1 ? 'book' : 'books'}
+                </Text>
+              </View>
+              <View style={{
+                backgroundColor: item.status === 'complete' ? '#e6f0e6' : '#f0ece6',
+                borderRadius:    6,
+                paddingHorizontal: 9,
+                paddingVertical:   4,
+              }}>
+                <Text style={{
+                  fontSize:   11,
+                  fontWeight: '600',
+                  color:      item.status === 'complete' ? '#4d7f52' : '#6b635c',
+                }}>
+                  {item.status === 'complete' ? 'Complete' : 'In Progress'}
+                </Text>
+              </View>
+            </View>
           );
         }
 
@@ -1309,8 +1538,9 @@ export default function LibraryScreen() {
         const hasPendingRating = pendingFeedback?.userBookId === item.id;
         const hasExtraRow      = hasButtons || isUpdating || hasPendingRating;
 
+        const isGroupMember        = renderedGroupedIds.has(item.id);
         const hasNonReading        = displayedItems.length > readingCount;
-        const showNowReadingHeader = activeFilter === 'all' && index === 0 && isReading && hasNonReading;
+        const showNowReadingHeader = activeFilter === 'all' && index === firstReadingDisplayIdx && isReading && hasNonReading;
 
         // ── Reading row: card style with pacing-state border ──────────────
         if (isReading) {
@@ -1351,6 +1581,7 @@ export default function LibraryScreen() {
                 backgroundColor: '#fefcf9',
                 borderRadius: 14,
                 marginVertical: 6,
+                marginLeft: isGroupMember ? 12 : 0,
                 borderLeftWidth: 3,
                 borderLeftColor: accentColor,
                 shadowColor: '#000',
@@ -1398,9 +1629,23 @@ export default function LibraryScreen() {
                   <Text style={{ fontWeight: '700', fontSize: 16, color: '#231f1b', marginBottom: 3, lineHeight: 22 }}>
                     {item.book?.title ?? '—'}
                   </Text>
-                  <Text style={{ color: '#78716c', fontSize: 13, marginBottom: hasProgress ? 12 : 0 }}>
+                  <Text style={{ color: '#78716c', fontSize: 13, marginBottom: (() => {
+                    const ctx = _allSeriesCtx.get(item.id);
+                    return (ctx && !isGroupMember) ? 0 : (hasProgress ? 12 : 0);
+                  })() }}>
                     {item.book?.author ?? '—'}
                   </Text>
+                  {(() => {
+                    const ctx = _allSeriesCtx.get(item.id);
+                    if (!ctx || isGroupMember) return null;
+                    const cat = getSeriesCatalog(ctx.seriesName);
+                    if (!cat) return null;
+                    return (
+                      <Text style={{ fontSize: 11, color: '#c4b5a5', marginTop: 2, marginBottom: hasProgress ? 10 : 4 }}>
+                        {cat.displayName} · Book {ctx.seriesPosition}
+                      </Text>
+                    );
+                  })()}
                   {hasProgress && (
                     <>
                       <View style={{
@@ -1573,6 +1818,7 @@ export default function LibraryScreen() {
               style={{
               paddingTop: 18,
               paddingBottom: hasExtraRow ? 14 : 18,
+              paddingLeft: isGroupMember ? 12 : 0,
               borderBottomWidth: 1,
               borderBottomColor: '#ede9e4',
             }}>
@@ -1616,12 +1862,28 @@ export default function LibraryScreen() {
                       {item.book?.author ?? '—'}
                     </Text>
                     {(() => {
-                      const label = seriesContinuationLabel(item);
-                      return label ? (
-                        <Text style={{ fontSize: 11, color: '#7b9e7e', marginTop: 3, fontWeight: '500' }}>
-                          {label}
-                        </Text>
-                      ) : null;
+                      // Want-to-read series labels
+                      const wtrLabel = seriesContinuationLabel(item);
+                      if (wtrLabel) {
+                        return (
+                          <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 3, fontWeight: '500' }}>
+                            {wtrLabel}
+                          </Text>
+                        );
+                      }
+                      // Series name subtitle for singleton reading/finished books
+                      const ctx = _allSeriesCtx.get(item.id);
+                      if (ctx && !isGroupMember && (item.status === 'reading' || item.status === 'finished' || item.status === 'dnf')) {
+                        const cat = getSeriesCatalog(ctx.seriesName);
+                        if (cat) {
+                          return (
+                            <Text style={{ fontSize: 11, color: '#c4b5a5', marginTop: 3 }}>
+                              {cat.displayName} · Book {ctx.seriesPosition}
+                            </Text>
+                          );
+                        }
+                      }
+                      return null;
                     })()}
                     {item.finished_at && (item.status === 'finished' || item.status === 'dnf') && (
                       <Text style={{ fontSize: 11, color: '#c4b5a5', marginTop: 3 }}>
