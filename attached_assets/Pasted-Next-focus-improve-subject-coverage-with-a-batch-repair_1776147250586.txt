@@ -1,0 +1,54 @@
+Next focus: improve subject coverage with a batch repair pass.
+
+Goal:
+Raise metadata quality across the library by backfilling missing Open Library subjects (and related metadata where appropriate), because subject coverage is currently one of the biggest ceilings on:
+- recommendation quality
+- smart shelf membership
+- content warnings
+- book detail richness
+- overall metadata trust
+
+I want a serious implementation pass, not just an analysis.
+
+What I want you to do:
+1. inspect the current metadata repair pipeline and identify the cleanest way to run a broader batch repair
+2. focus specifically on books where subjects are still null or meaningfully incomplete
+3. design and implement a safe batch repair path
+4. make sure the process is observable and honest about failures / partial completion
+5. avoid overwriting good existing metadata unnecessarily
+
+Requirements:
+- build on the existing repairBooksMetadata / Open Library repair architecture if possible
+- do not create a brittle one-off script if this can become a reusable maintenance path
+- prefer idempotent behavior
+- make sure failures do not break the app
+- surface useful logging / summary output so we know:
+  - how many books were eligible
+  - how many were enriched
+  - how many failed
+  - what fields improved
+- if there should be a manual trigger, make it intentional and clearly scoped
+- if there should be a dev-only trigger, keep it dev-only
+- if there should later be an automated/background form of this, note that, but do not overbuild it now
+
+I want you to answer these specific questions:
+1. what is the cleanest batch repair mechanism for this app right now?
+2. should this run:
+   - manually from a dev/admin trigger
+   - opportunistically in-app
+   - as a dedicated script
+   - or via Supabase function / cron later
+3. what subset of books should be targeted first?
+4. how will we prevent wasteful reprocessing?
+
+What I want back:
+1. exact files changed
+2. the batch repair mechanism you implemented
+3. what targeting/filtering logic it uses
+4. how progress / outcomes are reported
+5. whether any manual step is required from me
+6. what was intentionally deferred
+
+Important:
+Do not drift into unrelated metadata work.
+This pass is about improving subject coverage in a clean, reusable, trustworthy way.
