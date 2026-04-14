@@ -168,7 +168,38 @@ export async function executeGoodreadsImport(
     }
   }
 
-  // Insert books only for Goodreads IDs not yet in book_source_links.
+  // Title+author dedup guard: before creating new rows, check whether a book
+  // with the same normalised title+first-author already exists in the catalog.
+  // This prevents duplicate rows when the same book appears under a different
+  // Goodreads edition ID (e.g. re-import after a metadata repair run).
+  if (allSids.some(sid => !bookIdBySid.has(sid))) {
+    const { data: existingBooks } = await supabase
+      .from('books')
+      .select('id, title, author')
+      .limit(10000);
+
+    function normBookKey(title: string, author: string | null) {
+      const n = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+      return `${n(title)}||${n((author ?? '').split(',')[0])}`;
+    }
+
+    const existingByKey = new Map<string, string>();
+    for (const b of (existingBooks ?? []) as { id: string; title: string; author: string | null }[]) {
+      existingByKey.set(normBookKey(b.title, b.author), b.id);
+    }
+
+    for (const sid of allSids) {
+      if (bookIdBySid.has(sid)) continue; // already resolved via book_source_links
+      const row = sidToRow.get(sid)!;
+      const match = existingByKey.get(normBookKey(row.title!, row.author ?? ''));
+      if (match) {
+        console.log(`[goodreadsExecutor] title+author match for "${row.title}" — reusing book ${match.slice(0, 8)}`);
+        bookIdBySid.set(sid, match);
+      }
+    }
+  }
+
+  // Insert books only for Goodreads IDs not yet in book_source_links or catalog.
   // Returns inserted rows in the same order as the input — we zip by index.
   const newSids = allSids.filter(sid => !bookIdBySid.has(sid));
 

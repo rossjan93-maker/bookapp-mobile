@@ -44,6 +44,13 @@ The application is developed using React Native with Expo Router for navigation.
 - `supabase/migrations/20260413000001_rec_snapshots.sql` — creates `rec_snapshots (user_id, external_id)` PK table storing only rendered explanation + evidence_tags[]. RLS: users manage own rows. Written fire-and-forget on RecCard tap; read by book detail as fallback when session cache is empty.
 - `supabase/migrations/20260414000000_user_books_edition_key.sql` — adds `edition_key text` column to `user_books`. Nullable; stores the Open Library edition ID (e.g. "OL12345M") the user has explicitly chosen for their copy. When set, the book detail screen uses this edition's cover and page count instead of the canonical books row values.
 
+## Maintenance Scripts
+- **`scripts/repairSubjectCoverage.ts`** — Batch repair for books with missing or sparse subjects. Fetches subject data from OpenLibrary. Uses service-role key to bypass RLS. Flags: `--dry-run`, `--batch-size=<n>`, `--user-id=<uuid>`, `--after-id=<uuid>` (cursor). Run with `npx tsx scripts/repairSubjectCoverage.ts`.
+- **`scripts/deduplicateBooks.ts`** — Detects and merges duplicate book rows (same normalised title+author). Selects a canonical row by metadata quality score (OL work ID, subject count, description length, confidence), migrates all FK dependents (user_books, reading_sessions, import_rows), and deletes orphan rows. FK dependencies handled: user_books.book_id, reading_sessions.book_id, import_rows.user_book_id (nulled), import_rows.matched_book_id (remapped). Flags: `--dry-run`, `--verbose`. Run with `npx tsx scripts/deduplicateBooks.ts --dry-run` before every live run.
+
+## Duplicate Prevention
+`lib/goodreadsExecutor.ts` includes a title+author dedup guard (added after the book_source_links check, before the book insert loop). When a Goodreads import would create a new book row, it first normalises the title and first author and checks the entire catalog. If a matching row is found, it reuses that book ID — preventing duplicate rows that arise from re-imports or from the same book appearing under multiple Goodreads edition IDs.
+
 ## External Dependencies
 - **Supabase:** User authentication, PostgreSQL database, Row Level Security.
 - **Open Library API:** Primary source for book search and metadata.
