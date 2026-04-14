@@ -7,21 +7,24 @@
 // first (no OL search needed).  Subjects are only written when the OL result is
 // strictly better (more subjects) than what is already stored.
 //
+// Cursor-based progression (afterId)
+// ───────────────────────────────────
+// Every query uses ORDER BY id ASC and optionally id > afterId.  This means
+// repeated runs always advance forward through the table.  Failed and skipped
+// books are included in the cursor window exactly once per pass — they are not
+// re-queued on subsequent runs within the same cursor segment.  The returned
+// RepairSummary.lastId is the id of the last candidate processed; pass it as
+// the afterId of the next run to continue from where this one left off.
+//
 // The function requires an explicit Supabase client via opts.client.  This
-// keeps lib/subjectRepair.ts free of any React Native / AsyncStorage imports so
-// the standalone CLI script can run it in a plain Node.js environment without
-// transform errors.
+// keeps lib/subjectRepair.ts free of React Native / AsyncStorage imports so the
+// standalone CLI script can run it in a plain Node.js environment.
 //
 //   In the app:   pass supabase from lib/supabase
 //   In scripts:   pass createClient(url, serviceRoleKey) for RLS bypass
 //
-// Safe for repeated runs — the query filters exclude already-complete rows.
-// Each run is bounded by batchSize (default 50).  All queries order by id
-// ascending so successive runs make deterministic forward progress through the
-// full dataset without needing explicit offset bookkeeping.
-//
-// Fatal top-level errors (query failures, missing client) throw so callers /
-// scripts can react (e.g. exit non-zero).  Per-book errors remain fail-soft.
+// Fatal top-level errors throw so scripts can exit non-zero.  Per-book errors
+// remain fail-soft (caught and counted as failed).
 //
 // Used by:
 //   - scripts/repairSubjectCoverage.ts  (CLI, injects a Node.js client)
@@ -37,12 +40,23 @@ export type RepairSummary = {
   failed:         number;
   skipped:        number;
   fieldsImproved: number;
+  /**
+   * The id of the last candidate book that entered the processing loop.
+   * Pass as opts.afterId in the next call to continue from this point.
+   * Null when eligible=0 (nothing was processed).
+   */
+  lastId:         string | null;
 };
 
 export type SubjectRepairOptions = {
   userId?:    string;
   batchSize?: number;
   dryRun?:    boolean;
+  /**
+   * Cursor: only consider books with id > afterId (lexicographic / UUID order).
+   * Use RepairSummary.lastId from the previous run to page through the dataset.
+   */
+  afterId?:   string;
   /**
    * Supabase client to use.  Required — no internal default.
    * App callers pass the lib/supabase singleton; scripts pass a service-role client.
@@ -63,14 +77,14 @@ type CandidateBook = {
 export async function repairSubjectCoverage(
   opts: SubjectRepairOptions,
 ): Promise<RepairSummary> {
-  const { userId, batchSize = 50, dryRun = false, client: db } = opts;
+  const { userId, batchSize = 50, dryRun = false, afterId, client: db } = opts;
 
   if (!db) {
     throw new Error(`${LOG} No Supabase client provided — pass opts.client`);
   }
 
   const summary: RepairSummary = {
-    eligible: 0, enriched: 0, failed: 0, skipped: 0, fieldsImproved: 0,
+    eligible: 0, enriched: 0, failed: 0, skipped: 0, fieldsImproved: 0, lastId: null,
   };
 
   // ── Step 1: resolve book IDs for this user when userId is supplied ────────
@@ -95,14 +109,20 @@ export async function repairSubjectCoverage(
     console.log(`${LOG} user ${userId.slice(0, 8)}… has ${filterIds.length} book(s) in library`);
   }
 
+  if (afterId) {
+    console.log(`${LOG} cursor afterId=${afterId}`);
+  }
+
   // ── Step 2: Priority-1 candidates — subjects IS NULL ─────────────────────
-  // Order by id ascending for deterministic forward progress across repeated runs.
+  // Order by id ASC with optional cursor so each run window is deterministic
+  // and does not re-visit rows from previous runs.
   let q1 = db
     .from('books')
     .select('id, title, author, external_id, subjects')
     .is('subjects', null)
     .order('id', { ascending: true });
 
+  if (afterId) q1 = (q1 as typeof q1).gt('id', afterId);
   if (filterIds) q1 = (q1 as typeof q1).in('id', filterIds);
 
   const { data: p1Data, error: p1Err } = await (q1 as typeof q1).limit(batchSize);
@@ -112,10 +132,9 @@ export async function repairSubjectCoverage(
   const p1: CandidateBook[] = (p1Data ?? []) as CandidateBook[];
 
   // ── Step 3: Priority-2 candidates — subjects exists but < 3 entries ──────
-  // For user-scoped runs, filterIds already bounds the dataset — no pre-limit needed.
-  // For global runs, order by id and fetch all rows, relying on batchSize to cap
-  // what is actually enriched.  Repeated global runs make forward progress because
-  // enriched books (now at ≥ 3 subjects) are excluded from subsequent queries.
+  // DB-side limit: batchSize * 10 bounds the read while providing enough rows
+  // to find sparse candidates after the in-memory length filter.  The cursor
+  // ensures we advance forward rather than revisiting the same leading rows.
   let p2: CandidateBook[] = [];
   const slots = batchSize - p1.length;
 
@@ -126,9 +145,14 @@ export async function repairSubjectCoverage(
       .not('subjects', 'is', null)
       .order('id', { ascending: true });
 
+    if (afterId) q2 = (q2 as typeof q2).gt('id', afterId);
     if (filterIds) {
-      // User-scoped: filterIds bounds the result set — no additional limit required.
+      // User-scoped: filterIds bounds the result set to just this user's books.
       q2 = (q2 as typeof q2).in('id', filterIds);
+    } else {
+      // Global: cap DB read at batchSize * 10 to avoid full-table scans while
+      // still giving the in-memory filter enough rows to find sparse candidates.
+      q2 = (q2 as typeof q2).limit(batchSize * 10);
     }
 
     const { data: p2Raw, error: p2Err } = await (q2 as typeof q2);
@@ -136,15 +160,16 @@ export async function repairSubjectCoverage(
       throw new Error(`${LOG} priority-2 query failed — ${p2Err.message}`);
     }
 
-    // Filter in memory for rows that genuinely have < 3 subjects.
-    // PostgREST does not expose an array-length filter, so the full result set
-    // (bounded by filterIds or the table size) is returned and pruned here.
+    // In-memory filter for rows that genuinely have < 3 subjects.
+    // PostgREST does not expose an array-length predicate, so we prune here.
     p2 = ((p2Raw ?? []) as CandidateBook[])
       .filter(b => Array.isArray(b.subjects) && (b.subjects as string[]).length < 3)
       .slice(0, slots);
   }
 
   // ── Step 4: Merge — books with a valid OL external_id float to the top ────
+  // De-duplicate across priority sets, then prioritize books whose OL work key
+  // is already known (no search round-trip needed).
   const seen = new Set<string>();
   const candidates: CandidateBook[] = [...p1, ...p2]
     .filter(b => { if (seen.has(b.id)) return false; seen.add(b.id); return true; })
@@ -160,8 +185,16 @@ export async function repairSubjectCoverage(
     `dryRun=${dryRun}`,
   );
 
+  // Track the highest id seen so we can return it as the next cursor.
+  // We record every candidate id (including failed/skipped) so the cursor
+  // reliably advances past non-enrichable books on repeated runs.
+  let lastId: string | null = null;
+
   // ── Step 5: Enrich each candidate (per-book errors are fail-soft) ─────────
   for (const book of candidates) {
+    // Advance cursor for every candidate regardless of outcome.
+    lastId = book.id;
+
     const t = String(book.title  ?? '').trim();
     const a = String(book.author ?? '').trim();
     const currentSubjects: string[] = Array.isArray(book.subjects)
@@ -217,7 +250,8 @@ export async function repairSubjectCoverage(
 
       const preview = ol.subjects.slice(0, 3).join(', ');
       console.log(
-        `${LOG} enriched "${t}" [${currentSubjects.length} → ${ol.subjects.length}] (${preview}${ol.subjects.length > 3 ? '…' : ''})`,
+        `${LOG} enriched "${t}" [${currentSubjects.length} → ${ol.subjects.length}] ` +
+        `(${preview}${ol.subjects.length > 3 ? '…' : ''})`,
       );
 
       if (!dryRun) {
@@ -253,12 +287,13 @@ export async function repairSubjectCoverage(
     }
   }
 
-  // Any candidate not enriched, failed, or explicitly skipped ends up in
-  // the skipped bucket (covers edge cases where the loop exits early)
+  // Any candidate not enriched, failed, or explicitly skipped (edge case)
   const accounted = summary.enriched + summary.failed + summary.skipped;
   if (accounted < summary.eligible) {
     summary.skipped += summary.eligible - accounted;
   }
+
+  summary.lastId = lastId;
 
   console.log(
     `${LOG} done — ` +
@@ -266,7 +301,8 @@ export async function repairSubjectCoverage(
     `enriched=${summary.enriched} ` +
     `failed=${summary.failed} ` +
     `skipped=${summary.skipped} ` +
-    `fieldsImproved=${summary.fieldsImproved}` +
+    `fieldsImproved=${summary.fieldsImproved} ` +
+    `lastId=${lastId ?? 'none'}` +
     (dryRun ? ' [DRY RUN]' : ''),
   );
 

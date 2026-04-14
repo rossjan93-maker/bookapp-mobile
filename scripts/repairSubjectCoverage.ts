@@ -14,6 +14,11 @@
 //   2. EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY — anon client, suitable for
 //      user-scoped runs where the target book IDs are already known
 //
+// Cursor-based pagination:
+//   Each run prints "Next cursor: <id>" at the end.  Pass that id as
+//   --after-id=<id> on the next invocation to continue from where this run
+//   stopped — including past books that failed or were skipped.
+//
 // Usage:
 //   npx ts-node scripts/repairSubjectCoverage.ts [flags]
 //
@@ -21,15 +26,13 @@
 //   --dry-run              Preview enrichment without writing to the database
 //   --batch-size=<n>       Number of books to process per run (default: 50)
 //   --user-id=<uuid>       Restrict repair to one user's library
+//   --after-id=<uuid>      Cursor: only process books with id > this value
 //
 // Examples:
 //   npx ts-node scripts/repairSubjectCoverage.ts --dry-run
 //   npx ts-node scripts/repairSubjectCoverage.ts --batch-size=20
 //   npx ts-node scripts/repairSubjectCoverage.ts --user-id=abc123 --dry-run
-//   npx ts-node scripts/repairSubjectCoverage.ts --batch-size 20 --user-id abc123
-//
-// Repeated global runs make forward progress: enriched books gain subjects and
-// are excluded from subsequent queries; the next run picks up the next batch.
+//   npx ts-node scripts/repairSubjectCoverage.ts --after-id=<lastId from prev run>
 // =============================================================================
 
 import { createClient } from '@supabase/supabase-js';
@@ -44,15 +47,17 @@ function parseArgs(argv: string[]): {
   dryRun:    boolean;
   batchSize: number;
   userId:    string | undefined;
+  afterId:   string | undefined;
 } {
   let dryRun    = false;
   let batchSize = 50;
   let userId: string | undefined;
+  let afterId: string | undefined;
 
   for (let i = 2; i < argv.length; i++) {
-    const raw   = argv[i];
-    const eqIdx = raw.indexOf('=');
-    const flag  = eqIdx >= 0 ? raw.slice(0, eqIdx) : raw;
+    const raw    = argv[i];
+    const eqIdx  = raw.indexOf('=');
+    const flag   = eqIdx >= 0 ? raw.slice(0, eqIdx) : raw;
     const inline = eqIdx >= 0 ? raw.slice(eqIdx + 1) : null;
 
     if (flag === '--dry-run') {
@@ -72,23 +77,30 @@ function parseArgs(argv: string[]): {
         process.exit(1);
       }
       userId = val;
+    } else if (flag === '--after-id') {
+      const val = inline ?? argv[++i];
+      if (!val) {
+        console.error(`${LOG} --after-id requires a UUID value`);
+        process.exit(1);
+      }
+      afterId = val;
     } else {
       console.error(`${LOG} Unknown flag: ${raw}`);
       process.exit(1);
     }
   }
 
-  return { dryRun, batchSize, userId };
+  return { dryRun, batchSize, userId, afterId };
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 async function run() {
-  const { dryRun, batchSize, userId } = parseArgs(process.argv);
+  const { dryRun, batchSize, userId, afterId } = parseArgs(process.argv);
 
-  const supabaseUrl  = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
-  const serviceKey   = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
-  const anonKey      = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? '';
+  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
+  const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+  const anonKey     = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? '';
 
   if (!supabaseUrl) {
     console.error(`${LOG} Missing EXPO_PUBLIC_SUPABASE_URL`);
@@ -96,8 +108,10 @@ async function run() {
   }
 
   // Prefer service-role key so writes bypass RLS for global maintenance runs.
-  // Fall back to anon key for user-scoped runs where the caller supplies --user-id.
-  const authKey = serviceKey || anonKey;
+  // Fall back to anon key for user-scoped runs where --user-id is supplied.
+  const authKey  = serviceKey || anonKey;
+  const keyLabel = serviceKey ? 'service-role' : 'anon';
+
   if (!authKey) {
     console.error(
       `${LOG} No auth key found. Set SUPABASE_SERVICE_ROLE_KEY (recommended for global runs) ` +
@@ -106,7 +120,6 @@ async function run() {
     process.exit(1);
   }
 
-  const keyLabel = serviceKey ? 'service-role' : 'anon';
   if (!serviceKey && !userId) {
     console.warn(
       `${LOG} WARNING: Running global repair with anon key — writes may fail RLS. ` +
@@ -119,10 +132,13 @@ async function run() {
   const client = createClient(supabaseUrl, authKey);
 
   console.log(`${LOG} === Subject Coverage Batch Repair ===`);
-  console.log(`${LOG} auth=${keyLabel}  dryRun=${dryRun}  batchSize=${batchSize}  userId=${userId ?? '(all)'}`);
+  console.log(
+    `${LOG} auth=${keyLabel}  dryRun=${dryRun}  batchSize=${batchSize}  ` +
+    `userId=${userId ?? '(all)'}  afterId=${afterId ?? '(start)'}`,
+  );
   if (dryRun) console.log(`${LOG} DRY RUN — no writes will be made\n`);
 
-  const summary = await repairSubjectCoverage({ dryRun, batchSize, userId, client });
+  const summary = await repairSubjectCoverage({ dryRun, batchSize, userId, afterId, client });
 
   console.log(`\n${LOG} ── Summary ──────────────────────────────────────────`);
   console.log(`${LOG}   eligible       : ${summary.eligible}`);
@@ -131,10 +147,15 @@ async function run() {
   console.log(`${LOG}   skipped        : ${summary.skipped}`);
   console.log(`${LOG}   fieldsImproved : ${summary.fieldsImproved}`);
   if (dryRun) console.log(`${LOG}   (no changes written — dry run)`);
-  console.log(`${LOG} ─────────────────────────────────────────────────────\n`);
+  console.log(`${LOG} ─────────────────────────────────────────────────────`);
+
+  if (summary.lastId) {
+    console.log(`${LOG}   Next cursor    : --after-id=${summary.lastId}`);
+  }
+  console.log();
 
   if (summary.eligible === 0) {
-    console.log(`${LOG} Nothing to repair — all books already have subjects.`);
+    console.log(`${LOG} Nothing to repair — all books already have subjects (or cursor is past end).`);
   }
 }
 
