@@ -13,10 +13,12 @@
 // transform errors.
 //
 //   In the app:   pass supabase from lib/supabase
-//   In scripts:   pass createClient(url, anonKey)
+//   In scripts:   pass createClient(url, serviceRoleKey) for RLS bypass
 //
 // Safe for repeated runs — the query filters exclude already-complete rows.
-// Each run is bounded by batchSize (default 50).
+// Each run is bounded by batchSize (default 50).  All queries order by id
+// ascending so successive runs make deterministic forward progress through the
+// full dataset without needing explicit offset bookkeeping.
 //
 // Fatal top-level errors (query failures, missing client) throw so callers /
 // scripts can react (e.g. exit non-zero).  Per-book errors remain fail-soft.
@@ -43,7 +45,7 @@ export type SubjectRepairOptions = {
   dryRun?:    boolean;
   /**
    * Supabase client to use.  Required — no internal default.
-   * App callers pass the lib/supabase singleton; scripts pass a plain Node.js client.
+   * App callers pass the lib/supabase singleton; scripts pass a service-role client.
    */
   client:     SupabaseClient | null;
 };
@@ -94,10 +96,12 @@ export async function repairSubjectCoverage(
   }
 
   // ── Step 2: Priority-1 candidates — subjects IS NULL ─────────────────────
+  // Order by id ascending for deterministic forward progress across repeated runs.
   let q1 = db
     .from('books')
     .select('id, title, author, external_id, subjects')
-    .is('subjects', null);
+    .is('subjects', null)
+    .order('id', { ascending: true });
 
   if (filterIds) q1 = (q1 as typeof q1).in('id', filterIds);
 
@@ -108,9 +112,10 @@ export async function repairSubjectCoverage(
   const p1: CandidateBook[] = (p1Data ?? []) as CandidateBook[];
 
   // ── Step 3: Priority-2 candidates — subjects exists but < 3 entries ──────
-  // Fetch the entire eligible scope (bounded by filterIds when user-scoped,
-  // or capped at 500 for global runs) so no sparse-subject book is skipped
-  // due to a pre-limit applied before the in-memory length filter.
+  // For user-scoped runs, filterIds already bounds the dataset — no pre-limit needed.
+  // For global runs, order by id and fetch all rows, relying on batchSize to cap
+  // what is actually enriched.  Repeated global runs make forward progress because
+  // enriched books (now at ≥ 3 subjects) are excluded from subsequent queries.
   let p2: CandidateBook[] = [];
   const slots = batchSize - p1.length;
 
@@ -118,14 +123,12 @@ export async function repairSubjectCoverage(
     let q2 = db
       .from('books')
       .select('id, title, author, external_id, subjects')
-      .not('subjects', 'is', null);
+      .not('subjects', 'is', null)
+      .order('id', { ascending: true });
 
     if (filterIds) {
-      // User-scoped: filter to exactly this user's books — no pre-limit needed
+      // User-scoped: filterIds bounds the result set — no additional limit required.
       q2 = (q2 as typeof q2).in('id', filterIds);
-    } else {
-      // Global: use a generous cap to stay bounded while covering the dataset
-      q2 = (q2 as typeof q2).limit(500);
     }
 
     const { data: p2Raw, error: p2Err } = await (q2 as typeof q2);
@@ -133,6 +136,9 @@ export async function repairSubjectCoverage(
       throw new Error(`${LOG} priority-2 query failed — ${p2Err.message}`);
     }
 
+    // Filter in memory for rows that genuinely have < 3 subjects.
+    // PostgREST does not expose an array-length filter, so the full result set
+    // (bounded by filterIds or the table size) is returned and pruned here.
     p2 = ((p2Raw ?? []) as CandidateBook[])
       .filter(b => Array.isArray(b.subjects) && (b.subjects as string[]).length < 3)
       .slice(0, slots);

@@ -3,15 +3,23 @@
 // scripts/repairSubjectCoverage.ts
 // =============================================================================
 // CLI wrapper around lib/subjectRepair.ts.
-// Creates a plain Node.js Supabase client and injects it via the `client` option
-// so the shared repair function runs without its React Native app imports.
+//
+// Creates a Supabase client and injects it via opts.client so the shared repair
+// function runs without React Native imports.  For maintenance runs that touch
+// all books (no --user-id), use the service-role key so writes pass RLS.
+//
+// Auth strategy (checked in order):
+//   1. SUPABASE_SERVICE_ROLE_KEY — service-role client, bypasses RLS (recommended
+//      for global runs that update books not owned by an authenticated session)
+//   2. EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY — anon client, suitable for
+//      user-scoped runs where the target book IDs are already known
 //
 // Usage:
 //   npx ts-node scripts/repairSubjectCoverage.ts [flags]
 //
 // Flags (both --flag value and --flag=value forms are accepted):
 //   --dry-run              Preview enrichment without writing to the database
-//   --batch-size=<n>       Number of books to process in this run (default: 50)
+//   --batch-size=<n>       Number of books to process per run (default: 50)
 //   --user-id=<uuid>       Restrict repair to one user's library
 //
 // Examples:
@@ -19,6 +27,9 @@
 //   npx ts-node scripts/repairSubjectCoverage.ts --batch-size=20
 //   npx ts-node scripts/repairSubjectCoverage.ts --user-id=abc123 --dry-run
 //   npx ts-node scripts/repairSubjectCoverage.ts --batch-size 20 --user-id abc123
+//
+// Repeated global runs make forward progress: enriched books gain subjects and
+// are excluded from subsequent queries; the next run picks up the next batch.
 // =============================================================================
 
 import { createClient } from '@supabase/supabase-js';
@@ -39,9 +50,7 @@ function parseArgs(argv: string[]): {
   let userId: string | undefined;
 
   for (let i = 2; i < argv.length; i++) {
-    const raw = argv[i];
-
-    // Split --flag=value into ['--flag', 'value']
+    const raw   = argv[i];
     const eqIdx = raw.indexOf('=');
     const flag  = eqIdx >= 0 ? raw.slice(0, eqIdx) : raw;
     const inline = eqIdx >= 0 ? raw.slice(eqIdx + 1) : null;
@@ -51,11 +60,17 @@ function parseArgs(argv: string[]): {
     } else if (flag === '--batch-size') {
       const raw2 = inline ?? argv[++i];
       const v    = parseInt(raw2 ?? '', 10);
-      if (isNaN(v) || v < 1) { console.error(`${LOG} --batch-size requires a positive integer`); process.exit(1); }
+      if (isNaN(v) || v < 1) {
+        console.error(`${LOG} --batch-size requires a positive integer`);
+        process.exit(1);
+      }
       batchSize = v;
     } else if (flag === '--user-id') {
       const val = inline ?? argv[++i];
-      if (!val) { console.error(`${LOG} --user-id requires a UUID value`); process.exit(1); }
+      if (!val) {
+        console.error(`${LOG} --user-id requires a UUID value`);
+        process.exit(1);
+      }
       userId = val;
     } else {
       console.error(`${LOG} Unknown flag: ${raw}`);
@@ -71,20 +86,40 @@ function parseArgs(argv: string[]): {
 async function run() {
   const { dryRun, batchSize, userId } = parseArgs(process.argv);
 
-  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
-  const anonKey     = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? '';
+  const supabaseUrl  = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
+  const serviceKey   = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+  const anonKey      = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? '';
 
-  if (!supabaseUrl || !anonKey) {
-    console.error(`${LOG} Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`);
+  if (!supabaseUrl) {
+    console.error(`${LOG} Missing EXPO_PUBLIC_SUPABASE_URL`);
     process.exit(1);
   }
 
-  // Create a plain Node.js client and inject it so lib/subjectRepair.ts does
-  // not need to import lib/supabase.ts (which pulls in react-native / AsyncStorage).
-  const client = createClient(supabaseUrl, anonKey);
+  // Prefer service-role key so writes bypass RLS for global maintenance runs.
+  // Fall back to anon key for user-scoped runs where the caller supplies --user-id.
+  const authKey = serviceKey || anonKey;
+  if (!authKey) {
+    console.error(
+      `${LOG} No auth key found. Set SUPABASE_SERVICE_ROLE_KEY (recommended for global runs) ` +
+      `or EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY.`,
+    );
+    process.exit(1);
+  }
+
+  const keyLabel = serviceKey ? 'service-role' : 'anon';
+  if (!serviceKey && !userId) {
+    console.warn(
+      `${LOG} WARNING: Running global repair with anon key — writes may fail RLS. ` +
+      `Set SUPABASE_SERVICE_ROLE_KEY for maintenance runs without --user-id.`,
+    );
+  }
+
+  // Inject a plain Node.js client so lib/subjectRepair.ts does not need to
+  // import lib/supabase.ts (which pulls in react-native / AsyncStorage).
+  const client = createClient(supabaseUrl, authKey);
 
   console.log(`${LOG} === Subject Coverage Batch Repair ===`);
-  console.log(`${LOG} dryRun=${dryRun}  batchSize=${batchSize}  userId=${userId ?? '(all)'}`);
+  console.log(`${LOG} auth=${keyLabel}  dryRun=${dryRun}  batchSize=${batchSize}  userId=${userId ?? '(all)'}`);
   if (dryRun) console.log(`${LOG} DRY RUN — no writes will be made\n`);
 
   const summary = await repairSubjectCoverage({ dryRun, batchSize, userId, client });
