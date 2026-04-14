@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { registerWtTarget, useWalkthrough } from '../../lib/walkthroughEngine';
@@ -23,6 +24,8 @@ import { computePagePacing, computeUserAvgPace, inferReadState, computeSessionPa
 import { computeMonthlyWrap, computeYearlyWrap, deriveInsights, type WrapSession, type WrapBookRef, type ReaderInsight } from '../../lib/readingWraps';
 import { computeStreaks } from '../../lib/streaks';
 import { showToast } from '../../lib/toast';
+import { BadgeContext } from './_layout';
+import { RecsInboxSheet } from '../../components/RecsInboxSheet';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -401,6 +404,8 @@ registerCacheClearer(() => { _homeCache = null; }, 'bookData');
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { newRecCount } = useContext(BadgeContext);
+  const [inboxSheetOpen, setInboxSheetOpen] = useState(false);
 
   // Initialise from cache when it exists — renders meaningful content immediately
   // without a network round-trip on return visits.
@@ -943,6 +948,7 @@ export default function HomeScreen() {
   }
 
   return (
+    <>
     <ScrollView
       style={{ backgroundColor: '#f5f1ec' }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: insets.top + 16, paddingBottom: 40 }}
@@ -952,25 +958,59 @@ export default function HomeScreen() {
     >
       {/* ── Hero heading ── */}
       <View style={{ marginBottom: 34 }}>
-        <Text style={{
-          fontSize: 10,
-          fontWeight: '600',
-          color: '#c4b5a5',
-          letterSpacing: 1.4,
-          textTransform: 'uppercase',
-          marginBottom: 6,
-        }}>
-          {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-        </Text>
-        <Text style={{
-          fontSize: 38,
-          fontWeight: '900',
-          color: '#231f1b',
-          letterSpacing: -1.5,
-          lineHeight: 43,
-        }}>
-          {greeting ? `${timeGreeting()},\n${greeting}` : timeGreeting()}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{
+              fontSize: 10,
+              fontWeight: '600',
+              color: '#c4b5a5',
+              letterSpacing: 1.4,
+              textTransform: 'uppercase',
+              marginBottom: 6,
+            }}>
+              {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+            </Text>
+            <Text style={{
+              fontSize: 38,
+              fontWeight: '900',
+              color: '#231f1b',
+              letterSpacing: -1.5,
+              lineHeight: 43,
+            }}>
+              {greeting ? `${timeGreeting()},\n${greeting}` : timeGreeting()}
+            </Text>
+          </View>
+
+          {/* Inbox icon with badge */}
+          <TouchableOpacity
+            onPress={() => setInboxSheetOpen(true)}
+            hitSlop={10}
+            style={{ marginTop: 2, padding: 4 }}
+          >
+            <View style={{ position: 'relative' }}>
+              <Ionicons name="mail-outline" size={24} color="#6b635c" />
+              {newRecCount > 0 && (
+                <View style={{
+                  position: 'absolute',
+                  top: -4,
+                  right: -5,
+                  backgroundColor: '#231f1b',
+                  borderRadius: 8,
+                  minWidth: 16,
+                  height: 16,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingHorizontal: 3,
+                }}>
+                  <Text style={{ color: '#fefcf9', fontSize: 9, fontWeight: '700', lineHeight: 12 }}>
+                    {newRecCount}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </TouchableOpacity>
+        </View>
+
         {currentReads.length > 0 && (
           <Text style={{ fontSize: 13, color: '#7b9e7e', fontWeight: '600', marginTop: 8, letterSpacing: 0.1 }}>
             {currentReads.length === 1
@@ -1743,5 +1783,8 @@ export default function HomeScreen() {
         )}
       </View>
     </ScrollView>
+
+    <RecsInboxSheet visible={inboxSheetOpen} onClose={() => setInboxSheetOpen(false)} />
+    </>
   );
 }

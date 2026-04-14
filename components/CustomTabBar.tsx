@@ -14,10 +14,11 @@ const TABS: TabConfig[] = [
   { name: 'index',   label: 'Home',    icon: 'home-outline',     iconFocused: 'home'     },
   { name: 'search',  label: 'For You', icon: 'sparkles-outline', iconFocused: 'sparkles' },
   { name: 'library', label: 'Library', icon: 'library-outline',  iconFocused: 'library'  },
-  { name: 'notes',   label: 'Inbox',   icon: 'mail-outline',     iconFocused: 'mail'     },
-  { name: 'clubs',   label: 'Clubs',   icon: 'people-outline',   iconFocused: 'people'   },
   { name: 'profile', label: 'Profile', icon: 'person-outline',   iconFocused: 'person'   },
 ];
+
+const TAB_NAMES = new Set(TABS.map(t => t.name));
+const TAB_MAP   = new Map(TABS.map(t => [t.name, t]));
 
 const INK      = '#231f1b';
 const DUST     = '#9e958d';
@@ -29,10 +30,10 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
   return (
     <View style={[styles.outerWrap, { paddingBottom: Math.max(insets.bottom, 10) }]}>
       <View style={styles.pill}>
-        {state.routes.map((route, index) => {
-          const isFocused  = state.index === index;
-          const tab        = TABS[index];
-          if (!tab) return null;
+        {state.routes.filter(r => TAB_NAMES.has(r.name)).map((route) => {
+          const routeIndex = state.routes.indexOf(route);
+          const isFocused  = state.index === routeIndex;
+          const tab        = TAB_MAP.get(route.name)!;
 
           const descriptor = descriptors[route.key];
           const badge      = descriptor.options.tabBarBadge;

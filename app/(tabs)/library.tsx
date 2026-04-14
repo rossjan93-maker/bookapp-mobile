@@ -20,13 +20,15 @@ import { registerWtTarget, useWalkthrough } from '../../lib/walkthroughEngine';
 import { WtDemoLibrary } from '../../components/walkthrough/WtDemoLibrary';
 import { ShelfRow } from '../../components/ShelfRow';
 import { SHELF_DEFINITIONS } from '../../lib/shelves';
+import { fetchMyClubs } from '../../lib/bookClub';
+import type { ClubWithDetails } from '../../lib/bookClubTypes';
 
 const LIB_VIEW_MODE_KEY = 'libraryViewMode';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type UserBookStatus = 'want_to_read' | 'reading' | 'finished' | 'dnf';
-type FilterKey      = 'all' | UserBookStatus;
+type FilterKey      = 'all' | UserBookStatus | 'clubs';
 type SortKey        = 'recent' | 'progress' | 'finished_date';
 
 type UserBook = {
@@ -131,6 +133,7 @@ const FILTER_OPTIONS: Array<{ key: FilterKey; label: string }> = [
   { key: 'want_to_read', label: 'Want to Read' },
   { key: 'finished',     label: 'Finished'     },
   { key: 'dnf',          label: 'Set aside'    },
+  { key: 'clubs',        label: 'Clubs'        },
 ];
 
 const FILTER_EMPTY: Record<FilterKey, { title: string; body: string }> = {
@@ -139,6 +142,7 @@ const FILTER_EMPTY: Record<FilterKey, { title: string; body: string }> = {
   want_to_read: { title: 'Nothing queued up',      body: 'Save books you want to read next.' },
   finished:     { title: 'No finished books yet',  body: 'Finished books will appear here.' },
   dnf:          { title: 'Nothing set aside',      body: 'Sometimes a book isn\'t the right fit for now.' },
+  clubs:        { title: 'No clubs yet',            body: 'Start a book club and invite your friends to read together.' },
 };
 
 // ─── Module-level session cache ───────────────────────────────────────────────
@@ -170,7 +174,7 @@ registerCacheClearer(() => { _libCache = null; }, 'bookData');
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
-const VALID_FILTERS = new Set<FilterKey>(['all', 'want_to_read', 'reading', 'finished', 'dnf']);
+const VALID_FILTERS = new Set<FilterKey>(['all', 'want_to_read', 'reading', 'finished', 'dnf', 'clubs']);
 
 export default function LibraryScreen() {
   const insets = useSafeAreaInsets();
@@ -215,6 +219,8 @@ export default function LibraryScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<TextInput>(null);
   const [activeShelf, setActiveShelf] = useState<string | null>(null);
+  const [clubs, setClubs] = useState<ClubWithDetails[]>([]);
+  const [clubsLoading, setClubsLoading] = useState(false);
 
   // ── Walkthrough target measurement ──────────────────────────────────────────
   // Measures the FlatList header (title + filter bar) once loading completes.
@@ -453,6 +459,24 @@ export default function LibraryScreen() {
     loadBooks();
   }, []));
 
+  // ── Clubs loader ─────────────────────────────────────────────────────────
+
+  async function loadClubs() {
+    if (!supabase) return;
+    setClubsLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setClubsLoading(false); return; }
+    const { clubs: data } = await fetchMyClubs(supabase, { userId: user.id });
+    setClubs(data);
+    setClubsLoading(false);
+  }
+
+  useEffect(() => {
+    if (activeFilter === 'clubs') {
+      loadClubs();
+    }
+  }, [activeFilter]);
+
   // ── Business logic (unchanged) ────────────────────────────────────────────
 
   function saveRating(userBookId: string, bookId: string, rating: number) {
@@ -658,7 +682,9 @@ export default function LibraryScreen() {
   // When shelf is active, status chip filtering is bypassed (chips are hidden).
   const filteredItems = activeShelf
     ? shelfFilteredItems
-    : (activeFilter === 'all' ? items : items.filter(i => i.status === activeFilter));
+    : (activeFilter === 'all' || activeFilter === 'clubs'
+      ? items
+      : items.filter(i => i.status === activeFilter));
 
   // Sort + ordering:
   //   All filter    → reading first, then finished (finished_at desc), then want-to-read, then dnf.
@@ -1000,6 +1026,7 @@ export default function LibraryScreen() {
     want_to_read: items.filter(i => i.status === 'want_to_read').length,
     finished:     items.filter(i => i.status === 'finished').length,
     dnf:          items.filter(i => i.status === 'dnf').length,
+    clubs:        0,
   };
 
   const contextSubtitle = (() => {
@@ -1169,8 +1196,8 @@ export default function LibraryScreen() {
             </Text>
           )}
 
-          {/* ── Filter chip bar — hidden when a shelf is active ── */}
-          {!searchActive && items.length > 0 && !activeShelf && (
+          {/* ── Filter chip bar — always visible so Clubs is reachable even with empty library ── */}
+          {!searchActive && !activeShelf && (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -1350,10 +1377,92 @@ export default function LibraryScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#f5f1ec' }}>
-    {viewMode === 'gallery' && !searchActive ? (
+    {activeFilter === 'clubs' ? (
+      <FlatList
+        data={clubs}
+        keyExtractor={c => c.id}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
+        refreshControl={<RefreshControl refreshing={clubsLoading} onRefresh={loadClubs} tintColor="#78716c" />}
+        ListHeaderComponent={libraryHeaderEl}
+        ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+        ListEmptyComponent={
+          clubsLoading ? (
+            <View style={{ paddingTop: 40, alignItems: 'center' }}>
+              <ActivityIndicator size="large" color="#7b9e7e" />
+            </View>
+          ) : (
+            <View style={{ paddingTop: 48, paddingHorizontal: 24, alignItems: 'center' }}>
+              <Ionicons name="people-outline" size={40} color="#c4b5a5" style={{ marginBottom: 14 }} />
+              <Text style={{ fontSize: 18, fontWeight: '700', color: '#231f1b', marginBottom: 8, textAlign: 'center' }}>
+                {FILTER_EMPTY.clubs.title}
+              </Text>
+              <Text style={{ fontSize: 14, color: '#9e958d', textAlign: 'center', lineHeight: 22 }}>
+                {FILTER_EMPTY.clubs.body}
+              </Text>
+            </View>
+          )
+        }
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={{
+              backgroundColor: '#fefcf9',
+              borderRadius: 14,
+              padding: 14,
+              shadowColor: '#231f1b',
+              shadowOpacity: 0.07,
+              shadowRadius: 8,
+              shadowOffset: { width: 0, height: 2 },
+              elevation: 3,
+            }}
+            onPress={() => router.push({ pathname: '/club/[id]', params: { id: item.id } })}
+            activeOpacity={0.8}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              {item.activeBook ? (
+                <CoverThumb
+                  url={item.activeBook.cover_url}
+                  externalId={item.activeBook.external_id}
+                  title={item.activeBook.title}
+                  width={44}
+                  height={64}
+                  radius={6}
+                />
+              ) : (
+                <View style={{
+                  width: 44, height: 64, borderRadius: 6,
+                  backgroundColor: '#ede9e4', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <Ionicons name="book-outline" size={20} color="#9e958d" />
+                </View>
+              )}
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#231f1b' }} numberOfLines={1}>
+                  {item.name}
+                </Text>
+                {item.activeBook ? (
+                  <Text style={{ fontSize: 12, color: '#9e958d' }} numberOfLines={1}>
+                    Reading: {item.activeBook.title}
+                  </Text>
+                ) : (
+                  <Text style={{ fontSize: 12, color: '#9e958d', fontStyle: 'italic' }}>No active book</Text>
+                )}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                  <Ionicons name="people-outline" size={12} color="#9e958d" />
+                  <Text style={{ fontSize: 11, color: '#9e958d' }}>
+                    {item.memberCount} {item.memberCount === 1 ? 'member' : 'members'}
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#9e958d" />
+            </View>
+          </TouchableOpacity>
+        )}
+      />
+    ) : viewMode === 'gallery' && !searchActive ? (
       <LibraryGalleryView
         books={filteredItems}
-        filter={activeFilter}
+        filter={activeFilter as 'all' | UserBookStatus}
         sort={sort}
         screenWidth={screenWidth}
         ListHeaderComponent={libraryHeaderEl}
