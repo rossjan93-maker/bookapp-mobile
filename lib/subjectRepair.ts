@@ -7,15 +7,25 @@
 // first (no OL search needed).  Subjects are only written when the OL result is
 // strictly better (more subjects) than what is already stored.
 //
-// Safe for repeated runs: the query filters exclude already-complete rows.
+// The function requires an explicit Supabase client via opts.client.  This
+// keeps lib/subjectRepair.ts free of any React Native / AsyncStorage imports so
+// the standalone CLI script can run it in a plain Node.js environment without
+// transform errors.
+//
+//   In the app:   pass supabase from lib/supabase
+//   In scripts:   pass createClient(url, anonKey)
+//
+// Safe for repeated runs — the query filters exclude already-complete rows.
 // Each run is bounded by batchSize (default 50).
 //
+// Fatal top-level errors (query failures, missing client) throw so callers /
+// scripts can react (e.g. exit non-zero).  Per-book errors remain fail-soft.
+//
 // Used by:
-//   - scripts/repairSubjectCoverage.ts  (CLI, passes its own Node.js client)
+//   - scripts/repairSubjectCoverage.ts  (CLI, injects a Node.js client)
 //   - app/settings.tsx                  (__DEV__ developer trigger with alert)
 // =============================================================================
 
-import { supabase as appSupabase }          from './supabase';
 import { fetchOLMeta, searchOLWork, isOLId } from './openLibrary';
 import type { SupabaseClient }              from '@supabase/supabase-js';
 
@@ -31,8 +41,11 @@ export type SubjectRepairOptions = {
   userId?:    string;
   batchSize?: number;
   dryRun?:    boolean;
-  /** Injectable client — used by the CLI script to avoid React Native imports. */
-  client?:    SupabaseClient | null;
+  /**
+   * Supabase client to use.  Required — no internal default.
+   * App callers pass the lib/supabase singleton; scripts pass a plain Node.js client.
+   */
+  client:     SupabaseClient | null;
 };
 
 const LOG = '[SUBJECT_REPAIR]';
@@ -46,21 +59,17 @@ type CandidateBook = {
 };
 
 export async function repairSubjectCoverage(
-  opts: SubjectRepairOptions = {},
+  opts: SubjectRepairOptions,
 ): Promise<RepairSummary> {
-  const { userId, batchSize = 50, dryRun = false } = opts;
+  const { userId, batchSize = 50, dryRun = false, client: db } = opts;
 
-  // Caller may inject a plain Node.js client; fall back to the app singleton.
-  const db: SupabaseClient | null = opts.client ?? appSupabase;
+  if (!db) {
+    throw new Error(`${LOG} No Supabase client provided — pass opts.client`);
+  }
 
   const summary: RepairSummary = {
     eligible: 0, enriched: 0, failed: 0, skipped: 0, fieldsImproved: 0,
   };
-
-  if (!db) {
-    console.log(`${LOG} supabase not available — aborting`);
-    return summary;
-  }
 
   // ── Step 1: resolve book IDs for this user when userId is supplied ────────
   let filterIds: string[] | null = null;
@@ -71,8 +80,7 @@ export async function repairSubjectCoverage(
       .eq('user_id', userId);
 
     if (error) {
-      console.log(`${LOG} user_books query failed — ${error.message}`);
-      return summary;
+      throw new Error(`${LOG} user_books query failed — ${error.message}`);
     }
 
     filterIds = (data ?? []).map((r: { book_id: string }) => r.book_id);
@@ -95,12 +103,14 @@ export async function repairSubjectCoverage(
 
   const { data: p1Data, error: p1Err } = await (q1 as typeof q1).limit(batchSize);
   if (p1Err) {
-    console.log(`${LOG} priority-1 query failed — ${p1Err.message}`);
-    return summary;
+    throw new Error(`${LOG} priority-1 query failed — ${p1Err.message}`);
   }
   const p1: CandidateBook[] = (p1Data ?? []) as CandidateBook[];
 
   // ── Step 3: Priority-2 candidates — subjects exists but < 3 entries ──────
+  // Fetch the entire eligible scope (bounded by filterIds when user-scoped,
+  // or capped at 500 for global runs) so no sparse-subject book is skipped
+  // due to a pre-limit applied before the in-memory length filter.
   let p2: CandidateBook[] = [];
   const slots = batchSize - p1.length;
 
@@ -110,9 +120,18 @@ export async function repairSubjectCoverage(
       .select('id, title, author, external_id, subjects')
       .not('subjects', 'is', null);
 
-    if (filterIds) q2 = (q2 as typeof q2).in('id', filterIds);
+    if (filterIds) {
+      // User-scoped: filter to exactly this user's books — no pre-limit needed
+      q2 = (q2 as typeof q2).in('id', filterIds);
+    } else {
+      // Global: use a generous cap to stay bounded while covering the dataset
+      q2 = (q2 as typeof q2).limit(500);
+    }
 
-    const { data: p2Raw } = await (q2 as typeof q2).limit(slots * 4);
+    const { data: p2Raw, error: p2Err } = await (q2 as typeof q2);
+    if (p2Err) {
+      throw new Error(`${LOG} priority-2 query failed — ${p2Err.message}`);
+    }
 
     p2 = ((p2Raw ?? []) as CandidateBook[])
       .filter(b => Array.isArray(b.subjects) && (b.subjects as string[]).length < 3)
@@ -135,7 +154,7 @@ export async function repairSubjectCoverage(
     `dryRun=${dryRun}`,
   );
 
-  // ── Step 5: Enrich each candidate ─────────────────────────────────────────
+  // ── Step 5: Enrich each candidate (per-book errors are fail-soft) ─────────
   for (const book of candidates) {
     const t = String(book.title  ?? '').trim();
     const a = String(book.author ?? '').trim();
@@ -144,8 +163,7 @@ export async function repairSubjectCoverage(
       : [];
 
     // Safety guard — never overwrite subjects already ≥ 3 entries.
-    // This should not normally fire (query already excludes these) but acts as
-    // a belt-and-suspenders check in case of race conditions or stale data.
+    // Normally excluded by the query but guards against races or stale reads.
     if (currentSubjects.length >= 3) {
       summary.skipped++;
       if (__DEV__) console.log(`${LOG} skip "${t}" — already has ${currentSubjects.length} subjects`);
@@ -182,8 +200,7 @@ export async function repairSubjectCoverage(
       }
 
       // Only write subjects when OL result is strictly better than current.
-      // This prevents a 1-subject OL result from displacing an existing 2-entry
-      // subjects array that was already partially enriched.
+      // Prevents a 1-subject OL result from displacing an existing 2-entry array.
       if (ol.subjects.length <= currentSubjects.length && currentSubjects.length > 0) {
         summary.skipped++;
         console.log(
@@ -230,8 +247,8 @@ export async function repairSubjectCoverage(
     }
   }
 
-  // Any candidate not enriched and not failed ended up skipped (safety guard
-  // or no-improvement guard fired beyond what was explicitly incremented)
+  // Any candidate not enriched, failed, or explicitly skipped ends up in
+  // the skipped bucket (covers edge cases where the loop exits early)
   const accounted = summary.enriched + summary.failed + summary.skipped;
   if (accounted < summary.eligible) {
     summary.skipped += summary.eligible - accounted;

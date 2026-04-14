@@ -182,6 +182,7 @@ export default function SettingsScreen() {
         userId,
         batchSize: 50,
         dryRun: false,
+        client: supabase,
       });
       Alert.alert(
         'Subject Repair Done',
