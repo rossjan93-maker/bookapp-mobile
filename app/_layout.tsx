@@ -13,15 +13,21 @@ import { clearLocalOnboardingState } from '../lib/localStateClear';
 // Exposes live session + needsOnboarding so child routes (especially
 // app/auth/callback.tsx) can actively wait for bootstrap to resolve
 // rather than relying solely on the routing guard.
+// Also exposes passwordRecovery so the reset-password screen knows why
+// the user is here and callback.tsx can route correctly after a reset link.
 
 type BootstrapCtx = {
-  session:         Session | null | undefined;
-  needsOnboarding: boolean | undefined;
+  session:              Session | null | undefined;
+  needsOnboarding:      boolean | undefined;
+  passwordRecovery:     boolean;
+  clearPasswordRecovery: () => void;
 };
 
 export const BootstrapContext = createContext<BootstrapCtx>({
-  session:         undefined,
-  needsOnboarding: undefined,
+  session:              undefined,
+  needsOnboarding:      undefined,
+  passwordRecovery:     false,
+  clearPasswordRecovery: () => {},
 });
 export const useBootstrap = () => useContext(BootstrapContext);
 
@@ -91,8 +97,9 @@ async function checkOnboardingCompleted(userId: string): Promise<boolean> {
 // ─── Root layout ──────────────────────────────────────────────────────────────
 
 export default function RootLayout() {
-  const [session,         setSession]         = useState<Session | null | undefined>(undefined);
-  const [needsOnboarding, setNeedsOnboarding] = useState<boolean | undefined>(undefined);
+  const [session,          setSession]          = useState<Session | null | undefined>(undefined);
+  const [needsOnboarding,  setNeedsOnboarding]  = useState<boolean | undefined>(undefined);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
   const router   = useRouter();
   const segments = useSegments();
 
@@ -203,10 +210,21 @@ export default function RootLayout() {
           setNeedsOnboarding(true);
         }
 
+      } else if (event === 'PASSWORD_RECOVERY' && newSession) {
+        // User arrived via a password-reset email link.
+        // Set session so they're authenticated, mark passwordRecovery=true so the
+        // routing guard routes them to /reset-password instead of the main app,
+        // and set needsOnboarding=false (they're an existing user).
+        console.log('[WARM_BOOT] PASSWORD_RECOVERY — routing to /reset-password');
+        setPasswordRecovery(true);
+        setSession(newSession);
+        setNeedsOnboarding(false);
+
       } else if (event === 'SIGNED_OUT') {
         setSession(newSession);
         console.log('[DELETE_TRACE] SIGNED_OUT — clearing local state');
         setNeedsOnboarding(false);
+        setPasswordRecovery(false);
         clearAllTabCaches();
         await clearLocalOnboardingState();
         const stageAfter = await readOnboardingStage();
@@ -281,8 +299,8 @@ export default function RootLayout() {
   }, []);
 
   // ── Routing guard ──────────────────────────────────────────────────────────
-  // Fires whenever session, segments, or needsOnboarding changes.
-  // Bails when either is undefined (still bootstrapping).
+  // Fires whenever session, segments, needsOnboarding, or passwordRecovery changes.
+  // Bails when session/needsOnboarding are undefined (still bootstrapping).
   // Note: the callback route handles its own navigation via BootstrapContext;
   // this guard acts as a safety net for other routes.
 
@@ -292,20 +310,36 @@ export default function RootLayout() {
     // '(auth)' = login/signup screens; 'auth' = the auth/callback route group.
     // Both must be treated as "in auth" so the session guard does not redirect
     // while the callback screen is exchanging a PKCE code (no session yet).
-    const seg0          = segments[0] as string;
-    const inAuth        = seg0 === '(auth)' || seg0 === 'auth';
-    // Treat /onboarding-import as part of the onboarding flow so the guard
+    const seg0         = segments[0] as string;
+    const inAuth       = seg0 === '(auth)' || seg0 === 'auth';
+    // Treat /onboarding-* as part of the onboarding flow so the guard
     // never evicts the user mid-step.
-    const inOnboarding  = segments[0] === 'onboarding' || segments[0] === 'onboarding-import' || segments[0] === 'onboarding-questions';
+    const inOnboarding = seg0 === 'onboarding' || seg0 === 'onboarding-import' || seg0 === 'onboarding-questions';
+    // /reset-password is a protected route only reachable after a PASSWORD_RECOVERY event.
+    const inResetPw    = seg0 === 'reset-password';
 
     console.log('[ROOT_GUARD] check', {
-      segments: segments[0],
-      session:        !!session,
+      segments: seg0,
+      session:         !!session,
       needsOnboarding,
+      passwordRecovery,
       inAuth,
       inOnboarding,
+      inResetPw,
     });
 
+    // ── Password recovery: highest-priority routing ─────────────────────────
+    // When in PASSWORD_RECOVERY state, always route to /reset-password
+    // regardless of which screen the user is currently on.
+    if (passwordRecovery) {
+      if (!inResetPw) {
+        console.log('[ROOT_GUARD] passwordRecovery=true → /reset-password');
+        router.replace('/reset-password');
+      }
+      return;
+    }
+
+    // ── Normal flows ────────────────────────────────────────────────────────
     if (session && inAuth) {
       // callback.tsx drives its own navigation via BootstrapContext;
       // the guard mirrors the same decision here as a safety net.
@@ -319,14 +353,19 @@ export default function RootLayout() {
     } else if (session && needsOnboarding && !inAuth && !inOnboarding) {
       console.log('[ROOT_GUARD] → route=/onboarding (guard redirect)');
       router.replace('/onboarding');
-    } else if (!session && !inAuth) {
-      console.log('[ROOT_GUARD] no session — redirecting to /login (segments:', segments[0], ')');
+    } else if (!session && !inAuth && !inResetPw) {
+      console.log('[ROOT_GUARD] no session — redirecting to /login (segments:', seg0, ')');
       router.replace('/login');
     }
-  }, [session, segments, needsOnboarding]);
+  }, [session, segments, needsOnboarding, passwordRecovery]);
 
   return (
-    <BootstrapContext.Provider value={{ session, needsOnboarding }}>
+    <BootstrapContext.Provider value={{
+      session,
+      needsOnboarding,
+      passwordRecovery,
+      clearPasswordRecovery: () => setPasswordRecovery(false),
+    }}>
       <OnboardingBridgeContext.Provider value={{ completeOnboarding: () => setNeedsOnboarding(false) }}>
         <View style={{ flex: 1 }}>
           <Stack screenOptions={{ headerShown: false }} />

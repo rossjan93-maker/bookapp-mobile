@@ -33,7 +33,7 @@ export default function AuthCallbackScreen() {
   const { code }    = useLocalSearchParams<{ code?: string }>();
   const router      = useRouter();
   const insets      = useSafeAreaInsets();
-  const { session, needsOnboarding: ctxOnboarding } = useBootstrap();
+  const { session, needsOnboarding: ctxOnboarding, passwordRecovery } = useBootstrap();
 
   const navigatedRef  = useRef(false);
   const probeStarted  = useRef(false);
@@ -65,10 +65,16 @@ export default function AuthCallbackScreen() {
     if (!session) return;
     if (navigatedRef.current) return;
     navigatedRef.current = true;
+    // PASSWORD_RECOVERY: always route to the set-new-password screen.
+    if (passwordRecovery) {
+      console.log('[CALLBACK] ctx fast path → /reset-password (PASSWORD_RECOVERY)');
+      router.replace('/reset-password');
+      return;
+    }
     const route = ctxOnboarding ? '/onboarding' : '/';
     console.log('[CALLBACK] ctx fast path → ', route);
     router.replace(route as '/onboarding' | '/');
-  }, [ctxOnboarding, session]);
+  }, [ctxOnboarding, session, passwordRecovery]);
 
   // ── Probe: minimal sequential fallback ─────────────────────────────────────
   async function runProbe(userId: string) {

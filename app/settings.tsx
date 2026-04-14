@@ -162,6 +162,8 @@ export default function SettingsScreen() {
   const [goalError, setGoalError]   = useState<string | null>(null);
 
   // ── Delete account state ──────────────────────────────────────────────────
+  const [signingOut, setSigningOut] = useState(false);
+
   const [deleteExpanded, setDeleteExpanded]   = useState(false);
   const [deleteConfirm, setDeleteConfirm]     = useState('');
   const [deletingAccount, setDeletingAccount] = useState(false);
@@ -336,7 +338,11 @@ export default function SettingsScreen() {
   }
 
   async function handleSignOut() {
+    if (signingOut) return;
+    setSigningOut(true);
     await supabase?.auth.signOut();
+    // SIGNED_OUT event in _layout.tsx handles navigation — no need to redirect here.
+    // setSigningOut(false) is intentionally omitted: the component unmounts on sign-out.
   }
 
   async function handleDeleteAccount() {
@@ -674,9 +680,20 @@ export default function SettingsScreen() {
         <View style={{ height: 1, backgroundColor: '#ede9e4' }} />
         <TouchableOpacity
           onPress={handleSignOut}
-          style={{ paddingHorizontal: 16, paddingVertical: 15 }}
+          disabled={signingOut}
+          style={{
+            paddingHorizontal: 16,
+            paddingVertical: 15,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+            opacity: signingOut ? 0.55 : 1,
+          }}
         >
-          <Text style={{ fontSize: 14, color: '#b91c1c', fontWeight: '500' }}>Sign Out</Text>
+          {signingOut && <ActivityIndicator size="small" color="#b91c1c" />}
+          <Text style={{ fontSize: 14, color: '#b91c1c', fontWeight: '500' }}>
+            {signingOut ? 'Signing out…' : 'Sign Out'}
+          </Text>
         </TouchableOpacity>
 
         {/* Delete account — collapsed trigger */}
