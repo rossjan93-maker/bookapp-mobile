@@ -169,7 +169,10 @@ export async function repairSubjectCoverage(
 
     if (afterId) q2 = (q2 as typeof q2).gt('id', afterId);
     if (filterIds) {
-      // User-scoped: filterIds already bounds the result set — no extra limit.
+      // User-scoped: filterIds bounds the result set to this user's library.
+      // No DB-side limit is applied here; for very large libraries (>5 000 books)
+      // the in-memory scan is still a small fixed set per user rather than a
+      // global table scan, so the trade-off is acceptable.
       q2 = (q2 as typeof q2).in('id', filterIds);
     } else {
       // Global: batchSize * 10 bounds the DB read to avoid full-table scans.
@@ -278,6 +281,8 @@ export async function repairSubjectCoverage(
 
       if (!dryRun) {
         const patch: Record<string, unknown> = { subjects: ol.subjects };
+        // Back-fill external_id when we searched for it — intentional scope: persisting
+        // the resolved OL work key prevents a redundant searchOLWork() on future runs.
         if (extIdFound) patch.external_id = resolvedExtId;
 
         const { error } = await db
