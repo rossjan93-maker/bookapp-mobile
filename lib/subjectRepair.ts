@@ -9,12 +9,12 @@
 //
 // Cursor-based progression (afterId)
 // ───────────────────────────────────
-// Every query uses ORDER BY id ASC and optionally id > afterId.  This means
-// repeated runs always advance forward through the table.  Failed and skipped
-// books are included in the cursor window exactly once per pass — they are not
-// re-queued on subsequent runs within the same cursor segment.  The returned
-// RepairSummary.lastId is the id of the last candidate processed; pass it as
-// the afterId of the next run to continue from where this one left off.
+// Every query uses ORDER BY id ASC and optionally id > afterId.  The returned
+// RepairSummary.lastId is the furthest book id seen across ALL query results in
+// this run — including dense p2 rows that were not sparse enough to become
+// candidates.  This guarantees the cursor always advances, even in runs where
+// eligible=0 (entirely dense window).  Pass lastId as afterId next run to
+// continue forward through the dataset without revisiting rows.
 //
 // The function requires an explicit Supabase client via opts.client.  This
 // keeps lib/subjectRepair.ts free of React Native / AsyncStorage imports so the
@@ -41,9 +41,10 @@ export type RepairSummary = {
   skipped:        number;
   fieldsImproved: number;
   /**
-   * The id of the last candidate book that entered the processing loop.
-   * Pass as opts.afterId in the next call to continue from this point.
-   * Null when eligible=0 (nothing was processed).
+   * The furthest book id read from any query in this run.
+   * Advances past dense windows where no sparse candidates were found, so
+   * the next call with afterId=lastId is never stuck at the same position.
+   * Null only when no rows exist at or after the current afterId cursor.
    */
   lastId:         string | null;
 };
@@ -54,7 +55,7 @@ export type SubjectRepairOptions = {
   dryRun?:    boolean;
   /**
    * Cursor: only consider books with id > afterId (lexicographic / UUID order).
-   * Use RepairSummary.lastId from the previous run to page through the dataset.
+   * Use RepairSummary.lastId from the previous run to page forward deterministically.
    */
   afterId?:   string;
   /**
@@ -74,6 +75,13 @@ type CandidateBook = {
   subjects:    string[] | null;
 };
 
+/** Return the lexicographically larger of two nullable id strings. */
+function maxId(a: string | null, b: string | null): string | null {
+  if (!a) return b;
+  if (!b) return a;
+  return a > b ? a : b;
+}
+
 export async function repairSubjectCoverage(
   opts: SubjectRepairOptions,
 ): Promise<RepairSummary> {
@@ -86,6 +94,11 @@ export async function repairSubjectCoverage(
   const summary: RepairSummary = {
     eligible: 0, enriched: 0, failed: 0, skipped: 0, fieldsImproved: 0, lastId: null,
   };
+
+  // Tracks the furthest row id returned by any query in this run.
+  // Updated after each query — guarantees the cursor always advances
+  // even when a window produces zero enrichable candidates.
+  let lastQueriedId: string | null = null;
 
   // ── Step 1: resolve book IDs for this user when userId is supplied ────────
   let filterIds: string[] | null = null;
@@ -114,8 +127,8 @@ export async function repairSubjectCoverage(
   }
 
   // ── Step 2: Priority-1 candidates — subjects IS NULL ─────────────────────
-  // Order by id ASC with optional cursor so each run window is deterministic
-  // and does not re-visit rows from previous runs.
+  // Order by id ASC + optional cursor so the window is deterministic and
+  // does not overlap with previous runs.
   let q1 = db
     .from('books')
     .select('id, title, author, external_id, subjects')
@@ -131,10 +144,13 @@ export async function repairSubjectCoverage(
   }
   const p1: CandidateBook[] = (p1Data ?? []) as CandidateBook[];
 
+  // Advance the cursor to the furthest id returned by this query.
+  for (const r of p1) lastQueriedId = maxId(lastQueriedId, r.id);
+
   // ── Step 3: Priority-2 candidates — subjects exists but < 3 entries ──────
-  // DB-side limit: batchSize * 10 bounds the read while providing enough rows
-  // to find sparse candidates after the in-memory length filter.  The cursor
-  // ensures we advance forward rather than revisiting the same leading rows.
+  // Fetch a bounded window ordered by id, then filter in memory for sparse rows.
+  // The window end (last queried id) is captured regardless of how many sparse
+  // rows are found — this prevents the cursor stalling if the window is all-dense.
   let p2: CandidateBook[] = [];
   const slots = batchSize - p1.length;
 
@@ -147,11 +163,11 @@ export async function repairSubjectCoverage(
 
     if (afterId) q2 = (q2 as typeof q2).gt('id', afterId);
     if (filterIds) {
-      // User-scoped: filterIds bounds the result set to just this user's books.
+      // User-scoped: filterIds already bounds the result set — no extra limit.
       q2 = (q2 as typeof q2).in('id', filterIds);
     } else {
-      // Global: cap DB read at batchSize * 10 to avoid full-table scans while
-      // still giving the in-memory filter enough rows to find sparse candidates.
+      // Global: batchSize * 10 bounds the DB read to avoid full-table scans.
+      // Rows at the end of the window advance the cursor even when not sparse.
       q2 = (q2 as typeof q2).limit(batchSize * 10);
     }
 
@@ -160,16 +176,19 @@ export async function repairSubjectCoverage(
       throw new Error(`${LOG} priority-2 query failed — ${p2Err.message}`);
     }
 
-    // In-memory filter for rows that genuinely have < 3 subjects.
-    // PostgREST does not expose an array-length predicate, so we prune here.
-    p2 = ((p2Raw ?? []) as CandidateBook[])
+    // Advance cursor to the end of the fetched window (not just the sparse subset).
+    // This ensures that even when all rows in the window are dense (length >= 3),
+    // the next run starts after this window rather than rescanning the same rows.
+    const p2All = (p2Raw ?? []) as CandidateBook[];
+    for (const r of p2All) lastQueriedId = maxId(lastQueriedId, r.id);
+
+    // In-memory filter: only rows that genuinely have fewer than 3 subjects.
+    p2 = p2All
       .filter(b => Array.isArray(b.subjects) && (b.subjects as string[]).length < 3)
       .slice(0, slots);
   }
 
   // ── Step 4: Merge — books with a valid OL external_id float to the top ────
-  // De-duplicate across priority sets, then prioritize books whose OL work key
-  // is already known (no search round-trip needed).
   const seen = new Set<string>();
   const candidates: CandidateBook[] = [...p1, ...p2]
     .filter(b => { if (seen.has(b.id)) return false; seen.add(b.id); return true; })
@@ -185,16 +204,8 @@ export async function repairSubjectCoverage(
     `dryRun=${dryRun}`,
   );
 
-  // Track the highest id seen so we can return it as the next cursor.
-  // We record every candidate id (including failed/skipped) so the cursor
-  // reliably advances past non-enrichable books on repeated runs.
-  let lastId: string | null = null;
-
   // ── Step 5: Enrich each candidate (per-book errors are fail-soft) ─────────
   for (const book of candidates) {
-    // Advance cursor for every candidate regardless of outcome.
-    lastId = book.id;
-
     const t = String(book.title  ?? '').trim();
     const a = String(book.author ?? '').trim();
     const currentSubjects: string[] = Array.isArray(book.subjects)
@@ -202,7 +213,6 @@ export async function repairSubjectCoverage(
       : [];
 
     // Safety guard — never overwrite subjects already ≥ 3 entries.
-    // Normally excluded by the query but guards against races or stale reads.
     if (currentSubjects.length >= 3) {
       summary.skipped++;
       if (__DEV__) console.log(`${LOG} skip "${t}" — already has ${currentSubjects.length} subjects`);
@@ -213,7 +223,6 @@ export async function repairSubjectCoverage(
       let resolvedExtId: string | null = isOLId(book.external_id) ? book.external_id : null;
       let extIdFound = false;
 
-      // Search Open Library when there is no valid external_id yet
       if (!resolvedExtId && t) {
         if (__DEV__) console.log(`${LOG} searching OL for "${t}"…`);
         const found = await searchOLWork(t, a);
@@ -239,7 +248,6 @@ export async function repairSubjectCoverage(
       }
 
       // Only write subjects when OL result is strictly better than current.
-      // Prevents a 1-subject OL result from displacing an existing 2-entry array.
       if (ol.subjects.length <= currentSubjects.length && currentSubjects.length > 0) {
         summary.skipped++;
         console.log(
@@ -256,8 +264,6 @@ export async function repairSubjectCoverage(
 
       if (!dryRun) {
         const patch: Record<string, unknown> = { subjects: ol.subjects };
-
-        // Back-fill external_id when we had to search for it
         if (extIdFound) patch.external_id = resolvedExtId;
 
         const { error } = await db
@@ -271,10 +277,9 @@ export async function repairSubjectCoverage(
           continue;
         }
 
-        summary.fieldsImproved++;               // subjects written
-        if (extIdFound) summary.fieldsImproved++; // external_id also written
+        summary.fieldsImproved++;
+        if (extIdFound) summary.fieldsImproved++;
       } else {
-        // Dry run — count what would be improved without writing
         summary.fieldsImproved++;
         if (extIdFound) summary.fieldsImproved++;
       }
@@ -287,13 +292,14 @@ export async function repairSubjectCoverage(
     }
   }
 
-  // Any candidate not enriched, failed, or explicitly skipped (edge case)
   const accounted = summary.enriched + summary.failed + summary.skipped;
   if (accounted < summary.eligible) {
     summary.skipped += summary.eligible - accounted;
   }
 
-  summary.lastId = lastId;
+  // Always expose the furthest queried row id so the next run can advance past
+  // this window even when eligible=0 (all-dense window produced no candidates).
+  summary.lastId = lastQueriedId;
 
   console.log(
     `${LOG} done — ` +
@@ -302,7 +308,7 @@ export async function repairSubjectCoverage(
     `failed=${summary.failed} ` +
     `skipped=${summary.skipped} ` +
     `fieldsImproved=${summary.fieldsImproved} ` +
-    `lastId=${lastId ?? 'none'}` +
+    `lastId=${lastQueriedId ?? 'none'}` +
     (dryRun ? ' [DRY RUN]' : ''),
   );
 
