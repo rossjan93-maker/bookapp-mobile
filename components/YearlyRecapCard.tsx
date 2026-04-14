@@ -154,17 +154,21 @@ const YearlyRecapCard = React.forwardRef<View, YearlyRecapCardProps>(
 
         <Rule />
 
-        {/* ── Stat row ── */}
+        {/* ── Stat row — always render all three required slots ── */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-          {wrap.pagesRead > 0 && (
-            <Stat label="Pages read" value={wrap.pagesRead.toLocaleString()} />
-          )}
-          {wrap.mostActiveMonth && (
-            <Stat label="Peak month" value={wrap.mostActiveMonth.label} />
-          )}
-          {wrap.longestStreak >= 2 && (
-            <Stat label="Best streak" value={`${wrap.longestStreak}d`} accent={CARD_SAGE} />
-          )}
+          <Stat
+            label="Pages read"
+            value={wrap.pagesRead > 0 ? wrap.pagesRead.toLocaleString() : '—'}
+          />
+          <Stat
+            label="Peak month"
+            value={wrap.mostActiveMonth ? wrap.mostActiveMonth.label : '—'}
+          />
+          <Stat
+            label="Best streak"
+            value={wrap.longestStreak > 0 ? `${wrap.longestStreak}d` : '—'}
+            accent={wrap.longestStreak > 0 ? CARD_SAGE : undefined}
+          />
         </View>
 
         <Rule />

@@ -152,10 +152,11 @@ export default function YearWrapScreen() {
   const router = useRouter();
   const { year: yearParam } = useLocalSearchParams<{ year: string }>();
 
-  const [loading, setLoading] = useState(true);
-  const [wrap, setWrap]       = useState<YearlyWrap | null>(null);
-  const [hasData, setHasData] = useState(false);
-  const [sharing, setSharing] = useState(false);
+  const [loading,    setLoading]    = useState(true);
+  const [wrap,       setWrap]       = useState<YearlyWrap | null>(null);
+  const [hasData,    setHasData]    = useState(false);
+  const [sharing,    setSharing]    = useState(false);
+  const [yearlyGoal, setYearlyGoal] = useState<number | null>(null);
 
   const cardRef = useRef<View>(null);
 
@@ -170,6 +171,14 @@ export default function YearWrapScreen() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+
+      // Fetch annual reading goal from profile
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('yearly_reading_goal')
+        .eq('id', user.id)
+        .single();
+      setYearlyGoal(profile?.yearly_reading_goal ?? null);
 
       const yrStr = String(yr);
 
@@ -248,7 +257,7 @@ export default function YearWrapScreen() {
           }}
           pointerEvents="none"
         >
-          <YearlyRecapCard ref={cardRef} wrap={wrap} />
+          <YearlyRecapCard ref={cardRef} wrap={wrap} yearlyGoal={yearlyGoal} />
         </View>
       )}
 

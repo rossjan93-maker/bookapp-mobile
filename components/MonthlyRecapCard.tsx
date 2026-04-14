@@ -140,15 +140,18 @@ const MonthlyRecapCard = React.forwardRef<View, MonthlyRecapCardProps>(
 
         <Rule />
 
-        {/* ── Stat row ── */}
+        {/* ── Stat row — always render all three required slots ── */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-          <Stat label="Reading days"  value={String(wrap.readingDays)} />
-          {wrap.avgPagesPerReadingDay != null && (
-            <Stat label="Avg / day" value={String(wrap.avgPagesPerReadingDay)} />
-          )}
-          {wrap.longestStreakInMonth >= 2 && (
-            <Stat label="Best streak" value={`${wrap.longestStreakInMonth}d`} accent={CARD_SAGE} />
-          )}
+          <Stat label="Reading days" value={String(wrap.readingDays)} />
+          <Stat
+            label="Avg / day"
+            value={wrap.avgPagesPerReadingDay != null ? String(wrap.avgPagesPerReadingDay) : '—'}
+          />
+          <Stat
+            label="Best streak"
+            value={wrap.longestStreakInMonth > 0 ? `${wrap.longestStreakInMonth}d` : '—'}
+            accent={wrap.longestStreakInMonth > 0 ? CARD_SAGE : undefined}
+          />
         </View>
 
         <Rule />
