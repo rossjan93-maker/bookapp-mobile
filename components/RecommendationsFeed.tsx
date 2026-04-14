@@ -3,6 +3,7 @@ import {
   Animated,
   LayoutAnimation,
   Platform,
+  ScrollView,
   Text,
   TouchableOpacity,
   UIManager,
@@ -158,12 +159,13 @@ export function RecommendationsFeed({
   const thesisHeight = useRef(new Animated.Value(0)).current;
 
   // ── Your Next Read — intent chip state ───────────────────────────────────
-  const [intentPanelOpen, setIntentPanelOpen]     = useState(false);
-  const [moodChip, setMoodChip]                   = useState<ReadingEnergyMode | null>(null);
-  const [paceChip, setPaceChip]                   = useState<'fast' | 'slow' | null>(null);
-  const [toneChip, setToneChip]                   = useState<'light' | 'dark' | null>(null);
-  const activeIntentRef                            = useRef<NextReadIntent | null>(null);
-  const [activeIntentLabel, setActiveIntentLabel] = useState<string>('');
+  const [intentPanelOpen, setIntentPanelOpen]         = useState(false);
+  const [moodChip, setMoodChip]                       = useState<ReadingEnergyMode | null>(null);
+  const [paceChip, setPaceChip]                       = useState<'fast' | 'slow' | null>(null);
+  const [toneChip, setToneChip]                       = useState<'light' | 'dark' | null>(null);
+  const [intensityChip, setIntensityChip]             = useState<'high' | 'low' | null>(null);
+  const activeIntentRef                               = useRef<NextReadIntent | null>(null);
+  const [activeIntentLabel, setActiveIntentLabel]     = useState<string>('');
 
   // ── Dismiss/undo ──────────────────────────────────────────────────────────
   const [dismissPending, setDismissPendingUI] = useState<{ book: ScoredBook } | null>(null);
@@ -579,9 +581,10 @@ export function RecommendationsFeed({
     const intent: NextReadIntent = {
       ...emptyIntent(),
       soft: {
-        readingEnergy: moodChip || undefined,
-        pace:          paceChip  || undefined,
-        tone:          toneChip  || undefined,
+        readingEnergy: moodChip     || undefined,
+        pace:          paceChip     || undefined,
+        tone:          toneChip     || undefined,
+        intensity:     intensityChip || undefined,
       },
     };
     if (!isIntentActive(intent)) {
@@ -603,6 +606,7 @@ export function RecommendationsFeed({
     setMoodChip(null);
     setPaceChip(null);
     setToneChip(null);
+    setIntensityChip(null);
     setIntentPanelOpen(false);
     clearAll();
     clearRecSession();
@@ -965,7 +969,12 @@ export function RecommendationsFeed({
                   }}>
                     Reading energy
                   </Text>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ flexDirection: 'row', gap: 6, paddingBottom: 2 }}
+                    style={{ marginBottom: 16 }}
+                  >
                     {([
                       ['light_fun',         'Light & fun'],
                       ['immersive',         'Immersive'],
@@ -995,7 +1004,7 @@ export function RecommendationsFeed({
                         </TouchableOpacity>
                       );
                     })}
-                  </View>
+                  </ScrollView>
 
                   {/* Pace chips */}
                   <Text style={{
@@ -1041,6 +1050,35 @@ export function RecommendationsFeed({
                           key={t}
                           activeOpacity={0.7}
                           onPress={() => setToneChip(active ? null : t)}
+                          style={{
+                            paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+                            backgroundColor: active ? '#231f1b' : '#f5f1ec',
+                            borderWidth: 1, borderColor: active ? '#231f1b' : '#ede9e4',
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, color: active ? '#fff' : '#6b635c', fontWeight: active ? '600' : '400' }}>
+                            {label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {/* Intensity chips */}
+                  <Text style={{
+                    fontSize: 10, fontWeight: '700', color: '#9e958d',
+                    letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10,
+                  }}>
+                    Emotional intensity
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
+                    {([['high', 'High intensity'], ['low', 'Low-key']] as ['high' | 'low', string][]).map(([iv, label]) => {
+                      const active = intensityChip === iv;
+                      return (
+                        <TouchableOpacity
+                          key={iv}
+                          activeOpacity={0.7}
+                          onPress={() => setIntensityChip(active ? null : iv)}
                           style={{
                             paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
                             backgroundColor: active ? '#231f1b' : '#f5f1ec',
