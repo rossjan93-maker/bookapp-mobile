@@ -13,6 +13,7 @@ import { supabase } from '../../lib/supabase';
 import {
   computeMonthlyWrap,
   computeYearlyWrap,
+  computeYearHeatmap,
   type MonthlyWrap,
   type YearlyWrap,
   type WrapSession,
@@ -380,8 +381,13 @@ export default function StatsScreen() {
       const { data: { user } } = await supabase!.auth.getUser();
       if (!user) return;
 
-      // Sessions: previous month → year-end (single query covers comparison + year chart)
-      const fetchFrom = `${prevMonthYear}-${String(prevMonthNum).padStart(2, '0')}-01`;
+      // Sessions: cover previous month AND trailing 365 days for the heatmap.
+      // Use whichever start date is earlier so one query serves both views.
+      const prevMonthFrom = `${prevMonthYear}-${String(prevMonthNum).padStart(2, '0')}-01`;
+      const heatmapStart  = new Date();
+      heatmapStart.setDate(heatmapStart.getDate() - 364);
+      const heatmapFrom   = heatmapStart.toISOString().slice(0, 10);
+      const fetchFrom     = heatmapFrom < prevMonthFrom ? heatmapFrom : prevMonthFrom;
       const { data: sessRows } = await supabase!
         .from('reading_sessions')
         .select('session_date, pages_read, user_book_id')
@@ -473,6 +479,10 @@ export default function StatsScreen() {
     () => computeYearlyWrap(yearSessions, year, booksFinished, bookLookup),
     [allSessions, booksFinished, bookInfoLookup],
   );
+  const yearHeatmap = useMemo(
+    () => computeYearHeatmap(allSessions),
+    [allSessions],
+  );
 
   const monthName    = MONTH_NAMES[month - 1];
   const prevDiff     = monthWrap.pagesRead > 0 && prevMonthWrap.pagesRead > 0
@@ -557,6 +567,7 @@ export default function StatsScreen() {
                 booksFinished={booksFinished}
                 currentMonth={month}
                 lastFinishedBook={lastFinishedBook}
+                yearHeatmap={yearHeatmap}
               />
           }
         </ScrollView>
@@ -790,17 +801,144 @@ function MonthView({
   );
 }
 
+// ── Year heatmap (52-week grid) ───────────────────────────────────────────────
+function ReadingHeatmap({ dayMap }: { dayMap: Record<string, number> }) {
+  const CELL  = 11;
+  const GAP   = 2;
+  const DOW_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+  // Build the 53-column × 7-row date grid aligned to week boundaries (Sun–Sat).
+  const today       = new Date();
+  const todayStr    = today.toISOString().slice(0, 10);
+  // Sunday of the current week
+  const currentSun  = new Date(today);
+  currentSun.setDate(today.getDate() - today.getDay());
+  // Sunday 52 weeks back = column 0
+  const startSun    = new Date(currentSun);
+  startSun.setDate(currentSun.getDate() - 52 * 7);
+
+  const NUM_WEEKS = 53;
+  const maxPages  = Math.max(...Object.values(dayMap), 1);
+
+  // Build columns: each column is an array of 7 date strings (Sun→Sat).
+  const columns: Array<{ dates: string[]; monthLabel: string | null }> = [];
+  for (let w = 0; w < NUM_WEEKS; w++) {
+    const weekSun = new Date(startSun);
+    weekSun.setDate(startSun.getDate() + w * 7);
+
+    const dates: string[] = [];
+    let monthLabel: string | null = null;
+    for (let d = 0; d < 7; d++) {
+      const cell = new Date(weekSun);
+      cell.setDate(weekSun.getDate() + d);
+      const str = cell.toISOString().slice(0, 10);
+      dates.push(str);
+      // Show month label if this is the 1st of a month and it falls in this column
+      if (cell.getDate() === 1) {
+        monthLabel = MONTH_SHORT[cell.getMonth()];
+      }
+    }
+    columns.push({ dates, monthLabel });
+  }
+
+  return (
+    <View>
+      {/* Section heading */}
+      <Text style={{
+        fontSize: 9, fontWeight: '700', color: DUST,
+        letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 12,
+      }}>
+        Reading through the year
+      </Text>
+
+      {/* Scrollable grid */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ flexDirection: 'row', gap: 0 }}
+      >
+        {/* Day-of-week labels */}
+        <View style={{ marginRight: GAP + 2 }}>
+          {/* Empty space for month label row */}
+          <View style={{ height: 14 }} />
+          {DOW_LABELS.map((lbl, i) => (
+            <View key={i} style={{ height: CELL + GAP, justifyContent: 'center' }}>
+              <Text style={{ fontSize: 7, color: FAINT, width: 8, textAlign: 'center' }}>
+                {i % 2 === 1 ? lbl : ''}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Week columns */}
+        {columns.map((col, ci) => (
+          <View key={ci} style={{ marginRight: GAP }}>
+            {/* Month label */}
+            <View style={{ height: 14, justifyContent: 'flex-end' }}>
+              {col.monthLabel && (
+                <Text style={{ fontSize: 8, color: STONE, lineHeight: 10 }}>
+                  {col.monthLabel}
+                </Text>
+              )}
+            </View>
+            {/* 7 cells */}
+            {col.dates.map((dateStr, ri) => {
+              const isFuture = dateStr > todayStr;
+              const pages    = dayMap[dateStr] ?? 0;
+              const hasRead  = pages > 0 && !isFuture;
+              const frac     = hasRead ? Math.max(0.14, Math.pow(pages / maxPages, 0.65)) : 0;
+              return (
+                <View key={ri} style={{
+                  width: CELL, height: CELL,
+                  marginBottom: GAP,
+                  borderRadius: 2,
+                  backgroundColor: isFuture
+                    ? 'transparent'
+                    : hasRead
+                      ? `rgba(123,158,126,${frac.toFixed(2)})`
+                      : BORDER,
+                }} />
+              );
+            })}
+          </View>
+        ))}
+      </ScrollView>
+
+      {/* Legend */}
+      <View style={{
+        flexDirection: 'row', alignItems: 'center',
+        gap: 4, marginTop: 8, justifyContent: 'flex-end',
+      }}>
+        <Text style={{ fontSize: 9, color: FAINT }}>less</Text>
+        {[0.14, 0.35, 0.55, 0.75, 1.0].map((op, i) => (
+          <View key={i} style={{
+            width: CELL, height: CELL, borderRadius: 2,
+            backgroundColor: `rgba(123,158,126,${op.toFixed(2)})`,
+          }} />
+        ))}
+        <Text style={{ fontSize: 9, color: FAINT }}>more</Text>
+      </View>
+    </View>
+  );
+}
+
 // ── Year view ─────────────────────────────────────────────────────────────────
 function YearView({
-  wrap, year, booksFinished, currentMonth, lastFinishedBook,
+  wrap, year, booksFinished, currentMonth, lastFinishedBook, yearHeatmap,
 }: {
   wrap:             YearlyWrap;
   year:             number;
   booksFinished:    number;
   currentMonth:     number;
   lastFinishedBook: { title: string; finishMonth: string } | null;
+  yearHeatmap:      Record<string, number>;
 }) {
-  if (booksFinished === 0 && wrap.pagesRead === 0) {
+  const hasCurrentYearActivity = booksFinished > 0 || wrap.pagesRead > 0;
+  const hasHeatmapActivity     = Object.keys(yearHeatmap).length > 0;
+
+  // If there is absolutely nothing to show — no current-year data, no trailing
+  // heatmap activity — render the full empty state and skip the rest.
+  if (!hasCurrentYearActivity && !hasHeatmapActivity) {
     return (
       <View style={{ paddingTop: 40 }}>
         <Text style={{
@@ -821,9 +959,9 @@ function YearView({
 
   const activeMonths   = wrap.monthlyBreakdown.length;
   const peakLabel      = wrap.mostActiveMonth?.label ?? null;
-  const yearHeadline   = deriveYearHeadline(wrap, booksFinished, currentMonth);
-  const yearSubline    = deriveYearSubline(wrap, booksFinished, activeMonths, peakLabel);
-  const chartInsight   = deriveYearChartInsight(wrap, currentMonth);
+  const yearHeadline   = hasCurrentYearActivity ? deriveYearHeadline(wrap, booksFinished, currentMonth) : null;
+  const yearSubline    = hasCurrentYearActivity ? deriveYearSubline(wrap, booksFinished, activeMonths, peakLabel) : '';
+  const chartInsight   = hasCurrentYearActivity ? deriveYearChartInsight(wrap, currentMonth) : null;
 
   const statItems: Array<{ value: string; label: string }> = [];
   if (wrap.readingDays > 0)              statItems.push({ value: String(wrap.readingDays), label: 'days read' });
@@ -834,33 +972,59 @@ function YearView({
   return (
     <View>
 
-      {/* ══ Hero ══════════════════════════════════════════════════════════════ */}
-      <View style={{ marginBottom: 20 }}>
-        <Text style={{
-          fontSize: 20, fontWeight: '700', color: INK,
-          letterSpacing: -0.3, lineHeight: 26, marginBottom: 18,
-        }}>
-          {yearHeadline}
-        </Text>
-        <Text style={{
-          fontSize: 60, fontWeight: '900', color: INK,
-          letterSpacing: -2.5, lineHeight: 60,
-        }}>
-          {booksFinished}
-        </Text>
-        <Text style={{ fontSize: 14, color: STONE, marginTop: 6 }}>
-          {booksFinished === 1 ? 'book finished in ' : 'books finished in '}{year}
-        </Text>
-        {lastFinishedBook && booksFinished > 0 && (
-          <Text style={{ fontSize: 12, color: DUST, marginTop: 5, lineHeight: 18 }} numberOfLines={2}>
-            Most recently: {lastFinishedBook.title} · {lastFinishedBook.finishMonth}
+      {/* ══ Hero — only when there is current-year activity ═══════════════════ */}
+      {hasCurrentYearActivity ? (
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{
+            fontSize: 20, fontWeight: '700', color: INK,
+            letterSpacing: -0.3, lineHeight: 26, marginBottom: 18,
+          }}>
+            {yearHeadline}
           </Text>
-        )}
-        {yearSubline.length > 0 && (
-          <Text style={{ fontSize: 12, color: DUST, marginTop: lastFinishedBook && booksFinished > 0 ? 3 : 6, lineHeight: 18 }}>
-            {yearSubline}
+          <Text style={{
+            fontSize: 60, fontWeight: '900', color: INK,
+            letterSpacing: -2.5, lineHeight: 60,
+          }}>
+            {booksFinished}
           </Text>
-        )}
+          <Text style={{ fontSize: 14, color: STONE, marginTop: 6 }}>
+            {booksFinished === 1 ? 'book finished in ' : 'books finished in '}{year}
+          </Text>
+          {lastFinishedBook && booksFinished > 0 && (
+            <Text style={{ fontSize: 12, color: DUST, marginTop: 5, lineHeight: 18 }} numberOfLines={2}>
+              Most recently: {lastFinishedBook.title} · {lastFinishedBook.finishMonth}
+            </Text>
+          )}
+          {yearSubline.length > 0 && (
+            <Text style={{ fontSize: 12, color: DUST, marginTop: lastFinishedBook && booksFinished > 0 ? 3 : 6, lineHeight: 18 }}>
+              {yearSubline}
+            </Text>
+          )}
+        </View>
+      ) : (
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{
+            fontSize: 56, fontWeight: '900', color: FAINT,
+            letterSpacing: -2, lineHeight: 56,
+          }}>
+            {year}
+          </Text>
+          <Text style={{ fontSize: 13, color: FAINT, marginTop: 12, lineHeight: 20 }}>
+            No reading logged this year yet.
+          </Text>
+        </View>
+      )}
+
+      {/* ══ Year heatmap ══════════════════════════════════════════════════════ */}
+      <View style={{
+        backgroundColor: CREAM, borderRadius: 14, overflow: 'hidden',
+        marginBottom: 16,
+        shadowColor: INK, shadowOpacity: 0.04, shadowRadius: 6,
+        shadowOffset: { width: 0, height: 1 }, elevation: 1,
+      }}>
+        <View style={{ padding: 16 }}>
+          <ReadingHeatmap dayMap={yearHeatmap} />
+        </View>
       </View>
 
       {/* ══ Monthly rhythm chart (with insight inside same card) ══════════════ */}

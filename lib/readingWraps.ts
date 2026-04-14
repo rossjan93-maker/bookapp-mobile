@@ -320,7 +320,47 @@ export function computeYearlyWrap(
 }
 
 // =============================================================================
-// D. Reader insights
+// D. Year heatmap
+// =============================================================================
+
+/**
+ * Compute a net-pages-per-day map for the trailing `windowDays` days (default 365).
+ *
+ * Rules:
+ *  - Negative correction rows are summed in (they reduce the day's total).
+ *  - Days whose net total is zero or negative are excluded from the result
+ *    so callers treat them identically to days with no activity.
+ *  - Days outside the trailing window are ignored.
+ *
+ * @param allSessions  Raw session rows (may include negative corrections).
+ * @param windowDays   How many trailing calendar days to include (default 365).
+ * @returns            Sparse map of 'YYYY-MM-DD' → positive net pages.
+ */
+export function computeYearHeatmap(
+  allSessions: WrapSession[],
+  windowDays: number = 365,
+): Record<string, number> {
+  const today = new Date();
+  const startDate = new Date(today);
+  startDate.setDate(today.getDate() - (windowDays - 1));
+  const startStr = startDate.toISOString().slice(0, 10);
+  const todayStr  = today.toISOString().slice(0, 10);
+
+  const netByDate: Record<string, number> = {};
+  for (const s of allSessions) {
+    if (s.session_date < startStr || s.session_date > todayStr) continue;
+    netByDate[s.session_date] = (netByDate[s.session_date] ?? 0) + s.pages_read;
+  }
+
+  const result: Record<string, number> = {};
+  for (const [date, net] of Object.entries(netByDate)) {
+    if (net > 0) result[date] = net;
+  }
+  return result;
+}
+
+// =============================================================================
+// E. Reader insights
 // =============================================================================
 
 /**
