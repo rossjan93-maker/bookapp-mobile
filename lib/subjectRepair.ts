@@ -3,9 +3,22 @@
 // =============================================================================
 // repairSubjectCoverage — queries the books table for rows where subjects is
 // null (priority 1) or has fewer than 3 entries (priority 2), then attempts to
-// fill them via Open Library.  Books with an existing external_id are processed
-// first (no OL search needed).  Subjects are only written when the OL result is
-// strictly better (more subjects) than what is already stored.
+// fill them via Open Library (primary) with a Google Books fallback when OL
+// cannot supply usable subjects.
+//
+// Provider strategy:
+//   1. Open Library (OL) — attempted first for every eligible book.
+//      Books with an existing OL external_id skip the search step.
+//   2. Google Books (GB) — attempted only when OL completely fails:
+//        a. No OL ID could be found (search returned nothing), OR
+//        b. OL ID was found but returned 0 subjects.
+//      GB is NOT tried when OL already found ≥ 1 subject (even if sparse) —
+//      the conservative approach avoids overwriting confirmed OL subject data.
+//
+// Idempotency guard:
+//   Subjects are only written when the incoming result has strictly more entries
+//   than what is already stored.  A book with 2 existing subjects requires at
+//   least 3 incoming subjects before a write occurs.
 //
 // Cursor-based progression (afterId)
 // ───────────────────────────────────
@@ -32,11 +45,16 @@
 // =============================================================================
 
 import { fetchOLMeta, searchOLWork, isOLId } from './openLibrary';
+import { fetchGoogleBooksMetadata, normalizeGBCategories } from './googleBooks';
 import type { SupabaseClient }              from '@supabase/supabase-js';
 
 export type RepairSummary = {
   eligible:       number;
   enriched:       number;
+  /** Books enriched via Open Library subjects. Subset of enriched. */
+  enrichedByOL:   number;
+  /** Books enriched via Google Books categories. Subset of enriched. */
+  enrichedByGB:   number;
   failed:         number;
   skipped:        number;
   fieldsImproved: number;
@@ -73,6 +91,8 @@ type CandidateBook = {
   author:      string | null;
   external_id: string | null;
   subjects:    string[] | null;
+  isbn13:      string | null;
+  isbn:        string | null;
 };
 
 /** Return the lexicographically larger of two nullable id strings. */
@@ -80,6 +100,42 @@ function maxId(a: string | null, b: string | null): string | null {
   if (!a) return b;
   if (!b) return a;
   return a > b ? a : b;
+}
+
+// ── Google Books subject fallback ─────────────────────────────────────────────
+// Called when OL completely fails to supply subjects for a book.
+// Returns normalized subject strings if GB has usable categories AND they are
+// strictly more than currentCount, otherwise returns null (no write should occur).
+async function fetchGBSubjects(
+  t: string,
+  a: string,
+  isbn13: string | null,
+  isbn: string | null,
+  currentCount: number,
+): Promise<{ subjects: string[]; volumeId: string | null } | null> {
+  const gb = await fetchGoogleBooksMetadata({ isbn13, isbn, title: t, author: a });
+
+  if (!gb.categories || gb.categories.length === 0) {
+    console.log(`${LOG} GB returned no categories for "${t}"`);
+    return null;
+  }
+
+  const normalized = normalizeGBCategories(gb.categories);
+
+  if (normalized.length === 0) {
+    console.log(`${LOG} GB categories normalized to empty for "${t}" — raw: ${gb.categories.join(' | ')}`);
+    return null;
+  }
+
+  // Idempotency guard: only useful when strictly better than current.
+  if (normalized.length <= currentCount && currentCount > 0) {
+    console.log(
+      `${LOG} GB ${normalized.length} subjects not an improvement over existing ${currentCount} for "${t}"`,
+    );
+    return null;
+  }
+
+  return { subjects: normalized, volumeId: gb.volume_id };
 }
 
 export async function repairSubjectCoverage(
@@ -92,7 +148,8 @@ export async function repairSubjectCoverage(
   }
 
   const summary: RepairSummary = {
-    eligible: 0, enriched: 0, failed: 0, skipped: 0, fieldsImproved: 0, lastId: null,
+    eligible: 0, enriched: 0, enrichedByOL: 0, enrichedByGB: 0,
+    failed: 0, skipped: 0, fieldsImproved: 0, lastId: null,
   };
 
   // lastWindowId: furthest row id seen across all query results (p1 + full p2 window).
@@ -137,7 +194,7 @@ export async function repairSubjectCoverage(
   // does not overlap with previous runs.
   let q1 = db
     .from('books')
-    .select('id, title, author, external_id, subjects')
+    .select('id, title, author, external_id, subjects, isbn13, isbn')
     .is('subjects', null)
     .order('id', { ascending: true });
 
@@ -163,7 +220,7 @@ export async function repairSubjectCoverage(
   if (slots > 0) {
     let q2 = db
       .from('books')
-      .select('id, title, author, external_id, subjects')
+      .select('id, title, author, external_id, subjects, isbn13, isbn')
       .not('subjects', 'is', null)
       .order('id', { ascending: true });
 
@@ -225,6 +282,8 @@ export async function repairSubjectCoverage(
   for (const book of candidates) {
     const t = String(book.title  ?? '').trim();
     const a = String(book.author ?? '').trim();
+    const isbn13 = book.isbn13 ?? null;
+    const isbn   = book.isbn   ?? null;
     const currentSubjects: string[] = Array.isArray(book.subjects)
       ? (book.subjects as string[])
       : [];
@@ -250,20 +309,93 @@ export async function repairSubjectCoverage(
         }
       }
 
+      // ── OL failure path A: no OL ID at all ───────────────────────────────
+      // Try Google Books as fallback before marking as failed.
       if (!resolvedExtId) {
-        summary.failed++;
-        console.log(`${LOG} no OL ID for "${t}" — cannot enrich`);
+        console.log(`${LOG} no OL ID for "${t}" — trying GB fallback`);
+        const gbResult = await fetchGBSubjects(t, a, isbn13, isbn, currentSubjects.length);
+
+        if (gbResult) {
+          const preview = gbResult.subjects.slice(0, 3).join(', ');
+          console.log(
+            `${LOG} GB enriched "${t}" [${currentSubjects.length} → ${gbResult.subjects.length}] ` +
+            `via categories (${preview}${gbResult.subjects.length > 3 ? '…' : ''})`,
+          );
+
+          if (!dryRun) {
+            const { error } = await db
+              .from('books')
+              .update({ subjects: gbResult.subjects })
+              .eq('id', book.id);
+
+            if (error) {
+              summary.failed++;
+              console.log(`${LOG} db update failed for "${t}" — ${error.message}`);
+              continue;
+            }
+            summary.fieldsImproved++;
+          } else {
+            summary.fieldsImproved++;
+          }
+
+          summary.enriched++;
+          summary.enrichedByGB++;
+        } else {
+          summary.failed++;
+          console.log(`${LOG} GB also returned no usable subjects for "${t}"`);
+        }
         continue;
       }
 
       const ol = await fetchOLMeta(resolvedExtId);
 
+      // ── OL failure path B: OL ID found but zero subjects ─────────────────
+      // Try Google Books as fallback before marking as failed.
       if (ol.subjects.length === 0) {
-        summary.failed++;
-        console.log(`${LOG} OL returned 0 subjects for "${t}"`);
+        console.log(`${LOG} OL returned 0 subjects for "${t}" — trying GB fallback`);
+        const gbResult = await fetchGBSubjects(t, a, isbn13, isbn, currentSubjects.length);
+
+        if (gbResult) {
+          const preview = gbResult.subjects.slice(0, 3).join(', ');
+          console.log(
+            `${LOG} GB enriched "${t}" [${currentSubjects.length} → ${gbResult.subjects.length}] ` +
+            `via categories (${preview}${gbResult.subjects.length > 3 ? '…' : ''})`,
+          );
+
+          if (!dryRun) {
+            // Back-fill external_id when we searched for it (prevents redundant
+            // searchOLWork() on future runs even if OL has no subjects).
+            const patch: Record<string, unknown> = { subjects: gbResult.subjects };
+            if (extIdFound) patch.external_id = resolvedExtId;
+
+            const { error } = await db
+              .from('books')
+              .update(patch)
+              .eq('id', book.id);
+
+            if (error) {
+              summary.failed++;
+              console.log(`${LOG} db update failed for "${t}" — ${error.message}`);
+              continue;
+            }
+
+            summary.fieldsImproved++;
+            if (extIdFound) summary.fieldsImproved++;
+          } else {
+            summary.fieldsImproved++;
+            if (extIdFound) summary.fieldsImproved++;
+          }
+
+          summary.enriched++;
+          summary.enrichedByGB++;
+        } else {
+          summary.failed++;
+          console.log(`${LOG} GB also returned no usable subjects for "${t}"`);
+        }
         continue;
       }
 
+      // ── OL success path ───────────────────────────────────────────────────
       // Only write subjects when OL result is strictly better than current.
       if (ol.subjects.length <= currentSubjects.length && currentSubjects.length > 0) {
         summary.skipped++;
@@ -275,7 +407,7 @@ export async function repairSubjectCoverage(
 
       const preview = ol.subjects.slice(0, 3).join(', ');
       console.log(
-        `${LOG} enriched "${t}" [${currentSubjects.length} → ${ol.subjects.length}] ` +
+        `${LOG} OL enriched "${t}" [${currentSubjects.length} → ${ol.subjects.length}] ` +
         `(${preview}${ol.subjects.length > 3 ? '…' : ''})`,
       );
 
@@ -304,6 +436,7 @@ export async function repairSubjectCoverage(
       }
 
       summary.enriched++;
+      summary.enrichedByOL++;
 
     } catch (err) {
       summary.failed++;
@@ -327,7 +460,7 @@ export async function repairSubjectCoverage(
   console.log(
     `${LOG} done — ` +
     `eligible=${summary.eligible} ` +
-    `enriched=${summary.enriched} ` +
+    `enriched=${summary.enriched} (OL=${summary.enrichedByOL} GB=${summary.enrichedByGB}) ` +
     `failed=${summary.failed} ` +
     `skipped=${summary.skipped} ` +
     `fieldsImproved=${summary.fieldsImproved} ` +

@@ -245,7 +245,65 @@ export type GoogleBooksMetadata = {
    *  This is the canonical source_book_id for book_source_links — never use
    *  a title fragment or ISBN as a substitute for this field. */
   volume_id:   string | null;
+  /**
+   * Raw BISAC-style categories from the Google Books API (e.g. ["Fiction / Fantasy / Epic"]).
+   * Non-null only when the matched item carries at least one category string.
+   * Pass to normalizeGBCategories() to get app-compatible subject strings.
+   */
+  categories:  string[] | null;
 };
+
+// ─── BISAC category → app subject normalization ───────────────────────────────
+// Google Books returns categories as BISAC-style hierarchical strings:
+//   "Fiction / Fantasy / Epic"
+//   "Young Adult Fiction"
+//   "Biography & Autobiography / Personal Memoirs"
+//
+// Strategy:
+//   1. Split each category string on " / " to isolate hierarchy segments.
+//   2. Normalize each segment: lowercase, " & " → " and ", trim.
+//   3. Drop segments that are too generic to be useful as standalone subjects.
+//   4. Collect, deduplicate, cap at 15.
+//
+// The blocklist uses exact post-normalized matching — "juvenile fiction" and
+// "young adult fiction" pass through intentionally; "fiction" alone does not.
+//
+// Exported so callers (lib/subjectRepair.ts, scripts) can use it independently.
+
+const GB_GENERIC_TERMS = new Set([
+  'fiction',
+  'nonfiction',
+  'non-fiction',
+  'books',
+  'general',
+  'literature',
+  'electronic books',
+  'large print books',
+  'audiobooks',
+  'ebooks',
+  'e-books',
+]);
+
+export function normalizeGBCategories(categories: string[]): string[] {
+  const out = new Set<string>();
+
+  for (const cat of categories) {
+    if (typeof cat !== 'string' || !cat.trim()) continue;
+
+    const segments = cat
+      .split('/')
+      .map(s => s.trim().replace(/\s*&\s*/g, ' and ').toLowerCase())
+      .filter(Boolean);
+
+    for (const seg of segments) {
+      if (!GB_GENERIC_TERMS.has(seg)) {
+        out.add(seg);
+      }
+    }
+  }
+
+  return Array.from(out).slice(0, 15);
+}
 
 export async function fetchGoogleBooksMetadata(opts: {
   isbn13?: string | null;
@@ -253,7 +311,7 @@ export async function fetchGoogleBooksMetadata(opts: {
   title:   string;
   author:  string;
 }): Promise<GoogleBooksMetadata> {
-  const result: GoogleBooksMetadata = { cover_url: null, description: null, page_count: null, volume_id: null };
+  const result: GoogleBooksMetadata = { cover_url: null, description: null, page_count: null, volume_id: null, categories: null };
   const { isbn13, isbn, title, author } = opts;
   if (!title.trim()) return result;
 
@@ -293,7 +351,8 @@ export async function fetchGoogleBooksMetadata(opts: {
 
   // NOTE: `id` is included in the fields param so we get the real GB volume ID.
   // This is the canonical identifier for book_source_links.source_book_id.
-  const fields = 'items(id,volumeInfo(title,authors,imageLinks(thumbnail,smallThumbnail),description,pageCount))';
+  // `categories` is included for subject enrichment (see normalizeGBCategories).
+  const fields = 'items(id,volumeInfo(title,authors,categories,imageLinks(thumbnail,smallThumbnail),description,pageCount))';
 
   for (const { q, skipTitleCheck, checkAuthor } of strategies) {
     const url =
@@ -307,7 +366,17 @@ export async function fetchGoogleBooksMetadata(opts: {
     if (!Array.isArray(data.items) || data.items.length === 0) continue;
 
     for (const item of data.items) {
-      const typedItem = item as { id?: string; volumeInfo?: { title?: string; authors?: string[]; imageLinks?: { thumbnail?: string; smallThumbnail?: string }; description?: unknown; pageCount?: unknown } };
+      const typedItem = item as {
+        id?: string;
+        volumeInfo?: {
+          title?: string;
+          authors?: string[];
+          categories?: unknown;
+          imageLinks?: { thumbnail?: string; smallThumbnail?: string };
+          description?: unknown;
+          pageCount?: unknown;
+        };
+      };
       const vi = typedItem?.volumeInfo;
       if (!vi) continue;
       if (!skipTitleCheck && !titleMatches(title, vi.title ?? '')) continue;
@@ -334,8 +403,15 @@ export async function fetchGoogleBooksMetadata(opts: {
         result.page_count = pc;
       }
 
+      if (Array.isArray(vi.categories)) {
+        const cats = (vi.categories as unknown[]).filter(
+          (c): c is string => typeof c === 'string' && c.trim().length > 0,
+        );
+        if (cats.length > 0) result.categories = cats;
+      }
+
       // If this item gave us at least one field, capture its volume ID and commit.
-      if (result.cover_url || result.description || result.page_count) {
+      if (result.cover_url || result.description || result.page_count || result.categories) {
         // Capture the real GB volume ID — this is the canonical source_book_id.
         if (typeof typedItem.id === 'string' && typedItem.id.length > 0) {
           result.volume_id = typedItem.id;

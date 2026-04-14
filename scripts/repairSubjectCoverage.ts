@@ -143,6 +143,8 @@ async function run() {
   console.log(`\n${LOG} ── Summary ──────────────────────────────────────────`);
   console.log(`${LOG}   eligible       : ${summary.eligible}`);
   console.log(`${LOG}   enriched       : ${summary.enriched}`);
+  console.log(`${LOG}     ↳ via OL     : ${summary.enrichedByOL}`);
+  console.log(`${LOG}     ↳ via GB     : ${summary.enrichedByGB}`);
   console.log(`${LOG}   failed         : ${summary.failed}`);
   console.log(`${LOG}   skipped        : ${summary.skipped}`);
   console.log(`${LOG}   fieldsImproved : ${summary.fieldsImproved}`);
