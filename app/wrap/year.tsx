@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   ScrollView,
   Text,
   TouchableOpacity,
@@ -232,7 +233,10 @@ export default function YearWrapScreen() {
   async function shareCard() {
     if (!cardRef.current || sharing) return;
     const available = await Sharing.isAvailableAsync();
-    if (!available) return;
+    if (!available) {
+      Alert.alert('Sharing not available', 'Your device does not support sharing images.');
+      return;
+    }
     setSharing(true);
     try {
       const uri = await captureRef(cardRef, { format: 'jpg', quality: 0.95 });
