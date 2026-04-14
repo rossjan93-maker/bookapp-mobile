@@ -15,6 +15,7 @@ import { supabase } from '../lib/supabase';
 import { getDisplayName } from '../lib/displayName';
 import { ONBOARDING_STAGE_KEY, readOnboardingStage } from '../lib/onboardingStage';
 import { clearLocalOnboardingState } from '../lib/localStateClear';
+import { repairSubjectCoverage, type RepairSummary } from '../lib/subjectRepair';
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
@@ -166,6 +167,36 @@ export default function SettingsScreen() {
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deleteError, setDeleteError]         = useState<string | null>(null);
   const deleteInputRef = useRef<TextInput>(null);
+
+  // ── Subject repair (dev only) ─────────────────────────────────────────────
+  const [subjectRepairRunning, setSubjectRepairRunning] = useState(false);
+
+  async function handleSubjectRepair() {
+    if (!userId) {
+      Alert.alert('Subject Repair', 'No user session — sign in first.');
+      return;
+    }
+    setSubjectRepairRunning(true);
+    try {
+      const summary: RepairSummary = await repairSubjectCoverage({
+        userId,
+        batchSize: 50,
+        dryRun: false,
+      });
+      Alert.alert(
+        'Subject Repair Done',
+        `Eligible:  ${summary.eligible}\n` +
+        `Enriched:  ${summary.enriched}\n` +
+        `Failed:    ${summary.failed}\n` +
+        `Skipped:   ${summary.skipped}\n` +
+        `Fields improved: ${summary.fieldsImproved}`,
+      );
+    } catch (err) {
+      Alert.alert('Subject Repair Error', String(err));
+    } finally {
+      setSubjectRepairRunning(false);
+    }
+  }
 
   useEffect(() => {
     async function load() {
@@ -590,6 +621,37 @@ export default function SettingsScreen() {
           </View>
         </TouchableOpacity>
       </SettingsCard>
+
+      {/* ── Developer (DEV only) ─────────────────────────────────────────────── */}
+      {__DEV__ && (
+        <>
+          <SectionHeader>Developer</SectionHeader>
+          <SettingsCard>
+            <TouchableOpacity
+              onPress={handleSubjectRepair}
+              disabled={subjectRepairRunning}
+              activeOpacity={0.75}
+              style={{ paddingHorizontal: 16, paddingVertical: 16 }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', marginBottom: 3 }}>
+                    Repair Subject Coverage
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
+                    Enrich books with null or sparse subjects via Open Library
+                  </Text>
+                </View>
+                {subjectRepairRunning ? (
+                  <ActivityIndicator size="small" color="#9e958d" style={{ marginLeft: 10 }} />
+                ) : (
+                  <Text style={{ fontSize: 20, color: '#c4b5a5', marginLeft: 10 }}>›</Text>
+                )}
+              </View>
+            </TouchableOpacity>
+          </SettingsCard>
+        </>
+      )}
 
       {/* ── Account ──────────────────────────────────────────────────────────── */}
       <SectionHeader>Account</SectionHeader>
