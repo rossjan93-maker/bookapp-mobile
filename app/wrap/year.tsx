@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -7,6 +7,8 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
@@ -17,6 +19,7 @@ import {
   type WrapBookRef,
   type MonthBreakdown,
 } from '../../lib/readingWraps';
+import YearlyRecapCard, { CARD_WIDTH, CARD_HEIGHT } from '../../components/YearlyRecapCard';
 
 // ── Tokens ────────────────────────────────────────────────────────────────────
 const INK     = '#231f1b';
@@ -111,7 +114,7 @@ function MonthColumns({
               <View style={{
                 width: Math.max(6, colW - 5),
                 height: barH || 3,
-                backgroundColor: isPeak ? SAGE : SAGE,
+                backgroundColor: SAGE,
                 borderTopLeftRadius: 3,
                 borderTopRightRadius: 3,
                 opacity: days > 0 ? (0.35 + 0.65 * frac) : 0.12,
@@ -152,6 +155,9 @@ export default function YearWrapScreen() {
   const [loading, setLoading] = useState(true);
   const [wrap, setWrap]       = useState<YearlyWrap | null>(null);
   const [hasData, setHasData] = useState(false);
+  const [sharing, setSharing] = useState(false);
+
+  const cardRef = useRef<View>(null);
 
   const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
 
@@ -214,8 +220,37 @@ export default function YearWrapScreen() {
     }
   }
 
+  async function shareCard() {
+    if (!cardRef.current || sharing) return;
+    setSharing(true);
+    try {
+      const uri = await captureRef(cardRef, { format: 'jpg', quality: 0.95 });
+      await Sharing.shareAsync(uri, { mimeType: 'image/jpeg' });
+    } catch (_) {
+      // sharing cancelled or failed — silently ignore
+    } finally {
+      setSharing(false);
+    }
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
+
+      {/* ── Off-screen card for capture (rendered but not visible) ── */}
+      {wrap && (
+        <View
+          style={{
+            position: 'absolute',
+            left:     -(CARD_WIDTH + 10),
+            top:      0,
+            width:    CARD_WIDTH,
+            height:   CARD_HEIGHT,
+          }}
+          pointerEvents="none"
+        >
+          <YearlyRecapCard ref={cardRef} wrap={wrap} />
+        </View>
+      )}
 
       {/* ── Immersive dark header ── */}
       <View style={{
@@ -384,6 +419,43 @@ export default function YearWrapScreen() {
               </View>
             </>
           )}
+
+          {/* ── Share card row ── */}
+          <Rule />
+          <TouchableOpacity
+            onPress={shareCard}
+            disabled={sharing}
+            activeOpacity={0.78}
+          >
+            <View style={{
+              backgroundColor:  CREAM,
+              borderRadius:     14,
+              paddingHorizontal: 20,
+              paddingVertical:  16,
+              flexDirection:    'row',
+              alignItems:       'center',
+              justifyContent:   'space-between',
+              shadowColor:      INK,
+              shadowOpacity:    0.04,
+              shadowRadius:     6,
+              shadowOffset:     { width: 0, height: 1 },
+              elevation:        1,
+              opacity:          sharing ? 0.6 : 1,
+            }}>
+              <View>
+                <Text style={{
+                  fontSize: 9, fontWeight: '700', color: DUST,
+                  letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 3,
+                }}>
+                  Export
+                </Text>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: INK }}>
+                  {sharing ? 'Generating…' : 'Share recap card'}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 18, color: DUST }}>↗</Text>
+            </View>
+          </TouchableOpacity>
 
         </ScrollView>
       )}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -7,15 +7,20 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import {
   computeMonthlyWrap,
+  deriveInsights,
   type MonthlyWrap,
   type WrapSession,
   type WrapBookRef,
+  type ReaderInsight,
 } from '../../lib/readingWraps';
+import MonthlyRecapCard, { CARD_WIDTH, CARD_HEIGHT } from '../../components/MonthlyRecapCard';
 
 // ── Tokens ────────────────────────────────────────────────────────────────────
 const INK      = '#231f1b';
@@ -91,7 +96,11 @@ export default function MonthWrapScreen() {
 
   const [loading, setLoading] = useState(true);
   const [wrap, setWrap]       = useState<MonthlyWrap | null>(null);
+  const [insight, setInsight] = useState<ReaderInsight | null>(null);
   const [hasData, setHasData] = useState(false);
+  const [sharing, setSharing] = useState(false);
+
+  const cardRef = useRef<View>(null);
 
   const currentYear = new Date().getFullYear();
   const targetYear  = month ? parseInt(month.split('-')[0], 10) : currentYear;
@@ -140,8 +149,24 @@ export default function MonthWrapScreen() {
       const computed = computeMonthlyWrap(sessions, m, lookup);
       setWrap(computed);
       setHasData(computed.pagesRead > 0);
+
+      const insights = deriveInsights(computed, null, null, null);
+      setInsight(insights[0] ?? null);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function shareCard() {
+    if (!cardRef.current || sharing) return;
+    setSharing(true);
+    try {
+      const uri = await captureRef(cardRef, { format: 'jpg', quality: 0.95 });
+      await Sharing.shareAsync(uri, { mimeType: 'image/jpeg' });
+    } catch (_) {
+      // sharing cancelled or failed — silently ignore
+    } finally {
+      setSharing(false);
     }
   }
 
@@ -149,6 +174,22 @@ export default function MonthWrapScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
+
+      {/* ── Off-screen card for capture (rendered but not visible) ── */}
+      {wrap && (
+        <View
+          style={{
+            position: 'absolute',
+            left:     -(CARD_WIDTH + 10),
+            top:      0,
+            width:    CARD_WIDTH,
+            height:   CARD_HEIGHT,
+          }}
+          pointerEvents="none"
+        >
+          <MonthlyRecapCard ref={cardRef} wrap={wrap} insight={insight} />
+        </View>
+      )}
 
       {/* ── Immersive dark header ── */}
       <View style={{
@@ -325,11 +366,48 @@ export default function MonthWrapScreen() {
             </>
           )}
 
+          {/* ── Share card row ── */}
+          <Rule />
+          <TouchableOpacity
+            onPress={shareCard}
+            disabled={sharing}
+            activeOpacity={0.78}
+          >
+            <View style={{
+              backgroundColor:  CREAM,
+              borderRadius:     14,
+              paddingHorizontal: 20,
+              paddingVertical:  16,
+              flexDirection:    'row',
+              alignItems:       'center',
+              justifyContent:   'space-between',
+              shadowColor:      INK,
+              shadowOpacity:    0.04,
+              shadowRadius:     6,
+              shadowOffset:     { width: 0, height: 1 },
+              elevation:        1,
+              opacity:          sharing ? 0.6 : 1,
+            }}>
+              <View>
+                <Text style={{
+                  fontSize: 9, fontWeight: '700', color: DUST,
+                  letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 3,
+                }}>
+                  Export
+                </Text>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: INK }}>
+                  {sharing ? 'Generating…' : 'Share recap card'}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 18, color: DUST }}>↗</Text>
+            </View>
+          </TouchableOpacity>
+
           {/* ── Year CTA ── */}
           <TouchableOpacity
             onPress={() => router.push({ pathname: '/wrap/year', params: { year: String(targetYear) } })}
             activeOpacity={0.82}
-            style={{ marginTop: 32 }}
+            style={{ marginTop: 12 }}
           >
             <View style={{
               backgroundColor: INK,
