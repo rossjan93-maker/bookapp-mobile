@@ -1,0 +1,68 @@
+The Open Library and Google Books subject coverage passes are now done.
+
+Next focus: LLM subject inference for the stubborn remainder.
+
+Goal:
+close the remaining subject-coverage holes for books where Open Library and Google Books both fail to provide useful subject data, especially modern/self-published fantasy and romantasy titles that are important to the app’s recommendation and shelf quality.
+
+Why this matters:
+The remaining null/weak-subject books are now concentrated in exactly the kinds of books likely to matter for our users.
+Improving them should lift:
+- recommendation quality
+- smart shelf membership
+- content warnings
+- book detail richness
+- overall metadata trust
+
+Important framing:
+This should be treated as a bounded metadata-enrichment job, not a live user-facing AI feature.
+I do NOT want this to become a recurring real-time LLM dependency in the user flow.
+I want a conservative, cacheable, one-time enrichment path.
+
+What I want you to do:
+1. inspect the current subject repair pipeline
+2. add an LLM-based fallback stage after Open Library and Google Books both fail
+3. only run it for books where subjects are still null or meaningfully insufficient
+4. use title + author + description as the main inference inputs
+5. normalize the output into the app’s subject model cleanly
+6. make the process observable, idempotent, and safe
+
+Requirements:
+- do not overwrite richer provider-sourced subjects
+- do not infer subjects if there is not enough context (e.g. missing/too-thin description)
+- prefer a small, high-confidence inferred set over a broad noisy list
+- store the results so each book only needs this once
+- keep it out of live user-facing request paths
+- make it clear when inference was used vs provider metadata
+- build on the existing repair architecture rather than inventing a parallel system
+
+I want you to answer these design questions too:
+1. what is the cleanest integration point for LLM inference in the current repair pipeline?
+2. what provider/client approach should be used for this codebase right now?
+3. how should inferred subjects be normalized and constrained?
+4. how should provenance/confidence be tracked so inferred data is distinguishable from OL/GB data?
+5. what is the cheapest/safest way to operate this so costs stay bounded?
+
+Implementation expectations:
+- add the fallback conservatively
+- make it runnable via the existing repair path or a closely related maintenance path
+- add logging/summary output so we can see:
+  - how many books were eligible
+  - how many were inferred
+  - how many were skipped for insufficient context
+  - how many failed
+- keep the implementation production-minded, not experimental throwaway code
+
+What I want back:
+1. exact files changed
+2. how the inference fallback works
+3. what prompt/schema/normalization strategy was used
+4. how provenance/confidence is tracked
+5. before/after metrics after running it
+6. estimated operational/cost impact of this approach
+7. what still remains unresolved after LLM inference
+8. your recommendation for the next best move after this
+
+Important:
+Do not drift into broader LLM recommendation work yet.
+This pass is only about subject inference as the final metadata fallback.
