@@ -1455,6 +1455,10 @@ export default function LibraryScreen() {
               justifyContent: 'space-between',
               paddingTop:     index === 0 ? 10 : 24,
               paddingBottom:  8,
+              borderLeftWidth: 3,
+              borderLeftColor: '#7b9e7e',
+              paddingLeft:     10,
+              marginLeft:      -2,
             }}>
               <View style={{ flex: 1, marginRight: 10 }}>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', letterSpacing: -0.1 }}>
@@ -1464,20 +1468,30 @@ export default function LibraryScreen() {
                   {item.readCount} of {item.total} {item.readCount === 1 ? 'book' : 'books'}
                 </Text>
               </View>
-              <View style={{
-                backgroundColor: item.status === 'complete' ? '#e6f0e6' : '#f0ece6',
-                borderRadius:    6,
-                paddingHorizontal: 9,
-                paddingVertical:   4,
-              }}>
-                <Text style={{
-                  fontSize:   11,
-                  fontWeight: '600',
-                  color:      item.status === 'complete' ? '#4d7f52' : '#6b635c',
+              {item.status === 'complete' ? (
+                <View style={{
+                  backgroundColor: '#e6f0e6',
+                  borderRadius:    6,
+                  paddingHorizontal: 9,
+                  paddingVertical:   4,
                 }}>
-                  {item.status === 'complete' ? 'Complete' : 'In Progress'}
-                </Text>
-              </View>
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: '#4d7f52' }}>
+                    Complete
+                  </Text>
+                </View>
+              ) : (
+                <View style={{
+                  borderRadius:    6,
+                  borderWidth:     1,
+                  borderColor:     '#c4b5a5',
+                  paddingHorizontal: 9,
+                  paddingVertical:   3,
+                }}>
+                  <Text style={{ fontSize: 11, fontWeight: '500', color: '#6b635c' }}>
+                    In Progress
+                  </Text>
+                </View>
+              )}
             </View>
           );
         }
@@ -1818,9 +1832,11 @@ export default function LibraryScreen() {
               style={{
               paddingTop: 18,
               paddingBottom: hasExtraRow ? 14 : 18,
-              paddingLeft: isGroupMember ? 12 : 0,
+              paddingLeft: isGroupMember ? 14 : 0,
               borderBottomWidth: 1,
               borderBottomColor: '#ede9e4',
+              borderLeftWidth: isGroupMember ? 2 : 0,
+              borderLeftColor: '#c4b5a5',
             }}>
             <TouchableOpacity
               activeOpacity={0.7}
@@ -1862,13 +1878,30 @@ export default function LibraryScreen() {
                       {item.book?.author ?? '—'}
                     </Text>
                     {(() => {
-                      // Want-to-read series labels
+                      // Want-to-read series cue chips
                       const wtrLabel = seriesContinuationLabel(item);
                       if (wtrLabel) {
+                        const isStartChip = wtrLabel === 'Start here';
                         return (
-                          <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 3, fontWeight: '500' }}>
-                            {wtrLabel}
-                          </Text>
+                          <View style={{
+                            alignSelf:        'flex-start',
+                            marginTop:        5,
+                            paddingHorizontal: isStartChip ? 8 : 9,
+                            paddingVertical:   3,
+                            borderRadius:      6,
+                            borderWidth:       1,
+                            borderColor:       isStartChip ? '#c4956a' : '#c4b5a5',
+                            backgroundColor:   isStartChip ? '#fef9f4' : 'transparent',
+                          }}>
+                            <Text style={{
+                              fontSize:   11,
+                              fontWeight: '600',
+                              color:      isStartChip ? '#a07040' : '#6b635c',
+                              letterSpacing: 0.1,
+                            }}>
+                              {wtrLabel}
+                            </Text>
+                          </View>
                         );
                       }
                       // Series name subtitle for singleton reading/finished books

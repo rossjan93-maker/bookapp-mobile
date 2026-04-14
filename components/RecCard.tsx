@@ -636,7 +636,8 @@ export function RecCard({
           </View>
 
           {hasSeriesMeta && (
-            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 5, marginBottom: 8 }}>
+            <View style={{ marginBottom: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 5, marginBottom: 5 }}>
               {catalogMeta!.orderedBooks.map((b, i) => {
                 const isCurrent  = (i + 1) === seriesPos;
                 const w          = isCurrent ? 34 : 27;
@@ -648,7 +649,7 @@ export function RecCard({
                   <View
                     key={`${b.title}-${i}`}
                     style={{
-                      opacity:      isCurrent ? 1 : 0.38,
+                      opacity:      isCurrent ? 1 : 0.70,
                       borderWidth:  isCurrent ? 1.5 : 0,
                       borderColor:  '#231f1b',
                       borderRadius: 4,
@@ -684,6 +685,11 @@ export function RecCard({
                   </View>
                 );
               })}
+              </View>
+              {/* Position label — "Book N of M" only; no action suffix */}
+              <Text style={{ fontSize: 11, color: '#9e958d', letterSpacing: 0.1 }}>
+                {`Book ${seriesPos} of ${seriesTotal}`}
+              </Text>
             </View>
           )}
 
