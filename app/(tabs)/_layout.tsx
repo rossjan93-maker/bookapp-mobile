@@ -42,13 +42,14 @@ export const BadgeContext = createContext<BadgeContextType>({
 
 // ─── Tab ordering (matches Tabs.Screen declaration order) ─────────────────────
 
-const TAB_ROUTES = ['index', 'search', 'library', 'notes', 'profile'] as const;
+const TAB_ROUTES = ['index', 'search', 'library', 'notes', 'clubs', 'profile'] as const;
 
 const TAB_PATHS = {
   index:   '/'               as const,
   search:  '/(tabs)/search'  as const,
   library: '/(tabs)/library' as const,
   notes:   '/(tabs)/notes'   as const,
+  clubs:   '/(tabs)/clubs'   as const,
   profile: '/(tabs)/profile' as const,
 } satisfies Record<typeof TAB_ROUTES[number], string>;
 
@@ -353,6 +354,7 @@ export default function TabsLayout() {
                     tabBarBadge: newRecCount > 0 ? newRecCount : undefined,
                   }}
                 />
+                <Tabs.Screen name="clubs"   options={{ title: 'Clubs'   }} />
                 <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
               </Tabs>
             </Animated.View>

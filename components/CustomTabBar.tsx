@@ -15,6 +15,7 @@ const TABS: TabConfig[] = [
   { name: 'search',  label: 'For You', icon: 'sparkles-outline', iconFocused: 'sparkles' },
   { name: 'library', label: 'Library', icon: 'library-outline',  iconFocused: 'library'  },
   { name: 'notes',   label: 'Inbox',   icon: 'mail-outline',     iconFocused: 'mail'     },
+  { name: 'clubs',   label: 'Clubs',   icon: 'people-outline',   iconFocused: 'people'   },
   { name: 'profile', label: 'Profile', icon: 'person-outline',   iconFocused: 'person'   },
 ];
 
