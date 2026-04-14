@@ -329,11 +329,13 @@ export function intentSummaryLabel(intent: NextReadIntent): string {
 // Attached to each ScoredBook for inspection in the debug panel.
 
 export type IntentBookTrace = {
-  excluded_by:        string | null;   // exclusion key, or null if not excluded
-  hard_filter_passes: string[];        // e.g. ['lane: modern_suspense', 'standalone ok']
-  hard_filter_fails:  string[];        // e.g. ['lane (got scifi_fantasy, wanted modern_suspense)']
-  soft_boosts:        string[];        // e.g. ['fast-paced', 'lighter tone']
-  score_delta:        number;          // net score change applied (+/- or 0)
+  excluded_by:        string | null;         // exclusion key, or null if not excluded
+  hard_filter_passes: string[];              // e.g. ['lane: modern_suspense', 'standalone ok']
+  hard_filter_fails:  string[];              // e.g. ['lane (got scifi_fantasy, wanted modern_suspense)']
+  soft_boosts:        string[];              // e.g. ['fast-paced', 'lighter tone']
+  score_delta:        number;                // net score change applied (+/- or 0)
+  mood_preset:        ReadingEnergyMode | null;  // active mood chip, null when none set
+  mood_delta:         number;                // contribution from mood boost (0 when no trait match)
 };
 
 // ── Set-level summary ──────────────────────────────────────────────────────────
@@ -537,15 +539,33 @@ const NL_RULES: NLRule[] = [
     apply: i => addLane(i, 'memoir_nonfiction'), label: 'nonfiction' },
 
   // ── Reading energy / mood preset ──────────────────────────────────────────
-  { patterns: ['light and fun', 'light & fun', 'fun and breezy', 'something light and fun', 'fun easy read', 'light-hearted fun'],
+  // Matches both explicit mood phrases ("light & fun") and common user phrasings
+  // like "something light" and "something fun", "i want something breezy".
+  // Note: "something light" also triggers soft.tone='light' via the tone rules below —
+  // both signals fire independently and are additive (chip priority at merge time).
+  { patterns: ['light and fun', 'light & fun', 'fun and breezy', 'something light and fun',
+               'fun easy read', 'light-hearted fun', 'something fun', 'something light',
+               'something easy and fun', 'something breezy', 'fun and easy'],
     apply: i => { i.soft.readingEnergy = 'light_fun'; }, label: 'light & fun' },
-  { patterns: ['get lost in', 'lose myself in', 'immersive world', 'rich world', 'world-building experience', 'deeply immersive', 'fully immersive'],
+  { patterns: ['get lost in', 'lose myself in', 'immersive world', 'rich world',
+               'world-building experience', 'deeply immersive', 'fully immersive',
+               'something immersive', 'i want immersive', 'want to get lost',
+               'something with great world'],
     apply: i => { i.soft.readingEnergy = 'immersive'; }, label: 'immersive' },
-  { patterns: ['deep and demanding', 'deep & demanding', 'challenging read', 'dense and literary', 'intellectually demanding', 'mentally demanding', 'requires focus'],
+  { patterns: ['deep and demanding', 'deep & demanding', 'challenging read',
+               'dense and literary', 'intellectually demanding', 'mentally demanding',
+               'requires focus', 'something challenging', 'something dense',
+               'something literary and demanding', 'literary and complex'],
     apply: i => { i.soft.readingEnergy = 'deep_demanding'; }, label: 'deep & demanding' },
-  { patterns: ['emotionally heavy', 'emotionally draining', 'heavy emotional', 'need a cry', 'emotional gut-punch', 'devastating read', 'need something devastating'],
+  { patterns: ['emotionally heavy', 'emotionally draining', 'heavy emotional',
+               'need a cry', 'emotional gut-punch', 'devastating read',
+               'need something devastating', 'something devastating', 'something heavy',
+               'really emotional', 'deeply moving read'],
     apply: i => { i.soft.readingEnergy = 'emotionally_heavy'; }, label: 'emotionally heavy' },
-  { patterns: ['palate cleanser', 'palette cleanser', 'palate-cleanser', 'change of pace', 'break from heavy', 'refresh my reading', 'cleanse my palate'],
+  { patterns: ['palate cleanser', 'palette cleanser', 'palate-cleanser',
+               'change of pace', 'break from heavy', 'refresh my reading',
+               'cleanse my palate', 'something refreshing', 'something different and light',
+               'reset my reading'],
     apply: i => { i.soft.readingEnergy = 'palate_cleanser'; }, label: 'palate cleanser' },
 
   // ── Pace ─────────────────────────────────────────────────────────────────

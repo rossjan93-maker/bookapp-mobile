@@ -2131,6 +2131,8 @@ export function getRankedRecs(
           hard_filter_fails:  [],
           soft_boosts:        [],
           score_delta:        0,
+          mood_preset:        intent.soft.readingEnergy ?? null,
+          mood_delta:         0,
         };
         continue;
       }
@@ -2146,6 +2148,8 @@ export function getRankedRecs(
           hard_filter_fails:  hardEval.failReasons,
           soft_boosts:        [],
           score_delta:        0,
+          mood_preset:        intent.soft.readingEnergy ?? null,
+          mood_delta:         0,
         };
         continue;
       }
@@ -2204,6 +2208,8 @@ export function getRankedRecs(
         hard_filter_fails:  [],
         soft_boosts:        boostReasons,
         score_delta:        totalBoost,
+        mood_preset:        moodMode || null,
+        mood_delta:         moodDelta,
       };
 
       kept.push(book);

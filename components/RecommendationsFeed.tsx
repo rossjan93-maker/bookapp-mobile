@@ -158,9 +158,11 @@ export function RecommendationsFeed({
   const thesisHeight = useRef(new Animated.Value(0)).current;
 
   // ── Your Next Read — intent chip state ───────────────────────────────────
-  const [intentPanelOpen, setIntentPanelOpen] = useState(false);
-  const [moodChip, setMoodChip]               = useState<ReadingEnergyMode | null>(null);
-  const activeIntentRef                        = useRef<NextReadIntent | null>(null);
+  const [intentPanelOpen, setIntentPanelOpen]     = useState(false);
+  const [moodChip, setMoodChip]                   = useState<ReadingEnergyMode | null>(null);
+  const [paceChip, setPaceChip]                   = useState<'fast' | 'slow' | null>(null);
+  const [toneChip, setToneChip]                   = useState<'light' | 'dark' | null>(null);
+  const activeIntentRef                            = useRef<NextReadIntent | null>(null);
   const [activeIntentLabel, setActiveIntentLabel] = useState<string>('');
 
   // ── Dismiss/undo ──────────────────────────────────────────────────────────
@@ -574,7 +576,14 @@ export function RecommendationsFeed({
   // ── Your Next Read — intent apply / clear ─────────────────────────────────
 
   function handleApplyIntent() {
-    const intent: NextReadIntent = { ...emptyIntent(), soft: { readingEnergy: moodChip || undefined } };
+    const intent: NextReadIntent = {
+      ...emptyIntent(),
+      soft: {
+        readingEnergy: moodChip || undefined,
+        pace:          paceChip  || undefined,
+        tone:          toneChip  || undefined,
+      },
+    };
     if (!isIntentActive(intent)) {
       handleClearIntent();
       return;
@@ -592,6 +601,8 @@ export function RecommendationsFeed({
     activeIntentRef.current = null;
     setActiveIntentLabel('');
     setMoodChip(null);
+    setPaceChip(null);
+    setToneChip(null);
     setIntentPanelOpen(false);
     clearAll();
     clearRecSession();
@@ -979,6 +990,64 @@ export function RecommendationsFeed({
                             color: active ? '#fff' : '#6b635c',
                             fontWeight: active ? '600' : '400',
                           }}>
+                            {label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {/* Pace chips */}
+                  <Text style={{
+                    fontSize: 10, fontWeight: '700', color: '#9e958d',
+                    letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10,
+                  }}>
+                    Pace
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
+                    {([['fast', 'Fast-paced'], ['slow', 'Slow burn']] as ['fast' | 'slow', string][]).map(([p, label]) => {
+                      const active = paceChip === p;
+                      return (
+                        <TouchableOpacity
+                          key={p}
+                          activeOpacity={0.7}
+                          onPress={() => setPaceChip(active ? null : p)}
+                          style={{
+                            paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+                            backgroundColor: active ? '#231f1b' : '#f5f1ec',
+                            borderWidth: 1, borderColor: active ? '#231f1b' : '#ede9e4',
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, color: active ? '#fff' : '#6b635c', fontWeight: active ? '600' : '400' }}>
+                            {label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {/* Tone chips */}
+                  <Text style={{
+                    fontSize: 10, fontWeight: '700', color: '#9e958d',
+                    letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10,
+                  }}>
+                    Tone
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
+                    {([['light', 'Light / uplifting'], ['dark', 'Dark / serious']] as ['light' | 'dark', string][]).map(([t, label]) => {
+                      const active = toneChip === t;
+                      return (
+                        <TouchableOpacity
+                          key={t}
+                          activeOpacity={0.7}
+                          onPress={() => setToneChip(active ? null : t)}
+                          style={{
+                            paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+                            backgroundColor: active ? '#231f1b' : '#f5f1ec',
+                            borderWidth: 1, borderColor: active ? '#231f1b' : '#ede9e4',
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, color: active ? '#fff' : '#6b635c', fontWeight: active ? '600' : '400' }}>
                             {label}
                           </Text>
                         </TouchableOpacity>
