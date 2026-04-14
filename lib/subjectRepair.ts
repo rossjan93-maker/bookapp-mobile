@@ -95,10 +95,16 @@ export async function repairSubjectCoverage(
     eligible: 0, enriched: 0, failed: 0, skipped: 0, fieldsImproved: 0, lastId: null,
   };
 
-  // Tracks the furthest row id returned by any query in this run.
-  // Updated after each query — guarantees the cursor always advances
-  // even when a window produces zero enrichable candidates.
-  let lastQueriedId: string | null = null;
+  // lastWindowId: furthest row id seen across all query results (p1 + full p2 window).
+  // Used as fallback cursor when eligible=0 so dense windows don't stall the cursor.
+  //
+  // maxCandidateId: max id of the actual candidate set (before processing loop).
+  // When candidates exist, this is the correct cursor — it equals the highest id
+  // in the processed batch, so next run with afterId=maxCandidateId continues from
+  // there and finds the remaining sparse rows in the same window.
+  //
+  // summary.lastId = maxCandidateId (when candidates exist) OR lastWindowId (fallback).
+  let lastWindowId: string | null = null;
 
   // ── Step 1: resolve book IDs for this user when userId is supplied ────────
   let filterIds: string[] | null = null;
@@ -144,8 +150,8 @@ export async function repairSubjectCoverage(
   }
   const p1: CandidateBook[] = (p1Data ?? []) as CandidateBook[];
 
-  // Advance the cursor to the furthest id returned by this query.
-  for (const r of p1) lastQueriedId = maxId(lastQueriedId, r.id);
+  // Track window end for the dense-window fallback cursor.
+  for (const r of p1) lastWindowId = maxId(lastWindowId, r.id);
 
   // ── Step 3: Priority-2 candidates — subjects exists but < 3 entries ──────
   // Fetch a bounded window ordered by id, then filter in memory for sparse rows.
@@ -176,11 +182,11 @@ export async function repairSubjectCoverage(
       throw new Error(`${LOG} priority-2 query failed — ${p2Err.message}`);
     }
 
-    // Advance cursor to the end of the fetched window (not just the sparse subset).
+    // Track the full window end for the dense-window fallback cursor.
     // This ensures that even when all rows in the window are dense (length >= 3),
     // the next run starts after this window rather than rescanning the same rows.
     const p2All = (p2Raw ?? []) as CandidateBook[];
-    for (const r of p2All) lastQueriedId = maxId(lastQueriedId, r.id);
+    for (const r of p2All) lastWindowId = maxId(lastWindowId, r.id);
 
     // In-memory filter: only rows that genuinely have fewer than 3 subjects.
     p2 = p2All
@@ -196,6 +202,14 @@ export async function repairSubjectCoverage(
     .slice(0, batchSize);
 
   summary.eligible = candidates.length;
+
+  // maxCandidateId: the highest id among all candidates.
+  // Since p2All is ordered by id ASC and we take .slice(0, slots), the candidates
+  // set covers the lowest-id sparse rows in the window — not beyond them.
+  // Setting the cursor to maxCandidateId guarantees the next run finds the
+  // remaining sparse rows (ids > maxCandidateId) still within the window.
+  let maxCandidateId: string | null = null;
+  for (const c of candidates) maxCandidateId = maxId(maxCandidateId, c.id);
 
   const withExtId = candidates.filter(b => isOLId(b.external_id)).length;
   console.log(
@@ -297,9 +311,13 @@ export async function repairSubjectCoverage(
     summary.skipped += summary.eligible - accounted;
   }
 
-  // Always expose the furthest queried row id so the next run can advance past
-  // this window even when eligible=0 (all-dense window produced no candidates).
-  summary.lastId = lastQueriedId;
+  // Cursor semantics:
+  // - When candidates exist: use maxCandidateId (highest id in the processed batch).
+  //   Since p2 takes the lowest-id sparse rows in the window, the next run with
+  //   afterId=maxCandidateId finds the remaining sparse rows in the same window.
+  // - When eligible=0 (all-dense window): fall back to lastWindowId so the next
+  //   run advances past the dense window rather than stalling.
+  summary.lastId = maxCandidateId ?? lastWindowId;
 
   console.log(
     `${LOG} done — ` +
@@ -308,7 +326,7 @@ export async function repairSubjectCoverage(
     `failed=${summary.failed} ` +
     `skipped=${summary.skipped} ` +
     `fieldsImproved=${summary.fieldsImproved} ` +
-    `lastId=${lastQueriedId ?? 'none'}` +
+    `lastId=${summary.lastId ?? 'none'}` +
     (dryRun ? ' [DRY RUN]' : ''),
   );
 
