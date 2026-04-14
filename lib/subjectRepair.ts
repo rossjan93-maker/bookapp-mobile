@@ -4,18 +4,20 @@
 // repairSubjectCoverage — queries the books table for rows where subjects is
 // null (priority 1) or has fewer than 3 entries (priority 2), then attempts to
 // fill them via Open Library.  Books with an existing external_id are processed
-// first (no OL search needed).  Books already at ≥ 3 subjects are never touched.
+// first (no OL search needed).  Subjects are only written when the OL result is
+// strictly better (more subjects) than what is already stored.
 //
 // Safe for repeated runs: the query filters exclude already-complete rows.
 // Each run is bounded by batchSize (default 50).
 //
 // Used by:
-//   - scripts/repairSubjectCoverage.ts  (CLI batch repair with dry-run support)
+//   - scripts/repairSubjectCoverage.ts  (CLI, passes its own Node.js client)
 //   - app/settings.tsx                  (__DEV__ developer trigger with alert)
 // =============================================================================
 
-import { supabase }                      from './supabase';
+import { supabase as appSupabase }          from './supabase';
 import { fetchOLMeta, searchOLWork, isOLId } from './openLibrary';
+import type { SupabaseClient }              from '@supabase/supabase-js';
 
 export type RepairSummary = {
   eligible:       number;
@@ -29,6 +31,8 @@ export type SubjectRepairOptions = {
   userId?:    string;
   batchSize?: number;
   dryRun?:    boolean;
+  /** Injectable client — used by the CLI script to avoid React Native imports. */
+  client?:    SupabaseClient | null;
 };
 
 const LOG = '[SUBJECT_REPAIR]';
@@ -46,11 +50,14 @@ export async function repairSubjectCoverage(
 ): Promise<RepairSummary> {
   const { userId, batchSize = 50, dryRun = false } = opts;
 
+  // Caller may inject a plain Node.js client; fall back to the app singleton.
+  const db: SupabaseClient | null = opts.client ?? appSupabase;
+
   const summary: RepairSummary = {
     eligible: 0, enriched: 0, failed: 0, skipped: 0, fieldsImproved: 0,
   };
 
-  if (!supabase) {
+  if (!db) {
     console.log(`${LOG} supabase not available — aborting`);
     return summary;
   }
@@ -58,7 +65,7 @@ export async function repairSubjectCoverage(
   // ── Step 1: resolve book IDs for this user when userId is supplied ────────
   let filterIds: string[] | null = null;
   if (userId) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('user_books')
       .select('book_id')
       .eq('user_id', userId);
@@ -79,14 +86,18 @@ export async function repairSubjectCoverage(
   }
 
   // ── Step 2: Priority-1 candidates — subjects IS NULL ─────────────────────
-  let q1 = supabase
+  let q1 = db
     .from('books')
     .select('id, title, author, external_id, subjects')
     .is('subjects', null);
 
   if (filterIds) q1 = (q1 as typeof q1).in('id', filterIds);
 
-  const { data: p1Data } = await (q1 as typeof q1).limit(batchSize);
+  const { data: p1Data, error: p1Err } = await (q1 as typeof q1).limit(batchSize);
+  if (p1Err) {
+    console.log(`${LOG} priority-1 query failed — ${p1Err.message}`);
+    return summary;
+  }
   const p1: CandidateBook[] = (p1Data ?? []) as CandidateBook[];
 
   // ── Step 3: Priority-2 candidates — subjects exists but < 3 entries ──────
@@ -94,7 +105,7 @@ export async function repairSubjectCoverage(
   const slots = batchSize - p1.length;
 
   if (slots > 0) {
-    let q2 = supabase
+    let q2 = db
       .from('books')
       .select('id, title, author, external_id, subjects')
       .not('subjects', 'is', null);
@@ -117,9 +128,10 @@ export async function repairSubjectCoverage(
 
   summary.eligible = candidates.length;
 
+  const withExtId = candidates.filter(b => isOLId(b.external_id)).length;
   console.log(
     `${LOG} eligible=${candidates.length} ` +
-    `(p1_null=${p1.length} p2_sparse=${p2.length}) ` +
+    `(p1_null=${p1.length} p2_sparse=${p2.length} with_ext_id=${withExtId}) ` +
     `dryRun=${dryRun}`,
   );
 
@@ -131,7 +143,7 @@ export async function repairSubjectCoverage(
       ? (book.subjects as string[])
       : [];
 
-    // Safety guard — never overwrite subjects already at 3+ entries.
+    // Safety guard — never overwrite subjects already ≥ 3 entries.
     // This should not normally fire (query already excludes these) but acts as
     // a belt-and-suspenders check in case of race conditions or stale data.
     if (currentSubjects.length >= 3) {
@@ -169,8 +181,21 @@ export async function repairSubjectCoverage(
         continue;
       }
 
+      // Only write subjects when OL result is strictly better than current.
+      // This prevents a 1-subject OL result from displacing an existing 2-entry
+      // subjects array that was already partially enriched.
+      if (ol.subjects.length <= currentSubjects.length && currentSubjects.length > 0) {
+        summary.skipped++;
+        console.log(
+          `${LOG} skip "${t}" — OL ${ol.subjects.length} subjects not an improvement over existing ${currentSubjects.length}`,
+        );
+        continue;
+      }
+
       const preview = ol.subjects.slice(0, 3).join(', ');
-      console.log(`${LOG} "${t}" → ${ol.subjects.length} subjects (${preview}${ol.subjects.length > 3 ? '…' : ''})`);
+      console.log(
+        `${LOG} enriched "${t}" [${currentSubjects.length} → ${ol.subjects.length}] (${preview}${ol.subjects.length > 3 ? '…' : ''})`,
+      );
 
       if (!dryRun) {
         const patch: Record<string, unknown> = { subjects: ol.subjects };
@@ -178,7 +203,7 @@ export async function repairSubjectCoverage(
         // Back-fill external_id when we had to search for it
         if (extIdFound) patch.external_id = resolvedExtId;
 
-        const { error } = await supabase!
+        const { error } = await db
           .from('books')
           .update(patch)
           .eq('id', book.id);
@@ -192,6 +217,7 @@ export async function repairSubjectCoverage(
         summary.fieldsImproved++;               // subjects written
         if (extIdFound) summary.fieldsImproved++; // external_id also written
       } else {
+        // Dry run — count what would be improved without writing
         summary.fieldsImproved++;
         if (extIdFound) summary.fieldsImproved++;
       }
@@ -204,7 +230,8 @@ export async function repairSubjectCoverage(
     }
   }
 
-  // Any candidate not enriched and not failed ended up skipped (safety guard)
+  // Any candidate not enriched and not failed ended up skipped (safety guard
+  // or no-improvement guard fired beyond what was explicitly incremented)
   const accounted = summary.enriched + summary.failed + summary.skipped;
   if (accounted < summary.eligible) {
     summary.skipped += summary.eligible - accounted;
