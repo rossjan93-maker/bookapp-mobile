@@ -506,9 +506,25 @@ export type MonthlyStats = {
  * Aggregate session-level reading stats for the current calendar month.
  *
  * Designed to be the base data layer for monthly and yearly reading wraps.
- * Only sessions with pages_read > 0 are counted.
  *
- * @param sessions — SessionRow[] from reading_sessions (may cover 90 days or more)
+ * Correction model — when a user reduces or resets page progress, a negative
+ * pages_read row is inserted into reading_sessions.  This function uses a
+ * net-sum model so those corrections are reflected in all three metrics:
+ *
+ *   pagesThisMonth      — sum of ALL rows (positive + negative).  Clamped to
+ *                         0 because a negative net total is not meaningful to
+ *                         display (it means the user corrected more than they
+ *                         actually read this month).
+ *
+ *   readingDaysThisMonth — count of calendar dates where the net total across
+ *                         all rows for that date is > 0.  A day that was
+ *                         entirely corrected away (net ≤ 0) is not counted.
+ *
+ *   sessionsThisMonth   — count of forward (positive) rows only; correction
+ *                         rows are infrastructure, not discrete reading events.
+ *
+ * @param sessions — rows from reading_sessions (may cover 90 days or more;
+ *                   may include negative correction rows)
  * @param today    — override for testing; defaults to new Date()
  */
 export function computeMonthlyStats(
@@ -518,15 +534,29 @@ export function computeMonthlyStats(
   const ref         = today ?? new Date();
   const monthPrefix = `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, '0')}`;
 
-  const monthRows = sessions.filter(
-    s => s.session_date.startsWith(monthPrefix) && s.pages_read > 0,
-  );
+  // Include ALL rows for the month — corrections have negative pages_read and
+  // must participate in the net sum for the totals to be accurate.
+  const monthRows = sessions.filter(s => s.session_date.startsWith(monthPrefix));
 
-  return {
-    pagesThisMonth:      monthRows.reduce((sum, s) => sum + s.pages_read, 0),
-    readingDaysThisMonth: new Set(monthRows.map(s => s.session_date)).size,
-    sessionsThisMonth:   monthRows.length,
-  };
+  // Net pages: sum positive and negative rows together.
+  // Clamp to 0 — a negative total means corrections exceeded forward progress
+  // this month, which is semantically equivalent to "0 net pages read".
+  const rawNet       = monthRows.reduce((sum, s) => sum + s.pages_read, 0);
+  const pagesThisMonth = Math.max(0, rawNet);
+
+  // Reading days: only dates where the net total across all rows is > 0.
+  // A day that was entirely corrected away (e.g. reset to 0) must not count.
+  const netByDate: Record<string, number> = {};
+  for (const r of monthRows) {
+    netByDate[r.session_date] = (netByDate[r.session_date] ?? 0) + r.pages_read;
+  }
+  const readingDaysThisMonth = Object.values(netByDate).filter(net => net > 0).length;
+
+  // Session count: forward (positive) rows only — corrections are not user-
+  // visible reading events and should not inflate the session counter.
+  const sessionsThisMonth = monthRows.filter(r => r.pages_read > 0).length;
+
+  return { pagesThisMonth, readingDaysThisMonth, sessionsThisMonth };
 }
 
 // ---------------------------------------------------------------------------

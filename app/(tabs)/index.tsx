@@ -780,11 +780,14 @@ export default function HomeScreen() {
     }>;
 
     const byBook: Record<string, SessionRow[]> = {};
-    const allDates: string[] = [];
 
+    // Net pages per date — correction rows (negative pages_read) cancel out
+    // forward sessions so a day fully corrected to 0 is not a reading day.
+    const netByDate: Record<string, number> = {};
     for (const r of rows) {
+      netByDate[r.session_date] = (netByDate[r.session_date] ?? 0) + r.pages_read;
+      // Per-book grouping uses forward sessions only (velocity estimation).
       if (r.pages_read > 0) {
-        allDates.push(r.session_date);
         if (!byBook[r.user_book_id]) byBook[r.user_book_id] = [];
         byBook[r.user_book_id].push({
           session_date: r.session_date,
@@ -792,6 +795,11 @@ export default function HomeScreen() {
         });
       }
     }
+
+    // Streak uses net-positive dates — a day corrected to 0 must not count.
+    const allDates = Object.entries(netByDate)
+      .filter(([, net]) => net > 0)
+      .map(([date]) => date);
 
     const streak  = computeStreaks(allDates);
     const monthly = computeMonthlyStats(rows);
