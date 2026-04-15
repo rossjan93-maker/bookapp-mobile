@@ -82,6 +82,14 @@ const MIN_CANDIDATES    = 5;
 const MIN_PASS_SCORE    = 0.12;
 const MIN_PASSING_BOOKS = 2;
 
+// ── Catalog exhaustion fallback threshold ──────────────────────────────────────
+// When the primary local-catalog query (limited to CATALOG_QUERY_LIMIT rows)
+// yields fewer than this many un-library'd candidates, the user has likely
+// exhausted most of the catalog.  A supplemental "all unseen books" query runs
+// to surface every remaining eligible title before OL seeds are added.
+const CATALOG_QUERY_LIMIT         = 600;   // covers current catalog + growth room
+const CATALOG_FALLBACK_THRESHOLD  = 15;    // trigger full-scan if fewer than this survive
+
 // ── Composition constants ───────────────────────────────────────────────────
 // Applied in the set-composition engine after scoring and CoG classification.
 
@@ -832,7 +840,7 @@ async function getLocalCandidates(
       .from('books')
       .select('id, title, author, cover_url, external_id, subjects, page_count, description, isbn')
       .or('subjects.not.is.null,description.not.is.null,isbn.not.is.null')
-      .limit(120),
+      .limit(CATALOG_QUERY_LIMIT),
   ]);
 
   type UBRow = {
@@ -1319,9 +1327,31 @@ function applyHygiene(
       subjLower.some(s => s.includes(sig))
     );
     if (isJuvenile) {
-      excluded++;
-      if (reasons.length < 8) reasons.push(`juvenile: ${book.title}`);
-      return false;
+      // Exemption: YA/juvenile-tagged books that carry strong adult romantic
+      // fiction signals are commonly read by adults and should not be excluded
+      // from adult recommendation pools.  Typical case: ACOTAR, which OL tags
+      // "Juvenile fiction" but whose subjects also include "Man-woman
+      // relationships" and "Love stories" — hallmarks of adult romance/romantasy.
+      // This exemption is conservative: it only overrides when the romance
+      // evidence is unambiguous, so picture books and middle-grade non-romance
+      // titles remain filtered regardless.
+      const hasAdultRomanceSignal = subjLower.some(s =>
+        s.includes('romance') ||
+        s.includes('romantasy') ||
+        s.includes('man-woman relationships') ||
+        s === 'love stories' ||
+        s === 'love, fiction' ||
+        s.includes('erotic') ||
+        s === 'adult fiction'         // exact match only — avoids "young adult fiction" false-positive
+      );
+      if (!hasAdultRomanceSignal) {
+        excluded++;
+        if (reasons.length < 8) reasons.push(`juvenile: ${book.title}`);
+        return false;
+      }
+      if (__DEV__ && reasons.length < 8) {
+        reasons.push(`juvenile_overridden(adult_romance): ${book.title}`);
+      }
     }
 
     // ── 2. Poetry / drama form exclusion ─────────────────────────────────
@@ -2532,6 +2562,70 @@ export async function getCandidateBooks(
   const local = await getLocalCandidates(client, userId);
   const _t1 = Date.now();
 
+  // ── Catalog-exhaustion fallback ───────────────────────────────────────────
+  // Primary query fetches CATALOG_QUERY_LIMIT books then filters client-side.
+  // For users who have read most of the catalog, the primary draw may include
+  // very few unseen titles (e.g. 273/304 books in library → ≤12 unseen in a
+  // 120-book draw).  When the candidate count falls below CATALOG_FALLBACK_THRESHOLD
+  // we run a targeted DB-side exclusion query to surface every remaining unseen
+  // title so the pool is not artificially capped before OL seeds are merged.
+  if (local.candidates.length < CATALOG_FALLBACK_THRESHOLD && local.readIds.size > 0) {
+    if (__DEV__) {
+      console.log(
+        '[CATALOG_FALLBACK] triggered',
+        `| initial_candidates=${local.candidates.length}`,
+        `| library_size=${local.readIds.size}`,
+        `| threshold=${CATALOG_FALLBACK_THRESHOLD}`,
+      );
+    }
+    // PostgREST accepts UUID arrays in the not.in.(…) filter without quoting.
+    const excludeList = Array.from(local.readIds).join(',');
+    const { data: fallbackRaw } = await client
+      .from('books')
+      .select('id, title, author, cover_url, external_id, subjects, page_count, description, isbn')
+      .not('id', 'in', `(${excludeList})`)
+      .or('subjects.not.is.null,description.not.is.null,isbn.not.is.null')
+      .limit(2000);
+
+    const existingIds = new Set(local.candidates.map(c => c.id));
+    type FBBook = {
+      id: string; title: string; author: string; cover_url: string | null;
+      external_id: string | null; subjects: string[] | null; page_count: number | null;
+      description: string | null; isbn: string | null;
+    };
+    const newCandidates: CandidateBook[] = ((fallbackRaw ?? []) as FBBook[])
+      .filter(b => !existingIds.has(b.id))
+      .filter(b =>
+        (b.subjects && b.subjects.length > 0) ||
+        (b.description && b.description.trim().length > 30) ||
+        !!b.isbn
+      )
+      .map((b): CandidateBook => ({
+        id:                b.id,
+        title:             b.title,
+        author:            b.author,
+        cover_url:         b.cover_url,
+        external_id:       b.external_id,
+        subjects:          b.subjects,
+        page_count:        b.page_count,
+        description:       b.description,
+        _source:           'catalog',
+        _retrieval_reason: 'local:fallback_scan',
+      }));
+
+    if (newCandidates.length > 0) {
+      local.candidates.push(...newCandidates);
+      if (__DEV__) {
+        console.log(
+          '[CATALOG_FALLBACK] merged',
+          `| added=${newCandidates.length}`,
+          `| total_local=${local.candidates.length}`,
+          `| titles=${newCandidates.map(b => `"${b.title}"`).join(', ')}`,
+        );
+      }
+    }
+  }
+
   // ── seriesReadSet — built deterministically from user library ─────────────
   // Must happen BEFORE any OL fetch so Continue Reading routing is stable
   // regardless of OL response variance. With subtitle-stripping in lookupCurated,
@@ -3099,7 +3193,32 @@ export async function getPersonalizedRecsWithExpert(
   const decision = canRunExpertRecs(entitlement, profile);
 
   if (!decision.allowed) {
-    // Return deterministic result with decision context for UI messaging
+    // Persist deterministic recs so the cache survives OL outages on future sessions.
+    // Non-blocking fire-and-forget: fetches feedbackCount then upserts.
+    // persistRecCache is already best-effort (never throws), so no outer try/catch needed.
+    if (baseResult.recs.length > 0) {
+      void client
+        .from('rec_feedback')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .then(({ count }) =>
+          persistRecCache(
+            client,
+            userId,
+            baseResult.recs,
+            'deterministic',
+            buildSignalSnapshot(
+              profile.strongSignalCount ?? 0,
+              count ?? 0,
+              (profile.evidence.imported_books_count ?? 0) > 0,
+            ),
+          )
+        );
+      if (__DEV__) {
+        console.log('[REC_CACHE] deterministic write queued', `| recs=${baseResult.recs.length}`);
+      }
+    }
+
     return {
       ...baseResult,
       meta: {
