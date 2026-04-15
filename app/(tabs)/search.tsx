@@ -1475,23 +1475,41 @@ export default function RecommendationsScreen() {
               <WtDemoRecommend />
             ) : (
               <>
-                {/* ── First-run context line ────────────────────────────────────
-                    A single slim text line for intake-cold-start users only.
+                {/* ── First-run context card ────────────────────────────────────
+                    A slim confidence card for intake-cold-start users only.
                     Sits above RecommendationsFeed so it leads naturally into the
                     Feed's own "FOR YOU" label → "Assembling your picks…" loader.
-                    Intentionally lightweight — the assembling animation below is
-                    the primary visual; this line only adds the "why" (your genres).
-                    No card, no border, no competing colour — one cohesive sequence.
+                    Styled as a bordered note so it reads as a deliberate signal,
+                    not an afterthought, without competing with the animation below.
                     wasFirstRun is locked at mount → never shows on return visits. */}
                 {isIntakeColdStart && (
-                  <Text style={{
-                    fontSize:     12,
-                    color:        '#78716c',
-                    marginBottom: 10,
-                    lineHeight:   18,
+                  <View style={{
+                    backgroundColor:  '#fefcf9',
+                    borderRadius:     12,
+                    borderWidth:      1,
+                    borderColor:      '#ede9e4',
+                    borderLeftWidth:  3,
+                    borderLeftColor:  '#7b9e7e',
+                    paddingVertical:  12,
+                    paddingHorizontal: 14,
+                    marginBottom:     14,
                   }}>
-                    Finding picks based on your genre preferences.
-                  </Text>
+                    <Text style={{
+                      fontSize:   13,
+                      fontWeight: '600',
+                      color:      '#231f1b',
+                      marginBottom: 3,
+                    }}>
+                      Building your first picks
+                    </Text>
+                    <Text style={{
+                      fontSize:  12,
+                      color:     '#78716c',
+                      lineHeight: 18,
+                    }}>
+                      We're using your stated genre preferences to get started. Your picks will sharpen as you rate books.
+                    </Text>
+                  </View>
                 )}
                 <RecommendationsFeed
                   userId={currentUserId}

@@ -661,6 +661,7 @@ export function RecommendationsFeed({
   // of isInitialLoading, so the user never sees skeleton cards for a state that
   // is NOT a loading state — it is an insufficient-signal state.
   if (tier < 1) {
+    const hasImportedHistory = (tasteProfile?.evidence?.imported_books_count ?? 0) > 0;
     return (
       <View style={{ marginBottom: 36 }}>
         <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 12 }}>
@@ -677,10 +678,12 @@ export function RecommendationsFeed({
           {/* Header strip */}
           <View style={{ backgroundColor: '#f5f1ec', borderBottomWidth: 1, borderBottomColor: '#ede9e4', padding: 20, paddingBottom: 16 }}>
             <Text style={{ fontSize: 16, fontWeight: '800', color: '#231f1b', letterSpacing: -0.2, marginBottom: 6 }}>
-              Nothing to share just yet.
+              {hasImportedHistory ? 'Your library is in.' : 'Nothing to share just yet.'}
             </Text>
             <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
-              Recommendations unlock once we have enough reading history to make picks worth trusting. Add a few books and we'll take it from there.
+              {hasImportedHistory
+                ? 'We\'re building your taste profile from your reading history. Rate a few books from your shelves to unlock your first picks.'
+                : 'Recommendations unlock once we have enough reading history to make picks worth trusting. Add a few books and we\'ll take it from there.'}
             </Text>
           </View>
 
@@ -780,7 +783,9 @@ export function RecommendationsFeed({
                 <Text style={{ fontSize: 10, fontWeight: '700', color: '#f5f1ec', letterSpacing: 0.5 }}>EXPERT</Text>
               </View>
             ) : (
-              <Text style={{ fontSize: 11, color: '#9e958d' }}>{tasteProfile?.label ?? ''}</Text>
+              <Text style={{ fontSize: 11, color: '#9e958d' }}>
+                {tasteProfile?.label || ((tasteProfile?.strongSignalCount ?? 0) === 0 ? 'Based on your stated genres' : '')}
+              </Text>
             )}
           </View>
 
@@ -1246,15 +1251,60 @@ export function RecommendationsFeed({
       {/* ── Quality gate: other (catalog coverage) ── */}
       {displayState === 'quality_gated' && tier >= 1 && recsQualityGate !== 'insufficient_pool' && (
         <View style={{
-          backgroundColor: '#fefcf9', borderRadius: 14, padding: 16, marginBottom: 16,
-          borderWidth: 1, borderColor: '#ede9e4',
+          backgroundColor: '#fefcf9', borderRadius: 16,
+          overflow: 'hidden',
+          shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8,
+          shadowOffset: { width: 0, height: 2 }, elevation: 2,
+          marginBottom: 16,
         }}>
-          <Text style={{ fontSize: 13, fontWeight: '600', color: '#231f1b', marginBottom: 6 }}>
-            No close matches in the current catalog
-          </Text>
-          <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18 }}>
-            Your taste profile is strong but catalog coverage is limited right now. Try removing some filters or check back later.
-          </Text>
+          <View style={{ backgroundColor: '#f5f1ec', borderBottomWidth: 1, borderBottomColor: '#ede9e4', padding: 20, paddingBottom: 16 }}>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: '#231f1b', letterSpacing: -0.2, marginBottom: 6 }}>
+              No close matches right now.
+            </Text>
+            <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
+              Your taste profile is strong, but catalog coverage for your specific preferences is limited at the moment. Broadening your preferences or adding more reading history helps us find better candidates.
+            </Text>
+          </View>
+          <View style={{ padding: 16, gap: 10 }}>
+            <TouchableOpacity
+              onPress={() => router.push('/edit-preferences' as any)}
+              activeOpacity={0.82}
+              style={{
+                backgroundColor: '#231f1b', borderRadius: 12, paddingVertical: 14,
+                paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12,
+              }}
+            >
+              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 15 }}>🎯</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff', lineHeight: 19 }}>Broaden your preferences</Text>
+                <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 1 }}>Genres, pace, style — widens the candidate pool</Text>
+              </View>
+              <Text style={{ fontSize: 16, color: 'rgba(255,255,255,0.35)' }}>›</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => router.push('/add-book' as any)}
+              activeOpacity={0.8}
+              style={{
+                borderRadius: 12, paddingVertical: 13, paddingHorizontal: 16,
+                flexDirection: 'row', alignItems: 'center', gap: 12,
+                borderWidth: 1.5, borderColor: '#ede9e4', backgroundColor: '#f5f1ec',
+              }}
+            >
+              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#ede9e4', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 15 }}>＋</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', lineHeight: 19 }}>Add more books you've read</Text>
+                <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 1 }}>More history gives the algorithm more to work with</Text>
+              </View>
+              <Text style={{ fontSize: 16, color: '#ede9e4' }}>›</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 11, color: '#c4b5a5', textAlign: 'center', paddingTop: 2, paddingBottom: 4, lineHeight: 17 }}>
+              Coverage improves as the catalog grows — check back soon.
+            </Text>
+          </View>
         </View>
       )}
 
@@ -1311,9 +1361,27 @@ export function RecommendationsFeed({
         <View style={{ backgroundColor: '#fefcf9', borderRadius: 14, padding: 20, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 1 }, elevation: 1 }}>
           <Text style={{ fontSize: 22, marginBottom: 12 }}>✓</Text>
           <Text style={{ fontSize: 15, fontWeight: '600', color: '#231f1b', marginBottom: 6 }}>You've seen everything</Text>
-          <Text style={{ fontSize: 13, color: '#9e958d', textAlign: 'center', lineHeight: 20 }}>
-            You've acted on all available picks. Rate more books to unlock fresh recommendations.
+          <Text style={{ fontSize: 13, color: '#9e958d', textAlign: 'center', lineHeight: 20, marginBottom: 16 }}>
+            You've acted on all available picks. Rating more books gives the algorithm fresh signal to work with.
           </Text>
+          <TouchableOpacity
+            onPress={() => router.push('/(tabs)/library' as any)}
+            activeOpacity={0.8}
+            style={{
+              backgroundColor: '#231f1b', borderRadius: 10,
+              paddingVertical: 11, paddingHorizontal: 22,
+              marginBottom: 10,
+            }}
+          >
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#fff' }}>Rate books in your library</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push('/add-book' as any)}
+            activeOpacity={0.75}
+            style={{ paddingVertical: 8 }}
+          >
+            <Text style={{ fontSize: 13, color: '#78716c' }}>Add more books you've read</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -1322,9 +1390,27 @@ export function RecommendationsFeed({
         <View style={{ backgroundColor: '#fefcf9', borderRadius: 14, padding: 20, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 1 }, elevation: 1 }}>
           <Text style={{ fontSize: 22, marginBottom: 12 }}>✓</Text>
           <Text style={{ fontSize: 15, fontWeight: '600', color: '#231f1b', marginBottom: 6 }}>You're caught up</Text>
-          <Text style={{ fontSize: 13, color: '#9e958d', textAlign: 'center', lineHeight: 20, marginBottom: 8 }}>
+          <Text style={{ fontSize: 13, color: '#9e958d', textAlign: 'center', lineHeight: 20, marginBottom: 16 }}>
             We'll keep learning as you finish and rate more books.
           </Text>
+          <TouchableOpacity
+            onPress={() => router.push('/(tabs)/library' as any)}
+            activeOpacity={0.8}
+            style={{
+              backgroundColor: '#231f1b', borderRadius: 10,
+              paddingVertical: 11, paddingHorizontal: 22,
+              marginBottom: 10,
+            }}
+          >
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#fff' }}>Go to your library</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push('/add-book' as any)}
+            activeOpacity={0.75}
+            style={{ paddingVertical: 8 }}
+          >
+            <Text style={{ fontSize: 13, color: '#78716c' }}>Add books you've read</Text>
+          </TouchableOpacity>
         </View>
       )}
     </View>
