@@ -6,7 +6,7 @@ import { ToastContainer } from '../components/Toast';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { clearAllTabCaches } from '../lib/tabCache';
-import { readOnboardingStage } from '../lib/onboardingStage';
+import { readOnboardingStage, writeOnboardingStage } from '../lib/onboardingStage';
 import { clearLocalOnboardingState } from '../lib/localStateClear';
 
 // ─── Bootstrap context ─────────────────────────────────────────────────────────
@@ -168,28 +168,52 @@ export default function RootLayout() {
           // Only AsyncStorage (≈10ms) is on the routing critical path.
           // Every DB operation has been moved off it:
           //
-          //   localStage='done'        → returning user    → needsOnboarding=false (immediate)
-          //   localStage='walkthrough' → mid-onboarding    → needsOnboarding=false (immediate)
-          //   localStage='final_setup' → mid-onboarding    → needsOnboarding=false (immediate)
-          //   localStage=null          → new user (assumed)→ needsOnboarding=true  (immediate)
+          //   localStage='done'        → returning user     → needsOnboarding=false (fast, no DB call)
+          //   localStage='walkthrough' → mid-tour           → needsOnboarding=false (fast, no DB call)
+          //   localStage='final_setup' → mid-import step    → needsOnboarding=false (fast, no DB call)
+          //   localStage=null          → new OR signed-out  → check DB to distinguish
           //
           // After routing, ensureProfile runs in the background so the profile
           // row exists for subsequent app operations — it does not affect where
           // the user lands.
           //
-          // Edge case: returning user who reinstalled (localStage=null but
-          // onboarding_completed=true in DB). They see the onboarding welcome
-          // screen; it's a single-step screen they can tap through instantly.
-          // This case is rare and the tradeoff is worth eliminating the 4-6s wait.
-
-          const t0         = Date.now();
-          const localStage = await withTimeout(readOnboardingStage(), 3000, 'readOnboardingStage');
+          const t0          = Date.now();
+          const localStage  = await withTimeout(readOnboardingStage(), 3000, 'readOnboardingStage');
           const locallyDone = localStage === 'done';
           const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup';
-          const needsOb     = !locallyDone && !midFlow;
 
-          console.log('[WARM_BOOT] localStage=', localStage, '→ needsOnboarding=', needsOb, 'in', Date.now() - t0, 'ms');
-          setNeedsOnboarding(needsOb);
+          if (locallyDone || midFlow) {
+            // Fast path: local state is conclusive. No DB call needed.
+            //   'done'         → returning user, normal app
+            //   'walkthrough'  → mid-tour, tabs layout handles it
+            //   'final_setup'  → mid-import step, tabs layout redirects
+            console.log('[WARM_BOOT] localStage=', localStage, '→ needsOnboarding=false (fast path) in', Date.now() - t0, 'ms');
+            setNeedsOnboarding(false);
+          } else {
+            // localStage === null.
+            //
+            // Two cases that look identical locally:
+            //   A) Genuinely new user (first sign-in on any device)
+            //   B) Returning user who signed out — clearLocalOnboardingState()
+            //      wiped readstack_onboarding_stage_v1 on sign-out.
+            //
+            // Without a DB check, case B always re-triggers onboarding.
+            // The fast path was an intentional optimisation that accepted this
+            // tradeoff; it breaks correctness for every sign-out+sign-back-in
+            // cycle. We always check DB when local state is absent.
+            console.log('[WARM_BOOT] localStage=null — checking DB to distinguish new vs returning user');
+            const completed = await checkOnboardingCompleted(newSession.user.id);
+            if (completed) {
+              // Returning user: repair local stage so future sign-ins stay on
+              // the fast path and skip this DB call.
+              writeOnboardingStage('done').catch(() => {});
+              console.log('[WARM_BOOT] DB confirmed complete — needsOnboarding=false, local stage repaired in', Date.now() - t0, 'ms');
+              setNeedsOnboarding(false);
+            } else {
+              console.log('[WARM_BOOT] DB: onboarding not complete — needsOnboarding=true (new user) in', Date.now() - t0, 'ms');
+              setNeedsOnboarding(true);
+            }
+          }
 
           // ── Background: upsert profile row (non-blocking) ─────────────────
           const meta = newSession.user.user_metadata;

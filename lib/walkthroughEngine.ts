@@ -162,9 +162,13 @@ export const WT_DEFS: Record<'home' | 'recommend' | 'library' | 'inbox', WtStepD
 
 };
 
-// Step order follows physical left-to-right tab layout.
-export const WT_ORDER: WtStep[]         = ['home', 'recommend', 'library', 'inbox', 'done'];
-export const WT_OVERLAY_STEPS: WtStep[] = ['home', 'recommend', 'library', 'inbox'];
+// Step order. 'inbox' is removed: the notes tab is now href:null (hidden) and
+// the inbox is a sheet on the Home tab. The 'inbox' WtStep value is kept in
+// the type union and readWtStep validator for backward compatibility with any
+// device that already has 'inbox' persisted; the tabs layout recovery block
+// treats it the same as 'done' (advances to final_setup).
+export const WT_ORDER: WtStep[]         = ['home', 'recommend', 'library', 'done'];
+export const WT_OVERLAY_STEPS: WtStep[] = ['home', 'recommend', 'library'];
 
 export function nextWtStep(current: WtStep): WtStep {
   const i = WT_ORDER.indexOf(current);

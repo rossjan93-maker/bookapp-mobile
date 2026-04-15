@@ -112,11 +112,17 @@ export default function TabsLayout() {
         const step = sub ?? 'home';
         console.log('[STAGE] walkthrough — wtStep:', step);
 
-        // Recovery: walkthrough wrote wtStep='done' but stage='final_setup'
-        // never persisted (e.g. app closed between the two writes). Recover by
-        // writing final_setup and navigating to onboarding-import.
-        if (step === 'done') {
-          console.log('[STAGE] walkthrough+done — recovery: writing final_setup → /onboarding-import');
+        // Recovery cases that both advance to final_setup:
+        //
+        //   step='done'  — walkthrough wrote wtStep='done' but stage='final_setup'
+        //                  never persisted (app closed between the two writes).
+        //
+        //   step='inbox' — deprecated; the notes tab is now href:null so this
+        //                  step can no longer be shown. Treat as complete and
+        //                  advance to the import step.
+        if (step === 'done' || step === 'inbox') {
+          const reason = step === 'inbox' ? 'inbox_deprecated' : 'done_recovery';
+          console.log('[STAGE] walkthrough recovery —', reason, '→ writing final_setup → /onboarding-import');
           await writeOnboardingStage('final_setup');
           routerRef.current.replace('/onboarding-import' as any);
           return;

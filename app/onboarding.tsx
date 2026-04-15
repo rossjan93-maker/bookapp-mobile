@@ -1,22 +1,30 @@
-// ─── Welcome screen ────────────────────────────────────────────────────────────
+// ─── Onboarding introduction ───────────────────────────────────────────────────
 //
-// Full-screen light composition matching the app's real palette.
-// Job: welcome, set tone, invite the user into the live app tour.
+// Three-slide value proposition screen. This replaces the single welcome
+// screen + tooltip walkthrough model.
 //
-// Animation approach: BookStackLoader builds 5 books upward, then breathes.
-// Text + CTA fade in after a fixed 600ms setTimeout — NOT chained to stack
-// completion.  This guarantees the CTA is always visible/touchable within ~1s
-// regardless of animation behaviour.
+// Flow:
+//   Slide 0 — What readstack is
+//   Slide 1 — Why the library matters / how recommendations work
+//   Slide 2 — How to start (import or add books)
+//   CTA      — writes stage='final_setup' → /onboarding-import
 //
-// Handoff: completeOnboarding() updates needsOnboarding in _layout.tsx BEFORE
-// router.replace('/'), preventing the routing guard from looping back here.
-// All Supabase/AsyncStorage writes happen in the background after navigation.
+// The tooltip walkthrough (walkthroughEngine.ts) is preserved as an optional
+// feature for users who want to replay the in-app tour, but it no longer
+// auto-triggers for new users. New users go directly to the import step.
+//
+// State contract:
+//   onboarding_completed=true is written by onboarding-import.tsx — NOT here.
+//   Writing it here would cause returning users on a fresh device to skip the
+//   entire sequence. Stage='final_setup' is what enables onboarding-import.tsx
+//   to render; the DB flag is belt-and-suspenders for cross-device correctness.
 
-import React, { useEffect, useRef } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   Animated,
   Platform,
   SafeAreaView,
+  ScrollView,
   StatusBar,
   Text,
   TouchableOpacity,
@@ -24,90 +32,141 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { supabase } from '../lib/supabase';
-import { writeGuidedStep } from '../components/OnboardingWalkthrough';
-import { writeWtStep } from '../lib/walkthroughEngine';
+import { Ionicons } from '@expo/vector-icons';
 import { writeOnboardingStage } from '../lib/onboardingStage';
 import {
   welcomeEvt_started,
   welcomeEvt_completed,
   welcomeEvt_skipped,
   welcomeEvt_handoffStarted,
+  introEvt_slideViewed,
 } from '../lib/onboardingAnalytics';
 import { useOnboardingBridge } from './_layout';
 import { BookStackLoader } from '../components/BookStackLoader';
 
-// ─── Palette — matches app-wide tokens ────────────────────────────────────────
+// ─── Palette ──────────────────────────────────────────────────────────────────
+const BG   = '#f5f1ec';
+const INK  = '#231f1b';
+const SUB  = '#6b635c';
+const SAGE = '#7b9e7e';
+const DUST = '#9e958d';
 
-const BG    = '#f5f1ec';   // rich warm ivory
-const INK   = '#231f1b';   // warm near-black
-const SUB   = '#6b635c';   // warm stone subtext
-const SAGE  = '#7b9e7e';   // muted warm sage accent
+// ─── Slide definitions ────────────────────────────────────────────────────────
+type SlideData = {
+  id:        string;
+  visual:    'stack' | 'bulb' | 'download';
+  title:     string;
+  body:      string;
+};
+
+const SLIDES: SlideData[] = [
+  {
+    id:     'what',
+    visual: 'stack',
+    title:  'Your reading life,\norganised',
+    body:   "Track what you're reading, what you've finished, and what you want to read next \u2014 all in one place.",
+  },
+  {
+    id:     'how',
+    visual: 'bulb',
+    title:  'Recommendations\nthat actually fit you',
+    body:   'readstack learns from the books you log, not what you say you like. The more you track, the sharper your picks.',
+  },
+  {
+    id:     'start',
+    visual: 'download',
+    title:  "Start with what\nyou\u2019ve already read",
+    body:   'Import your Goodreads library in one tap, or add a few books by hand. Your history is what makes everything work.',
+  },
+];
+
+// ─── Slide visual component ───────────────────────────────────────────────────
+function SlideVisual({ visual }: { visual: SlideData['visual'] }) {
+  if (visual === 'stack') {
+    return (
+      <View style={{ marginBottom: 36 }}>
+        <BookStackLoader size="lg" />
+      </View>
+    );
+  }
+  const iconName: 'bulb-outline' | 'cloud-download-outline' =
+    visual === 'bulb' ? 'bulb-outline' : 'cloud-download-outline';
+  return (
+    <View
+      style={{
+        width:           80,
+        height:          80,
+        borderRadius:    40,
+        backgroundColor: SAGE + '22',
+        alignItems:      'center',
+        justifyContent:  'center',
+        marginBottom:    36,
+      }}
+    >
+      <Ionicons name={iconName} size={36} color={SAGE} />
+    </View>
+  );
+}
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
-
 export default function OnboardingScreen() {
-  const router             = useRouter();
+  const router              = useRouter();
   const { completeOnboarding } = useOnboardingBridge();
-  const { height: SH } = useWindowDimensions();
-
-  const textFade   = useRef(new Animated.Value(0)).current;
-  const ctaFade    = useRef(new Animated.Value(0)).current;
-  const ctaOffsetY = useRef(new Animated.Value(18)).current;
+  const { width: W }        = useWindowDimensions();
+  const scrollRef           = useRef<ScrollView>(null);
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [finishing, setFinishing]       = useState(false);
+  const ctaFade             = useRef(new Animated.Value(0)).current;
+  const [slideAreaHeight, setSlideAreaHeight] = useState(0);
 
   useEffect(() => {
     welcomeEvt_started();
-
-    // Text + CTA: fixed delay — always visible within ~1s of mount
-    const t = setTimeout(() => {
-      Animated.parallel([
-        Animated.timing(textFade,   { toValue: 1, duration: 380, useNativeDriver: false }),
-        Animated.timing(ctaFade,    { toValue: 1, duration: 440, useNativeDriver: false }),
-        Animated.timing(ctaOffsetY, { toValue: 0, duration: 380, useNativeDriver: false }),
-      ]).start();
-    }, 580);
-
-    return () => clearTimeout(t);
+    introEvt_slideViewed(0);
+    Animated.timing(ctaFade, {
+      toValue:         1,
+      duration:        500,
+      delay:           400,
+      useNativeDriver: true,
+    }).start();
   }, []);
 
-  // Hard fail-safe: navigate after 12s even if nothing else fired
-  useEffect(() => {
-    const t = setTimeout(() => finish('failsafe'), 12000);
-    return () => clearTimeout(t);
-  }, []);
+  function onScrollEnd(x: number) {
+    const idx = Math.round(x / W);
+    if (idx !== currentSlide) {
+      setCurrentSlide(idx);
+      introEvt_slideViewed(idx);
+    }
+  }
 
-  async function finish(source: 'cta' | 'skip' | 'failsafe' = 'cta') {
+  function goNext() {
+    if (currentSlide < SLIDES.length - 1) {
+      scrollRef.current?.scrollTo({ x: (currentSlide + 1) * W, animated: true });
+    } else {
+      finish('cta');
+    }
+  }
+
+  const finish = useCallback(async (source: 'cta' | 'skip') => {
+    if (finishing) return;
+    setFinishing(true);
+
     if (source === 'skip') welcomeEvt_skipped();
     else                   welcomeEvt_completed();
     welcomeEvt_handoffStarted();
 
-    // ① Update parent state BEFORE navigating — prevents redirect loop
+    // Update root routing guard BEFORE navigating so the guard sees
+    // needsOnboarding=false and doesn't redirect back to /onboarding.
     completeOnboarding();
 
-    // ② Await both stage writes before navigating so _layout.tsx always
-    //    reads 'walkthrough' on first mount, never null.
-    await Promise.all([
-      writeOnboardingStage('walkthrough'),
-      writeWtStep('home'),
-    ]);
+    // Write stage='final_setup' so onboarding-import.tsx knows to render.
+    // This is awaited — never navigate before the stage is persisted, or the
+    // import page's guard will redirect home.
+    await writeOnboardingStage('final_setup');
 
-    // ③ Navigate only after stage writes are confirmed.
-    //
-    // NOTE: We intentionally do NOT write onboarding_completed=true here.
-    // That flag is the signal the root layout uses to detect whether the FULL
-    // onboarding sequence (walkthrough + import/setup step) is done. Writing it
-    // here — at the welcome screen — would cause the DB to report "complete"
-    // before the user has reached onboarding-import.tsx. On a new device or
-    // fresh browser session (e.g. after clicking the confirmation email link on a
-    // different phone), checkOnboardingCompleted would return true and skip the
-    // entire sequence. The flag is written by onboarding-import.tsx in all three
-    // resolution paths (import / intake / not now).
-    router.replace('/');
+    router.replace('/onboarding-import' as any);
+  }, [finishing, completeOnboarding, router]);
 
-    // ④ Background writes (non-blocking)
-    Promise.allSettled([writeGuidedStep(0)]);
-  }
-
+  const isLast = currentSlide === SLIDES.length - 1;
   const topPad = Platform.OS === 'android' ? 20 : 0;
 
   return (
@@ -115,94 +174,108 @@ export default function OnboardingScreen() {
       <StatusBar barStyle="dark-content" backgroundColor={BG} />
       <SafeAreaView style={{ flex: 1 }}>
 
-        {/* Skip — top right */}
+        {/* Skip */}
         <View style={{ paddingHorizontal: 24, paddingTop: topPad + 12, alignItems: 'flex-end' }}>
           <TouchableOpacity
             onPress={() => finish('skip')}
             hitSlop={{ top: 14, bottom: 14, left: 20, right: 20 }}
+            disabled={finishing}
           >
-            <Text style={{ fontSize: 14, color: SUB, fontWeight: '500', letterSpacing: 0.2 }}>
+            <Text style={{ fontSize: 14, color: DUST, fontWeight: '500', letterSpacing: 0.2 }}>
               Skip
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* ── Main content ─────────────────────────────────────────────────── */}
-        <View
-          style={{
-            flex:           1,
-            alignItems:     'center',
-            justifyContent: 'center',
-            paddingBottom:  SH * 0.06,
-          }}
+        {/* Slide area */}
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          scrollEventThrottle={16}
+          onMomentumScrollEnd={e => onScrollEnd(e.nativeEvent.contentOffset.x)}
+          style={{ flex: 1 }}
+          onLayout={e => setSlideAreaHeight(e.nativeEvent.layout.height)}
         >
-          {/* Book stack — builds upward then breathes */}
-          <View style={{ marginBottom: SH * 0.05 }}>
-            <BookStackLoader size="lg" />
-          </View>
-
-          {/* Wordmark */}
-          <Animated.View
-            style={{
-              alignItems:        'center',
-              opacity:           textFade,
-              paddingHorizontal: 36,
-            }}
-          >
-            {/* Logo mark */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
-              <Text
-                style={{
-                  fontSize:      50,
-                  fontWeight:    '800',
-                  color:         INK,
-                  letterSpacing: -1.5,
-                }}
-              >
-                readstack
-              </Text>
-            </View>
-
-            {/* Green rule accent */}
+          {SLIDES.map((slide, index) => (
             <View
+              key={slide.id}
               style={{
-                width:           44,
-                height:          3,
-                borderRadius:    2,
-                backgroundColor: SAGE,
-                marginBottom:    20,
-              }}
-            />
-
-            {/* Editorial tagline */}
-            <Text
-              style={{
-                fontSize:      14,
-                color:         SUB,
-                lineHeight:    22,
-                textAlign:     'center',
-                letterSpacing: 0.6,
-                textTransform: 'uppercase',
-                maxWidth:      240,
+                width:          W,
+                height:         slideAreaHeight || undefined,
+                paddingHorizontal: 36,
+                alignItems:     'center',
+                justifyContent: 'center',
               }}
             >
-              your reading, together.
-            </Text>
-          </Animated.View>
+              <SlideVisual visual={slide.visual} />
+
+              <Text
+                style={{
+                  fontSize:      26,
+                  fontWeight:    '800',
+                  color:         INK,
+                  textAlign:     'center',
+                  letterSpacing: -0.6,
+                  lineHeight:    34,
+                  marginBottom:  16,
+                }}
+              >
+                {slide.title}
+              </Text>
+
+              <Text
+                style={{
+                  fontSize:  16,
+                  color:     SUB,
+                  textAlign: 'center',
+                  lineHeight: 26,
+                  maxWidth:  290,
+                }}
+              >
+                {slide.body}
+              </Text>
+            </View>
+          ))}
+        </ScrollView>
+
+        {/* Slide indicators */}
+        <View
+          style={{
+            flexDirection:  'row',
+            justifyContent: 'center',
+            alignItems:     'center',
+            marginBottom:   20,
+            gap:            8,
+          }}
+        >
+          {SLIDES.map((_, i) => (
+            <View
+              key={i}
+              style={{
+                width:           currentSlide === i ? 22 : 6,
+                height:          6,
+                borderRadius:    3,
+                backgroundColor: currentSlide === i ? INK : DUST,
+                opacity:         currentSlide === i ? 1 : 0.35,
+              }}
+            />
+          ))}
         </View>
 
-        {/* ── CTA ──────────────────────────────────────────────────────────── */}
+        {/* CTA */}
         <Animated.View
           style={{
             paddingHorizontal: 22,
             paddingBottom:     Platform.OS === 'android' ? 28 : 18,
             opacity:           ctaFade,
-            transform:         [{ translateY: ctaOffsetY }],
           }}
         >
           <TouchableOpacity
-            onPress={() => finish('cta')}
+            onPress={goNext}
             activeOpacity={0.85}
+            disabled={finishing}
             style={{
               backgroundColor: INK,
               borderRadius:    14,
@@ -211,7 +284,7 @@ export default function OnboardingScreen() {
             }}
           >
             <Text style={{ color: BG, fontSize: 16, fontWeight: '800', letterSpacing: -0.2 }}>
-              Let's go →
+              {isLast ? 'Get started \u2192' : 'Next \u2192'}
             </Text>
           </TouchableOpacity>
         </Animated.View>
