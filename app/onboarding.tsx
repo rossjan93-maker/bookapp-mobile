@@ -76,7 +76,7 @@ const SLIDES: SlideData[] = [
     id:     'start',
     visual: 'download',
     title:  "Start with what\nyou\u2019ve already read",
-    body:   'Import your Goodreads library in one tap, or add a few books by hand. Your history is what makes everything work.',
+    body:   'Import your Goodreads library in one tap, or add a few books by hand. The more history you bring, the better your picks from day one.',
   },
 ];
 

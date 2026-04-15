@@ -10,8 +10,8 @@
 //
 // Actions:
 //   Import library   → write stage='done' → push /import/goodreads
-//   Answer questions → write stage='done' → navigate /(tabs)/search
-//   Not right now    → write stage='done' → replace /(tabs)
+//   Pick genres      → write stage='done' → navigate /onboarding-questions
+//   Skip for now     → write stage='done' → replace /(tabs)/search
 //
 // State guard:
 //   On mount we read the onboarding stage. If it is NOT 'final_setup' (user
@@ -31,11 +31,12 @@ import { readOnboardingStage, writeOnboardingStage } from '../lib/onboardingStag
 import { useOnboardingBridge } from './_layout';
 import { supabase } from '../lib/supabase';
 
-const BG  = '#f5f1ec';
-const INK = '#231f1b';
-const SUB = '#6b635c';
-const MUT = '#9e958d';
-const BOR = '#ede9e4';
+const BG   = '#f5f1ec';
+const INK  = '#231f1b';
+const SUB  = '#6b635c';
+const MUT  = '#9e958d';
+const BOR  = '#ede9e4';
+const SAGE = '#7b9e7e';
 
 // ─── Shared helper ────────────────────────────────────────────────────────────
 // Write onboarding_completed=true to the profiles table.
@@ -106,12 +107,14 @@ export default function OnboardingImportPage() {
   }
 
   async function handleDismiss() {
-    console.log('[IMPORT_ROUTE] action: not_right_now_tapped');
+    console.log('[IMPORT_ROUTE] action: skip_tapped');
     // Disarm the routing guard before navigating.
     completeOnboarding();
     await Promise.all([writeOnboardingStage('done'), markOnboardingComplete()]);
-    console.log('[IMPORT_ROUTE] dismiss: stage=done + onboarding_completed written — replacing with /(tabs)');
-    router.replace('/(tabs)' as any);
+    // Send to the Discover tab — better starting point than an empty home
+    // for a user who hasn't added any books yet.
+    console.log('[IMPORT_ROUTE] dismiss: stage=done + onboarding_completed written — replacing with /(tabs)/search');
+    router.replace('/(tabs)/search' as any);
   }
 
   // Hold off rendering until the async guard resolves.
@@ -126,7 +129,7 @@ export default function OnboardingImportPage() {
         flex:              1,
         paddingHorizontal: 24,
         justifyContent:    'center',
-        paddingBottom:     24,
+        paddingBottom:     32,
       }}>
 
         {/* Step indicator */}
@@ -159,17 +162,17 @@ export default function OnboardingImportPage() {
           One import.{'\n'}Instant recommendations.
         </Text>
 
-        {/* Sub-copy */}
+        {/* Sub-copy — concrete benefit, addresses cold-start fear */}
         <Text style={{
           fontSize:     16,
           color:        SUB,
           lineHeight:   26,
           marginBottom: 40,
         }}>
-          This is the fastest way to make readstack useful. Connect your reading history and we'll tune your picks from day one.
+          Your ratings and shelves tell us what you love, what you avoided, and where your taste sits. Import them and your recommendations are personal from the very first session.
         </Text>
 
-        {/* Primary CTA */}
+        {/* ── Primary CTA: Import ─────────────────────────────────────────── */}
         <TouchableOpacity
           onPress={handleImport}
           activeOpacity={0.82}
@@ -181,7 +184,7 @@ export default function OnboardingImportPage() {
             flexDirection:     'row',
             alignItems:        'center',
             gap:               14,
-            marginBottom:      14,
+            marginBottom:      12,
           }}
         >
           <View style={{
@@ -213,36 +216,66 @@ export default function OnboardingImportPage() {
           <Ionicons name="chevron-forward" size={18} color="#9e958d" />
         </TouchableOpacity>
 
-        {/* Secondary row */}
-        <View style={{
-          flexDirection:  'row',
-          justifyContent: 'center',
-          alignItems:     'center',
-          gap:            24,
-          paddingTop:     8,
-        }}>
-          <TouchableOpacity
-            onPress={handleIntake}
-            activeOpacity={0.7}
-            hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
-          >
-            <Text style={{ fontSize: 14, color: SUB, fontWeight: '500' }}>
-              Answer a few questions
-            </Text>
-          </TouchableOpacity>
+        {/* ── Secondary CTA: Genre-based setup ────────────────────────────── */}
+        {/* Clearly styled as second-best — outline card, no fill */}
+        <TouchableOpacity
+          onPress={handleIntake}
+          activeOpacity={0.78}
+          style={{
+            borderRadius:      14,
+            borderWidth:       1.5,
+            borderColor:       BOR,
+            paddingVertical:   15,
+            paddingHorizontal: 20,
+            flexDirection:     'row',
+            alignItems:        'center',
+            gap:               14,
+            marginBottom:      28,
+          }}
+        >
+          <View style={{
+            width:           42,
+            height:          42,
+            borderRadius:    21,
+            backgroundColor: SAGE + '18',
+            alignItems:      'center',
+            justifyContent:  'center',
+          }}>
+            <Ionicons name="options-outline" size={19} color={SAGE} />
+          </View>
 
-          <View style={{ width: 1, height: 14, backgroundColor: BOR }} />
-
-          <TouchableOpacity
-            onPress={handleDismiss}
-            activeOpacity={0.7}
-            hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
-          >
-            <Text style={{ fontSize: 14, color: MUT, fontWeight: '500' }}>
-              Not right now
+          <View style={{ flex: 1 }}>
+            <Text style={{
+              fontSize:     15,
+              fontWeight:   '600',
+              color:        INK,
+              lineHeight:   21,
+              marginBottom: 2,
+            }}>
+              Pick genres instead
             </Text>
-          </TouchableOpacity>
-        </View>
+            <Text style={{ fontSize: 12, color: MUT }}>
+              No file needed — takes about 30 seconds
+            </Text>
+          </View>
+
+          <Ionicons name="chevron-forward" size={16} color={MUT} />
+        </TouchableOpacity>
+
+        {/* ── Tertiary: Skip — intentional exit, not a dead end ───────────── */}
+        <TouchableOpacity
+          onPress={handleDismiss}
+          activeOpacity={0.6}
+          hitSlop={{ top: 12, bottom: 12, left: 20, right: 20 }}
+          style={{ alignItems: 'center' }}
+        >
+          <Text style={{ fontSize: 13, color: MUT, fontWeight: '500' }}>
+            Skip for now
+          </Text>
+          <Text style={{ fontSize: 11, color: MUT, opacity: 0.6, marginTop: 4 }}>
+            You can import any time from your profile
+          </Text>
+        </TouchableOpacity>
 
       </View>
     </SafeAreaView>

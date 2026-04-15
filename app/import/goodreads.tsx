@@ -1008,23 +1008,28 @@ function CompleteView({
   result,
   coversEnriched,
   onReset,
+  onGoToDiscover,
   onGoToLibrary,
 }: {
   result: ExecutionSummary;
   coversEnriched: number;
   onReset: () => void;
+  onGoToDiscover: () => void;
   onGoToLibrary: () => void;
 }) {
   const totalImported = result.added + result.merged;
   const showQueue = result.reviewRows.length > 0;
 
+  // Headline and subtitle vary by outcome
+  const heading = totalImported > 0 ? 'Your library is in.' : 'Already up to date.';
+
   const subtitle = totalImported > 0
-    ? `${totalImported} ${totalImported === 1 ? 'book has' : 'books have'} been added to your library.${coversEnriched > 0 ? ` Covers and metadata updated for ${coversEnriched}.` : ''}`
-    : 'Your library is already up to date.';
+    ? `${totalImported} ${totalImported === 1 ? 'book' : 'books'} added.${coversEnriched > 0 ? ` Covers enriched for ${coversEnriched}.` : ''} Head to Discover — your recommendations are being built now.`
+    : 'Nothing new to add — your library is current. Your recommendations are ready.';
 
   return (
     <>
-      <PageTitle>Import complete</PageTitle>
+      <PageTitle>{heading}</PageTitle>
       <PageSubtitle>{subtitle}</PageSubtitle>
 
       <SectionLabel>Results</SectionLabel>
@@ -1084,9 +1089,9 @@ function CompleteView({
         </>
       )}
 
-      {/* Primary CTA */}
+      {/* Primary CTA — send to recommendations, not library */}
       <TouchableOpacity
-        onPress={onGoToLibrary}
+        onPress={onGoToDiscover}
         style={{
           marginTop: 28,
           backgroundColor: '#231f1b',
@@ -1096,8 +1101,20 @@ function CompleteView({
         }}
       >
         <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>
-          Go to Library
+          Explore recommendations
         </Text>
+      </TouchableOpacity>
+
+      {/* Secondary: view library */}
+      <TouchableOpacity
+        onPress={onGoToLibrary}
+        style={{
+          marginTop: 14,
+          paddingVertical: 10,
+          alignItems: 'center',
+        }}
+      >
+        <Text style={{ fontSize: 14, color: '#6b635c' }}>View library</Text>
       </TouchableOpacity>
 
       <ResetButton onPress={onReset} label="Import another file" />
@@ -1584,7 +1601,8 @@ export default function GoodreadsImportScreen() {
           result={executionResult}
           coversEnriched={coversEnriched}
           onReset={handleReset}
-          onGoToLibrary={() => router.push('/(tabs)/library')}
+          onGoToDiscover={() => router.replace('/(tabs)/search' as any)}
+          onGoToLibrary={() => router.push('/(tabs)/library' as any)}
         />
       )}
 
