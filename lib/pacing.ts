@@ -570,10 +570,20 @@ export function computeMonthlyStats(
     if (cp == null) {
       contribution = Math.max(0, netSessions);
     } else {
+      // Anchor the cap on the first POSITIVE-delta row, not the first row in
+      // calendar order.  Negative-delta rows (organic corrections from
+      // saveCurrentPage, or synthetic backfill rows from
+      // scripts/backfillSessionCorrections.ts) carry a started_page that
+      // reflects the pre-correction position, not where the user began
+      // reading this period.  Anchoring on them would inflate the cap base
+      // and zero out legitimate same-period forward reading.
+      // Fallback to the first row when no positive-delta row exists (period
+      // contains only corrections — contribution is correctly clamped to 0).
       const sorted = [...bookRows].sort((a, b) =>
         a.session_date.localeCompare(b.session_date),
       );
-      const firstStartedPage = sorted[0].started_page ?? 0;
+      const firstForward = sorted.find((r) => r.pages_read > 0) ?? sorted[0];
+      const firstStartedPage = firstForward.started_page ?? 0;
       contribution = Math.max(0, Math.min(netSessions, cp - firstStartedPage));
     }
 

@@ -117,12 +117,19 @@ export function aggregatePeriod(
       // No reconciliation possible — use legacy net-sum, clamped to 0
       contribution = Math.max(0, netSessions);
     } else {
-      // Find the chronologically first session's started_page — that is the
-      // book's page-position at the start of the period.
+      // Anchor on the first POSITIVE-delta row, not first-by-date.  See the
+      // matching comment in lib/pacing.ts → computeMonthlyStats.  In short:
+      // negative-delta rows (organic corrections from saveCurrentPage and
+      // synthetic backfill rows) carry a started_page reflecting the
+      // pre-correction position, which would inflate the cap base if used.
+      // Falls back to the first row when no positive-delta row exists —
+      // contribution is then correctly clamped to 0 for correction-only
+      // periods.
       const sorted = [...bookRows].sort((a, b) =>
         a.session_date.localeCompare(b.session_date),
       );
-      const firstStartedPage = sorted[0].started_page ?? 0;
+      const firstForward = sorted.find((r) => r.pages_read > 0) ?? sorted[0];
+      const firstStartedPage = firstForward.started_page ?? 0;
       const headroom = cp - firstStartedPage;
       contribution = Math.max(0, Math.min(netSessions, headroom));
     }
