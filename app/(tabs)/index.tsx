@@ -21,7 +21,7 @@ import { CoverThumb } from '../../components/CoverThumb';
 import { HomeScreenSkeleton } from '../../components/Placeholder';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computePagePacing, computeUserAvgPace, inferReadState, computeSessionPacing, formatProjectedFinish, computeMonthlyStats, type SessionRow, type ReadState, type MonthlyStats } from '../../lib/pacing';
-import { computeMonthlyWrap, computeYearlyWrap, deriveInsights, type WrapSession, type WrapBookRef, type ReaderInsight } from '../../lib/readingWraps';
+import { aggregatePeriod, computeMonthlyWrap, computeYearlyWrap, deriveInsights, type WrapSession, type WrapBookRef, type ReaderInsight } from '../../lib/readingWraps';
 import { computeStreaks } from '../../lib/streaks';
 import { showToast } from '../../lib/toast';
 import { BadgeContext } from './_layout';
@@ -379,19 +379,23 @@ function InitialAvatar({ name }: { name: string }) {
 // Background refresh fires when cache is stale (> 60 s).
 
 type HomeSnapshot = {
-  userId:          string;
-  greeting:        string;
-  currentReads:    CurrentRead[];
-  yearlyGoal:      number | null;
-  pendingRecCount: number;
-  booksThisYear:   YearBook[];
-  feed:            FeedEvent[];
-  friendships:     FriendshipRow[];
-  fetchedAt:       number;
-  sessionsByBook:  Record<string, SessionRow[]>;
-  currentStreak:   number;
-  longestStreak:   number;
-  monthlyStats:    MonthlyStats | null;
+  userId:             string;
+  greeting:           string;
+  currentReads:       CurrentRead[];
+  yearlyGoal:         number | null;
+  pendingRecCount:    number;
+  booksThisYear:      YearBook[];
+  feed:               FeedEvent[];
+  friendships:        FriendshipRow[];
+  fetchedAt:          number;
+  sessionsByBook:     Record<string, SessionRow[]>;
+  /** Full session rows (incl. negative corrections + started_page) used by wraps. */
+  allSessionsForWrap: WrapSession[];
+  /** user_book_id → current_page for reconciliation cap. */
+  currentPageByBook:  Record<string, number | null>;
+  currentStreak:      number;
+  longestStreak:      number;
+  monthlyStats:       MonthlyStats | null;
 };
 
 let _homeCache: HomeSnapshot | null = null;
@@ -442,6 +446,10 @@ export default function HomeScreen() {
 
   // Session data for pacing + streak
   const [sessionsByBook, setSessionsByBook] = useState<Record<string, SessionRow[]>>(() => _homeCache?.sessionsByBook ?? {});
+  // Full session set (with negatives + started_page) — drives wraps + reconciled streak
+  const [allSessionsForWrap, setAllSessionsForWrap] = useState<WrapSession[]>(() => _homeCache?.allSessionsForWrap ?? []);
+  // current_page per user_book — used by aggregatePeriod cap so rolled-back books drop out
+  const [currentPageByBook,  setCurrentPageByBook]  = useState<Record<string, number | null>>(() => _homeCache?.currentPageByBook ?? {});
   const [currentStreak,  setCurrentStreak]  = useState<number>(() => _homeCache?.currentStreak ?? 0);
   const [longestStreak,  setLongestStreak]  = useState<number>(() => _homeCache?.longestStreak ?? 0);
   const [monthlyStats,   setMonthlyStats]   = useState<MonthlyStats | null>(() => _homeCache?.monthlyStats ?? null);
@@ -455,6 +463,8 @@ export default function HomeScreen() {
   const _feedRef  = useRef<FeedEvent[]>([]);
   const _fsRef    = useRef<FriendshipRow[]>([]);
   const _sbRef    = useRef<Record<string, SessionRow[]>>({});
+  const _aswRef   = useRef<WrapSession[]>([]);
+  const _cpbRef   = useRef<Record<string, number | null>>({});
   const _csRef    = useRef<number>(0);
   const _lsRef    = useRef<number>(0);
   const _msRef    = useRef<MonthlyStats | null>(null);
@@ -463,14 +473,13 @@ export default function HomeScreen() {
   // These are fast O(n) computations over ≤90 days of session rows so they can
   // live in useMemo without performance concerns.
 
-  /** Flat session array with user_book_id attached — required by wrap functions. */
-  const allSessions = useMemo<WrapSession[]>(
-    () =>
-      Object.entries(sessionsByBook).flatMap(([ubId, rows]) =>
-        rows.map(r => ({ ...r, user_book_id: ubId })),
-      ),
-    [sessionsByBook],
-  );
+  /**
+   * Flat session array with user_book_id, started_page, and correction rows
+   * attached — required by wrap functions for the per-book reconciliation cap.
+   * Sourced directly from loadSessionData (unlike sessionsByBook which is
+   * positive-only and used by per-book pacing).
+   */
+  const allSessions = allSessionsForWrap;
 
   /**
    * Book reference lookup: user_book_id → { title, author }.
@@ -494,21 +503,21 @@ export default function HomeScreen() {
   const _prevMonthPrefix  = `${_prevMonthDate.getFullYear()}-${String(_prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
   const currentMonthWrap = useMemo(
-    () => computeMonthlyWrap(allSessions, _curMonthPrefix, bookLookup),
+    () => computeMonthlyWrap(allSessions, _curMonthPrefix, bookLookup, currentPageByBook),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [allSessions, bookLookup],
+    [allSessions, bookLookup, currentPageByBook],
   );
 
   const prevMonthWrap = useMemo(
-    () => computeMonthlyWrap(allSessions, _prevMonthPrefix, bookLookup),
+    () => computeMonthlyWrap(allSessions, _prevMonthPrefix, bookLookup, currentPageByBook),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [allSessions, bookLookup],
+    [allSessions, bookLookup, currentPageByBook],
   );
 
   const yearlyWrap = useMemo(
-    () => computeYearlyWrap(allSessions, _wrapToday.getFullYear(), booksThisYear.length, bookLookup),
+    () => computeYearlyWrap(allSessions, _wrapToday.getFullYear(), booksThisYear.length, bookLookup, currentPageByBook),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [allSessions, booksThisYear.length, bookLookup],
+    [allSessions, booksThisYear.length, bookLookup, currentPageByBook],
   );
 
   const insights = useMemo(
@@ -589,19 +598,21 @@ export default function HomeScreen() {
 
     // Persist snapshot for future cold starts / tab switches
     _homeCache = {
-      userId:          user.id,
-      greeting:        greetingName,
-      currentReads:    _crRef.current,
-      yearlyGoal:      _gyRef.current,
-      pendingRecCount: _prRef.current,
-      booksThisYear:   _byRef.current,
-      feed:            _feedRef.current,
-      friendships:     _fsRef.current,
-      fetchedAt:       Date.now(),
-      sessionsByBook:  _sbRef.current,
-      currentStreak:   _csRef.current,
-      longestStreak:   _lsRef.current,
-      monthlyStats:    _msRef.current,
+      userId:             user.id,
+      greeting:           greetingName,
+      currentReads:       _crRef.current,
+      yearlyGoal:         _gyRef.current,
+      pendingRecCount:    _prRef.current,
+      booksThisYear:      _byRef.current,
+      feed:               _feedRef.current,
+      friendships:        _fsRef.current,
+      fetchedAt:          Date.now(),
+      sessionsByBook:     _sbRef.current,
+      allSessionsForWrap: _aswRef.current,
+      currentPageByBook:  _cpbRef.current,
+      currentStreak:      _csRef.current,
+      longestStreak:      _lsRef.current,
+      monthlyStats:       _msRef.current,
     };
   }
 
@@ -766,9 +777,10 @@ export default function HomeScreen() {
       .toISOString()
       .split('T')[0];
 
+    // ── 1. Fetch sessions (forward + corrections + started_page) ────────────
     const { data } = await supabase
       .from('reading_sessions')
-      .select('user_book_id, session_date, pages_read')
+      .select('user_book_id, session_date, pages_read, started_page')
       .eq('user_id', uid)
       .gte('session_date', ninetyDaysAgo)
       .order('session_date', { ascending: true });
@@ -776,16 +788,38 @@ export default function HomeScreen() {
     const rows = (data ?? []) as Array<{
       user_book_id: string;
       session_date: string;
-      pages_read: number;
+      pages_read:   number;
+      started_page: number | null;
     }>;
 
-    const byBook: Record<string, SessionRow[]> = {};
+    // ── 2. Fetch current_page for every book that has sessions ──────────────
+    // Needed for the per-book reconciliation cap: a book whose current_page
+    // is below what the sessions log implies has been rolled back, and its
+    // contribution to monthly/yearly totals must be capped accordingly.
+    const uniqueBookIds = Array.from(new Set(rows.map(r => r.user_book_id)));
+    const cpByBook: Record<string, number | null> = {};
+    if (uniqueBookIds.length > 0) {
+      const { data: ubData } = await supabase
+        .from('user_books')
+        .select('id, current_page')
+        .in('id', uniqueBookIds);
+      for (const ub of (ubData ?? []) as Array<{ id: string; current_page: number | null }>) {
+        cpByBook[ub.id] = ub.current_page;
+      }
+    }
 
-    // Net pages per date — correction rows (negative pages_read) cancel out
-    // forward sessions so a day fully corrected to 0 is not a reading day.
-    const netByDate: Record<string, number> = {};
+    // ── 3. Build the two derived shapes ─────────────────────────────────────
+    // sessionsByBook (positive only) drives per-book velocity / projected finish.
+    // wrapSessions (full set with started_page) drives wraps + streak reconciliation.
+    const byBook: Record<string, SessionRow[]> = {};
+    const wrapSessions: WrapSession[] = rows.map(r => ({
+      session_date:  r.session_date,
+      pages_read:    r.pages_read,
+      started_page:  r.started_page ?? 0,
+      user_book_id:  r.user_book_id,
+    }));
+
     for (const r of rows) {
-      netByDate[r.session_date] = (netByDate[r.session_date] ?? 0) + r.pages_read;
       // Per-book grouping uses forward sessions only (velocity estimation).
       if (r.pages_read > 0) {
         if (!byBook[r.user_book_id]) byBook[r.user_book_id] = [];
@@ -796,16 +830,21 @@ export default function HomeScreen() {
       }
     }
 
-    // Streak uses net-positive dates — a day corrected to 0 must not count.
-    const allDates = Object.entries(netByDate)
-      .filter(([, net]) => net > 0)
-      .map(([date]) => date);
-
-    const streak  = computeStreaks(allDates);
-    const monthly = computeMonthlyStats(rows);
+    // ── 4. Streak uses reconciled active reading days ───────────────────────
+    // aggregatePeriod applies the same per-book cap as the wrap functions, so
+    // a book rolled back to 0 (with no correction row) drops its session dates
+    // from the streak.  This keeps the streak honest: a day whose pages have
+    // been fully undone does not count.
+    const windowAgg = aggregatePeriod(wrapSessions, cpByBook);
+    const streak    = computeStreaks(windowAgg.activeReadingDates);
+    const monthly   = computeMonthlyStats(wrapSessions, cpByBook);
 
     setSessionsByBook(byBook);
     _sbRef.current = byBook;
+    setAllSessionsForWrap(wrapSessions);
+    _aswRef.current = wrapSessions;
+    setCurrentPageByBook(cpByBook);
+    _cpbRef.current = cpByBook;
     setCurrentStreak(streak.current);
     _csRef.current = streak.current;
     setLongestStreak(streak.longest);
@@ -815,7 +854,7 @@ export default function HomeScreen() {
 
     if (__DEV__ && (streak.current > 0 || rows.length > 0)) {
       console.log(
-        `[PACING] sessions loaded — ${rows.length} rows  |  streak: ${streak.current}d current / ${streak.longest}d longest  |  month: ${monthly.readingDaysThisMonth}d / ${monthly.pagesThisMonth}pp`,
+        `[PACING] sessions loaded — ${rows.length} rows / ${uniqueBookIds.length} books  |  streak: ${streak.current}d current / ${streak.longest}d longest  |  month: ${monthly.readingDaysThisMonth}d / ${monthly.pagesThisMonth}pp`,
       );
     }
   }

@@ -117,37 +117,45 @@ export default function MonthWrapScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // Include correction rows (pages_read < 0) and started_page so the
+      // per-book reconciliation cap in computeMonthlyWrap works correctly.
+      // See lib/readingWraps.ts → aggregatePeriod for the full rationale.
       const { data: rows } = await supabase
         .from('reading_sessions')
-        .select('session_date, pages_read, user_book_id')
+        .select('session_date, pages_read, started_page, user_book_id')
         .eq('user_id', user.id)
         .gte('session_date', `${m}-01`)
         .lt('session_date', nextMonthPrefix(m))
-        .gt('pages_read', 0)
         .order('session_date');
 
       const sessions: WrapSession[] = (rows ?? []).map(r => ({
         session_date: r.session_date as string,
         pages_read:   r.pages_read   as number,
+        started_page: (r.started_page as number | null) ?? 0,
         user_book_id: r.user_book_id ?? undefined,
       }));
 
       const bookIds = [...new Set(sessions.map(s => s.user_book_id).filter(Boolean))] as string[];
       const lookup: Record<string, WrapBookRef> = {};
+      const currentPageByBook: Record<string, number | null> = {};
 
       if (bookIds.length > 0) {
+        // Fetch title/author AND current_page in one query — current_page is
+        // the input to the reconciliation cap that prevents rolled-back books
+        // from inflating monthly totals.
         const { data: ubRows } = await supabase
           .from('user_books')
-          .select('id, book:books(title, author)')
+          .select('id, current_page, book:books(title, author)')
           .in('id', bookIds)
           .is('deleted_at', null);
 
         for (const row of (ubRows ?? []) as any[]) {
           if (row.book) lookup[row.id] = { title: row.book.title, author: row.book.author };
+          currentPageByBook[row.id] = row.current_page ?? null;
         }
       }
 
-      const computed = computeMonthlyWrap(sessions, m, lookup);
+      const computed = computeMonthlyWrap(sessions, m, lookup, currentPageByBook);
       setWrap(computed);
       setHasData(computed.pagesRead > 0);
 

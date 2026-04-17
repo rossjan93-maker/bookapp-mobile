@@ -371,6 +371,9 @@ export default function StatsScreen() {
   const [allSessions,      setAllSessions]      = useState<WrapSession[]>([]);
   const [booksFinished,    setBooksFinished]    = useState(0);
   const [bookInfoLookup,   setBookInfoLookup]   = useState<Record<string, BookInfo>>({});
+  // user_book_id → current_page; feeds the wrap reconciliation cap so books
+  // rolled back to a lower page no longer inflate monthly/yearly totals.
+  const [currentPageByBook, setCurrentPageByBook] = useState<Record<string, number | null>>({});
   const [lastFinishedBook, setLastFinishedBook] = useState<{ title: string; finishMonth: string } | null>(null);
 
   useFocusEffect(useCallback(() => { load(); }, []));
@@ -388,9 +391,12 @@ export default function StatsScreen() {
       heatmapStart.setDate(heatmapStart.getDate() - 364);
       const heatmapFrom   = heatmapStart.toISOString().slice(0, 10);
       const fetchFrom     = heatmapFrom < prevMonthFrom ? heatmapFrom : prevMonthFrom;
+      // started_page is required by the per-book reconciliation cap in the
+      // wrap functions (see lib/readingWraps.ts → aggregatePeriod) so books
+      // that have been rolled back to a lower page no longer inflate totals.
       const { data: sessRows } = await supabase!
         .from('reading_sessions')
-        .select('session_date, pages_read, user_book_id')
+        .select('session_date, pages_read, started_page, user_book_id')
         .eq('user_id', user.id)
         .gte('session_date', fetchFrom)
         .lte('session_date', `${year}-12-31`)
@@ -399,6 +405,7 @@ export default function StatsScreen() {
       const sessions: WrapSession[] = (sessRows ?? []).map(r => ({
         session_date: r.session_date as string,
         pages_read:   r.pages_read   as number,
+        started_page: (r.started_page as number | null) ?? 0,
         user_book_id: r.user_book_id ?? undefined,
       }));
       setAllSessions(sessions);
@@ -433,23 +440,27 @@ export default function StatsScreen() {
         });
       }
 
-      // Book metadata — include page_count for finish projections
+      // Book metadata — include page_count for finish projections AND
+      // current_page for the wrap reconciliation cap.
       const bookIds = [...new Set(sessions.map(s => s.user_book_id).filter(Boolean))] as string[];
       if (bookIds.length > 0) {
         const { data: ubRows } = await supabase!
           .from('user_books')
-          .select('id, book:books(title, author, page_count)')
+          .select('id, current_page, book:books(title, author, page_count)')
           .in('id', bookIds)
           .is('deleted_at', null);
         const lk: Record<string, BookInfo> = {};
+        const cpb: Record<string, number | null> = {};
         for (const row of (ubRows ?? []) as any[]) {
           if (row.book) lk[row.id] = {
             title:     row.book.title,
             author:    row.book.author,
             pageCount: row.book.page_count ?? undefined,
           };
+          cpb[row.id] = row.current_page ?? null;
         }
         setBookInfoLookup(lk);
+        setCurrentPageByBook(cpb);
       }
     } finally {
       setLoading(false);
@@ -468,16 +479,19 @@ export default function StatsScreen() {
   const bookLookup = bookInfoLookup as Record<string, WrapBookRef>;
 
   const monthWrap = useMemo(
-    () => computeMonthlyWrap(curMonthSessions, monthPrefix, bookLookup),
-    [allSessions, bookInfoLookup],
+    () => computeMonthlyWrap(curMonthSessions, monthPrefix, bookLookup, currentPageByBook),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allSessions, bookInfoLookup, currentPageByBook],
   );
   const prevMonthWrap = useMemo(
-    () => computeMonthlyWrap(prevMonthSessions, prevPrefix, {}),
-    [allSessions],
+    () => computeMonthlyWrap(prevMonthSessions, prevPrefix, {}, currentPageByBook),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allSessions, currentPageByBook],
   );
   const yearWrap = useMemo(
-    () => computeYearlyWrap(yearSessions, year, booksFinished, bookLookup),
-    [allSessions, booksFinished, bookInfoLookup],
+    () => computeYearlyWrap(yearSessions, year, booksFinished, bookLookup, currentPageByBook),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allSessions, booksFinished, bookInfoLookup, currentPageByBook],
   );
   const yearHeatmap = useMemo(
     () => computeYearHeatmap(allSessions),

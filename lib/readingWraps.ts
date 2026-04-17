@@ -27,12 +27,171 @@ import { computeStreaks } from './streaks';
  * A single reading session row, optionally enriched with the user_book_id so
  * per-book aggregations work.  This is the canonical input shape accepted by
  * all wrap functions.
+ *
+ * `pages_read` may be negative — those are correction rows written by
+ * saveCurrentPage when the user reduces their progress.  `started_page` is
+ * the user's page-position before this session and is used by the
+ * reconciliation cap (see `aggregatePeriod`) as the per-book baseline for the
+ * period.
  */
 export type WrapSession = {
   session_date: string;   // 'YYYY-MM-DD' local date
-  pages_read: number;     // always > 0 in practice (callers may include 0; filtered internally)
+  pages_read: number;     // forward sessions positive; corrections negative
+  started_page?: number;  // page-position before this session (default 0)
   user_book_id?: string;  // omit if not available — book-level stats degrade gracefully
 };
+
+/**
+ * Internal aggregation result over a set of session rows for a single period
+ * (month or year).  All metrics here have the per-book reconciliation cap
+ * already applied — the wrap functions just shape this into their public type.
+ */
+export type PeriodAggregate = {
+  pagesRead:           number;
+  readingDays:         number;
+  sessionCount:        number;
+  longestSessionPages: number | null;
+  /** bookId → effective contribution after cap (always ≥ 0) */
+  contributionByBook:  Record<string, number>;
+  /** Dates with positive net pages from at least one active book. Sorted asc. */
+  activeReadingDates:  string[];
+};
+
+/**
+ * Aggregate session rows for a single period (month or year), applying a
+ * per-book reconciliation cap so that the metrics reflect the user's actual
+ * current state — not the raw forward sessions log.
+ *
+ * Why this exists: if a user reset a book's progress before the
+ * `pages_read != 0` constraint was relaxed (migration 20260413000000), the
+ * negative correction row may not have been written, leaving orphan forward
+ * sessions in the log.  A naïve sum would still credit those pages even
+ * though `current_page` shows the book is back at zero.  This function caps
+ * each book's contribution to what `current_page` actually justifies.
+ *
+ * Per-book contribution formula (when current_page is known):
+ *   contribution = max(0, min(net_session_pages_in_period,
+ *                             current_page − started_page_of_first_session))
+ *
+ * - The first session's `started_page` is the page-position at the start of
+ *   the period for that book.
+ * - `current_page − first.started_page` is the maximum forward progress that
+ *   could have been made in this period.
+ * - We also cap at `net_session_pages` so we never credit more than the
+ *   sessions log itself recorded (e.g. out-of-band manual edits don't
+ *   inflate session-derived stats).
+ *
+ * When `currentPageByBook` is not provided OR the book is missing from it,
+ * we fall back to `max(0, net_session_pages)` — the legacy net-sum model.
+ * This keeps every existing caller backward-compatible.
+ *
+ * Sessions without a `user_book_id` (legacy / unknown) are summed in
+ * uncapped — they cannot be reconciled against any book.
+ */
+export function aggregatePeriod(
+  rows: WrapSession[],
+  currentPageByBook?: Record<string, number | null>,
+): PeriodAggregate {
+  // ── Group rows by book ────────────────────────────────────────────────────
+  const rowsByBook: Record<string, WrapSession[]> = {};
+  const noBookRows: WrapSession[] = [];
+  for (const r of rows) {
+    if (r.user_book_id) {
+      if (!rowsByBook[r.user_book_id]) rowsByBook[r.user_book_id] = [];
+      rowsByBook[r.user_book_id].push(r);
+    } else {
+      noBookRows.push(r);
+    }
+  }
+
+  // ── Per-book effective contribution (with cap) ────────────────────────────
+  const contributionByBook: Record<string, number> = {};
+  const activeBookIds = new Set<string>();
+
+  for (const [bookId, bookRows] of Object.entries(rowsByBook)) {
+    const netSessions = bookRows.reduce((sum, r) => sum + r.pages_read, 0);
+    const cp = currentPageByBook?.[bookId];
+
+    let contribution: number;
+    if (cp == null) {
+      // No reconciliation possible — use legacy net-sum, clamped to 0
+      contribution = Math.max(0, netSessions);
+    } else {
+      // Find the chronologically first session's started_page — that is the
+      // book's page-position at the start of the period.
+      const sorted = [...bookRows].sort((a, b) =>
+        a.session_date.localeCompare(b.session_date),
+      );
+      const firstStartedPage = sorted[0].started_page ?? 0;
+      const headroom = cp - firstStartedPage;
+      contribution = Math.max(0, Math.min(netSessions, headroom));
+    }
+
+    contributionByBook[bookId] = contribution;
+    if (contribution > 0) activeBookIds.add(bookId);
+  }
+
+  // Unbooked rows: sum into total but don't participate in book-level metrics
+  const unbookedNet = Math.max(0, noBookRows.reduce((s, r) => s + r.pages_read, 0));
+
+  // ── Total pages (sum of capped contributions) ─────────────────────────────
+  const pagesRead =
+    Object.values(contributionByBook).reduce((s, c) => s + c, 0) + unbookedNet;
+
+  // ── Reading days: dates where any active book has positive net ────────────
+  // A date is a reading day if at least one active book contributed positive
+  // net pages on it.  Books that were rolled back to zero contribute no days.
+  const dateNetByActive: Record<string, number> = {};
+  for (const bookId of activeBookIds) {
+    for (const r of rowsByBook[bookId]) {
+      dateNetByActive[r.session_date] =
+        (dateNetByActive[r.session_date] ?? 0) + r.pages_read;
+    }
+  }
+  for (const r of noBookRows) {
+    dateNetByActive[r.session_date] =
+      (dateNetByActive[r.session_date] ?? 0) + r.pages_read;
+  }
+  const activeReadingDates = Object.entries(dateNetByActive)
+    .filter(([, net]) => net > 0)
+    .map(([d]) => d)
+    .sort();
+  const readingDays = activeReadingDates.length;
+
+  // ── Session count: forward sessions on active books only ──────────────────
+  // Corrections aren't user-visible events.  Sessions for rolled-back books
+  // are excluded — the user effectively undid them.
+  let sessionCount = 0;
+  let longestSessionPages: number | null = null;
+
+  for (const bookId of activeBookIds) {
+    for (const r of rowsByBook[bookId]) {
+      if (r.pages_read > 0) {
+        sessionCount++;
+        if (longestSessionPages == null || r.pages_read > longestSessionPages) {
+          longestSessionPages = r.pages_read;
+        }
+      }
+    }
+  }
+  for (const r of noBookRows) {
+    if (r.pages_read > 0) {
+      sessionCount++;
+      if (longestSessionPages == null || r.pages_read > longestSessionPages) {
+        longestSessionPages = r.pages_read;
+      }
+    }
+  }
+
+  return {
+    pagesRead,
+    readingDays,
+    sessionCount,
+    longestSessionPages,
+    contributionByBook,
+    activeReadingDates,
+  };
+}
 
 /**
  * Minimal book reference.  Populated from a lookup built by callers from
@@ -106,54 +265,36 @@ export type MonthlyWrap = {
 /**
  * Compute a MonthlyWrap for the given calendar month prefix.
  *
- * @param allSessions  Flat WrapSession array (typically 90-day window; filtered internally).
- * @param month        'YYYY-MM' prefix of the month to summarise.
- * @param bookLookup   Optional map from user_book_id → title/author for topBook resolution.
+ * @param allSessions        Flat WrapSession array (typically 90-day window; filtered internally).
+ * @param month              'YYYY-MM' prefix of the month to summarise.
+ * @param bookLookup         Optional map from user_book_id → title/author for topBook resolution.
+ * @param currentPageByBook  Optional map from user_book_id → current_page (from user_books).
+ *                           When provided, each book's contribution is capped against
+ *                           current_page so books that have been rolled back to a
+ *                           lower page (or zero) no longer inflate this month's
+ *                           totals.  See `aggregatePeriod` for the formula.
  */
 export function computeMonthlyWrap(
   allSessions: WrapSession[],
   month: string,
   bookLookup?: Record<string, WrapBookRef>,
+  currentPageByBook?: Record<string, number | null>,
 ): MonthlyWrap {
   const rows = allSessions.filter(s => s.session_date.startsWith(month));
+  const agg  = aggregatePeriod(rows, currentPageByBook);
 
-  const pagesRead = rows.reduce((sum, s) => sum + s.pages_read, 0);
-
-  // Reading days: only count dates where net pages > 0 (corrections may zero out a day)
-  const netPagesByDate: Record<string, number> = {};
-  for (const r of rows) {
-    netPagesByDate[r.session_date] = (netPagesByDate[r.session_date] ?? 0) + r.pages_read;
-  }
-  const readingDates   = Object.entries(netPagesByDate).filter(([, net]) => net > 0).map(([d]) => d);
-  const readingDaySet  = new Set(readingDates);
-  const readingDays    = readingDaySet.size;
-
-  // Session count: only forward (positive) sessions are meaningful to the user
-  const posRows      = rows.filter(r => r.pages_read > 0);
-  const sessionCount = posRows.length;
-
-  const avgPagesPerReadingDay = readingDays > 0
-    ? Math.round(pagesRead / readingDays)
+  const avgPagesPerReadingDay = agg.readingDays > 0
+    ? Math.round(agg.pagesRead / agg.readingDays)
     : null;
 
-  const longestSessionPages = posRows.length > 0
-    ? Math.max(...posRows.map(r => r.pages_read))
-    : null;
-
-  // ── Per-book aggregations (net pages per book — resets cancel out) ──────────
-  const pagesByBook: Record<string, number> = {};
-  for (const r of rows) {
-    if (r.user_book_id) {
-      pagesByBook[r.user_book_id] = (pagesByBook[r.user_book_id] ?? 0) + r.pages_read;
-    }
-  }
-  // Only count books with a positive net contribution
-  const netPositiveBooks = Object.entries(pagesByBook).filter(([, net]) => net > 0);
-  const booksActive = netPositiveBooks.length;
+  // Books with positive effective contribution after the reconciliation cap.
+  // A book rolled back to zero this month has contribution 0 and is excluded.
+  const positiveBooks = Object.entries(agg.contributionByBook).filter(([, c]) => c > 0);
+  const booksActive   = positiveBooks.length;
 
   let topBook: MonthlyWrap['topBook'] = null;
   if (bookLookup && booksActive > 0) {
-    const topEntry = netPositiveBooks.sort(([, a], [, b]) => b - a)[0];
+    const topEntry = positiveBooks.sort(([, a], [, b]) => b - a)[0];
     if (topEntry) {
       const [topId, topPages] = topEntry;
       const ref = bookLookup[topId];
@@ -162,17 +303,16 @@ export function computeMonthlyWrap(
   }
 
   // ── Streak within this month only ──────────────────────────────────────────
-  const datesInMonth         = [...readingDaySet].sort();
-  const { current, longest } = computeStreaks(datesInMonth);
+  const { current, longest } = computeStreaks(agg.activeReadingDates);
   const longestStreakInMonth  = Math.max(current, longest);
 
   return {
     month,
-    pagesRead,
-    readingDays,
-    sessionCount,
+    pagesRead:           agg.pagesRead,
+    readingDays:         agg.readingDays,
+    sessionCount:        agg.sessionCount,
     avgPagesPerReadingDay,
-    longestSessionPages,
+    longestSessionPages: agg.longestSessionPages,
     booksActive,
     topBook,
     longestStreakInMonth,
@@ -243,50 +383,44 @@ export function computeYearlyWrap(
   year: number,
   booksFinished: number,
   _bookLookup?: Record<string, WrapBookRef>,
+  currentPageByBook?: Record<string, number | null>,
 ): YearlyWrap {
   const yearPrefix = String(year);
   const yearRows   = allSessions.filter(s => s.session_date.startsWith(yearPrefix));
 
-  // ── Totals ─────────────────────────────────────────────────────────────────
-  const pagesRead = yearRows.reduce((sum, s) => sum + s.pages_read, 0);
+  // ── Yearly totals — same per-book reconciliation cap as monthly ───────────
+  const yearAgg = aggregatePeriod(yearRows, currentPageByBook);
 
-  // Reading days: only count dates where net pages > 0
-  const netPagesByDate: Record<string, number> = {};
-  for (const r of yearRows) {
-    netPagesByDate[r.session_date] = (netPagesByDate[r.session_date] ?? 0) + r.pages_read;
-  }
-  const allDates    = Object.entries(netPagesByDate).filter(([, net]) => net > 0).map(([d]) => d).sort();
-  const readingDays = allDates.length;
-
-  // Session count: only forward (positive) sessions
-  const sessionCount = yearRows.filter(r => r.pages_read > 0).length;
-
-  const avgPagesPerReadingDay = readingDays > 0
-    ? Math.round(pagesRead / readingDays)
+  const avgPagesPerReadingDay = yearAgg.readingDays > 0
+    ? Math.round(yearAgg.pagesRead / yearAgg.readingDays)
     : null;
 
   // ── Monthly breakdown ──────────────────────────────────────────────────────
-  // Single-pass aggregation: accumulate net totals per month prefix.
-  const monthPagesMap: Record<string, number>       = {};
-  const monthNetByDate: Record<string, Record<string, number>> = {};
-  const monthSessionMap: Record<string, number>     = {};
-
+  // Each month uses the same cap formula independently.  This is correct
+  // because firstStartedPage is computed within each month's row set, so a
+  // book that was rolled back today has every prior month's contribution
+  // pulled down to zero — consistent with the totals above.
+  const rowsByMonth: Record<string, WrapSession[]> = {};
   for (const r of yearRows) {
     const m = r.session_date.slice(0, 7); // 'YYYY-MM'
-    monthPagesMap[m]   = (monthPagesMap[m] ?? 0) + r.pages_read;
-    if (r.pages_read > 0) monthSessionMap[m] = (monthSessionMap[m] ?? 0) + 1;
-    if (!monthNetByDate[m]) monthNetByDate[m] = {};
-    monthNetByDate[m][r.session_date] = (monthNetByDate[m][r.session_date] ?? 0) + r.pages_read;
+    if (!rowsByMonth[m]) rowsByMonth[m] = [];
+    rowsByMonth[m].push(r);
   }
 
-  const monthlyBreakdown: MonthBreakdown[] = Object.keys(monthPagesMap)
+  const monthlyBreakdown: MonthBreakdown[] = Object.keys(rowsByMonth)
     .sort()
-    .map(m => ({
-      month:        m,
-      pagesRead:    monthPagesMap[m],
-      readingDays:  Object.values(monthNetByDate[m] ?? {}).filter(net => net > 0).length,
-      sessionCount: monthSessionMap[m] ?? 0,
-    }));
+    .map(m => {
+      const monthAgg = aggregatePeriod(rowsByMonth[m], currentPageByBook);
+      return {
+        month:        m,
+        pagesRead:    monthAgg.pagesRead,
+        readingDays:  monthAgg.readingDays,
+        sessionCount: monthAgg.sessionCount,
+      };
+    })
+    // Drop fully-rolled-back months from the breakdown so they don't show as
+    // empty entries in the year view.
+    .filter(b => b.pagesRead > 0 || b.readingDays > 0 || b.sessionCount > 0);
 
   // Most active month (by reading days; tie-break: more pages)
   const mostActiveMonthData = monthlyBreakdown.reduce<MonthBreakdown | null>(
@@ -303,15 +437,15 @@ export function computeYearlyWrap(
     : null;
 
   // ── Longest streak ─────────────────────────────────────────────────────────
-  const { current, longest } = computeStreaks(allDates);
+  const { current, longest } = computeStreaks(yearAgg.activeReadingDates);
   const longestStreak = Math.max(current, longest);
 
   return {
     year,
     booksFinished,
-    pagesRead,
-    readingDays,
-    sessionCount,
+    pagesRead:    yearAgg.pagesRead,
+    readingDays:  yearAgg.readingDays,
+    sessionCount: yearAgg.sessionCount,
     avgPagesPerReadingDay,
     monthlyBreakdown,
     mostActiveMonth,

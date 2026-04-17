@@ -528,33 +528,80 @@ export type MonthlyStats = {
  * @param today    — override for testing; defaults to new Date()
  */
 export function computeMonthlyStats(
-  sessions: Array<{ session_date: string; pages_read: number }>,
+  sessions: Array<{
+    session_date:   string;
+    pages_read:     number;
+    started_page?:  number;
+    user_book_id?:  string;
+  }>,
+  currentPageByBook?: Record<string, number | null>,
   today?: Date,
 ): MonthlyStats {
   const ref         = today ?? new Date();
   const monthPrefix = `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, '0')}`;
+  const monthRows   = sessions.filter(s => s.session_date.startsWith(monthPrefix));
 
-  // Include ALL rows for the month — corrections have negative pages_read and
-  // must participate in the net sum for the totals to be accurate.
-  const monthRows = sessions.filter(s => s.session_date.startsWith(monthPrefix));
-
-  // Net pages: sum positive and negative rows together.
-  // Clamp to 0 — a negative total means corrections exceeded forward progress
-  // this month, which is semantically equivalent to "0 net pages read".
-  const rawNet       = monthRows.reduce((sum, s) => sum + s.pages_read, 0);
-  const pagesThisMonth = Math.max(0, rawNet);
-
-  // Reading days: only dates where the net total across all rows is > 0.
-  // A day that was entirely corrected away (e.g. reset to 0) must not count.
-  const netByDate: Record<string, number> = {};
+  // ── Group rows by book for per-book reconciliation ────────────────────────
+  // See lib/readingWraps.ts → aggregatePeriod for the full rationale.
+  // Brief: each book's contribution is capped at (current_page − started_page
+  // of its first session this month) so books rolled back to a lower position
+  // (or zero) no longer inflate this month's totals.  Books not present in
+  // the lookup fall back to the legacy net-sum model.
+  const rowsByBook: Record<string, typeof monthRows> = {};
+  const noBookRows: typeof monthRows = [];
   for (const r of monthRows) {
-    netByDate[r.session_date] = (netByDate[r.session_date] ?? 0) + r.pages_read;
+    if (r.user_book_id) {
+      if (!rowsByBook[r.user_book_id]) rowsByBook[r.user_book_id] = [];
+      rowsByBook[r.user_book_id].push(r);
+    } else {
+      noBookRows.push(r);
+    }
   }
-  const readingDaysThisMonth = Object.values(netByDate).filter(net => net > 0).length;
 
-  // Session count: forward (positive) rows only — corrections are not user-
-  // visible reading events and should not inflate the session counter.
-  const sessionsThisMonth = monthRows.filter(r => r.pages_read > 0).length;
+  let pagesThisMonth   = 0;
+  let sessionsThisMonth = 0;
+  const activeBookIds  = new Set<string>();
+
+  for (const [bookId, bookRows] of Object.entries(rowsByBook)) {
+    const netSessions = bookRows.reduce((sum, r) => sum + r.pages_read, 0);
+    const cp = currentPageByBook?.[bookId];
+
+    let contribution: number;
+    if (cp == null) {
+      contribution = Math.max(0, netSessions);
+    } else {
+      const sorted = [...bookRows].sort((a, b) =>
+        a.session_date.localeCompare(b.session_date),
+      );
+      const firstStartedPage = sorted[0].started_page ?? 0;
+      contribution = Math.max(0, Math.min(netSessions, cp - firstStartedPage));
+    }
+
+    pagesThisMonth += contribution;
+    if (contribution > 0) {
+      activeBookIds.add(bookId);
+      sessionsThisMonth += bookRows.filter(r => r.pages_read > 0).length;
+    }
+  }
+
+  // Unbooked rows: legacy fallback — sum net, count positive
+  const unbookedNet = Math.max(0, noBookRows.reduce((s, r) => s + r.pages_read, 0));
+  pagesThisMonth   += unbookedNet;
+  sessionsThisMonth += noBookRows.filter(r => r.pages_read > 0).length;
+
+  // ── Reading days: dates where any active book has net > 0 ─────────────────
+  const dateNetByActive: Record<string, number> = {};
+  for (const bookId of activeBookIds) {
+    for (const r of rowsByBook[bookId]) {
+      dateNetByActive[r.session_date] =
+        (dateNetByActive[r.session_date] ?? 0) + r.pages_read;
+    }
+  }
+  for (const r of noBookRows) {
+    dateNetByActive[r.session_date] =
+      (dateNetByActive[r.session_date] ?? 0) + r.pages_read;
+  }
+  const readingDaysThisMonth = Object.values(dateNetByActive).filter(n => n > 0).length;
 
   return { pagesThisMonth, readingDaysThisMonth, sessionsThisMonth };
 }
