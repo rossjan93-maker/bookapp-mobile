@@ -56,7 +56,12 @@ function mapSignInError(error: { message?: string; status?: number }): {
     raw.includes('user not found') ||
     raw.includes('no user')
   ) {
-    return { text: "We couldn\u2019t sign you in. Check your email and password, or use the options below.", offerResend: false };
+    // We deliberately do not distinguish "wrong password" from "unknown email"
+    // from "account exists but is Google/Apple only" — Supabase returns the
+    // same `invalid_credentials` for all three to prevent account enumeration.
+    // The provider-mismatch hint shown below the status (see render block)
+    // covers the social-only case without revealing which path applied.
+    return { text: "We couldn\u2019t sign you in with that email and password.", offerResend: false };
   }
 
   // Network / server errors
@@ -930,6 +935,85 @@ export default function LoginScreen() {
                 Resend confirmation email
               </Text>
             </TouchableOpacity>
+          )}
+
+          {/* ── Provider-mismatch hint (sign-in failures) ─────────────────────
+              Shown on EVERY sign-in failure, not only when we know the account
+              is social-only.  Supabase deliberately returns the same
+              invalid_credentials error for wrong-password, unknown-email, and
+              "this email is a Google/Apple identity with no password" — so
+              showing this on every failure is the only way to help the
+              social-only user without leaking which case they hit. */}
+          {statusIsError && mode === 'signin' && !offerResend && (
+            <View style={{
+              marginTop: 14,
+              paddingTop: 14,
+              borderTopWidth: 1,
+              borderTopColor: '#ede9e4',
+            }}>
+              <Text style={{
+                textAlign: 'center',
+                fontSize: 12,
+                color: '#6b635c',
+                lineHeight: 18,
+              }}>
+                If you originally signed up with Google{appleAvailable ? ' or Apple' : ''},
+                use the {appleAvailable ? 'buttons' : 'button'} above to continue.
+              </Text>
+              <TouchableOpacity
+                onPress={() => switchMode('forgot')}
+                style={{ marginTop: 10, alignItems: 'center' }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={{
+                  fontSize: 13,
+                  color: '#231f1b',
+                  fontWeight: '600',
+                  textDecorationLine: 'underline',
+                }}>
+                  Reset your password
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* ── Provider-mismatch hint (forgot-password "sent") ──────────────
+              Reset emails are never sent for social-only identities, so the
+              "we sent a link" success message can feel like a silent no-op
+              for those users.  This footnote acknowledges that case without
+              confirming whether the address was social-only. */}
+          {!statusIsError && emailSent && mode === 'forgot' && (
+            <View style={{
+              marginTop: 14,
+              paddingTop: 14,
+              borderTopWidth: 1,
+              borderTopColor: '#ede9e4',
+            }}>
+              <Text style={{
+                textAlign: 'center',
+                fontSize: 12,
+                color: '#6b635c',
+                lineHeight: 18,
+              }}>
+                No email arriving? If you originally signed up with Google
+                {appleAvailable ? ' or Apple' : ''}, password reset doesn't
+                apply — sign in with that {appleAvailable ? 'provider' : 'option'} instead.
+              </Text>
+              <TouchableOpacity
+                onPress={() => switchMode('signin')}
+                style={{ marginTop: 10, alignItems: 'center' }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={{
+                  fontSize: 13,
+                  color: '#231f1b',
+                  fontWeight: '600',
+                  textDecorationLine: 'underline',
+                }}>
+                  Back to sign-in options
+                </Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       )}
