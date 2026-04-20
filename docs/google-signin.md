@@ -33,7 +33,24 @@ The allow list must include all of:
 - `https://<project-ref>.supabase.co/auth/v1/callback`  (default, used by Supabase itself)
 - The deployed web origin if/when web sign-in is enabled (e.g. `https://readstack.app/auth/callback`)
 
-Site URL should remain the default Supabase value.
+### Site URL — critical
+
+Site URL **must NOT** be set to a domain we do not actually host (for example
+`https://readstack.co`). When the `redirect_to` value the app sends is not on
+the allow list above, Supabase silently falls back to the Site URL and uses
+the same path — so `redirect_to=readstack://auth/callback` with an empty allow
+list and `Site URL=https://readstack.co` produces a real HTTPS redirect to
+`https://readstack.co/auth/callback?code=…`. That URL 404s, the browser stops
+there, the app never receives the deep link, and the user is stuck on
+"Signing you in…".
+
+Set Site URL to either:
+- the default `https://<project-ref>.supabase.co`, OR
+- a real owned web origin that serves the callback (we do not currently have one).
+
+This is the single most common cause of "Google sign-in hangs" reports, and it
+is a dashboard-only fix — no code change can recover from it because the
+WebBrowser session never returns to the app.
 
 ## Supabase Auth → Providers → Google
 

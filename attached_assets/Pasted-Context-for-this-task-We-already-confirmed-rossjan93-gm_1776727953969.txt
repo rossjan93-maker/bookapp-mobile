@@ -1,0 +1,50 @@
+Context for this task:
+
+We already confirmed:
+- rossjan93@gmail.com exists in Supabase
+- the account is confirmed
+- the account is attached to the Google provider
+- this is not a password/provider-mismatch issue
+
+We also now have a concrete symptom from the failed Google sign-in flow:
+
+When the user taps Continue with Google, the flow ends up on:
+https://readstack.co/auth/callback?...code=...
+
+That page returns a 404.
+
+What this means:
+- Google sign-in is not failing because of the user account
+- it is failing because the OAuth redirect/callback target is wrong, missing, or not being handled correctly
+- the flow is landing on a dead web callback page instead of successfully completing auth and routing back into the app
+
+Task:
+Debug and fix Google sign-in end to end, focusing specifically on the callback/redirect failure.
+
+I want you to:
+1. inspect the full Google sign-in flow from button tap to browser handoff to callback return to session creation to app routing
+2. identify why the flow is landing on https://readstack.co/auth/callback and why that route is 404ing
+3. determine whether the redirect target should be:
+   - a working web callback route
+   - or the app deep link / native callback path
+4. inspect all relevant config and code:
+   - Google Cloud OAuth redirect settings
+   - Supabase Google provider config
+   - Supabase URL / redirect config
+   - lib/socialAuth.ts
+   - auth callback route handling
+   - Expo / browser / deep-link handling
+5. fix the actual root cause so Google sign-in completes successfully
+
+Important:
+Do not treat this as a login-copy or provider-hint issue.
+This is now a real callback / redirect / session-completion failure.
+
+What I want back:
+1. exact root cause
+2. exact files changed
+3. any dashboard/config changes still required
+4. what the correct redirect target should be for this flow
+5. what now happens step by step when a user taps Continue with Google
+6. whether rossjan93@gmail.com can now successfully log in with Google
+7. what still needs to be validated on a real iOS/TestFlight build
