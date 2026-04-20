@@ -130,7 +130,10 @@ export default function RootLayout() {
         } else {
           const localStage = await readOnboardingStage();
           const locallyDone = localStage === 'done';
-          const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup';
+          // 'intake_active' is mid-flow: the user started the genres intake but
+          // didn't finish. Tabs layout (and the routing guard below) redirects
+          // them back to /onboarding-questions to resume.
+          const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup' || localStage === 'intake_active';
           console.log('[DELETE_TRACE] cold-start localStage=', localStage, '→ needsOnboarding=', !midFlow && !locallyDone);
           setNeedsOnboarding(!midFlow && !locallyDone);
         }
@@ -180,7 +183,10 @@ export default function RootLayout() {
           const t0          = Date.now();
           const localStage  = await withTimeout(readOnboardingStage(), 3000, 'readOnboardingStage');
           const locallyDone = localStage === 'done';
-          const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup';
+          // 'intake_active' is mid-flow (the user is partway through the genres
+          // intake). Tabs layout's mount-stage switch routes them back to
+          // /onboarding-questions on the next render.
+          const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup' || localStage === 'intake_active';
 
           if (locallyDone || midFlow) {
             // Fast path: local state is conclusive. No DB call needed.

@@ -34,6 +34,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
+import { readIntakeDraft, writeIntakeDraft, clearIntakeDraft } from '../lib/intakeDraft';
 import { CoverThumb } from './CoverThumb';
 import { OB, OnboardingShell, StepDots, SubProgressBar } from './OnboardingShell';
 import {
@@ -794,10 +795,64 @@ export function RecEntryScreen({
     tasteAnswers: {},
     anchorBook:   null,
   });
+  // Cached so we can write per-user drafts without re-fetching the session
+  // before every phase transition.
+  const userIdRef = useRef<string | null>(null);
+  // Gate the genre/taste/anchor screens until the draft probe finishes so we
+  // don't render an empty form for half a frame before snapping to the
+  // restored state.
+  const [draftHydrated, setDraftHydrated] = useState<boolean>(initialPhase !== 'intake_genres');
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => { reEntryShown(); }, []);
+
+  // ── Draft hydration ─────────────────────────────────────────────────────────
+  // When entering at 'intake_genres' (the onboarding-questions route), check
+  // for a saved draft from a prior mid-quit session and resume there. Without
+  // this, a user who quits mid-question loses every selection on cold restart.
+  useEffect(() => {
+    if (initialPhase !== 'intake_genres') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!supabase) { setDraftHydrated(true); return; }
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { setDraftHydrated(true); return; }
+        userIdRef.current = user.id;
+        const draft = await readIntakeDraft(user.id);
+        if (cancelled) return;
+        if (draft) {
+          setIntake({
+            fictionSplit: draft.fictionSplit,
+            likedGenres:  draft.likedGenres,
+            tasteAnswers: draft.tasteAnswers,
+            anchorBook:   null,
+          });
+          setPhase(draft.phase);
+        }
+      } catch {
+        // Non-blocking — fall through to a fresh start if anything goes wrong.
+      } finally {
+        if (!cancelled) setDraftHydrated(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [initialPhase]);
+
+  // Persist a draft so a mid-quit user can resume from the same step on
+  // cold-restart. Phase+state captured here is what RecEntryScreen will boot
+  // back into when readIntakeDraft fires next.
+  function persistDraft(nextPhase: 'intake_genres' | 'intake_taste' | 'intake_anchor', state: IntakeState) {
+    const uid = userIdRef.current;
+    if (!uid) return;
+    writeIntakeDraft(uid, {
+      phase:        nextPhase,
+      fictionSplit: state.fictionSplit,
+      likedGenres:  state.likedGenres,
+      tasteAnswers: state.tasteAnswers,
+    });
+  }
 
   function goTo(next: Phase) {
     Animated.timing(fadeAnim, { toValue: 0, duration: 90, useNativeDriver: true }).start(() => {
@@ -825,12 +880,17 @@ export function RecEntryScreen({
   }
 
   function handleGenresContinue(split: IntakeState['fictionSplit'], liked: string[]) {
-    setIntake(prev => ({ ...prev, fictionSplit: split, likedGenres: liked }));
+    const next = { ...intake, fictionSplit: split, likedGenres: liked };
+    setIntake(next);
+    // Persist draft pointing at the next phase so cold-restart resumes there.
+    persistDraft('intake_taste', next);
     goTo('intake_taste');
   }
 
   function handleTasteComplete(tasteAnswers: Record<string, string>) {
-    setIntake(prev => ({ ...prev, tasteAnswers }));
+    const next = { ...intake, tasteAnswers };
+    setIntake(next);
+    persistDraft('intake_anchor', next);
     goTo('intake_anchor');
   }
 
@@ -858,6 +918,13 @@ export function RecEntryScreen({
     }
     await markRecEntrySeen();
     onDone();
+  }
+
+  // Hold the screen blank until the draft probe finishes when entering at
+  // intake_genres — otherwise a user with a saved draft sees an empty form
+  // for one frame before it snaps to their previous selections.
+  if (!draftHydrated) {
+    return <View style={{ flex: 1, backgroundColor: BG }} />;
   }
 
   return (

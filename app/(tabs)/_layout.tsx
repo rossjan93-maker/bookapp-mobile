@@ -107,6 +107,16 @@ export default function TabsLayout() {
         return;
       }
 
+      // Mid-quit recovery: the user started the "Pick genres" intake but did
+      // not finish (RecEntryScreen writes a per-user draft after each phase).
+      // Send them back to /onboarding-questions, where the draft is rehydrated
+      // and they resume from the last completed step.
+      if (stage === 'intake_active') {
+        console.log('[STAGE] intake_active — redirecting to /onboarding-questions');
+        routerRef.current.replace('/onboarding-questions' as any);
+        return;
+      }
+
       if (stage === 'walkthrough') {
         const sub = await readWtStep();
         const step = sub ?? 'home';

@@ -98,11 +98,13 @@ export default function OnboardingImportPage() {
     console.log('[IMPORT_ROUTE] action: intake_tapped');
     // Disarm the routing guard before navigating.
     completeOnboarding();
-    // Write stage='done' so onboarding-import doesn't re-appear if the user
-    // backs out mid-questions. Do NOT write markOnboardingComplete() here —
-    // that is deferred to onboarding-questions when the flow actually finishes.
-    await writeOnboardingStage('done');
-    console.log('[IMPORT_ROUTE] intake: stage=done written — replacing with /onboarding-questions');
+    // Write stage='intake_active' (NOT 'done') so a cold-restart mid-question
+    // routes the user back to /onboarding-questions to finish what they
+    // started. The companion draft in lib/intakeDraft.ts preserves their
+    // selections across the restart. onboarding-questions writes 'done' once
+    // the flow actually completes (or is explicitly skipped).
+    await writeOnboardingStage('intake_active');
+    console.log('[IMPORT_ROUTE] intake: stage=intake_active written — replacing with /onboarding-questions');
     router.replace('/onboarding-questions' as any);
   }
 

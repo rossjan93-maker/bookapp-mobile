@@ -146,6 +146,65 @@ export async function signInWithGoogle(): Promise<{ error?: string }> {
   return handleOAuthBrowserFlow('google');
 }
 
+// ─── Profile name persistence (Apple) ─────────────────────────────────────────
+// Writes Apple-provided first/last name into the profiles row, with retry to
+// survive the race against ensureProfile() in app/_layout.tsx (which runs in
+// parallel via onAuthStateChange and uses ignoreDuplicates:true).
+
+async function persistAppleNamesToProfile(
+  userId: string,
+  email: string,
+  firstName: string | null,
+  lastName: string | null,
+): Promise<void> {
+  if (!supabase) return;
+  if (!firstName && !lastName) return;
+
+  // Step 1: ensure the profiles row exists.
+  // Mirrors the username-fallback logic in ensureProfile so a row created here
+  // (when we win the race) carries the same shape as one created there.
+  const emailPrefix      = (email || 'user').split('@')[0] || 'user';
+  const idSuffix         = userId.replace(/-/g, '').slice(0, 6);
+  const fallbackUsername = `${emailPrefix}_${idSuffix}`;
+
+  try {
+    await supabase
+      .from('profiles')
+      .upsert(
+        { id: userId, username: fallbackUsername },
+        { onConflict: 'id', ignoreDuplicates: true },
+      );
+  } catch (e) {
+    console.warn('[APPLE_AUTH] profiles upsert (row create) failed:', e);
+  }
+
+  // Step 2: set first_name/last_name on the row.
+  // Retry up to 3 times so we win even if ensureProfile is mid-flight elsewhere.
+  // Filter on first_name IS NULL so we never overwrite a value the user has
+  // since edited themselves.
+  const updates: Record<string, unknown> = {};
+  if (firstName) updates.first_name = firstName;
+  if (lastName)  updates.last_name  = lastName;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', userId)
+        .is('first_name', null);
+      if (!error) {
+        console.log('[APPLE_AUTH] profile names persisted (attempt', attempt + 1, ')');
+        return;
+      }
+      console.warn('[APPLE_AUTH] profile name update error (attempt', attempt + 1, '):', error.message);
+    } catch (e) {
+      console.warn('[APPLE_AUTH] profile name update threw (attempt', attempt + 1, '):', e);
+    }
+    await new Promise(r => setTimeout(r, 200));
+  }
+}
+
 // ─── Apple Sign-In ────────────────────────────────────────────────────────────
 // iOS:          native system sheet (expo-apple-authentication)
 // Web/Android:  intentionally hidden until Apple web Service ID is configured.
@@ -184,16 +243,43 @@ export async function signInWithApple(): Promise<{ error?: string }> {
 
       if (authError) return { error: mapOAuthError(authError) };
 
-      // Apple only sends the full name on the very first sign-in
+      // Apple only sends the full name on the very first sign-in.
+      //
+      // Race we are defending against:
+      //   1. signInWithIdToken() returns → onAuthStateChange fires in _layout.tsx
+      //   2. ensureProfile() upserts a profiles row using user_metadata, which
+      //      at this instant has NO names (Apple delivers them out-of-band, in
+      //      the credential object — not in the id-token claims).
+      //   3. ensureProfile() uses ignoreDuplicates:true, so once the row exists
+      //      with NULL names a later metadata refresh will NOT update it.
+      //   4. Result: profile permanently shows the fallback "user_xxx" username
+      //      instead of the user's real Apple-provided name.
+      //
+      // Fix: after updating auth metadata, also write the names directly into
+      // the profiles row. Run an UPSERT first to guarantee the row exists, then
+      // an UPDATE that only touches first_name/last_name — this avoids
+      // overwriting any fields ensureProfile (or another path) may have set.
       if (credential.fullName?.givenName || credential.fullName?.familyName) {
+        const firstName = credential.fullName.givenName ?? null;
+        const lastName  = credential.fullName.familyName ?? null;
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          await supabase.auth.updateUser({
-            data: {
-              first_name: credential.fullName.givenName ?? undefined,
-              last_name:  credential.fullName.familyName ?? undefined,
-            },
-          });
+          // 1. Refresh auth metadata so getSession() reflects the names.
+          try {
+            await supabase.auth.updateUser({
+              data: {
+                first_name: firstName ?? undefined,
+                last_name:  lastName  ?? undefined,
+              },
+            });
+          } catch (e) {
+            console.warn('[APPLE_AUTH] updateUser metadata failed:', e);
+          }
+
+          // 2. Defensively persist names directly into the profiles row.
+          //    Retry briefly because ensureProfile (which creates the row) may
+          //    not have completed yet — onAuthStateChange runs in parallel.
+          await persistAppleNamesToProfile(user.id, user.email ?? '', firstName, lastName);
         }
       }
 
