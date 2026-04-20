@@ -1261,70 +1261,92 @@ export default function HomeScreen() {
                 );
               })()}
 
-              {/* ── 3. Bookshelf progress bar ── */}
+              {/* ── 3. Vertical stacked bookshelf ── */}
               {(() => {
                 const total    = yearlyGoal ?? 0;
                 const read     = booksThisYear.length;
                 const expected = goalExpectedByNow;
-                // Deterministic height sequence — 16-step cycle, 18–36px range
-                const H = [28, 20, 36, 22, 31, 18, 26, 33, 24, 30, 19, 35, 23, 29, 18, 32];
-                // Tilted books — 4 positions chosen to feel naturally lived-in
-                const TILTS: Record<number, string> = {
-                  [3]:                             '8deg',
-                  [total > 8 ? Math.floor(total * 0.3)  : 5]:  '-5deg',
-                  [total > 8 ? Math.floor(total * 0.62) : 7]:  '6deg',
-                  [total > 8 ? Math.floor(total * 0.85) : 10]: '-7deg',
+
+                // Deterministic width variation (% of column) — keeps stack lived-in but orderly
+                const W = [98, 88, 94, 82, 100, 86, 92, 96, 84, 90, 78, 95, 89, 99, 83, 91];
+
+                // Tonal palettes — subtle variation per book so stack reads as individual volumes
+                const sageTones    = ['#7b9e7e', '#83a386', '#759a78', '#88a78b', '#7e9f81'];
+                const amberTones   = ['#e8a44a', '#eaaa55', '#e6a040', '#ecae5e', '#e7a247'];
+                const neutralTones = ['#cec6be', '#d3ccc4', '#c9c1b9', '#d5cec6', '#ccc4bc'];
+
+                // Adaptive sizing so the card stays within a comfortable height
+                let blockH: number;
+                let gap:    number;
+                if (total <= 20)       { blockH = 12; gap = 2.5; }
+                else if (total <= 35)  { blockH = 10; gap = 2;   }
+                else if (total <= 55)  { blockH = 8;  gap = 1.5; }
+                else if (total <= 80)  { blockH = 7;  gap = 1;   }
+                else                   { blockH = 6;  gap = 1;   }
+
+                // Split into 2 balanced columns once a single stack would get too tall
+                const splitColumns = total > 40;
+                const colCount     = splitColumns ? 2 : 1;
+                const perCol       = Math.ceil(total / colCount);
+
+                const renderBook = (i: number) => {
+                  const isRead   = i < read;
+                  const isBehind = !isRead && i < expected;
+                  const palette  = isRead ? sageTones : isBehind ? amberTones : neutralTones;
+                  const color    = palette[i % palette.length];
+                  const w        = W[i % W.length];
+                  const edgeH    = Math.max(1, Math.floor(blockH * 0.2));
+                  return (
+                    <View
+                      key={i}
+                      style={{
+                        width:           `${w}%`,
+                        height:          blockH,
+                        backgroundColor: color,
+                        borderRadius:    2,
+                        marginBottom:    gap,
+                        alignSelf:       'center',
+                        overflow:        'hidden',
+                      }}
+                    >
+                      {/* Top page-edge highlight — suggests stacked pages */}
+                      <View style={{ height: edgeH, backgroundColor: 'rgba(255,255,255,0.22)' }} />
+                      {/* Bottom seam — depth between volumes */}
+                      <View style={{
+                        position:        'absolute',
+                        left:            0,
+                        right:           0,
+                        bottom:          0,
+                        height:          1,
+                        backgroundColor: 'rgba(0,0,0,0.10)',
+                      }} />
+                    </View>
+                  );
                 };
+
+                // Build columns. Within each column we render top→bottom but reverse the
+                // index order so the lowest index (first read) ends up at the bottom of
+                // the pile — books accumulate upward, the way a real stack grows.
+                const columns: number[][] = [];
+                for (let c = 0; c < colCount; c++) {
+                  const start = c * perCol;
+                  const end   = Math.min(total, start + perCol);
+                  const idxs: number[] = [];
+                  for (let i = start; i < end; i++) idxs.push(i);
+                  columns.push(idxs.reverse());
+                }
+
                 return (
                   <View style={{ marginBottom: 18 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 1.5 }}>
-                      {Array.from({ length: total }).map((_, i) => {
-                        const isRead   = i < read;
-                        const isBehind = !isRead && i < expected;
-                        const spine    = isRead ? '#7b9e7e' : isBehind ? '#e8a44a' : '#cec6be';
-                        const h        = H[i % H.length];
-                        const rotate   = TILTS[i] ?? '0deg';
-                        return (
-                          <View
-                            key={i}
-                            style={{
-                              flex:            1,
-                              height:          h,
-                              backgroundColor: spine,
-                              borderTopLeftRadius:  2,
-                              borderTopRightRadius: 2,
-                              borderRadius:    1,
-                              transform:       [{ rotate }],
-                              overflow:        'hidden',
-                            }}
-                          >
-                            {/* Page-top edge — light strip at crown of spine */}
-                            <View style={{ height: 2.5, backgroundColor: 'rgba(255,255,255,0.32)' }} />
-                            {/* Left spine highlight — catches shelf light */}
-                            <View style={{
-                              position:        'absolute',
-                              left:            0,
-                              top:             0,
-                              bottom:          0,
-                              width:           '38%',
-                              backgroundColor: 'rgba(255,255,255,0.13)',
-                            }} />
-                            {/* Right shadow edge — depth between books */}
-                            <View style={{
-                              position:        'absolute',
-                              right:           0,
-                              top:             0,
-                              bottom:          0,
-                              width:           1,
-                              backgroundColor: 'rgba(0,0,0,0.11)',
-                            }} />
-                          </View>
-                        );
-                      })}
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 10 }}>
+                      {columns.map((col, ci) => (
+                        <View key={ci} style={{ flex: 1 }}>
+                          {col.map(i => renderBook(i))}
+                        </View>
+                      ))}
                     </View>
-                    {/* Shelf surface */}
-                    <View style={{ height: 3, backgroundColor: '#b8a898', marginTop: 1, borderRadius: 1 }} />
-                    {/* Shelf drop-shadow */}
+                    {/* Base plank — the stack rests on this */}
+                    <View style={{ height: 4, backgroundColor: '#b8a898', marginTop: 3, borderRadius: 1 }} />
                     <View style={{ height: 1.5, backgroundColor: '#a3917f', opacity: 0.4, borderRadius: 1 }} />
                   </View>
                 );
