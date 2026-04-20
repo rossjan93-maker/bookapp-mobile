@@ -3,10 +3,10 @@ type ModuleMap = Record<string, () => Promise<Record<string, unknown>>>;
 export const modules: ModuleMap = {
   "./components/mockups/BookDetailHero.tsx": () => import("../components/mockups/BookDetailHero.tsx"),
   "./components/mockups/FallbackProof.tsx": () => import("../components/mockups/FallbackProof.tsx"),
-  "./components/mockups/login-variants/CardEnclosure.tsx": () => import("../components/mockups/login-variants/CardEnclosure.tsx"),
-  "./components/mockups/login-variants/EditorialHeader.tsx": () => import("../components/mockups/login-variants/EditorialHeader.tsx"),
-  "./components/mockups/login-variants/FormFirst.tsx": () => import("../components/mockups/login-variants/FormFirst.tsx"),
   "./components/mockups/onboarding-proof/GuidedTourScreen.tsx": () => import("../components/mockups/onboarding-proof/GuidedTourScreen.tsx"),
   "./components/mockups/onboarding-proof/IntroScreen.tsx": () => import("../components/mockups/onboarding-proof/IntroScreen.tsx"),
-  "./components/mockups/onboarding-proof/QuestionScreen.tsx": () => import("../components/mockups/onboarding-proof/QuestionScreen.tsx")
+  "./components/mockups/onboarding-proof/QuestionScreen.tsx": () => import("../components/mockups/onboarding-proof/QuestionScreen.tsx"),
+  "./components/mockups/login-variants/CardEnclosure.tsx": () => import("../components/mockups/login-variants/CardEnclosure.tsx"),
+  "./components/mockups/login-variants/EditorialHeader.tsx": () => import("../components/mockups/login-variants/EditorialHeader.tsx"),
+  "./components/mockups/login-variants/FormFirst.tsx": () => import("../components/mockups/login-variants/FormFirst.tsx")
 };

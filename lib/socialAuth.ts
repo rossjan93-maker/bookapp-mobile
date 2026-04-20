@@ -1,10 +1,41 @@
 import { Platform } from 'react-native';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import { supabase } from './supabase';
 
 // Needed for web — completes the auth session after redirect
 WebBrowser.maybeCompleteAuthSession();
+
+// ─── OAuth in-flight lock ─────────────────────────────────────────────────────
+// Both lib/socialAuth.ts and app/auth/callback.tsx historically called
+// supabase.auth.exchangeCodeForSession() on the same single-use PKCE code,
+// which causes "invalid grant" failures and intermittent UI hangs (notably
+// on Android Custom Tabs and on web where the deep link route also mounts).
+//
+// We make socialAuth.ts the sole owner of the exchange whenever the
+// WebBrowser flow is in-flight. callback.tsx checks isOAuthInFlight()
+// before attempting its own exchange.
+//
+// Two flags compose the lock so that a cancelled/errored attempt does NOT
+// silence a legitimate late-arriving deep link in app/auth/callback.tsx:
+//
+//   webBrowserActive — true only while the WebBrowser session is open.
+//                      Cleared in finally for every outcome.
+//   exchangeOwnedAt  — set only when we are committing to exchange a code
+//                      we actually received. Provides a 5 s post-completion
+//                      grace window so a late deep link to callback.tsx
+//                      cannot double-exchange the same code we just used.
+//
+// On cancel / browser error / dismiss-without-deep-link, exchangeOwnedAt is
+// NEVER set, so callback.tsx remains free to handle a late deep link.
+
+let webBrowserActive = false;
+let exchangeOwnedAt = 0;
+
+export function isOAuthInFlight(): boolean {
+  return webBrowserActive || (exchangeOwnedAt > 0 && Date.now() - exchangeOwnedAt < 5000);
+}
 
 // ─── Friendly error mapper ────────────────────────────────────────────────────
 // Handles raw strings, Error instances, Supabase AuthError objects, and JSON
@@ -77,11 +108,47 @@ async function handleOAuthBrowserFlow(
 ): Promise<{ error?: string }> {
   if (!supabase) return { error: 'Not configured.' };
 
+  webBrowserActive = true;
+
+  // ── Android dismiss fallback ─────────────────────────────────────────────
+  // On Android (Custom Tabs) and some iOS configurations, the OS hands the
+  // OAuth redirect to the app as a deep link instead of returning it inline
+  // through WebBrowser.openAuthSessionAsync. In those cases the WebBrowser
+  // session resolves with type='dismiss' and the redirect URL arrives over
+  // expo-linking. We listen for it for the duration of this flow and use it
+  // as a fallback if the inline result is dismiss/cancel.
+  let dismissUrl: string | null = null;
+  const linkSub = Linking.addEventListener('url', ({ url }) => {
+    if (url && url.includes('auth/callback')) {
+      dismissUrl = url;
+    }
+  });
+
   try {
     const redirectTo = AuthSession.makeRedirectUri({
       scheme: 'readstack',
       path: 'auth/callback',
     });
+
+    // ── Sanity check: warn if Expo proxy URL is being used unexpectedly ──
+    // The Supabase redirect allow-list is configured for the custom scheme
+    // (readstack://auth/callback). If makeRedirectUri returns a proxy URL
+    // (auth.expo.io / *.exp.direct) the redirect will not match and the
+    // browser will land on a Supabase error page. Flag this loudly so the
+    // next regression is obvious in console logs.
+    if (
+      redirectTo.includes('auth.expo.io') ||
+      redirectTo.includes('.exp.direct') ||
+      redirectTo.includes('exp://')
+    ) {
+      console.error(
+        '[OAUTH] makeRedirectUri returned a proxy URL (' +
+          redirectTo +
+          ') — Google sign-in requires the dev client / standalone build, not Expo Go.',
+      );
+    } else {
+      console.log('[OAUTH] redirectTo=', redirectTo, 'provider=', provider);
+    }
 
     const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
       provider,
@@ -93,16 +160,35 @@ async function handleOAuthBrowserFlow(
     }
 
     const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+    console.log('[OAUTH] WebBrowser result.type=', result.type);
 
-    if (result.type === 'cancel' || result.type === 'dismiss') {
-      return { error: '' };
-    }
-
-    if (result.type !== 'success') {
+    let returnUrl: string | null = null;
+    if (result.type === 'success') {
+      returnUrl = result.url;
+    } else if (result.type === 'cancel' || result.type === 'dismiss') {
+      // Android Custom Tabs and some iOS configurations resolve with
+      // dismiss/cancel BEFORE the deep link with the redirect URL fires.
+      // Poll briefly so we don't mistakenly conclude the user cancelled.
+      // Total wait budget: ~1000ms (10 × 100ms). Real cancellations don't
+      // produce a deep link, so they still surface as cancel after the wait.
+      if (!dismissUrl) {
+        console.log('[OAUTH] dismiss with no deep link yet — waiting up to 1000ms for fallback');
+        for (let i = 0; i < 10; i++) {
+          await new Promise(r => setTimeout(r, 100));
+          if (dismissUrl) break;
+        }
+      }
+      if (dismissUrl) {
+        console.log('[OAUTH] dismiss + deep link fallback engaged');
+        returnUrl = dismissUrl;
+      } else {
+        console.log('[OAUTH] dismiss — no deep link arrived, treating as cancel');
+        return { error: '' };
+      }
+    } else {
       return { error: 'Sign-in failed — please try again.' };
     }
 
-    const returnUrl = result.url;
     const urlObj    = new URL(returnUrl);
 
     // Check for error params in the redirect URL before looking for tokens.
@@ -117,6 +203,10 @@ async function handleOAuthBrowserFlow(
     // PKCE flow: authorization code in query params
     const code = urlObj.searchParams.get('code');
     if (code) {
+      // Set the post-completion grace window only now that we have a real
+      // code we are about to exchange. This keeps callback.tsx unblocked
+      // when the redirect URL turned out to carry no usable code.
+      exchangeOwnedAt = Date.now();
       const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
       if (sessionError) return { error: mapOAuthError(sessionError) };
       console.log('[WARM_BOOT] socialAuth exchangeCodeForSession success — provider=', provider);
@@ -135,6 +225,13 @@ async function handleOAuthBrowserFlow(
     return { error: 'Sign-in failed — please try again.' };
   } catch (err) {
     return { error: mapOAuthError(err) };
+  } finally {
+    linkSub.remove();
+    webBrowserActive = false;
+    // exchangeOwnedAt is intentionally NOT touched here — see the lock
+    // documentation at the top of the file. We only set it when we begin
+    // the exchange, and rely on the 5-second grace window in
+    // isOAuthInFlight() to expire it naturally.
   }
 }
 

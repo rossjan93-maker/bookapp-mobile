@@ -17,6 +17,7 @@ import { BookStackLoader } from '../../components/BookStackLoader';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { isOAuthInFlight } from '../../lib/socialAuth';
 import { readOnboardingStage } from '../../lib/onboardingStage';
 import { useBootstrap } from '../_layout';
 
@@ -39,9 +40,20 @@ export default function AuthCallbackScreen() {
   const probeStarted  = useRef(false);
 
   // ── Phase A: code exchange (only when `code` param is present) ─────────────
+  // socialAuth.ts owns the exchange whenever a WebBrowser OAuth flow is in
+  // flight (or has just completed). Skipping here prevents the duplicate
+  // exchangeCodeForSession call that previously failed with "invalid grant"
+  // and left the UI stuck on the "Signing you in…" screen on platforms where
+  // the redirect is also delivered as a deep link (web, some Android Custom
+  // Tabs configurations). callback.tsx still owns the cold-start case where
+  // the app is launched directly from a deep link with no in-flight session.
   useEffect(() => {
     if (!supabase || !code) return;
-    console.log('[CALLBACK] exchangeCodeForSession start');
+    if (isOAuthInFlight()) {
+      console.log('[CALLBACK] OAuth in-flight in socialAuth — skipping duplicate exchange');
+      return;
+    }
+    console.log('[CALLBACK] exchangeCodeForSession start (cold deep-link path)');
     withTimeout(supabase.auth.exchangeCodeForSession(code), 10000, 'exchangeCodeForSession')
       .then(({ error }) => {
         if (error) console.warn('[CALLBACK] exchangeCodeForSession failed:', error.message);
