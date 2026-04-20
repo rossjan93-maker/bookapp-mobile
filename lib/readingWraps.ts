@@ -18,6 +18,7 @@
  */
 
 import { computeStreaks } from './streaks';
+import { activeSegment } from './sessionSegment';
 
 // =============================================================================
 // A. Shared types
@@ -107,28 +108,38 @@ export function aggregatePeriod(
   // ── Per-book effective contribution (with cap) ────────────────────────────
   const contributionByBook: Record<string, number> = {};
   const activeBookIds = new Set<string>();
+  // Per-book ACTIVE SEGMENT — the rows after the most-recent reset-to-0 in
+  // this period (or all rows when no reset occurred).  Used downstream so
+  // reading days, session count, and longest-session all agree on the same
+  // "still counts" set as the contribution math.  See lib/sessionSegment.ts.
+  const activeRowsByBook: Record<string, WrapSession[]> = {};
 
   for (const [bookId, bookRows] of Object.entries(rowsByBook)) {
-    const netSessions = bookRows.reduce((sum, r) => sum + r.pages_read, 0);
+    const active = activeSegment(bookRows);
+    activeRowsByBook[bookId] = active;
+    const netSessions = active.reduce((sum, r) => sum + r.pages_read, 0);
     const cp = currentPageByBook?.[bookId];
 
     let contribution: number;
     if (cp == null) {
       // No reconciliation possible — use legacy net-sum, clamped to 0
       contribution = Math.max(0, netSessions);
+    } else if (active.length < bookRows.length) {
+      // A reset-to-0 occurred inside this period — baseline is unconditionally
+      // 0 inside the active segment.  Cap at current_page, the most the user
+      // could possibly have re-read since the reset.  Pre-reset rows are
+      // intentionally dropped: per product semantics, "reset to 0 = start
+      // over", so pages that were undone don't count toward this period.
+      contribution = Math.max(0, Math.min(netSessions, cp));
     } else {
-      // Anchor on the first POSITIVE-delta row, not first-by-date.  See the
-      // matching comment in lib/pacing.ts → computeMonthlyStats.  In short:
-      // negative-delta rows (organic corrections from saveCurrentPage and
-      // synthetic backfill rows) carry a started_page reflecting the
-      // pre-correction position, which would inflate the cap base if used.
-      // Falls back to the first row when no positive-delta row exists —
-      // contribution is then correctly clamped to 0 for correction-only
-      // periods.
-      const sorted = [...bookRows].sort((a, b) =>
-        a.session_date.localeCompare(b.session_date),
-      );
-      const firstForward = sorted.find((r) => r.pages_read > 0) ?? sorted[0];
+      // No reset this period — anchor on the first POSITIVE-delta row in the
+      // segment, not first-by-date.  Negative-delta rows (organic partial
+      // corrections from saveCurrentPage, or synthetic backfill rows) carry
+      // a started_page reflecting the pre-correction position, which would
+      // inflate the cap base if used.  Falls back to the first row when no
+      // positive-delta row exists — contribution is then correctly clamped
+      // to 0 for correction-only periods.
+      const firstForward = active.find((r) => r.pages_read > 0) ?? active[0];
       const firstStartedPage = firstForward.started_page ?? 0;
       const headroom = cp - firstStartedPage;
       contribution = Math.max(0, Math.min(netSessions, headroom));
@@ -148,9 +159,12 @@ export function aggregatePeriod(
   // ── Reading days: dates where any active book has positive net ────────────
   // A date is a reading day if at least one active book contributed positive
   // net pages on it.  Books that were rolled back to zero contribute no days.
+  // Reading days, session count, and longest-session all read from the
+  // per-book ACTIVE SEGMENT — pre-reset rows are intentionally dropped so
+  // every metric agrees with the contribution math.
   const dateNetByActive: Record<string, number> = {};
   for (const bookId of activeBookIds) {
-    for (const r of rowsByBook[bookId]) {
+    for (const r of activeRowsByBook[bookId]) {
       dateNetByActive[r.session_date] =
         (dateNetByActive[r.session_date] ?? 0) + r.pages_read;
     }
@@ -172,7 +186,7 @@ export function aggregatePeriod(
   let longestSessionPages: number | null = null;
 
   for (const bookId of activeBookIds) {
-    for (const r of rowsByBook[bookId]) {
+    for (const r of activeRowsByBook[bookId]) {
       if (r.pages_read > 0) {
         sessionCount++;
         if (longestSessionPages == null || r.pages_read > longestSessionPages) {
@@ -487,10 +501,32 @@ export function computeYearHeatmap(
   const startStr = startDate.toISOString().slice(0, 10);
   const todayStr  = today.toISOString().slice(0, 10);
 
-  const netByDate: Record<string, number> = {};
+  // Apply reset-aware segmentation per book BEFORE summing into the date map.
+  // Without this, a book reset to 0 inside the window would have its pre-reset
+  // positives cancel against the negative reset row, zeroing out the day; and
+  // any post-reset re-reading would be hidden behind the cancelled history.
+  // Per product semantics ("reset to 0 = start over"), pre-reset rows are
+  // dropped and only post-reset reading lights up the heatmap.
+  const rowsByBook: Record<string, WrapSession[]> = {};
+  const noBookRows: WrapSession[] = [];
   for (const s of allSessions) {
     if (s.session_date < startStr || s.session_date > todayStr) continue;
-    netByDate[s.session_date] = (netByDate[s.session_date] ?? 0) + s.pages_read;
+    if (s.user_book_id) {
+      if (!rowsByBook[s.user_book_id]) rowsByBook[s.user_book_id] = [];
+      rowsByBook[s.user_book_id].push(s);
+    } else {
+      noBookRows.push(s);
+    }
+  }
+
+  const netByDate: Record<string, number> = {};
+  for (const bookRows of Object.values(rowsByBook)) {
+    for (const r of activeSegment(bookRows)) {
+      netByDate[r.session_date] = (netByDate[r.session_date] ?? 0) + r.pages_read;
+    }
+  }
+  for (const r of noBookRows) {
+    netByDate[r.session_date] = (netByDate[r.session_date] ?? 0) + r.pages_read;
   }
 
   const result: Record<string, number> = {};

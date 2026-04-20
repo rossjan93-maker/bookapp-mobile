@@ -11,6 +11,8 @@
  *   G. Year-to-date goal progress (existing)
  */
 
+import { activeSegment } from './sessionSegment';
+
 // =============================================================================
 // A. Read-state inference
 // =============================================================================
@@ -561,28 +563,38 @@ export function computeMonthlyStats(
   let pagesThisMonth   = 0;
   let sessionsThisMonth = 0;
   const activeBookIds  = new Set<string>();
+  // Per-book "active segment" — rows after the most recent reset-to-0 in
+  // this month.  Used downstream for reading-day and session counting so
+  // every metric agrees on the same set of "still counts" rows.
+  const activeRowsByBook: Record<string, typeof monthRows> = {};
 
   for (const [bookId, bookRows] of Object.entries(rowsByBook)) {
-    const netSessions = bookRows.reduce((sum, r) => sum + r.pages_read, 0);
+    // Reset-aware segmentation: drop pre-reset rows for this book in this
+    // month.  See lib/sessionSegment.ts for the rule.  When the book had a
+    // reset-to-0 inside the month, only post-reset rows are eligible to
+    // contribute pages, reading days, or session count.
+    const active = activeSegment(bookRows);
+    activeRowsByBook[bookId] = active;
+    const netSessions = active.reduce((sum, r) => sum + r.pages_read, 0);
     const cp = currentPageByBook?.[bookId];
 
     let contribution: number;
     if (cp == null) {
       contribution = Math.max(0, netSessions);
+    } else if (active.length < bookRows.length) {
+      // Reset happened this month — baseline is unconditionally 0 inside the
+      // active segment.  Cap contribution at current_page (the maximum the
+      // user could possibly have re-read since the reset).
+      contribution = Math.max(0, Math.min(netSessions, cp));
     } else {
-      // Anchor the cap on the first POSITIVE-delta row, not the first row in
-      // calendar order.  Negative-delta rows (organic corrections from
-      // saveCurrentPage, or synthetic backfill rows from
-      // scripts/backfillSessionCorrections.ts) carry a started_page that
-      // reflects the pre-correction position, not where the user began
-      // reading this period.  Anchoring on them would inflate the cap base
-      // and zero out legitimate same-period forward reading.
-      // Fallback to the first row when no positive-delta row exists (period
-      // contains only corrections — contribution is correctly clamped to 0).
-      const sorted = [...bookRows].sort((a, b) =>
-        a.session_date.localeCompare(b.session_date),
-      );
-      const firstForward = sorted.find((r) => r.pages_read > 0) ?? sorted[0];
+      // No reset this month — anchor the cap on the first POSITIVE-delta row
+      // in the segment.  Negative rows (organic partial corrections, or
+      // synthetic backfill rows from scripts/backfillSessionCorrections.ts)
+      // carry a started_page that reflects the pre-correction position, not
+      // where the user began reading this period.  Falls back to the first
+      // row when no positive-delta row exists (period contains only
+      // corrections — contribution is correctly clamped to 0).
+      const firstForward = active.find((r) => r.pages_read > 0) ?? active[0];
       const firstStartedPage = firstForward.started_page ?? 0;
       contribution = Math.max(0, Math.min(netSessions, cp - firstStartedPage));
     }
@@ -590,7 +602,7 @@ export function computeMonthlyStats(
     pagesThisMonth += contribution;
     if (contribution > 0) {
       activeBookIds.add(bookId);
-      sessionsThisMonth += bookRows.filter(r => r.pages_read > 0).length;
+      sessionsThisMonth += active.filter((r) => r.pages_read > 0).length;
     }
   }
 
@@ -600,9 +612,11 @@ export function computeMonthlyStats(
   sessionsThisMonth += noBookRows.filter(r => r.pages_read > 0).length;
 
   // ── Reading days: dates where any active book has net > 0 ─────────────────
+  // Uses the per-book ACTIVE SEGMENT only — pre-reset reading days are
+  // intentionally excluded so the count agrees with the contribution math.
   const dateNetByActive: Record<string, number> = {};
   for (const bookId of activeBookIds) {
-    for (const r of rowsByBook[bookId]) {
+    for (const r of activeRowsByBook[bookId]) {
       dateNetByActive[r.session_date] =
         (dateNetByActive[r.session_date] ?? 0) + r.pages_read;
     }
