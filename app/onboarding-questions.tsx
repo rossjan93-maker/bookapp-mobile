@@ -27,6 +27,14 @@ async function markOnboardingComplete(): Promise<string | null> {
         .from('profiles')
         .update({ onboarding_completed: true })
         .eq('id', session.user.id);
+      // Force a token refresh so the JWT app_metadata.onboarding_completed
+      // claim (set by the trigger in migration 20260421000000) converges to
+      // `true` immediately. Without this, the persisted JWT still carries
+      // the stale `false` until Supabase's own refresh interval fires, and
+      // a cold-restart in that window would have to fall back to a DB
+      // lookup. Errors are non-fatal — the cold-start path tolerates a
+      // missing/false JWT claim and verifies via local stage / DB.
+      supabase.auth.refreshSession().catch(() => {});
       return session.user.id;
     }
   } catch {

@@ -1496,11 +1496,15 @@ export default function GoodreadsImportScreen() {
       // never restart onboarding (import may be reached directly, bypassing the
       // onboarding-import.tsx action handler where the primary DB write lives).
       if (supabase) {
-        supabase.auth.getSession().then(({ data: { session } }) => {
+        supabase.auth.getSession().then(async ({ data: { session } }) => {
           if (session?.user) {
-            supabase?.from('profiles')
+            await supabase?.from('profiles')
               .update({ onboarding_completed: true })
               .eq('id', session.user.id);
+            // Force a token refresh so the JWT app_metadata claim (set by
+            // the trigger in migration 20260421000000) carries the updated
+            // value immediately, keeping the cold-start fast path hot.
+            supabase?.auth.refreshSession().catch(() => {});
           }
         }).catch(() => {});
       }

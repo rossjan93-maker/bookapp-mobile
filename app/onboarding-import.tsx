@@ -51,6 +51,11 @@ async function markOnboardingComplete(): Promise<void> {
         .from('profiles')
         .update({ onboarding_completed: true })
         .eq('id', session.user.id);
+      // Force a token refresh so the JWT's app_metadata.onboarding_completed
+      // claim (set by the trigger in migration 20260421000000) converges to
+      // `true` immediately. The cold-start fast path in app/_layout.tsx
+      // reads it directly from the JWT to skip the profiles SELECT entirely.
+      supabase.auth.refreshSession().catch(() => {});
     }
   } catch {
     // Non-blocking — local stage='done' already prevents the import page from

@@ -121,6 +121,28 @@ async function checkOnboardingCompleted(userId: string): Promise<boolean | null>
   return null;
 }
 
+// Reads onboarding_completed from the JWT's app_metadata claim. Populated by a
+// Postgres trigger (supabase/migrations/20260421000000_onboarding_jwt_claim.sql)
+// that mirrors profiles.onboarding_completed → auth.users.raw_app_meta_data.
+//
+// IMPORTANT correctness note: a persisted JWT can be up to one refresh window
+// stale. If the user finished onboarding and then closed the app before the
+// next token refresh, the persisted JWT still carries
+// onboarding_completed=false even though the DB row is true. We therefore
+// treat ONLY a `true` claim as authoritative — it can only become true after
+// the row was already true. A `false` claim (or missing claim) falls through
+// to local stage / DB verification so a freshly-onboarded user is never
+// dumped back into the onboarding flow on cold start.
+//
+// Returns:
+//   true  — JWT claims onboarding is complete (safe fast-path)
+//   null  — claim is `false` or missing; caller MUST verify via local stage /
+//           DB / heuristic before deciding to send the user to onboarding.
+function readOnboardingFromAppMetadata(session: Session): true | null {
+  const claim = (session.user.app_metadata as { onboarding_completed?: unknown } | undefined)?.onboarding_completed;
+  return claim === true ? true : null;
+}
+
 // Heuristic used whenever checkOnboardingCompleted returns null (DB unreachable).
 // New accounts (created in the last 5 minutes) → treat as needing onboarding.
 // Older accounts → treat as returning users so a transient DB slowness never
@@ -155,14 +177,44 @@ export default function RootLayout() {
       console.log('[DELETE_TRACE] cold-start userId=', data.session?.user?.id?.slice(0, 8) ?? null);
       if (data.session) {
         const meta = data.session.user.user_metadata;
-        await ensureProfile(
-          data.session.user.id,
-          data.session.user.email ?? '',
-          meta?.first_name,
-          meta?.last_name,
-        );
-        const completed = await checkOnboardingCompleted(data.session.user.id);
-        console.log('[DELETE_TRACE] cold-start DB onboarding_completed=', completed);
+        const t0   = Date.now();
+
+        // ── Fast path: JWT claim === true (zero DB round trip) ────────────
+        // The Postgres trigger added in migration 20260421000000 mirrors
+        // profiles.onboarding_completed into auth.users.raw_app_meta_data,
+        // which Supabase serialises into the JWT as user.app_metadata.
+        // We only treat `true` as authoritative — see readOnboardingFromAppMetadata
+        // for why a stale `false` cannot be trusted on cold start.
+        const jwtCompleted = readOnboardingFromAppMetadata(data.session);
+        if (jwtCompleted === true) {
+          console.log('[WARM_BOOT] cold-start JWT onboarding_completed=true in', Date.now() - t0, 'ms');
+          setNeedsOnboarding(false);
+          // Profile upsert in background — does not affect routing.
+          ensureProfile(
+            data.session.user.id,
+            data.session.user.email ?? '',
+            meta?.first_name,
+            meta?.last_name,
+          ).catch(e => console.warn('[WARM_BOOT] cold-start background ensureProfile error:', e));
+          return;
+        }
+
+        // ── Slow path: JWT claim absent or false (legacy/stale session) ───
+        // Run ensureProfile and checkOnboardingCompleted in parallel so the
+        // worst case is the slower of the two rather than the sum.
+        const [, completed] = await Promise.all([
+          ensureProfile(
+            data.session.user.id,
+            data.session.user.email ?? '',
+            meta?.first_name,
+            meta?.last_name,
+          ).catch(e => {
+            console.warn('[WARM_BOOT] cold-start ensureProfile error:', e);
+            return null;
+          }),
+          checkOnboardingCompleted(data.session.user.id),
+        ]);
+        console.log('[DELETE_TRACE] cold-start DB onboarding_completed=', completed, 'in', Date.now() - t0, 'ms');
         if (completed === true) {
           console.log('[DELETE_TRACE] cold-start → needsOnboarding=false (DB says done)');
           setNeedsOnboarding(false);
@@ -257,11 +309,30 @@ export default function RootLayout() {
             //   B) Returning user who signed out — clearLocalOnboardingState()
             //      wiped readstack_onboarding_stage_v1 on sign-out.
             //
-            // Without a DB check, case B always re-triggers onboarding.
-            // The fast path was an intentional optimisation that accepted this
-            // tradeoff; it breaks correctness for every sign-out+sign-back-in
-            // cycle. We always check DB when local state is absent.
-            console.log('[WARM_BOOT] localStage=null — checking DB to distinguish new vs returning user');
+            // Without disambiguation, case B always re-triggers onboarding.
+            // First try the JWT app_metadata claim (zero round trip). Only a
+            // `true` claim is treated as authoritative — a stale `false`
+            // could be carried by a session issued before the user finished
+            // onboarding (see readOnboardingFromAppMetadata).
+            const jwtCompleted = readOnboardingFromAppMetadata(newSession);
+            if (jwtCompleted === true) {
+              writeOnboardingStage('done').catch(() => {});
+              console.log('[WARM_BOOT] JWT confirmed complete — needsOnboarding=false, local stage repaired in', Date.now() - t0, 'ms');
+              setNeedsOnboarding(false);
+              // Background profile upsert; routing already resolved.
+              const meta = newSession.user.user_metadata;
+              ensureProfile(
+                newSession.user.id,
+                newSession.user.email ?? '',
+                meta?.first_name,
+                meta?.last_name,
+              ).catch(e => console.warn('[WARM_BOOT] background ensureProfile error:', e));
+              return;
+            }
+            // JWT claim absent or false. Fall back to a DB lookup so a
+            // freshly-onboarded user with a stale session is not dumped
+            // back into onboarding.
+            console.log('[WARM_BOOT] localStage=null + JWT not authoritative — checking DB to distinguish new vs returning user');
             const completed = await checkOnboardingCompleted(newSession.user.id);
             if (completed === true) {
               // Returning user: repair local stage so future sign-ins stay on

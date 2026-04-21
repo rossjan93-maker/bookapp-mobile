@@ -92,6 +92,23 @@ export default function AuthCallbackScreen() {
   async function runProbe(userId: string) {
     if (!supabase) return;
     try {
+      // Try the JWT app_metadata claim first (zero round trip). Populated by
+      // the trigger added in migration 20260421000000. Only `true` is
+      // authoritative — a stale `false` could be carried by a token issued
+      // before the user completed onboarding, so we fall through to the
+      // DB lookup in that case.
+      const claim = (session?.user.app_metadata as { onboarding_completed?: unknown } | undefined)?.onboarding_completed;
+      if (claim === true) {
+        console.log('[CALLBACK] probe: JWT app_metadata onboarding_completed=true');
+        navigate(false);
+        // Background profile upsert so the row exists for downstream calls.
+        supabase.from('profiles').upsert(
+          { id: userId },
+          { onConflict: 'id', ignoreDuplicates: true },
+        ).then(() => console.log('[CALLBACK] probe: background upsert done'));
+        return;
+      }
+
       // Parallel: fetch profile row + local stage simultaneously
       console.log('[CALLBACK] probe: parallel preProfile + localStage');
       const [profileRes, localStage] = await Promise.all([
