@@ -194,12 +194,16 @@ async function testBackfillPath(): Promise<string> {
 
   // Strip the onboarding_completed key from raw_app_meta_data — this is the
   // shape an existing user had before the migration ran.
-  const { data: cur, error: getErr } = await admin.auth.admin.getUserById(userId);
-  if (getErr || !cur.user) throw new Error(`getUserById failed: ${getErr?.message}`);
-  const stripped = { ...(cur.user.app_metadata ?? {}) } as Record<string, unknown>;
-  delete stripped.onboarding_completed;
+  //
+  // NOTE: GoTrue's admin updateUser MERGES app_metadata rather than replacing
+  // it, so passing an object with the key omitted leaves the existing claim
+  // intact. Passing the key with a `null` value is the documented way to drop
+  // it from raw_app_meta_data (jsonb || '{"k": null}' removes the key on
+  // serialisation back to the JWT — confirmed empirically against this
+  // project: the refreshed session.user.app_metadata no longer contains
+  // `onboarding_completed`).
   const { error: stripErr } = await admin.auth.admin.updateUserById(userId, {
-    app_metadata: stripped,
+    app_metadata: { onboarding_completed: null },
   });
   if (stripErr) throw new Error(`strip claim failed: ${stripErr.message}`);
 
