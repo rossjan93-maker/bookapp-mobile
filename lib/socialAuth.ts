@@ -125,10 +125,37 @@ async function handleOAuthBrowserFlow(
   });
 
   try {
-    const redirectTo = AuthSession.makeRedirectUri({
-      scheme: 'readstack',
-      path: 'auth/callback',
-    });
+    // ── Platform-split redirect target ──────────────────────────────────────
+    // Web and native need genuinely different redirect URLs:
+    //
+    //   Native (iOS / Android dev client + standalone)
+    //     readstack://auth/callback     — custom URL scheme deep link
+    //
+    //   Web (browser, including the Replit preview iframe)
+    //     <window.location.origin>/auth/callback
+    //     — Expo Router serves app/auth/callback.tsx universally, so the
+    //       same screen handles the ?code=… on web exactly as on native.
+    //
+    // Both targets must be in the Supabase Auth → URL Configuration →
+    // Redirect URLs allow-list. If a target is missing, Supabase silently
+    // falls back to the project Site URL root, which surfaces as
+    // {"error":"requested path is invalid"} on a `/<root>?code=…` URL.
+    let redirectTo: string;
+    if (Platform.OS === 'web') {
+      const origin =
+        typeof window !== 'undefined' && window.location?.origin
+          ? window.location.origin
+          : '';
+      if (!origin) {
+        return { error: 'Sign-in failed — please try again.' };
+      }
+      redirectTo = `${origin}/auth/callback`;
+    } else {
+      redirectTo = AuthSession.makeRedirectUri({
+        scheme: 'readstack',
+        path: 'auth/callback',
+      });
+    }
 
     // ── Sanity check: warn if Expo proxy URL is being used unexpectedly ──
     // The Supabase redirect allow-list is configured for the custom scheme
@@ -147,7 +174,7 @@ async function handleOAuthBrowserFlow(
           ') — Google sign-in requires the dev client / standalone build, not Expo Go.',
       );
     } else {
-      console.log('[OAUTH] redirectTo=', redirectTo, 'provider=', provider);
+      console.log('[OAUTH] redirectTo=', redirectTo, 'provider=', provider, 'platform=', Platform.OS);
     }
 
     const { data, error: oauthError } = await supabase.auth.signInWithOAuth({

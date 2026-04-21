@@ -31,7 +31,16 @@ The allow list must include all of:
 - `readstack://auth/callback`              (iOS / Android dev client + standalone)
 - `bookappmobile://auth/callback`          (legacy scheme — kept for in-flight users)
 - `https://<project-ref>.supabase.co/auth/v1/callback`  (default, used by Supabase itself)
-- The deployed web origin if/when web sign-in is enabled (e.g. `https://readstack.app/auth/callback`)
+- **Every web origin where sign-in runs**, with `/auth/callback` appended:
+  - Replit dev preview: e.g. `https://873b2006-24b4-4f11-90d7-d43f33b13819-00-1is2pqlq3lp0f.picard.replit.dev/auth/callback`
+    (the host changes per Repl — re-add when it changes)
+  - Local web dev: `http://localhost:5000/auth/callback`
+  - Future production web origin once a real domain is live
+    (e.g. `https://app.readstack.com/auth/callback`)
+
+Native uses the `readstack://` scheme; the browser uses the current origin
+plus `/auth/callback` (Expo Router serves `app/auth/callback.tsx` universally,
+so the same screen handles `?code=…` on web and on native).
 
 ### Site URL — critical
 
