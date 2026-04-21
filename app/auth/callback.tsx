@@ -11,8 +11,8 @@
  *
  * The diagnostic panel and debug buttons have been removed for production.
  */
-import { useEffect, useRef } from 'react';
-import { Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Text, View } from 'react-native';
 import { BookStackLoader } from '../../components/BookStackLoader';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -169,20 +169,54 @@ export default function AuthCallbackScreen() {
     router.replace(route as '/onboarding' | '/');
   }
 
+  // ── Rotating reading-themed copy ──────────────────────────────────────────
+  // Replaces the static "Signing you in… Just a moment" with a slow, calm
+  // rotation of book-shaped phrases. Anchors attention while the warm-boot
+  // path runs (typically <1 s on the JWT fast path; can be 1–3 s for new
+  // accounts that need profile creation + DB round-trip). Avoids the
+  // perceived-stall gap without feeling gimmicky.
+  const PHRASES = [
+    'Pulling your shelf together…',
+    'Dusting off the spines…',
+    'Finding your place in the story…',
+    'Almost there…',
+  ];
+  const [phraseIdx, setPhraseIdx] = useState(0);
+  const phraseFade = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      Animated.sequence([
+        Animated.timing(phraseFade, { toValue: 0, duration: 280, useNativeDriver: true }),
+        Animated.timing(phraseFade, { toValue: 1, duration: 280, useNativeDriver: true }),
+      ]).start();
+      // Bump the phrase at the midpoint of the cross-fade so it swaps while
+      // the text is invisible. setTimeout keeps the swap aligned with the
+      // fade-out half (280 ms) without depending on Animated callbacks.
+      setTimeout(() => {
+        setPhraseIdx(i => (i < PHRASES.length - 1 ? i + 1 : PHRASES.length - 1));
+      }, 280);
+    }, 1800);
+    return () => clearInterval(id);
+  }, []);
+
   // ── Render: clean branded loading screen ───────────────────────────────────
   return (
     <View style={{ flex: 1, backgroundColor: '#f5f1ec', alignItems: 'center', justifyContent: 'center' }}>
       <BookStackLoader size="lg" />
-      <Text style={{
-        fontSize: 17, fontWeight: '700', color: '#231f1b',
-        marginTop: 20, letterSpacing: -0.3,
-      }}>
-        Signing you in…
-      </Text>
+      <Animated.Text
+        style={{
+          fontSize: 17, fontWeight: '700', color: '#231f1b',
+          marginTop: 20, letterSpacing: -0.3,
+          opacity: phraseFade,
+        }}
+      >
+        {PHRASES[phraseIdx]}
+      </Animated.Text>
       <Text style={{
         fontSize: 13, color: '#9e958d', marginTop: 6,
       }}>
-        Just a moment
+        Setting up your reading life
       </Text>
     </View>
   );

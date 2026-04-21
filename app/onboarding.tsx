@@ -140,7 +140,17 @@ export default function OnboardingScreen() {
 
   function goNext() {
     if (currentSlide < SLIDES.length - 1) {
-      scrollRef.current?.scrollTo({ x: (currentSlide + 1) * W, animated: true });
+      // Update state synchronously — do not wait for onMomentumScrollEnd.
+      // On react-native-web a programmatic scrollTo({animated:true}) does not
+      // reliably fire onMomentumScrollEnd, which leaves currentSlide pinned
+      // at its previous value and causes the next tap to re-scroll to the
+      // same slide instead of advancing. Stepping the state ourselves keeps
+      // the indicator dots in sync and guarantees forward progress on every
+      // platform.
+      const nextIdx = currentSlide + 1;
+      setCurrentSlide(nextIdx);
+      introEvt_slideViewed(nextIdx);
+      scrollRef.current?.scrollTo({ x: nextIdx * W, animated: true });
     } else {
       finish('cta');
     }

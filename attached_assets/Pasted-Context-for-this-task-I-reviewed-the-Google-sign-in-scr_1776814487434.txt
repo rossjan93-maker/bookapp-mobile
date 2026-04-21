@@ -1,0 +1,49 @@
+Context for this task:
+
+I reviewed the Google sign-in screen recording again and corrected the diagnosis.
+
+This was a net-new user, so onboarding appearing was expected.
+The real problems are:
+
+1. Onboarding progression is broken
+- after Google sign-in, onboarding appears
+- only two information screens are shown
+- on the second screen, tapping "Next" does not advance the flow
+- the user cannot progress normally and appears forced to exit
+
+2. The post-sign-in delay is too painful
+- there is a noticeable delay after Google account selection before the user reaches the app flow
+- for a net-new account, some latency may be expected during account creation/bootstrap
+- but the current loading experience does not maintain confidence or attention
+- if latency cannot be eliminated fully, it needs to be masked with a more intentional, engaging loading state
+
+This is not primarily a Google OAuth bug now.
+It is:
+- a broken net-new onboarding flow
+- plus weak latency handling during post-auth setup
+
+Task:
+Debug and fix the net-new onboarding progression and improve the post-sign-in loading experience.
+
+I want you to:
+1. inspect the net-new Google signup path end to end
+2. identify exactly why onboarding only shows two screens and why the second screen cannot advance
+3. fix the onboarding progression bug so net-new users can complete onboarding normally
+4. inspect the post-sign-in account creation/bootstrap path and identify what is causing the delay
+5. reduce the latency if possible
+6. if some latency is unavoidable, improve the loading state so it feels intentional, reassuring, and engaging rather than stalled
+
+Requirements:
+- preserve the correct behavior for net-new users: onboarding should appear
+- do not regress existing-user sign-in behavior
+- make the onboarding flow fully navigable
+- make the loading state feel premium and confidence-building
+- if using a loading/interstitial state, it should fit the Readstack tone and not feel gimmicky
+
+What I want back:
+1. exact root cause of the onboarding progression bug
+2. exact files changed
+3. what was causing the delay after Google sign-in
+4. how the onboarding flow now behaves for a net-new user
+5. how the loading experience was improved
+6. whether this path is now ready for TestFlight testing
