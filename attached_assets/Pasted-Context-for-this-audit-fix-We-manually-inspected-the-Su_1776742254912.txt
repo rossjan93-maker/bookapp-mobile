@@ -1,0 +1,81 @@
+Context for this audit / fix:
+
+We manually inspected the Supabase and Google Cloud auth configuration because Google sign-in has not been working reliably across environments.
+
+Current observed behavior:
+- Google sign-in on laptop/browser has been failing
+- one failure mode previously sent the user to https://readstack.co/auth/callback?... which 404ed
+- after changing Supabase Site URL, the browser flow now lands on the Supabase project root with ?code=... and returns:
+  {"error":"requested path is invalid"}
+- this suggests the browser/web Google auth flow is still not fully configured correctly, even though the native/mobile redirect path may now be closer to correct
+
+What we already confirmed:
+- Supabase Auth user exists for rossjan93@gmail.com
+- that user is confirmed
+- that user is attached to the Google provider
+- this is not a password/provider mismatch issue
+- Resend SMTP is configured and password-reset dispatch is working at the send layer
+
+Actual dashboard values we verified:
+
+Supabase → Authentication → URL Configuration
+
+Site URL:
+https://dqveycawauuwcplowmrd.supabase.co
+
+Redirect URLs:
+readstack://auth/callback
+https://dqveycawauuwcplowmrd.supabase.co/auth/v1/callback
+bookappmobile://auth/callback
+
+Google Cloud Console → OAuth 2.0 Client IDs
+
+Web client:
+Name: Readstack-web
+Type: Web application
+
+Authorized redirect URIs:
+https://dqveycawauuwcplowmrd.supabase.co/auth/v1/callback
+
+Authorized JavaScript origins:
+CURRENTLY EMPTY
+
+Android client:
+Name: Readstack-android
+Package name: com.readstack.app
+SHA-1 fingerprint is present in the dashboard
+(we have not fully validated native Android sign-in yet from this audit alone)
+
+What appears to be missing / most suspicious:
+- In the Google Web client, Authorized JavaScript origins is empty
+- We likely need https://readstack.co added there for browser/web Google sign-in
+- We may also still need a correct split between:
+  - native app redirect flow using readstack://auth/callback
+  - browser/web redirect flow using a real web callback destination
+- We do not yet know whether the web app itself has a proper auth callback handling route, or whether the app is incorrectly using the native redirect target in browser/web contexts
+
+Task:
+
+Please audit and reconcile the auth configuration and app behavior using the exact values above.
+
+I want you to:
+1. determine exactly what is still misconfigured
+2. identify whether the browser/web Google sign-in failure is now caused by:
+   - missing Authorized JavaScript origin
+   - missing/incorrect web callback handling route
+   - wrong redirect target selection in code between web vs native
+   - or some combination
+3. inspect the app code and tell me whether web and native are correctly split today
+4. tell me exactly what should be changed in:
+   - Google Cloud
+   - Supabase
+   - app code
+5. keep native app auth behavior correct while also making browser/web auth behave correctly if web login is intended to work
+
+What I want back:
+1. exact root cause
+2. exact files changed
+3. exact dashboard/config changes still required
+4. what redirect target should be used on web vs native after the fix
+5. whether browser/web Google sign-in should work after the change
+6. what still needs to be validated on Android / TestFlight after this is fixed
