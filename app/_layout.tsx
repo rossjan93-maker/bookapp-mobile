@@ -80,18 +80,57 @@ async function ensureProfile(
   );
 }
 
-async function checkOnboardingCompleted(userId: string): Promise<boolean> {
+// Returns:
+//   true  — DB row exists and onboarding_completed=true (returning user, done)
+//   false — DB row exists with onboarding_completed=false, OR no row exists
+//           (genuinely new user)
+//   null  — DB call timed out or errored. Caller MUST apply a heuristic
+//           (e.g. user.created_at age) before deciding which way to route,
+//           otherwise a transient slowness sends existing users back through
+//           onboarding.
+async function checkOnboardingCompleted(userId: string): Promise<boolean | null> {
   if (!supabase) return false;
-  const { data, error } = await withTimeout(
-    supabase.from('profiles').select('onboarding_completed').eq('id', userId).maybeSingle(),
-    8000,
-    'checkOnboardingCompleted',
-  );
-  // On any DB error, assume not completed — never skip onboarding on a failure.
-  if (error) return false;
-  // maybeSingle returns data=null when no row exists (new user).
-  // null?.onboarding_completed === true → false → correctly sends to onboarding.
-  return data?.onboarding_completed === true;
+
+  // First attempt: 10s. Most cold PostgREST hits resolve within 2–3s; the
+  // wider window absorbs occasional slow hops without surfacing a fallback.
+  // On timeout/error we retry once with a tighter 3s window — if even that
+  // fails, the network is genuinely degraded and we hand control back to
+  // the caller's heuristic.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const ms = attempt === 0 ? 10000 : 3000;
+    try {
+      const { data, error } = await withTimeout(
+        supabase.from('profiles').select('onboarding_completed').eq('id', userId).maybeSingle(),
+        ms,
+        `checkOnboardingCompleted(attempt ${attempt + 1})`,
+      );
+      if (error) {
+        console.warn('[WARM_BOOT] checkOnboardingCompleted DB error (attempt', attempt + 1, '):', error.message);
+        // Real DB error (RLS, schema, etc.) — don't retry, return null so the
+        // caller can fall back to the created_at heuristic.
+        return null;
+      }
+      // maybeSingle returns data=null when no row exists (new user).
+      return data?.onboarding_completed === true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn('[WARM_BOOT] checkOnboardingCompleted timed out (attempt', attempt + 1, '):', msg);
+      // Loop to retry once; after the retry we fall through and return null.
+    }
+  }
+  return null;
+}
+
+// Heuristic used whenever checkOnboardingCompleted returns null (DB unreachable).
+// New accounts (created in the last 5 minutes) → treat as needing onboarding.
+// Older accounts → treat as returning users so a transient DB slowness never
+// dumps an established user back through the onboarding flow.
+function needsOnboardingFromCreatedAt(createdAtIso: string | undefined | null): boolean {
+  if (!createdAtIso) return false;
+  const createdMs = Date.parse(createdAtIso);
+  if (!Number.isFinite(createdMs)) return false;
+  const ageMs = Date.now() - createdMs;
+  return ageMs < 5 * 60 * 1000;
 }
 
 // ─── Root layout ──────────────────────────────────────────────────────────────
@@ -124,10 +163,10 @@ export default function RootLayout() {
         );
         const completed = await checkOnboardingCompleted(data.session.user.id);
         console.log('[DELETE_TRACE] cold-start DB onboarding_completed=', completed);
-        if (completed) {
+        if (completed === true) {
           console.log('[DELETE_TRACE] cold-start → needsOnboarding=false (DB says done)');
           setNeedsOnboarding(false);
-        } else {
+        } else if (completed === false) {
           const localStage = await readOnboardingStage();
           const locallyDone = localStage === 'done';
           // 'intake_active' is mid-flow: the user started the genres intake but
@@ -136,6 +175,21 @@ export default function RootLayout() {
           const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup' || localStage === 'intake_active';
           console.log('[DELETE_TRACE] cold-start localStage=', localStage, '→ needsOnboarding=', !midFlow && !locallyDone);
           setNeedsOnboarding(!midFlow && !locallyDone);
+        } else {
+          // completed === null — DB unavailable. Trust local stage if conclusive,
+          // otherwise fall back to the created_at heuristic so an established
+          // user is never re-routed into onboarding by a transient slowness.
+          const localStage = await readOnboardingStage();
+          const locallyDone = localStage === 'done';
+          const midFlow     = localStage === 'walkthrough' || localStage === 'final_setup' || localStage === 'intake_active';
+          if (locallyDone || midFlow) {
+            console.warn('[WARM_BOOT] cold-start DB unavailable — local stage conclusive (', localStage, ') → needsOnboarding=false');
+            setNeedsOnboarding(false);
+          } else {
+            const fallback = needsOnboardingFromCreatedAt(data.session.user.created_at);
+            console.warn('[WARM_BOOT] cold-start DB unavailable — created_at heuristic → needsOnboarding=', fallback);
+            setNeedsOnboarding(fallback);
+          }
         }
       } else {
         setNeedsOnboarding(false);
@@ -209,15 +263,27 @@ export default function RootLayout() {
             // cycle. We always check DB when local state is absent.
             console.log('[WARM_BOOT] localStage=null — checking DB to distinguish new vs returning user');
             const completed = await checkOnboardingCompleted(newSession.user.id);
-            if (completed) {
+            if (completed === true) {
               // Returning user: repair local stage so future sign-ins stay on
               // the fast path and skip this DB call.
               writeOnboardingStage('done').catch(() => {});
               console.log('[WARM_BOOT] DB confirmed complete — needsOnboarding=false, local stage repaired in', Date.now() - t0, 'ms');
               setNeedsOnboarding(false);
-            } else {
+            } else if (completed === false) {
               console.log('[WARM_BOOT] DB: onboarding not complete — needsOnboarding=true (new user) in', Date.now() - t0, 'ms');
               setNeedsOnboarding(true);
+            } else {
+              // completed === null — DB call timed out or errored after retry.
+              // Apply the created_at heuristic instead of defaulting to true,
+              // which would wrongly send established users back to onboarding.
+              const fallback = needsOnboardingFromCreatedAt(newSession.user.created_at);
+              console.warn('[WARM_BOOT] DB unavailable — created_at heuristic (account ageMs=',
+                Date.now() - Date.parse(newSession.user.created_at ?? ''),
+                ') → needsOnboarding=', fallback, 'in', Date.now() - t0, 'ms');
+              // If the heuristic decided the user is returning, repair local
+              // stage so the next sign-in stays on the fast path.
+              if (!fallback) writeOnboardingStage('done').catch(() => {});
+              setNeedsOnboarding(fallback);
             }
           }
 
@@ -234,10 +300,16 @@ export default function RootLayout() {
 
         } catch (err) {
           // Any throw here previously left needsOnboarding===undefined forever,
-          // hanging the callback screen indefinitely. Now we always resolve.
-          const msg = err instanceof Error ? err.message : String(err);
-          console.error('[WARM_BOOT] bootstrap threw — needsOnboarding fallback=true:', msg);
-          setNeedsOnboarding(true);
+          // hanging the callback screen indefinitely. We always resolve — but
+          // the resolution uses the created_at heuristic rather than blindly
+          // defaulting to true, so an established user is not dumped back into
+          // onboarding when something transient (e.g. AsyncStorage hiccup, a
+          // late DB error not caught by checkOnboardingCompleted) blows up the
+          // bootstrap path.
+          const msg      = err instanceof Error ? err.message : String(err);
+          const fallback = needsOnboardingFromCreatedAt(newSession.user.created_at);
+          console.error('[WARM_BOOT] bootstrap threw — created_at heuristic → needsOnboarding=', fallback, 'msg=', msg);
+          setNeedsOnboarding(fallback);
         }
 
       } else if (event === 'PASSWORD_RECOVERY' && newSession) {
