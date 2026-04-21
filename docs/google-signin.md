@@ -75,18 +75,22 @@ so the same screen handles `?code=…` on web and on native).
 
 ### Site URL — critical
 
-Site URL **must NOT** be set to a domain we do not actually host (for example
-`https://readstack.co`). When the `redirect_to` value the app sends is not on
-the allow list above, Supabase silently falls back to the Site URL and uses
-the same path — so `redirect_to=readstack://auth/callback` with an empty allow
-list and `Site URL=https://readstack.co` produces a real HTTPS redirect to
-`https://readstack.co/auth/callback?code=…`. That URL 404s, the browser stops
-there, the app never receives the deep link, and the user is stuck on
-"Signing you in…".
+Site URL is the fallback Supabase uses whenever the `redirect_to` the app
+sends is not matched by the allow list. It **must** be a URL that actually
+serves the auth callback, otherwise the user lands somewhere that 404s (or,
+worse, the Supabase API root, which produces
+`{"error":"requested path is invalid"}`).
 
-Set Site URL to either:
-- the default `https://<project-ref>.supabase.co`, OR
-- a real owned web origin that serves the callback (we do not currently have one).
+Set Site URL to one of:
+- `https://readstack.co` — the production web origin (preferred, since web
+  sign-in is now supported and `app/auth/callback.tsx` handles `?code=…`
+  universally), OR
+- `readstack://auth/callback` — only if web is not yet deployed; this routes
+  the fallback into the native app via deep link.
+
+Do **not** set Site URL to `https://<project-ref>.supabase.co`. The Supabase
+API root has no callback handler and will return
+`{"error":"requested path is invalid"}` whenever the fallback is taken.
 
 This is the single most common cause of "Google sign-in hangs" reports, and it
 is a dashboard-only fix — no code change can recover from it because the
