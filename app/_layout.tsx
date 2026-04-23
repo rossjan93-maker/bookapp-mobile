@@ -155,6 +155,26 @@ function needsOnboardingFromCreatedAt(createdAtIso: string | undefined | null): 
   return ageMs < 5 * 60 * 1000;
 }
 
+// Brand-new account fast path: a user whose account was created seconds ago
+// definitionally needs onboarding — there is no DB state worth checking
+// because ensureProfile has not even run yet. This avoids the 10s+3s
+// checkOnboardingCompleted wait on the most common Google-signup path on
+// Android, where the just-signed-up user has:
+//   - no profiles row yet (background upsert runs after routing)
+//   - no app_metadata.onboarding_completed claim (trigger only sets true)
+//   - no localStage (fresh install or post-sign-out wipe)
+// The 60s window is intentionally tight: it only matches the just-completed
+// SIGNED_IN event, never an established account.
+function isFreshlyCreatedAccount(createdAtIso: string | undefined | null): boolean {
+  if (!createdAtIso) return false;
+  const createdMs = Date.parse(createdAtIso);
+  if (!Number.isFinite(createdMs)) return false;
+  const ageMs = Date.now() - createdMs;
+  // Reject negative ages (client clock skew/forward) — never treat a
+  // "future-dated" account as fresh, that direction is always a bug.
+  return ageMs >= 0 && ageMs < 60 * 1000;
+}
+
 // ─── Root layout ──────────────────────────────────────────────────────────────
 
 export default function RootLayout() {
@@ -190,6 +210,46 @@ export default function RootLayout() {
           console.log('[WARM_BOOT] cold-start JWT onboarding_completed=true in', Date.now() - t0, 'ms');
           setNeedsOnboarding(false);
           // Profile upsert in background — does not affect routing.
+          ensureProfile(
+            data.session.user.id,
+            data.session.user.email ?? '',
+            meta?.first_name,
+            meta?.last_name,
+          ).catch(e => console.warn('[WARM_BOOT] cold-start background ensureProfile error:', e));
+          return;
+        }
+
+        // ── Brand-new account fast path on cold start ─────────────────────
+        // If the persisted session belongs to an account created in the last
+        // 60s (e.g. user signed up, app crashed/closed, reopened immediately)
+        // skip the DB call — the answer is unambiguously needsOnboarding=true.
+        //
+        // CRITICAL: check localStage first. A user who finished onboarding
+        // less than 60s ago and force-quits + reopens the app would have:
+        //   - createdAt < 60s    (matches the fresh check)
+        //   - JWT claim stale    (issued before completion, not refreshed)
+        //   - localStage='done'  (they DID complete onboarding)
+        // Without the local-stage gate the fresh path would wrongly send
+        // them back through onboarding.
+        if (isFreshlyCreatedAccount(data.session.user.created_at)) {
+          const localStageEarly = await readOnboardingStage().catch(() => null);
+          const earlyDone = localStageEarly === 'done'
+            || localStageEarly === 'walkthrough'
+            || localStageEarly === 'final_setup'
+            || localStageEarly === 'intake_active';
+          if (!earlyDone) {
+            console.log('[WARM_BOOT] cold-start freshly-created account → needsOnboarding=true, skipping DB in', Date.now() - t0, 'ms');
+            setNeedsOnboarding(true);
+            ensureProfile(
+              data.session.user.id,
+              data.session.user.email ?? '',
+              meta?.first_name,
+              meta?.last_name,
+            ).catch(e => console.warn('[WARM_BOOT] cold-start background ensureProfile error:', e));
+            return;
+          }
+          console.log('[WARM_BOOT] cold-start fresh account but localStage=', localStageEarly, '— treating as returning user');
+          setNeedsOnboarding(false);
           ensureProfile(
             data.session.user.id,
             data.session.user.email ?? '',
@@ -329,6 +389,25 @@ export default function RootLayout() {
               ).catch(e => console.warn('[WARM_BOOT] background ensureProfile error:', e));
               return;
             }
+            // Brand-new account fast path: account created in the last 60s.
+            // The DB lookup is guaranteed to return either no row (profile
+            // upsert hasn't run yet) or onboarding_completed=false — both
+            // mean needsOnboarding=true. Skip the (potentially 13s) DB call
+            // and route immediately. This is the dominant Google-signup
+            // path on Android and was the source of the long wait.
+            if (isFreshlyCreatedAccount(newSession.user.created_at)) {
+              console.log('[WARM_BOOT] freshly-created account (<60s) → needsOnboarding=true, skipping DB in', Date.now() - t0, 'ms');
+              setNeedsOnboarding(true);
+              const meta = newSession.user.user_metadata;
+              ensureProfile(
+                newSession.user.id,
+                newSession.user.email ?? '',
+                meta?.first_name,
+                meta?.last_name,
+              ).catch(e => console.warn('[WARM_BOOT] background ensureProfile error:', e));
+              return;
+            }
+
             // JWT claim absent or false. Fall back to a DB lookup so a
             // freshly-onboarded user with a stale session is not dumped
             // back into onboarding.
