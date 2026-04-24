@@ -1,0 +1,71 @@
+Context:
+
+I reviewed the latest mobile UI on-device and there are three design problems that need fixing before this is shown to users.
+
+1. The reading-goal progress visual on the Home tab looks bad.
+- The current oversized vertical stack/progress bar treatment is not working.
+- It takes up too much vertical space.
+- It looks like a generic progress graphic rather than a thoughtful Readstack bookshelf visual.
+- I want the book-stack visual to sit to the left of the numerical reading goal count, not dominate the full card.
+- I would prefer multiple small book stacks rather than one huge stack.
+- Use the reference image directionally: stacked books, warm editorial feel, not literal illustration copying.
+
+2. The onboarding/import screen framing is off.
+- The “Get picks worth reading” / import choices screen is too large and poorly framed on mobile.
+- The content should sit more comfortably within the viewport.
+- It should feel polished, balanced, and intentionally spaced, not oversized or cramped.
+
+3. The empty Library screen framing is also off.
+- The Library empty state currently feels too large and awkwardly positioned.
+- The import card and supporting options need better mobile sizing, spacing, and viewport fit.
+- The screen should feel calm and usable, not like content is spilling or oversized.
+
+Task:
+
+Please do a focused mobile design pass on these areas.
+
+Files/screens to inspect first:
+- Home tab reading goal / progress card
+- onboarding-import screen
+- empty Library state
+- any shared components used by those screens
+
+Requirements:
+
+Home reading goal card:
+- Replace the current oversized progress visual with a compact bookshelf-style visual.
+- Put the visual to the left of the main numerical goal count where possible.
+- Use multiple small stacks of books instead of one huge full-width stack.
+- The card should communicate progress clearly without taking over the screen.
+- Keep the Readstack visual language: warm, editorial, soft, premium.
+- Avoid a childish/cartoonish illustration style.
+- Maintain responsiveness across different phone sizes.
+
+Onboarding/import screen:
+- Rework sizing and spacing so the screen sits properly on a phone viewport.
+- Improve vertical rhythm.
+- Keep the hierarchy clear: headline, explanation, primary import option, secondary question option, skip.
+- Make sure nothing feels oversized, clipped, or visually heavy.
+- Preserve the intended flow and existing behavior.
+
+Library empty state:
+- Rework the empty-state layout so it fits better on mobile.
+- Improve spacing around the header, filter chips, import CTA, and provider options.
+- Keep the import action clear but less heavy.
+- Make the provider options feel like helpful guidance, not a giant block.
+- Preserve all existing behavior.
+
+Important:
+- This is a UI/UX implementation task, not a product strategy task.
+- Do not add major new features.
+- Do not change auth, onboarding state logic, recommendation logic, or import behavior unless absolutely necessary for layout.
+- Focus on mobile visual quality and fit.
+
+What I want back:
+1. exact files changed
+2. what changed on the Home reading goal card
+3. how the new book-stack visual is structured
+4. what changed on onboarding-import
+5. what changed on the Library empty state
+6. confirmation that the screens fit properly on mobile
+7. any tradeoffs made for responsiveness/performance

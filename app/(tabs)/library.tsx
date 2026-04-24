@@ -2158,12 +2158,12 @@ export default function LibraryScreen() {
             </TouchableOpacity>
           </View>
         ) : items.length === 0 && activeFilter === 'all' ? (
-          <View ref={libEmptyRef} style={{ paddingTop: 36, paddingHorizontal: 24 }}>
+          <View ref={libEmptyRef} style={{ paddingTop: 24, paddingHorizontal: 22 }}>
             {/* Heading + value prop */}
-            <Text style={{ fontSize: 22, fontWeight: '800', color: '#231f1b', marginBottom: 8, letterSpacing: -0.4 }}>
+            <Text style={{ fontSize: 20, fontWeight: '800', color: '#231f1b', marginBottom: 6, letterSpacing: -0.4 }}>
               Start your library
             </Text>
-            <Text style={{ color: '#78716c', fontSize: 14, lineHeight: 22, marginBottom: 28 }}>
+            <Text style={{ color: '#78716c', fontSize: 13.5, lineHeight: 20, marginBottom: 18 }}>
               Your reading history powers your recommendations. The more readstack knows, the better your picks get.
             </Text>
 
@@ -2174,13 +2174,13 @@ export default function LibraryScreen() {
                 width: '100%',
                 backgroundColor: '#231f1b',
                 borderRadius: 12,
-                paddingVertical: 15,
+                paddingVertical: 13,
                 alignItems: 'center',
-                marginBottom: 20,
+                marginBottom: 14,
               }}
             >
-              <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>Import from Goodreads</Text>
-              <Text style={{ color: '#9e958d', fontSize: 12, marginTop: 3 }}>Brings in your full reading history at once</Text>
+              <Text style={{ color: '#fff', fontSize: 14.5, fontWeight: '700' }}>Import from Goodreads</Text>
+              <Text style={{ color: '#9e958d', fontSize: 11.5, marginTop: 2 }}>Brings in your full reading history at once</Text>
             </TouchableOpacity>
 
             {/* Platform guidance panel */}
@@ -2189,10 +2189,10 @@ export default function LibraryScreen() {
               borderColor: '#ede9e4',
               borderRadius: 12,
               overflow: 'hidden',
-              marginBottom: 16,
+              marginBottom: 12,
             }}>
-              <View style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#ede9e4', backgroundColor: '#f5f1ec' }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 0.6, textTransform: 'uppercase' }}>
+              <View style={{ paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#ede9e4', backgroundColor: '#f5f1ec' }}>
+                <Text style={{ fontSize: 10.5, fontWeight: '700', color: '#9e958d', letterSpacing: 0.6, textTransform: 'uppercase' }}>
                   Where do you track books?
                 </Text>
               </View>
@@ -2200,36 +2200,36 @@ export default function LibraryScreen() {
               {/* Goodreads row */}
               <TouchableOpacity
                 onPress={() => router.push('/import/goodreads')}
-                style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#ede9e4', backgroundColor: '#fefcf9' }}
+                style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#ede9e4', backgroundColor: '#fefcf9' }}
               >
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b' }}>Goodreads</Text>
-                  <Text style={{ fontSize: 12, color: '#78716c', marginTop: 1 }}>Import your full library — live now</Text>
+                  <Text style={{ fontSize: 13.5, fontWeight: '600', color: '#231f1b' }}>Goodreads</Text>
+                  <Text style={{ fontSize: 11.5, color: '#78716c', marginTop: 1 }}>Import your full library — live now</Text>
                 </View>
-                <View style={{ backgroundColor: '#dcfce7', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, marginRight: 8 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#15803d' }}>Supported</Text>
+                <View style={{ backgroundColor: '#dcfce7', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2, marginRight: 6 }}>
+                  <Text style={{ fontSize: 10.5, fontWeight: '700', color: '#15803d' }}>Supported</Text>
                 </View>
-                <Text style={{ fontSize: 16, color: '#ede9e4' }}>›</Text>
+                <Text style={{ fontSize: 15, color: '#ede9e4' }}>›</Text>
               </TouchableOpacity>
 
               {/* StoryGraph row */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#ede9e4', backgroundColor: '#fefcf9' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#ede9e4', backgroundColor: '#fefcf9' }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b' }}>StoryGraph</Text>
-                  <Text style={{ fontSize: 12, color: '#78716c', marginTop: 1, lineHeight: 17 }}>
-                    Export your library from StoryGraph, then add your books manually below for now. Direct import is on the roadmap.
+                  <Text style={{ fontSize: 13.5, fontWeight: '600', color: '#231f1b' }}>StoryGraph</Text>
+                  <Text style={{ fontSize: 11.5, color: '#78716c', marginTop: 1, lineHeight: 16 }}>
+                    Export from StoryGraph, then add manually below. Direct import is on the roadmap.
                   </Text>
                 </View>
-                <View style={{ backgroundColor: '#fef9c3', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, marginLeft: 10, alignSelf: 'flex-start', marginTop: 2 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#92400e' }}>Coming soon</Text>
+                <View style={{ backgroundColor: '#fef9c3', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2, marginLeft: 8, marginTop: 1 }}>
+                  <Text style={{ fontSize: 10.5, fontWeight: '700', color: '#92400e' }}>Soon</Text>
                 </View>
               </View>
 
               {/* Other sources row */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 13, backgroundColor: '#fefcf9' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, backgroundColor: '#fefcf9' }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b' }}>Elsewhere</Text>
-                  <Text style={{ fontSize: 12, color: '#78716c', marginTop: 1 }}>Track books in Libby, Amazon, or a spreadsheet? Add them manually below.</Text>
+                  <Text style={{ fontSize: 13.5, fontWeight: '600', color: '#231f1b' }}>Elsewhere</Text>
+                  <Text style={{ fontSize: 11.5, color: '#78716c', marginTop: 1 }}>Libby, Amazon, a spreadsheet? Add them manually below.</Text>
                 </View>
               </View>
             </View>
@@ -2242,12 +2242,12 @@ export default function LibraryScreen() {
                 borderWidth: 1,
                 borderColor: '#ede9e4',
                 borderRadius: 12,
-                paddingVertical: 14,
+                paddingVertical: 12,
                 alignItems: 'center',
                 marginBottom: 8,
               }}
             >
-              <Text style={{ color: '#57534e', fontSize: 14, fontWeight: '500' }}>Add your first book manually</Text>
+              <Text style={{ color: '#57534e', fontSize: 13.5, fontWeight: '500' }}>Add your first book manually</Text>
             </TouchableOpacity>
           </View>
         ) : items.length === 0 ? (

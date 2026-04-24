@@ -134,18 +134,18 @@ export default function OnboardingImportPage() {
     <SafeAreaView style={{ flex: 1, backgroundColor: BG }}>
       <View style={{
         flex:              1,
-        paddingHorizontal: 24,
+        paddingHorizontal: 22,
         justifyContent:    'center',
-        paddingBottom:     32,
+        paddingBottom:     24,
       }}>
 
         {/* Step indicator */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 44 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 24 }}>
           {[1, 2, 3].map(i => (
             <View
               key={i}
               style={{
-                width:           i === 3 ? 24 : 6,
+                width:           i === 3 ? 22 : 6,
                 height:          6,
                 borderRadius:    3,
                 backgroundColor: i === 3 ? INK : '#d8d0c8',
@@ -157,26 +157,26 @@ export default function OnboardingImportPage() {
           </Text>
         </View>
 
-        {/* Headline */}
+        {/* Headline — sized down so the primary card sits comfortably above the fold */}
         <Text style={{
-          fontSize:      33,
+          fontSize:      27,
           fontWeight:    '800',
           color:         INK,
-          lineHeight:    40,
-          letterSpacing: -0.6,
-          marginBottom:  14,
+          lineHeight:    33,
+          letterSpacing: -0.5,
+          marginBottom:  10,
         }}>
           One import.{'\n'}Instant recommendations.
         </Text>
 
         {/* Sub-copy — concrete benefit, addresses cold-start fear */}
         <Text style={{
-          fontSize:     16,
+          fontSize:     14.5,
           color:        SUB,
-          lineHeight:   26,
-          marginBottom: 40,
+          lineHeight:   22,
+          marginBottom: 24,
         }}>
-          Your ratings and shelves tell us what you love, what you avoided, and where your taste sits. Import them and your recommendations are personal from the very first session.
+          Your ratings and shelves tell us what you love and where your taste sits. Import them and recommendations are personal from the first session.
         </Text>
 
         {/* ── Primary CTA: Import ─────────────────────────────────────────── */}
@@ -185,42 +185,42 @@ export default function OnboardingImportPage() {
           activeOpacity={0.82}
           style={{
             backgroundColor:   INK,
-            borderRadius:      16,
-            paddingVertical:   18,
-            paddingHorizontal: 20,
+            borderRadius:      14,
+            paddingVertical:   14,
+            paddingHorizontal: 16,
             flexDirection:     'row',
             alignItems:        'center',
-            gap:               14,
-            marginBottom:      12,
+            gap:               12,
+            marginBottom:      10,
           }}
         >
           <View style={{
-            width:           42,
-            height:          42,
-            borderRadius:    21,
+            width:           36,
+            height:          36,
+            borderRadius:    18,
             backgroundColor: '#ffffff14',
             alignItems:      'center',
             justifyContent:  'center',
           }}>
-            <Ionicons name="cloud-download-outline" size={20} color="#fff" />
+            <Ionicons name="cloud-download-outline" size={18} color="#fff" />
           </View>
 
           <View style={{ flex: 1 }}>
             <Text style={{
-              fontSize:     17,
+              fontSize:     15.5,
               fontWeight:   '700',
               color:        '#fff',
-              lineHeight:   22,
-              marginBottom: 3,
+              lineHeight:   20,
+              marginBottom: 2,
             }}>
               Import my library
             </Text>
-            <Text style={{ fontSize: 12, color: '#b8afa6' }}>
+            <Text style={{ fontSize: 11.5, color: '#b8afa6' }}>
               Goodreads · StoryGraph · others
             </Text>
           </View>
 
-          <Ionicons name="chevron-forward" size={18} color="#9e958d" />
+          <Ionicons name="chevron-forward" size={16} color="#9e958d" />
         </TouchableOpacity>
 
         {/* ── Secondary CTA: Genre-based setup ────────────────────────────── */}
@@ -229,44 +229,44 @@ export default function OnboardingImportPage() {
           onPress={handleIntake}
           activeOpacity={0.78}
           style={{
-            borderRadius:      14,
+            borderRadius:      12,
             borderWidth:       1.5,
             borderColor:       BOR,
-            paddingVertical:   15,
-            paddingHorizontal: 20,
+            paddingVertical:   12,
+            paddingHorizontal: 16,
             flexDirection:     'row',
             alignItems:        'center',
-            gap:               14,
-            marginBottom:      28,
+            gap:               12,
+            marginBottom:      20,
           }}
         >
           <View style={{
-            width:           42,
-            height:          42,
-            borderRadius:    21,
+            width:           36,
+            height:          36,
+            borderRadius:    18,
             backgroundColor: SAGE + '18',
             alignItems:      'center',
             justifyContent:  'center',
           }}>
-            <Ionicons name="options-outline" size={19} color={SAGE} />
+            <Ionicons name="options-outline" size={17} color={SAGE} />
           </View>
 
           <View style={{ flex: 1 }}>
             <Text style={{
-              fontSize:     15,
+              fontSize:     14,
               fontWeight:   '600',
               color:        INK,
-              lineHeight:   21,
-              marginBottom: 2,
+              lineHeight:   19,
+              marginBottom: 1,
             }}>
               Pick genres instead
             </Text>
-            <Text style={{ fontSize: 12, color: MUT }}>
+            <Text style={{ fontSize: 11.5, color: MUT }}>
               No file needed — takes about 30 seconds
             </Text>
           </View>
 
-          <Ionicons name="chevron-forward" size={16} color={MUT} />
+          <Ionicons name="chevron-forward" size={15} color={MUT} />
         </TouchableOpacity>
 
         {/* ── Tertiary: Skip — intentional exit, not a dead end ───────────── */}
@@ -279,7 +279,7 @@ export default function OnboardingImportPage() {
           <Text style={{ fontSize: 13, color: MUT, fontWeight: '500' }}>
             Skip for now
           </Text>
-          <Text style={{ fontSize: 11, color: MUT, opacity: 0.6, marginTop: 4 }}>
+          <Text style={{ fontSize: 11, color: MUT, opacity: 0.6, marginTop: 3 }}>
             You can import any time from your profile
           </Text>
         </TouchableOpacity>

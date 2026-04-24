@@ -1220,147 +1220,151 @@ export default function HomeScreen() {
             <View style={{
               backgroundColor: '#fefcf9',
               borderRadius: 16,
-              padding: 18,
+              padding: 16,
               shadowColor: '#000',
               shadowOpacity: 0.06,
               shadowRadius: 8,
               shadowOffset: { width: 0, height: 2 },
               elevation: 2,
             }}>
-              {/* ── 1. Headline ── */}
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12 }}>
-                <Text style={{ fontSize: 24, fontWeight: '800', color: '#231f1b', letterSpacing: -0.6 }}>
-                  {booksThisYear.length}
-                  <Text style={{ fontSize: 15, fontWeight: '400', color: '#9e958d' }}> / {yearlyGoal} books</Text>
-                </Text>
-              </View>
+              {/* ── Top row: bookshelf visual on the LEFT, headline + pace badge on the RIGHT ── */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
 
-              {/* ── 2. Pace status badge ── */}
-              {(() => {
-                const isAhead  = goalIsAhead;
-                const isBehind = goalIsBehind;
-                const bg     = isAhead ? '#f0fdf4' : isBehind ? '#fffbeb' : '#f5f3ef';
-                const border  = isAhead ? '#bbf7d0' : isBehind ? '#fde68a' : '#e2ddd9';
-                const color   = isAhead ? '#15803d' : isBehind ? '#92400e' : '#6b635c';
-                const symbol  = isAhead ? '↑' : isBehind ? '↓' : '→';
-                const label   = isAhead
-                  ? `${goalSurplus} book${goalSurplus !== 1 ? 's' : ''} ahead`
-                  : isBehind
-                  ? `${goalDeficit} book${goalDeficit !== 1 ? 's' : ''} behind`
-                  : goalExpectedByNow === 0 ? 'Just getting started' : 'Right on pace';
-                return (
-                  <View style={{
-                    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
-                    backgroundColor: bg, borderWidth: 1, borderColor: border,
-                    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
-                    marginBottom: 18, gap: 5,
-                  }}>
-                    <Text style={{ fontSize: 12, color, fontWeight: '700' }}>{symbol}</Text>
-                    <Text style={{ fontSize: 12, color, fontWeight: '600' }}>{label}</Text>
-                  </View>
-                );
-              })()}
+                {/* ─ Bookshelf visual: 3 small stacks of books ─
+                    Fixed visual footprint regardless of goal size — books fill
+                    proportionally from bottom-left across the three stacks. The
+                    three-stack composition mirrors the editorial reference: a
+                    small, lived-in still life of stacked volumes rather than a
+                    single dominating column.                                    */}
+                {(() => {
+                  const total    = Math.max(1, yearlyGoal ?? 0);
+                  const read     = booksThisYear.length;
+                  const expected = goalExpectedByNow;
 
-              {/* ── 3. Vertical stacked bookshelf ── */}
-              {(() => {
-                const total    = yearlyGoal ?? 0;
-                const read     = booksThisYear.length;
-                const expected = goalExpectedByNow;
+                  // Three stacks, each holding 7 visual book bars → 21 slots total.
+                  // We fill `read` slots from stack 1 upward, then stack 2, then 3.
+                  // "Expected but unread" slots get amber to surface pacing.
+                  const STACKS         = 3;
+                  const PER_STACK      = 7;
+                  const TOTAL_SLOTS    = STACKS * PER_STACK;
+                  // Floor + clamp so extreme goals (very small or very large)
+                  // can't over- or under-fill the 21-slot visual.
+                  const clamp = (n: number) => Math.max(0, Math.min(TOTAL_SLOTS, n));
+                  const readSlots      = clamp(Math.floor((read / total) * TOTAL_SLOTS));
+                  const expectedSlots  = clamp(Math.floor((expected / total) * TOTAL_SLOTS));
 
-                // Deterministic width variation (% of column) — keeps stack lived-in but orderly
-                const W = [98, 88, 94, 82, 100, 86, 92, 96, 84, 90, 78, 95, 89, 99, 83, 91];
+                  // Width variation per book (% of stack) — keeps each pile lived-in.
+                  const W       = [98, 88, 94, 82, 100, 86, 92];
+                  // Slight per-stack height jitter so the still life feels organic.
+                  const STACK_H = [7, 6, 7];   // book bar height per stack
+                  const STACK_G = [2, 2, 2];   // gap per stack
 
-                // Tonal palettes — subtle variation per book so stack reads as individual volumes
-                const sageTones    = ['#7b9e7e', '#83a386', '#759a78', '#88a78b', '#7e9f81'];
-                const amberTones   = ['#e8a44a', '#eaaa55', '#e6a040', '#ecae5e', '#e7a247'];
-                const neutralTones = ['#cec6be', '#d3ccc4', '#c9c1b9', '#d5cec6', '#ccc4bc'];
+                  const sage    = '#7b9e7e';
+                  const amber   = '#e8a44a';
+                  const neutral = '#d3ccc4';
 
-                // Adaptive sizing so the card stays within a comfortable height
-                let blockH: number;
-                let gap:    number;
-                if (total <= 20)       { blockH = 12; gap = 2.5; }
-                else if (total <= 35)  { blockH = 10; gap = 2;   }
-                else if (total <= 55)  { blockH = 8;  gap = 1.5; }
-                else if (total <= 80)  { blockH = 7;  gap = 1;   }
-                else                   { blockH = 6;  gap = 1;   }
-
-                // Split into 2 balanced columns once a single stack would get too tall
-                const splitColumns = total > 40;
-                const colCount     = splitColumns ? 2 : 1;
-                const perCol       = Math.ceil(total / colCount);
-
-                const renderBook = (i: number) => {
-                  const isRead   = i < read;
-                  const isBehind = !isRead && i < expected;
-                  const palette  = isRead ? sageTones : isBehind ? amberTones : neutralTones;
-                  const color    = palette[i % palette.length];
-                  const w        = W[i % W.length];
-                  const edgeH    = Math.max(1, Math.floor(blockH * 0.2));
                   return (
-                    <View
-                      key={i}
-                      style={{
-                        width:           `${w}%`,
-                        height:          blockH,
-                        backgroundColor: color,
-                        borderRadius:    2,
-                        marginBottom:    gap,
-                        alignSelf:       'center',
-                        overflow:        'hidden',
-                      }}
-                    >
-                      {/* Top page-edge highlight — suggests stacked pages */}
-                      <View style={{ height: edgeH, backgroundColor: 'rgba(255,255,255,0.22)' }} />
-                      {/* Bottom seam — depth between volumes */}
-                      <View style={{
-                        position:        'absolute',
-                        left:            0,
-                        right:           0,
-                        bottom:          0,
-                        height:          1,
-                        backgroundColor: 'rgba(0,0,0,0.10)',
-                      }} />
+                    <View style={{ width: 132, alignItems: 'flex-end' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
+                        {Array.from({ length: STACKS }).map((_, sIdx) => {
+                          const blockH = STACK_H[sIdx];
+                          const gap    = STACK_G[sIdx];
+                          // Render top→bottom but the BOTTOM book in each stack is
+                          // the lowest index, so books accumulate upward like a
+                          // real pile.
+                          const slotIdxs: number[] = [];
+                          for (let i = 0; i < PER_STACK; i++) {
+                            slotIdxs.push(sIdx * PER_STACK + i);
+                          }
+                          return (
+                            <View key={sIdx} style={{ width: 36 }}>
+                              {slotIdxs.slice().reverse().map(slot => {
+                                const isRead   = slot < readSlots;
+                                const isBehind = !isRead && slot < expectedSlots;
+                                const color    = isRead ? sage : isBehind ? amber : neutral;
+                                return (
+                                  <View
+                                    key={slot}
+                                    style={{
+                                      width:           `${W[slot % W.length]}%`,
+                                      height:          blockH,
+                                      backgroundColor: color,
+                                      borderRadius:    1.5,
+                                      marginBottom:    gap,
+                                      alignSelf:       'center',
+                                      overflow:        'hidden',
+                                    }}
+                                  >
+                                    {/* Top page-edge highlight */}
+                                    <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.25)' }} />
+                                    {/* Bottom seam */}
+                                    <View style={{
+                                      position:        'absolute',
+                                      left:            0,
+                                      right:           0,
+                                      bottom:          0,
+                                      height:          1,
+                                      backgroundColor: 'rgba(0,0,0,0.09)',
+                                    }} />
+                                  </View>
+                                );
+                              })}
+                            </View>
+                          );
+                        })}
+                      </View>
+                      {/* Base plank — all three stacks rest on it */}
+                      <View style={{ width: '100%', height: 3, backgroundColor: '#b8a898', marginTop: 3, borderRadius: 1 }} />
+                      <View style={{ width: '100%', height: 1, backgroundColor: '#a3917f', opacity: 0.4, borderRadius: 1, marginTop: 1 }} />
                     </View>
                   );
-                };
+                })()}
 
-                // Build columns. Within each column we render top→bottom but reverse the
-                // index order so the lowest index (first read) ends up at the bottom of
-                // the pile — books accumulate upward, the way a real stack grows.
-                const columns: number[][] = [];
-                for (let c = 0; c < colCount; c++) {
-                  const start = c * perCol;
-                  const end   = Math.min(total, start + perCol);
-                  const idxs: number[] = [];
-                  for (let i = start; i < end; i++) idxs.push(i);
-                  columns.push(idxs.reverse());
-                }
+                {/* ─ Right column: count + pace badge ─ */}
+                <View style={{ flex: 1, marginLeft: 16 }}>
+                  <Text style={{ fontSize: 26, fontWeight: '800', color: '#231f1b', letterSpacing: -0.6, lineHeight: 30 }}>
+                    {booksThisYear.length}
+                    <Text style={{ fontSize: 14, fontWeight: '400', color: '#9e958d' }}> / {yearlyGoal}</Text>
+                  </Text>
+                  <Text style={{ fontSize: 11, color: '#9e958d', fontWeight: '600', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 2, marginBottom: 8 }}>
+                    Books this year
+                  </Text>
 
-                return (
-                  <View style={{ marginBottom: 18 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 10 }}>
-                      {columns.map((col, ci) => (
-                        <View key={ci} style={{ flex: 1 }}>
-                          {col.map(i => renderBook(i))}
-                        </View>
-                      ))}
-                    </View>
-                    {/* Base plank — the stack rests on this */}
-                    <View style={{ height: 4, backgroundColor: '#b8a898', marginTop: 3, borderRadius: 1 }} />
-                    <View style={{ height: 1.5, backgroundColor: '#a3917f', opacity: 0.4, borderRadius: 1 }} />
-                  </View>
-                );
-              })()}
+                  {(() => {
+                    const isAhead  = goalIsAhead;
+                    const isBehind = goalIsBehind;
+                    const bg       = isAhead ? '#f0fdf4' : isBehind ? '#fffbeb' : '#f5f3ef';
+                    const border   = isAhead ? '#bbf7d0' : isBehind ? '#fde68a' : '#e2ddd9';
+                    const color    = isAhead ? '#15803d' : isBehind ? '#92400e' : '#6b635c';
+                    const symbol   = isAhead ? '↑' : isBehind ? '↓' : '→';
+                    const label    = isAhead
+                      ? `${goalSurplus} ahead`
+                      : isBehind
+                      ? `${goalDeficit} behind`
+                      : goalExpectedByNow === 0 ? 'Getting started' : 'On pace';
+                    return (
+                      <View style={{
+                        flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
+                        backgroundColor: bg, borderWidth: 1, borderColor: border,
+                        borderRadius: 20, paddingHorizontal: 9, paddingVertical: 4, gap: 4,
+                      }}>
+                        <Text style={{ fontSize: 11, color, fontWeight: '700' }}>{symbol}</Text>
+                        <Text style={{ fontSize: 11, color, fontWeight: '600' }}>{label}</Text>
+                      </View>
+                    );
+                  })()}
+                </View>
+              </View>
 
-              {/* ── 4. Finish projection ── */}
+              {/* ── Finish projection — full-width below the split row ── */}
               {goalProjected !== null && (
-                <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18, marginBottom: 10 }}>
+                <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18, marginTop: 4 }}>
                   {`At your current pace, you'll finish ~${goalProjected} book${goalProjected !== 1 ? 's' : ''} this year`}
                 </Text>
               )}
 
-              {/* ── 5. Footer: pace rate + expand ── */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              {/* ── Footer: pace rate + expand ── */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
                 {yearAvgPace !== null ? (
                   <Text style={{ fontSize: 11, color: '#9e958d' }}>
                     {`~${yearAvgPace} pages/day`}
