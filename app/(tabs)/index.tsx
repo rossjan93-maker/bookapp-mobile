@@ -6,7 +6,6 @@ import {
   RefreshControl,
   ScrollView,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -19,13 +18,14 @@ import { supabase } from '../../lib/supabase';
 import { registerCacheClearer } from '../../lib/tabCache';
 import { CoverThumb } from '../../components/CoverThumb';
 import { HomeScreenSkeleton } from '../../components/Placeholder';
-import { getDisplayName, getFirstName } from '../../lib/displayName';
+import { getFirstName } from '../../lib/displayName';
 import { computePagePacing, computeUserAvgPace, inferReadState, computeSessionPacing, formatProjectedFinish, computeMonthlyStats, type SessionRow, type ReadState, type MonthlyStats } from '../../lib/pacing';
 import { aggregatePeriod, computeMonthlyWrap, computeYearlyWrap, deriveInsights, type WrapSession, type WrapBookRef, type ReaderInsight } from '../../lib/readingWraps';
 import { computeStreaks } from '../../lib/streaks';
 import { showToast } from '../../lib/toast';
 import { BadgeContext } from './_layout';
 import { RecsInboxSheet } from '../../components/RecsInboxSheet';
+import { FriendsSheet } from '../../components/FriendsSheet';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,13 +53,6 @@ type FeedEvent = {
   book: { title: string; author: string; cover_url: string | null; external_id: string } | null;
 };
 
-type ProfileResult = {
-  id: string;
-  username: string;
-  first_name: string | null;
-  last_name: string | null;
-};
-
 type FriendshipRow = {
   id: string;
   requester_id: string;
@@ -81,24 +74,7 @@ type YearBook = {
   page_count: number | null;
 };
 
-type RelationshipState = 'none' | 'pending' | 'accepted';
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function getRelationship(
-  userId: string,
-  otherId: string,
-  friendships: FriendshipRow[]
-): RelationshipState {
-  const row = friendships.find(
-    f =>
-      (f.requester_id === userId && f.addressee_id === otherId) ||
-      (f.addressee_id === userId && f.requester_id === otherId)
-  );
-  if (!row) return 'none';
-  if (row.status === 'accepted') return 'accepted';
-  return 'pending';
-}
 
 function eventVerb(eventType: string): string {
   switch (eventType) {
@@ -354,24 +330,6 @@ function ReaderInsightCard({ insights }: { insights: ReaderInsight[] }) {
   );
 }
 
-function InitialAvatar({ name }: { name: string }) {
-  return (
-    <View style={{
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: '#ede9e4',
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: 12,
-    }}>
-      <Text style={{ fontSize: 15, fontWeight: '600', color: '#57534e' }}>
-        {name.charAt(0).toUpperCase()}
-      </Text>
-    </View>
-  );
-}
-
 // ─── Module-level session cache ───────────────────────────────────────────────
 //
 // Survives tab switches and sub-screen navigation. Cleared on sign-out.
@@ -432,15 +390,8 @@ export default function HomeScreen() {
   // Friends
   const [friendships,       setFriendships]       = useState<FriendshipRow[]>(() => _homeCache?.friendships ?? []);
   const [loadingFriendships, setLoadingFriendships] = useState<boolean>(() => !_homeCache);
+  const [friendsSheetOpen,   setFriendsSheetOpen]   = useState(false);
 
-  // Search
-  const [searchQuery,   setSearchQuery]   = useState('');
-  const [searchResults, setSearchResults] = useState<ProfileResult[]>([]);
-  const [searching,     setSearching]     = useState(false);
-  const [searchError,   setSearchError]   = useState<string | null>(null);
-  const [addingId,      setAddingId]      = useState<string | null>(null);
-
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
 
@@ -859,63 +810,25 @@ export default function HomeScreen() {
     }
   }
 
-  // ── Search ───────────────────────────────────────────────────────────────────
+  // ── Friend-sheet refresh helper ──────────────────────────────────────────────
+  // Called by FriendsSheet after add/accept/decline so the badge, list and feed
+  // reflect the new friendship graph without a full screen reload. Reloading
+  // the feed picks up events from any newly-accepted friends immediately.
 
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    const trimmed = searchQuery.trim();
-    if (trimmed.length < 2) {
-      setSearchResults([]);
-      setSearchError(null);
-      return;
-    }
-    debounceRef.current = setTimeout(() => {
-      runSearch(trimmed);
-    }, 300);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [searchQuery, userId]);
-
-  async function runSearch(query: string) {
-    if (!supabase || !userId) return;
-    setSearching(true);
-    setSearchError(null);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, username, first_name, last_name')
-      .ilike('username', `%${query}%`)
-      .neq('id', userId)
-      .limit(20);
-    if (error) {
-      setSearchError('Search failed.');
-    } else {
-      setSearchResults((data as ProfileResult[]) ?? []);
-    }
-    setSearching(false);
-  }
-
-  async function handleAddFriend(otherId: string) {
-    if (!supabase || !userId) return;
-    setAddingId(otherId);
-    const { error } = await supabase.from('friendships').insert({
-      requester_id: userId,
-      addressee_id: otherId,
-      status: 'pending',
-    });
-    if (!error) {
-      await loadFriendships(userId);
-      showToast('Friend request sent');
-    }
-    setAddingId(null);
+  async function refreshFriendships() {
+    if (!userId) return;
+    const rows = await loadFriendships(userId);
+    const acceptedFriendIds = rows
+      .filter(f => f.status === 'accepted')
+      .map(f => (f.requester_id === userId ? f.addressee_id : f.requester_id));
+    await loadFeed([userId, ...acceptedFriendIds]);
   }
 
   // ── Derived ──────────────────────────────────────────────────────────────────
 
-  const acceptedFriends = friendships
-    .filter(f => f.status === 'accepted')
-    .map(f => (f.requester_id === userId ? f.addressee : f.requester))
-    .filter(Boolean) as { id: string; username: string; first_name: string | null; last_name: string | null }[];
+  const incomingFriendRequestCount = friendships.filter(
+    f => f.status === 'pending' && f.addressee_id === userId,
+  ).length;
 
   const displayedFeed = feed.filter(e => eventVerb(e.event_type)).slice(0, 10);
   const totalFeedWithVerb = feed.filter(e => eventVerb(e.event_type)).length;
@@ -1028,34 +941,67 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          {/* Inbox icon with badge */}
-          <TouchableOpacity
-            onPress={() => setInboxSheetOpen(true)}
-            hitSlop={10}
-            style={{ marginTop: 2, padding: 4 }}
-          >
-            <View style={{ position: 'relative' }}>
-              <Ionicons name="mail-outline" size={24} color="#6b635c" />
-              {newRecCount > 0 && (
-                <View style={{
-                  position: 'absolute',
-                  top: -4,
-                  right: -5,
-                  backgroundColor: '#231f1b',
-                  borderRadius: 8,
-                  minWidth: 16,
-                  height: 16,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  paddingHorizontal: 3,
-                }}>
-                  <Text style={{ color: '#fefcf9', fontSize: 9, fontWeight: '700', lineHeight: 12 }}>
-                    {newRecCount}
-                  </Text>
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
+          {/* Header actions: Friends + Inbox */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 6 }}>
+
+            {/* Friends icon — opens add-friend / manage-requests sheet */}
+            <TouchableOpacity
+              onPress={() => setFriendsSheetOpen(true)}
+              hitSlop={10}
+              style={{ padding: 4 }}
+            >
+              <View style={{ position: 'relative' }}>
+                <Ionicons name="person-add-outline" size={22} color="#6b635c" />
+                {incomingFriendRequestCount > 0 && (
+                  <View style={{
+                    position: 'absolute',
+                    top: -4,
+                    right: -5,
+                    backgroundColor: '#231f1b',
+                    borderRadius: 8,
+                    minWidth: 16,
+                    height: 16,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingHorizontal: 3,
+                  }}>
+                    <Text style={{ color: '#fefcf9', fontSize: 9, fontWeight: '700', lineHeight: 12 }}>
+                      {incomingFriendRequestCount}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+
+            {/* Inbox icon with badge */}
+            <TouchableOpacity
+              onPress={() => setInboxSheetOpen(true)}
+              hitSlop={10}
+              style={{ padding: 4 }}
+            >
+              <View style={{ position: 'relative' }}>
+                <Ionicons name="mail-outline" size={24} color="#6b635c" />
+                {newRecCount > 0 && (
+                  <View style={{
+                    position: 'absolute',
+                    top: -4,
+                    right: -5,
+                    backgroundColor: '#231f1b',
+                    borderRadius: 8,
+                    minWidth: 16,
+                    height: 16,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingHorizontal: 3,
+                  }}>
+                    <Text style={{ color: '#fefcf9', fontSize: 9, fontWeight: '700', lineHeight: 12 }}>
+                      {newRecCount}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {currentReads.length > 0 && (
@@ -1705,159 +1651,20 @@ export default function HomeScreen() {
         )}
       </View>
 
-      {/* ── 4. Friends (unified: search + list) ── */}
-      <View>
-        <SectionLabel>Friends</SectionLabel>
-
-        <TextInput
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Search by username…"
-          autoCapitalize="none"
-          autoCorrect={false}
-          placeholderTextColor="#9e958d"
-          style={{
-            backgroundColor: '#fefcf9',
-            borderRadius: 12,
-            paddingHorizontal: 14,
-            paddingVertical: 12,
-            fontSize: 15,
-            color: '#231f1b',
-            marginBottom: 10,
-            shadowColor: '#000',
-            shadowOpacity: 0.04,
-            shadowRadius: 4,
-            shadowOffset: { width: 0, height: 1 },
-            elevation: 1,
-          }}
-        />
-
-        {searching && <ActivityIndicator color="#78716c" style={{ marginVertical: 10 }} />}
-
-        {searchError && (
-          <Text style={{ color: '#b91c1c', marginBottom: 8, fontSize: 13 }}>{searchError}</Text>
-        )}
-
-        {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
-          <Text style={{ color: '#9e958d', marginBottom: 16, fontSize: 14 }}>No users found.</Text>
-        )}
-
-        {searchResults.length > 0 && (
-          <View style={{
-            backgroundColor: '#fefcf9',
-            borderRadius: 14,
-            shadowColor: '#000',
-            shadowOpacity: 0.04,
-            shadowRadius: 6,
-            shadowOffset: { width: 0, height: 1 },
-            elevation: 1,
-            overflow: 'hidden',
-            marginBottom: acceptedFriends.length > 0 ? 16 : 0,
-          }}>
-            {searchResults.map((result, idx) => {
-              const rel = userId ? getRelationship(userId, result.id, friendships) : 'none';
-              const isAdding = addingId === result.id;
-              return (
-                <View
-                  key={result.id}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    paddingVertical: 12,
-                    paddingHorizontal: 16,
-                    borderBottomWidth: idx < searchResults.length - 1 ? 1 : 0,
-                    borderBottomColor: '#ede9e4',
-                  }}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <InitialAvatar name={getDisplayName(result)} />
-                    <View>
-                      <Text style={{ fontSize: 15, color: '#231f1b' }}>{getDisplayName(result)}</Text>
-                      {(result.first_name || result.last_name) && (
-                        <Text style={{ fontSize: 12, color: '#9e958d' }}>@{result.username}</Text>
-                      )}
-                    </View>
-                  </View>
-                  {isAdding ? (
-                    <ActivityIndicator color="#78716c" size="small" />
-                  ) : rel === 'none' ? (
-                    <TouchableOpacity
-                      onPress={() => handleAddFriend(result.id)}
-                      disabled={addingId !== null}
-                      style={{
-                        paddingHorizontal: 14,
-                        paddingVertical: 7,
-                        backgroundColor: addingId !== null ? '#ede9e4' : '#231f1b',
-                        borderRadius: 8,
-                      }}
-                    >
-                      <Text style={{ color: '#fff', fontSize: 13, fontWeight: '500' }}>Add</Text>
-                    </TouchableOpacity>
-                  ) : rel === 'pending' ? (
-                    <Text style={{ color: '#9e958d', fontSize: 13 }}>Pending</Text>
-                  ) : (
-                    <Text style={{ color: '#78716c', fontSize: 13 }}>Friends</Text>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        )}
-
-        {acceptedFriends.length === 0 ? (
-          <Text style={{ color: '#9e958d', fontSize: 14, marginBottom: 16 }}>No friends yet.</Text>
-        ) : (
-          <View style={{
-            backgroundColor: '#fefcf9',
-            borderRadius: 14,
-            shadowColor: '#000',
-            shadowOpacity: 0.04,
-            shadowRadius: 6,
-            shadowOffset: { width: 0, height: 1 },
-            elevation: 1,
-            overflow: 'hidden',
-          }}>
-            {acceptedFriends.map((friend, idx) => (
-              <TouchableOpacity
-                key={friend.id}
-                onPress={() => router.push({
-                  pathname: '/friend/[id]',
-                  params: {
-                    id: friend.id,
-                    username: friend.username,
-                    firstName: friend.first_name ?? '',
-                    lastName: friend.last_name ?? '',
-                  },
-                })}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  paddingVertical: 13,
-                  paddingHorizontal: 16,
-                  borderBottomWidth: idx < acceptedFriends.length - 1 ? 1 : 0,
-                  borderBottomColor: '#ede9e4',
-                }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <InitialAvatar name={getDisplayName(friend)} />
-                  <View>
-                    <Text style={{ fontSize: 15, color: '#231f1b' }}>{getDisplayName(friend)}</Text>
-                    {(friend.first_name || friend.last_name) && (
-                      <Text style={{ fontSize: 12, color: '#9e958d' }}>@{friend.username}</Text>
-                    )}
-                  </View>
-                </View>
-                <Text style={{ fontSize: 18, color: '#ede9e4', marginRight: 2 }}>›</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-      </View>
+      {/* Friends section moved to a dedicated bottom sheet, opened from the
+          person-add icon in the header. The icon shows a badge for incoming
+          requests, so users don't need a Friends section on the homepage to
+          notice them. */}
     </ScrollView>
 
     <RecsInboxSheet visible={inboxSheetOpen} onClose={() => setInboxSheetOpen(false)} />
+    <FriendsSheet
+      visible={friendsSheetOpen}
+      onClose={() => setFriendsSheetOpen(false)}
+      userId={userId}
+      friendships={friendships}
+      onFriendshipsChange={refreshFriendships}
+    />
     </>
   );
 }
