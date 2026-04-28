@@ -365,6 +365,10 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { newRecCount } = useContext(BadgeContext);
   const [inboxSheetOpen, setInboxSheetOpen] = useState(false);
+  // Cover shelf below the goal progress bar starts collapsed; the user
+  // taps the small handle that hangs off the bar to expand it. Editorial
+  // surface — only the bar + on-pace line is visible by default.
+  const [coversExpanded, setCoversExpanded] = useState(false);
 
   // Initialise from cache when it exists — renders meaningful content immediately
   // without a network round-trip on return visits.
@@ -1335,6 +1339,43 @@ export default function HomeScreen() {
                       borderRadius:    5,
                     }} />
                   </View>
+                  {/* Dropdown handle hangs directly off the bottom of the
+                      progress bar — same #ede9e4 fill so it visually flows
+                      out of the bar like a pull-tab. Tapping flips the
+                      chevron and reveals the cover shelf below. */}
+                  {booksThisYear.length > 0 && (
+                    <View style={{ alignItems: 'center', marginTop: 0 }}>
+                      <TouchableOpacity
+                        onPress={() => setCoversExpanded(v => !v)}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 6, bottom: 6, left: 12, right: 12 }}
+                        style={{
+                          flexDirection:           'row',
+                          alignItems:              'center',
+                          gap:                     6,
+                          backgroundColor:         '#ede9e4',
+                          paddingHorizontal:       12,
+                          paddingTop:              4,
+                          paddingBottom:           5,
+                          borderBottomLeftRadius:  10,
+                          borderBottomRightRadius: 10,
+                        }}
+                      >
+                        <Text style={{
+                          fontSize:   11,
+                          color:      '#6b635c',
+                          fontWeight: '600',
+                        }}>
+                          {coversExpanded ? 'Hide' : 'View'} {booksThisYear.length} {booksThisYear.length === 1 ? 'book' : 'books'}
+                        </Text>
+                        <Ionicons
+                          name={coversExpanded ? 'chevron-up' : 'chevron-down'}
+                          size={12}
+                          color="#6b635c"
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  )}
                   <View style={{
                     flexDirection: 'row',
                     alignItems:    'center',
@@ -1381,17 +1422,19 @@ export default function HomeScreen() {
               );
             })()}
 
-            {/* ── Row 3 · Completed Books on a subtle shelf ───────────────
-                Anchors the bottom of the section. Separated from the goal
-                block by a hairline rule and generous top margin. Covers
-                stand on a thin wood-toned plank with a soft drop shadow
-                so they feel grounded — never floating. Each book runs
-                through resolveBookDisplay() which returns either an
+            {/* ── Row 3 · Completed Books on a subtle shelf (collapsible) ──
+                Hidden by default — revealed by tapping the dropdown handle
+                that hangs off the goal progress bar. If there's no yearly
+                goal (and therefore no progress bar / no handle), the shelf
+                renders unconditionally so the books are still reachable.
+                Covers stand on a thin wood-toned plank with a soft drop
+                shadow so they feel grounded — never floating. Each book
+                runs through resolveBookDisplay() which returns either an
                 individual-volume cover or a placeholder; bundle artwork
                 is never shown. Same-series adjacent runs sit closer
                 together so the eye reads them as a unit; bundles always
                 render standalone and never join a cluster. */}
-            {booksThisYear.length > 0 && (
+            {booksThisYear.length > 0 && (coversExpanded || !(yearlyGoal && yearlyGoal > 0)) && (
               <View style={{
                 marginTop:      28,
                 paddingTop:     28,
