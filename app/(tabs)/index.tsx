@@ -1147,78 +1147,82 @@ export default function HomeScreen() {
             ref={currentReads.length === 0 ? homeTargetRef : undefined}
             onLayout={currentReads.length === 0 ? measureHomeContent : undefined}
           >
-            {/* ── Row 1 · Activity (mini-stat blocks, evenly spaced) ──
-                Three [big number / small label] blocks share the row in equal
-                slots (flex: 1 each) so spacing stays uniform regardless of
-                digit count. The whole row taps through to /stats; the chevron
-                stays anchored to the far right. Each block hides independently
-                when its value is zero / unavailable, and the remaining blocks
-                continue to share the row evenly. */}
-            {(currentMonthWrap.pagesRead > 0 ||
-              currentStreak > 0 ||
-              currentMonthWrap.avgPagesPerReadingDay != null) && (
-              <TouchableOpacity
-                onPress={() => router.push('/stats')}
-                activeOpacity={0.6}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  paddingVertical: 10,
-                }}
-              >
-                <View style={{ flex: 1, flexDirection: 'row' }}>
-                  {currentMonthWrap.pagesRead > 0 && (
-                    <View style={{ flex: 1 }}>
-                      <Text style={{
-                        fontSize: 22,
-                        fontWeight: '800',
-                        color: '#231f1b',
-                        letterSpacing: -0.4,
-                        lineHeight: 26,
-                      }}>
-                        {currentMonthWrap.pagesRead}
-                      </Text>
-                      <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2 }}>
-                        pages this month
-                      </Text>
-                    </View>
-                  )}
-                  {currentStreak > 0 && (
-                    <View style={{ flex: 1 }}>
-                      <Text style={{
-                        fontSize: 22,
-                        fontWeight: '800',
-                        color: '#231f1b',
-                        letterSpacing: -0.4,
-                        lineHeight: 26,
-                      }}>
-                        {currentStreak}
-                      </Text>
-                      <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2 }}>
-                        day streak
-                      </Text>
-                    </View>
-                  )}
-                  {currentMonthWrap.avgPagesPerReadingDay != null && (
-                    <View style={{ flex: 1 }}>
-                      <Text style={{
-                        fontSize: 22,
-                        fontWeight: '800',
-                        color: '#231f1b',
-                        letterSpacing: -0.4,
-                        lineHeight: 26,
-                      }}>
-                        {currentMonthWrap.avgPagesPerReadingDay}
-                      </Text>
-                      <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2 }}>
-                        pp/day
-                      </Text>
-                    </View>
-                  )}
-                </View>
-                <Ionicons name="chevron-forward" size={16} color="#c4b5a5" style={{ marginLeft: 8 }} />
-              </TouchableOpacity>
-            )}
+            {/* ── Row 1 · Activity (editorial stat strip) ──
+                A row of [big number / small label] blocks separated by hairline
+                dividers — reads as a unified strip rather than three loose
+                cells. Slots:
+                  • pages this month (only when > 0)
+                  • day streak (ALWAYS rendered, including 0 — it's the
+                    reading-habit anchor and absence reads as missing data)
+                  • pp/day (only when computable)
+                Each visible slot gets flex: 1 so spacing stays even regardless
+                of digit count. The whole row taps through to /stats. */}
+            {(() => {
+              const slots: Array<{ key: string; value: string; label: string }> = [];
+              if (currentMonthWrap.pagesRead > 0) {
+                slots.push({
+                  key:   'pages',
+                  value: String(currentMonthWrap.pagesRead),
+                  label: 'pages this month',
+                });
+              }
+              slots.push({
+                key:   'streak',
+                value: String(currentStreak ?? 0),
+                label: 'day streak',
+              });
+              if (currentMonthWrap.avgPagesPerReadingDay != null) {
+                slots.push({
+                  key:   'ppd',
+                  value: String(currentMonthWrap.avgPagesPerReadingDay),
+                  label: 'pp/day',
+                });
+              }
+              return (
+                <TouchableOpacity
+                  onPress={() => router.push('/stats')}
+                  activeOpacity={0.6}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 10,
+                  }}
+                >
+                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+                    {slots.map((slot, i) => (
+                      <View
+                        key={slot.key}
+                        style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+                      >
+                        {i > 0 && (
+                          <View style={{
+                            width: 1,
+                            height: 28,
+                            backgroundColor: '#ede9e4',
+                            marginRight: 12,
+                          }} />
+                        )}
+                        <View style={{ flex: 1 }}>
+                          <Text style={{
+                            fontSize: 22,
+                            fontWeight: '800',
+                            color: '#231f1b',
+                            letterSpacing: -0.4,
+                            lineHeight: 26,
+                          }}>
+                            {slot.value}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2 }}>
+                            {slot.label}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color="#c4b5a5" style={{ marginLeft: 8 }} />
+                </TouchableOpacity>
+              );
+            })()}
 
             {/* ── Row 2 · Yearly Goal (tight vertical stack) ──
                 Reads as one unit, top-down: count → context label → bar →
@@ -1253,19 +1257,21 @@ export default function HomeScreen() {
                   <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2 }}>
                     books this year
                   </Text>
-                  {/* Slim linear progress bar — directly tied to the count above */}
+                  {/* Compact progress module — thicker, fully rounded bar with
+                      a strong forest-green fill so progress reads decisively.
+                      Track sits in the standard border tone so the fill pops. */}
                   <View style={{
-                    height: 6,
+                    height: 10,
                     backgroundColor: '#ede9e4',
-                    borderRadius: 3,
+                    borderRadius: 5,
                     overflow: 'hidden',
-                    marginTop: 8,
+                    marginTop: 10,
                   }}>
                     <View style={{
-                      height: 6,
+                      height: 10,
                       width: `${pct}%`,
-                      backgroundColor: '#7b9e7e',
-                      borderRadius: 3,
+                      backgroundColor: '#2f6f3a',
+                      borderRadius: 5,
                     }} />
                   </View>
                   <Text style={{ fontSize: 11, color, fontWeight: '600', marginTop: 6 }}>
@@ -1303,16 +1309,30 @@ export default function HomeScreen() {
                     }));
 
                     // Walk the list once, building runs of consecutive books
-                    // that share a non-null seriesName.
+                    // that share a non-null seriesName. Bundles (box sets,
+                    // omnibuses, bare-series-name editions) ALWAYS render
+                    // standalone — they may carry a seriesName for routing,
+                    // but they must never be absorbed into an adjacent
+                    // cluster of individual volumes (or chained with another
+                    // bundle), since the cluster reads as "I read these
+                    // single volumes together".
                     const groups: Group[] = [];
                     for (const item of items) {
+                      if (item.display.isBundle) {
+                        groups.push({ seriesName: null, items: [item] });
+                        continue;
+                      }
                       const last = groups[groups.length - 1];
+                      const lastIsClusterable =
+                        last != null &&
+                        last.items.length > 0 &&
+                        !last.items[last.items.length - 1].display.isBundle;
                       if (
-                        last &&
-                        last.seriesName !== null &&
-                        last.seriesName === item.display.seriesName
+                        lastIsClusterable &&
+                        last!.seriesName !== null &&
+                        last!.seriesName === item.display.seriesName
                       ) {
-                        last.items.push(item);
+                        last!.items.push(item);
                       } else {
                         groups.push({ seriesName: item.display.seriesName, items: [item] });
                       }

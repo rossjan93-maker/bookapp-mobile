@@ -33,6 +33,67 @@ import {
   type SeriesCatalogEntry,
 } from './seriesCatalog';
 
+// ── Series-suffix extraction ─────────────────────────────────────────────────
+//
+// Goodreads-style imports often label individual volumes with a trailing
+// "(Series Name, #N)" suffix — e.g. "Glint (The Plated Prisoner, #2)".
+// Many of those records arrive with the wrong cover URL: the import
+// service substitutes a box-set / compilation cover (and, in practice,
+// the SAME image is reused across several volumes of the same series).
+// When the suffix names a curated series we know about, we trust the
+// catalog over the imported cover and substitute the canonical
+// single-volume artwork — or a placeholder when the catalog has no
+// cover for that volume — never the original (potentially box-set) URL.
+
+/**
+ * Pulls "(Series Name, #N)" / "(Series Name #N)" / "(Series Name, Book N)"
+ * from the end of a title. Returns null when no recognizable volume
+ * marker is present (parentheticals like "(Hardcover edition)" or
+ * "(2007)" do not qualify because they have no #N).
+ */
+function extractSeriesSuffix(
+  title: string,
+): { series: string; volume: number } | null {
+  const m = title.match(/\(([^()]+?)[,\s]+(?:#\s*(\d+)|book\s+(\d+))\)\s*$/i);
+  if (!m) return null;
+  const seriesRaw = m[1].trim();
+  // Must contain at least one letter — guards against pure-number parens.
+  if (!/[a-z]/i.test(seriesRaw)) return null;
+  const volStr = m[2] ?? m[3];
+  if (!volStr) return null;
+  return { series: seriesRaw, volume: parseInt(volStr, 10) };
+}
+
+/**
+ * Look up a curated series by the parenthetical name found in a title.
+ * Strips a leading "the " on both sides so "The Plated Prisoner" matches
+ * a catalog entry stored as "The Plated Prisoner" or "Plated Prisoner".
+ * Author must agree with the curated first-volume author.
+ */
+function findCatalogEntryBySeriesName(
+  seriesNameFromTitle: string,
+  author:              string,
+): { key: string; entry: SeriesCatalogEntry } | null {
+  const stripThe = (s: string) => s.replace(/^the\s+/, '').trim();
+  const target = stripThe(normalize(seriesNameFromTitle));
+  if (!target) return null;
+
+  for (const [key, entry] of Object.entries(getAllSeriesCatalog())) {
+    const first = entry.orderedBooks[0];
+    if (!first) continue;
+    if (!authorMatches(author, first.author)) continue;
+
+    const candidates = [entry.displayName, key]
+      .map(s => stripThe(normalize(s)))
+      .filter(Boolean);
+
+    if (candidates.includes(target)) {
+      return { key, entry };
+    }
+  }
+  return null;
+}
+
 // ── Detection patterns ───────────────────────────────────────────────────────
 
 const BUNDLE_PATTERNS: RegExp[] = [
@@ -227,6 +288,14 @@ export type BookDisplay = {
    * individual volumes the original external_id is preserved.
    */
   externalId: string | null;
+  /**
+   * True when the input represents a multi-volume bundle (box set, omnibus,
+   * "Books N-M", or a bare series-name title that matches a bundle edition).
+   * False for individual volumes (including ones whose cover was overridden
+   * via series-suffix catalog lookup). Callers use this to keep bundles from
+   * being absorbed into adjacent same-series clusters in editorial rows.
+   */
+  isBundle:   boolean;
 };
 
 /**
@@ -256,6 +325,29 @@ export function resolveBookDisplay(book: {
   const title  = (book.title ?? '').trim();
   const author = (book.author ?? '').trim();
 
+  // 0) Title encodes "(Series Name, #N)" suffix. Trust the curated catalog
+  //    over the imported cover — Goodreads-style imports routinely return
+  //    box-set / compilation art for individual volumes (Plated Prisoner is
+  //    a known case where Glint #2 and Gleam #3 share the same wrong cover).
+  //    If the catalog has the right olCoverId, substitute it; otherwise
+  //    fall back to a placeholder rather than risk showing a bundle cover.
+  if (title && author) {
+    const suffix = extractSeriesSuffix(title);
+    if (suffix) {
+      const catalog = findCatalogEntryBySeriesName(suffix.series, author);
+      if (catalog) {
+        const idx = suffix.volume - 1;
+        const vol = catalog.entry.orderedBooks[idx];
+        return {
+          seriesName: catalog.key,
+          coverUrl:   vol?.olCoverId ? coverUrlForOlId(vol.olCoverId) : null,
+          externalId: null,
+          isBundle:   false,
+        };
+      }
+    }
+  }
+
   // 1) Bare series-name title — almost always the bundle edition.
   if (title && author) {
     const bare = findBareSeriesNameMatch(title, author);
@@ -264,6 +356,7 @@ export function resolveBookDisplay(book: {
         seriesName: bare.seriesName,
         coverUrl:   bare.coverUrl,
         externalId: null,
+        isBundle:   true,
       };
     }
   }
@@ -275,6 +368,7 @@ export function resolveBookDisplay(book: {
       seriesName: matched?.seriesName ?? null,
       coverUrl:   matched?.coverUrl ?? null,
       externalId: null,
+      isBundle:   true,
     };
   }
 
@@ -284,5 +378,6 @@ export function resolveBookDisplay(book: {
     seriesName: found?.seriesName ?? null,
     coverUrl:   book.cover_url,
     externalId: book.external_id,
+    isBundle:   false,
   };
 }

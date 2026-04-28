@@ -1,0 +1,94 @@
+Context:
+
+The Reading Progress section is improved structurally, but visually it still does not feel strong enough.
+
+Current issues:
+1. The top metric row feels like loose numbers floating on the page.
+2. If there is no active reading streak, the streak metric disappears, which makes the row feel incomplete.
+3. The goal/progress area is still too plain and does not feel like a premium product surface.
+4. The completed-books row is still showing Plated Prisoner box-set artwork instead of individual novel artwork.
+5. Series grouping is useful, but it does not solve the underlying wrong-cover problem.
+
+Task:
+
+Redesign the Reading Progress section more decisively.
+
+PART 1 — Always show a streak slot
+The top activity row must always contain three metric slots:
+- pages this month
+- reading streak
+- pp/day
+
+If there is no current streak, show:
+0
+day streak
+
+or:
+—
+day streak
+
+Do not remove the streak slot.
+
+The purpose is behavioral:
+we want the user to understand that reading consistency is something the app tracks and encourages.
+
+PART 2 — Make the top row feel designed, not floating
+Turn the top metrics into a clean editorial stat strip.
+
+Direction:
+- use a subtle horizontal stat strip or divided row
+- each stat has:
+  - large number
+  - small label
+- add very subtle dividers or spacing rhythm between the three metrics
+- the chevron stays on the far right
+- the entire strip remains tappable
+
+Avoid:
+- heavy cards
+- dashboard boxes
+- overly decorative styling
+
+PART 3 — Tighten the yearly goal presentation
+Make the goal feel like a compact progress module:
+- “10 / 35 books this year”
+- progress bar directly beneath
+- pace status directly tied to the bar
+
+The bar should feel intentional:
+- slightly thicker than now
+- rounded
+- strong green fill
+- neutral track
+
+PART 4 — Fix Plated Prisoner cover handling specifically
+The completed-books row is still showing Plated Prisoner box-set artwork.
+
+Please inspect the metadata for the two visible Plated Prisoner items and identify why they are not being detected as box sets / bundles.
+
+Fix the resolver so:
+- Plated Prisoner box-set covers are never shown
+- the row uses individual novel artwork when available
+- if individual artwork cannot be found, use a clean placeholder instead of the box set
+
+Do not rely only on title matching.
+Also inspect:
+- cover URL
+- subjects
+- description
+- series metadata if present
+- title patterns
+- author + series catalog match
+
+PART 5 — Series grouping
+Keep the subtle same-series grouping, but make sure it only groups valid individual book covers or placeholders.
+Do not use grouping to justify showing a bundle cover.
+
+What I want back:
+1. exact files changed
+2. how the stat strip was redesigned
+3. how no-streak state is displayed
+4. how the yearly goal module changed
+5. why Plated Prisoner box sets were slipping through
+6. how the resolver now prevents those box-set covers
+7. confirmation the completed row shows reading history, not catalog artifacts
