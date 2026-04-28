@@ -1339,43 +1339,6 @@ export default function HomeScreen() {
                       borderRadius:    5,
                     }} />
                   </View>
-                  {/* Dropdown handle hangs directly off the bottom of the
-                      progress bar — same #ede9e4 fill so it visually flows
-                      out of the bar like a pull-tab. Tapping flips the
-                      chevron and reveals the cover shelf below. */}
-                  {booksThisYear.length > 0 && (
-                    <View style={{ alignItems: 'center', marginTop: 0 }}>
-                      <TouchableOpacity
-                        onPress={() => setCoversExpanded(v => !v)}
-                        activeOpacity={0.7}
-                        hitSlop={{ top: 6, bottom: 6, left: 12, right: 12 }}
-                        style={{
-                          flexDirection:           'row',
-                          alignItems:              'center',
-                          gap:                     6,
-                          backgroundColor:         '#ede9e4',
-                          paddingHorizontal:       12,
-                          paddingTop:              4,
-                          paddingBottom:           5,
-                          borderBottomLeftRadius:  10,
-                          borderBottomRightRadius: 10,
-                        }}
-                      >
-                        <Text style={{
-                          fontSize:   11,
-                          color:      '#6b635c',
-                          fontWeight: '600',
-                        }}>
-                          {coversExpanded ? 'Hide' : 'View'} {booksThisYear.length} {booksThisYear.length === 1 ? 'book' : 'books'}
-                        </Text>
-                        <Ionicons
-                          name={coversExpanded ? 'chevron-up' : 'chevron-down'}
-                          size={12}
-                          color="#6b635c"
-                        />
-                      </TouchableOpacity>
-                    </View>
-                  )}
                   <View style={{
                     flexDirection: 'row',
                     alignItems:    'center',
@@ -1418,15 +1381,51 @@ export default function HomeScreen() {
                       </>
                     )}
                   </View>
+                  {/* Dropdown toggle — sits below the on-pace + projection
+                      sentence with breathing room above so it doesn't crowd
+                      the bar. Centered pill affordance; tapping flips the
+                      chevron and reveals the cover shelf below. */}
+                  {booksThisYear.length > 0 && (
+                    <View style={{ alignItems: 'center', marginTop: 18 }}>
+                      <TouchableOpacity
+                        onPress={() => setCoversExpanded(v => !v)}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 6, bottom: 6, left: 12, right: 12 }}
+                        style={{
+                          flexDirection:     'row',
+                          alignItems:        'center',
+                          gap:               6,
+                          backgroundColor:   '#ede9e4',
+                          paddingHorizontal: 14,
+                          paddingVertical:   6,
+                          borderRadius:      999,
+                        }}
+                      >
+                        <Text style={{
+                          fontSize:   12,
+                          color:      '#6b635c',
+                          fontWeight: '600',
+                        }}>
+                          {coversExpanded ? 'Hide' : 'View'} {booksThisYear.length} {booksThisYear.length === 1 ? 'book' : 'books'}
+                        </Text>
+                        <Ionicons
+                          name={coversExpanded ? 'chevron-up' : 'chevron-down'}
+                          size={12}
+                          color="#6b635c"
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
               );
             })()}
 
             {/* ── Row 3 · Completed Books on a subtle shelf (collapsible) ──
-                Hidden by default — revealed by tapping the dropdown handle
-                that hangs off the goal progress bar. If there's no yearly
-                goal (and therefore no progress bar / no handle), the shelf
-                renders unconditionally so the books are still reachable.
+                Hidden by default — revealed by tapping the dropdown toggle
+                that sits below the on-pace status line in the goal block.
+                If there's no yearly goal (and therefore no progress bar /
+                no toggle), the shelf renders unconditionally so the books
+                are still reachable.
                 Covers stand on a thin wood-toned plank with a soft drop
                 shadow so they feel grounded — never floating. Each book
                 runs through resolveBookDisplay() which returns either an
