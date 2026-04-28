@@ -1131,11 +1131,21 @@ export default function HomeScreen() {
       )}
 
       {/* ── Reading Progress ──
-          Editorial-style block combining the previous "Reading Goal" and
-          "Reading Insights" sections. Three rows, no nested cards:
-            1. Activity (tappable → /stats): pages this month · reading days · pp/day
-            2. Yearly goal: large "X / Y" with a slim linear progress bar + pace label
-            3. Completed books: horizontal scroll of small cover thumbs with right-edge fade
+          Editorial layout — three distinct modules separated by clear vertical
+          space and hairline rules, never collapsed into a single block:
+            ROW 1 · Activity card    — filled card, 3 stat columns w/ vertical
+                                        dividers, large green numbers, tappable
+                                        through to /stats. Streak is anchored
+                                        at slot 2 and ALWAYS visible (even at 0)
+                                        with a "Keep it going!" nudge.
+            ROW 2 · Yearly Goal      — left-aligned "X / Y" with a thick rounded
+                                        forest-green progress bar and a single
+                                        status line ("On pace · …") below.
+            ROW 3 · Completed Books  — horizontal scroll of individual volume
+                                        covers (never bundles) standing on a
+                                        subtle wooden shelf with a soft drop
+                                        shadow. Same-series adjacent runs are
+                                        tightened together for visual grouping.
           The walkthrough target attaches here whenever the user has no current reads. */}
       {((yearlyGoal && yearlyGoal > 0) ||
         currentMonthWrap.pagesRead > 0 ||
@@ -1147,263 +1157,377 @@ export default function HomeScreen() {
             ref={currentReads.length === 0 ? homeTargetRef : undefined}
             onLayout={currentReads.length === 0 ? measureHomeContent : undefined}
           >
-            {/* ── Row 1 · Activity (editorial stat strip) ──
-                A row of [big number / small label] blocks separated by hairline
-                dividers — reads as a unified strip rather than three loose
-                cells. Slots:
-                  • pages this month (only when > 0)
-                  • day streak (ALWAYS rendered, including 0 — it's the
-                    reading-habit anchor and absence reads as missing data)
-                  • pp/day (only when computable)
-                Each visible slot gets flex: 1 so spacing stays even regardless
-                of digit count. The whole row taps through to /stats. */}
+            {/* ── Row 1 · Activity card ───────────────────────────────────
+                Filled card so the row reads as ONE editorial unit, not three
+                loose cells. Three equal flex slots with hairline vertical
+                dividers between them. Streak is the middle anchor and is
+                ALWAYS rendered: at 0 it shows a "Keep it going!" nudge so
+                the absence of a streak still reads as actionable rather than
+                missing data. Whole card is tappable → /stats. */}
             {(() => {
-              const slots: Array<{ key: string; value: string; label: string }> = [];
-              if (currentMonthWrap.pagesRead > 0) {
-                slots.push({
+              type Slot = {
+                key:      string;
+                value:    string;
+                label:    string;
+                icon?:    React.ComponentProps<typeof Ionicons>['name'];
+                subtext?: string;
+              };
+              // Render exactly 3 fixed slots in a stable order so the
+              // streak is always anchored in the middle and the layout
+              // never shifts as numbers come and go. Slots fall back to
+              // "0" rather than disappearing — empty state is part of
+              // the story, not a layout bug.
+              const streakValue = currentStreak ?? 0;
+              const slots: Slot[] = [
+                {
                   key:   'pages',
-                  value: String(currentMonthWrap.pagesRead),
-                  label: 'pages this month',
-                });
-              }
-              slots.push({
-                key:   'streak',
-                value: String(currentStreak ?? 0),
-                label: 'day streak',
-              });
-              if (currentMonthWrap.avgPagesPerReadingDay != null) {
-                slots.push({
+                  value: String(currentMonthWrap.pagesRead ?? 0),
+                  label: 'pages\nthis month',
+                },
+                {
+                  key:     'streak',
+                  value:   String(streakValue),
+                  label:   'day streak',
+                  icon:    'flame',
+                  subtext: streakValue === 0 ? 'Keep it going!' : undefined,
+                },
+                {
                   key:   'ppd',
-                  value: String(currentMonthWrap.avgPagesPerReadingDay),
+                  value: String(currentMonthWrap.avgPagesPerReadingDay ?? 0),
                   label: 'pp/day',
-                });
-              }
+                },
+              ];
               return (
                 <TouchableOpacity
                   onPress={() => router.push('/stats')}
-                  activeOpacity={0.6}
+                  activeOpacity={0.7}
                   style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingVertical: 10,
+                    flexDirection:   'row',
+                    alignItems:      'center',
+                    backgroundColor: '#ebe4d5',
+                    borderRadius:    14,
+                    borderWidth:     1,
+                    borderColor:     '#e0d8ca',
+                    paddingVertical: 22,
+                    paddingHorizontal: 18,
                   }}
                 >
-                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'stretch' }}>
                     {slots.map((slot, i) => (
                       <View
                         key={slot.key}
-                        style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+                        style={{ flex: 1, flexDirection: 'row', alignItems: 'stretch' }}
                       >
                         {i > 0 && (
                           <View style={{
-                            width: 1,
-                            height: 28,
-                            backgroundColor: '#ede9e4',
-                            marginRight: 12,
+                            width:           1,
+                            backgroundColor: '#d8cebe',
+                            marginRight:     14,
+                            marginVertical:  2,
                           }} />
                         )}
                         <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+                            <Text style={{
+                              fontSize:      28,
+                              fontWeight:    '800',
+                              color:         '#2f6f3a',
+                              letterSpacing: -0.6,
+                              lineHeight:    30,
+                            }}>
+                              {slot.value}
+                            </Text>
+                            {slot.icon && (
+                              <Ionicons
+                                name={slot.icon}
+                                size={14}
+                                color="#b8967a"
+                                style={{ marginBottom: 2 }}
+                              />
+                            )}
+                          </View>
                           <Text style={{
-                            fontSize: 22,
-                            fontWeight: '800',
-                            color: '#231f1b',
-                            letterSpacing: -0.4,
-                            lineHeight: 26,
+                            fontSize:   12,
+                            color:      '#6b635c',
+                            marginTop:  6,
+                            lineHeight: 15,
                           }}>
-                            {slot.value}
-                          </Text>
-                          <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2 }}>
                             {slot.label}
                           </Text>
+                          {slot.subtext && (
+                            <Text style={{
+                              fontSize:  11,
+                              color:     '#c97a3a',
+                              marginTop: 4,
+                            }}>
+                              {slot.subtext}
+                            </Text>
+                          )}
                         </View>
                       </View>
                     ))}
                   </View>
-                  <Ionicons name="chevron-forward" size={16} color="#c4b5a5" style={{ marginLeft: 8 }} />
+                  <Ionicons name="chevron-forward" size={18} color="#a8927e" style={{ marginLeft: 10 }} />
                 </TouchableOpacity>
               );
             })()}
 
-            {/* ── Row 2 · Yearly Goal (tight vertical stack) ──
-                Reads as one unit, top-down: count → context label → bar →
-                status. Everything left-aligned so the eye drops straight
-                down. The status line sits directly under the bar so it
-                reads as a caption to the bar, not as a floating chip. */}
+            {/* ── Row 2 · Yearly Goal ─────────────────────────────────────
+                Visually separated from Row 1 by generous top margin and a
+                hairline rule. Reads top-down as one unit:
+                  count → caption → progress bar → status line.
+                The status line includes a forecast sentence ("you'll finish
+                ~N this year") computed from current pace, so the bar always
+                has narrative context. */}
             {yearlyGoal && yearlyGoal > 0 && (() => {
-              const read    = booksThisYear.length;
-              const total   = Math.max(1, yearlyGoal);
-              const pct     = Math.max(0, Math.min(100, (read / total) * 100));
-              const label   = goalIsAhead
-                ? `${goalSurplus} ahead`
+              const read           = booksThisYear.length;
+              const total          = Math.max(1, yearlyGoal);
+              const pct            = Math.max(0, Math.min(100, (read / total) * 100));
+              const projectedTotal = goalDayOfYear > 0
+                ? Math.round((read / goalDayOfYear) * 365)
+                : read;
+              const status = goalIsAhead
+                ? 'Ahead of pace'
                 : goalIsBehind
-                ? `${goalDeficit} behind`
-                : goalExpectedByNow === 0 ? 'Getting started' : 'On pace';
-              const symbol  = goalIsAhead ? '↑' : goalIsBehind ? '↓' : '→';
-              const color   = goalIsAhead ? '#15803d' : goalIsBehind ? '#92400e' : '#6b635c';
+                ? 'Behind pace'
+                : goalExpectedByNow === 0
+                ? 'Just getting started'
+                : 'On pace';
+              const statusColor = goalIsAhead
+                ? '#15803d'
+                : goalIsBehind
+                ? '#92400e'
+                : '#2f6f3a';
+              // Wait at least a week before reporting a projection — early-year
+              // pace numbers are noisy and read as wildly optimistic/pessimistic.
+              const projectionSentence = goalDayOfYear >= 7
+                ? `At your current pace, you'll finish ~${projectedTotal} books this year.`
+                : null;
               return (
-                <View style={{ paddingVertical: 6 }}>
+                <View style={{
+                  marginTop:      28,
+                  paddingTop:     24,
+                  borderTopWidth: 1,
+                  borderTopColor: '#ede9e4',
+                }}>
                   <Text style={{
-                    fontSize: 28,
-                    fontWeight: '800',
-                    color: '#231f1b',
-                    letterSpacing: -0.6,
-                    lineHeight: 32,
+                    fontSize:      32,
+                    fontWeight:    '800',
+                    color:         '#231f1b',
+                    letterSpacing: -0.8,
+                    lineHeight:    36,
                   }}>
                     {read}
-                    <Text style={{ fontSize: 16, fontWeight: '500', color: '#9e958d' }}>
+                    <Text style={{ fontSize: 18, fontWeight: '500', color: '#9e958d' }}>
                       {` / ${yearlyGoal}`}
                     </Text>
                   </Text>
-                  <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2 }}>
+                  <Text style={{ fontSize: 12, color: '#6b635c', marginTop: 4 }}>
                     books this year
                   </Text>
-                  {/* Compact progress module — thicker, fully rounded bar with
-                      a strong forest-green fill so progress reads decisively.
-                      Track sits in the standard border tone so the fill pops. */}
                   <View style={{
-                    height: 10,
+                    height:          10,
                     backgroundColor: '#ede9e4',
-                    borderRadius: 5,
-                    overflow: 'hidden',
-                    marginTop: 10,
+                    borderRadius:    5,
+                    overflow:        'hidden',
+                    marginTop:       14,
                   }}>
                     <View style={{
-                      height: 10,
-                      width: `${pct}%`,
+                      height:          10,
+                      width:           `${pct}%`,
                       backgroundColor: '#2f6f3a',
-                      borderRadius: 5,
+                      borderRadius:    5,
                     }} />
                   </View>
-                  <Text style={{ fontSize: 11, color, fontWeight: '600', marginTop: 6 }}>
-                    {symbol}  {label}
-                  </Text>
+                  <View style={{
+                    flexDirection: 'row',
+                    alignItems:    'center',
+                    flexWrap:      'wrap',
+                    marginTop:     14,
+                  }}>
+                    <View style={{
+                      width:           18,
+                      height:          18,
+                      borderRadius:    9,
+                      backgroundColor: statusColor,
+                      alignItems:      'center',
+                      justifyContent:  'center',
+                      marginRight:     8,
+                    }}>
+                      <Ionicons
+                        name={goalIsAhead ? 'arrow-up' : goalIsBehind ? 'arrow-down' : 'arrow-forward'}
+                        size={11}
+                        color="#fff"
+                      />
+                    </View>
+                    <Text style={{
+                      fontSize:    13,
+                      fontWeight:  '700',
+                      color:       statusColor,
+                      marginRight: 10,
+                    }}>
+                      {status}
+                    </Text>
+                    {projectionSentence && (
+                      <>
+                        <Text style={{ color: '#c4b5a5', marginRight: 10, fontSize: 13 }}>·</Text>
+                        <Text style={{
+                          fontSize:  13,
+                          color:     '#6b635c',
+                          flexShrink: 1,
+                        }}>
+                          {projectionSentence}
+                        </Text>
+                      </>
+                    )}
+                  </View>
                 </View>
               );
             })()}
 
-            {/* ── Row 3 · Completed Books (horizontal scroll with right-edge fade) ──
-                Each book runs through resolveBookDisplay() which:
-                  • replaces box-set / omnibus / "Mistborn Trilogy"-style
-                    bundle covers with the canonical first-volume cover from
-                    the curated series catalog (or a clean placeholder if
-                    no unique catalog match exists),
-                  • surfaces the canonical series name so adjacent books
-                    from the same series can be visually clustered.
-                Adjacent same-series books are wrapped in a subtle sage-tinted
-                capsule that sits behind the covers. Singletons render flush
-                with the row, keeping the clustering understated. */}
+            {/* ── Row 3 · Completed Books on a wooden shelf ───────────────
+                Visually separated from Row 2 by generous top margin and a
+                hairline rule. The shelf treatment turns the row into a
+                feature: covers stand on a subtle wood-toned plank with a
+                soft drop shadow underneath so they feel grounded rather
+                than floating. Each book runs through resolveBookDisplay()
+                which returns either an individual-volume cover or a
+                placeholder — bundle artwork is never shown. Adjacent
+                runs from the same curated series tighten their spacing
+                so the eye reads them as a unit; bundles always render
+                standalone and never join a cluster. */}
             {booksThisYear.length > 0 && (
-              <View style={{ paddingTop: 12, position: 'relative' }}>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ gap: 8, paddingRight: 24, alignItems: 'center' }}
-                >
-                  {(() => {
-                    type Item  = { book: typeof booksThisYear[number]; display: BookDisplay };
-                    type Group = { seriesName: string | null; items: Item[] };
+              <View style={{
+                marginTop:      28,
+                paddingTop:     24,
+                borderTopWidth: 1,
+                borderTopColor: '#ede9e4',
+              }}>
+                <Text style={{
+                  fontSize:       10,
+                  fontWeight:     '700',
+                  color:          '#9e958d',
+                  letterSpacing:  1.6,
+                  textTransform:  'uppercase',
+                  marginBottom:   14,
+                }}>
+                  Completed Books
+                </Text>
+                <View>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{
+                      alignItems:   'flex-end',
+                      paddingRight: 16,
+                    }}
+                  >
+                    {(() => {
+                      type Item  = { book: typeof booksThisYear[number]; display: BookDisplay };
+                      type Group = { seriesName: string | null; items: Item[] };
 
-                    const items: Item[] = booksThisYear.map(book => ({
-                      book,
-                      display: resolveBookDisplay(book),
-                    }));
+                      const items: Item[] = booksThisYear.map(book => ({
+                        book,
+                        display: resolveBookDisplay(book),
+                      }));
 
-                    // Walk the list once, building runs of consecutive books
-                    // that share a non-null seriesName. Bundles (box sets,
-                    // omnibuses, bare-series-name editions) ALWAYS render
-                    // standalone — they may carry a seriesName for routing,
-                    // but they must never be absorbed into an adjacent
-                    // cluster of individual volumes (or chained with another
-                    // bundle), since the cluster reads as "I read these
-                    // single volumes together".
-                    const groups: Group[] = [];
-                    for (const item of items) {
-                      if (item.display.isBundle) {
-                        groups.push({ seriesName: null, items: [item] });
-                        continue;
+                      // Walk the list once, building runs of consecutive
+                      // books that share a non-null seriesName. Bundles
+                      // ALWAYS form their own singleton group — they may
+                      // carry a seriesName for routing but must never be
+                      // absorbed into an adjacent cluster of individual
+                      // volumes (or chained to another bundle).
+                      const groups: Group[] = [];
+                      for (const item of items) {
+                        if (item.display.isBundle) {
+                          groups.push({ seriesName: null, items: [item] });
+                          continue;
+                        }
+                        const last = groups[groups.length - 1];
+                        const lastIsClusterable =
+                          last != null &&
+                          last.items.length > 0 &&
+                          !last.items[last.items.length - 1].display.isBundle;
+                        if (
+                          lastIsClusterable &&
+                          last!.seriesName !== null &&
+                          last!.seriesName === item.display.seriesName
+                        ) {
+                          last!.items.push(item);
+                        } else {
+                          groups.push({ seriesName: item.display.seriesName, items: [item] });
+                        }
                       }
-                      const last = groups[groups.length - 1];
-                      const lastIsClusterable =
-                        last != null &&
-                        last.items.length > 0 &&
-                        !last.items[last.items.length - 1].display.isBundle;
-                      if (
-                        lastIsClusterable &&
-                        last!.seriesName !== null &&
-                        last!.seriesName === item.display.seriesName
-                      ) {
-                        last!.items.push(item);
-                      } else {
-                        groups.push({ seriesName: item.display.seriesName, items: [item] });
-                      }
-                    }
 
-                    const renderCover = (item: Item) => (
-                      <TouchableOpacity
-                        key={item.book.id}
-                        activeOpacity={0.7}
-                        onPress={() => router.push({
-                          pathname: '/book/[id]',
-                          params: {
-                            id: item.book.book_id,
-                            title: item.book.title,
-                            author: item.book.author,
-                            coverUrl: item.book.cover_url ?? '',
-                            externalId: item.book.external_id ?? '',
-                            status: 'finished',
-                          },
-                        })}
-                      >
-                        <CoverThumb
-                          url={item.display.coverUrl}
-                          externalId={item.display.externalId}
-                          title={item.book.title}
-                          width={44}
-                          height={64}
-                        />
-                      </TouchableOpacity>
-                    );
+                      const renderCover = (item: Item) => (
+                        <TouchableOpacity
+                          key={item.book.id}
+                          activeOpacity={0.7}
+                          onPress={() => router.push({
+                            pathname: '/book/[id]',
+                            params: {
+                              id:         item.book.book_id,
+                              title:      item.book.title,
+                              author:     item.book.author,
+                              coverUrl:   item.book.cover_url ?? '',
+                              externalId: item.book.external_id ?? '',
+                              status:     'finished',
+                            },
+                          })}
+                        >
+                          <CoverThumb
+                            url={item.display.coverUrl}
+                            externalId={item.display.externalId}
+                            title={item.book.title}
+                            width={50}
+                            height={72}
+                          />
+                        </TouchableOpacity>
+                      );
 
-                    return groups.map((group, gIdx) => {
-                      const isLinked = group.seriesName != null && group.items.length >= 2;
-                      if (isLinked) {
+                      // Spacing strategy: covers inside a same-series group
+                      // sit nearly flush (gap 2) so the eye reads them as
+                      // a single unit; between groups the gap opens up to
+                      // 8px so they breathe.
+                      return groups.map((group, gIdx) => {
+                        const isLinked = group.seriesName != null && group.items.length >= 2;
+                        const isLast   = gIdx === groups.length - 1;
                         return (
                           <View
-                            key={`g-${gIdx}-${group.seriesName}`}
+                            key={`g-${gIdx}-${group.seriesName ?? 'std'}-${group.items[0].book.id}`}
                             style={{
                               flexDirection: 'row',
-                              gap: 4,
-                              paddingVertical: 4,
-                              paddingHorizontal: 6,
-                              backgroundColor: 'rgba(123, 158, 126, 0.10)',
-                              borderRadius: 8,
-                              alignItems: 'center',
+                              gap:           isLinked ? 2 : 0,
+                              marginRight:   isLast ? 0 : 8,
                             }}
                           >
                             {group.items.map(renderCover)}
                           </View>
                         );
-                      }
-                      // Singleton group → render the cover directly so it
-                      // participates in the ScrollView's own gap:8 spacing.
-                      return renderCover(group.items[0]);
-                    });
-                  })()}
-                </ScrollView>
-                {/* Soft fade hint that the row scrolls — matches page bg (#f5f1ec) */}
-                <LinearGradient
-                  pointerEvents="none"
-                  colors={['rgba(245,241,236,0)', 'rgba(245,241,236,1)']}
-                  start={{ x: 0, y: 0.5 }}
-                  end={{ x: 1, y: 0.5 }}
-                  style={{
-                    position: 'absolute',
-                    right: 0,
-                    top: 12,
-                    bottom: 0,
-                    width: 28,
-                  }}
-                />
+                      });
+                    })()}
+                  </ScrollView>
+                  {/* Wood plank — subtle vertical gradient gives the shelf a
+                      soft dimensional feel without looking cartoonish. */}
+                  <LinearGradient
+                    colors={['#d4b896', '#a8845f']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 1 }}
+                    style={{
+                      height:       8,
+                      borderRadius: 1,
+                    }}
+                  />
+                  {/* Soft drop shadow beneath the plank — sells the depth so
+                      the shelf reads as sitting in front of the page. */}
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={['rgba(60, 40, 20, 0.18)', 'rgba(60, 40, 20, 0)']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 1 }}
+                    style={{ height: 10 }}
+                  />
+                </View>
               </View>
             )}
           </View>
