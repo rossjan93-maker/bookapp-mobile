@@ -1157,124 +1157,8 @@ export default function HomeScreen() {
             ref={currentReads.length === 0 ? homeTargetRef : undefined}
             onLayout={currentReads.length === 0 ? measureHomeContent : undefined}
           >
-            {/* ── Row 1 · Activity card ───────────────────────────────────
-                Filled card so the row reads as ONE editorial unit, not three
-                loose cells. Three equal flex slots with hairline vertical
-                dividers between them. Streak is the middle anchor and is
-                ALWAYS rendered: at 0 it shows a "Keep it going!" nudge so
-                the absence of a streak still reads as actionable rather than
-                missing data. Whole card is tappable → /stats. */}
-            {(() => {
-              type Slot = {
-                key:      string;
-                value:    string;
-                label:    string;
-                icon?:    React.ComponentProps<typeof Ionicons>['name'];
-                subtext?: string;
-              };
-              // Render exactly 3 fixed slots in a stable order so the
-              // streak is always anchored in the middle and the layout
-              // never shifts as numbers come and go. Slots fall back to
-              // "0" rather than disappearing — empty state is part of
-              // the story, not a layout bug.
-              const streakValue = currentStreak ?? 0;
-              const slots: Slot[] = [
-                {
-                  key:   'pages',
-                  value: String(currentMonthWrap.pagesRead ?? 0),
-                  label: 'pages\nthis month',
-                },
-                {
-                  key:     'streak',
-                  value:   String(streakValue),
-                  label:   'day streak',
-                  icon:    'flame',
-                  subtext: streakValue === 0 ? 'Keep it going!' : undefined,
-                },
-                {
-                  key:   'ppd',
-                  value: String(currentMonthWrap.avgPagesPerReadingDay ?? 0),
-                  label: 'pp/day',
-                },
-              ];
-              return (
-                <TouchableOpacity
-                  onPress={() => router.push('/stats')}
-                  activeOpacity={0.7}
-                  style={{
-                    flexDirection:   'row',
-                    alignItems:      'center',
-                    backgroundColor: '#ebe4d5',
-                    borderRadius:    14,
-                    borderWidth:     1,
-                    borderColor:     '#e0d8ca',
-                    paddingVertical: 22,
-                    paddingHorizontal: 18,
-                  }}
-                >
-                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'stretch' }}>
-                    {slots.map((slot, i) => (
-                      <View
-                        key={slot.key}
-                        style={{ flex: 1, flexDirection: 'row', alignItems: 'stretch' }}
-                      >
-                        {i > 0 && (
-                          <View style={{
-                            width:           1,
-                            backgroundColor: '#d8cebe',
-                            marginRight:     14,
-                            marginVertical:  2,
-                          }} />
-                        )}
-                        <View style={{ flex: 1 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-                            <Text style={{
-                              fontSize:      28,
-                              fontWeight:    '800',
-                              color:         '#2f6f3a',
-                              letterSpacing: -0.6,
-                              lineHeight:    30,
-                            }}>
-                              {slot.value}
-                            </Text>
-                            {slot.icon && (
-                              <Ionicons
-                                name={slot.icon}
-                                size={14}
-                                color="#b8967a"
-                                style={{ marginBottom: 2 }}
-                              />
-                            )}
-                          </View>
-                          <Text style={{
-                            fontSize:   12,
-                            color:      '#6b635c',
-                            marginTop:  6,
-                            lineHeight: 15,
-                          }}>
-                            {slot.label}
-                          </Text>
-                          {slot.subtext && (
-                            <Text style={{
-                              fontSize:  11,
-                              color:     '#c97a3a',
-                              marginTop: 4,
-                            }}>
-                              {slot.subtext}
-                            </Text>
-                          )}
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color="#a8927e" style={{ marginLeft: 10 }} />
-                </TouchableOpacity>
-              );
-            })()}
-
-            {/* ── Row 2 · Yearly Goal ─────────────────────────────────────
-                Visually separated from Row 1 by generous top margin and a
-                hairline rule. Reads top-down as one unit:
+            {/* ── Row 1 · Yearly Goal ─────────────────────────────────────
+                Reads top-down as one unit:
                   count → caption → progress bar → status line.
                 The status line includes a forecast sentence ("you'll finish
                 ~N this year") computed from current pace, so the bar always
@@ -1304,12 +1188,7 @@ export default function HomeScreen() {
                 ? `At your current pace, you'll finish ~${projectedTotal} books this year.`
                 : null;
               return (
-                <View style={{
-                  marginTop:      28,
-                  paddingTop:     24,
-                  borderTopWidth: 1,
-                  borderTopColor: '#ede9e4',
-                }}>
+                <View>
                   <Text style={{
                     fontSize:      32,
                     fontWeight:    '800',
@@ -1382,6 +1261,134 @@ export default function HomeScreen() {
                     )}
                   </View>
                 </View>
+              );
+            })()}
+
+            {/* ── Row 2 · Activity card ───────────────────────────────────
+                Visually separated from Row 1 by generous top margin. The
+                filled card reads as ONE editorial unit, not three loose
+                cells. Three equal flex slots with hairline vertical
+                dividers between them; each slot's content is center-
+                aligned (number, label, and optional subtext) so the
+                metrics feel balanced inside their column. Streak is the
+                middle anchor and is ALWAYS rendered: at 0 it shows a
+                "Keep it going!" nudge so the absence of a streak still
+                reads as actionable rather than missing data. Whole card
+                is tappable → /stats. */}
+            {(() => {
+              type Slot = {
+                key:      string;
+                value:    string;
+                label:    string;
+                icon?:    React.ComponentProps<typeof Ionicons>['name'];
+                subtext?: string;
+              };
+              // Render exactly 3 fixed slots in a stable order so the
+              // streak is always anchored in the middle and the layout
+              // never shifts as numbers come and go. Slots fall back to
+              // "0" rather than disappearing — empty state is part of
+              // the story, not a layout bug.
+              const streakValue = currentStreak ?? 0;
+              const slots: Slot[] = [
+                {
+                  key:   'pages',
+                  value: String(currentMonthWrap.pagesRead ?? 0),
+                  label: 'pages\nthis month',
+                },
+                {
+                  key:     'streak',
+                  value:   String(streakValue),
+                  label:   'day streak',
+                  icon:    'flame',
+                  subtext: streakValue === 0 ? 'Keep it going!' : undefined,
+                },
+                {
+                  key:   'ppd',
+                  value: String(currentMonthWrap.avgPagesPerReadingDay ?? 0),
+                  label: 'pp/day',
+                },
+              ];
+              return (
+                <TouchableOpacity
+                  onPress={() => router.push('/stats')}
+                  activeOpacity={0.7}
+                  style={{
+                    flexDirection:     'row',
+                    alignItems:        'center',
+                    backgroundColor:   '#ebe4d5',
+                    borderRadius:      14,
+                    borderWidth:       1,
+                    borderColor:       '#e0d8ca',
+                    paddingVertical:   22,
+                    paddingHorizontal: 18,
+                    marginTop:         28,
+                  }}
+                >
+                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'stretch' }}>
+                    {slots.map((slot, i) => (
+                      <View
+                        key={slot.key}
+                        style={{ flex: 1, flexDirection: 'row', alignItems: 'stretch' }}
+                      >
+                        {i > 0 && (
+                          <View style={{
+                            width:           1,
+                            backgroundColor: '#d8cebe',
+                            marginRight:     14,
+                            marginVertical:  2,
+                          }} />
+                        )}
+                        <View style={{ flex: 1, alignItems: 'center' }}>
+                          <View style={{
+                            flexDirection:  'row',
+                            alignItems:     'baseline',
+                            justifyContent: 'center',
+                            gap:            6,
+                          }}>
+                            <Text style={{
+                              fontSize:      28,
+                              fontWeight:    '800',
+                              color:         '#2f6f3a',
+                              letterSpacing: -0.6,
+                              lineHeight:    30,
+                              textAlign:     'center',
+                            }}>
+                              {slot.value}
+                            </Text>
+                            {slot.icon && (
+                              <Ionicons
+                                name={slot.icon}
+                                size={14}
+                                color="#b8967a"
+                                style={{ marginBottom: 2 }}
+                              />
+                            )}
+                          </View>
+                          <Text style={{
+                            fontSize:   12,
+                            color:      '#6b635c',
+                            marginTop:  6,
+                            lineHeight: 15,
+                            textAlign:  'center',
+                          }}>
+                            {slot.label}
+                          </Text>
+                          {slot.subtext && (
+                            <Text style={{
+                              fontSize:  11,
+                              color:     '#c97a3a',
+                              marginTop: 4,
+                              textAlign: 'center',
+                            }}>
+                              {slot.subtext}
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#a8927e" style={{ marginLeft: 10 }} />
+                </TouchableOpacity>
               );
             })()}
 
