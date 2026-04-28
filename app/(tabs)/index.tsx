@@ -1146,36 +1146,74 @@ export default function HomeScreen() {
             ref={currentReads.length === 0 ? homeTargetRef : undefined}
             onLayout={currentReads.length === 0 ? measureHomeContent : undefined}
           >
-            {/* ── Row 1 · Activity ── */}
-            {(currentMonthWrap.pagesRead > 0 || currentMonthWrap.readingDays > 0) && (
+            {/* ── Row 1 · Activity (vertical metric blocks) ──
+                Three stacked metrics — each is [big number] over [small label],
+                grouped on the left with equal gaps so the eye scans them in
+                under a second. The whole row taps through to /stats; the
+                chevron stays anchored to the far right. Each block hides
+                independently when its value is zero / unavailable. */}
+            {(currentMonthWrap.pagesRead > 0 ||
+              currentStreak > 0 ||
+              currentMonthWrap.avgPagesPerReadingDay != null) && (
               <TouchableOpacity
                 onPress={() => router.push('/stats')}
                 activeOpacity={0.6}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
-                  justifyContent: 'space-between',
-                  paddingVertical: 10,
+                  paddingVertical: 12,
                 }}
               >
-                <Text style={{ fontSize: 14, color: '#231f1b', flex: 1, lineHeight: 20 }}>
-                  <Text style={{ fontWeight: '700' }}>{currentMonthWrap.pagesRead}</Text>
-                  <Text style={{ color: '#6b635c' }}> pages this month</Text>
-                  {currentMonthWrap.readingDays > 0 && (
-                    <>
-                      <Text style={{ color: '#c4b5a5' }}>   ·   </Text>
-                      <Text style={{ fontWeight: '700' }}>{currentMonthWrap.readingDays}</Text>
-                      <Text style={{ color: '#6b635c' }}>{` reading ${currentMonthWrap.readingDays === 1 ? 'day' : 'days'}`}</Text>
-                    </>
+                <View style={{ flex: 1, flexDirection: 'row', gap: 28 }}>
+                  {currentMonthWrap.pagesRead > 0 && (
+                    <View>
+                      <Text style={{
+                        fontSize: 20,
+                        fontWeight: '700',
+                        color: '#231f1b',
+                        letterSpacing: -0.3,
+                        lineHeight: 24,
+                      }}>
+                        {currentMonthWrap.pagesRead}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2 }}>
+                        pages this month
+                      </Text>
+                    </View>
+                  )}
+                  {currentStreak > 0 && (
+                    <View>
+                      <Text style={{
+                        fontSize: 20,
+                        fontWeight: '700',
+                        color: '#231f1b',
+                        letterSpacing: -0.3,
+                        lineHeight: 24,
+                      }}>
+                        {currentStreak}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2 }}>
+                        day streak
+                      </Text>
+                    </View>
                   )}
                   {currentMonthWrap.avgPagesPerReadingDay != null && (
-                    <>
-                      <Text style={{ color: '#c4b5a5' }}>   ·   </Text>
-                      <Text style={{ fontWeight: '700' }}>{currentMonthWrap.avgPagesPerReadingDay}</Text>
-                      <Text style={{ color: '#6b635c' }}> pp/day</Text>
-                    </>
+                    <View>
+                      <Text style={{
+                        fontSize: 20,
+                        fontWeight: '700',
+                        color: '#231f1b',
+                        letterSpacing: -0.3,
+                        lineHeight: 24,
+                      }}>
+                        {currentMonthWrap.avgPagesPerReadingDay}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2 }}>
+                        pp/day
+                      </Text>
+                    </View>
                   )}
-                </Text>
+                </View>
                 <Ionicons name="chevron-forward" size={16} color="#c4b5a5" style={{ marginLeft: 8 }} />
               </TouchableOpacity>
             )}
