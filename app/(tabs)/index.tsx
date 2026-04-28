@@ -1156,7 +1156,7 @@ export default function HomeScreen() {
         currentMonthWrap.readingDays > 0 ||
         booksThisYear.length > 0) && (
         <View style={{ marginBottom: 32 }}>
-          <SectionLabel>Reading Progress</SectionLabel>
+          <SectionLabel>Reading Insights</SectionLabel>
           <View
             ref={currentReads.length === 0 ? homeTargetRef : undefined}
             onLayout={currentReads.length === 0 ? measureHomeContent : undefined}
@@ -1310,6 +1310,19 @@ export default function HomeScreen() {
                   borderTopWidth: 1,
                   borderTopColor: '#ede9e4',
                 }}>
+                  {/* Sub-label sits above the count to title this sub-block
+                      as the user's yearly reading progress, distinct from
+                      the wider "Reading Insights" section header. */}
+                  <Text style={{
+                    fontSize:       10,
+                    fontWeight:     '700',
+                    color:          '#9e958d',
+                    letterSpacing:  1.6,
+                    textTransform:  'uppercase',
+                    marginBottom:   10,
+                  }}>
+                    Reading Progress
+                  </Text>
                   <Text style={{
                     fontSize:      32,
                     fontWeight:    '800',
