@@ -686,28 +686,9 @@ export function deriveInsights(
   }
 
   // ── 5. Year goal context ───────────────────────────────────────────────────
-  // Shows where the reader stands vs their goal — observation only, no grade.
-  // "On pace for" / "still on track" removed — too productivity-app-like.
-  // Both tiers use the same plain format; strength controls display priority.
-  if (yearlyGoal && yearlyGoal > 0 && yearlyWrap && yearlyWrap.booksFinished > 0) {
-    const doy       = dayOfYear(ref);
-    const daysInYr  = isLeapYear(ref.getFullYear()) ? 366 : 365;
-    const paceBooks = Math.round((yearlyWrap.booksFinished / doy) * daysInYr);
-
-    if (paceBooks >= yearlyGoal) {
-      candidates.push({
-        kind:     'year_pace',
-        text:     `${yearlyWrap.booksFinished} of ${yearlyGoal} books finished this year.`,
-        strength: 'notable',
-      });
-    } else if (paceBooks >= Math.round(yearlyGoal * 0.7)) {
-      candidates.push({
-        kind:     'year_pace',
-        text:     `${yearlyWrap.booksFinished} of ${yearlyGoal} books finished this year.`,
-        strength: 'mild',
-      });
-    }
-  }
+  // Removed: the previous "X of Y books finished this year." candidate is now
+  // redundant with the dedicated Reading Progress sub-block on Home (count +
+  // progress bar + on-pace line), so it no longer surfaces as a wrap insight.
 
   // Return up to 2, notable first, then mild
   return candidates
