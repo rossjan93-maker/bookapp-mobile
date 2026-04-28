@@ -1,0 +1,76 @@
+Context:
+
+The Reading Progress section is closer, but still not good enough.
+
+Problems:
+1. The top metric row feels visually sparse and uneven.
+2. The yearly goal row feels disconnected.
+3. The completed-book cover row is still showing series/box-set artwork instead of individual book covers.
+4. Books completed from the same series need to be visually linked in the cover row.
+
+Task:
+
+Refine the Reading Progress section again.
+
+PART 1 — Activity row hierarchy
+Restore three metrics:
+- pages this month
+- reading streak / reading days
+- pp/day
+
+Use compact mini-stat blocks:
+22
+pages this month
+
+1
+day streak
+
+22
+pp/day
+
+Rules:
+- numbers large and bold
+- labels smaller and muted
+- all three blocks evenly spaced
+- arrow remains on far right
+- entire row remains tappable to detailed reading insights
+
+PART 2 — Yearly goal layout
+Tighten the yearly goal area so it reads as one unit:
+- 10 / 35
+- books this year
+- progress bar
+- On pace status
+
+Rules:
+- left aligned
+- progress bar directly tied to the count
+- On pace should not float awkwardly
+- reduce empty spacing
+
+PART 3 — Completed covers row
+Fix the cover data problem.
+
+The row must show individual completed books, not series bundles or box sets.
+
+Rules:
+- Do not show covers that depict a box set, omnibus, collection, or bundled series.
+- If a completed item is part of a series, show the specific volume cover.
+- If multiple completed books belong to the same series, visually link them.
+
+Series-linking direction:
+- Group adjacent completed books from the same series together.
+- Add a subtle shared background capsule or small connector behind those covers.
+- Keep it understated and editorial.
+- Do not add labels unless absolutely necessary.
+- The row should still scroll horizontally.
+
+Fallback:
+- If the correct individual cover cannot be resolved, use the clean placeholder rather than showing a box-set image.
+
+What I want back:
+1. exact files changed
+2. how the activity row was corrected
+3. how the yearly goal layout was tightened
+4. how box-set/series cover detection was improved
+5. how completed books from the same series are visually linked

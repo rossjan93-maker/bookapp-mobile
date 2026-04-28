@@ -18,7 +18,7 @@ import { WtDemoHome } from '../../components/walkthrough/WtDemoHome';
 import { supabase } from '../../lib/supabase';
 import { registerCacheClearer } from '../../lib/tabCache';
 import { CoverThumb } from '../../components/CoverThumb';
-import { isBoxSet, resolveIndividualVolumeCover } from '../../lib/boxSetDetection';
+import { resolveBookDisplay, type BookDisplay } from '../../lib/boxSetDetection';
 import { HomeScreenSkeleton } from '../../components/Placeholder';
 import { getFirstName } from '../../lib/displayName';
 import { computePagePacing, computeUserAvgPace, inferReadState, computeSessionPacing, formatProjectedFinish, computeMonthlyStats, type SessionRow, type ReadState, type MonthlyStats } from '../../lib/pacing';
@@ -1147,12 +1147,13 @@ export default function HomeScreen() {
             ref={currentReads.length === 0 ? homeTargetRef : undefined}
             onLayout={currentReads.length === 0 ? measureHomeContent : undefined}
           >
-            {/* ── Row 1 · Activity (vertical metric blocks) ──
-                Three stacked metrics — each is [big number] over [small label],
-                grouped on the left with equal gaps so the eye scans them in
-                under a second. The whole row taps through to /stats; the
-                chevron stays anchored to the far right. Each block hides
-                independently when its value is zero / unavailable. */}
+            {/* ── Row 1 · Activity (mini-stat blocks, evenly spaced) ──
+                Three [big number / small label] blocks share the row in equal
+                slots (flex: 1 each) so spacing stays uniform regardless of
+                digit count. The whole row taps through to /stats; the chevron
+                stays anchored to the far right. Each block hides independently
+                when its value is zero / unavailable, and the remaining blocks
+                continue to share the row evenly. */}
             {(currentMonthWrap.pagesRead > 0 ||
               currentStreak > 0 ||
               currentMonthWrap.avgPagesPerReadingDay != null) && (
@@ -1162,18 +1163,18 @@ export default function HomeScreen() {
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
-                  paddingVertical: 12,
+                  paddingVertical: 10,
                 }}
               >
-                <View style={{ flex: 1, flexDirection: 'row', gap: 28 }}>
+                <View style={{ flex: 1, flexDirection: 'row' }}>
                   {currentMonthWrap.pagesRead > 0 && (
-                    <View>
+                    <View style={{ flex: 1 }}>
                       <Text style={{
-                        fontSize: 20,
-                        fontWeight: '700',
+                        fontSize: 22,
+                        fontWeight: '800',
                         color: '#231f1b',
-                        letterSpacing: -0.3,
-                        lineHeight: 24,
+                        letterSpacing: -0.4,
+                        lineHeight: 26,
                       }}>
                         {currentMonthWrap.pagesRead}
                       </Text>
@@ -1183,13 +1184,13 @@ export default function HomeScreen() {
                     </View>
                   )}
                   {currentStreak > 0 && (
-                    <View>
+                    <View style={{ flex: 1 }}>
                       <Text style={{
-                        fontSize: 20,
-                        fontWeight: '700',
+                        fontSize: 22,
+                        fontWeight: '800',
                         color: '#231f1b',
-                        letterSpacing: -0.3,
-                        lineHeight: 24,
+                        letterSpacing: -0.4,
+                        lineHeight: 26,
                       }}>
                         {currentStreak}
                       </Text>
@@ -1199,13 +1200,13 @@ export default function HomeScreen() {
                     </View>
                   )}
                   {currentMonthWrap.avgPagesPerReadingDay != null && (
-                    <View>
+                    <View style={{ flex: 1 }}>
                       <Text style={{
-                        fontSize: 20,
-                        fontWeight: '700',
+                        fontSize: 22,
+                        fontWeight: '800',
                         color: '#231f1b',
-                        letterSpacing: -0.3,
-                        lineHeight: 24,
+                        letterSpacing: -0.4,
+                        lineHeight: 26,
                       }}>
                         {currentMonthWrap.avgPagesPerReadingDay}
                       </Text>
@@ -1219,7 +1220,11 @@ export default function HomeScreen() {
               </TouchableOpacity>
             )}
 
-            {/* ── Row 2 · Yearly Goal ── */}
+            {/* ── Row 2 · Yearly Goal (tight vertical stack) ──
+                Reads as one unit, top-down: count → context label → bar →
+                status. Everything left-aligned so the eye drops straight
+                down. The status line sits directly under the bar so it
+                reads as a caption to the bar, not as a floating chip. */}
             {yearlyGoal && yearlyGoal > 0 && (() => {
               const read    = booksThisYear.length;
               const total   = Math.max(1, yearlyGoal);
@@ -1232,35 +1237,29 @@ export default function HomeScreen() {
               const symbol  = goalIsAhead ? '↑' : goalIsBehind ? '↓' : '→';
               const color   = goalIsAhead ? '#15803d' : goalIsBehind ? '#92400e' : '#6b635c';
               return (
-                <View style={{ paddingVertical: 10 }}>
-                  <View style={{
-                    flexDirection: 'row',
-                    alignItems: 'baseline',
-                    justifyContent: 'space-between',
-                    marginBottom: 10,
+                <View style={{ paddingVertical: 6 }}>
+                  <Text style={{
+                    fontSize: 28,
+                    fontWeight: '800',
+                    color: '#231f1b',
+                    letterSpacing: -0.6,
+                    lineHeight: 32,
                   }}>
-                    <Text style={{
-                      fontSize: 28,
-                      fontWeight: '800',
-                      color: '#231f1b',
-                      letterSpacing: -0.6,
-                      lineHeight: 32,
-                    }}>
-                      {read}
-                      <Text style={{ fontSize: 16, fontWeight: '500', color: '#9e958d' }}>
-                        {` / ${yearlyGoal}`}
-                      </Text>
+                    {read}
+                    <Text style={{ fontSize: 16, fontWeight: '500', color: '#9e958d' }}>
+                      {` / ${yearlyGoal}`}
                     </Text>
-                    <Text style={{ fontSize: 12, color, fontWeight: '600' }}>
-                      {symbol}  {label}
-                    </Text>
-                  </View>
-                  {/* Slim linear progress bar */}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2 }}>
+                    books this year
+                  </Text>
+                  {/* Slim linear progress bar — directly tied to the count above */}
                   <View style={{
                     height: 6,
                     backgroundColor: '#ede9e4',
                     borderRadius: 3,
                     overflow: 'hidden',
+                    marginTop: 8,
                   }}>
                     <View style={{
                       height: 6,
@@ -1269,60 +1268,107 @@ export default function HomeScreen() {
                       borderRadius: 3,
                     }} />
                   </View>
+                  <Text style={{ fontSize: 11, color, fontWeight: '600', marginTop: 6 }}>
+                    {symbol}  {label}
+                  </Text>
                 </View>
               );
             })()}
 
-            {/* ── Row 3 · Completed Books (horizontal scroll with right-edge fade) ── */}
+            {/* ── Row 3 · Completed Books (horizontal scroll with right-edge fade) ──
+                Each book runs through resolveBookDisplay() which:
+                  • replaces box-set / omnibus / "Mistborn Trilogy"-style
+                    bundle covers with the canonical first-volume cover from
+                    the curated series catalog (or a clean placeholder if
+                    no unique catalog match exists),
+                  • surfaces the canonical series name so adjacent books
+                    from the same series can be visually clustered.
+                Adjacent same-series books are wrapped in a subtle sage-tinted
+                capsule that sits behind the covers. Singletons render flush
+                with the row, keeping the clustering understated. */}
             {booksThisYear.length > 0 && (
               <View style={{ paddingTop: 12, position: 'relative' }}>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ gap: 8, paddingRight: 24 }}
+                  contentContainerStyle={{ gap: 8, paddingRight: 24, alignItems: 'center' }}
                 >
-                  {booksThisYear.map(book => {
-                    // Box sets / multi-volume bundles must not display the
-                    // grouped-product cover. Try to resolve to a canonical
-                    // single-volume cover from the curated series catalog;
-                    // if none is found, drop the URL/externalId so CoverThumb
-                    // renders its clean typographic placeholder.
-                    let coverUrl    = book.cover_url;
-                    let externalId  = book.external_id;
-                    if (isBoxSet({ title: book.title, page_count: book.page_count })) {
-                      const resolved = resolveIndividualVolumeCover({
-                        title:  book.title,
-                        author: book.author,
-                      });
-                      coverUrl   = resolved;
-                      externalId = null;
+                  {(() => {
+                    type Item  = { book: typeof booksThisYear[number]; display: BookDisplay };
+                    type Group = { seriesName: string | null; items: Item[] };
+
+                    const items: Item[] = booksThisYear.map(book => ({
+                      book,
+                      display: resolveBookDisplay(book),
+                    }));
+
+                    // Walk the list once, building runs of consecutive books
+                    // that share a non-null seriesName.
+                    const groups: Group[] = [];
+                    for (const item of items) {
+                      const last = groups[groups.length - 1];
+                      if (
+                        last &&
+                        last.seriesName !== null &&
+                        last.seriesName === item.display.seriesName
+                      ) {
+                        last.items.push(item);
+                      } else {
+                        groups.push({ seriesName: item.display.seriesName, items: [item] });
+                      }
                     }
-                    return (
+
+                    const renderCover = (item: Item) => (
                       <TouchableOpacity
-                        key={book.id}
+                        key={item.book.id}
                         activeOpacity={0.7}
                         onPress={() => router.push({
                           pathname: '/book/[id]',
                           params: {
-                            id: book.book_id,
-                            title: book.title,
-                            author: book.author,
-                            coverUrl: book.cover_url ?? '',
-                            externalId: book.external_id ?? '',
+                            id: item.book.book_id,
+                            title: item.book.title,
+                            author: item.book.author,
+                            coverUrl: item.book.cover_url ?? '',
+                            externalId: item.book.external_id ?? '',
                             status: 'finished',
                           },
                         })}
                       >
                         <CoverThumb
-                          url={coverUrl}
-                          externalId={externalId}
-                          title={book.title}
+                          url={item.display.coverUrl}
+                          externalId={item.display.externalId}
+                          title={item.book.title}
                           width={44}
                           height={64}
                         />
                       </TouchableOpacity>
                     );
-                  })}
+
+                    return groups.map((group, gIdx) => {
+                      const isLinked = group.seriesName != null && group.items.length >= 2;
+                      if (isLinked) {
+                        return (
+                          <View
+                            key={`g-${gIdx}-${group.seriesName}`}
+                            style={{
+                              flexDirection: 'row',
+                              gap: 4,
+                              paddingVertical: 4,
+                              paddingHorizontal: 6,
+                              backgroundColor: 'rgba(123, 158, 126, 0.10)',
+                              borderRadius: 8,
+                              alignItems: 'center',
+                            }}
+                          >
+                            {group.items.map(renderCover)}
+                          </View>
+                        );
+                      }
+                      // Singleton group → render the cover directly so it
+                      // participates in the ScrollView's own gap:8 spacing.
+                      return renderCover(group.items[0]);
+                    });
+                  })()}
                 </ScrollView>
                 {/* Soft fade hint that the row scrolls — matches page bg (#f5f1ec) */}
                 <LinearGradient
