@@ -1264,35 +1264,18 @@ export default function HomeScreen() {
               );
             })()}
 
-            {/* ── Row 2 · Completed Books on a wooden shelf ───────────────
-                Sits directly under the yearly-goal progress bar so the
-                covers act as the visual proof of the number above. Visually
-                separated by generous top margin and a hairline rule. The
-                shelf treatment turns the row into a feature: covers stand
-                on a subtle wood-toned plank with a soft drop shadow
-                underneath so they feel grounded rather than floating. Each
-                book runs through resolveBookDisplay() which returns either
-                an individual-volume cover or a placeholder — bundle artwork
-                is never shown. Adjacent runs from the same curated series
-                tighten their spacing so the eye reads them as a unit;
-                bundles always render standalone and never join a cluster. */}
+            {/* ── Row 2 · Completed Books ─────────────────────────────────
+                Sits close to the yearly-goal progress bar so the covers
+                act as the visual proof of the number above — no header,
+                no shelf, just the artwork floating on the page with
+                comfortable air around each spine. Each book runs through
+                resolveBookDisplay() which returns either an individual-
+                volume cover or a placeholder — bundle artwork is never
+                shown. Adjacent runs from the same curated series tighten
+                their spacing so the eye reads them as a unit; bundles
+                always render standalone and never join a cluster. */}
             {booksThisYear.length > 0 && (
-              <View style={{
-                marginTop:      28,
-                paddingTop:     24,
-                borderTopWidth: 1,
-                borderTopColor: '#ede9e4',
-              }}>
-                <Text style={{
-                  fontSize:       10,
-                  fontWeight:     '700',
-                  color:          '#9e958d',
-                  letterSpacing:  1.6,
-                  textTransform:  'uppercase',
-                  marginBottom:   14,
-                }}>
-                  Completed Books
-                </Text>
+              <View style={{ marginTop: 14 }}>
                 <View>
                   <ScrollView
                     horizontal
@@ -1366,9 +1349,9 @@ export default function HomeScreen() {
                       );
 
                       // Spacing strategy: covers inside a same-series group
-                      // sit nearly flush (gap 2) so the eye reads them as
-                      // a single unit; between groups the gap opens up to
-                      // 8px so they breathe.
+                      // sit close together (gap 4) so the eye still reads
+                      // them as a unit; between groups the gap opens up to
+                      // 14px so every cover gets room to breathe.
                       return groups.map((group, gIdx) => {
                         const isLinked = group.seriesName != null && group.items.length >= 2;
                         const isLast   = gIdx === groups.length - 1;
@@ -1377,8 +1360,8 @@ export default function HomeScreen() {
                             key={`g-${gIdx}-${group.seriesName ?? 'std'}-${group.items[0].book.id}`}
                             style={{
                               flexDirection: 'row',
-                              gap:           isLinked ? 2 : 0,
-                              marginRight:   isLast ? 0 : 8,
+                              gap:           isLinked ? 4 : 0,
+                              marginRight:   isLast ? 0 : 14,
                             }}
                           >
                             {group.items.map(renderCover)}
@@ -1387,26 +1370,6 @@ export default function HomeScreen() {
                       });
                     })()}
                   </ScrollView>
-                  {/* Wood plank — subtle vertical gradient gives the shelf a
-                      soft dimensional feel without looking cartoonish. */}
-                  <LinearGradient
-                    colors={['#d4b896', '#a8845f']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 0, y: 1 }}
-                    style={{
-                      height:       8,
-                      borderRadius: 1,
-                    }}
-                  />
-                  {/* Soft drop shadow beneath the plank — sells the depth so
-                      the shelf reads as sitting in front of the page. */}
-                  <LinearGradient
-                    pointerEvents="none"
-                    colors={['rgba(60, 40, 20, 0.18)', 'rgba(60, 40, 20, 0)']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 0, y: 1 }}
-                    style={{ height: 10 }}
-                  />
                 </View>
               </View>
             )}
