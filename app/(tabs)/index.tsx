@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { registerWtTarget, useWalkthrough } from '../../lib/walkthroughEngine';
@@ -22,7 +23,6 @@ import { getFirstName } from '../../lib/displayName';
 import { computePagePacing, computeUserAvgPace, inferReadState, computeSessionPacing, formatProjectedFinish, computeMonthlyStats, type SessionRow, type ReadState, type MonthlyStats } from '../../lib/pacing';
 import { aggregatePeriod, computeMonthlyWrap, computeYearlyWrap, deriveInsights, type WrapSession, type WrapBookRef, type ReaderInsight } from '../../lib/readingWraps';
 import { computeStreaks } from '../../lib/streaks';
-import { showToast } from '../../lib/toast';
 import { BadgeContext } from './_layout';
 import { RecsInboxSheet } from '../../components/RecsInboxSheet';
 import { FriendsSheet } from '../../components/FriendsSheet';
@@ -97,10 +97,6 @@ function relativeTime(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-
-function shortFinishDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -379,7 +375,6 @@ export default function HomeScreen() {
   const [yearlyGoal,      setYearlyGoal]      = useState<number | null>(() => _homeCache?.yearlyGoal ?? null);
   const [pendingRecCount, setPendingRecCount] = useState<number>(() => _homeCache?.pendingRecCount ?? 0);
   const [booksThisYear,   setBooksThisYear]   = useState<YearBook[]>(() => _homeCache?.booksThisYear ?? []);
-  const [goalExpanded,    setGoalExpanded]    = useState(false);
 
   // Activity feed
   const [feed,            setFeed]            = useState<FeedEvent[]>(() => _homeCache?.feed ?? []);
@@ -839,17 +834,9 @@ export default function HomeScreen() {
     return <HomeScreenSkeleton />;
   }
 
-  // ── Progress + pacing helpers ─────────────────────────────────────────────────
+  // ── Reading Progress derived values ──────────────────────────────────────────
+  // Pace status drives the "On pace / N ahead / N behind" label in Row 2.
 
-  const yearAvgPace: number | null = computeUserAvgPace(
-    booksThisYear.map(b => ({
-      started_at:  b.started_at,
-      finished_at: b.finished_at,
-      pageCount:   b.page_count,
-    }))
-  );
-
-  // ── Reading Goal card derived values ─────────────────────────────────────────
   const goalDayOfYear = Math.floor(
     (new Date().getTime() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86_400_000
   );
@@ -858,10 +845,6 @@ export default function HomeScreen() {
   const goalDeficit        = Math.max(0, goalExpectedByNow - booksThisYear.length);
   const goalIsAhead        = goalSurplus >= 2;
   const goalIsBehind       = goalDeficit >= 2;
-  const goalProjected: number | null =
-    booksThisYear.length > 0 && goalDayOfYear >= 14
-      ? Math.round(booksThisYear.length / (goalDayOfYear / 365))
-      : null;
 
   function homeCardBorderColor(cr: CurrentRead, goal: number | null): string {
     const pageCount = cr.page_count;
@@ -879,13 +862,6 @@ export default function HomeScreen() {
     }
     if (cr.current_page) return `Page ${cr.current_page}`;
     return 'In progress';
-  }
-
-  function progressPct(cr: CurrentRead): number {
-    if (cr.current_page && cr.page_count && cr.page_count > 0) {
-      return Math.min(cr.current_page / cr.page_count, 1);
-    }
-    return 0;
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────────
@@ -1153,321 +1129,165 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* ── Yearly Reading Goal ── */}
-      {yearlyGoal && yearlyGoal > 0 && (
+      {/* ── Reading Progress ──
+          Editorial-style block combining the previous "Reading Goal" and
+          "Reading Insights" sections. Three rows, no nested cards:
+            1. Activity (tappable → /stats): pages this month · reading days · pp/day
+            2. Yearly goal: large "X / Y" with a slim linear progress bar + pace label
+            3. Completed books: horizontal scroll of small cover thumbs with right-edge fade
+          The walkthrough target attaches here whenever the user has no current reads. */}
+      {((yearlyGoal && yearlyGoal > 0) ||
+        currentMonthWrap.pagesRead > 0 ||
+        currentMonthWrap.readingDays > 0 ||
+        booksThisYear.length > 0) && (
         <View style={{ marginBottom: 32 }}>
-          <SectionLabel>Reading Goal</SectionLabel>
-          {/* Walkthrough ref wraps only the goal card, not the section label */}
+          <SectionLabel>Reading Progress</SectionLabel>
           <View
             ref={currentReads.length === 0 ? homeTargetRef : undefined}
             onLayout={currentReads.length === 0 ? measureHomeContent : undefined}
           >
-          <TouchableOpacity activeOpacity={0.8} onPress={() => setGoalExpanded(e => !e)}>
-            <View style={{
-              backgroundColor: '#fefcf9',
-              borderRadius: 16,
-              padding: 16,
-              shadowColor: '#000',
-              shadowOpacity: 0.06,
-              shadowRadius: 8,
-              shadowOffset: { width: 0, height: 2 },
-              elevation: 2,
-            }}>
-              {/* ── Top row: bookshelf visual on the LEFT, headline + pace badge on the RIGHT ── */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-
-                {/* ─ Bookshelf visual: 3 small stacks of books ─
-                    Fixed visual footprint regardless of goal size — books fill
-                    proportionally from bottom-left across the three stacks. The
-                    three-stack composition mirrors the editorial reference: a
-                    small, lived-in still life of stacked volumes rather than a
-                    single dominating column.                                    */}
-                {(() => {
-                  const total    = Math.max(1, yearlyGoal ?? 0);
-                  const read     = booksThisYear.length;
-                  const expected = goalExpectedByNow;
-
-                  // Three stacks, each holding 7 visual book bars → 21 slots total.
-                  // We fill `read` slots from stack 1 upward, then stack 2, then 3.
-                  // "Expected but unread" slots get amber to surface pacing.
-                  const STACKS         = 3;
-                  const PER_STACK      = 7;
-                  const TOTAL_SLOTS    = STACKS * PER_STACK;
-                  // Floor + clamp so extreme goals (very small or very large)
-                  // can't over- or under-fill the 21-slot visual.
-                  const clamp = (n: number) => Math.max(0, Math.min(TOTAL_SLOTS, n));
-                  const readSlots      = clamp(Math.floor((read / total) * TOTAL_SLOTS));
-                  const expectedSlots  = clamp(Math.floor((expected / total) * TOTAL_SLOTS));
-
-                  // Width variation per book (% of stack) — keeps each pile lived-in.
-                  const W       = [98, 88, 94, 82, 100, 86, 92];
-                  // Slight per-stack height jitter so the still life feels organic.
-                  const STACK_H = [7, 6, 7];   // book bar height per stack
-                  const STACK_G = [2, 2, 2];   // gap per stack
-
-                  const sage    = '#7b9e7e';
-                  const amber   = '#e8a44a';
-                  const neutral = '#d3ccc4';
-
-                  return (
-                    <View style={{ width: 132, alignItems: 'flex-end' }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
-                        {Array.from({ length: STACKS }).map((_, sIdx) => {
-                          const blockH = STACK_H[sIdx];
-                          const gap    = STACK_G[sIdx];
-                          // Render top→bottom but the BOTTOM book in each stack is
-                          // the lowest index, so books accumulate upward like a
-                          // real pile.
-                          const slotIdxs: number[] = [];
-                          for (let i = 0; i < PER_STACK; i++) {
-                            slotIdxs.push(sIdx * PER_STACK + i);
-                          }
-                          return (
-                            <View key={sIdx} style={{ width: 36 }}>
-                              {slotIdxs.slice().reverse().map(slot => {
-                                const isRead   = slot < readSlots;
-                                const isBehind = !isRead && slot < expectedSlots;
-                                const color    = isRead ? sage : isBehind ? amber : neutral;
-                                return (
-                                  <View
-                                    key={slot}
-                                    style={{
-                                      width:           `${W[slot % W.length]}%`,
-                                      height:          blockH,
-                                      backgroundColor: color,
-                                      borderRadius:    1.5,
-                                      marginBottom:    gap,
-                                      alignSelf:       'center',
-                                      overflow:        'hidden',
-                                    }}
-                                  >
-                                    {/* Top page-edge highlight */}
-                                    <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.25)' }} />
-                                    {/* Bottom seam */}
-                                    <View style={{
-                                      position:        'absolute',
-                                      left:            0,
-                                      right:           0,
-                                      bottom:          0,
-                                      height:          1,
-                                      backgroundColor: 'rgba(0,0,0,0.09)',
-                                    }} />
-                                  </View>
-                                );
-                              })}
-                            </View>
-                          );
-                        })}
-                      </View>
-                      {/* Base plank — all three stacks rest on it */}
-                      <View style={{ width: '100%', height: 3, backgroundColor: '#b8a898', marginTop: 3, borderRadius: 1 }} />
-                      <View style={{ width: '100%', height: 1, backgroundColor: '#a3917f', opacity: 0.4, borderRadius: 1, marginTop: 1 }} />
-                    </View>
-                  );
-                })()}
-
-                {/* ─ Right column: count + pace badge ─ */}
-                <View style={{ flex: 1, marginLeft: 16 }}>
-                  <Text style={{ fontSize: 26, fontWeight: '800', color: '#231f1b', letterSpacing: -0.6, lineHeight: 30 }}>
-                    {booksThisYear.length}
-                    <Text style={{ fontSize: 14, fontWeight: '400', color: '#9e958d' }}> / {yearlyGoal}</Text>
-                  </Text>
-                  <Text style={{ fontSize: 11, color: '#9e958d', fontWeight: '600', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 2, marginBottom: 8 }}>
-                    Books this year
-                  </Text>
-
-                  {(() => {
-                    const isAhead  = goalIsAhead;
-                    const isBehind = goalIsBehind;
-                    const bg       = isAhead ? '#f0fdf4' : isBehind ? '#fffbeb' : '#f5f3ef';
-                    const border   = isAhead ? '#bbf7d0' : isBehind ? '#fde68a' : '#e2ddd9';
-                    const color    = isAhead ? '#15803d' : isBehind ? '#92400e' : '#6b635c';
-                    const symbol   = isAhead ? '↑' : isBehind ? '↓' : '→';
-                    const label    = isAhead
-                      ? `${goalSurplus} ahead`
-                      : isBehind
-                      ? `${goalDeficit} behind`
-                      : goalExpectedByNow === 0 ? 'Getting started' : 'On pace';
-                    return (
-                      <View style={{
-                        flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
-                        backgroundColor: bg, borderWidth: 1, borderColor: border,
-                        borderRadius: 20, paddingHorizontal: 9, paddingVertical: 4, gap: 4,
-                      }}>
-                        <Text style={{ fontSize: 11, color, fontWeight: '700' }}>{symbol}</Text>
-                        <Text style={{ fontSize: 11, color, fontWeight: '600' }}>{label}</Text>
-                      </View>
-                    );
-                  })()}
-                </View>
-              </View>
-
-              {/* ── Finish projection — full-width below the split row ── */}
-              {goalProjected !== null && (
-                <Text style={{ fontSize: 12, color: '#78716c', lineHeight: 18, marginTop: 4 }}>
-                  {`At your current pace, you'll finish ~${goalProjected} book${goalProjected !== 1 ? 's' : ''} this year`}
+            {/* ── Row 1 · Activity ── */}
+            {(currentMonthWrap.pagesRead > 0 || currentMonthWrap.readingDays > 0) && (
+              <TouchableOpacity
+                onPress={() => router.push('/stats')}
+                activeOpacity={0.6}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingVertical: 10,
+                }}
+              >
+                <Text style={{ fontSize: 14, color: '#231f1b', flex: 1, lineHeight: 20 }}>
+                  <Text style={{ fontWeight: '700' }}>{currentMonthWrap.pagesRead}</Text>
+                  <Text style={{ color: '#6b635c' }}> pages this month</Text>
+                  {currentMonthWrap.readingDays > 0 && (
+                    <>
+                      <Text style={{ color: '#c4b5a5' }}>   ·   </Text>
+                      <Text style={{ fontWeight: '700' }}>{currentMonthWrap.readingDays}</Text>
+                      <Text style={{ color: '#6b635c' }}>{` reading ${currentMonthWrap.readingDays === 1 ? 'day' : 'days'}`}</Text>
+                    </>
+                  )}
+                  {currentMonthWrap.avgPagesPerReadingDay != null && (
+                    <>
+                      <Text style={{ color: '#c4b5a5' }}>   ·   </Text>
+                      <Text style={{ fontWeight: '700' }}>{currentMonthWrap.avgPagesPerReadingDay}</Text>
+                      <Text style={{ color: '#6b635c' }}> pp/day</Text>
+                    </>
+                  )}
                 </Text>
-              )}
+                <Ionicons name="chevron-forward" size={16} color="#c4b5a5" style={{ marginLeft: 8 }} />
+              </TouchableOpacity>
+            )}
 
-              {/* ── Footer: pace rate + expand ── */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
-                {yearAvgPace !== null ? (
-                  <Text style={{ fontSize: 11, color: '#9e958d' }}>
-                    {`~${yearAvgPace} pages/day`}
-                  </Text>
-                ) : <View />}
-                {booksThisYear.length > 0 && (
-                  <Text style={{ fontSize: 11, color: '#c4b5a5' }}>
-                    {goalExpanded
-                      ? '▴ hide'
-                      : `▾ ${booksThisYear.length} book${booksThisYear.length !== 1 ? 's' : ''}`}
-                  </Text>
-                )}
-              </View>
-            </View>
-          </TouchableOpacity>
-
-          {goalExpanded && (
-            <View style={{
-              backgroundColor: '#fefcf9',
-              borderRadius: 14,
-              marginTop: 8,
-              overflow: 'hidden',
-              shadowColor: '#000',
-              shadowOpacity: 0.04,
-              shadowRadius: 6,
-              shadowOffset: { width: 0, height: 1 },
-              elevation: 1,
-            }}>
-              {booksThisYear.length === 0 ? (
-                <View style={{ padding: 18 }}>
-                  <Text style={{ fontSize: 13, color: '#9e958d', lineHeight: 20 }}>
-                    No books finished yet this year.{'\n'}Keep reading — you've got this.
-                  </Text>
-                </View>
-              ) : (
-                booksThisYear.map((book, idx) => (
-                  <TouchableOpacity
-                    key={book.id}
-                    activeOpacity={0.7}
-                    onPress={() => router.push({
-                      pathname: '/book/[id]',
-                      params: {
-                        id: book.book_id,
-                        title: book.title,
-                        author: book.author,
-                        coverUrl: book.cover_url ?? '',
-                        externalId: book.external_id ?? '',
-                        status: 'finished',
-                      },
-                    })}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      paddingVertical: 10,
-                      paddingHorizontal: 14,
-                      borderTopWidth: idx > 0 ? 1 : 0,
-                      borderTopColor: '#ede9e4',
-                    }}
-                  >
-                    <CoverThumb
-                      url={book.cover_url}
-                      externalId={book.external_id}
-                      title={book.title}
-                      width={32}
-                      height={46}
-                    />
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#231f1b' }} numberOfLines={1}>
-                        {book.title}
-                      </Text>
-                      <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 1 }} numberOfLines={1}>
-                        {book.author}
-                      </Text>
-                    </View>
-                    {book.finished_at && (
-                      <Text style={{ fontSize: 11, color: '#c4b5a5', marginLeft: 8 }}>
-                        {shortFinishDate(book.finished_at)}
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                ))
-              )}
-            </View>
-          )}
-          </View>{/* close homeTargetRef wrapper */}
-        </View>
-      )}
-
-      {/* ── Reading Insights entry ── */}
-      {(currentMonthWrap.pagesRead > 0 || currentMonthWrap.readingDays > 0 || booksThisYear.length > 0) && (
-        <View style={{ marginBottom: 32 }}>
-          <SectionLabel>Reading Insights</SectionLabel>
-          <TouchableOpacity
-            onPress={() => router.push('/stats')}
-            activeOpacity={0.82}
-          >
-            <View style={{
-              backgroundColor: '#fefcf9',
-              borderRadius: 16,
-              padding: 18,
-              shadowColor: '#231f1b',
-              shadowOpacity: 0.05,
-              shadowRadius: 8,
-              shadowOffset: { width: 0, height: 2 },
-              elevation: 2,
-            }}>
-              {/* Top row: month pages + year books */}
-              <View style={{ flexDirection: 'row', marginBottom: 14 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{
-                    fontSize: 32, fontWeight: '800', color: '#231f1b',
-                    letterSpacing: -1, lineHeight: 34,
+            {/* ── Row 2 · Yearly Goal ── */}
+            {yearlyGoal && yearlyGoal > 0 && (() => {
+              const read    = booksThisYear.length;
+              const total   = Math.max(1, yearlyGoal);
+              const pct     = Math.max(0, Math.min(100, (read / total) * 100));
+              const label   = goalIsAhead
+                ? `${goalSurplus} ahead`
+                : goalIsBehind
+                ? `${goalDeficit} behind`
+                : goalExpectedByNow === 0 ? 'Getting started' : 'On pace';
+              const symbol  = goalIsAhead ? '↑' : goalIsBehind ? '↓' : '→';
+              const color   = goalIsAhead ? '#15803d' : goalIsBehind ? '#92400e' : '#6b635c';
+              return (
+                <View style={{ paddingVertical: 10 }}>
+                  <View style={{
+                    flexDirection: 'row',
+                    alignItems: 'baseline',
+                    justifyContent: 'space-between',
+                    marginBottom: 10,
                   }}>
-                    {currentMonthWrap.pagesRead}
-                  </Text>
-                  <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 3 }}>
-                    pages this month
-                  </Text>
-                </View>
-                {booksThisYear.length > 0 && (
-                  <View style={{ flex: 1, alignItems: 'flex-end' }}>
                     <Text style={{
-                      fontSize: 32, fontWeight: '800', color: '#231f1b',
-                      letterSpacing: -1, lineHeight: 34,
+                      fontSize: 28,
+                      fontWeight: '800',
+                      color: '#231f1b',
+                      letterSpacing: -0.6,
+                      lineHeight: 32,
                     }}>
-                      {booksThisYear.length}
+                      {read}
+                      <Text style={{ fontSize: 16, fontWeight: '500', color: '#9e958d' }}>
+                        {` / ${yearlyGoal}`}
+                      </Text>
                     </Text>
-                    <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 3 }}>
-                      books this year
+                    <Text style={{ fontSize: 12, color, fontWeight: '600' }}>
+                      {symbol}  {label}
                     </Text>
                   </View>
-                )}
+                  {/* Slim linear progress bar */}
+                  <View style={{
+                    height: 6,
+                    backgroundColor: '#ede9e4',
+                    borderRadius: 3,
+                    overflow: 'hidden',
+                  }}>
+                    <View style={{
+                      height: 6,
+                      width: `${pct}%`,
+                      backgroundColor: '#7b9e7e',
+                      borderRadius: 3,
+                    }} />
+                  </View>
+                </View>
+              );
+            })()}
+
+            {/* ── Row 3 · Completed Books (horizontal scroll with right-edge fade) ── */}
+            {booksThisYear.length > 0 && (
+              <View style={{ paddingTop: 12, position: 'relative' }}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 8, paddingRight: 24 }}
+                >
+                  {booksThisYear.map(book => (
+                    <TouchableOpacity
+                      key={book.id}
+                      activeOpacity={0.7}
+                      onPress={() => router.push({
+                        pathname: '/book/[id]',
+                        params: {
+                          id: book.book_id,
+                          title: book.title,
+                          author: book.author,
+                          coverUrl: book.cover_url ?? '',
+                          externalId: book.external_id ?? '',
+                          status: 'finished',
+                        },
+                      })}
+                    >
+                      <CoverThumb
+                        url={book.cover_url}
+                        externalId={book.external_id}
+                        title={book.title}
+                        width={44}
+                        height={64}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                {/* Soft fade hint that the row scrolls — matches page bg (#f5f1ec) */}
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={['rgba(245,241,236,0)', 'rgba(245,241,236,1)']}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={{
+                    position: 'absolute',
+                    right: 0,
+                    top: 12,
+                    bottom: 0,
+                    width: 28,
+                  }}
+                />
               </View>
-              {/* Bottom row: sub-stats + arrow */}
-              <View style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                paddingTop: 12,
-                borderTopWidth: 1,
-                borderTopColor: '#ede9e4',
-              }}>
-                <Text style={{ fontSize: 12, color: '#9e958d' }}>
-                  {currentMonthWrap.readingDays > 0
-                    ? `${currentMonthWrap.readingDays} reading ${currentMonthWrap.readingDays === 1 ? 'day' : 'days'}`
-                    : `${_wrapToday.toLocaleString('default', { month: 'long' })} · ${_wrapToday.getFullYear()}`
-                  }
-                  {currentMonthWrap.avgPagesPerReadingDay != null
-                    ? `  ·  ${currentMonthWrap.avgPagesPerReadingDay} pp/day`
-                    : ''}
-                </Text>
-                <Text style={{ fontSize: 13, color: '#c4b5a5' }}>→</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
+            )}
+          </View>
         </View>
       )}
+
 
       {/* ── 2. Timeline (self + network activity) ── */}
       {/* For new users with no reads and no goal, the "Nothing yet" card below
