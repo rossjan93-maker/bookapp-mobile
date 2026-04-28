@@ -11,7 +11,6 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
-import { computeGoalProgress } from '../../lib/pacing';
 import { computeAvgPagesPerDay, computeSourceCompletion } from '../../lib/signals';
 import { ProfileScreenSkeleton } from '../../components/Placeholder';
 import type { SourceCompletion } from '../../lib/signals';
@@ -65,16 +64,6 @@ type ReaderSignals = {
 type ReadingPatterns = {
   selfAdded: number;   // user_books added by user themselves
   recAdded: number;    // user_books sourced from a recommendation
-};
-
-type YearBook = {
-  id: string;
-  book_id: string;
-  finished_at: string | null;
-  title: string;
-  author: string;
-  cover_url: string | null;
-  external_id: string | null;
 };
 
 const REC_STATUS: Record<string, { bg: string; text: string; label: string }> = {
@@ -137,8 +126,6 @@ export default function ProfileScreen() {
   const [error, setError]               = useState<string | null>(null);
   const [recsExpanded, setRecsExpanded]         = useState(false);
   const [acceptedFriends, setAcceptedFriends]   = useState<AcceptedFriend[] | null>(null);
-  const [booksThisYear, setBooksThisYear]       = useState<YearBook[] | null>(null);
-  const [goalExpanded, setGoalExpanded]         = useState(false);
   const [refreshing, setRefreshing]             = useState(false);
 
   async function loadProfile(force = false) {
@@ -214,7 +201,6 @@ export default function ProfileScreen() {
       selfAddedDnfRes,
       recAddedFinishedRes,
       recAddedDnfRes,
-      finishedYearBooksRes,
     ] = await Promise.all([
       supabase
         .from('friendships')
@@ -255,15 +241,6 @@ export default function ProfileScreen() {
       supabase.from('user_books').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('source', 'self_added').eq('status', 'dnf').is('deleted_at', null),
       supabase.from('user_books').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('source', 'recommendation').eq('status', 'finished').is('deleted_at', null),
       supabase.from('user_books').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('source', 'recommendation').eq('status', 'dnf').is('deleted_at', null),
-      supabase
-        .from('user_books')
-        .select('id, book_id, finished_at, book:books(title, author, cover_url, external_id)')
-        .eq('user_id', user.id)
-        .eq('status', 'finished')
-        .is('deleted_at', null)
-        .gte('finished_at', yearStart)
-        .order('finished_at', { ascending: false })
-        .limit(50),
     ]);
 
     setPendingRequests((requestsRes.data as unknown as PendingRequest[]) ?? []);
@@ -280,19 +257,6 @@ export default function ProfileScreen() {
       .map(f => (f.requester_id === user.id ? f.addressee : f.requester))
       .filter((f): f is AcceptedFriend => f !== null);
     setAcceptedFriends(friendsList);
-
-    setBooksThisYear(((finishedYearBooksRes.data ?? []) as any[]).map(r => {
-      const b = r.book as any;
-      return {
-        id:          r.id,
-        book_id:     r.book_id,
-        finished_at: r.finished_at ?? null,
-        title:       b?.title ?? '',
-        author:      b?.author ?? '',
-        cover_url:   b?.cover_url ?? null,
-        external_id: b?.external_id ?? null,
-      };
-    }));
 
     const dnf      = dnfCountRes.count ?? 0;
     const resolved = finishedCount + dnf;
@@ -361,7 +325,17 @@ export default function ProfileScreen() {
   const hasChosenUsername = username.length > 0;
   const displayName      = getDisplayName(profile);
   const yearlyGoal       = profile?.yearly_reading_goal ?? null;
-  const goalProgress     = stats ? computeGoalProgress(stats.finishedThisYear, yearlyGoal) : null;
+
+  // On-pace computation (mirrors lib/pacing.ts → computeGoalProgress).
+  let onPace = false;
+  if (stats && yearlyGoal && yearlyGoal > 0) {
+    const today = new Date();
+    const dayOfYear = Math.floor(
+      (today.getTime() - new Date(today.getFullYear(), 0, 0).getTime()) / (24 * 60 * 60 * 1000)
+    );
+    const expectedByNow = Math.floor((dayOfYear / 365) * yearlyGoal);
+    onPace = stats.finishedThisYear >= expectedByNow;
+  }
 
   const hasTasteData = prefs && (
     (prefs.favorite_genres?.length ?? 0) > 0 ||
@@ -439,123 +413,25 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      {/* ── Reading Goal ── */}
-      <View style={{ paddingHorizontal: 24, marginTop: 24, marginBottom: 0 }}>
-        {goalProgress ? (
-          <View style={{
-            backgroundColor: '#fefcf9',
-            borderRadius: 14,
-            padding: 16,
-            shadowColor: '#000',
-            shadowOpacity: 0.04,
-            shadowRadius: 6,
-            shadowOffset: { width: 0, height: 1 },
-            elevation: 1,
-          }}>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => setGoalExpanded(e => !e)}
-              style={{ flexDirection: 'row', alignItems: 'center' }}
-            >
-              <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500', flex: 1 }}>
-                {goalProgress}
+      {/* ── Reading summary row ── */}
+      {stats && (
+        <View style={{ paddingHorizontal: 24, marginTop: 22 }}>
+          {yearlyGoal ? (
+            <View>
+              <Text style={{ fontSize: 15, fontWeight: '600', color: '#231f1b' }}>
+                {stats.finishedThisYear} / {yearlyGoal} books this year
               </Text>
-              <Text style={{ fontSize: 14, color: '#ede9e4', marginLeft: 8 }}>
-                {goalExpanded ? '↑' : '↓'}
+              <Text style={{ fontSize: 13, color: onPace ? '#4d7f52' : '#9e958d', marginTop: 4 }}>
+                {onPace ? 'On pace' : 'Behind pace'}
               </Text>
+            </View>
+          ) : (
+            <TouchableOpacity onPress={() => router.push('/settings')}>
+              <Text style={{ fontSize: 13, color: '#9e958d' }}>Set a yearly reading goal →</Text>
             </TouchableOpacity>
-            {yearlyGoal && stats && (
-              <View style={{ height: 3, backgroundColor: '#ede9e4', borderRadius: 2, overflow: 'hidden', marginTop: 10 }}>
-                <View style={{
-                  height: 3,
-                  width: `${Math.min(100, Math.round((stats.finishedThisYear / yearlyGoal) * 100))}%`,
-                  backgroundColor: '#231f1b',
-                  borderRadius: 2,
-                }} />
-              </View>
-            )}
-            {goalExpanded && (
-              <View style={{ marginTop: 14 }}>
-                {booksThisYear === null ? (
-                  <Text style={{ fontSize: 13, color: '#ede9e4', lineHeight: 20 }}>Loading…</Text>
-                ) : booksThisYear.length === 0 ? (
-                  <Text style={{ fontSize: 13, color: '#9e958d', lineHeight: 20 }}>
-                    No books finished yet this year.
-                  </Text>
-                ) : (
-                  <View>
-                    {booksThisYear.map((book, idx) => (
-                      <TouchableOpacity
-                        key={book.id}
-                        activeOpacity={0.7}
-                        onPress={() => router.push({
-                          pathname: '/book/[id]',
-                          params: {
-                            id: book.book_id,
-                            title: book.title,
-                            author: book.author,
-                            coverUrl: book.cover_url ?? '',
-                            externalId: book.external_id ?? '',
-                            status: 'finished',
-                          },
-                        })}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          paddingVertical: 9,
-                          borderTopWidth: idx > 0 ? 1 : 0,
-                          borderTopColor: 'rgba(231,229,228,0.5)',
-                        }}
-                      >
-                        <CoverThumb
-                          url={book.cover_url}
-                          externalId={book.external_id}
-                          title={book.title}
-                          width={28}
-                          height={40}
-                        />
-                        <View style={{ flex: 1, marginLeft: 10 }}>
-                          <Text style={{ fontSize: 13, fontWeight: '600', color: '#231f1b' }} numberOfLines={1}>
-                            {book.title}
-                          </Text>
-                          <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 1 }} numberOfLines={1}>
-                            {book.author}
-                          </Text>
-                        </View>
-                        {book.finished_at && (
-                          <Text style={{ fontSize: 11, color: '#c4b5a5', marginLeft: 8 }}>
-                            {new Date(book.finished_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </Text>
-                        )}
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-              </View>
-            )}
-          </View>
-        ) : (
-          <TouchableOpacity
-            onPress={() => router.push('/settings')}
-            style={{
-              backgroundColor: '#fefcf9',
-              borderRadius: 14,
-              padding: 16,
-              shadowColor: '#000',
-              shadowOpacity: 0.04,
-              shadowRadius: 6,
-              shadowOffset: { width: 0, height: 1 },
-              elevation: 1,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}
-          >
-            <Text style={{ fontSize: 13, color: '#9e958d' }}>Set a yearly reading goal</Text>
-            <Text style={{ fontSize: 14, color: '#ede9e4' }}>›</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+          )}
+        </View>
+      )}
 
       {/* ── Taste profile card ── */}
       <View style={{ paddingHorizontal: 24, marginTop: 14, marginBottom: 24 }}>
@@ -633,40 +509,6 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* ── Reading Intelligence ── */}
-      <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
-        <SectionLabel>Reading Intelligence</SectionLabel>
-        <View style={{
-          backgroundColor: '#fefcf9',
-          borderRadius: 14,
-          padding: 18,
-          shadowColor: '#000',
-          shadowOpacity: 0.04,
-          shadowRadius: 6,
-          shadowOffset: { width: 0, height: 1 },
-          elevation: 1,
-        }}>
-          <View style={{
-            alignSelf: 'flex-start',
-            backgroundColor: '#ede9e4',
-            borderRadius: 6,
-            paddingHorizontal: 8,
-            paddingVertical: 3,
-            marginBottom: 10,
-          }}>
-            <Text style={{ fontSize: 10, fontWeight: '700', color: '#9e958d', letterSpacing: 0.7, textTransform: 'uppercase' }}>
-              Coming soon
-            </Text>
-          </View>
-          <Text style={{ fontSize: 14, color: '#57534e', lineHeight: 22 }}>
-            Signals and patterns from your reading life.
-          </Text>
-          <Text style={{ fontSize: 13, color: '#9e958d', lineHeight: 20, marginTop: 6 }}>
-            Pace, completion habits, and how your taste aligns with friends — surfaced as you read.
-          </Text>
-        </View>
-      </View>
-
       {/* ── Friend Requests (only rendered when Phase 2 data has arrived and there are pending requests) ── */}
       {pendingRequests !== null && pendingRequests.length > 0 && (
         <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
@@ -697,31 +539,10 @@ export default function ProfileScreen() {
         </View>
       )}
 
-      {/* ── Friends ── */}
-      <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
-        <SectionLabel>Friends</SectionLabel>
-        {acceptedFriends === null ? null : acceptedFriends.length === 0 ? (
-          <TouchableOpacity
-            onPress={() => router.push('/(tabs)/')}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              backgroundColor: '#fefcf9',
-              borderRadius: 12,
-              paddingVertical: 13,
-              paddingHorizontal: 16,
-              shadowColor: '#000',
-              shadowOpacity: 0.04,
-              shadowRadius: 6,
-              shadowOffset: { width: 0, height: 1 },
-              elevation: 1,
-            }}
-          >
-            <Text style={{ fontSize: 14, color: '#57534e' }}>Find friends to connect with</Text>
-            <Text style={{ fontSize: 16, color: '#ede9e4' }}>›</Text>
-          </TouchableOpacity>
-        ) : (
+      {/* ── Friends (only when active) ── */}
+      {acceptedFriends && acceptedFriends.length > 0 && (
+        <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
+          <SectionLabel>Friends</SectionLabel>
           <View style={{
             backgroundColor: '#fefcf9',
             borderRadius: 14,
@@ -786,22 +607,97 @@ export default function ProfileScreen() {
               );
             })}
           </View>
-        )}
-      </View>
+        </View>
+      )}
 
-      {/* ── Sent Recommendations ── */}
-      <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
-        <SectionLabel>Recommendations Sent</SectionLabel>
-        {sentRecs === null ? null : sentRecs.length === 0 ? (
+      {/* ── Sent Recommendations (only when active) ── */}
+      {sentRecs && sentRecs.length > 0 && (
+        <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
+          <SectionLabel>Recommendations Sent</SectionLabel>
+          {(recsExpanded ? sentRecs : sentRecs.slice(0, 3)).map(rec => {
+            const badge = REC_STATUS[rec.status] ?? { bg: '#f1f5f9', text: '#475569', label: rec.status };
+            return (
+              <TouchableOpacity
+                key={rec.id}
+                activeOpacity={0.7}
+                onPress={() => router.push({
+                  pathname: '/book/[id]',
+                  params: {
+                    id: rec.book_id,
+                    title: rec.book?.title ?? '',
+                    author: rec.book?.author ?? '',
+                    coverUrl: rec.book?.cover_url ?? '',
+                    externalId: rec.book?.external_id ?? '',
+                    status: rec.status,
+                    note: rec.note ?? '',
+                    toUser: getFirstName(rec.to_user),
+                  },
+                })}
+                style={{
+                  paddingVertical: 14,
+                  borderBottomWidth: 1,
+                  borderBottomColor: '#ede9e4',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                }}
+              >
+                <CoverThumb
+                  url={rec.book?.cover_url}
+                  externalId={rec.book?.external_id}
+                  title={rec.book?.title}
+                  width={32}
+                  height={46}
+                />
+                <View style={{ flex: 1, marginLeft: 12, marginRight: 10 }}>
+                  <Text style={{ fontWeight: '600', fontSize: 14, color: '#231f1b', marginBottom: 3 }}>
+                    {rec.book?.title ?? '—'}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#9e958d' }}>
+                    → {getFirstName(rec.to_user)}
+                  </Text>
+                  {rec.note ? (
+                    <Text style={{ fontSize: 12, color: '#78716c', fontStyle: 'italic', marginTop: 4 }} numberOfLines={1}>
+                      "{rec.note}"
+                    </Text>
+                  ) : null}
+                </View>
+                <View style={{
+                  backgroundColor: badge.bg,
+                  borderRadius: 6,
+                  paddingHorizontal: 8,
+                  paddingVertical: 3,
+                  alignSelf: 'center',
+                }}>
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: badge.text }}>{badge.label}</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+          {sentRecs.length > 3 && (
+            <TouchableOpacity
+              onPress={() => setRecsExpanded(e => !e)}
+              style={{ paddingVertical: 13, alignItems: 'center' }}
+            >
+              <Text style={{ fontSize: 13, color: '#9e958d' }}>
+                {recsExpanded ? 'Show less' : `${sentRecs.length - 3} more`}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* ── Combined social CTA (only when both Friends and Recs are empty) ── */}
+      {acceptedFriends && acceptedFriends.length === 0 && sentRecs && sentRecs.length === 0 && (
+        <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
           <TouchableOpacity
-            onPress={() => router.push('/(tabs)/library')}
+            onPress={() => router.push('/')}
             style={{
               flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'space-between',
               backgroundColor: '#fefcf9',
               borderRadius: 12,
-              paddingVertical: 13,
+              paddingVertical: 14,
               paddingHorizontal: 16,
               shadowColor: '#000',
               shadowOpacity: 0.04,
@@ -810,98 +706,13 @@ export default function ProfileScreen() {
               elevation: 1,
             }}
           >
-            <Text style={{ fontSize: 14, color: '#57534e' }}>Browse your library to send one</Text>
+            <Text style={{ fontSize: 14, color: '#57534e' }}>
+              Find friends &amp; share what you&apos;re reading
+            </Text>
             <Text style={{ fontSize: 16, color: '#ede9e4' }}>›</Text>
           </TouchableOpacity>
-        ) : (
-          <>
-            {(recsExpanded ? sentRecs : sentRecs.slice(0, 3)).map(rec => {
-              const badge = REC_STATUS[rec.status] ?? { bg: '#f1f5f9', text: '#475569', label: rec.status };
-              return (
-                <TouchableOpacity
-                  key={rec.id}
-                  activeOpacity={0.7}
-                  onPress={() => router.push({
-                    pathname: '/book/[id]',
-                    params: {
-                      id: rec.book_id,
-                      title: rec.book?.title ?? '',
-                      author: rec.book?.author ?? '',
-                      coverUrl: rec.book?.cover_url ?? '',
-                      externalId: rec.book?.external_id ?? '',
-                      status: rec.status,
-                      note: rec.note ?? '',
-                      toUser: getFirstName(rec.to_user),
-                    },
-                  })}
-                  style={{
-                    paddingVertical: 14,
-                    borderBottomWidth: 1,
-                    borderBottomColor: '#ede9e4',
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                  }}
-                >
-                  <CoverThumb
-                    url={rec.book?.cover_url}
-                    externalId={rec.book?.external_id}
-                    title={rec.book?.title}
-                    width={32}
-                    height={46}
-                  />
-                  <View style={{ flex: 1, marginLeft: 12, marginRight: 10 }}>
-                    <Text style={{ fontWeight: '600', fontSize: 14, color: '#231f1b', marginBottom: 3 }}>
-                      {rec.book?.title ?? '—'}
-                    </Text>
-                    <Text style={{ fontSize: 12, color: '#9e958d' }}>
-                      → {getFirstName(rec.to_user)}
-                    </Text>
-                    {rec.note ? (
-                      <Text style={{ fontSize: 12, color: '#78716c', fontStyle: 'italic', marginTop: 4 }} numberOfLines={1}>
-                        "{rec.note}"
-                      </Text>
-                    ) : null}
-                  </View>
-                  <View style={{
-                    backgroundColor: badge.bg,
-                    borderRadius: 6,
-                    paddingHorizontal: 8,
-                    paddingVertical: 3,
-                    alignSelf: 'center',
-                  }}>
-                    <Text style={{ fontSize: 11, fontWeight: '600', color: badge.text }}>{badge.label}</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-            {sentRecs.length > 3 && (
-              <TouchableOpacity
-                onPress={() => setRecsExpanded(e => !e)}
-                style={{ paddingVertical: 13, alignItems: 'center' }}
-              >
-                <Text style={{ fontSize: 13, color: '#9e958d' }}>
-                  {recsExpanded ? 'Show less' : `${sentRecs.length - 3} more`}
-                </Text>
-              </TouchableOpacity>
-            )}
-          </>
-        )}
-      </View>
-
-      {/* ── Settings link ── */}
-      <TouchableOpacity
-        onPress={() => router.push('/settings')}
-        style={{
-          alignSelf: 'center',
-          paddingHorizontal: 24,
-          paddingVertical: 10,
-          borderWidth: 1,
-          borderColor: '#ede9e4',
-          borderRadius: 8,
-        }}
-      >
-        <Text style={{ fontSize: 14, color: '#78716c' }}>Settings</Text>
-      </TouchableOpacity>
+        </View>
+      )}
     </ScrollView>
   );
 }

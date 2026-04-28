@@ -147,13 +147,24 @@ export default function SettingsScreen() {
 
   const [firstName, setFirstName]       = useState('');
   const [lastName, setLastName]         = useState('');
-  const [profileDirty, setProfileDirty] = useState(false);
+
+  // Account section (username) save state
+  const [accountDirty, setAccountDirty]   = useState(false);
+  const [savingAccount, setSavingAccount] = useState(false);
+  const [accountSaved, setAccountSaved]   = useState(false);
+  const [accountError, setAccountError]   = useState<string | null>(null);
+
+  // Profile section (first/last name) save state
+  const [profileDirty, setProfileDirty]   = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaved, setProfileSaved]   = useState(false);
   const [profileError, setProfileError]   = useState<string | null>(null);
 
   type UsernameStatus = 'idle' | 'checking' | 'available' | 'taken' | 'invalid';
   const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>('idle');
+
+  // Advanced section (collapsed by default)
+  const [advancedExpanded, setAdvancedExpanded] = useState(false);
 
   const [goalDraft, setGoalDraft] = useState('');
   const [goalDirty, setGoalDirty] = useState(false);
@@ -258,23 +269,46 @@ export default function SettingsScreen() {
     return () => clearTimeout(timer);
   }, [username, userId, originalUsername]);
 
-  async function handleSaveProfile() {
+  async function handleSaveAccount() {
     if (!supabase || !userId) return;
-    setProfileError(null);
+    setAccountError(null);
 
     const uname = username.trim().toLowerCase().replace(/\s+/g, '');
     if (uname && !/^[a-z0-9_]{3,20}$/.test(uname)) {
-      setProfileError('Username must be 3–20 characters: letters, numbers, or underscores.');
+      setAccountError('Username must be 3–20 characters: letters, numbers, or underscores.');
       return;
     }
     if (usernameStatus === 'taken') {
-      setProfileError('That username is already taken. Please choose another.');
+      setAccountError('That username is already taken. Please choose another.');
       return;
     }
     if (usernameStatus === 'checking') {
-      setProfileError('Still checking availability — try again in a moment.');
+      setAccountError('Still checking availability — try again in a moment.');
       return;
     }
+
+    setSavingAccount(true);
+    const { error } = await supabase
+      .from('profiles')
+      .update({ username: uname || null })
+      .eq('id', userId);
+    setSavingAccount(false);
+    if (!error) {
+      setOriginalUsername(uname);
+      setUsernameStatus('idle');
+      setAccountDirty(false);
+      setAccountSaved(true);
+      setTimeout(() => setAccountSaved(false), 2500);
+    } else if (error.code === '23505') {
+      setAccountError('That username is already taken. Please choose another.');
+    } else {
+      setAccountError('Could not save — try again.');
+    }
+  }
+
+  async function handleSaveProfile() {
+    if (!supabase || !userId) return;
+    setProfileError(null);
 
     setSavingProfile(true);
     const { error } = await supabase
@@ -282,18 +316,13 @@ export default function SettingsScreen() {
       .update({
         first_name: firstName.trim() || null,
         last_name:  lastName.trim()  || null,
-        username:   uname || null,
       })
       .eq('id', userId);
     setSavingProfile(false);
     if (!error) {
-      setOriginalUsername(uname);
-      setUsernameStatus('idle');
       setProfileDirty(false);
       setProfileSaved(true);
       setTimeout(() => setProfileSaved(false), 2500);
-    } else if (error.code === '23505') {
-      setProfileError('That username is already taken. Please choose another.');
     } else {
       setProfileError('Could not save — try again.');
     }
@@ -428,15 +457,21 @@ export default function SettingsScreen() {
         Profile, reading goals, and preferences.
       </Text>
 
-      {/* ── Profile / Identity ───────────────────────────────────────────────── */}
-      <SectionHeader>Profile</SectionHeader>
+      {/* ── Account (email + username) ───────────────────────────────────────── */}
+      <SectionHeader>Account</SectionHeader>
       <SettingsCard>
         <SettingsRow>
+          <RowLabel>Email</RowLabel>
+          <Text style={{ flex: 1, fontSize: 15, color: '#78716c', paddingVertical: 2 }}>
+            {email ?? '—'}
+          </Text>
+        </SettingsRow>
+        <SettingsRow last>
           <RowLabel>Username</RowLabel>
           <Text style={{ fontSize: 15, color: '#9e958d', paddingVertical: 2 }}>@</Text>
           <TextInput
             value={username}
-            onChangeText={v => { setUsername(v); setProfileDirty(true); setProfileSaved(false); setProfileError(null); }}
+            onChangeText={v => { setUsername(v); setAccountDirty(true); setAccountSaved(false); setAccountError(null); }}
             placeholder="your_username"
             placeholderTextColor="#c4b5a5"
             autoCapitalize="none"
@@ -453,6 +488,43 @@ export default function SettingsScreen() {
             <Text style={{ fontSize: 15, color: '#dc2626', marginLeft: 6 }}>✕</Text>
           )}
         </SettingsRow>
+      </SettingsCard>
+
+      {usernameStatus === 'taken' && !accountError && (
+        <Text style={{ fontSize: 12, color: '#dc2626', marginTop: 8, paddingHorizontal: 2 }}>
+          That username is already taken.
+        </Text>
+      )}
+      {usernameStatus === 'invalid' && !accountError && (
+        <Text style={{ fontSize: 12, color: '#92400e', marginTop: 8, paddingHorizontal: 2 }}>
+          3–20 characters — letters, numbers, or underscores only.
+        </Text>
+      )}
+      {usernameStatus === 'available' && !accountError && (
+        <Text style={{ fontSize: 12, color: '#16a34a', marginTop: 8, paddingHorizontal: 2 }}>
+          Username is available.
+        </Text>
+      )}
+
+      {accountError && (
+        <Text style={{ fontSize: 12, color: '#b91c1c', marginTop: 8, paddingHorizontal: 2 }}>
+          {accountError}
+        </Text>
+      )}
+
+      {(accountDirty || accountSaved) && (
+        <SaveButton
+          onPress={handleSaveAccount}
+          saving={savingAccount}
+          saved={accountSaved}
+          disabled={usernameStatus === 'taken' || usernameStatus === 'checking' || usernameStatus === 'invalid'}
+          label="Save Username"
+        />
+      )}
+
+      {/* ── Profile (first + last name) ──────────────────────────────────────── */}
+      <SectionHeader>Profile</SectionHeader>
+      <SettingsCard>
         <SettingsRow>
           <RowLabel>First name</RowLabel>
           <TextInput
@@ -490,22 +562,6 @@ export default function SettingsScreen() {
         </CardFooter>
       </SettingsCard>
 
-      {usernameStatus === 'taken' && !profileError && (
-        <Text style={{ fontSize: 12, color: '#dc2626', marginTop: 8, paddingHorizontal: 2 }}>
-          That username is already taken.
-        </Text>
-      )}
-      {usernameStatus === 'invalid' && !profileError && (
-        <Text style={{ fontSize: 12, color: '#92400e', marginTop: 8, paddingHorizontal: 2 }}>
-          3–20 characters — letters, numbers, or underscores only.
-        </Text>
-      )}
-      {usernameStatus === 'available' && !profileError && (
-        <Text style={{ fontSize: 12, color: '#16a34a', marginTop: 8, paddingHorizontal: 2 }}>
-          Username is available.
-        </Text>
-      )}
-
       {profileError && (
         <Text style={{ fontSize: 12, color: '#b91c1c', marginTop: 8, paddingHorizontal: 2 }}>
           {profileError}
@@ -517,12 +573,11 @@ export default function SettingsScreen() {
           onPress={handleSaveProfile}
           saving={savingProfile}
           saved={profileSaved}
-          disabled={usernameStatus === 'taken' || usernameStatus === 'checking' || usernameStatus === 'invalid'}
           label="Save Profile"
         />
       )}
 
-      {/* ── Reading / Goal ──────────────────────────────────────────────────── */}
+      {/* ── Reading (yearly goal) ────────────────────────────────────────────── */}
       <SectionHeader>Reading</SectionHeader>
       <SettingsCard>
         <SettingsRow last>
@@ -566,30 +621,7 @@ export default function SettingsScreen() {
         />
       )}
 
-      {/* ── Reading / Taste ──────────────────────────────────────────────────── */}
-      <View style={{ marginTop: 12 }}>
-        <SettingsCard>
-          <TouchableOpacity
-            onPress={() => router.push('/edit-preferences')}
-            activeOpacity={0.75}
-            style={{ paddingHorizontal: 16, paddingVertical: 16 }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', marginBottom: 3 }}>
-                  Taste & Style
-                </Text>
-                <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
-                  Genres, styles, and authors you love
-                </Text>
-              </View>
-              <Text style={{ fontSize: 20, color: '#c4b5a5', marginLeft: 10 }}>›</Text>
-            </View>
-          </TouchableOpacity>
-        </SettingsCard>
-      </View>
-
-      {/* ── Library ──────────────────────────────────────────────────────────── */}
+      {/* ── Library (Goodreads import + repair dates) ────────────────────────── */}
       <SectionHeader>Library</SectionHeader>
       <SettingsCard>
         <TouchableOpacity
@@ -629,55 +661,64 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </SettingsCard>
 
-      {/* ── Developer (DEV only) ─────────────────────────────────────────────── */}
+      {/* ── Advanced (collapsed, DEV only) ───────────────────────────────────── */}
       {__DEV__ && (
         <>
-          <SectionHeader>Developer</SectionHeader>
+          <SectionHeader>Advanced</SectionHeader>
           <SettingsCard>
             <TouchableOpacity
-              onPress={handleSubjectRepair}
-              disabled={subjectRepairRunning}
+              onPress={() => setAdvancedExpanded(e => !e)}
               activeOpacity={0.75}
               style={{ paddingHorizontal: 16, paddingVertical: 16 }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', marginBottom: 3 }}>
-                    Repair Subject Coverage
+                    Developer tools
                   </Text>
                   <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
-                    Enrich books with null or sparse subjects via Open Library
+                    {advancedExpanded ? 'Tap to collapse' : 'Tap to reveal'}
                   </Text>
                 </View>
-                {subjectRepairRunning ? (
-                  <ActivityIndicator size="small" color="#9e958d" style={{ marginLeft: 10 }} />
-                ) : (
-                  <Text style={{ fontSize: 20, color: '#c4b5a5', marginLeft: 10 }}>›</Text>
-                )}
+                <Text style={{ fontSize: 14, color: '#c4b5a5', marginLeft: 10 }}>
+                  {advancedExpanded ? '↑' : '↓'}
+                </Text>
               </View>
             </TouchableOpacity>
+            {advancedExpanded && (
+              <>
+                <View style={{ height: 1, backgroundColor: '#ede9e4', marginHorizontal: 16 }} />
+                <TouchableOpacity
+                  onPress={handleSubjectRepair}
+                  disabled={subjectRepairRunning}
+                  activeOpacity={0.75}
+                  style={{ paddingHorizontal: 16, paddingVertical: 16 }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '500', color: '#231f1b', marginBottom: 3 }}>
+                        Repair Subject Coverage
+                      </Text>
+                      <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
+                        Enrich books with null or sparse subjects via Open Library
+                      </Text>
+                    </View>
+                    {subjectRepairRunning ? (
+                      <ActivityIndicator size="small" color="#9e958d" style={{ marginLeft: 10 }} />
+                    ) : (
+                      <Text style={{ fontSize: 20, color: '#c4b5a5', marginLeft: 10 }}>›</Text>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              </>
+            )}
           </SettingsCard>
         </>
       )}
 
-      {/* ── Account ──────────────────────────────────────────────────────────── */}
-      <SectionHeader>Account</SectionHeader>
+      {/* ── Danger zone (sign out + delete account) ──────────────────────────── */}
+      <SectionHeader>Danger zone</SectionHeader>
       <SettingsCard>
-        {/* Identity info */}
-        <View style={{ paddingHorizontal: 16, paddingVertical: 14 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 5 }}>
-            <Text style={{ fontSize: 13, color: '#9e958d' }}>Username</Text>
-            <Text style={{ fontSize: 13, color: '#78716c', fontWeight: '500' }}>@{username}</Text>
-          </View>
-          <View style={{ height: 1, backgroundColor: '#ede9e4', marginVertical: 2 }} />
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 5 }}>
-            <Text style={{ fontSize: 13, color: '#9e958d' }}>Email</Text>
-            <Text style={{ fontSize: 13, color: '#78716c', fontWeight: '500' }}>{email ?? '—'}</Text>
-          </View>
-        </View>
-
-        {/* Sign out */}
-        <View style={{ height: 1, backgroundColor: '#ede9e4' }} />
         <TouchableOpacity
           onPress={handleSignOut}
           disabled={signingOut}
