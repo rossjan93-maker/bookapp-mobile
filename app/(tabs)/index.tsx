@@ -18,6 +18,7 @@ import { WtDemoHome } from '../../components/walkthrough/WtDemoHome';
 import { supabase } from '../../lib/supabase';
 import { registerCacheClearer } from '../../lib/tabCache';
 import { CoverThumb } from '../../components/CoverThumb';
+import { isBoxSet, resolveIndividualVolumeCover } from '../../lib/boxSetDetection';
 import { HomeScreenSkeleton } from '../../components/Placeholder';
 import { getFirstName } from '../../lib/displayName';
 import { computePagePacing, computeUserAvgPace, inferReadState, computeSessionPacing, formatProjectedFinish, computeMonthlyStats, type SessionRow, type ReadState, type MonthlyStats } from '../../lib/pacing';
@@ -1280,31 +1281,48 @@ export default function HomeScreen() {
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={{ gap: 8, paddingRight: 24 }}
                 >
-                  {booksThisYear.map(book => (
-                    <TouchableOpacity
-                      key={book.id}
-                      activeOpacity={0.7}
-                      onPress={() => router.push({
-                        pathname: '/book/[id]',
-                        params: {
-                          id: book.book_id,
-                          title: book.title,
-                          author: book.author,
-                          coverUrl: book.cover_url ?? '',
-                          externalId: book.external_id ?? '',
-                          status: 'finished',
-                        },
-                      })}
-                    >
-                      <CoverThumb
-                        url={book.cover_url}
-                        externalId={book.external_id}
-                        title={book.title}
-                        width={44}
-                        height={64}
-                      />
-                    </TouchableOpacity>
-                  ))}
+                  {booksThisYear.map(book => {
+                    // Box sets / multi-volume bundles must not display the
+                    // grouped-product cover. Try to resolve to a canonical
+                    // single-volume cover from the curated series catalog;
+                    // if none is found, drop the URL/externalId so CoverThumb
+                    // renders its clean typographic placeholder.
+                    let coverUrl    = book.cover_url;
+                    let externalId  = book.external_id;
+                    if (isBoxSet({ title: book.title, page_count: book.page_count })) {
+                      const resolved = resolveIndividualVolumeCover({
+                        title:  book.title,
+                        author: book.author,
+                      });
+                      coverUrl   = resolved;
+                      externalId = null;
+                    }
+                    return (
+                      <TouchableOpacity
+                        key={book.id}
+                        activeOpacity={0.7}
+                        onPress={() => router.push({
+                          pathname: '/book/[id]',
+                          params: {
+                            id: book.book_id,
+                            title: book.title,
+                            author: book.author,
+                            coverUrl: book.cover_url ?? '',
+                            externalId: book.external_id ?? '',
+                            status: 'finished',
+                          },
+                        })}
+                      >
+                        <CoverThumb
+                          url={coverUrl}
+                          externalId={externalId}
+                          title={book.title}
+                          width={44}
+                          height={64}
+                        />
+                      </TouchableOpacity>
+                    );
+                  })}
                 </ScrollView>
                 {/* Soft fade hint that the row scrolls — matches page bg (#f5f1ec) */}
                 <LinearGradient
