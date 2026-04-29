@@ -653,3 +653,48 @@ export function computeGoalProgress(
 
   return `${finishedThisYear} of ${yearlyGoal} books this year · ${onPace ? 'on pace ✓' : 'behind pace'}`;
 }
+
+// ---------------------------------------------------------------------------
+// Shared yearly-goal pace status
+// ---------------------------------------------------------------------------
+//
+// Single source of truth for "ahead / on pace / behind" used across Home and
+// Profile. Previously each screen reimplemented the math inline with different
+// thresholds (Home used a ±2-book buffer, Profile was strict), so the same
+// reader could see "On pace" on Home and "Behind pace" on Profile at once.
+//
+// Buffer rationale: a strict `finished >= expected` threshold flips a reader
+// to "behind" the moment they're one book short, even when they're 0–1 books
+// behind the daily-prorated target — which is statistical noise, not a trend.
+// The ±2-book buffer matches the Home screen's prior behavior and keeps the
+// status from flickering day-to-day.
+
+export type PaceStatus = {
+  state:    'ahead' | 'on_pace' | 'behind';
+  surplus:  number;   // books AHEAD of expected (0 if not ahead)
+  deficit:  number;   // books BEHIND expected (0 if not behind)
+  expected: number;   // expected books finished by today's day-of-year
+};
+
+const PACE_BUFFER_BOOKS = 2;
+
+export function computePaceStatus(
+  finishedThisYear: number,
+  yearlyGoal: number | null | undefined,
+  now: Date = new Date(),
+): PaceStatus | null {
+  if (!yearlyGoal || yearlyGoal <= 0) return null;
+
+  const dayOfYear = Math.floor(
+    (now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86_400_000,
+  );
+  const expected = Math.floor((dayOfYear / 365) * yearlyGoal);
+  const surplus  = Math.max(0, finishedThisYear - expected);
+  const deficit  = Math.max(0, expected - finishedThisYear);
+
+  let state: PaceStatus['state'] = 'on_pace';
+  if (surplus >= PACE_BUFFER_BOOKS) state = 'ahead';
+  else if (deficit >= PACE_BUFFER_BOOKS) state = 'behind';
+
+  return { state, surplus, deficit, expected };
+}

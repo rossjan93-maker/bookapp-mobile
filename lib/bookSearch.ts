@@ -33,9 +33,42 @@ export type BookResult = {
 
 const GB_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_BOOKS_API_KEY ?? '';
 
+// Warn ONCE per JS context if the GB key is missing — anonymous-tier requests
+// still work but get rate-limited under any real volume, which presents to the
+// user as "search returned nothing".
+let _gbKeyWarned = false;
+function warnMissingGbKey(): void {
+  if (_gbKeyWarned) return;
+  _gbKeyWarned = true;
+  console.warn(
+    '[bookSearch] EXPO_PUBLIC_GOOGLE_BOOKS_API_KEY is not set — falling back to Open Library only. ' +
+      'Search results will be sparser and Google Books covers will not be available.',
+  );
+}
+
 // ─── OL field list ────────────────────────────────────────────────────────────
 
 const OL_FIELDS = 'key,title,author_name,cover_i,cover_edition_key,number_of_pages_median';
+
+// ─── Network helpers ──────────────────────────────────────────────────────────
+// Mobile networks routinely drop or stall fetches. Without timeouts a single
+// hung request will keep the UI's "Searching…" spinner spinning forever and
+// the stale-request guard in add-book.tsx will discard the eventual response.
+
+const FETCH_TIMEOUT_MS = 6000;
+
+async function fetchWithTimeout(
+  url: string,
+  ms: number = FETCH_TIMEOUT_MS,
+): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // ─── Stop-word set (for variant generation) ───────────────────────────────────
 
@@ -47,12 +80,20 @@ const STOP = new Set([
 // ─── Google Books fetch ───────────────────────────────────────────────────────
 
 export async function fetchGoogleBooks(q: string): Promise<BookResult[]> {
-  if (!GB_API_KEY) return [];
+  if (!GB_API_KEY) {
+    warnMissingGbKey();
+    return [];
+  }
   try {
     const fields = 'fields=items(id%2CvolumeInfo(title%2Cauthors%2CimageLinks(thumbnail%2CsmallThumbnail)%2CindustryIdentifiers%2CpageCount))';
     const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&key=${GB_API_KEY}&maxResults=10&printType=books&${fields}`;
-    const res  = await fetch(url);
-    if (!res.ok) return [];
+    const res  = await fetchWithTimeout(url);
+    if (!res.ok) {
+      // 403/429/5xx — surface in dev console so the failure mode is visible.
+      // The OL fallback path will still run; we just won't have GB results.
+      console.warn('[bookSearch] Google Books returned', res.status, 'for query', JSON.stringify(q));
+      return [];
+    }
     const json = await res.json();
     const items: any[] = json.items ?? [];
     return items.map(item => {
@@ -74,7 +115,11 @@ export async function fetchGoogleBooks(q: string): Promise<BookResult[]> {
         _isbn10:                isbn10,
       } satisfies BookResult;
     }).filter(b => b.title.length > 0);
-  } catch {
+  } catch (err) {
+    // Network/timeout errors during GB are expected on flaky links; surface
+    // them so the search-fallback path is debuggable when users report empty
+    // results.
+    console.warn('[bookSearch] Google Books request failed:', err);
     return [];
   }
 }
@@ -124,10 +169,13 @@ export function hybridMerge(gbBooks: BookResult[], olBooks: BookResult[]): BookR
 
 async function fetchCompletions(prefix: string): Promise<string[]> {
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://api.datamuse.com/words?sp=${encodeURIComponent(prefix)}*&max=20`
     );
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.warn(`[bookSearch] Datamuse non-2xx for prefix="${prefix}":`, res.status);
+      return [];
+    }
     const words: { word: string }[] = await res.json();
     return words
       .map(w => w.word)
@@ -139,7 +187,8 @@ async function fetchCompletions(prefix: string): Promise<string[]> {
         w !== prefix                    // not the prefix itself
       )
       .slice(0, 8);
-  } catch {
+  } catch (err) {
+    console.warn('[bookSearch] Datamuse request failed:', err);
     return [];
   }
 }
@@ -170,7 +219,10 @@ export async function searchBooks(rawQuery: string): Promise<SearchBooksResult> 
   const tokens         = searchQuery.trim().split(/\s+/);
   const longestToken   = tokens.reduce((m, t) => Math.max(m, t.length), 0);
   const isAliasQuery   = !!aliasExpansion;
-  const queryTooWeak   = !isAliasQuery && longestToken < 4;
+  // Allow 3-letter title words ("kid", "war", "sun") through — many real titles
+  // contain only short tokens. The abbreviation path below catches single-token
+  // queries ≤ 5 chars.  Was: longestToken < 4 (rejected too many real searches).
+  const queryTooWeak   = !isAliasQuery && longestToken < 3;
 
   if (queryTooWeak) return { ...empty, weakQuery: true };
 
@@ -180,11 +232,16 @@ export async function searchBooks(rawQuery: string): Promise<SearchBooksResult> 
   if (isAbbrevQuery) {
     try {
       const url  = `https://openlibrary.org/search.json?q=${encodeURIComponent(searchQuery)}&fields=${OL_FIELDS}&limit=15`;
-      const res  = await fetch(url);
+      const res  = await fetchWithTimeout(url);
+      if (!res.ok) {
+        console.warn('[bookSearch] OL abbrev returned', res.status, 'for', JSON.stringify(searchQuery));
+        return { ...empty, noResults: true };
+      }
       const json = await res.json();
       const raw: BookResult[] = json.docs ?? [];
       return { ...empty, results: raw.slice(0, 15), noResults: raw.length === 0 };
-    } catch {
+    } catch (err) {
+      console.warn('[bookSearch] OL abbrev failed:', (err as Error)?.message ?? err);
       return { ...empty, noResults: true };
     }
   }
@@ -227,9 +284,18 @@ export async function searchBooks(rawQuery: string): Promise<SearchBooksResult> 
   // Fire Google Books + all OL variants in parallel
   const olFetches = variants.map(v => {
     const url = `https://openlibrary.org/search.json?${v.param}=${encodeURIComponent(v.q)}&fields=${OL_FIELDS}&limit=20`;
-    return fetch(url)
-      .then(r => r.json() as Promise<{ docs?: BookResult[] }>)
-      .catch(() => ({ docs: [] as BookResult[] }));
+    return fetchWithTimeout(url)
+      .then(r => {
+        if (!r.ok) {
+          console.warn('[bookSearch] OL variant returned', r.status, 'for', v.param, JSON.stringify(v.q));
+          return { docs: [] as BookResult[] };
+        }
+        return r.json() as Promise<{ docs?: BookResult[] }>;
+      })
+      .catch(err => {
+        console.warn('[bookSearch] OL variant failed:', (err as Error)?.message ?? err);
+        return { docs: [] as BookResult[] };
+      });
   });
 
   const [gbBooks, ...olResponses] = await Promise.all([
@@ -291,9 +357,14 @@ export async function searchBooks(rawQuery: string): Promise<SearchBooksResult> 
       const completionFetches = completions.map(word => {
         const q = `${headSig} ${word}`;
         const url = `https://openlibrary.org/search.json?title=${encodeURIComponent(q)}&fields=${OL_FIELDS}&limit=10`;
-        return fetch(url)
+        // Use the same 6s timeout wrapper as the primary OL leg so a single
+        // slow completion variant cannot stall the whole fallback Promise.all.
+        return fetchWithTimeout(url)
           .then(r => r.json() as Promise<{ docs?: BookResult[] }>)
-          .catch(() => ({ docs: [] as BookResult[] }));
+          .catch(err => {
+            console.warn(`[bookSearch] OL completion fetch failed for "${q}":`, err);
+            return { docs: [] as BookResult[] };
+          });
       });
 
       const completionResponses = await Promise.all(completionFetches);

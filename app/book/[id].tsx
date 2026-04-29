@@ -1452,7 +1452,16 @@ export default function BookDetailScreen() {
     >
       {/* ── Hero cover ── */}
       {(() => {
-        const activeCoverUrl = editionCoverUrl || enrichedCoverUrl || coverUrl || null;
+        // Precedence (most → least specific):
+        //   1. editionCoverUrl   — user explicitly chose this OL edition for THIS copy
+        //   2. coverUrl          — canonical books.cover_url (matches Library/Home/etc.)
+        //   3. enrichedCoverUrl  — in-session GB lookup (only when DB had no cover)
+        //
+        // Putting coverUrl ahead of enrichedCoverUrl is what keeps the hero
+        // matching the canonical art shown in lists. enrichedCoverUrl only
+        // shows through when coverUrl is genuinely null (book row had no
+        // cover at navigation time and GB found one in the background).
+        const activeCoverUrl = editionCoverUrl || coverUrl || enrichedCoverUrl || null;
         const isGoogleBooks = !!(activeCoverUrl && (activeCoverUrl.includes('books.google') || activeCoverUrl.includes('googleapis')));
         const glowColor = isGoogleBooks
           ? 'rgba(220, 232, 252, 0.72)'

@@ -12,6 +12,7 @@ import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computeAvgPagesPerDay, computeSourceCompletion } from '../../lib/signals';
+import { computePaceStatus } from '../../lib/pacing';
 import { ProfileScreenSkeleton } from '../../components/Placeholder';
 import type { SourceCompletion } from '../../lib/signals';
 import { registerCacheClearer } from '../../lib/tabCache';
@@ -326,16 +327,22 @@ export default function ProfileScreen() {
   const displayName      = getDisplayName(profile);
   const yearlyGoal       = profile?.yearly_reading_goal ?? null;
 
-  // On-pace computation (mirrors lib/pacing.ts → computeGoalProgress).
-  let onPace = false;
-  if (stats && yearlyGoal && yearlyGoal > 0) {
-    const today = new Date();
-    const dayOfYear = Math.floor(
-      (today.getTime() - new Date(today.getFullYear(), 0, 0).getTime()) / (24 * 60 * 60 * 1000)
-    );
-    const expectedByNow = Math.floor((dayOfYear / 365) * yearlyGoal);
-    onPace = stats.finishedThisYear >= expectedByNow;
-  }
+  // Pace status — shared with Home via lib/pacing.ts → computePaceStatus.
+  // Tri-state ahead / on_pace / behind with a 2-book buffer so Home and
+  // Profile never disagree about the reader's status.
+  const paceStatus = stats ? computePaceStatus(stats.finishedThisYear, yearlyGoal) : null;
+  const paceLabel  = paceStatus?.state === 'ahead'
+    ? `${paceStatus.surplus} ahead of pace`
+    : paceStatus?.state === 'behind'
+    ? `${paceStatus.deficit} behind pace`
+    : paceStatus
+    ? 'On pace'
+    : '';
+  const paceColor  = paceStatus?.state === 'ahead'
+    ? '#4d7f52'
+    : paceStatus?.state === 'on_pace'
+    ? '#4d7f52'
+    : '#9e958d';
 
   const hasTasteData = prefs && (
     (prefs.favorite_genres?.length ?? 0) > 0 ||
@@ -421,8 +428,8 @@ export default function ProfileScreen() {
               <Text style={{ fontSize: 15, fontWeight: '600', color: '#231f1b' }}>
                 {stats.finishedThisYear} / {yearlyGoal} books this year
               </Text>
-              <Text style={{ fontSize: 13, color: onPace ? '#4d7f52' : '#9e958d', marginTop: 4 }}>
-                {onPace ? 'On pace' : 'Behind pace'}
+              <Text style={{ fontSize: 13, color: paceColor, marginTop: 4 }}>
+                {paceLabel}
               </Text>
             </View>
           ) : (

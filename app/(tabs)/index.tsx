@@ -21,7 +21,7 @@ import { CoverThumb } from '../../components/CoverThumb';
 import { resolveBookDisplay, type BookDisplay } from '../../lib/boxSetDetection';
 import { HomeScreenSkeleton } from '../../components/Placeholder';
 import { getFirstName } from '../../lib/displayName';
-import { computePagePacing, computeUserAvgPace, inferReadState, computeSessionPacing, formatProjectedFinish, computeMonthlyStats, type SessionRow, type ReadState, type MonthlyStats } from '../../lib/pacing';
+import { computePagePacing, computeUserAvgPace, inferReadState, computeSessionPacing, formatProjectedFinish, computeMonthlyStats, computePaceStatus, type SessionRow, type ReadState, type MonthlyStats } from '../../lib/pacing';
 import { aggregatePeriod, computeMonthlyWrap, computeYearlyWrap, deriveInsights, type WrapSession, type WrapBookRef, type ReaderInsight } from '../../lib/readingWraps';
 import { computeStreaks } from '../../lib/streaks';
 import { BadgeContext } from './_layout';
@@ -841,15 +841,14 @@ export default function HomeScreen() {
 
   // ── Reading Progress derived values ──────────────────────────────────────────
   // Pace status drives the "On pace / N ahead / N behind" label in Row 2.
+  // Shared with Profile via lib/pacing.ts → computePaceStatus so both screens
+  // always agree on whether the reader is ahead, on pace, or behind.
 
-  const goalDayOfYear = Math.floor(
-    (new Date().getTime() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86_400_000
-  );
-  const goalExpectedByNow  = yearlyGoal ? Math.floor((goalDayOfYear / 365) * yearlyGoal) : 0;
-  const goalSurplus        = Math.max(0, booksThisYear.length - goalExpectedByNow);
-  const goalDeficit        = Math.max(0, goalExpectedByNow - booksThisYear.length);
-  const goalIsAhead        = goalSurplus >= 2;
-  const goalIsBehind       = goalDeficit >= 2;
+  const paceStatus         = computePaceStatus(booksThisYear.length, yearlyGoal);
+  const goalSurplus        = paceStatus?.surplus ?? 0;
+  const goalDeficit        = paceStatus?.deficit ?? 0;
+  const goalIsAhead        = paceStatus?.state === 'ahead';
+  const goalIsBehind       = paceStatus?.state === 'behind';
 
   function homeCardBorderColor(cr: CurrentRead, goal: number | null): string {
     const pageCount = cr.page_count;
@@ -1283,14 +1282,17 @@ export default function HomeScreen() {
               const read           = booksThisYear.length;
               const total          = Math.max(1, yearlyGoal);
               const pct            = Math.max(0, Math.min(100, (read / total) * 100));
-              const projectedTotal = goalDayOfYear > 0
-                ? Math.round((read / goalDayOfYear) * 365)
+              const dayOfYear      = Math.floor(
+                (new Date().getTime() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86_400_000
+              );
+              const projectedTotal = dayOfYear > 0
+                ? Math.round((read / dayOfYear) * 365)
                 : read;
               const status = goalIsAhead
                 ? 'Ahead of pace'
                 : goalIsBehind
                 ? 'Behind pace'
-                : goalExpectedByNow === 0
+                : (paceStatus?.expected ?? 0) === 0
                 ? 'Just getting started'
                 : 'On pace';
               const statusColor = goalIsAhead
@@ -1300,7 +1302,7 @@ export default function HomeScreen() {
                 : '#2f6f3a';
               // Wait at least a week before reporting a projection — early-year
               // pace numbers are noisy and read as wildly optimistic/pessimistic.
-              const projectionSentence = goalDayOfYear >= 7
+              const projectionSentence = dayOfYear >= 7
                 ? `At your current pace, you'll finish ~${projectedTotal} books this year.`
                 : null;
               return (

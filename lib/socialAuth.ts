@@ -55,10 +55,12 @@ function mapOAuthError(err: unknown): string {
 
   // Parse JSON error bodies — supabase-js v2 sometimes puts the full API
   // response JSON as the error message string.
+  let parsedErrorCode = '';
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const jsonMsg    = String(parsed.msg ?? parsed.message ?? parsed.error ?? '').toLowerCase();
     const errorCode  = String(parsed.error_code ?? parsed.code ?? '').toLowerCase();
+    parsedErrorCode  = errorCode;
     if (
       jsonMsg.includes('not enabled') ||
       jsonMsg.includes('unsupported provider') ||
@@ -75,6 +77,26 @@ function mapOAuthError(err: unknown): string {
   }
 
   const lower = raw.toLowerCase();
+
+  // ── Existing-account collision ──────────────────────────────────────────────
+  // Apple (and Google) deliver an identity for an email that already has a
+  // Supabase user via password.  Without "Link accounts with same email"
+  // enabled in the Supabase dashboard, signInWithIdToken returns
+  // `email_exists` / `user_already_exists` / `identity_already_exists`.
+  // Tell the user clearly so they don't keep tapping the Apple button.
+  if (
+    parsedErrorCode === 'email_exists' ||
+    parsedErrorCode === 'user_already_exists' ||
+    parsedErrorCode === 'identity_already_exists' ||
+    parsedErrorCode === 'user_already_registered' ||
+    lower.includes('email already') ||
+    lower.includes('already registered') ||
+    lower.includes('already exists') ||
+    lower.includes('identity_already_exists') ||
+    lower.includes('user_already_exists')
+  ) {
+    return 'An account with this email already exists. Sign in with your password, then link this provider from Settings.';
+  }
 
   if (
     lower.includes('provider not found') ||

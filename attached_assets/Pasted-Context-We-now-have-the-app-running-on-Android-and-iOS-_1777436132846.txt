@@ -1,0 +1,148 @@
+Context:
+
+We now have the app running on Android and iOS/TestFlight for device testing. Before making larger design or feature changes, we need to fix several stability and trust-breaking issues.
+
+This task should focus only on the issues below. Do not redesign unrelated screens and do not start new feature work.
+
+Priority:
+Fix the parts of the app that make the product feel broken, inconsistent, or unreliable.
+
+ISSUE 1 — Side-swipe navigation crash / gesture conflict
+
+The app currently supports swipe navigation between tabs, and some tabs also contain horizontally scrollable content such as carousels or book rows.
+
+Problem:
+The app can crash or behave poorly when side-swipe tab navigation conflicts with horizontal scrolling inside a tab.
+
+Task:
+Audit the gesture/navigation setup and fix the interaction model so:
+- horizontal carousels can scroll normally
+- tab-to-tab swipe navigation does not crash
+- nested horizontal scroll gestures do not fight each other
+- Android and iOS both behave reliably
+
+Acceptance criteria:
+- swiping between tabs does not crash
+- horizontal content rows still scroll normally
+- tab swipe should not accidentally trigger when the user is clearly scrolling a carousel
+- no regression to bottom tab navigation
+
+ISSUE 2 — Add-book search does not work
+
+Problem:
+The search function for adding a book to the library is currently failing or not returning usable results.
+
+Task:
+Inspect the add-book search flow end to end:
+- search input
+- search request/query logic
+- provider/API call
+- result parsing
+- result display
+- add-to-library action
+
+Fix the root cause.
+
+Acceptance criteria:
+- user can search for a known book title
+- results populate
+- user can select a result
+- selected book can be added to library
+- empty/error states are clear
+
+ISSUE 3 — Apple sign-in not working for existing users
+
+Problem:
+Apple sign-in is not working for test users who already have accounts. Manual login works, but Apple sign-in also needs to work.
+
+Task:
+Investigate Apple sign-in end to end:
+- Apple credential response
+- Supabase OAuth/provider identity behavior
+- existing-account matching
+- provider linking limitations
+- error handling
+- routing after successful auth
+
+Important:
+Do not assume this is only a frontend button issue. Determine whether this is:
+- Apple configuration
+- Supabase provider config
+- identity-linking behavior
+- account already exists with email/password
+- missing redirect/deep-link config
+- app-side auth handling
+
+Acceptance criteria:
+- a new user can sign in with Apple
+- an existing user with the same email can either sign in cleanly or gets a clear, privacy-safe explanation of what action to take
+- no silent failure
+- no stuck loading state
+- logs clearly identify which auth phase failed
+
+ISSUE 4 — Cover artwork mismatch
+
+Problem:
+The cover artwork shown in lists/cards sometimes differs from the cover shown when clicking into the book detail.
+
+Task:
+Audit how cover URLs are selected and passed across:
+- Library list
+- Home/current reading cards
+- Completed book row
+- Recommendation cards
+- Book detail screen
+- User-book detail screen
+
+Fix the source of truth so the same book/user_book displays the same canonical cover across surfaces.
+
+Acceptance criteria:
+- cover shown in a card matches the cover shown in book detail
+- cover does not change unexpectedly between surfaces
+- provider fallback logic is consistent
+- if a user manually selects a cover, that cover wins everywhere
+
+ISSUE 5 — Cover edit/change flow barely loads cover options
+
+Problem:
+The cover editing/change-cover UI rarely loads enough viable cover artwork options.
+
+Task:
+Inspect the cover-option generation logic:
+- what providers are queried
+- what metadata is used
+- what qualifies as an option
+- how duplicates are removed
+- how failures are handled
+
+Improve the logic so the user sees useful cover choices.
+
+Acceptance criteria:
+- known books show multiple viable cover options when available
+- duplicate/near-duplicate covers are reduced
+- box sets/compilation covers are avoided when possible
+- if no options exist, the UI explains that clearly
+
+ISSUE 6 — Pace inconsistency
+
+Problem:
+Home says the yearly goal is “On pace,” while Profile says “Behind pace.”
+
+Task:
+Find every place where yearly goal pace is computed or displayed.
+
+Create one shared pace calculation utility if needed so Home, Profile, and any other surface use the same logic.
+
+Acceptance criteria:
+- Home and Profile always show the same pace status
+- pace status is mathematically accurate based on current date, books completed this year, and yearly goal
+- the UI copy is consistent across screens
+- edge cases are handled: no goal, goal met, behind pace, on pace, ahead of pace
+
+What I want back:
+1. exact root cause for each issue
+2. exact files changed
+3. what was fixed
+4. what was intentionally not changed
+5. validation steps performed on Android/iOS where possible
+6. any remaining follow-ups that should be split into separate tasks

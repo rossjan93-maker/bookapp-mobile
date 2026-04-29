@@ -53,21 +53,28 @@ const TAB_PATHS = {
 
 // ─── Swipe tuning constants ────────────────────────────────────────────────────
 //
-// Old values → new values:
-//   Recognition ratio:   1.5 → 1.2   (horizontal intent recognized sooner)
-//   Recognition floor:   10px → 6px   (less movement needed to start capture)
-//   Switch distance:     50px → 28px  (much less drag needed to commit)
-//   Velocity trigger:    none → 0.22  (fast flick always works, regardless of distance)
-//   Resistance:          none → 0.62  (content follows finger at 62% speed, tactile feel)
-//   Snap animation:      none → spring(tension:260, friction:26) on cancel
-//   Commit animation:    none → 140ms timing to edge, then navigate + reset
+// Tightened so inter-tab swipe never fights a horizontal carousel scroll
+// (Reading Now, Library shelves, Recommendations, Insights).
+//
+// Heuristics for capture (all must hold):
+//   1. Finger has moved ≥ GESTURE_FLOOR px in either axis (real drag, not a tap)
+//   2. Horizontal motion is ≥ GESTURE_RATIO × vertical motion (clearly sideways)
+//   3. Vertical motion is ≤ GESTURE_VFLOOR px (not a list/scroll-pane drag)
+//
+// Heuristics for commit (any one):
+//   • Distance: |dx| ≥ SWIPE_DISTANCE
+//   • Velocity: |vx| ≥ SWIPE_VELOCITY
+//
+// Children always win — onPanResponderTerminationRequest:true lets a ScrollView
+// reclaim the gesture mid-swipe, snapping our content back via springBack().
 
 const SCREEN_WIDTH     = Dimensions.get('window').width;
-const SWIPE_DISTANCE   = 28;   // px to commit to a tab switch
-const SWIPE_VELOCITY   = 0.22; // px/ms — fast flick bypasses distance check
-const GESTURE_RATIO    = 1.2;  // horizontal must be this much bigger than vertical
-const GESTURE_FLOOR    = 6;    // px minimum before we even evaluate the ratio
-const RESISTANCE       = 0.62; // content moves at 62% of finger travel
+const SWIPE_DISTANCE   = 56;   // px to commit (was 28 — too easy to misfire)
+const SWIPE_VELOCITY   = 0.45; // px/ms — fast flick bypasses distance (was 0.22)
+const GESTURE_RATIO    = 2.5;  // horizontal must be ≥ 2.5× vertical (was 1.2)
+const GESTURE_FLOOR    = 16;   // px minimum horizontal travel (was 6)
+const GESTURE_VFLOOR   = 14;   // px maximum vertical travel before yielding
+const RESISTANCE       = 0.55; // content moves at 55% of finger travel
 
 // ─── Layout ───────────────────────────────────────────────────────────────────
 
@@ -287,8 +294,11 @@ export default function TabsLayout() {
 
   const panResponder = useRef(
     PanResponder.create({
-      // Do not steal taps — only evaluate once motion has started
-      onStartShouldSetPanResponder: () => false,
+      // Never steal taps or capture-phase events — children always get first crack.
+      onStartShouldSetPanResponder:        () => false,
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponderCapture:  () => false,
+
       onMoveShouldSetPanResponder: (_, { dx, dy }) => {
         // Never intercept during the legacy guided tour or the walkthrough overlay.
         // (The import onboarding step is a separate route — PanResponder is not mounted there.)
@@ -296,11 +306,22 @@ export default function TabsLayout() {
         const ws = wtStepRef.current;
         if (ws === 'home' || ws === 'recommend' || ws === 'library' || ws === 'inbox') return false;
 
-        // Capture when movement is horizontal-dominant and past the noise floor
+        // Strict horizontal intent:
+        //   - Past the horizontal floor (real drag, not jitter)
+        //   - Vertical motion below its own floor (not a list pan)
+        //   - Horizontal dominance ≥ 2.5× vertical
         const absDx = Math.abs(dx);
         const absDy = Math.abs(dy);
-        return absDx > GESTURE_FLOOR && absDx > absDy * GESTURE_RATIO;
+        if (absDx < GESTURE_FLOOR)         return false;
+        if (absDy > GESTURE_VFLOOR)        return false;
+        if (absDx < absDy * GESTURE_RATIO) return false;
+        return true;
       },
+
+      // Always yield to a child that requests termination (e.g. an inner
+      // ScrollView whose own pan handler activated a moment later). springBack
+      // resets our content cleanly so the user never sees stuck offset.
+      onPanResponderTerminationRequest: () => true,
 
       // Content follows finger in real time — tactile connection
       onPanResponderMove: (_, { dx }) => {
