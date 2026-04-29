@@ -40,6 +40,7 @@ type CurrentRead = {
   author: string;
   cover_url: string | null;
   external_id: string | null;
+  edition_key: string | null;
   page_count: number | null;
 };
 
@@ -72,6 +73,7 @@ type YearBook = {
   author: string;
   cover_url: string | null;
   external_id: string | null;
+  edition_key: string | null;
   page_count: number | null;
 };
 
@@ -631,7 +633,7 @@ export default function HomeScreen() {
         .single(),
       supabase
         .from('user_books')
-        .select('id, book_id, started_at, progress_updated_at, current_page, book:books(title, author, cover_url, external_id, page_count)')
+        .select('id, book_id, started_at, progress_updated_at, current_page, edition_key, book:books(title, author, cover_url, external_id, page_count)')
         .eq('user_id', uid)
         .eq('status', 'reading')
         .is('deleted_at', null)
@@ -647,7 +649,7 @@ export default function HomeScreen() {
     if (res.error) {
       res = await supabase
         .from('user_books')
-        .select('id, book_id, started_at, book:books(title, author, cover_url, external_id)')
+        .select('id, book_id, started_at, edition_key, book:books(title, author, cover_url, external_id)')
         .eq('user_id', uid)
         .eq('status', 'reading')
         .is('deleted_at', null)
@@ -667,6 +669,7 @@ export default function HomeScreen() {
         author:               b?.author              ?? '',
         cover_url:            b?.cover_url           ?? null,
         external_id:          b?.external_id         ?? null,
+        edition_key:          r.edition_key          ?? null,
         page_count:           b?.page_count          ?? null,
       };
     });
@@ -691,7 +694,7 @@ export default function HomeScreen() {
     const yearStart = `${new Date().getFullYear()}-01-01T00:00:00Z`;
     const { data } = await supabase
       .from('user_books')
-      .select('id, book_id, started_at, finished_at, book:books(title, author, cover_url, external_id, page_count)')
+      .select('id, book_id, started_at, finished_at, edition_key, book:books(title, author, cover_url, external_id, page_count)')
       .eq('user_id', uid)
       .eq('status', 'finished')
       .is('deleted_at', null)
@@ -709,6 +712,7 @@ export default function HomeScreen() {
         author:      b?.author ?? '',
         cover_url:   b?.cover_url ?? null,
         external_id: b?.external_id ?? null,
+        edition_key: r.edition_key ?? null,
         page_count:  b?.page_count ?? null,
       };
     });
@@ -1088,7 +1092,7 @@ export default function HomeScreen() {
                       elevation: 2,
                     }}>
                       <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 }}>
-                        <CoverThumb url={cr.cover_url} externalId={cr.external_id} title={cr.title} width={44} height={64} />
+                        <CoverThumb url={cr.cover_url} externalId={cr.external_id} editionKey={cr.edition_key} title={cr.title} width={44} height={64} />
                         <View style={{ flex: 1, marginLeft: 10 }}>
                           <Text numberOfLines={2} style={{
                             fontSize: 14, fontWeight: '700', color: '#231f1b', lineHeight: 19, marginBottom: 3,
@@ -1520,6 +1524,7 @@ export default function HomeScreen() {
                           <CoverThumb
                             url={item.display.coverUrl}
                             externalId={item.display.externalId}
+                            editionKey={item.book.edition_key}
                             title={item.book.title}
                             width={50}
                             height={72}

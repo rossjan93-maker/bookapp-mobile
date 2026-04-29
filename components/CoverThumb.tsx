@@ -74,19 +74,30 @@ export function CoverThumb({
 
   const style = { width, height, borderRadius: radius };
 
-  // Derive URL from externalId / editionKey when no explicit url is given.
-  // Derived OL URLs are live CDN requests that can 404 silently; we use the
-  // session-level coverCache to avoid re-attempting URLs that already failed.
-  const derivedRaw = externalId
-    ? deriveCoverUrl(externalId, editionKey)
-    : editionKey
+  // Cover-source precedence (matches lib/coverResolver.ts):
+  //   1. editionKey  → user explicitly picked this edition (highest trust)
+  //   2. url         → canonical cover_url stored on the book row
+  //   3. external_id → /works/OL...W derived OL URL (last resort)
+  //
+  // Why editionKey beats url: every list surface passes the same generic
+  // books.cover_url, but only some readers will have picked a specific
+  // edition. When they do, that pick must win on every surface (Home,
+  // Library, Detail, Inbox), otherwise covers visibly disagree across
+  // screens — the trust bug reported in user testing.
+  //
+  // OL CDN URLs can 404 silently; we use the session-level coverCache to
+  // avoid re-attempting URLs that already failed and to fall through to the
+  // next precedence step instead of leaving a blank box.
+  const editionUrl = editionKey
     ? `https://covers.openlibrary.org/b/olid/${editionKey}-M.jpg`
     : null;
+  const externalUrl = externalId ? deriveCoverUrl(externalId, null) : null;
 
-  // Skip a derived URL that already 404'd in this session.
-  const derived = derivedRaw && isCoverUrlKnownFailed(derivedRaw) ? null : derivedRaw;
+  const editionLive  = editionUrl  && !isCoverUrlKnownFailed(editionUrl)  ? editionUrl  : null;
+  const externalLive = externalUrl && !isCoverUrlKnownFailed(externalUrl) ? externalUrl : null;
+  const urlLive      = url         && !isCoverUrlKnownFailed(url)         ? url         : null;
 
-  const rawSrc = url || derived;
+  const rawSrc = editionLive || urlLive || externalLive;
 
   // ── Credibility guard ─────────────────────────────────────────────────────
   // Reject URLs that don't come from known provider domains. A rejected URL

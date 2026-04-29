@@ -16,6 +16,12 @@ import { getDisplayName } from '../lib/displayName';
 import { ONBOARDING_STAGE_KEY, readOnboardingStage } from '../lib/onboardingStage';
 import { clearLocalOnboardingState } from '../lib/localStateClear';
 import { repairSubjectCoverage, type RepairSummary } from '../lib/subjectRepair';
+import {
+  getConnectedIdentities,
+  linkIdentityProvider,
+  isAppleAvailable,
+  type ConnectedIdentity,
+} from '../lib/socialAuth';
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
@@ -181,6 +187,39 @@ export default function SettingsScreen() {
   const [deleteError, setDeleteError]         = useState<string | null>(null);
   const deleteInputRef = useRef<TextInput>(null);
 
+  // ── Sign-in methods (linked identities) ───────────────────────────────────
+  // We keep the connected providers in state so the UI can disable a provider's
+  // link button as soon as it's attached — and so a successful link doesn't
+  // require the user to leave and come back to see the new badge.
+  const [identities, setIdentities]         = useState<ConnectedIdentity[]>([]);
+  const [linkingProvider, setLinkingProvider] = useState<'google' | 'apple' | null>(null);
+  const [linkError, setLinkError]           = useState<string | null>(null);
+  const [linkSuccess, setLinkSuccess]       = useState<string | null>(null);
+
+  async function refreshIdentities() {
+    const list = await getConnectedIdentities();
+    setIdentities(list);
+  }
+
+  async function handleLinkProvider(provider: 'google' | 'apple') {
+    setLinkError(null);
+    setLinkSuccess(null);
+    setLinkingProvider(provider);
+    try {
+      const { error } = await linkIdentityProvider(provider);
+      if (error) {
+        // Empty string means the user cancelled — leave the UI silent.
+        if (error.length > 0) setLinkError(error);
+      } else {
+        const label = provider === 'apple' ? 'Apple' : 'Google';
+        setLinkSuccess(`${label} connected.`);
+        await refreshIdentities();
+      }
+    } finally {
+      setLinkingProvider(null);
+    }
+  }
+
   // ── Subject repair (dev only) ─────────────────────────────────────────────
   const [subjectRepairRunning, setSubjectRepairRunning] = useState(false);
 
@@ -234,6 +273,11 @@ export default function SettingsScreen() {
         setLastName(data.last_name ?? '');
         setGoalDraft(data.yearly_reading_goal ? String(data.yearly_reading_goal) : '');
       }
+
+      // Load connected sign-in providers in parallel with the rest of the
+      // first paint — non-blocking, the section just shows "Loading…" briefly.
+      refreshIdentities().catch(() => { /* logged in helper */ });
+
       setLoading(false);
     }
     load();
@@ -520,6 +564,94 @@ export default function SettingsScreen() {
           disabled={usernameStatus === 'taken' || usernameStatus === 'checking' || usernameStatus === 'invalid'}
           label="Save Username"
         />
+      )}
+
+      {/* ── Sign-in methods ────────────────────────────────────────────────── */}
+      {/* Lets a user who signed up with email/password attach Apple or Google
+          so they can sign in either way next time. Apple-on-iOS uses the
+          native sheet; everything else uses the OAuth browser flow. The
+          dashboard must have "Allow manual linking" enabled — without it,
+          linkIdentity() returns "manual linking is disabled". */}
+      <SectionHeader>Sign-in methods</SectionHeader>
+      <SettingsCard>
+        {(() => {
+          const hasApple  = identities.some(i => i.provider === 'apple');
+          const hasGoogle = identities.some(i => i.provider === 'google');
+          const showApple = isAppleAvailable(); // iOS only — keep parity with sign-in
+          return (
+            <>
+              <SettingsRow last={!showApple}>
+                <RowLabel>Google</RowLabel>
+                {hasGoogle ? (
+                  <Text style={{ fontSize: 14, color: '#16a34a', paddingVertical: 2 }}>
+                    Connected ✓
+                  </Text>
+                ) : (
+                  <TouchableOpacity
+                    onPress={() => handleLinkProvider('google')}
+                    disabled={linkingProvider !== null}
+                    style={{
+                      paddingVertical: 6,
+                      paddingHorizontal: 12,
+                      borderRadius: 8,
+                      backgroundColor: linkingProvider === 'google' ? '#e7e5e0' : '#231f1b',
+                      opacity: linkingProvider !== null && linkingProvider !== 'google' ? 0.5 : 1,
+                    }}
+                  >
+                    {linkingProvider === 'google' ? (
+                      <ActivityIndicator size="small" color="#231f1b" />
+                    ) : (
+                      <Text style={{ color: '#fefcf9', fontSize: 13, fontWeight: '600' }}>
+                        Connect
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </SettingsRow>
+
+              {showApple && (
+                <SettingsRow last>
+                  <RowLabel>Apple</RowLabel>
+                  {hasApple ? (
+                    <Text style={{ fontSize: 14, color: '#16a34a', paddingVertical: 2 }}>
+                      Connected ✓
+                    </Text>
+                  ) : (
+                    <TouchableOpacity
+                      onPress={() => handleLinkProvider('apple')}
+                      disabled={linkingProvider !== null}
+                      style={{
+                        paddingVertical: 6,
+                        paddingHorizontal: 12,
+                        borderRadius: 8,
+                        backgroundColor: linkingProvider === 'apple' ? '#e7e5e0' : '#231f1b',
+                        opacity: linkingProvider !== null && linkingProvider !== 'apple' ? 0.5 : 1,
+                      }}
+                    >
+                      {linkingProvider === 'apple' ? (
+                        <ActivityIndicator size="small" color="#231f1b" />
+                      ) : (
+                        <Text style={{ color: '#fefcf9', fontSize: 13, fontWeight: '600' }}>
+                          Connect
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </SettingsRow>
+              )}
+            </>
+          );
+        })()}
+      </SettingsCard>
+      {linkSuccess && (
+        <Text style={{ fontSize: 12, color: '#16a34a', marginTop: 8, paddingHorizontal: 2 }}>
+          {linkSuccess}
+        </Text>
+      )}
+      {linkError && (
+        <Text style={{ fontSize: 12, color: '#b91c1c', marginTop: 8, paddingHorizontal: 2 }}>
+          {linkError}
+        </Text>
       )}
 
       {/* ── Profile (first + last name) ──────────────────────────────────────── */}

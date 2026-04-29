@@ -58,19 +58,66 @@ export function rankEditions(
   editions: OLEdition[],
   preferLang = 'eng',
 ): OLEdition[] {
-  function score(ed: OLEdition): number {
-    const langMatch =
-      ed.languages.length === 0 || ed.languages.includes(preferLang) ? 100 : 0;
-    const pub = ed.publisher?.toLowerCase().trim();
-    const hasPublisher = !!pub && pub !== 'n/a' && pub !== 'na';
-    const quality =
-      (ed.pageCount               ? 10 : 0) +
-      (ed.coverKey                ?  8 : 0) +
-      (hasPublisher               ?  4 : 0) +
-      (ed.isbn                    ?  2 : 0);
-    return langMatch + quality;
+  // ── Tiered sort, covers-first ───────────────────────────────────────────────
+  // The previous additive scoring let pageCount (+10) outrank coverKey (+8),
+  // so a blank-cover edition with a page count would sort above a cover-bearing
+  // edition without one. The user-visible result was the "Change cover" sheet
+  // leading with white squares — exactly the opposite of its purpose.
+  //
+  // We now sort by hard tiers in this priority order:
+  //   1. Preferred language          (English > non-English)
+  //   2. Has cover                   (real cover > no cover)
+  //   3. Has publisher (non-"n/a")
+  //   4. Has page count
+  //   5. Has ISBN
+  //   6. Page count desc (deterministic tiebreaker)
+  //
+  // A single missing cover can never push an edition above a cover-bearing
+  // one within the same language tier.
+  function langTier(ed: OLEdition): number {
+    return ed.languages.length === 0 || ed.languages.includes(preferLang) ? 1 : 0;
   }
-  return [...editions].sort((a, b) => score(b) - score(a));
+  function hasPublisher(ed: OLEdition): boolean {
+    const pub = ed.publisher?.toLowerCase().trim();
+    return !!pub && pub !== 'n/a' && pub !== 'na';
+  }
+
+  const sorted = [...editions].sort((a, b) => {
+    if (langTier(b)            !== langTier(a))            return langTier(b) - langTier(a);
+    if (!!b.coverKey           !== !!a.coverKey)           return (b.coverKey ? 1 : 0) - (a.coverKey ? 1 : 0);
+    if (hasPublisher(b)        !== hasPublisher(a))        return (hasPublisher(b) ? 1 : 0) - (hasPublisher(a) ? 1 : 0);
+    if (!!b.pageCount          !== !!a.pageCount)          return (b.pageCount ? 1 : 0) - (a.pageCount ? 1 : 0);
+    if (!!b.isbn               !== !!a.isbn)               return (b.isbn ? 1 : 0) - (a.isbn ? 1 : 0);
+    return (b.pageCount ?? 0) - (a.pageCount ?? 0);
+  });
+
+  // ── Dedup near-identical editions ──────────────────────────────────────────
+  // OL frequently lists the same physical printing under multiple work-edition
+  // rows that differ only in trivial metadata (extra/no ISBN, slightly different
+  // year, or alternate ISBN-10/13 pair). We collapse on (publisher|year|pages)
+  // and keep the first occurrence — which, after the tiered sort above, is
+  // already the one with the best cover/publisher signal. This noticeably
+  // shortens the picker list and removes the "three identical Penguin
+  // paperbacks" clutter users complained about.
+  const seen = new Set<string>();
+  const deduped: OLEdition[] = [];
+  for (const ed of sorted) {
+    const pub  = ed.publisher?.toLowerCase().trim() ?? '';
+    const year = ed.year                            ?? '';
+    const pg   = ed.pageCount                       ?? '';
+    // Only dedup when at least one identifying field is present, otherwise
+    // we'd collapse every "publisher: null, year: null, pages: null" row into
+    // a single entry and lose legitimate differing covers.
+    if (!pub && !year && !pg) {
+      deduped.push(ed);
+      continue;
+    }
+    const key = `${pub}|${year}|${pg}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(ed);
+  }
+  return deduped;
 }
 
 // Module-level editions cache keyed by OL work ID (e.g. "OL37620917W").
@@ -126,6 +173,47 @@ export async function searchOLWork(
 export function extractOLID(externalId: string): string | null {
   const m = externalId.match(/\/works\/(OL\w+)/);
   return m ? m[1] : null;
+}
+
+// ─── ISBN → edition OLID resolution ──────────────────────────────────────────
+// Used by the scan flow to attach a specific edition to user_books.edition_key
+// after the user saves a scanned book. The ISBN they scanned IS the edition
+// they hold, so this is the highest-trust edition signal we'll ever get for
+// that reader → that book — without it, the cover precedence falls back to
+// books.cover_url, which is the canonical work-level cover and may not match
+// the physical copy in the user's hand.
+//
+// OL has a redirect endpoint (https://openlibrary.org/isbn/{isbn}) and a JSON
+// endpoint (https://openlibrary.org/isbn/{isbn}.json). The JSON endpoint
+// returns the edition document whose `key` is `/books/OL...M` — the OLID we
+// store in user_books.edition_key.
+//
+// Returns null on any failure: the caller should leave edition_key untouched
+// and let the cover precedence chain fall back to the work-level cover.
+export async function resolveISBNToEditionKey(isbn: string): Promise<string | null> {
+  const cleaned = isbn.replace(/[-\s]/g, '');
+  if (!cleaned) return null;
+  // Quick shape check — avoid wasting a network call on obvious garbage.
+  if (!/^(?:97[89]\d{10}|\d{9}[\dXx])$/.test(cleaned)) return null;
+
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const res = await fetch(
+      `https://openlibrary.org/isbn/${cleaned}.json`,
+      { signal: ctrl.signal },
+    );
+    if (!res.ok) return null;
+    const data = await res.json() as { key?: string };
+    if (typeof data.key !== 'string') return null;
+    const m = data.key.match(/\/books\/(OL\w+M)/);
+    return m ? m[1] : null;
+  } catch (err) {
+    console.warn('[openLibrary] resolveISBNToEditionKey failed for', cleaned, ':', err);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function fetchOLMeta(externalId: string): Promise<OLMeta> {

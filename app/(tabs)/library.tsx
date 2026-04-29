@@ -39,6 +39,7 @@ type UserBook = {
   finished_at: string | null;
   current_page: number | null;
   progress_updated_at: string | null;
+  edition_key: string | null;
   taste_tags: Record<string, any> | null;
   rating: number | null;
   sentiment: string | null;
@@ -319,7 +320,7 @@ export default function LibraryScreen() {
         .single(),
       supabase
         .from('user_books')
-        .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, page_count, subjects)')
+        .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, edition_key, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, page_count, subjects)')
         .eq('user_id', user.id)
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
@@ -336,7 +337,7 @@ export default function LibraryScreen() {
       usedFallback = true;
       p1Result = await supabase
         .from('user_books')
-        .select('id, book_id, status, started_at, finished_at, progress_updated_at, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, subjects)')
+        .select('id, book_id, status, started_at, finished_at, progress_updated_at, edition_key, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, subjects)')
         .eq('user_id', user.id)
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
@@ -380,7 +381,7 @@ export default function LibraryScreen() {
           // May have more — fetch from offset 50 onwards
           let remResult = await supabase!
             .from('user_books')
-            .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, page_count, subjects)')
+            .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, edition_key, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, page_count, subjects)')
             .eq('user_id', user.id)
             .is('deleted_at', null)
             .order('created_at', { ascending: false })
@@ -390,7 +391,7 @@ export default function LibraryScreen() {
           if (remResult.error && !usedFallback) {
             remResult = await supabase!
               .from('user_books')
-              .select('id, book_id, status, started_at, finished_at, progress_updated_at, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, subjects)')
+              .select('id, book_id, status, started_at, finished_at, progress_updated_at, edition_key, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, subjects)')
               .eq('user_id', user.id)
               .is('deleted_at', null)
               .order('created_at', { ascending: false })
@@ -1744,6 +1745,7 @@ export default function LibraryScreen() {
                 <CoverThumb
                   url={item.book?.cover_url}
                   externalId={item.book?.external_id}
+                  editionKey={item.edition_key}
                   title={item.book?.title}
                   width={48}
                   height={70}
@@ -1973,6 +1975,7 @@ export default function LibraryScreen() {
               <CoverThumb
                 url={item.book?.cover_url}
                 externalId={item.book?.external_id}
+                editionKey={item.edition_key}
                 title={item.book?.title}
                 width={44}
                 height={64}

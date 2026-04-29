@@ -115,7 +115,22 @@ export default function AddBookScreen() {
 
     const timer = setTimeout(async () => {
       try {
-        const result = await searchBooks(trimmed);
+        // Stream the Google Books-only first batch into the UI as soon as it
+        // arrives so the user sees results within a few hundred ms even if
+        // an Open Library variant is slow. The full merged/scored result
+        // overwrites this once the parallel pipeline finishes.
+        const result = await searchBooks(trimmed, {
+          onPartial: (partial) => {
+            if (searchSeqRef.current !== mySeq) return;
+            if (partial.results.length === 0) return;
+            setBookResults(partial.results);
+            setNoResults(false);
+            setWeakQuery(false);
+            // Hide the spinner the moment we have something useful to show;
+            // the rest of the providers continue refining in the background.
+            setSearching(false);
+          },
+        });
 
         // Discard stale response
         if (searchSeqRef.current !== mySeq) return;

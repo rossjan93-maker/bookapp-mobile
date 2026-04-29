@@ -77,6 +77,51 @@ const STOP = new Set([
   'at','as','on','its','is','it','be','my','we','us','if','up','so',
 ]);
 
+// ─── In-memory result cache ───────────────────────────────────────────────────
+// Tiny LRU keyed by normalized query string so repeated searches (typing
+// "dune" → backspace → "dune" again, or back-navigation into the add-book
+// sheet) don't re-hit the network. TTL is short — book metadata is stable
+// minute-to-minute, but we don't want to mask provider issues for long.
+
+const SEARCH_CACHE_MAX_ENTRIES = 24;
+const SEARCH_CACHE_TTL_MS      = 5 * 60 * 1000; // 5 min
+
+type CacheEntry = { result: SearchBooksResult; cachedAt: number };
+const _searchCache = new Map<string, CacheEntry>();
+
+function cacheKey(rawQuery: string): string {
+  return rawQuery.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function getCached(rawQuery: string): SearchBooksResult | null {
+  const k = cacheKey(rawQuery);
+  const hit = _searchCache.get(k);
+  if (!hit) return null;
+  if (Date.now() - hit.cachedAt > SEARCH_CACHE_TTL_MS) {
+    _searchCache.delete(k);
+    return null;
+  }
+  // LRU touch — re-insert moves the key to the end of insertion order.
+  _searchCache.delete(k);
+  _searchCache.set(k, hit);
+  return hit.result;
+}
+
+function setCached(rawQuery: string, result: SearchBooksResult): void {
+  // Don't cache empty/error results — they're often transient network blips
+  // and we want the next keystroke to re-attempt the network.
+  if (result.results.length === 0) return;
+  const k = cacheKey(rawQuery);
+  _searchCache.set(k, { result, cachedAt: Date.now() });
+  while (_searchCache.size > SEARCH_CACHE_MAX_ENTRIES) {
+    const oldest = _searchCache.keys().next().value;
+    if (oldest === undefined) break;
+    _searchCache.delete(oldest);
+  }
+}
+
+export function _clearSearchCache(): void { _searchCache.clear(); }
+
 // ─── Google Books fetch ───────────────────────────────────────────────────────
 
 export async function fetchGoogleBooks(q: string): Promise<BookResult[]> {
@@ -132,11 +177,16 @@ export async function resolveOLKeyFromIsbn(book: BookResult): Promise<string> {
   const isbn = book._isbn13 ?? book._isbn10;
   if (!isbn) return book.key;
   try {
-    const res  = await fetch(`https://openlibrary.org/search.json?isbn=${isbn}&fields=key&limit=1`);
+    // Use the same 6s timeout wrapper as the search legs — without it, a hung
+    // OL response here would block the user's "Add to Library" tap until the
+    // platform's default timeout (often minutes), looking like a frozen UI.
+    const res  = await fetchWithTimeout(`https://openlibrary.org/search.json?isbn=${isbn}&fields=key&limit=1`);
     const json = await res.json();
     const key  = (json.docs ?? [])[0]?.key as string | undefined;
     if (key && key.startsWith('/works/')) return key;
-  } catch {}
+  } catch (err) {
+    console.warn('[bookSearch] resolveOLKeyFromIsbn failed for isbn', isbn, ':', err);
+  }
   return book.key;
 }
 
@@ -207,8 +257,37 @@ export type SearchBooksResult = {
 // ─── Core search function ─────────────────────────────────────────────────────
 // Full hybrid GB + OL retrieval pipeline with confidence scoring.
 // Callers are responsible for debouncing and stale-request cancellation.
+//
+// Streaming
+// ---------
+// Pass `opts.onPartial` to receive a fast first batch as soon as the Google
+// Books leg completes (typically ~300-700 ms on a healthy network). The OL
+// variants continue in the background and the final merged/scored result is
+// the awaited return value. This keeps the UI from sitting on the spinner
+// for the full 6 s timeout when one OL variant is slow.
+//
+// Caching
+// -------
+// Recent queries are cached in-memory (LRU, 24 entries, 5 min TTL). Cache
+// hits return immediately and do NOT fire `onPartial` (no need — we have
+// the full result already).
 
-export async function searchBooks(rawQuery: string): Promise<SearchBooksResult> {
+export type SearchOpts = {
+  onPartial?: (partial: SearchBooksResult) => void;
+};
+
+export async function searchBooks(
+  rawQuery: string,
+  opts: SearchOpts = {},
+): Promise<SearchBooksResult> {
+  // Cache check — instant return for repeats.
+  const cached = getCached(rawQuery);
+  if (cached) {
+    if (__DEV__) console.log('[bookSearch] cache hit:', JSON.stringify(rawQuery));
+    return cached;
+  }
+
+  const t0 = Date.now();
   const empty: SearchBooksResult = {
     results: [], hasHigh: false, hasMedium: false,
     lastTokenIncomplete: false, noResults: false, weakQuery: false,
@@ -239,7 +318,13 @@ export async function searchBooks(rawQuery: string): Promise<SearchBooksResult> 
       }
       const json = await res.json();
       const raw: BookResult[] = json.docs ?? [];
-      return { ...empty, results: raw.slice(0, 15), noResults: raw.length === 0 };
+      const abbrevResult: SearchBooksResult = {
+        ...empty,
+        results: raw.slice(0, 15),
+        noResults: raw.length === 0,
+      };
+      setCached(rawQuery, abbrevResult);
+      return abbrevResult;
     } catch (err) {
       console.warn('[bookSearch] OL abbrev failed:', (err as Error)?.message ?? err);
       return { ...empty, noResults: true };
@@ -281,9 +366,18 @@ export async function searchBooks(rawQuery: string): Promise<SearchBooksResult> 
     return true;
   });
 
-  // Fire Google Books + all OL variants in parallel
+  // Fire Google Books + all OL variants in parallel.
+  // Wrap each leg with a per-leg timing log so a slow provider is identifiable
+  // in the console without instrumenting the call sites.
+  const tGb0 = Date.now();
+  const gbPromise = fetchGoogleBooks(searchQuery).then(books => {
+    if (__DEV__) console.log(`[bookSearch] GB leg ${Date.now() - tGb0}ms (${books.length} results)`);
+    return books;
+  });
+
   const olFetches = variants.map(v => {
     const url = `https://openlibrary.org/search.json?${v.param}=${encodeURIComponent(v.q)}&fields=${OL_FIELDS}&limit=20`;
+    const tOl0 = Date.now();
     return fetchWithTimeout(url)
       .then(r => {
         if (!r.ok) {
@@ -292,16 +386,40 @@ export async function searchBooks(rawQuery: string): Promise<SearchBooksResult> 
         }
         return r.json() as Promise<{ docs?: BookResult[] }>;
       })
+      .then(json => {
+        if (__DEV__) console.log(`[bookSearch] OL ${v.param}="${v.q}" ${Date.now() - tOl0}ms (${(json.docs ?? []).length} results)`);
+        return json;
+      })
       .catch(err => {
         console.warn('[bookSearch] OL variant failed:', (err as Error)?.message ?? err);
         return { docs: [] as BookResult[] };
       });
   });
 
+  // Stream a partial result as soon as Google Books lands, so the UI can
+  // render its first batch quickly. We don't fire onPartial when GB is empty
+  // — that would produce a brief "No results" flicker before OL arrives.
+  if (opts.onPartial) {
+    gbPromise.then(gbBooks => {
+      if (gbBooks.length === 0) return;
+      const partialScored = scoreAndFilterBooks(searchQuery, gbBooks);
+      opts.onPartial!({
+        results:             partialScored.results,
+        hasHigh:             partialScored.hasHigh,
+        hasMedium:           partialScored.hasMedium,
+        lastTokenIncomplete: lastTok.length <= 3,
+        noResults:           false,
+        weakQuery:           false,
+      });
+    }).catch(() => { /* GB errors logged inside fetchGoogleBooks */ });
+  }
+
   const [gbBooks, ...olResponses] = await Promise.all([
-    fetchGoogleBooks(searchQuery),
+    gbPromise,
     ...olFetches,
   ]);
+
+  if (__DEV__) console.log(`[bookSearch] full pipeline ${Date.now() - t0}ms for ${JSON.stringify(rawQuery)}`);
 
   // Merge OL results (dedup by OL key within OL pool)
   let olMerged: BookResult[] = [];
@@ -318,7 +436,7 @@ export async function searchBooks(rawQuery: string): Promise<SearchBooksResult> 
   const lastTokenIncomplete = lastTok.length <= 3;
 
   if (scored.hasHigh || (scored.hasMedium && !lastTokenIncomplete)) {
-    return {
+    const mainResult: SearchBooksResult = {
       results: scored.results,
       hasHigh: scored.hasHigh,
       hasMedium: scored.hasMedium,
@@ -326,6 +444,8 @@ export async function searchBooks(rawQuery: string): Promise<SearchBooksResult> 
       noResults: false,
       weakQuery: false,
     };
+    setCached(rawQuery, mainResult);
+    return mainResult;
   }
 
   // ── Final-token completion fallback ──────────────────────────────────────────
@@ -378,7 +498,7 @@ export async function searchBooks(rawQuery: string): Promise<SearchBooksResult> 
         const completionScored = scoreAndFilterBooks(searchQuery, completionBooks);
 
         if (completionScored.hasHigh) {
-          return {
+          const completionResult: SearchBooksResult = {
             results: completionScored.results,
             hasHigh: true,
             hasMedium: completionScored.hasMedium,
@@ -386,6 +506,8 @@ export async function searchBooks(rawQuery: string): Promise<SearchBooksResult> 
             noResults: false,
             weakQuery: false,
           };
+          setCached(rawQuery, completionResult);
+          return completionResult;
         }
       }
     }

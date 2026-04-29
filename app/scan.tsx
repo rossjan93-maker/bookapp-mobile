@@ -37,6 +37,7 @@ import {
   type ResolvedBook, type ScanFitResult, type ScanVerdict,
 } from '../lib/scanFitEval';
 import { persistScan, updateScanAction } from '../lib/scanHistory';
+import { resolveISBNToEditionKey } from '../lib/openLibrary';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -286,6 +287,39 @@ export default function ScanScreen() {
             { user_id: user.id, book_id: bookDbId, status: 'want_to_read' },
             { onConflict: 'user_id,book_id', ignoreDuplicates: true },
           );
+
+        // ── Edition fingerprint persistence ─────────────────────────────────
+        // The user just scanned an ISBN — that's a hard pointer to the
+        // physical edition they hold. Resolve the ISBN to an OL edition
+        // OLID and write it to user_books.edition_key so every cover surface
+        // (Home, Library, Detail, Inbox) shows the cover for the edition
+        // they actually own, not whichever generic work-level cover happened
+        // to land on books.cover_url first.
+        //
+        // Done in the background so the UI doesn't wait on a network call.
+        // If the lookup fails (offline, OL down, ISBN not in OL) we just
+        // leave edition_key NULL and the cover precedence chain falls back
+        // to books.cover_url — exactly the pre-fix behavior.
+        if (book.isbn) {
+          (async () => {
+            const editionKey = await resolveISBNToEditionKey(book.isbn!);
+            if (!editionKey) return;
+            // Only fill edition_key when it's currently NULL — never stomp a
+            // pick the user has already made through the "Change cover"
+            // edition picker on the book detail screen. The .is filter makes
+            // this a single non-destructive UPDATE rather than a read-then-
+            // write race that another tab could clobber.
+            const { error: updErr } = await supabase!
+              .from('user_books')
+              .update({ edition_key: editionKey })
+              .eq('user_id', user.id)
+              .eq('book_id', bookDbId)
+              .is('edition_key', null);
+            if (updErr) {
+              console.warn('[scan] edition_key persist failed:', updErr.message);
+            }
+          })().catch(() => {});
+        }
       }
 
       await persistFeedback(supabase!, user.id, bookLike as any, 'saved', {

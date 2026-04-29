@@ -107,6 +107,18 @@ function mapOAuthError(err: unknown): string {
   ) {
     return "This sign-in option isn't available yet — try email instead.";
   }
+
+  // ── Manual linking disabled in dashboard ───────────────────────────────────
+  // supabase.auth.linkIdentity() returns this when "Allow manual linking" is
+  // off in Supabase Auth settings. Surface a distinct message so the operator
+  // can fix the dashboard without guessing — generic "try again" hides this.
+  if (
+    lower.includes('manual linking is disabled') ||
+    lower.includes('manual_linking_disabled') ||
+    parsedErrorCode === 'manual_linking_disabled'
+  ) {
+    return "Account linking isn't enabled yet — please contact support.";
+  }
   if (lower.includes('cancelled') || lower.includes('cancel') || lower.includes('dismiss')) {
     return '';
   }
@@ -440,4 +452,154 @@ export async function signInWithApple(): Promise<{ error?: string }> {
 
   // ── Web / Android path: OAuth browser flow ──
   return handleOAuthBrowserFlow('apple');
+}
+
+// ─── Identity introspection ──────────────────────────────────────────────────
+// Reads the providers attached to the current user. Used by the Settings
+// "Sign-in methods" section to render which providers are connected and
+// disable the link button for ones that already are.
+
+export type ConnectedIdentity = {
+  provider: 'email' | 'google' | 'apple' | string;
+  identity_id?: string;
+  email?: string | null;
+};
+
+export async function getConnectedIdentities(): Promise<ConnectedIdentity[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase.auth.getUserIdentities();
+    if (error || !data?.identities) return [];
+    return data.identities.map((id) => ({
+      provider:    id.provider,
+      identity_id: id.identity_id,
+      email:       (id.identity_data as { email?: string } | null)?.email ?? null,
+    }));
+  } catch (err) {
+    console.warn('[socialAuth] getConnectedIdentities failed:', err);
+    return [];
+  }
+}
+
+// ─── Identity linking ────────────────────────────────────────────────────────
+// Attaches an additional sign-in provider to the currently signed-in user so
+// they can sign in with either email/password OR the linked provider next time.
+//
+// IMPORTANT: this requires "Allow manual linking" enabled in
+//   Supabase Dashboard → Authentication → Settings → Manual linking
+// Without it, supabase-js returns a "manual linking is disabled" error which
+// we surface verbatim so the dashboard misconfiguration is obvious.
+//
+// Apple-on-iOS uses the native sheet exactly like sign-in: we obtain the
+// identity token via expo-apple-authentication and attach it via
+// signInWithIdToken — Supabase records it as a linked identity on the
+// existing user when the email matches.
+//
+// Google (all platforms) and Apple (web/Android) use the OAuth browser flow
+// via supabase.auth.linkIdentity() which returns a redirect URL we open in
+// the same WebBrowser as sign-in.
+
+export async function linkIdentityProvider(
+  provider: 'google' | 'apple',
+): Promise<{ error?: string }> {
+  if (!supabase) return { error: 'Not configured.' };
+
+  // Apple on iOS — native sheet, no browser
+  if (provider === 'apple' && Platform.OS === 'ios') {
+    try {
+      const AppleAuthentication = await import('expo-apple-authentication');
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (!credential.identityToken) {
+        return { error: 'Apple sign-in failed — no identity token received.' };
+      }
+      // signInWithIdToken on an already-authenticated session attaches the
+      // identity rather than creating a new user, provided the email matches
+      // and manual linking is enabled in the dashboard.
+      const { error: authError } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: credential.identityToken,
+      });
+      if (authError) return { error: mapOAuthError(authError) };
+      return {};
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('cancel') || msg.includes('1001')) return { error: '' };
+      return { error: mapOAuthError(err) };
+    }
+  }
+
+  // Google / Apple-on-web/Android — OAuth browser flow via linkIdentity()
+  webBrowserActive = true;
+  let dismissUrl: string | null = null;
+  const linkSub = Linking.addEventListener('url', ({ url }) => {
+    if (url && url.includes('auth/callback')) dismissUrl = url;
+  });
+
+  try {
+    let redirectTo: string;
+    if (Platform.OS === 'web') {
+      const origin =
+        typeof window !== 'undefined' && window.location?.origin
+          ? window.location.origin
+          : '';
+      if (!origin) return { error: 'Linking failed — please try again.' };
+      redirectTo = `${origin}/auth/callback`;
+    } else {
+      redirectTo = AuthSession.makeRedirectUri({
+        scheme: 'readstack',
+        path: 'auth/callback',
+      });
+    }
+
+    const { data, error: linkErr } = await supabase.auth.linkIdentity({
+      provider,
+      options: { redirectTo, skipBrowserRedirect: true },
+    });
+    if (linkErr || !data?.url) {
+      return { error: mapOAuthError(linkErr ?? new Error('No authorization URL returned')) };
+    }
+
+    const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+    let returnUrl: string | null = null;
+    if (result.type === 'success') {
+      returnUrl = result.url;
+    } else if (result.type === 'cancel' || result.type === 'dismiss') {
+      if (!dismissUrl) {
+        for (let i = 0; i < 10; i++) {
+          await new Promise(r => setTimeout(r, 100));
+          if (dismissUrl) break;
+        }
+      }
+      if (dismissUrl) returnUrl = dismissUrl;
+      else            return { error: '' };
+    } else {
+      return { error: 'Linking failed — please try again.' };
+    }
+
+    const urlObj = new URL(returnUrl);
+    const qError = urlObj.searchParams.get('error') ?? urlObj.searchParams.get('error_description');
+    if (qError) return { error: mapOAuthError(new Error(qError)) };
+    const hashParams = new URLSearchParams(urlObj.hash.slice(1));
+    const hError = hashParams.get('error') ?? hashParams.get('error_description');
+    if (hError) return { error: mapOAuthError(new Error(hError)) };
+
+    const code = urlObj.searchParams.get('code');
+    if (code) {
+      exchangeOwnedAt = Date.now();
+      const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
+      if (sessionError) return { error: mapOAuthError(sessionError) };
+      return {};
+    }
+    return { error: 'Linking failed — please try again.' };
+  } catch (err) {
+    return { error: mapOAuthError(err) };
+  } finally {
+    linkSub.remove();
+    webBrowserActive = false;
+  }
 }

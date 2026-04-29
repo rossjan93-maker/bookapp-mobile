@@ -1,0 +1,185 @@
+Context:
+
+This is a follow-up to the Stability Pass.
+
+I tested the app on device and the first pass is only partially accepted.
+
+We should NOT move to the next design/polish batch yet. We need to close the remaining trust-breaking issues first.
+
+Current status from testing:
+
+1. Add-book search is still too slow and inconsistent.
+- Some searches work.
+- Some searches fail or return nothing.
+- All searches feel slow.
+- The previous timeout/error-logging changes are not enough.
+
+2. Apple sign-in for existing users is still incomplete.
+- The previous pass only improved the error message.
+- I want the deferred “link Apple to existing account” work done now.
+
+3. Cover artwork mismatch is still happening.
+- I have a video example showing that the cover shown in one surface differs from the cover shown after clicking into the book.
+- The prior cover precedence change did not fully solve the mismatch.
+
+4. Open Library edition filter is better, but cover artwork is missing for many options.
+- The edition options are more numerous now, but too many options lack visible cover artwork.
+- The cover picker needs to prioritize useful visual choices.
+
+5. Book scanning should become part of edition resolution.
+- I want the scanning feature to help users add a book to their library and identify the correct edition quickly.
+- This matters because edition/cover mismatch is a recurring problem.
+- The scan flow should use ISBN/barcode data to resolve the exact edition when possible.
+
+6. Pacing appears to be working.
+- Unless you find a clear issue, do not spend more time on pacing in this pass.
+
+Task:
+
+Focus only on the remaining Batch 1 trust issues.
+
+PART 1 — Add-book search performance and reliability
+
+The current add-book search is too slow and inconsistent.
+
+Do a deeper audit of the add-book search architecture:
+- what providers are queried
+- in what order
+- whether calls are parallel or sequential
+- timeout behavior
+- caching
+- debouncing
+- query normalization
+- result ranking
+- error states
+- whether one slow provider blocks the whole experience
+
+Improve the search experience so it feels fast and reliable.
+
+Requirements:
+- show useful first results quickly
+- do not let one provider timeout block the entire search
+- add provider-level timing logs
+- cache recent searches if appropriate
+- normalize common queries
+- make empty/error states honest
+- preserve result quality
+
+Acceptance criteria:
+- searches for common books like “Dune”, “The Guest List”, “Harry Potter”, “Atomic Habits” return quickly
+- partial results can render while slower providers continue if possible
+- user can add a selected result to library
+- slow/failing providers do not make the whole search feel broken
+
+PART 2 — Link Apple to existing account
+
+Implement the deferred account-linking path.
+
+Goal:
+An existing user who created an account with email/password or Google should be able to link Apple from Settings.
+
+Requirements:
+- inspect Supabase account-linking requirements
+- confirm whether any Supabase dashboard setting is required, especially “Allow account linking”
+- add a Settings section showing connected sign-in methods
+- show which providers are connected: email/password, Google, Apple
+- add “Link Apple” action for signed-in users
+- add “Link Google” if straightforward and safe
+- handle provider conflicts gracefully
+- update the existing-account Apple sign-in error message to point users to Settings → Sign-in methods
+
+Acceptance criteria:
+- logged-in user can link Apple from Settings
+- if linking succeeds, Settings reflects Apple as connected
+- if linking fails because provider/email already belongs elsewhere, message is clear and safe
+- Apple sign-in after linking works for that account
+- no silent failure or stuck loading
+
+PART 3 — Cover artwork mismatch
+
+The mismatch still happens despite the previous precedence change.
+
+Do a deeper audit of cover source-of-truth across:
+- Home cards
+- Library rows/cards
+- Completed covers row
+- Recommendation cards
+- Book detail
+- User-book detail
+- edition picker
+- scan/add-book flows
+
+Find why the same book/user_book can still show different cover art across surfaces.
+
+Requirements:
+- identify whether mismatch is due to books.cover_url vs enrichedCoverUrl vs editionCoverUrl vs provider fallback vs cached local state
+- define one canonical display-cover resolver
+- use it consistently across all surfaces
+- ensure user-selected edition/cover wins everywhere
+- remove duplicate cover-selection logic where practical
+
+Acceptance criteria:
+- cover shown before tapping matches detail screen cover
+- manually selected edition cover persists across Home, Library, detail, recommendations where applicable
+- completed cover row and book detail agree
+- no surface independently invents a different provider fallback
+
+PART 4 — Edition picker cover quality
+
+The edition picker now returns more options, but many do not display cover art.
+
+Improve edition option logic.
+
+Requirements:
+- prioritize editions with cover artwork
+- show cover-bearing editions first
+- avoid showing a long list of blank-cover options above useful ones
+- dedupe similar editions
+- if an edition lacks a cover but has strong metadata, show a clean placeholder
+- preserve ability to select correct edition even when cover is unavailable
+
+Acceptance criteria:
+- known popular books show several visible cover options where available
+- blank-cover options are deprioritized
+- picker feels useful rather than broken
+
+PART 5 — Book scanning as edition resolution
+
+Start connecting the scanning feature to edition accuracy.
+
+Goal:
+Scanning a book barcode should help users add the correct edition quickly.
+
+Requirements:
+- inspect current scan/barcode flow
+- confirm whether ISBN is captured
+- use ISBN to query exact edition/provider metadata
+- when scan finds a match, add/show the exact edition cover when available
+- if multiple matches exist, show a concise picker
+- if no exact cover exists, use best metadata fallback
+- route scanned book into add-to-library flow cleanly
+
+Acceptance criteria:
+- scan ISBN → finds the correct book/edition when provider data supports it
+- scanned edition cover is used as the chosen cover
+- scanned book can be added to library
+- scan flow helps solve edition mismatch rather than creating another mismatch path
+
+PART 6 — Pacing
+
+Pacing appears to be working after the previous fix.
+
+Do not spend time here unless you find a clear regression.
+
+What I want back:
+1. exact root cause for remaining add-book search slowness/inconsistency
+2. exact root cause for cover mismatch still happening
+3. exact files changed
+4. what changed in search architecture
+5. how Apple/Google account linking now works
+6. what Supabase dashboard setting I need to confirm or change
+7. how canonical cover resolution now works
+8. how edition picker cover ranking changed
+9. how scanning now resolves exact editions
+10. what was validated
+11. what still remains deferred
