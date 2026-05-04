@@ -1,0 +1,59 @@
+Context:
+
+The remaining issue from Batch 1.5 is the Google account-linking flow from Settings.
+
+The user is already logged into the app and goes to:
+Settings → Sign-in methods → Link Google
+
+Observed behavior:
+- selecting the Google email opens the provider/auth window
+- after selecting the email, the app appears to start a normal login/profile-loading flow
+- this is wrong for account linking from Settings
+
+Expected behavior:
+This is not a new login.
+This is an identity-linking confirmation for an already-authenticated user.
+
+The flow should be:
+1. user is already logged in
+2. taps Link Google from Settings
+3. Google provider window opens only to verify the Google account
+4. app returns directly to Settings / Sign-in methods
+5. app confirms Google is now connected or shows a clear error
+6. no onboarding, no profile-loading page, no normal login bootstrap screen
+
+Important:
+Do not treat provider linking like a standard sign-in.
+Do not route through the normal login/onboarding path after the provider callback.
+Do not create or load a different profile.
+
+Task:
+Fix the Google/Apple provider-linking callback flow so linking from Settings is handled separately from normal sign-in.
+
+I want you to:
+1. inspect the current linkIdentity / OAuth linking implementation
+2. identify why linking is triggering the normal sign-in/profile-loading path
+3. distinguish provider-linking OAuth callbacks from normal sign-in OAuth callbacks
+4. after successful linking, route the user back to Settings → Sign-in methods
+5. refresh the connected providers list
+6. show a clear success message
+7. if the selected provider email does not match the current account email, show a clear safe error and do not link
+
+Acceptance criteria:
+- logged-in user can tap Link Google from Settings
+- Google account selector opens
+- after choosing the matching email, app returns to Settings
+- no onboarding screen appears
+- no profile-loading/login bootstrap screen appears
+- connected providers list updates to show Google linked
+- if wrong Google email is selected, linking is blocked or clearly fails
+- same architecture should support Apple linking on iOS
+
+What I want back:
+1. exact root cause
+2. exact files changed
+3. how linking callbacks are now distinguished from sign-in callbacks
+4. how email-match validation is handled
+5. what the user sees on success
+6. what the user sees on mismatch/failure
+7. what I should retest on Android/iOS

@@ -563,7 +563,17 @@ export default function RootLayout() {
     // Both must be treated as "in auth" so the session guard does not redirect
     // while the callback screen is exchanging a PKCE code (no session yet).
     const seg0         = segments[0] as string;
-    const inAuth       = seg0 === '(auth)' || seg0 === 'auth';
+    const seg1         = segments[1] as string | undefined;
+    // /auth/link-callback is special: it's the post-OAuth landing page for
+    // identity linking initiated from Settings. The user is ALREADY signed in
+    // when they get there and the screen self-routes back to /settings. We
+    // must NOT treat it as part of the sign-in `inAuth` bucket — otherwise
+    // the safety-net branch below force-redirects authenticated users to
+    // `/(tabs)`, which surfaces as the "normal login/profile-loading page"
+    // bug after Connect Google. Excluding it here lets link-callback do its
+    // own navigation in peace.
+    const inLinkCallback = seg0 === 'auth' && seg1 === 'link-callback';
+    const inAuth       = (seg0 === '(auth)' || seg0 === 'auth') && !inLinkCallback;
     // Treat /onboarding-* as part of the onboarding flow so the guard
     // never evicts the user mid-step.
     const inOnboarding = seg0 === 'onboarding' || seg0 === 'onboarding-import' || seg0 === 'onboarding-questions';
@@ -605,7 +615,11 @@ export default function RootLayout() {
     } else if (session && needsOnboarding && !inAuth && !inOnboarding) {
       console.log('[ROOT_GUARD] → route=/onboarding (guard redirect)');
       router.replace('/onboarding');
-    } else if (!session && !inAuth && !inResetPw) {
+    } else if (!session && !inAuth && !inResetPw && !inLinkCallback) {
+      // Skip link-callback too: a cold deep-link with ?code= can land here
+      // before Supabase finishes rehydrating the session. The link-callback
+      // screen owns its own redirect to /settings; bouncing to /login here
+      // would dump the user out mid-exchange.
       console.log('[ROOT_GUARD] no session — redirecting to /login (segments:', seg0, ')');
       router.replace('/login');
     }

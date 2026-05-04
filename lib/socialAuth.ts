@@ -504,6 +504,20 @@ export async function linkIdentityProvider(
 ): Promise<{ error?: string }> {
   if (!supabase) return { error: 'Not configured.' };
 
+  // ── Capture the current account email up-front ───────────────────────────
+  // Used after the link completes to verify the provider account the user
+  // chose matches the account they're signed into. If they pick a different
+  // Google/Apple email by accident, we unlink immediately so the wrong
+  // identity is never left attached.
+  const { data: { user: currentUser } } = await supabase.auth.getUser();
+  if (!currentUser) return { error: 'You need to be signed in to link an account.' };
+  const currentEmail = (currentUser.email ?? '').toLowerCase();
+
+  // Snapshot identities BEFORE linking so we can find the new one after.
+  const beforeIdentitiesIds = new Set(
+    (currentUser.identities ?? []).map((i) => i.identity_id).filter(Boolean) as string[],
+  );
+
   // Apple on iOS — native sheet, no browser
   if (provider === 'apple' && Platform.OS === 'ios') {
     try {
@@ -516,6 +530,14 @@ export async function linkIdentityProvider(
       });
       if (!credential.identityToken) {
         return { error: 'Apple sign-in failed — no identity token received.' };
+      }
+      // Apple's email claim — only present on first auth, but that's exactly
+      // when linking happens, so we can validate before even calling Supabase.
+      const appleEmail = (credential.email ?? '').toLowerCase();
+      if (appleEmail && currentEmail && appleEmail !== currentEmail) {
+        return {
+          error: `That Apple account uses a different email (${appleEmail}). Sign in with the Apple ID matching ${currentEmail} to link.`,
+        };
       }
       // signInWithIdToken on an already-authenticated session attaches the
       // identity rather than creating a new user, provided the email matches
@@ -536,11 +558,27 @@ export async function linkIdentityProvider(
   // Google / Apple-on-web/Android — OAuth browser flow via linkIdentity()
   webBrowserActive = true;
   let dismissUrl: string | null = null;
+  // Listen on BOTH callback paths so the dismiss-fallback works whether the
+  // OS hands us the deep link via /auth/callback (legacy) or the new
+  // /auth/link-callback (preferred — keeps Settings on screen).
   const linkSub = Linking.addEventListener('url', ({ url }) => {
-    if (url && url.includes('auth/callback')) dismissUrl = url;
+    if (url && (url.includes('auth/link-callback') || url.includes('auth/callback'))) {
+      dismissUrl = url;
+    }
   });
 
   try {
+    // ── Distinct redirect target for linking ────────────────────────────────
+    // We deliberately do NOT reuse /auth/callback here. That screen is the
+    // sign-in landing screen and runs the onboarding probe + routes the
+    // user to /(tabs) — exactly the "normal login/profile-loading page"
+    // bug the user reported. /auth/link-callback is a tiny screen that
+    // does the code exchange (cold deep-link path only) and bounces back
+    // to /settings. Add it to:
+    //   Supabase Dashboard → Authentication → URL Configuration →
+    //     Redirect URLs allow-list:
+    //       https://<your-prod-domain>/auth/link-callback
+    //       readstack://auth/link-callback
     let redirectTo: string;
     if (Platform.OS === 'web') {
       const origin =
@@ -548,11 +586,11 @@ export async function linkIdentityProvider(
           ? window.location.origin
           : '';
       if (!origin) return { error: 'Linking failed — please try again.' };
-      redirectTo = `${origin}/auth/callback`;
+      redirectTo = `${origin}/auth/link-callback`;
     } else {
       redirectTo = AuthSession.makeRedirectUri({
         scheme: 'readstack',
-        path: 'auth/callback',
+        path: 'auth/link-callback',
       });
     }
 
@@ -593,6 +631,39 @@ export async function linkIdentityProvider(
       exchangeOwnedAt = Date.now();
       const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
       if (sessionError) return { error: mapOAuthError(sessionError) };
+
+      // ── Email-match validation (post-link) ────────────────────────────
+      // Supabase manual linking does NOT enforce email match by default.
+      // We compare the newly attached identity's email to the current
+      // user's email; if they differ, unlink immediately so the wrong
+      // identity is never left attached. This mirrors what users expect
+      // — "I'm linking my Google" implies "the Google with my email".
+      try {
+        const { data: idData } = await supabase.auth.getUserIdentities();
+        const newIdentity = (idData?.identities ?? []).find(
+          (i) => i.provider === provider && !beforeIdentitiesIds.has(i.identity_id),
+        );
+        if (newIdentity) {
+          const linkedEmail = ((newIdentity.identity_data as { email?: string } | null)?.email ?? '').toLowerCase();
+          if (currentEmail && linkedEmail && linkedEmail !== currentEmail) {
+            // Roll back. unlinkIdentity throws on failure, but if it does
+            // the surface error is still better than silently keeping the
+            // mismatched identity attached.
+            try { await supabase.auth.unlinkIdentity(newIdentity); } catch (e) {
+              console.warn('[LINK] rollback unlinkIdentity failed:', e);
+            }
+            const providerLabel = provider === 'apple' ? 'Apple' : 'Google';
+            return {
+              error: `That ${providerLabel} account uses a different email (${linkedEmail}). Sign in with the ${providerLabel} account matching ${currentEmail} to link.`,
+            };
+          }
+        }
+      } catch (e) {
+        // Don't fail the link just because the email-match check threw —
+        // log and proceed. The link itself succeeded.
+        console.warn('[LINK] email-match validation threw:', e);
+      }
+
       return {};
     }
     return { error: 'Linking failed — please try again.' };
