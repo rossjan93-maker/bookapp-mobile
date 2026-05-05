@@ -57,8 +57,8 @@ type ActionState = 'idle' | 'saved' | 'dismissed' | 'more_like_this';
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const VERDICT_BADGE: Record<ScanVerdict, { bg: string; text: string }> = {
-  strong_fit:  { bg: '#dcfce7', text: '#15803d' },
-  likely_fit:  { bg: '#f0fdf4', text: '#16a34a' },
+  strong_fit:  { bg: '#eaf1ea', text: '#2f6f3a' },
+  likely_fit:  { bg: '#eaf1ea', text: '#2f6f3a' },
   mixed_fit:   { bg: '#fef9c3', text: '#854d0e' },
   not_for_you: { bg: '#fee2e2', text: '#b91c1c' },
 };
@@ -873,7 +873,7 @@ export default function ScanScreen() {
             </>
           ) : (
             <View style={s.actionConfirm}>
-              <Ionicons name="checkmark-circle" size={22} color="#15803d" style={{ marginRight: 8 }} />
+              <Ionicons name="checkmark-circle" size={22} color="#2f6f3a" style={{ marginRight: 8 }} />
               <Text style={s.actionConfirmText}>
                 {actionState === 'saved'
                   ? 'Added to your Want to Read list'
@@ -1310,16 +1310,16 @@ const s = StyleSheet.create({
     flexDirection:   'row',
     alignItems:      'center',
     justifyContent:  'center',
-    backgroundColor: '#f0fdf4',
+    backgroundColor: '#eaf1ea',
     borderRadius:    12,
     paddingVertical: 16,
     paddingHorizontal: 16,
     borderWidth:     1,
-    borderColor:     '#bbf7d0',
+    borderColor:     '#7b9e7e',
   },
   actionConfirmText: {
     fontSize:   15,
-    color:      '#166534',
+    color:      '#3d5e42',
     fontWeight: '500',
     flex:       1,
   },

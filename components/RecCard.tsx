@@ -598,18 +598,18 @@ export function RecCard({
                           : tier === 'medium'   ? 'Good fit'
                           :                      'Explore';
               const bg    = isStarterBadge      ? '#fffbeb'
-                          : isContinuationBadge ? '#f0fdf4'
-                          : tier === 'high'     ? '#f0fdf4'
+                          : isContinuationBadge ? '#eaf1ea'
+                          : tier === 'high'     ? '#eaf1ea'
                           : tier === 'medium'   ? '#f8f8f7'
                           :                      '#f5f1ec';
               const col   = isStarterBadge      ? '#92400e'
-                          : isContinuationBadge ? '#166534'
-                          : tier === 'high'     ? '#15803d'
+                          : isContinuationBadge ? '#2f6f3a'
+                          : tier === 'high'     ? '#2f6f3a'
                           : tier === 'medium'   ? '#57534e'
                           :                      '#9e958d';
               const bord  = isStarterBadge      ? '#fde68a'
-                          : isContinuationBadge ? '#bbf7d0'
-                          : tier === 'high'     ? '#bbf7d0'
+                          : isContinuationBadge ? '#7b9e7e'
+                          : tier === 'high'     ? '#7b9e7e'
                           : tier === 'medium'   ? '#ede9e4'
                           :                      '#ede9e4';
               return (
@@ -765,7 +765,7 @@ export function RecCard({
       {confirmState && (
         <Animated.View style={{
           position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: confirmState === 'save' ? '#f0fdf4' : confirmState === 'dismiss' ? '#ede9e4' : '#faf5ff',
+          backgroundColor: confirmState === 'save' ? '#eaf1ea' : confirmState === 'dismiss' ? '#ede9e4' : '#faf5ff',
           borderRadius: 14,
           justifyContent: 'center',
           alignItems: 'center',
@@ -775,8 +775,8 @@ export function RecCard({
         }}>
           {confirmState === 'save' ? (
             <>
-              <Text style={{ fontSize: 15, fontWeight: '700', color: '#15803d' }}>✓  Added to your list</Text>
-              <Text style={{ fontSize: 12, color: '#166534' }}>Saved to Want to Read</Text>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: '#2f6f3a' }}>✓  Added to your list</Text>
+              <Text style={{ fontSize: 12, color: '#3d5e42' }}>Saved to Want to Read</Text>
             </>
           ) : confirmState === 'dismiss' ? (
             <>

@@ -136,7 +136,7 @@ function StatusPill({ status }: { status: string }) {
     sent:     { bg: '#f1f5f9', text: '#475569', label: 'New'          },
     saved:    { bg: '#e0f2fe', text: '#0369a1', label: 'Want to Read' },
     started:  { bg: '#dbeafe', text: '#1d4ed8', label: 'Reading'      },
-    finished: { bg: '#dcfce7', text: '#15803d', label: 'Finished'     },
+    finished: { bg: '#eaf1ea', text: '#2f6f3a', label: 'Finished'     },
     dnf:      { bg: '#fee2e2', text: '#b91c1c', label: 'DNF'          },
   };
   const s = map[status];
@@ -1998,14 +1998,14 @@ export default function RecommendationsScreen() {
     <View style={{ flex: 1, backgroundColor: '#f5f1ec', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
       {sendResult?.ok ? (
         <View style={{
-          backgroundColor: '#f0fdf4',
+          backgroundColor: '#eaf1ea',
           borderRadius: 16,
           padding: 28,
           alignItems: 'center',
           width: '100%',
           marginBottom: 24,
         }}>
-          <Text style={{ fontSize: 11, fontWeight: '700', color: '#15803d', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: '#2f6f3a', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>
             Sent
           </Text>
           <Text style={{ fontSize: 16, color: '#231f1b', textAlign: 'center', lineHeight: 24, fontWeight: '600' }}>

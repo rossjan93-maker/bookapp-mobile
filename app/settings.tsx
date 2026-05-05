@@ -123,7 +123,7 @@ function SaveButton({
       disabled={isDisabled}
       style={{
         marginTop: 10,
-        backgroundColor: saved ? '#15803d' : isDisabled ? '#ede9e4' : '#231f1b',
+        backgroundColor: saved ? '#2f6f3a' : isDisabled ? '#ede9e4' : '#231f1b',
         borderRadius: 10,
         paddingVertical: 13,
         alignItems: 'center',
@@ -526,7 +526,7 @@ export default function SettingsScreen() {
             <ActivityIndicator size="small" color="#9e958d" style={{ marginLeft: 6 }} />
           )}
           {usernameStatus === 'available' && (
-            <Text style={{ fontSize: 15, color: '#16a34a', marginLeft: 6 }}>✓</Text>
+            <Text style={{ fontSize: 15, color: '#2f6f3a', marginLeft: 6 }}>✓</Text>
           )}
           {usernameStatus === 'taken' && (
             <Text style={{ fontSize: 15, color: '#dc2626', marginLeft: 6 }}>✕</Text>
@@ -545,7 +545,7 @@ export default function SettingsScreen() {
         </Text>
       )}
       {usernameStatus === 'available' && !accountError && (
-        <Text style={{ fontSize: 12, color: '#16a34a', marginTop: 8, paddingHorizontal: 2 }}>
+        <Text style={{ fontSize: 12, color: '#2f6f3a', marginTop: 8, paddingHorizontal: 2 }}>
           Username is available.
         </Text>
       )}
@@ -583,7 +583,7 @@ export default function SettingsScreen() {
               <SettingsRow last={!showApple}>
                 <RowLabel>Google</RowLabel>
                 {hasGoogle ? (
-                  <Text style={{ fontSize: 14, color: '#16a34a', paddingVertical: 2 }}>
+                  <Text style={{ fontSize: 14, color: '#2f6f3a', paddingVertical: 2 }}>
                     Connected ✓
                   </Text>
                 ) : (
@@ -613,7 +613,7 @@ export default function SettingsScreen() {
                 <SettingsRow last>
                   <RowLabel>Apple</RowLabel>
                   {hasApple ? (
-                    <Text style={{ fontSize: 14, color: '#16a34a', paddingVertical: 2 }}>
+                    <Text style={{ fontSize: 14, color: '#2f6f3a', paddingVertical: 2 }}>
                       Connected ✓
                     </Text>
                   ) : (
@@ -644,7 +644,7 @@ export default function SettingsScreen() {
         })()}
       </SettingsCard>
       {linkSuccess && (
-        <Text style={{ fontSize: 12, color: '#16a34a', marginTop: 8, paddingHorizontal: 2 }}>
+        <Text style={{ fontSize: 12, color: '#2f6f3a', marginTop: 8, paddingHorizontal: 2 }}>
           {linkSuccess}
         </Text>
       )}

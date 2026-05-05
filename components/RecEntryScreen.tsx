@@ -85,7 +85,7 @@ const INK  = '#231f1b';
 const MUTED = '#9e958d';
 const SUB  = '#78716c';
 const BORD = '#ede9e4';
-const GRN  = '#15803d';
+const GRN  = '#2f6f3a';
 
 // ─── Quick-intake types ───────────────────────────────────────────────────────
 
@@ -374,8 +374,8 @@ function EntryOptions({
           paddingVertical: 7,
           alignSelf: 'flex-start',
         }}>
-          <Ionicons name="checkmark-circle-outline" size={13} color="#86efac" />
-          <Text style={{ fontSize: 12, fontWeight: '600', color: '#86efac', letterSpacing: 0.1 }}>
+          <Ionicons name="checkmark-circle-outline" size={13} color="#7b9e7e" />
+          <Text style={{ fontSize: 12, fontWeight: '600', color: '#7b9e7e', letterSpacing: 0.1 }}>
             Best results · no setup required
           </Text>
         </View>

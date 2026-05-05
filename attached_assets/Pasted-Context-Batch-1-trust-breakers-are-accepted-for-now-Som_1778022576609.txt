@@ -1,0 +1,153 @@
+Context:
+
+Batch 1 trust-breakers are accepted for now. Some remaining QA items are deferred and will be revisited later.
+
+Now move to Batch 2: UI consistency and first-session polish.
+
+Goal:
+Improve the first-session product feel so the app feels coherent, premium, and intentional before we invite more testers.
+
+Focus areas:
+1. Empty recommendations page for new / low-signal users
+2. For You heading/subheading copy
+3. App-wide green color consistency
+4. Motion/fluidity improvements
+5. Reading Progress section polish
+
+Important:
+Do not start new feature work.
+Do not modify auth, account linking, or database schema unless absolutely necessary.
+This is a design/UX polish pass.
+
+---
+
+ISSUE 1 — Empty recommendations page for new users
+
+Problem:
+The empty recommendations / low-signal page feels poorly framed.
+The heading sits too high and the layout feels unfinished.
+
+Task:
+Improve the empty/low-signal state on the For You screen.
+
+Requirements:
+- better vertical framing
+- clearer explanation of why recommendations are not ready yet
+- strong next action
+- avoid making the user feel like the app is broken
+- support users who skipped import or have very little reading data
+
+Acceptance criteria:
+- new users understand what to do next
+- page does not feel empty or broken
+- CTA hierarchy is clear
+
+---
+
+ISSUE 2 — For You heading/subheading copy
+
+Problem:
+The current For You copy is redundant and awkward.
+We repeat “For You” and “high confidence recommendation” too much.
+
+Task:
+Rewrite the For You header and subheader so they are cleaner and more natural.
+
+Direction:
+- remove repeated “For You” language
+- remove repeated “high confidence recommendation” phrasing
+- keep the idea of personalized picks
+- make the language feel confident but not robotic
+
+Acceptance criteria:
+- heading and subheading are grammatically clean
+- no duplicated idea in adjacent lines
+- copy feels premium and human
+
+---
+
+ISSUE 3 — App-wide green color consistency
+
+Problem:
+The app uses too many shades of green.
+
+Task:
+Audit current green usage and consolidate around one primary green with intentional tints.
+
+Requirements:
+- define one primary green token
+- define limited supporting green tint(s)
+- replace inconsistent one-off greens where practical
+- do not flatten every color blindly; preserve contrast and accessibility
+
+Acceptance criteria:
+- buttons, progress bars, badges, highlights, and success states feel visually consistent
+- no obvious competing greens on the same screen
+- color choices are centralized if possible
+
+---
+
+ISSUE 4 — Motion and fluidity
+
+Problem:
+The app feels too static.
+We need subtle motion and reactive feedback, especially around progress, scroll, reveal, and streaks.
+
+Task:
+Add tasteful motion where it improves product feel.
+
+Examples:
+- Reading streak flame should feel alive when a streak exists
+- progress numbers can animate gently when changed
+- progress bar can fill on mount
+- cards can reveal subtly on screen load
+- tap/selection states should feel responsive
+
+Constraints:
+- do not over-animate
+- no gimmicky animations
+- respect performance
+- keep motion subtle and premium
+
+Acceptance criteria:
+- app feels more fluid
+- key elements respond to user action
+- no distracting or excessive animation
+- no degraded scroll performance
+
+---
+
+ISSUE 5 — Reading Progress section polish
+
+Problem:
+The Reading Progress section is directionally improved but still needs refinement.
+
+Task:
+Polish layout, spacing, and hierarchy.
+
+Requirements:
+- keep the combined Reading Progress model
+- activity metrics, yearly goal, and completed books should feel like one cohesive section
+- ensure the activity row always shows a streak slot, even at 0
+- goal progress and pacing should feel visually connected
+- completed books shelf should feel grounded, not floating
+- left-aligned and editorial in tone
+
+Acceptance criteria:
+- section feels cohesive rather than like stacked unrelated widgets
+- hierarchy is clear
+- spacing feels intentional on mobile
+- completed book row looks polished and scrollable
+
+---
+
+What I want back:
+
+1. exact files changed
+2. copy before/after for For You and empty states
+3. green color/token decisions
+4. motion added and where
+5. Reading Progress layout changes
+6. any screenshots or visual verification
+7. what was intentionally not changed
+8. whether a new Android/iOS build is needed or whether this can be tested through the dev-client JS reload

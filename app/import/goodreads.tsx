@@ -940,7 +940,7 @@ function StagedView({
           count={summary.alreadyInApp}
           label="Already in readstack"
           sublabel="Exact match found — will be linked to your record"
-          accent="#15803d"
+          accent="#2f6f3a"
         />
         <StatRow
           count={summary.readyToImport}
@@ -1038,7 +1038,7 @@ function CompleteView({
           count={result.added}
           label="Added to library"
           sublabel="New books added to your readstack"
-          accent={result.added > 0 ? '#15803d' : undefined}
+          accent={result.added > 0 ? '#2f6f3a' : undefined}
         />
         <StatRow
           count={result.merged}

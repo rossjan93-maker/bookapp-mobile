@@ -137,7 +137,7 @@ export function GuidedNotedToast({ onDone }: { onDone: () => void }) {
         left:              16,
         right:             16,
         opacity,
-        backgroundColor:   '#15803d',
+        backgroundColor:   '#2f6f3a',
         borderRadius:      CARD.borderRadius,
         paddingVertical:   CARD.paddingVertical,
         paddingHorizontal: CARD.paddingHorizontal,

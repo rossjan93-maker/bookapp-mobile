@@ -283,7 +283,7 @@ export function fitLabel(score: number): string {
 }
 
 export function fitColor(score: number): string {
-  if (score > 0.60) return '#16a34a';
+  if (score > 0.60) return '#2f6f3a';
   if (score > 0.35) return '#2563eb';
   return '#78716c';
 }

@@ -29,7 +29,12 @@ The application is developed using React Native with Expo Router for navigation.
 - **Contracts:** Detailed contracts for loading, refresh, navigation continuity, action feedback, search, onboarding, book-state integrity, and surface-specific behaviors (Home, Library, etc.).
 
 ## Design Token Module
-`lib/tokens.ts` is the single source of truth for the 10-colour Readstack palette. Import as `import * as T from '../lib/tokens'` (adjust path depth as needed). Named exports: `BG`, `INK`, `STONE`, `DUST`, `SAGE`, `SAGE_BG`, `AMBER`, `CREAM`, `BORDER`, `FAINT`. Screen and component files can be migrated to this module incrementally; the token values are identical to the inline hex strings they replace.
+`lib/tokens.ts` is the single source of truth for the Readstack palette. Import as `import * as T from '../lib/tokens'` (adjust path depth as needed). Named exports: `BG`, `INK`, `STONE`, `DUST`, `SAGE`, `SAGE_BG`, `SAGE_DEEP`, `AMBER`, `CREAM`, `BORDER`, `FAINT`. The green system is intentionally three-tone — `SAGE` (#7b9e7e, primary mid-tone for borders/bars/accents), `SAGE_BG` (#eaf1ea, soft chip/panel background), `SAGE_DEEP` (#2f6f3a, the only "strong" green; used for big numerals, status text, primary progress-bar fills, and any green text on a light background). Bright Tailwind-style greens (#15803d, #16a34a, #166534, #4d7f52, #bbf7d0, #dcfce7, #f0fdf4, #86efac, #a8d0aa, #e6f0e6) have been swept out across the app — do NOT reintroduce them; use the SAGE_* tokens instead.
+
+## Reading Progress motion
+The home Reading Progress section uses two subtle animations that should not be removed without product approval:
+- **Yearly-goal progress bar** fills from 0 → current pct on mount and whenever `yearlyGoal` or `booksThisYear.length` changes (700 ms cubic ease-out, JS-driven width interpolation).
+- **Streak flame** loops a gentle scale pulse (1.0 ↔ 1.14, 780 ms each leg, native-driver scale) only when `currentStreak > 0`. At streak = 0 the loop is stopped and the flame snaps back to scale 1, so new users see no animation cost. The flame icon also switches from the muted `#b8967a` neutral to the warm `#c97a3a` only when the streak is active.
 
 ## Subject Matching
 `matchesSubjects()` in `lib/shelves.ts` uses word-boundary regex (`\b...\b`) — not substring `includes()`. This applies to smart shelf filtering (Romantasy, Long Reads, Comfort Reads). `contentWarnings.ts` uses the same approach with pre-compiled COMPILED_PATTERNS. Never revert either to `includes()`.

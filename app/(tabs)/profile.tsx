@@ -69,9 +69,9 @@ type ReadingPatterns = {
 
 const REC_STATUS: Record<string, { bg: string; text: string; label: string }> = {
   sent:     { bg: '#f0ece6', text: '#6b635c', label: 'Sent'          },
-  saved:    { bg: '#e6f0e6', text: '#4d7f52', label: 'Want to Read'  },
-  started:  { bg: '#e6f0e6', text: '#4d7f52', label: 'Reading'       },
-  finished: { bg: '#e6f0e6', text: '#4d7f52', label: 'Finished'      },
+  saved:    { bg: '#eaf1ea', text: '#2f6f3a', label: 'Want to Read'  },
+  started:  { bg: '#eaf1ea', text: '#2f6f3a', label: 'Reading'       },
+  finished: { bg: '#eaf1ea', text: '#2f6f3a', label: 'Finished'      },
   dnf:      { bg: '#fee2e2', text: '#b91c1c', label: 'Did Not Finish' },
 };
 
@@ -339,9 +339,9 @@ export default function ProfileScreen() {
     ? 'On pace'
     : '';
   const paceColor  = paceStatus?.state === 'ahead'
-    ? '#4d7f52'
+    ? '#2f6f3a'
     : paceStatus?.state === 'on_pace'
-    ? '#4d7f52'
+    ? '#2f6f3a'
     : '#9e958d';
 
   const hasTasteData = prefs && (

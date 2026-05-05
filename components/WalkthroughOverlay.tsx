@@ -227,8 +227,8 @@ function RecommendFocalCard({ rect }: { rect: TargetRect }) {
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 6 }}>
             <Text style={{ fontSize: 12, color: '#78716c', flex: 1 }} numberOfLines={1}>Andy Weir</Text>
-            <View style={{ backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2 }}>
-              <Text style={{ fontSize: 9, fontWeight: '700', color: '#15803d', letterSpacing: 0.3 }}>TOP PICK</Text>
+            <View style={{ backgroundColor: '#eaf1ea', borderWidth: 1, borderColor: '#7b9e7e', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2 }}>
+              <Text style={{ fontSize: 9, fontWeight: '700', color: '#2f6f3a', letterSpacing: 0.3 }}>TOP PICK</Text>
             </View>
           </View>
           <Text style={{ fontSize: 13, fontWeight: '600', color: '#231f1b', lineHeight: 18 }} numberOfLines={2}>

@@ -120,11 +120,11 @@ export function WtDemoLibrary() {
               <Text style={{ fontSize: 12, color: '#78716c' }}>James Clear</Text>
             </View>
             <View style={{
-              backgroundColor: '#f0fdf4',
+              backgroundColor: '#eaf1ea',
               borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
-              borderWidth: 1, borderColor: '#bbf7d0',
+              borderWidth: 1, borderColor: '#7b9e7e',
             }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', color: '#15803d' }}>
+              <Text style={{ fontSize: 11, fontWeight: '600', color: '#2f6f3a' }}>
                 Finished
               </Text>
             </View>

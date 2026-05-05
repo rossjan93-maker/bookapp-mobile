@@ -407,6 +407,10 @@ export default function HomeScreen() {
   const [longestStreak,  setLongestStreak]  = useState<number>(() => _homeCache?.longestStreak ?? 0);
   const [monthlyStats,   setMonthlyStats]   = useState<MonthlyStats | null>(() => _homeCache?.monthlyStats ?? null);
 
+  // Streak value at component scope so the flame-pulse effect can see it
+  // without us having to thread it through the IIFE that renders the slots.
+  const streakValue = currentStreak ?? 0;
+
   // Refs so we can write to the cache after all setters have been called
   // (state is async; refs give us the live values within the async load).
   const _crRef    = useRef<CurrentRead[]>([]);
@@ -421,6 +425,46 @@ export default function HomeScreen() {
   const _csRef    = useRef<number>(0);
   const _lsRef    = useRef<number>(0);
   const _msRef    = useRef<MonthlyStats | null>(null);
+
+  // ── Motion: progress-bar fill + streak-flame pulse ────────────────────────
+  // progressAnim drives the yearly-goal bar from 0 → 1 on mount and on goal /
+  // read-count changes. Width interpolation can't use the native driver, but
+  // it's a single short animation so the JS-thread cost is negligible.
+  // flameAnim loops a subtle scale pulse on the streak flame whenever a
+  // streak is active. It uses the native driver and stays paused at scale=1
+  // when the streak is 0 so it never adds work for new users.
+  const progressAnim = useRef(new Animated.Value(0)).current;
+  const flameAnim    = useRef(new Animated.Value(1)).current;
+
+  // Drive the bar fill — reset to 0 and ease back up whenever the inputs
+  // change so the user sees a clear movement, not an instantaneous jump.
+  useEffect(() => {
+    progressAnim.setValue(0);
+    Animated.timing(progressAnim, {
+      toValue:         1,
+      duration:        700,
+      delay:           120,
+      easing:          Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [progressAnim, yearlyGoal, booksThisYear.length]);
+
+  // Loop a gentle pulse on the flame when there is an active streak. The
+  // loop is owned by a ref so we can stop it cleanly when the streak drops.
+  useEffect(() => {
+    if (streakValue <= 0) {
+      flameAnim.stopAnimation(() => flameAnim.setValue(1));
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(flameAnim, { toValue: 1.14, duration: 780, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(flameAnim, { toValue: 1.0,  duration: 780, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => { loop.stop(); flameAnim.setValue(1); };
+  }, [flameAnim, streakValue]);
 
   // ── Wrap + insights (pure derivations from already-loaded session state) ─────
   // These are fast O(n) computations over ≤90 days of session rows so they can
@@ -858,7 +902,7 @@ export default function HomeScreen() {
     const pageCount = cr.page_count;
     if (!goal || !pageCount || pageCount <= 0) return '#ede9e4';
     const { state } = computePagePacing(cr.current_page ?? 0, pageCount, cr.started_at, goal);
-    if (state === 'ahead' || state === 'on_pace') return '#86efac';
+    if (state === 'ahead' || state === 'on_pace') return '#7b9e7e';
     if (state === 'behind') return '#fcd34d';
     return '#ede9e4';
   }
@@ -1181,7 +1225,6 @@ export default function HomeScreen() {
                 icon?:    React.ComponentProps<typeof Ionicons>['name'];
                 subtext?: string;
               };
-              const streakValue = currentStreak ?? 0;
               const slots: Slot[] = [
                 {
                   key:   'pages',
@@ -1241,12 +1284,20 @@ export default function HomeScreen() {
                             {slot.value}
                           </Text>
                           {slot.icon && (
-                            <Ionicons
-                              name={slot.icon}
-                              size={14}
-                              color="#b8967a"
-                              style={{ marginBottom: 2 }}
-                            />
+                            <Animated.View
+                              style={{
+                                marginBottom: 2,
+                                transform: slot.key === 'streak'
+                                  ? [{ scale: flameAnim }]
+                                  : undefined,
+                              }}
+                            >
+                              <Ionicons
+                                name={slot.icon}
+                                size={14}
+                                color={slot.key === 'streak' && streakValue > 0 ? '#c97a3a' : '#b8967a'}
+                              />
+                            </Animated.View>
                           )}
                         </View>
                         <Text style={{
@@ -1300,7 +1351,7 @@ export default function HomeScreen() {
                 ? 'Just getting started'
                 : 'On pace';
               const statusColor = goalIsAhead
-                ? '#15803d'
+                ? '#2f6f3a'
                 : goalIsBehind
                 ? '#92400e'
                 : '#2f6f3a';
@@ -1351,9 +1402,16 @@ export default function HomeScreen() {
                     overflow:        'hidden',
                     marginTop:       14,
                   }}>
-                    <View style={{
+                    {/* Animated fill — interpolates from 0% to the live pct
+                        on mount and any time progress changes. The eased
+                        ramp makes the bar feel like it's "settling" into
+                        its position rather than snapping into place. */}
+                    <Animated.View style={{
                       height:          10,
-                      width:           `${pct}%`,
+                      width:           progressAnim.interpolate({
+                        inputRange:  [0, 1],
+                        outputRange: ['0%', `${pct}%`],
+                      }),
                       backgroundColor: '#2f6f3a',
                       borderRadius:    5,
                     }} />

@@ -65,11 +65,11 @@ export function WtDemoRecommend() {
                 Andy Weir
               </Text>
               <View style={{
-                backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0',
+                backgroundColor: '#eaf1ea', borderWidth: 1, borderColor: '#7b9e7e',
                 borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2,
               }}>
                 <Text style={{
-                  fontSize: 9, fontWeight: '700', color: '#15803d', letterSpacing: 0.3,
+                  fontSize: 9, fontWeight: '700', color: '#2f6f3a', letterSpacing: 0.3,
                 }}>
                   TOP PICK
                 </Text>

@@ -675,15 +675,20 @@ export function RecommendationsFeed({
             shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
           }}
         >
-          {/* Header strip */}
-          <View style={{ backgroundColor: '#f5f1ec', borderBottomWidth: 1, borderBottomColor: '#ede9e4', padding: 20, paddingBottom: 16 }}>
-            <Text style={{ fontSize: 16, fontWeight: '800', color: '#231f1b', letterSpacing: -0.2, marginBottom: 6 }}>
-              {hasImportedHistory ? 'Your library is in.' : 'Nothing to share just yet.'}
+          {/* Hero strip — generous vertical breathing room so the empty
+              state feels intentional rather than truncated. The headline
+              sets the tone (we're working on it, not broken), the lede
+              explains why nothing is here yet, and the supporting line
+              tells the user exactly what unlocks recommendations. */}
+          <View style={{ backgroundColor: '#f5f1ec', borderBottomWidth: 1, borderBottomColor: '#ede9e4', paddingHorizontal: 22, paddingTop: 28, paddingBottom: 22 }}>
+            <View style={{ width: 32, height: 2.5, backgroundColor: '#7b9e7e', borderRadius: 2, marginBottom: 16 }} />
+            <Text style={{ fontSize: 19, fontWeight: '800', color: '#231f1b', letterSpacing: -0.3, marginBottom: 8, lineHeight: 25 }}>
+              {hasImportedHistory ? 'We\'re reading your shelves.' : 'Let\'s set up your shelf.'}
             </Text>
-            <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
+            <Text style={{ fontSize: 13.5, color: '#6b635c', lineHeight: 20 }}>
               {hasImportedHistory
-                ? 'We\'re building your taste profile from your reading history. Rate a few books from your shelves to unlock your first picks.'
-                : 'Recommendations unlock once we have enough reading history to make picks worth trusting. Add a few books and we\'ll take it from there.'}
+                ? 'Your library is in. Rate a handful of books you\'ve loved (or didn\'t) and we\'ll start surfacing picks worth trusting.'
+                : 'Recommendations get sharper the more we know about your reading. Pick the option below that\'s easiest for you — five books is enough to unlock your first picks.'}
             </Text>
           </View>
 
@@ -721,8 +726,8 @@ export function RecommendationsFeed({
                 <Text style={{ fontSize: 15 }}>＋</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', lineHeight: 19 }}>Add books you've read</Text>
-                <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 1 }}>Search and rate a few favourites</Text>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', lineHeight: 19 }}>Add a few favourites</Text>
+                <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 1 }}>Search, rate, done — under a minute</Text>
               </View>
               <Text style={{ fontSize: 16, color: '#ede9e4' }}>›</Text>
             </TouchableOpacity>
@@ -741,16 +746,11 @@ export function RecommendationsFeed({
                 <Text style={{ fontSize: 15 }}>🎯</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', lineHeight: 19 }}>Answer a few quick questions</Text>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', lineHeight: 19 }}>Tell us what you like</Text>
                 <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 1 }}>Genres, pace, style — under 90 seconds</Text>
               </View>
               <Text style={{ fontSize: 16, color: '#ede9e4' }}>›</Text>
             </TouchableOpacity>
-
-            {/* Supporting line */}
-            <Text style={{ fontSize: 11, color: '#c4b5a5', textAlign: 'center', paddingTop: 2, paddingBottom: 4, lineHeight: 17 }}>
-              Five rated books is enough to unlock your first picks.
-            </Text>
           </View>
         </View>
       </View>
@@ -775,28 +775,32 @@ export function RecommendationsFeed({
       {(displayState === 'ready' || displayState === 'ready_refreshing') && (
         <View style={{ marginBottom: 20 }}>
 
-          {/* Picked for you header */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', flex: 1 }}>Picked for you</Text>
-            {recMode === 'expert' ? (
-              <View style={{ backgroundColor: '#231f1b', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 }}>
-                <Text style={{ fontSize: 10, fontWeight: '700', color: '#f5f1ec', letterSpacing: 0.5 }}>EXPERT</Text>
-              </View>
-            ) : (
-              <Text style={{ fontSize: 11, color: '#9e958d' }}>
-                {tasteProfile?.label || ((tasteProfile?.strongSignalCount ?? 0) === 0 ? 'Based on your stated genres' : '')}
+          {/* Sub-header — only the taste basis (e.g. "Based on your stated
+              genres" or the user's profile label). The "FOR YOU" overline
+              above already names the section, so we don't repeat it here. */}
+          {(recMode === 'expert' || tasteProfile?.label || (tasteProfile?.strongSignalCount ?? 0) === 0) && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+              <Text style={{ fontSize: 12, color: '#78716c', flex: 1, fontStyle: 'italic' }} numberOfLines={1}>
+                {recMode === 'expert'
+                  ? 'Curated using deep taste analysis'
+                  : (tasteProfile?.label || 'Based on your stated genres')}
               </Text>
-            )}
-          </View>
+              {recMode === 'expert' && (
+                <View style={{ backgroundColor: '#231f1b', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: '#f5f1ec', letterSpacing: 0.5 }}>EXPERT</Text>
+                </View>
+              )}
+            </View>
+          )}
 
           {/* Free preview moment */}
           {isFreePreview && (
-            <View style={{ backgroundColor: '#f0fdf4', borderRadius: 10, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#bbf7d0' }}>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: '#15803d', marginBottom: 4 }}>
-                Your deep taste analysis is ready
+            <View style={{ backgroundColor: '#eaf1ea', borderRadius: 10, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#7b9e7e' }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#2f6f3a', marginBottom: 4 }}>
+                Your taste profile is ready
               </Text>
-              <Text style={{ fontSize: 12, color: '#166534', lineHeight: 18 }}>
-                We've analysed your reading history and built a personalised reader profile. These picks are selected against your specific taste lanes, not just broad genre preferences.
+              <Text style={{ fontSize: 12, color: '#3d5e42', lineHeight: 18 }}>
+                These picks are matched to your specific reading lanes — not just broad genres.
               </Text>
             </View>
           )}
@@ -858,7 +862,7 @@ export function RecommendationsFeed({
           {/* ── Currently Reading bucket ── */}
           {visibleConts.length > 0 && (
             <>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: 6, paddingLeft: 10, borderLeftWidth: 3, borderLeftColor: '#15803d' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: 6, paddingLeft: 10, borderLeftWidth: 3, borderLeftColor: '#2f6f3a' }}>
                 <View>
                   <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', letterSpacing: -0.1 }}>Currently Reading</Text>
                   <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>Pick up where you left off</Text>
@@ -892,7 +896,7 @@ export function RecommendationsFeed({
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: visibleConts.length === 0 ? 0 : 2, paddingLeft: 10, borderLeftWidth: 3, borderLeftColor: '#ede9e4' }}>
                 <View>
                   <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', letterSpacing: -0.1 }}>Discover Next</Text>
-                  <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>Books aligned to your taste</Text>
+                  <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>Fresh picks based on what you've loved</Text>
                 </View>
               </View>
               {visibleDiscs.map((rec, idx) => {

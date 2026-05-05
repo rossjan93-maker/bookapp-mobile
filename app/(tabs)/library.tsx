@@ -123,8 +123,8 @@ const STATUS_LABELS: Record<UserBookStatus, string> = {
 
 const STATUS_BADGE: Record<UserBookStatus, { bg: string; text: string }> = {
   want_to_read: { bg: '#f0ece6', text: '#6b635c' },
-  reading:      { bg: '#e6f0e6', text: '#4d7f52' },
-  finished:     { bg: '#e6f0e6', text: '#4d7f52' },
+  reading:      { bg: '#eaf1ea', text: '#2f6f3a' },
+  finished:     { bg: '#eaf1ea', text: '#2f6f3a' },
   dnf:          { bg: '#f0ece6', text: '#7d6f63' },
 };
 
@@ -1228,8 +1228,8 @@ export default function LibraryScreen() {
                       paddingVertical: 7,
                       borderRadius: 20,
                       borderWidth: 1,
-                      backgroundColor: active ? '#7b9e7e' : readingAccent ? '#e6f0e6' : 'transparent',
-                      borderColor:     active ? '#7b9e7e' : readingAccent ? '#a8d0aa' : '#ede9e4',
+                      backgroundColor: active ? '#7b9e7e' : readingAccent ? '#eaf1ea' : 'transparent',
+                      borderColor:     active ? '#7b9e7e' : readingAccent ? '#7b9e7e' : '#ede9e4',
                     }}
                   >
                     <Text style={{
@@ -1580,12 +1580,12 @@ export default function LibraryScreen() {
               </View>
               {item.status === 'complete' ? (
                 <View style={{
-                  backgroundColor: '#e6f0e6',
+                  backgroundColor: '#eaf1ea',
                   borderRadius:    6,
                   paddingHorizontal: 9,
                   paddingVertical:   4,
                 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '600', color: '#4d7f52' }}>
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: '#2f6f3a' }}>
                     Complete
                   </Text>
                 </View>
@@ -1679,7 +1679,7 @@ export default function LibraryScreen() {
           const accentColor = (() => {
             if (!borderPacing) return '#ede9e4';
             const s = borderPacing.state;
-            if (s === 'ahead' || s === 'on_pace') return '#86efac';
+            if (s === 'ahead' || s === 'on_pace') return '#7b9e7e';
             if (s === 'behind') return '#fcd34d';
             return '#ede9e4';
           })();
@@ -2209,8 +2209,8 @@ export default function LibraryScreen() {
                   <Text style={{ fontSize: 13.5, fontWeight: '600', color: '#231f1b' }}>Goodreads</Text>
                   <Text style={{ fontSize: 11.5, color: '#78716c', marginTop: 1 }}>Import your full library — live now</Text>
                 </View>
-                <View style={{ backgroundColor: '#dcfce7', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2, marginRight: 6 }}>
-                  <Text style={{ fontSize: 10.5, fontWeight: '700', color: '#15803d' }}>Supported</Text>
+                <View style={{ backgroundColor: '#eaf1ea', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2, marginRight: 6 }}>
+                  <Text style={{ fontSize: 10.5, fontWeight: '700', color: '#2f6f3a' }}>Supported</Text>
                 </View>
                 <Text style={{ fontSize: 15, color: '#ede9e4' }}>›</Text>
               </TouchableOpacity>

@@ -161,7 +161,7 @@ function readStatePill(book: UserBook): { label: string; color: string; bg: stri
     startedAt:         book.started_at,
     currentPage:       book.current_page,
   });
-  if (state === 'active')  return { label: 'Active',  color: '#15803d', bg: '#dcfce7' };
+  if (state === 'active')  return { label: 'Active',  color: '#2f6f3a', bg: '#eaf1ea' };
   if (state === 'paused')  return { label: 'Paused',  color: '#92400e', bg: '#fef9c3' };
   if (state === 'stalled') return { label: 'Stalled', color: '#9a3412', bg: '#fee2e2' };
   return null;

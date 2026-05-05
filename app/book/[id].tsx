@@ -64,7 +64,7 @@ function _cacheBookMeta(bookId: string, entry: BookMetaEntry): void {
 const STATUS_META: Record<string, { bg: string; text: string; label: string }> = {
   want_to_read: { bg: '#f1f5f9', text: '#475569', label: 'Want to Read' },
   reading:      { bg: '#dbeafe', text: '#1d4ed8', label: 'Reading'      },
-  finished:     { bg: '#dcfce7', text: '#15803d', label: 'Finished'     },
+  finished:     { bg: '#eaf1ea', text: '#2f6f3a', label: 'Finished'     },
   dnf:          { bg: '#fee2e2', text: '#b91c1c', label: 'DNF'          },
   sent:         { bg: '#f1f5f9', text: '#475569', label: 'New'          },
   saved:        { bg: '#e0f2fe', text: '#0369a1', label: 'Want to Read' },
@@ -1410,9 +1410,9 @@ export default function BookDetailScreen() {
   const descTruncated   = descText && descText.length > DESC_LIMIT && !descExpanded;
   const displayDesc     = descTruncated ? descText!.slice(0, DESC_LIMIT).trimEnd() + '…' : descText;
 
-  const pacingChipColor  = pacingState === 'ahead' ? '#15803d' : pacingState === 'behind' ? '#b91c1c' : '#78716c';
-  const pacingChipBg     = pacingState === 'ahead' ? '#f0fdf4' : pacingState === 'behind' ? '#fef2f2' : '#ede9e4';
-  const pacingChipBorder = pacingState === 'ahead' ? '#bbf7d0' : pacingState === 'behind' ? '#fecaca' : '#ede9e4';
+  const pacingChipColor  = pacingState === 'ahead' ? '#2f6f3a' : pacingState === 'behind' ? '#b91c1c' : '#78716c';
+  const pacingChipBg     = pacingState === 'ahead' ? '#eaf1ea' : pacingState === 'behind' ? '#fef2f2' : '#ede9e4';
+  const pacingChipBorder = pacingState === 'ahead' ? '#7b9e7e' : pacingState === 'behind' ? '#fecaca' : '#ede9e4';
 
   // Series section — synchronous from static catalog + route params.
   // No async dependency: if seriesName and seriesPosition are in the params,
@@ -1751,18 +1751,18 @@ export default function BookDetailScreen() {
                       <View style={{ width: 24, alignItems: 'center', justifyContent: 'center' }}>
                         {isComplete ? (
                           // Completed — green checkmark
-                          <Text style={{ fontSize: 13, color: '#15803d', lineHeight: 18 }}>✓</Text>
+                          <Text style={{ fontSize: 13, color: '#2f6f3a', lineHeight: 18 }}>✓</Text>
                         ) : (isCurrent || isInProg) ? (
                           // Current view or in-progress — green filled dot
                           <View style={{
                             width: 8, height: 8, borderRadius: 4,
-                            backgroundColor: '#15803d',
+                            backgroundColor: '#2f6f3a',
                           }} />
                         ) : isNextAvail ? (
                           // Next allowed, not started — green ring
                           <View style={{
                             width: 8, height: 8, borderRadius: 4,
-                            borderWidth: 1.5, borderColor: '#15803d',
+                            borderWidth: 1.5, borderColor: '#2f6f3a',
                           }} />
                         ) : (
                           // Locked or pre-load — gray ring
@@ -3215,9 +3215,9 @@ export default function BookDetailScreen() {
                         paddingHorizontal: 12,
                         borderRadius: 12,
                         marginBottom: 6,
-                        backgroundColor: isSelected ? '#f0fdf4' : '#f5f1ec',
+                        backgroundColor: isSelected ? '#eaf1ea' : '#f5f1ec',
                         borderWidth: 1.5,
-                        borderColor: isSelected ? '#bbf7d0' : 'transparent',
+                        borderColor: isSelected ? '#7b9e7e' : 'transparent',
                       }}
                     >
                       {/* Cover thumbnail */}
@@ -3258,7 +3258,7 @@ export default function BookDetailScreen() {
 
                       {/* Selection indicator */}
                       {isSelected && !pendingEditionKey && (
-                        <Text style={{ fontSize: 14, color: '#15803d', marginLeft: 8 }}>✓</Text>
+                        <Text style={{ fontSize: 14, color: '#2f6f3a', marginLeft: 8 }}>✓</Text>
                       )}
                       {savingEdition && ed.editionKey === pendingEditionKey && (
                         <ActivityIndicator size="small" color="#9e958d" style={{ marginLeft: 8 }} />

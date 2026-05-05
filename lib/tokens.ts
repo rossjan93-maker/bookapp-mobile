@@ -27,11 +27,17 @@ export const STONE   = '#6b635c';
 /** Tertiary / placeholder text — warm light-grey */
 export const DUST    = '#9e958d';
 
-/** Accent — muted sage green */
+/** Accent — muted sage green (primary brand green; used for borders, bars, accents) */
 export const SAGE    = '#7b9e7e';
 
-/** Sage tint background — for pills and highlight areas */
+/** Sage tint background — for pills, chips, and highlight surfaces */
 export const SAGE_BG = '#eaf1ea';
+
+/** Deep sage — the only “strong” green in the palette. Use for big numerals,
+ *  status text, primary progress-bar fills, and any green text on a light
+ *  background. Replaces every bright Tailwind-style green (#15803d, #16a34a,
+ *  #166534, #4d7f52) so the app reads as one coherent green system. */
+export const SAGE_DEEP = '#2f6f3a';
 
 /** Warm amber — for ratings, highlights, and cover glows */
 export const AMBER   = '#c4956a';

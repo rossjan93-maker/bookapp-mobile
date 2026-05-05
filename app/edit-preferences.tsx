@@ -231,7 +231,7 @@ export default function EditPreferencesScreen() {
         onPress={handleSave}
         disabled={saving || saveSuccess}
         style={{
-          backgroundColor: saveSuccess ? '#15803d' : saving ? '#ede9e4' : '#231f1b',
+          backgroundColor: saveSuccess ? '#2f6f3a' : saving ? '#ede9e4' : '#231f1b',
           borderRadius: 13,
           paddingVertical: 16,
           alignItems: 'center',
