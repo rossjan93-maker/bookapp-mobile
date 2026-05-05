@@ -10,12 +10,12 @@
     "web": "expo start --web --port 5000 --host lan",
     "dev:device": "expo start --dev-client --tunnel",
     "dev:device:lan": "expo start --dev-client --host lan",
-    "build:android:dev": "eas build --profile development --platform android",
-    "build:android:preview": "eas build --profile preview --platform android",
-    "build:ios:beta": "eas build --profile beta --platform ios",
-    "submit:ios:beta": "eas submit --profile beta --platform ios --latest",
-    "update:dev": "eas update --branch development",
-    "update:preview": "eas update --branch preview",
+    "build:android:dev": "npx eas-cli build --profile development --platform android",
+    "build:android:preview": "npx eas-cli build --profile preview --platform android",
+    "build:ios:beta": "npx eas-cli build --profile beta --platform ios",
+    "submit:ios:beta": "npx eas-cli submit --profile beta --platform ios --latest",
+    "update:dev": "npx eas-cli update --branch development",
+    "update:preview": "npx eas-cli update --branch preview",
     "check:series-covers": "npx tsx scripts/check_series_covers.ts"
   },
   "dependencies": {
