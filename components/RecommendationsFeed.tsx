@@ -664,9 +664,9 @@ export function RecommendationsFeed({
     const hasImportedHistory = (tasteProfile?.evidence?.imported_books_count ?? 0) > 0;
     return (
       <View style={{ marginBottom: 36 }}>
-        <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 12 }}>
-          For You
-        </Text>
+        {/* No internal "For You" overline — the parent surface
+            (app/(tabs)/search.tsx) already renders the hero header. A second
+            heading inside this card read as a duplicated section title. */}
         <View
           ref={wtRef}
           style={{
@@ -759,14 +759,14 @@ export function RecommendationsFeed({
 
   return (
     <View style={{ marginBottom: 36 }}>
-      {/* Section header */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-        <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 0.9, textTransform: 'uppercase' }}>
-          For You
-        </Text>
-        {/* Background refresh: single breathing dot — nearly invisible, no disruption */}
-        {displayState === 'ready_refreshing' && <RefreshingDot />}
-      </View>
+      {/* The parent search hub owns the "For You" hero. We only surface the
+          breathing-dot here so a background refresh stays visible without
+          repeating the section title. */}
+      {displayState === 'ready_refreshing' && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+          <RefreshingDot />
+        </View>
+      )}
 
       {/* ── First-load: bespoke deck-assembling experience ── */}
       {displayState === 'loading_initial' && <DeckAssemblingLoader />}

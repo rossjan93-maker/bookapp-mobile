@@ -438,15 +438,21 @@ export default function HomeScreen() {
 
   // Drive the bar fill — reset to 0 and ease back up whenever the inputs
   // change so the user sees a clear movement, not an instantaneous jump.
+  // We hold the active timing handle so consecutive data changes (or an
+  // unmount mid-animation) cleanly stop the prior run instead of letting
+  // overlapping JS-driven Animated.timings race each other.
   useEffect(() => {
+    progressAnim.stopAnimation();
     progressAnim.setValue(0);
-    Animated.timing(progressAnim, {
+    const anim = Animated.timing(progressAnim, {
       toValue:         1,
       duration:        700,
       delay:           120,
       easing:          Easing.out(Easing.cubic),
       useNativeDriver: false,
-    }).start();
+    });
+    anim.start();
+    return () => { anim.stop(); };
   }, [progressAnim, yearlyGoal, booksThisYear.length]);
 
   // Loop a gentle pulse on the flame when there is an active streak. The
