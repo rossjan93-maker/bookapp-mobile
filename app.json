@@ -14,7 +14,14 @@
       "expo-apple-authentication",
       "expo-dev-client",
       "expo-updates",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Readstack uses the camera to scan book barcodes.",
+          "recordAudioAndroid": false
+        }
+      ]
     ],
     "updates": {
       "url": "https://u.expo.dev/ac03c9eb-779b-4e1d-95d5-101751782e07"

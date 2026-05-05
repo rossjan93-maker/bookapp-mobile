@@ -62,6 +62,12 @@ Final state (April 2026): NULL=5 (no description, permanently unreachable), Spar
 ## Duplicate Prevention
 `lib/goodreadsExecutor.ts` includes a title+author dedup guard (added after the book_source_links check, before the book insert loop). When a Goodreads import would create a new book row, it first normalises the title and first author and checks the entire catalog. If a matching row is found, it reuses that book ID — preventing duplicate rows that arise from re-imports or from the same book appearing under multiple Goodreads edition IDs.
 
+## Device Testing
+See `docs/dev-testing.md` for the device-testing workflow (when to reload vs rebuild). Quick refs:
+- JS-only change → `npm run dev:device` then reload on phone (no rebuild).
+- Native/plugin change → `npm run build:android:dev` (or `:preview` / `build:ios:beta`).
+- `expo-camera` is registered in `app.json → plugins` with the camera permission string — required for the scan screen on Android/iOS dev/preview/production builds.
+
 ## External Dependencies
 - **Supabase:** User authentication, PostgreSQL database, Row Level Security.
 - **Open Library API:** Primary source for book search and metadata.
