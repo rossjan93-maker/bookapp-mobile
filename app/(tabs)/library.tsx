@@ -1,10 +1,10 @@
-import { SAGE_DEEP } from '../../lib/tokens';
+import { SAGE_BG, SAGE_DEEP } from '../../lib/tokens';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchGoogleBooksCoverUrl } from '../../lib/googleBooks';
 import { repairBooksMetadata } from '../../lib/metadataRepair';
 import { registerCacheClearer } from '../../lib/tabCache';
 import { mountDevInspector } from '../../lib/devInspector';
-import { ActivityIndicator, FlatList, Keyboard, Modal, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Keyboard, Modal, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -20,9 +20,18 @@ import { triggerRecPrewarm } from '../../lib/recPrewarm';
 import { registerWtTarget, useWalkthrough } from '../../lib/walkthroughEngine';
 import { WtDemoLibrary } from '../../components/walkthrough/WtDemoLibrary';
 import { ShelfRow } from '../../components/ShelfRow';
+import { ShelfPickerSheet } from '../../components/ShelfPickerSheet';
 import { SHELF_DEFINITIONS } from '../../lib/shelves';
 import { fetchMyClubs } from '../../lib/bookClub';
 import type { ClubWithDetails } from '../../lib/bookClubTypes';
+import {
+  listShelves,
+  listShelfMembership,
+  createShelf as createShelfApi,
+  deleteShelf as deleteShelfApi,
+  type CustomShelf,
+} from '../../lib/customShelves';
+import { parseIntent, matchBookToIntent, signalsRequireMetadata } from '../../lib/intentMatcher';
 
 const LIB_VIEW_MODE_KEY = 'libraryViewMode';
 
@@ -234,6 +243,17 @@ export default function LibraryScreen() {
   const [activeShelf, setActiveShelf] = useState<string | null>(null);
   const [clubs, setClubs] = useState<ClubWithDetails[]>([]);
   const [clubsLoading, setClubsLoading] = useState(false);
+  // ── Custom shelves (Batch 4) ───────────────────────────────────────────────
+  const [userShelves,     setUserShelves]     = useState<CustomShelf[]>([]);
+  const [shelfMembership, setShelfMembership] = useState<Map<string, Set<string>>>(new Map());
+  const [shelfPickerForUserBookId, setShelfPickerForUserBookId] = useState<string | null>(null);
+  const [shelfPickerTitle,         setShelfPickerTitle]         = useState<string | null>(null);
+  const [showCreateShelfModal,     setShowCreateShelfModal]     = useState(false);
+  const [newShelfName,             setNewShelfName]             = useState('');
+  const [createShelfBusy,          setCreateShelfBusy]          = useState(false);
+  const [createShelfError,         setCreateShelfError]         = useState<string | null>(null);
+  // ── Want-to-Read intent filter (Batch 4) ───────────────────────────────────
+  const [wtrQuery, setWtrQuery] = useState('');
 
   // ── Walkthrough target measurement ──────────────────────────────────────────
   // Measures the FlatList header (title + filter bar) once loading completes.
@@ -341,6 +361,12 @@ export default function LibraryScreen() {
     ]);
 
     setYearlyGoal(profileRes.data?.yearly_reading_goal ?? null);
+
+    // Load custom shelves + membership in parallel — non-fatal if the table
+    // doesn't exist yet (migration pending). Failure leaves arrays empty so
+    // the rest of the screen continues to work.
+    listShelves(user.id).then(setUserShelves).catch(() => setUserShelves([]));
+    listShelfMembership(user.id).then(setShelfMembership).catch(() => setShelfMembership(new Map()));
 
     // Fallback: older schema without current_page / page_count OR without
     // paused_at (migration pending). Drop both so the library still loads.
@@ -680,10 +706,15 @@ export default function LibraryScreen() {
 
   // When a shelf is active, the base pool is the shelf-filtered items;
   // otherwise it's the full items array (then filtered by status chip).
+  // Smart shelves use SHELF_DEFINITIONS filter fns; custom shelves use the
+  // shelfMembership map populated from user_shelf_books.
   const shelfFilteredItems: UserBook[] = (() => {
     if (!activeShelf) return items;
-    const def = SHELF_DEFINITIONS.find(d => d.id === activeShelf);
-    return def ? items.filter(def.filter) : items;
+    const smart = SHELF_DEFINITIONS.find(d => d.id === activeShelf);
+    if (smart) return items.filter(smart.filter);
+    const custom = userShelves.find(s => s.id === activeShelf);
+    if (custom) return items.filter(it => shelfMembership.get(it.id)?.has(custom.id) ?? false);
+    return items;
   })();
 
   const searchResults: UserBook[] = searchActive
@@ -968,10 +999,18 @@ export default function LibraryScreen() {
     if (activeFilter === 'want_to_read') {
       // Surface series continuations at the top so the next book in an in-progress
       // series is never buried under unrelated backlog items.
-      const all: UserBook[] = [
+      let all: UserBook[] = [
         ...p1.filter(i => i.status === 'want_to_read'),
         ...p2.filter(i => i.status === 'want_to_read'),
       ];
+      // Mood/intent filter (Batch 4): when the user types a query into the
+      // Want-to-Read input, narrow the pool to books whose subjects/page count
+      // satisfy the parsed signals. Continuations bypass the filter so an
+      // in-progress series isn't accidentally hidden by a mood query.
+      const wtrSignals = parseIntent(wtrQuery);
+      if (wtrSignals.length > 0) {
+        all = all.filter(it => isSeriesContinuation(it) || matchBookToIntent(it as any, wtrSignals).matched);
+      }
       const continuations = all.filter(i => isSeriesContinuation(i));
       const shelf         = all.filter(i => !isSeriesContinuation(i));
       if (continuations.length === 0) return all;
@@ -1163,6 +1202,44 @@ export default function LibraryScreen() {
                   setActiveShelf(id);
                   if (id !== null) setActiveFilter('all');
                 }}
+                userShelves={userShelves}
+                shelfMembership={shelfMembership}
+                itemUserBookId={(it: any) => it.id}
+                onCreateShelfPress={() => {
+                  setNewShelfName('');
+                  setCreateShelfError(null);
+                  setShowCreateShelfModal(true);
+                }}
+                onLongPressShelf={(shelfId) => {
+                  const sh = userShelves.find(s => s.id === shelfId);
+                  if (!sh) return;
+                  Alert.alert(
+                    `Delete "${sh.name}"?`,
+                    'Books on this shelf stay in your library; only the shelf is removed.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Delete', style: 'destructive', onPress: async () => {
+                        try {
+                          await deleteShelfApi(sh.id);
+                          setUserShelves(prev => prev.filter(s => s.id !== sh.id));
+                          setShelfMembership(prev => {
+                            const next = new Map(prev);
+                            for (const [ub, set] of next) {
+                              if (set.has(sh.id)) {
+                                const newSet = new Set(set); newSet.delete(sh.id);
+                                next.set(ub, newSet);
+                              }
+                            }
+                            return next;
+                          });
+                          if (activeShelf === sh.id) setActiveShelf(null);
+                        } catch (e: any) {
+                          Alert.alert('Could not delete shelf', e?.message ?? 'Try again.');
+                        }
+                      } },
+                    ],
+                  );
+                }}
               />
             </View>
           )}
@@ -1262,7 +1339,9 @@ export default function LibraryScreen() {
 
           {/* ── Active shelf clear affordance ── */}
           {!searchActive && activeShelf && (() => {
-            const def = SHELF_DEFINITIONS.find(d => d.id === activeShelf);
+            const smart  = SHELF_DEFINITIONS.find(d => d.id === activeShelf);
+            const custom = userShelves.find(s => s.id === activeShelf);
+            const def    = smart ?? (custom ? { id: custom.id, label: custom.name } : null);
             return def ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', paddingBottom: 14, gap: 8 }}>
                 <View style={{
@@ -1287,6 +1366,57 @@ export default function LibraryScreen() {
               </View>
             ) : null;
           })()}
+
+          {/* ── Want-to-Read intent / mood input (Batch 4) ── */}
+          {!searchActive && !activeShelf && activeFilter === 'want_to_read' && statusCounts.want_to_read > 0 && (
+            <View style={{ marginBottom: 14 }}>
+              <View style={{
+                flexDirection:    'row',
+                alignItems:       'center',
+                backgroundColor:  '#fefcf9',
+                borderRadius:     14,
+                borderWidth:      1,
+                borderColor:      '#ede9e4',
+                paddingHorizontal: 13,
+                paddingVertical:  10,
+                gap: 8,
+              }}>
+                <Ionicons name="sparkles-outline" size={16} color="#9e958d" />
+                <TextInput
+                  value={wtrQuery}
+                  onChangeText={setWtrQuery}
+                  placeholder='Find in your saved — try "mystery", "short", "fast paced"'
+                  placeholderTextColor="#c4b5a5"
+                  style={{ flex: 1, fontSize: 13, color: '#231f1b', padding: 0 }}
+                  returnKeyType="search"
+                  onSubmitEditing={() => Keyboard.dismiss()}
+                />
+                {wtrQuery.length > 0 && (
+                  <TouchableOpacity hitSlop={10} onPress={() => setWtrQuery('')}>
+                    <Ionicons name="close-circle" size={16} color="#c4b5a5" />
+                  </TouchableOpacity>
+                )}
+              </View>
+              {wtrQuery.length > 0 && (() => {
+                const sigs = parseIntent(wtrQuery);
+                if (sigs.length === 0) return null;
+                return (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                    {sigs.map((s, i) => (
+                      <View key={`${s.kind}_${i}`} style={{
+                        backgroundColor:  SAGE_BG,
+                        borderRadius:     12,
+                        paddingHorizontal: 9,
+                        paddingVertical:  3,
+                      }}>
+                        <Text style={{ fontSize: 11, color: SAGE_DEEP, fontWeight: '500' }}>{s.reason}</Text>
+                      </View>
+                    ))}
+                  </View>
+                );
+              })()}
+            </View>
+          )}
 
           {/* ── Goodreads import banner (shown for users with books who haven't imported) ── */}
           {hasGoodreadsImport === false && items.length > 0 && (
@@ -1734,9 +1864,14 @@ export default function LibraryScreen() {
                 paddingBottom: hasExtraRow ? 12 : 14,
                 paddingLeft: 14,
               }}>
-              {/* Cover + title/author/progress */}
+              {/* Cover + title/author/progress. Long-press → shelf picker (Batch 4). */}
               <TouchableOpacity
                 activeOpacity={0.7}
+                onLongPress={() => {
+                  setShelfPickerForUserBookId(item.id);
+                  setShelfPickerTitle(item.book?.title ?? null);
+                }}
+                delayLongPress={350}
                 onPress={() => {
                   const seriesCtx = findSeriesForBook(item.book?.title ?? '', item.book?.author ?? '');
                   router.push({
@@ -1976,6 +2111,11 @@ export default function LibraryScreen() {
             }}>
             <TouchableOpacity
               activeOpacity={0.7}
+              onLongPress={() => {
+                setShelfPickerForUserBookId(item.id);
+                setShelfPickerTitle(item.book?.title ?? null);
+              }}
+              delayLongPress={350}
               onPress={() => {
                 const seriesCtx = findSeriesForBook(item.book?.title ?? '', item.book?.author ?? '');
                 router.push({
@@ -2350,14 +2490,38 @@ export default function LibraryScreen() {
                 </TouchableOpacity>
               )
             )}
-            {activeFilter === 'want_to_read' && (
-              <TouchableOpacity
-                onPress={() => router.push('/add-book')}
-                style={{ backgroundColor: '#231f1b', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 }}
-              >
-                <Text style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>Add Book</Text>
-              </TouchableOpacity>
-            )}
+            {activeFilter === 'want_to_read' && (() => {
+              // Distinguish "no saved books at all" vs "intent query yields nothing"
+              // vs "query needs metadata most books don't have" — Batch 4.
+              if (wtrQuery.trim().length > 0 && statusCounts.want_to_read > 0) {
+                const sigs = parseIntent(wtrQuery);
+                const needs = signalsRequireMetadata(sigs);
+                const wtrItems = items.filter(i => i.status === 'want_to_read');
+                const havePages    = wtrItems.filter(i => typeof i.book?.page_count === 'number').length;
+                const haveSubjects = wtrItems.filter(i => {
+                  const s = i.book?.subjects;
+                  return Array.isArray(s) ? s.length > 0 : typeof s === 'string' && s.length > 0;
+                }).length;
+                const sparse =
+                  (needs.needsPageCount && havePages    < wtrItems.length / 3) ||
+                  (needs.needsSubjects  && haveSubjects < wtrItems.length / 3);
+                return (
+                  <Text style={{ fontSize: 12, color: '#9e958d', textAlign: 'center', marginTop: 6, lineHeight: 18 }}>
+                    {sparse
+                      ? "Most of your saved books don't have enough metadata to match this filter yet."
+                      : 'Try a broader query, or clear it to see everything you saved.'}
+                  </Text>
+                );
+              }
+              return (
+                <TouchableOpacity
+                  onPress={() => router.push('/add-book')}
+                  style={{ backgroundColor: '#231f1b', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>Add Book</Text>
+                </TouchableOpacity>
+              );
+            })()}
           </View>
         )
       }
@@ -2460,6 +2624,108 @@ export default function LibraryScreen() {
               : <Text style={{ fontSize: 15, fontWeight: '600', color: '#fff' }}>Done</Text>
             }
           </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+
+    {/* ── Shelf picker sheet (Batch 4) ── */}
+    {currentUserId && (
+      <ShelfPickerSheet
+        visible={shelfPickerForUserBookId !== null}
+        userId={currentUserId}
+        userBookId={shelfPickerForUserBookId}
+        bookTitle={shelfPickerTitle}
+        shelves={userShelves}
+        initialShelfIds={
+          shelfPickerForUserBookId
+            ? (shelfMembership.get(shelfPickerForUserBookId) ?? new Set())
+            : new Set()
+        }
+        onClose={() => { setShelfPickerForUserBookId(null); setShelfPickerTitle(null); }}
+        onMembershipChange={(shelfId, added) => {
+          if (!shelfPickerForUserBookId) return;
+          const ub = shelfPickerForUserBookId;
+          setShelfMembership(prev => {
+            const next = new Map(prev);
+            const set  = new Set(next.get(ub) ?? []);
+            if (added) set.add(shelfId); else set.delete(shelfId);
+            next.set(ub, set);
+            return next;
+          });
+        }}
+        onShelfCreated={(sh) => setUserShelves(prev => [...prev, sh])}
+      />
+    )}
+
+    {/* ── Create-shelf modal (Batch 4) ── */}
+    <Modal
+      visible={showCreateShelfModal}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setShowCreateShelfModal(false)}
+    >
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <View style={{ width: '100%', maxWidth: 360, backgroundColor: '#fefcf9', borderRadius: 16, padding: 22 }}>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: '#231f1b', marginBottom: 6 }}>New shelf</Text>
+          <Text style={{ fontSize: 13, color: '#9e958d', marginBottom: 16 }}>
+            Group books however you like — for example "Summer reading" or "Recommended by Sam".
+          </Text>
+          <TextInput
+            value={newShelfName}
+            onChangeText={setNewShelfName}
+            placeholder="Shelf name"
+            placeholderTextColor="#c4b5a5"
+            autoFocus
+            maxLength={60}
+            style={{
+              backgroundColor: '#f5f1ec',
+              borderRadius: 10,
+              paddingHorizontal: 12,
+              paddingVertical: 11,
+              fontSize: 14,
+              color: '#231f1b',
+              marginBottom: createShelfError ? 8 : 16,
+            }}
+          />
+          {createShelfError && (
+            <Text style={{ fontSize: 12, color: '#b91c1c', marginBottom: 12 }}>{createShelfError}</Text>
+          )}
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10 }}>
+            <TouchableOpacity
+              onPress={() => { setShowCreateShelfModal(false); setNewShelfName(''); setCreateShelfError(null); }}
+              style={{ paddingVertical: 10, paddingHorizontal: 14 }}
+            >
+              <Text style={{ fontSize: 14, color: '#9e958d', fontWeight: '600' }}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              disabled={createShelfBusy || newShelfName.trim().length === 0 || !currentUserId}
+              onPress={async () => {
+                if (!currentUserId) return;
+                setCreateShelfBusy(true);
+                setCreateShelfError(null);
+                try {
+                  const sh = await createShelfApi(currentUserId, newShelfName);
+                  setUserShelves(prev => [...prev, sh]);
+                  setShowCreateShelfModal(false);
+                  setNewShelfName('');
+                } catch (e: any) {
+                  setCreateShelfError(e?.message ?? 'Could not create shelf.');
+                } finally {
+                  setCreateShelfBusy(false);
+                }
+              }}
+              style={{
+                backgroundColor: newShelfName.trim().length === 0 ? '#d8d3cc' : '#231f1b',
+                borderRadius: 10,
+                paddingVertical: 10,
+                paddingHorizontal: 18,
+              }}
+            >
+              {createShelfBusy
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={{ fontSize: 14, color: '#fff', fontWeight: '600' }}>Create</Text>}
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </Modal>

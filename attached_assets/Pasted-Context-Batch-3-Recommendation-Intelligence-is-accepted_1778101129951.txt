@@ -1,0 +1,209 @@
+Context:
+
+Batch 3 Recommendation Intelligence is accepted. Now move to Batch 4: Library Organization and Saved-Book Discovery.
+
+Goal:
+Make the Library more useful as a personal reading system, not just a flat list of books.
+
+Current issues:
+1. Library shelves should be optional groups users can add/remove.
+2. Users should be able to create custom shelves.
+3. Users should be able to manually add/remove books from shelves.
+4. Want to Read needs better filtering and discovery.
+5. A user should be able to ask a saved-book question like:
+   “I’m in the mood for a mystery novel — what have I saved?”
+
+Important:
+Do not overbuild.
+Start with a clean, maintainable v1.
+Prioritize data model clarity, simple UX, and future extensibility.
+
+---
+
+PART 1 — Audit current Library structure
+
+Please inspect the current Library implementation:
+- status groups
+- filters
+- shelves/clubs if any
+- user_books data model
+- any existing shelf-like concepts
+- search/filter behavior
+- Want to Read section
+
+Before changing code, identify:
+- what already exists
+- what can be reused
+- what needs a new table/model
+- what should remain out of scope
+
+---
+
+PART 2 — Shelf data model
+
+Add a v1 shelf system.
+
+Requirements:
+- users can create custom shelves
+- users can remove/delete custom shelves
+- users can add books to shelves
+- users can remove books from shelves
+- one book can belong to multiple shelves
+- shelves are user-specific
+- shelf ordering should be possible later, even if not fully implemented now
+
+Proposed model if nothing better exists:
+- `user_shelves`
+  - id
+  - user_id
+  - name
+  - created_at
+  - updated_at
+  - sort_order optional
+- `user_shelf_books`
+  - id
+  - user_id
+  - shelf_id
+  - user_book_id
+  - created_at
+
+Acceptance criteria:
+- migration is created
+- RLS is correct
+- duplicate book-in-shelf entries are prevented
+- deleting a shelf removes shelf membership rows but not books
+
+---
+
+PART 3 — Library shelf UX
+
+Add a simple shelf management experience.
+
+Requirements:
+- Library should show default status filters as it does now
+- Add a clear “Shelves” entry/section
+- Users can create a new shelf
+- Users can open a shelf and see books in it
+- Users can add books to a shelf through a search/select flow
+- Users can remove books from a shelf
+- Users can delete a custom shelf
+
+Design direction:
+- keep it simple and mobile-friendly
+- avoid heavy management UI
+- do not make shelves the dominant Library experience yet
+- shelves should feel like optional organization, not required setup
+
+Acceptance criteria:
+- create shelf
+- add book
+- view shelf
+- remove book
+- delete shelf
+- all works on mobile without cramped UI
+
+---
+
+PART 4 — Want to Read filtering
+
+Improve Want to Read as a saved-book discovery surface.
+
+Problem:
+Want to Read is currently just a saved list. It should help users decide what to pick next.
+
+Requirements:
+- Want to Read should be expandable/collapsible if needed
+- Add filter/search within Want to Read
+- Support filtering by available metadata:
+  - title
+  - author
+  - genre/subjects
+  - themes
+  - mood/tone if available
+  - pacing/traits if available
+- If metadata is thin, be honest and fall back to title/author/subject matching
+
+Example user need:
+“I’m in the mood for a mystery novel — do I have anything saved?”
+
+V1 implementation can be a search/filter input, not full AI chat.
+
+Acceptance criteria:
+- user can search within Want to Read
+- queries like “mystery”, “romance”, “fantasy”, “short”, “dark”, “light”, “fast paced” return relevant saved books when metadata supports it
+- empty states explain whether no books match or metadata is limited
+
+---
+
+PART 5 — Mood / intent matching architecture
+
+Add a lightweight intent parser for Want to Read filtering.
+
+Requirements:
+- do not call this “AI” unless there is an actual model call
+- use local rules first
+- map common intent words to metadata signals
+
+Examples:
+- “mystery” → mystery / detective / crime / thriller subjects
+- “light” → humor / cozy / romance / low intensity if available
+- “dark” → gothic / horror / noir / bleak / psychological
+- “fast paced” → pacing trait if available, thriller/action subjects otherwise
+- “short” → low page count if page_count exists
+- “literary” → literary fiction / prose / character-driven
+- “fantasy” → fantasy / magic / epic / romantasy
+
+Acceptance criteria:
+- matching logic is centralized in a utility
+- easy to extend later
+- results explain why they matched when possible
+
+---
+
+PART 6 — Preserve performance
+
+Important:
+Library can contain hundreds of books.
+
+Requirements:
+- avoid loading unnecessarily huge joined payloads repeatedly
+- avoid expensive client-side work on every render
+- cache or memoize filtered results where appropriate
+- keep scrolling smooth
+
+Acceptance criteria:
+- Library remains responsive with 250+ books
+- filtering feels instant or near-instant
+- no obvious mobile jank
+
+---
+
+PART 7 — What NOT to build yet
+
+Do not build:
+- full AI chat for library
+- social shelf sharing
+- public shelves
+- collaborative shelves
+- complex drag-and-drop shelf ordering
+- recommendation engine rewrite
+- friend taste overlap
+- advanced semantic embeddings
+
+Those can come later.
+
+---
+
+What I want back:
+
+1. exact files changed
+2. current Library architecture before changes
+3. database migrations added
+4. RLS policies added
+5. shelf data model explanation
+6. shelf UX flow
+7. Want to Read filtering logic
+8. mood/intent matching logic
+9. performance considerations
+10. what was validated
+11. what remains intentionally deferred

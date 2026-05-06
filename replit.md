@@ -11,6 +11,7 @@ The Book Recommendation App helps users discover, track, and share personalized 
     - `supabase/migrations/20260413000001_rec_snapshots.sql`
     - `supabase/migrations/20260414000000_user_books_edition_key.sql`
     - `supabase/migrations/20260506000000_user_books_paused_at.sql`
+    - `supabase/migrations/20260506000001_user_shelves.sql`
     (Need manual application via Supabase dashboard SQL editor.)
 
 ## Stack
@@ -46,6 +47,10 @@ The Book Recommendation App helps users discover, track, and share personalized 
 - `scripts/deduplicateBooks.ts`: Script for deduplicating book rows.
 - `lib/goodreadsExecutor.ts`: Goodreads import logic, including deduplication.
 - `app.json`: Expo configuration, including camera plugin.
+- `lib/customShelves.ts`: User-managed shelves CRUD (single source of truth for `user_shelves` / `user_shelf_books` mutations).
+- `lib/intentMatcher.ts`: Mood/intent vocabulary + `parseIntent` / `matchBookToIntent` for the Want-to-Read filter.
+- `components/ShelfRow.tsx`: Renders smart shelves + custom shelves + "+ New shelf" tile.
+- `components/ShelfPickerSheet.tsx`: Bottom sheet for toggling a book's shelf membership; supports inline create.
 
 ## Architecture decisions
 - **Hybrid Book Data Retrieval:** Combines Open Library and Google Books API for comprehensive and enriched book metadata.
@@ -57,6 +62,8 @@ The Book Recommendation App helps users discover, track, and share personalized 
 - **Single Green System (sage):** All greens flow through `SAGE`, `SAGE_BG`, `SAGE_DEEP`, `SAGE_INK` in `lib/tokens.ts`. Never reintroduce raw Tailwind greens (`#15803d`, `#16a34a`, `#166534`) or hand-rolled `#2f6f3a` literals — import the token instead. `SAGE_INK` is reserved for sparing emphasis on top of `SAGE_BG`.
 - **Reading Progress motion (home):** The yearly-goal bar (`progressAnim`) eases from 0 → live pct on mount and on goal change; the streak flame (`flameAnim`) loops a subtle scale pulse only when `streakValue > 0`. Both refs live in `app/(tabs)/index.tsx` near the top of the component — keep timing/easing in sync if either is touched.
 - **Recommendation rationale variants:** `components/RecCard.tsx` builds card explanations from variant *pools* (4 phrasings each for aligns / appreciation / reader-trait / subject / lane-fallback / theme-tail; 3 for author-loyalty). A FNV-1a hash of `book.id + pattern-tag` deterministically picks one variant — same card always shows the same sentence (snapshot-stable), but consecutive cards rotate. Banned phrasings (`"you gravitate toward"`, `"because you liked"`) are absent from every pool. When `reasons[0]` is a *trait* signal AND `reasons[1]` is a *theme* signal, `buildExplanation` joins them via `_themeTailFor` so two distinct kinds of evidence surface in one sentence.
+- **Custom shelves alongside smart shelves:** `user_shelves` (named, per-user, unique-by-lower(name)) + `user_shelf_books` (CASCADE on shelf delete only — books always survive). `ShelfRow` renders both kinds identically; `activeShelf` in `library.tsx` resolves smart-first then falls back to `userShelves`. All mutations go through `lib/customShelves.ts` so duplicate handling (23505 → friendly error / idempotent add) stays consistent. Long-press a custom shelf chip → confirm-delete; long-press a library row → `ShelfPickerSheet`.
+- **Want-to-Read intent matching (deterministic, local):** `lib/intentMatcher.ts` parses queries like "short fantasy" or "fast paced" into AND-combined `IntentSignal`s (subjects via `matchesSubjects`, page bounds, free-text fallback). Runs on every keystroke — no model calls. `signalsRequireMetadata` powers an honest empty state that distinguishes "no matches" from "your saved books lack the metadata to answer this query yet".
 - **Content-warning taxonomy (two-tier):** `lib/contentWarnings.ts` exports `deriveContentWarningsDetailed(subjects, description?) → ContentWarning[]` with `confidence: 'specific' | 'broad'` and an optional `parent` family. Subject matches → `specific`; description-only matches → `broad` (rendered with softer "may include" preface in book/[id]). Specific sub-labels (Sexual violence, War violence, Murder, Graphic violence, Domestic abuse, Self-harm, Suicide, Addiction, Grief, PTSD, Child abuse) suppress their broad parent when both match, so the UI never shows "Violence" alongside "Sexual violence". DB still stores labels as `string[]`; confidence is re-derived on read.
 
 ## Product
