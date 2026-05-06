@@ -1,0 +1,161 @@
+Context:
+
+Batch 4 Library Organization + Want-to-Read discovery is accepted. Move to Batch 5.
+
+Batch 5 focus:
+Add a quick action for sharing/recommending a completed book to a friend from the book detail screen.
+
+Goal:
+Make completed books actionable. When a user finishes a book and is viewing the book detail page, they should be able to quickly recommend/share that book with a friend.
+
+Important:
+Do not overbuild social.
+Do not build full messaging, DMs, public feeds, or social discovery in this pass.
+This should be a clean v1 sharing/recommendation action.
+
+---
+
+PART 1 — Audit existing social/recommendation primitives
+
+Before coding, inspect the current app for:
+- friends/following tables or concepts
+- recommendation inbox implementation
+- RecsInboxSheet
+- any existing “send recommendation” logic
+- any friend search/contact UI
+- any book club/social code
+- current book detail actions
+
+Identify what already exists and what should be reused.
+
+---
+
+PART 2 — Add book detail quick action
+
+On book detail pages, add a quick action when the book is completed/finished.
+
+Suggested label:
+- “Recommend to a friend”
+or
+- “Share this book”
+
+Requirements:
+- action should be visible on finished/completed books
+- should not clutter the page for books not finished
+- should feel like a natural next action after completion
+- placement should be near existing book actions, not buried
+
+Acceptance criteria:
+- completed book detail page shows the action
+- unfinished/current/want-to-read books do not show it unless there is a good reason
+- action is clearly tappable and visually consistent with the app
+
+---
+
+PART 3 — Friend selection flow
+
+When tapped, open a lightweight sheet/modal.
+
+Requirements:
+- show existing friends if the app already has a friends model
+- allow search among friends if there are enough
+- if no friends exist, show a useful empty state:
+  “Add friends to send book recommendations.”
+- do not build a full friend invite system unless already present
+
+Acceptance criteria:
+- user can pick a friend if friends exist
+- no-friends state is clear
+- sheet can be dismissed cleanly
+
+---
+
+PART 4 — Send recommendation
+
+Use existing recommendation inbox / social infrastructure if available.
+
+Desired behavior:
+- sender chooses a friend
+- app sends the book recommendation
+- recipient should receive it in whatever existing inbox/recommendation surface exists
+- sender sees confirmation
+
+Data requirements:
+- sender_user_id
+- recipient_user_id
+- book_id or user_book_id as appropriate
+- optional note/message if simple to support
+- created_at
+- read/acted-on state if existing inbox supports it
+
+If no suitable table exists, propose and implement a minimal table/migration.
+
+Acceptance criteria:
+- recommendation persists
+- recipient can see it in existing recommendation inbox/surface
+- duplicate sends are handled gracefully
+- sender gets success/failure feedback
+
+---
+
+PART 5 — Optional note
+
+If simple, allow an optional short note:
+“Thought you’d like this.”
+
+Requirements:
+- note should be optional
+- keep max length reasonable
+- do not overbuild messaging
+
+Acceptance criteria:
+- recommendation can be sent with or without a note
+- note appears to recipient if existing UI supports it
+
+---
+
+PART 6 — Share sheet fallback
+
+If there are no in-app friends or if social infra is incomplete, add a native share fallback.
+
+Requirements:
+- user can share book externally using native share sheet
+- share text includes book title and author
+- avoid exposing private user data
+- deep link can be deferred if not already available
+
+Acceptance criteria:
+- native share works from book detail
+- fallback is available even without friends
+
+---
+
+PART 7 — Keep this v1 scoped
+
+Do NOT build:
+- DMs
+- friend discovery
+- public profiles
+- social feed
+- push notifications
+- invite links
+- complex permission model
+- comments/threads
+
+Those are later.
+
+---
+
+What I want back:
+
+1. exact files changed
+2. current social/recommendation infrastructure before changes
+3. whether a migration was added
+4. how the quick action appears on completed book detail pages
+5. how friend selection works
+6. how the recommendation is stored/sent
+7. where the recipient sees the recommendation
+8. how no-friends state is handled
+9. how native share fallback works
+10. what was intentionally deferred
+11. validation steps performed

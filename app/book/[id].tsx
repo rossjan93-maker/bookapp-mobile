@@ -1,4 +1,4 @@
-import { SAGE_DEEP } from '../../lib/tokens';
+import { SAGE, SAGE_BG, SAGE_DEEP } from '../../lib/tokens';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -40,6 +40,8 @@ import { getRecContext } from '../../lib/recContext';
 import type { RecContext } from '../../lib/recContext';
 import { getRecSnapshot } from '../../lib/recSnapshot';
 import { EvidenceTagsRow } from '../../components/RecCard';
+import { RecommendBookSheet } from '../../components/RecommendBookSheet';
+import { Ionicons } from '@expo/vector-icons';
 
 // ─── Book-level enrichment cache ──────────────────────────────────────────────
 // Module-level Map keyed by book DB id.  Stores the description / subjects /
@@ -354,6 +356,7 @@ export default function BookDetailScreen() {
 
   // Edit-history modal state
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showRecommendSheet, setShowRecommendSheet] = useState(false);
   const [editRating, setEditRating]       = useState<number | null>(null);
   const [editNote, setEditNote]           = useState('');
   const [savingEdit, setSavingEdit]       = useState(false);
@@ -2673,6 +2676,32 @@ export default function BookDetailScreen() {
                 </Text>
               </View>
             ) : null}
+
+            {/* Recommend to a friend — finished books only. Natural next-step
+                after a user closes the book; sits inside Your History so it
+                doesn't clutter in-progress / want-to-read views. */}
+            {localStatus === 'finished' && (
+              <TouchableOpacity
+                onPress={() => setShowRecommendSheet(true)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  backgroundColor: SAGE_BG,
+                  borderWidth: 1,
+                  borderColor: SAGE,
+                  borderRadius: 12,
+                  paddingVertical: 12,
+                  marginTop: 16,
+                }}
+              >
+                <Ionicons name="paper-plane-outline" size={15} color={SAGE_DEEP} />
+                <Text style={{ fontSize: 14, fontWeight: '700', color: SAGE_DEEP }}>
+                  Recommend to a friend
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -3514,6 +3543,15 @@ export default function BookDetailScreen() {
         </View>
       </View>
     </Modal>
+
+    <RecommendBookSheet
+      visible={showRecommendSheet}
+      onClose={() => setShowRecommendSheet(false)}
+      bookId={Array.isArray(bookId) ? bookId[0] ?? null : bookId ?? null}
+      title={Array.isArray(title) ? title[0] ?? '' : title ?? ''}
+      author={Array.isArray(author) ? author[0] ?? '' : author ?? ''}
+      externalId={Array.isArray(externalId) ? externalId[0] ?? null : externalId ?? null}
+    />
     </View>
   );
 }
