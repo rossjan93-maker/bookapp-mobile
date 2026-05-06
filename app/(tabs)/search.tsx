@@ -116,6 +116,7 @@ function olCoverUrl(coverId?: number, size: 'S' | 'M' = 'M'): string | null {
 // are imported from lib/bookSearch (shared with add-book.tsx).
 
 function SectionLabel({ children }: { children: string }) {
+  const T = useThemedTokens();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16, gap: 10 }}>
       <Text style={{
@@ -133,6 +134,7 @@ function SectionLabel({ children }: { children: string }) {
 }
 
 function StatusPill({ status }: { status: string }) {
+  const T = useThemedTokens();
   const map: Record<string, { bg: string; text: string; label: string }> = {
     sent:     { bg: '#f1f5f9', text: '#475569', label: 'New'          },
     saved:    { bg: '#e0f2fe', text: '#0369a1', label: 'Want to Read' },
@@ -152,7 +154,7 @@ function StatusPill({ status }: { status: string }) {
 // ─── Card shell ───────────────────────────────────────────────────────────────
 
 const CARD_STYLE = {
-  backgroundColor: T.CARD, borderRadius: 12, overflow: 'hidden' as const,
+  backgroundColor: '#fefcf9', borderRadius: 12, overflow: 'hidden' as const,
   shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6,
   shadowOffset: { width: 0, height: 2 }, elevation: 2,
 };
@@ -205,6 +207,7 @@ function getBookAwareTraits(book: { subjects?: string[] | null; title?: string; 
 // ─── Skeleton loading card ────────────────────────────────────────────────────
 
 function SkeletonCard() {
+  const T = useThemedTokens();
   const pulse = useRef(new Animated.Value(0.55)).current;
   useEffect(() => {
     const anim = Animated.loop(
@@ -325,6 +328,7 @@ function TagPanel({
 // ─── Shared card header row ───────────────────────────────────────────────────
 
 function BookRow({ book, rating, small }: { book: BookToRate | BookToTag; rating?: number; small?: boolean }) {
+  const T = useThemedTokens();
   const cW = small ? 28 : 36;
   const cH = small ? 40 : 52;
   return (
@@ -394,6 +398,7 @@ type RateCardProps = { book: BookToRate; onComplete: (id: string) => void };
 type RateMode = 'rate' | 'notes' | 'tags';
 
 function RateCard({ book, onComplete }: RateCardProps) {
+  const T = useThemedTokens();
   const [mode, setMode]             = useState<RateMode>('rate');
   const [rating, setRating]         = useState(0);
   const [pendingRating, setPending] = useState(0);
@@ -581,6 +586,7 @@ function RateCard({ book, onComplete }: RateCardProps) {
 type TagCardProps = { book: BookToTag; onComplete: (id: string) => void };
 
 function TagCard({ book, onComplete }: TagCardProps) {
+  const T = useThemedTokens();
   const [expanded, setExpanded]   = useState(false);
   const [noteText, setNoteText]   = useState('');
   const [likedTags, setLiked]     = useState<string[]>([]);

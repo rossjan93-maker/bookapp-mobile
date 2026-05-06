@@ -69,14 +69,15 @@ type ReadingPatterns = {
 };
 
 const REC_STATUS: Record<string, { bg: string; text: string; label: string }> = {
-  sent:     { bg: '#f0ece6', text: T.STONE, label: 'Sent'          },
-  saved:    { bg: T.SAGE_BG, text: T.SAGE_DEEP, label: 'Want to Read'  },
-  started:  { bg: T.SAGE_BG, text: T.SAGE_DEEP, label: 'Reading'       },
-  finished: { bg: T.SAGE_BG, text: T.SAGE_DEEP, label: 'Finished'      },
+  sent:     { bg: '#f0ece6', text: '#6b635c', label: 'Sent'          },
+  saved:    { bg: '#eaf1ea', text: '#2f6f3a', label: 'Want to Read'  },
+  started:  { bg: '#eaf1ea', text: '#2f6f3a', label: 'Reading'       },
+  finished: { bg: '#eaf1ea', text: '#2f6f3a', label: 'Finished'      },
   dnf:      { bg: '#fee2e2', text: '#b91c1c', label: 'Did Not Finish' },
 };
 
 function SectionLabel({ children }: { children: string }) {
+  const T = useThemedTokens();
   return (
     <Text style={{
       fontSize: 11,

@@ -113,6 +113,7 @@ function timeGreeting(): string {
 }
 
 function SectionLabel({ children }: { children: string }) {
+  const T = useThemedTokens();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16, gap: 10 }}>
       <Text style={{
@@ -140,6 +141,7 @@ type HeroReadCardProps = {
 };
 
 function HeroReadCard({ book, onPress, accentColor, projectedFinish, readState, pacingStrength }: HeroReadCardProps) {
+  const T = useThemedTokens();
   const barAnim = useRef(new Animated.Value(0)).current;
   const cardAnim = useRef(new Animated.Value(0)).current;
 
@@ -274,6 +276,7 @@ function HeroReadCard({ book, onPress, accentColor, projectedFinish, readState, 
  * Tone: reflective, not gamified. No trophies, no fire emojis.
  */
 function StreakPill({ days, longest, monthlyDays }: { days: number; longest: number; monthlyDays: number }) {
+  const T = useThemedTokens();
   const showStreak  = days >= 2;
   const showMonthly = monthlyDays >= 3;
   if (!showStreak && !showMonthly) return null;
@@ -308,6 +311,7 @@ function StreakPill({ days, longest, monthlyDays }: { days: number; longest: num
  * Returns null when there is nothing meaningful to surface.
  */
 function ReaderInsightCard({ insights }: { insights: ReaderInsight[] }) {
+  const T = useThemedTokens();
   if (insights.length === 0) return null;
   return (
     <View style={{ marginTop: 10, gap: 5 }}>

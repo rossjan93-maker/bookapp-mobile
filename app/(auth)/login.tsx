@@ -135,13 +135,14 @@ const INPUT: object = {
   borderRadius: 12,
   padding: 14,
   fontSize: 15,
-  color: T.INK,
-  backgroundColor: T.BG,
+  color: '#231f1b',
+  backgroundColor: '#f5f1ec',
   marginBottom: 10,
 };
 
 // ─── Book glyph mark — 3 stacked horizontal spines, static identity mark ─────
 function BookGlyph() {
+  const T = useThemedTokens();
   return (
     <View style={{ alignItems: 'center', marginBottom: 16 }}>
       {[

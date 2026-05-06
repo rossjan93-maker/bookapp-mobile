@@ -137,9 +137,9 @@ const STATUS_LABELS: Record<UserBookStatus, string> = {
 };
 
 const STATUS_BADGE: Record<UserBookStatus, { bg: string; text: string }> = {
-  want_to_read: { bg: '#f0ece6', text: T.STONE },
-  reading:      { bg: T.SAGE_BG, text: T.SAGE_DEEP },
-  finished:     { bg: T.SAGE_BG, text: T.SAGE_DEEP },
+  want_to_read: { bg: '#f0ece6', text: '#6b635c' },
+  reading:      { bg: '#eaf1ea', text: '#2f6f3a' },
+  finished:     { bg: '#eaf1ea', text: '#2f6f3a' },
   dnf:          { bg: '#f0ece6', text: '#7d6f63' },
 };
 
@@ -2805,6 +2805,7 @@ const DNF_REASON_LABELS: Record<string, string> = Object.fromEntries(
  * Tone: reflective. No guilt, no judgment — all reasons are equally valid.
  */
 function DnfReasonChips({ onSelect, onSkip }: { onSelect: (reason: string) => void; onSkip: () => void }) {
+  const T = useThemedTokens();
   return (
     <View style={{ marginTop: 4 }}>
       <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 8 }}>
@@ -2843,6 +2844,7 @@ function DnfReasonChips({ onSelect, onSkip }: { onSelect: (reason: string) => vo
 // ─── Buttons ──────────────────────────────────────────────────────────────────
 
 function PrimaryButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled: boolean }) {
+  const T = useThemedTokens();
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -2861,6 +2863,7 @@ function PrimaryButton({ label, onPress, disabled }: { label: string; onPress: (
 }
 
 function OutlineButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled: boolean }) {
+  const T = useThemedTokens();
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -2880,6 +2883,7 @@ function OutlineButton({ label, onPress, disabled }: { label: string; onPress: (
 }
 
 function DangerButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled: boolean }) {
+  const T = useThemedTokens();
   return (
     <TouchableOpacity
       onPress={onPress}

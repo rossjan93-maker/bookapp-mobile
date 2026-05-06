@@ -41,6 +41,12 @@ import type { RecContext } from '../../lib/recContext';
 import { getRecSnapshot } from '../../lib/recSnapshot';
 import { EvidenceTagsRow } from '../../components/RecCard';
 import { RecommendBookSheet } from '../../components/RecommendBookSheet';
+import { ShelfPickerSheet } from '../../components/ShelfPickerSheet';
+import {
+  listShelves,
+  listShelfMembership,
+  type CustomShelf,
+} from '../../lib/customShelves';
 import { Ionicons } from '@expo/vector-icons';
 
 // ─── Book-level enrichment cache ──────────────────────────────────────────────
@@ -73,7 +79,7 @@ function _cacheBookMeta(bookId: string, entry: BookMetaEntry): void {
 const STATUS_META: Record<string, { bg: string; text: string; label: string }> = {
   want_to_read: { bg: '#f1f5f9', text: '#475569', label: 'Want to Read' },
   reading:      { bg: '#dbeafe', text: '#1d4ed8', label: 'Reading'      },
-  finished:     { bg: T.SAGE_BG, text: T.SAGE_DEEP, label: 'Finished'     },
+  finished:     { bg: '#eaf1ea', text: '#2f6f3a', label: 'Finished'     },
   dnf:          { bg: '#fee2e2', text: '#b91c1c', label: 'DNF'          },
   sent:         { bg: '#f1f5f9', text: '#475569', label: 'New'          },
   saved:        { bg: '#e0f2fe', text: '#0369a1', label: 'Want to Read' },
@@ -83,6 +89,7 @@ const STATUS_META: Record<string, { bg: string; text: string; label: string }> =
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function SectionLabel({ children }: { children: string }) {
+  const T = useThemedTokens();
   return (
     <Text style={{
       fontSize: 11,
@@ -107,6 +114,7 @@ type ContentWarningsProps = {
 };
 
 function ContentWarnings({ warnings, subjects, expanded, onToggle }: ContentWarningsProps) {
+  const T = useThemedTokens();
   if (!warnings || warnings.length === 0) return null;
 
   const showIncompleteNote = isCoveragePartial(subjects);
@@ -358,6 +366,12 @@ export default function BookDetailScreen() {
   // Edit-history modal state
   const [showEditModal, setShowEditModal] = useState(false);
   const [showRecommendSheet, setShowRecommendSheet] = useState(false);
+  // Shelf picker (Batch 4) — opens from "Add to shelf" action when the book is
+  // saved (userBookId present). Loaded lazily the first time the sheet opens.
+  const [showShelfPicker,    setShowShelfPicker]    = useState(false);
+  const [userShelves,        setUserShelves]        = useState<CustomShelf[]>([]);
+  const [shelfMembershipMap, setShelfMembershipMap] = useState<Map<string, Set<string>>>(new Map());
+  const [shelvesLoading,     setShelvesLoading]     = useState(false);
   const [editRating, setEditRating]       = useState<number | null>(null);
   const [editNote, setEditNote]           = useState('');
   const [savingEdit, setSavingEdit]       = useState(false);
@@ -2678,6 +2692,58 @@ export default function BookDetailScreen() {
               </View>
             ) : null}
 
+            {/* Add to shelf — any saved book. Loads shelves + membership on
+                first open. */}
+            {userBookId && userId && (
+              <TouchableOpacity
+                onPress={async () => {
+                  // Always refetch on open: shelves and membership can be
+                  // mutated from other surfaces (library row long-press,
+                  // another device) and we want this sheet to be fresh.
+                  // Optimistic updates from this sheet itself still work
+                  // because the picker writes through `onMembershipChange` /
+                  // `onShelfCreated` before the next open.
+                  setShowShelfPicker(true);
+                  if (shelvesLoading) return;
+                  setShelvesLoading(true);
+                  try {
+                    const [sh, mem] = await Promise.all([
+                      listShelves(userId),
+                      listShelfMembership(userId),
+                    ]);
+                    setUserShelves(sh);
+                    setShelfMembershipMap(mem);
+                  } catch {
+                    // Sheet stays open; user can close and retry.
+                  } finally {
+                    setShelvesLoading(false);
+                  }
+                }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  backgroundColor: T.CARD,
+                  borderWidth: 1,
+                  borderColor: T.BORDER,
+                  borderRadius: 12,
+                  paddingVertical: 12,
+                  marginTop: 16,
+                }}
+              >
+                <Ionicons name="bookmarks-outline" size={15} color={T.INK} />
+                <Text style={{ fontSize: 14, fontWeight: '700', color: T.INK }}>
+                  {(() => {
+                    const n = userBookId
+                      ? (shelfMembershipMap.get(userBookId)?.size ?? 0)
+                      : 0;
+                    return n > 0 ? `On ${n} shelf${n === 1 ? '' : 's'}` : 'Add to shelf';
+                  })()}
+                </Text>
+              </TouchableOpacity>
+            )}
+
             {/* Recommend to a friend — finished books only. Natural next-step
                 after a user closes the book; sits inside Your History so it
                 doesn't clutter in-progress / want-to-read views. */}
@@ -3553,6 +3619,31 @@ export default function BookDetailScreen() {
       author={Array.isArray(author) ? author[0] ?? '' : author ?? ''}
       externalId={Array.isArray(externalId) ? externalId[0] ?? null : externalId ?? null}
     />
+
+    {userId && (
+      <ShelfPickerSheet
+        visible={showShelfPicker}
+        userId={userId}
+        userBookId={userBookId}
+        bookTitle={Array.isArray(title) ? title[0] ?? null : title ?? null}
+        shelves={userShelves}
+        initialShelfIds={
+          userBookId ? (shelfMembershipMap.get(userBookId) ?? new Set()) : new Set()
+        }
+        onClose={() => setShowShelfPicker(false)}
+        onMembershipChange={(shelfId, added) => {
+          if (!userBookId) return;
+          setShelfMembershipMap(prev => {
+            const next = new Map(prev);
+            const set  = new Set(next.get(userBookId) ?? new Set<string>());
+            if (added) set.add(shelfId); else set.delete(shelfId);
+            next.set(userBookId, set);
+            return next;
+          });
+        }}
+        onShelfCreated={(shelf) => setUserShelves(prev => [...prev, shelf])}
+      />
+    )}
     </View>
   );
 }
