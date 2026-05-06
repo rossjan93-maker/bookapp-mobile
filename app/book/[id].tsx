@@ -17,6 +17,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
+import { resolveBookDisplay } from '../../lib/boxSetDetection';
 import { DescriptionSkeleton, ProgressCardSkeleton } from '../../components/Placeholder';
 import { getSeriesCatalog, getSagaForSeries, getAllSagaCatalog, findSeriesForBook } from '../../lib/seriesCatalog';
 import { triggerRecPrewarm } from '../../lib/recPrewarm';
@@ -220,6 +221,16 @@ export default function BookDetailScreen() {
   // Enriched cover: set when Book Detail hydration finds a cover not present at
   // navigation time (e.g. imported books that had no cover in the DB yet).
   const [enrichedCoverUrl, setEnrichedCoverUrl]       = useState<string | null>(null);
+  // Set when resolveBookDisplay() determines that the route-param / DB cover
+  // is a bundle / box-set / series-omnibus image and should be replaced with
+  // the canonical single-volume art (or suppressed to a placeholder when the
+  // catalog has no clean cover). { url } takes precedence over the route
+  // coverUrl param at render time so deep links and library-row taps end up
+  // on the same artwork the home shelf already shows. Null means "no
+  // correction needed — use the existing precedence chain".
+  const [correctedCover, setCorrectedCover] = useState<
+    { url: string | null; externalId: string | null } | null
+  >(null);
   const [metaFromGb, setMetaFromGb]                   = useState(false);
   const [contentWarnings, setContentWarnings]         = useState<string[]>([]);
   const [warningsExpanded, setWarningsExpanded]       = useState(false);
@@ -456,6 +467,18 @@ export default function BookDetailScreen() {
     // never bleeds into the next book (state carries over across navigations).
     setContentWarnings([]);
     setWarningsExpanded(false);
+    // Same hazard for the bundle-cover correction: if the previous book had
+    // a non-null correctedCover, the hero would briefly render that book's
+    // canonical art under the new book's title until the resolver below
+    // re-runs. Clearing it here means the new book's first paint uses the
+    // route-param coverUrl (which the home shelf already pre-resolves), and
+    // the hydration pass below replaces it with the correct value if the
+    // new book also turns out to be a bundle.
+    setCorrectedCover(null);
+    // Same for the GB-enrichment cover — without this reset the previous
+    // book's GB cover could leak in as a fallback when the new book's
+    // route-param coverUrl is empty.
+    setEnrichedCoverUrl(null);
 
     // Pre-populate description/subjects/pageCount from session cache so the UI
     // shows content immediately on revisit without waiting for the DB query.
@@ -547,6 +570,7 @@ export default function BookDetailScreen() {
       const dbContentWarnings: string[] = row?.content_warnings ?? [];
       const dbPages           = row?.page_count ?? null;
       const dbCover           = row?.cover_url  ?? null;
+
       // Attribution: mark as Google Books sourced if the stored cover URL is a GB URL.
       if (dbCover && (dbCover.includes('books.google.com') || dbCover.includes('googleapis.com'))) {
         setMetaFromGb(true);
@@ -558,6 +582,36 @@ export default function BookDetailScreen() {
       const rawExtId = row?.external_id ?? externalId ?? null;
       let olId: string | null = isOLId(rawExtId) ? rawExtId : null;
       let discoveredExtId: string | null = null;
+
+      // ── Bundle / series-cover correction ─────────────────────────────────
+      // Run the same resolver the home Completed-Books shelf uses so the hero
+      // here matches what the user tapped. Without this pass, deep links and
+      // entry points that haven't pre-routed the resolved cover (library
+      // rows, recs, notes) would happily paint the box-set / omnibus art
+      // straight from the DB row. The resolver returns:
+      //   • a canonical first-volume URL for bundle titles ("Mistborn
+      //     Trilogy", "Books 1-3", etc.) — substitute it
+      //   • null for true bundles with no clean catalog cover — suppress so
+      //     CoverThumb falls back to its typographic placeholder
+      //   • the original cover URL for individual volumes — no correction
+      //     needed, leave correctedCover at null so the existing precedence
+      //     chain (route param → enriched) wins
+      // We only override when the resolved URL differs from what the screen
+      // would otherwise show OR when the resolver flags a bundle (so the
+      // externalId-fallback in CoverThumb gets neutralized too).
+      const incomingCover = coverUrl || dbCover || null;
+      const display = resolveBookDisplay({
+        title:       (title  ?? '') as string,
+        author:      (author ?? '') as string,
+        page_count:  dbPages,
+        cover_url:   dbCover,
+        external_id: rawExtId,
+      });
+      if (display.isBundle || display.coverUrl !== incomingCover) {
+        setCorrectedCover({ url: display.coverUrl, externalId: display.externalId });
+      } else {
+        setCorrectedCover(null);
+      }
 
       // Navigation-time cover takes precedence over DB (might be a CDN url passed
       // through route params that hasn't been persisted yet).
@@ -1461,7 +1515,16 @@ export default function BookDetailScreen() {
         // matching the canonical art shown in lists. enrichedCoverUrl only
         // shows through when coverUrl is genuinely null (book row had no
         // cover at navigation time and GB found one in the background).
-        const activeCoverUrl = editionCoverUrl || coverUrl || enrichedCoverUrl || null;
+        //
+        // correctedCover (set by the bundle resolver during hydration) sits
+        // just under editionCoverUrl: when present it overrides BOTH the
+        // route-param cover and the enriched-from-GB cover, because those
+        // values may carry the offending bundle / series-omnibus art that
+        // the resolver has already rejected. correctedCover.url === null
+        // means "the resolver explicitly suppressed the cover" → render
+        // CoverThumb's typographic placeholder, do not fall through.
+        const activeCoverUrl = editionCoverUrl
+          ?? (correctedCover ? correctedCover.url : (coverUrl || enrichedCoverUrl || null));
         const isGoogleBooks = !!(activeCoverUrl && (activeCoverUrl.includes('books.google') || activeCoverUrl.includes('googleapis')));
         const glowColor = isGoogleBooks
           ? 'rgba(220, 232, 252, 0.72)'
@@ -1536,7 +1599,7 @@ export default function BookDetailScreen() {
 
               <CoverThumb
                 url={activeCoverUrl}
-                externalId={externalId || null}
+                externalId={correctedCover ? correctedCover.externalId : (externalId || null)}
                 editionKey={selectedEditionKey || null}
                 title={title || null}
                 width={122}

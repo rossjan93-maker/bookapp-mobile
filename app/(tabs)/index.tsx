@@ -1661,8 +1661,16 @@ export default function HomeScreen() {
                               id:         item.book.book_id,
                               title:      item.book.title,
                               author:     item.book.author,
-                              coverUrl:   item.book.cover_url ?? '',
-                              externalId: item.book.external_id ?? '',
+                              // Pass the RESOLVED cover/external id, not the raw
+                              // DB values. resolveBookDisplay() strips bundle /
+                              // box-set artwork and substitutes the canonical
+                              // single-volume cover from the curated catalog —
+                              // passing the unresolved cover_url here would let
+                              // a series cover (e.g. "Plated Prisoner" omnibus
+                              // art for "Glint #2") flash on the detail screen
+                              // even though the shelf shows the right one.
+                              coverUrl:   item.display.coverUrl  ?? '',
+                              externalId: item.display.externalId ?? '',
                               status:     'finished',
                             },
                           })}
