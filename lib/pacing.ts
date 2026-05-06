@@ -57,14 +57,26 @@ export function inferReadState(params: {
   progressUpdatedAt: string | null | undefined;
   startedAt:         string | null | undefined;
   currentPage:       number | null | undefined;
+  /**
+   * Explicit user-set pause timestamp on the user_books row. When non-null
+   * for a 'reading' book the inference returns 'paused' immediately,
+   * overriding the inactivity heuristic — the reader has chosen to mark this
+   * as paused and we trust that signal even if their last page update was
+   * yesterday. Cleared by any status transition (finished / dnf / want_to_read)
+   * via transitionStatus(), so it can never linger across status changes.
+   * Optional for back-compat with callers that don't yet thread paused_at.
+   */
+  pausedAt?:         string | null | undefined;
 }): ReadState {
-  const { status, progressUpdatedAt, startedAt, currentPage } = params;
+  const { status, progressUpdatedAt, startedAt, currentPage, pausedAt } = params;
 
   if (status === 'finished')     return 'finished';
   if (status === 'dnf')         return 'dnf';
   if (status === 'want_to_read') return 'want_to_read';
 
-  // status === 'reading'
+  // status === 'reading' — explicit user pause beats every inactivity rule.
+  if (pausedAt) return 'paused';
+
   const anchor = progressUpdatedAt ?? startedAt;
   if (!anchor) return 'active'; // brand-new start, no data yet
 

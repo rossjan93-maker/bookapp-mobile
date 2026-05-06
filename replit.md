@@ -10,6 +10,7 @@ The Book Recommendation App helps users discover, track, and share personalized 
 - **Pending Migrations**:
     - `supabase/migrations/20260413000001_rec_snapshots.sql`
     - `supabase/migrations/20260414000000_user_books_edition_key.sql`
+    - `supabase/migrations/20260506000000_user_books_paused_at.sql`
     (Need manual application via Supabase dashboard SQL editor.)
 
 ## Stack
@@ -52,6 +53,7 @@ The Book Recommendation App helps users discover, track, and share personalized 
 - **Edition Awareness:** Allows users to select specific book editions, dynamically updating cover and page count for accurate reading progress, while preserving `current_page`.
 - **Three-Pass Subject Enrichment:** Uses Open Library, Google Books, and LLM inference to maximize subject coverage for books, ensuring rich discoverability.
 - **Reading Progress Reset Logic:** Implements "reset-to-0 = start over" rule for reading sessions, ensuring stats like monthly pages and streaks accurately reflect current reading efforts.
+- **Explicit Paused State:** `user_books.paused_at` lets readers self-mark a 'reading' book as Paused (toggle in book detail's Reading Progress card). `inferReadState` returns 'paused' immediately when `pausedAt` is set, overriding the inactivity heuristic. `transitionStatus` always clears `paused_at` so it can never outlive the status it was set under.
 
 ## Product
 - **Book Discovery & Recommendations:** Personalized recommendations with a credibility system for recommenders.

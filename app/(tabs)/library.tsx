@@ -40,6 +40,11 @@ type UserBook = {
   current_page: number | null;
   progress_updated_at: string | null;
   edition_key: string | null;
+  // See supabase/migrations/20260506000000_user_books_paused_at.sql.
+  // Optional / undefined when the column isn't present in this DB — the
+  // selects below probe and fall back, so consumers must treat it as
+  // possibly-undefined and pass through to inferReadState as-is.
+  paused_at?: string | null;
   taste_tags: Record<string, any> | null;
   rating: number | null;
   sentiment: string | null;
@@ -326,7 +331,7 @@ export default function LibraryScreen() {
         .single(),
       supabase
         .from('user_books')
-        .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, edition_key, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, page_count, subjects)')
+        .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, edition_key, paused_at, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, page_count, subjects)')
         .eq('user_id', user.id)
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
@@ -336,7 +341,8 @@ export default function LibraryScreen() {
 
     setYearlyGoal(profileRes.data?.yearly_reading_goal ?? null);
 
-    // Fallback: older schema without current_page / page_count columns
+    // Fallback: older schema without current_page / page_count OR without
+    // paused_at (migration pending). Drop both so the library still loads.
     let p1Result = primaryResult;
     let usedFallback = false;
     if (p1Result.error) {
@@ -387,7 +393,7 @@ export default function LibraryScreen() {
           // May have more — fetch from offset 50 onwards
           let remResult = await supabase!
             .from('user_books')
-            .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, edition_key, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, page_count, subjects)')
+            .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, edition_key, paused_at, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, page_count, subjects)')
             .eq('user_id', user.id)
             .is('deleted_at', null)
             .order('created_at', { ascending: false })
@@ -395,6 +401,8 @@ export default function LibraryScreen() {
             .range(50, 99999);
 
           if (remResult.error && !usedFallback) {
+            // Strip paused_at + current_page in the fallback so a missing
+            // column from either pending migration doesn't kill phase 2.
             remResult = await supabase!
               .from('user_books')
               .select('id, book_id, status, started_at, finished_at, progress_updated_at, edition_key, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, subjects)')
@@ -1696,6 +1704,7 @@ export default function LibraryScreen() {
             progressUpdatedAt: item.progress_updated_at,
             startedAt:         item.started_at,
             currentPage:       item.current_page,
+            pausedAt:          item.paused_at,
           });
 
           return (

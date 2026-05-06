@@ -168,6 +168,18 @@ export async function transitionStatus(
   }
 
   const userBookUpdate: Record<string, unknown> = { status: newStatus };
+  // Always clear the explicit pause flag on a status change. A paused row is
+  // an annotation on a *currently-reading* book — finishing, DNFing, or moving
+  // back to want_to_read all imply the pause is no longer meaningful, and
+  // leaving the timestamp behind would make the read-state inference report
+  // 'paused' the instant the book was ever moved back into 'reading'. We
+  // also clear it for newStatus === 'reading' itself, so re-starting a paused
+  // book through the status flow gives a clean slate.
+  // Sent unconditionally; if the column doesn't exist yet (migration pending)
+  // PostgREST surfaces a schema error and the whole update is rejected — to
+  // keep status changes working pre-migration, we rely on the schema having
+  // been applied. See supabase/migrations/20260506000000_user_books_paused_at.sql.
+  userBookUpdate.paused_at = null;
   if (newStatus === 'reading') userBookUpdate.started_at = now;
   if (newStatus === 'finished' || newStatus === 'dnf') {
     // Preserve an existing finish date (e.g. from a Goodreads import) rather
@@ -178,10 +190,27 @@ export async function transitionStatus(
     userBookUpdate.finished_year = null;
   }
 
-  const { error: updateError } = await supabase
+  let { error: updateError } = await supabase
     .from('user_books')
     .update(userBookUpdate)
     .eq('id', userBookId);
+
+  // Schema-tolerant: if the paused_at column doesn't exist yet (migration
+  // pending), retry without it so core status changes still work.
+  if (updateError) {
+    const isSchemaError =
+      updateError.code === '42703' ||
+      updateError.code === 'PGRST204' ||
+      (typeof updateError.message === 'string' && updateError.message.includes('does not exist'));
+    if (isSchemaError && 'paused_at' in userBookUpdate) {
+      const { paused_at: _drop, ...withoutPause } = userBookUpdate;
+      const retry = await supabase
+        .from('user_books')
+        .update(withoutPause)
+        .eq('id', userBookId);
+      updateError = retry.error;
+    }
+  }
 
   if (updateError) {
     return { data: null, error: 'Could not update status. Please try again.', snapshot };
@@ -303,7 +332,14 @@ export async function editUserBook(
 
   const patch: Record<string, unknown> = {};
 
-  if (newStatus) patch.status = newStatus;
+  if (newStatus) {
+    patch.status = newStatus;
+    // Mirror the invariant from transitionStatus(): any status change clears
+    // the explicit pause flag. A paused row is annotation on a 'reading'
+    // book; moving away from (or re-entering) reading must reset it so the
+    // read-state inference doesn't surface a stale "Paused" pill.
+    patch.paused_at = null;
+  }
 
   if (startedAt) {
     if (startedAt.kind === 'date')    patch.started_at = new Date(startedAt.date).toISOString();
@@ -321,7 +357,19 @@ export async function editUserBook(
     return { result: { snapshot, updatedAt: new Date().toISOString() }, error: null };
   }
 
-  const { error } = await supabase.from('user_books').update(patch).eq('id', userBookId);
+  let { error } = await supabase.from('user_books').update(patch).eq('id', userBookId);
+  // Schema-tolerant: paused_at column may not exist yet — retry without it.
+  if (error && 'paused_at' in patch) {
+    const isSchemaError =
+      error.code === '42703' ||
+      error.code === 'PGRST204' ||
+      (typeof error.message === 'string' && error.message.includes('does not exist'));
+    if (isSchemaError) {
+      const { paused_at: _drop, ...withoutPause } = patch;
+      const retry = await supabase.from('user_books').update(withoutPause).eq('id', userBookId);
+      error = retry.error;
+    }
+  }
   if (error) return { result: null, error: 'Could not save changes.' };
 
   return { result: { snapshot, updatedAt: new Date().toISOString() }, error: null };
@@ -424,6 +472,42 @@ export async function setEditionKey(
     .update({ edition_key: editionKey })
     .eq('id', userBookId);
   return { error: error ? 'Could not save edition.' : null };
+}
+
+/**
+ * Set or clear the explicit "paused" flag on a user_books row.
+ *
+ * Pass paused = true to mark the book as paused (writes paused_at = now()),
+ * paused = false to resume (writes paused_at = null). Only meaningful for
+ * books in 'reading' status — transitionStatus() always clears paused_at
+ * when moving to finished / dnf / want_to_read so the flag can never
+ * outlive the status it was set under.
+ *
+ * Returns { error } shaped like the rest of this module. The column may
+ * not exist yet (migration pending) — in that case we surface a friendly
+ * message rather than the raw Postgres error so the caller can fall back
+ * gracefully (e.g. hide the button).
+ */
+export async function setPaused(
+  supabase: SupabaseClient,
+  params: { userBookId: string; paused: boolean },
+): Promise<{ error: string | null }> {
+  const { userBookId, paused } = params;
+  const { error } = await supabase
+    .from('user_books')
+    .update({ paused_at: paused ? new Date().toISOString() : null })
+    .eq('id', userBookId);
+  if (!error) return { error: null };
+  // Schema-error surface: column hasn't been added in this Supabase project.
+  const isSchemaError =
+    error.code === '42703' ||
+    error.code === 'PGRST204' ||
+    (typeof error.message === 'string' && error.message.includes('does not exist'));
+  return {
+    error: isSchemaError
+      ? 'Pause is not yet enabled on this database — apply the latest migration.'
+      : 'Could not save pause state.',
+  };
 }
 
 /**

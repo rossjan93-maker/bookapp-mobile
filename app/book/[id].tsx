@@ -26,7 +26,7 @@ import { fetchGoogleBooksMetadata } from '../../lib/googleBooks';
 import { fetchOLMeta, fetchEditions, rankEditions, searchOLWork, isOLId } from '../../lib/openLibrary';
 import type { OLMeta, OLEdition } from '../../lib/openLibrary';
 import { deriveContentWarnings, isCoveragePartial } from '../../lib/contentWarnings';
-import { transitionStatus, editUserBook, softDeleteBook, restoreSnapshot, saveCurrentPage, setEditionKey as persistEditionKey } from '../../lib/userBookActions';
+import { transitionStatus, editUserBook, softDeleteBook, restoreSnapshot, saveCurrentPage, setEditionKey as persistEditionKey, setPaused as persistPaused } from '../../lib/userBookActions';
 import type { UserBookStatus, BookSnapshot, FinishedDateInput, StartedDateInput } from '../../lib/userBookActions';
 import { useUndoBar } from '../../lib/useUndoBar';
 import { invalidateBookDataCaches } from '../../lib/tabCache';
@@ -279,6 +279,17 @@ export default function BookDetailScreen() {
   // loading spinner appears on the tapped row rather than the old selection.
   const [pendingEditionKey, setPendingEditionKey]   = useState<string | null>(null);
 
+  // Pause state — explicit user-set pause flag on the user_books row.
+  // pausedAt mirrors user_books.paused_at; truthy when the reader has opted
+  // into "Paused" via the toggle in the Reading Progress card. Local state
+  // (rather than re-querying) so the button gives immediate feedback. Cleared
+  // implicitly by transitionStatus, so any status change wipes it from the
+  // server — the local state stays in sync because the screen reloads on
+  // status transition (handleTransition triggers a status change → setLocalStatus).
+  const [pausedAt,    setPausedAt]    = useState<string | null>(null);
+  const [pausing,     setPausing]     = useState(false);
+  const [pauseError,  setPauseError]  = useState<string | null>(null);
+
   // Edit-history modal state
   const [showEditModal, setShowEditModal] = useState(false);
   const [editRating, setEditRating]       = useState<number | null>(null);
@@ -377,42 +388,55 @@ export default function BookDetailScreen() {
       if (!user) return;
       if (!userId) setUserId(user.id);
 
-      // Select with edition_key; if the column doesn't exist yet (migration
-      // not yet applied) fall back to a query without it.
+      // Select with edition_key + paused_at; if either column doesn't exist
+      // yet (migrations not yet applied) fall back through progressively
+      // smaller column sets so the screen still renders.
       let data: Record<string, unknown> | null = null;
+      const isSchemaErr = (e: { code?: string; message?: string } | null) =>
+        !!e && (
+          e.code === '42703' ||
+          e.code === 'PGRST204' ||
+          (typeof e.message === 'string' && e.message.includes('does not exist'))
+        );
       const { data: d1, error: e1 } = await supabase
         .from('user_books')
-        .select('id, rating, finished_at, review_body, private_note, edition_key')
+        .select('id, rating, finished_at, review_body, private_note, edition_key, paused_at')
         .eq('user_id', user.id)
         .eq('book_id', bookId!)
         .maybeSingle();
       if (!e1) {
         data = d1 as Record<string, unknown> | null;
       } else {
-        // The edition_key column may not exist yet (migration pending).
-        // PostgreSQL "undefined_column" has code 42703; PostgREST surfaces it
-        // as PGRST204 or a message containing "does not exist".
-        // Retry without edition_key only for schema errors; log other causes.
-        const isSchemaError =
-          e1.code === '42703' ||
-          e1.code === 'PGRST204' ||
-          (typeof e1.message === 'string' && e1.message.includes('does not exist'));
-        if (!isSchemaError) {
+        if (!isSchemaErr(e1)) {
           console.warn('[BOOK_DETAIL] user_books select failed unexpectedly:', e1.code, e1.message);
         }
-        const { data: d2 } = await supabase
+        // Try without paused_at (edition_key migration applied, paused_at not).
+        const { data: d2, error: e2 } = await supabase
           .from('user_books')
-          .select('id, rating, finished_at, review_body, private_note')
+          .select('id, rating, finished_at, review_body, private_note, edition_key')
           .eq('user_id', user.id)
           .eq('book_id', bookId!)
           .maybeSingle();
-        data = d2 as Record<string, unknown> | null;
+        if (!e2) {
+          data = d2 as Record<string, unknown> | null;
+        } else {
+          // Final fallback: drop edition_key too.
+          const { data: d3 } = await supabase
+            .from('user_books')
+            .select('id, rating, finished_at, review_body, private_note')
+            .eq('user_id', user.id)
+            .eq('book_id', bookId!)
+            .maybeSingle();
+          data = d3 as Record<string, unknown> | null;
+        }
       }
 
       if (data) {
         if (data.id && !userBookId) setUserBookId(data.id as string);
         // Restore persisted edition choice
         if (data.edition_key) setSelectedEditionKey(data.edition_key as string);
+        // Restore explicit pause flag (null when column missing or unset).
+        setPausedAt((data.paused_at as string | null) ?? null);
         const h = {
           rating:      (data.rating      as number | null) ?? null,
           finishedAt:  (data.finished_at as string | null) ?? null,
@@ -1168,6 +1192,25 @@ export default function BookDetailScreen() {
       setPageCount(newCount);
       setEditingPageCount(false);
       Keyboard.dismiss();
+    }
+  }
+
+  // ── Pause / resume — explicit user toggle, orthogonal to status ─────────
+  // Only applies to status='reading' books. Optimistically updates local
+  // state then persists; on failure we roll back so the button reflects
+  // the actual server truth.
+  async function handlePauseToggle() {
+    if (!supabase || !userBookId) return;
+    const wasPaused = !!pausedAt;
+    const nextPausedAt = wasPaused ? null : new Date().toISOString();
+    setPauseError(null);
+    setPausing(true);
+    setPausedAt(nextPausedAt); // optimistic
+    const { error } = await persistPaused(supabase, { userBookId, paused: !wasPaused });
+    setPausing(false);
+    if (error) {
+      setPausedAt(wasPaused ? new Date().toISOString() : null); // rollback
+      setPauseError(error);
     }
   }
 
@@ -2301,6 +2344,38 @@ export default function BookDetailScreen() {
                         Update progress
                       </Text>
                     </TouchableOpacity>
+                    {/* Pause / Resume — full-width subtle toggle. Amber when paused
+                        to match the Paused pill colors used in the library gallery
+                        view (components/LibraryGalleryView.tsx). Hidden while the
+                        page-count editor is open to keep the action area focused. */}
+                    {!editingPageCount && (
+                      <TouchableOpacity
+                        onPress={handlePauseToggle}
+                        disabled={pausing || transitioning}
+                        style={{
+                          borderWidth: 1,
+                          borderColor: pausedAt ? '#fcd34d' : '#ede9e4',
+                          backgroundColor: pausedAt ? '#fef9c3' : 'transparent',
+                          borderRadius: 10,
+                          paddingVertical: 11,
+                          alignItems: 'center',
+                          marginBottom: 8,
+                          opacity: (pausing || transitioning) ? 0.5 : 1,
+                        }}
+                      >
+                        {pausing
+                          ? <ActivityIndicator color="#92400e" size="small" />
+                          : (
+                            <Text style={{ fontSize: 13, fontWeight: '600', color: pausedAt ? '#92400e' : '#78716c' }}>
+                              {pausedAt ? 'Resume reading' : 'Pause reading'}
+                            </Text>
+                          )
+                        }
+                      </TouchableOpacity>
+                    )}
+                    {pauseError && (
+                      <Text style={{ fontSize: 12, color: '#b91c1c', marginBottom: 8 }}>{pauseError}</Text>
+                    )}
                     {!editingPageCount && (
                       <View style={{ flexDirection: 'row', gap: 8 }}>
                         <TouchableOpacity

@@ -23,6 +23,12 @@ type UserBook = {
   finished_at: string | null;
   current_page: number | null;
   progress_updated_at: string | null;
+  // Optional: present when the paused_at migration has been applied AND the
+  // caller selected the column. When non-null on a 'reading' book it forces
+  // the Paused pill regardless of recency. Treated as undefined when the
+  // column isn't selected — the gallery silently falls back to the legacy
+  // inactivity-based inference.
+  paused_at?: string | null;
   taste_tags: Record<string, any> | null;
   book: {
     title: string;
@@ -160,6 +166,7 @@ function readStatePill(book: UserBook): { label: string; color: string; bg: stri
     progressUpdatedAt: book.progress_updated_at,
     startedAt:         book.started_at,
     currentPage:       book.current_page,
+    pausedAt:          book.paused_at,
   });
   if (state === 'active')  return { label: 'Active',  color: '#2f6f3a', bg: '#eaf1ea' };
   if (state === 'paused')  return { label: 'Paused',  color: '#92400e', bg: '#fef9c3' };
