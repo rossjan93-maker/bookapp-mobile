@@ -1373,11 +1373,30 @@ export default function HomeScreen() {
                 : (paceStatus?.expected ?? 0) === 0
                 ? 'Just getting started'
                 : 'On pace';
+              // Behind-pace warning palette: warm amber, not the muddy brown
+              // we had before. statusColor drives the headline text + arrow
+              // chip; barFillColor drives the actual progress fill so the
+              // bar visibly carries the same signal as the label.
               const statusColor = effectiveAhead
                 ? '#2f6f3a'
                 : effectiveBehind
-                ? '#92400e'
+                ? '#b45309'
                 : '#2f6f3a';
+              const barFillColor = effectiveBehind ? '#d97706' : '#2f6f3a';
+              // Where the reader needs to be today to stay on pace, expressed
+              // as a percentage of the yearly goal. Used to render a tick on
+              // the bar and to derive the "N behind / ahead today" caption,
+              // so the user can see the gap, not just be told about it.
+              const expectedBooks = paceStatus?.expected ?? 0;
+              const expectedPct   = Math.max(0, Math.min(100, (expectedBooks / Math.max(1, yearlyGoal)) * 100));
+              const gapBooks      = expectedBooks - read;
+              const gapCaption    = dayOfYear < 7
+                ? null
+                : gapBooks >= 1
+                ? `${gapBooks} ${gapBooks === 1 ? 'book' : 'books'} behind today's pace`
+                : gapBooks <= -1
+                ? `${Math.abs(gapBooks)} ${Math.abs(gapBooks) === 1 ? 'book' : 'books'} ahead of today's pace`
+                : null;
               // Wait at least a week before reporting a projection — early-year
               // pace numbers are noisy and read as wildly optimistic/pessimistic.
               const projectionSentence = dayOfYear >= 7
@@ -1422,23 +1441,69 @@ export default function HomeScreen() {
                     height:          10,
                     backgroundColor: '#ede9e4',
                     borderRadius:    5,
-                    overflow:        'hidden',
                     marginTop:       14,
+                    position:        'relative',
+                    overflow:        'visible',
                   }}>
-                    {/* Animated fill — interpolates from 0% to the live pct
-                        on mount and any time progress changes. The eased
-                        ramp makes the bar feel like it's "settling" into
-                        its position rather than snapping into place. */}
-                    <Animated.View style={{
-                      height:          10,
-                      width:           progressAnim.interpolate({
-                        inputRange:  [0, 1],
-                        outputRange: ['0%', `${pct}%`],
-                      }),
-                      backgroundColor: '#2f6f3a',
-                      borderRadius:    5,
-                    }} />
+                    {/* Inner clip wrapper — keeps the animated fill rounded at
+                        both ends without clipping the absolutely-positioned
+                        "expected" tick that sits on top of it. */}
+                    <View style={{
+                      height: 10, borderRadius: 5, overflow: 'hidden',
+                    }}>
+                      {/* Animated fill — interpolates from 0% to the live pct
+                          on mount and any time progress changes. The eased
+                          ramp makes the bar feel like it's "settling" into
+                          its position rather than snapping into place. The
+                          colour follows the pace status (sage when on/ahead,
+                          warm amber when behind), so the bar itself carries
+                          the same signal as the label below. */}
+                      <Animated.View style={{
+                        height:          10,
+                        width:           progressAnim.interpolate({
+                          inputRange:  [0, 1],
+                          outputRange: ['0%', `${pct}%`],
+                        }),
+                        backgroundColor: barFillColor,
+                        borderRadius:    5,
+                      }} />
+                    </View>
+                    {/* "Expected today" tick — a vertical mark at the point
+                        the user would need to be at today to stay on pace.
+                        Positioned absolutely so the gap between the live fill
+                        and this tick is the deficit (or surplus) at a glance.
+                        Hidden in the first week of the year (noisy) and when
+                        there's nothing meaningful to mark (expected = 0). */}
+                    {expectedBooks > 0 && dayOfYear >= 7 && expectedPct < 100 && (
+                      <View
+                        pointerEvents="none"
+                        style={{
+                          position:        'absolute',
+                          top:             -3,
+                          bottom:          -3,
+                          left:            `${expectedPct}%`,
+                          width:           2,
+                          marginLeft:      -1,
+                          backgroundColor: '#3f3a35',
+                          borderRadius:    1,
+                        }}
+                      />
+                    )}
                   </View>
+                  {/* Gap caption — surfaces the literal book-count gap so
+                      "Behind pace" isn't an opaque label. Only renders past
+                      the first week of the year and when the gap is at least
+                      a full book in either direction. */}
+                  {gapCaption && (
+                    <Text style={{
+                      fontSize:  11,
+                      color:     gapBooks >= 1 ? '#b45309' : '#2f6f3a',
+                      marginTop: 6,
+                      fontWeight: '600',
+                    }}>
+                      {gapCaption}
+                    </Text>
+                  )}
                   <View style={{
                     flexDirection: 'row',
                     alignItems:    'center',
