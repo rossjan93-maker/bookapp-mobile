@@ -46,7 +46,8 @@ The Book Recommendation App helps users discover, track, and share personalized 
 - `scripts/backfillSessionCorrections.ts`: Script for backfilling session corrections.
 - `scripts/deduplicateBooks.ts`: Script for deduplicating book rows.
 - `lib/goodreadsExecutor.ts`: Goodreads import logic, including deduplication.
-- `app.json`: Expo configuration, including camera plugin.
+- `app.json`: Expo configuration, including camera plugin and explicit iOS `NSCameraUsageDescription` (defense-in-depth on top of the expo-camera plugin's auto-generated key).
+- `docs/ios-testflight-checklist.md`: TestFlight QA checklist (auth, deep links, layout, native modules) — run before each beta.
 - `lib/customShelves.ts`: User-managed shelves CRUD (single source of truth for `user_shelves` / `user_shelf_books` mutations).
 - `lib/intentMatcher.ts`: Mood/intent vocabulary + `parseIntent` / `matchBookToIntent` for the Want-to-Read filter.
 - `components/ShelfRow.tsx`: Renders smart shelves + custom shelves + "+ New shelf" tile.

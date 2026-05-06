@@ -1,0 +1,163 @@
+Context:
+
+We are skipping the Profile + Settings cleanup batch for now.
+
+Move to Batch 7: iOS/TestFlight QA and platform-specific hardening.
+
+Goal:
+Make sure the app works properly on real iPhone/TestFlight and catch platform-specific issues before broader tester access.
+
+Important:
+Do not redesign large sections of the app.
+Do not start new feature work.
+Focus on iOS/TestFlight behavior, auth/deep links, native UI issues, and platform-specific bugs.
+
+---
+
+PART 1 — Audit current iOS/TestFlight readiness
+
+Inspect the current setup:
+- app.json / app config
+- iOS bundle identifier
+- URL schemes / deep links
+- Apple sign-in configuration
+- Google sign-in redirect behavior
+- password reset redirect behavior
+- EAS production profile
+- TestFlight build assumptions
+
+Report anything that could affect iPhone/TestFlight behavior.
+
+---
+
+PART 2 — Apple sign-in validation path
+
+Apple sign-in needs to work cleanly on iOS.
+
+Please inspect:
+- Apple credential handling
+- Supabase Apple provider flow
+- name capture on first Apple sign-in
+- existing-account behavior
+- account-linking behavior from Settings
+- post-auth routing
+
+Acceptance criteria:
+- new user can sign up/sign in with Apple
+- existing linked user can sign in with Apple
+- wrong-account / existing-email cases show clear messages
+- no stuck loading state
+- no unintended onboarding/profile-loading route
+
+---
+
+PART 3 — Google sign-in on iOS
+
+Google sign-in should be validated separately from Android/web.
+
+Please inspect:
+- iOS redirect URL behavior
+- WebBrowser/AuthSession behavior
+- callback handling
+- post-auth routing
+- onboarding state resolution
+
+Acceptance criteria:
+- existing user signs in with Google
+- new user signs up with Google and enters onboarding
+- no browser dead-end
+- no slow/frozen post-auth state
+- no wrong onboarding fallback
+
+---
+
+PART 4 — Password reset deep link
+
+Password reset needs to work from a real iPhone email app.
+
+Please inspect:
+- reset email redirect URL
+- Supabase URL allow-list assumptions
+- app/auth/callback handling
+- reset-password route
+- expired/invalid link messaging
+
+Acceptance criteria:
+- user requests password reset
+- email arrives
+- tapping link on iPhone opens Readstack app
+- user lands on reset-password screen
+- user can set new password
+- expired/invalid link has clear recovery copy
+
+---
+
+PART 5 — iOS layout and safe-area review
+
+Audit common iPhone-specific layout risks:
+- safe area top/bottom
+- tab bar clearance
+- keyboard overlap
+- modals/sheets
+- scroll views
+- auth screens
+- onboarding screens
+- Add Book / search
+- Library
+- Book detail
+- Settings
+- Reading Progress
+
+Acceptance criteria:
+- no content hidden behind notch/tab bar/keyboard
+- sheets fit correctly
+- scroll behavior feels native
+- forms remain usable with keyboard open
+
+---
+
+PART 6 — Native module checks
+
+Confirm current iOS build includes required native modules/config:
+- expo-camera
+- react-native-view-shot
+- Apple auth
+- deep linking scheme
+- any other native dependencies
+
+Acceptance criteria:
+- no missing native module errors
+- scan screen requests camera permission correctly
+- share/capture features do not crash
+
+---
+
+PART 7 — Produce an iOS QA checklist
+
+Create a practical checklist I can run on TestFlight.
+
+Include:
+- auth
+- onboarding
+- password reset
+- add book/search
+- scanning
+- library
+- shelves
+- recommendations
+- book detail
+- reading progress
+- sharing/recommend to friend
+- settings/account linking
+
+What I want back:
+1. exact files changed, if any
+2. current iOS/TestFlight readiness assessment
+3. any config issues found
+4. Apple sign-in risk/fix summary
+5. Google sign-in iOS risk/fix summary
+6. password reset deep-link risk/fix summary
+7. native module/config readiness
+8. iOS layout/safe-area issues found
+9. final TestFlight QA checklist
+10. whether a new iOS build is required

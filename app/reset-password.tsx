@@ -76,6 +76,21 @@ export default function ResetPasswordScreen() {
         setError('Please choose a new password that is different from your current one.');
       } else if (raw.includes('rate limit') || raw.includes('too many')) {
         setError('Too many attempts — wait a moment and try again.');
+      } else if (
+        // Supabase recovery-token failure modes when the deep link is stale,
+        // already used, or the recovery session has expired. These surface as
+        // 401/403s on updateUser and previously fell through to the generic
+        // "Could not update your password" message — which sounds like a
+        // server problem rather than something the user can act on.
+        raw.includes('expired') ||
+        raw.includes('invalid token') ||
+        raw.includes('token has expired') ||
+        raw.includes('jwt expired') ||
+        raw.includes('auth session missing') ||
+        raw.includes('session_not_found') ||
+        raw.includes('not authenticated')
+      ) {
+        setError('This reset link has expired or already been used. Request a new one from the sign-in screen.');
       } else {
         setError('Could not update your password. Please try again.');
       }

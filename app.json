@@ -33,7 +33,8 @@
       "bundleIdentifier": "com.readstack.app",
       "usesAppleSignIn": true,
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Readstack uses the camera to scan book barcodes."
       }
     },
     "android": {
