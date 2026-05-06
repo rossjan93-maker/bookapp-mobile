@@ -1,0 +1,86 @@
+{
+  "$schema": "https://lovable.dev/schemas/design-tokens.v1.json",
+  "variant": "aura",
+  "name": "Aura",
+  "tagline": "Cinematic soft",
+  "color": {
+    "paper": "#F4EEE4",
+    "paperDeep": "#ECE3D2",
+    "ink": "#2A2218",
+    "spice": "#C46A3A",
+    "clay": "#7A5E3F",
+    "muted": "#7A6B55",
+    "border": "rgba(42,34,24,0.12)"
+  },
+  "type": {
+    "display": {
+      "family": "Instrument Serif",
+      "style": "italic",
+      "weight": "400",
+      "tracking": "-0.01em",
+      "use": "Oversized italic headlines. Let counters breathe \u2014 min size 44px."
+    },
+    "italic": {
+      "family": "Instrument Serif",
+      "style": "italic",
+      "use": "The display IS italic; reserve roman for sub-headlines only."
+    },
+    "sans": {
+      "family": "Geist",
+      "weight": "300/400/500",
+      "use": "All UI body. Lean light (300) for labels, 400 for paragraphs."
+    },
+    "mono": {
+      "family": "Geist Mono",
+      "weight": "400",
+      "use": "Meta only. Uppercase 10px / 0.14em tracking."
+    }
+  },
+  "shadow": {
+    "paper": "0 1px 0 rgba(42,34,24,.04), 0 28px 60px -36px rgba(42,34,24,.22)"
+  },
+  "rules": [
+    "Whitespace is the primary visual element \u2014 never crowd a hero.",
+    "Italic display, roman support \u2014 never the inverse.",
+    "Spice accent appears once per scroll viewport."
+  ],
+  "scale": {
+    "display": [
+      88,
+      64,
+      44,
+      32
+    ],
+    "body": [
+      18,
+      16,
+      14
+    ],
+    "label": 10
+  },
+  "radius": {
+    "sm": 8,
+    "md": 12,
+    "lg": 14,
+    "xl": 18,
+    "pill": 999
+  },
+  "spacing": [
+    4,
+    8,
+    12,
+    16,
+    24,
+    32,
+    48,
+    64,
+    96
+  ],
+  "motion": {
+    "easing-default": "cubic-bezier(.2,.8,.2,1)",
+    "easing-ink": "cubic-bezier(.2,.7,.1,1)",
+    "duration-fast": "240ms",
+    "duration-base": "480ms",
+    "duration-slow": "700ms"
+  }
+}

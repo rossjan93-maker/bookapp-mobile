@@ -1,0 +1,345 @@
+Context:
+
+We are adding user-selectable visual themes to Readstack.
+
+This is a major design-system feature, not a simple color tweak.
+
+I am attaching a tokens.json file. Use that file as the source reference for the theme directions, palettes, typography intent, and visual mood. Do not reinterpret colors manually from screenshots if the token file provides values.
+
+Goal:
+Allow users to select one of the provided theme variations from Settings / Appearance, and have the selected theme apply across the core app experience.
+
+This should be implemented as a maintainable theme system.
+
+Do not hardcode theme-specific colors inside random screens.
+Do not patch individual components one by one without a system.
+Build the underlying architecture so we can add more themes later.
+
+---
+
+THEME DIRECTIONS
+
+The attached tokens.json includes the theme system / design-lab variations. At minimum, implement the following three theme options first:
+
+1. North
+Mood:
+- editorial restraint
+- warm neutral
+- quiet, bookish, literary
+- elegant but not overly decorative
+
+Visual intent:
+- warm paper background
+- near-black text
+- ember/rust accent
+- muted sage secondary accent
+- soft borders and calm surfaces
+- editorial feel
+
+2. Atelier
+Mood:
+- dark
+- quiet luxury
+- cognac / couture
+- intimate reading room
+
+Visual intent:
+- near-black background
+- warm ivory text
+- cognac / tan accent
+- deep charcoal surfaces
+- subtle borders
+- premium dark-mode experience
+- must remain readable and accessible
+
+3. Kiosk
+Mood:
+- bold
+- newsstand confidence
+- graphic, energetic, contemporary
+
+Visual intent:
+- warm cream background
+- black foreground
+- brick/orange accent
+- ochre secondary accent
+- stronger contrast
+- bold sans editorial energy
+
+If tokens.json contains additional variations beyond these three, do not implement every option in the first pass unless it is trivial after the theme architecture is built. Prioritize a clean implementation of these three.
+
+---
+
+PART 1 — Audit current token and styling system
+
+Inspect:
+- lib/tokens.ts
+- existing color usage
+- typography usage
+- card/surface styles
+- tab bar styles
+- buttons
+- badges
+- progress bars
+- Reading Progress
+- Home
+- For You / recommendations
+- Library
+- Book detail
+- Profile
+- Settings
+- Auth screens
+
+Report:
+- what is already tokenized
+- what is still hardcoded
+- what can be safely migrated now
+- what should remain deferred
+
+---
+
+PART 2 — Create a central theme registry
+
+Create a maintainable theme registry based on tokens.json.
+
+Suggested file structure:
+- lib/themes.ts
+or
+- lib/theme/themeRegistry.ts
+- lib/theme/ThemeProvider.tsx
+
+Use semantic tokens rather than raw palette references wherever possible.
+
+Each theme should expose semantic values such as:
+
+- id
+- name
+- shortDescription
+- mood
+- colors:
+  - appBackground
+  - surface
+  - surfaceElevated
+  - cardBackground
+  - textPrimary
+  - textSecondary
+  - textMuted
+  - border
+  - divider
+  - accent
+  - accentSoft
+  - accentText
+  - success
+  - warning
+  - danger
+  - progressFill
+  - progressTrack
+  - tabActive
+  - tabInactive
+  - pillBackground
+  - inputBackground
+- typography:
+  - displayFamily
+  - bodyFamily
+  - monoFamily if needed
+  - headingWeight
+  - bodyWeight
+- radius:
+  - card
+  - pill
+  - input
+- shadow/elevation:
+  - card
+  - floating
+- optional:
+  - isDark
+  - statusBarStyle
+
+Requirements:
+- tokens.json should drive the theme values.
+- If tokens.json uses raw palette names, map them into semantic roles.
+- If tokens.json already contains semantic roles, preserve them where possible.
+- Adding a new theme later should be straightforward.
+
+Acceptance criteria:
+- no theme logic scattered across screens
+- all themes are centralized
+- app has a safe default theme
+
+---
+
+PART 3 — Theme provider and persistence
+
+Add an app-level ThemeProvider.
+
+Requirements:
+- selected theme persists across app restarts
+- use AsyncStorage for v1 unless there is already a strong user-preference storage pattern
+- default theme should be North or the closest equivalent to the current app look
+- theme loading must not block app boot
+- failed theme load should safely fall back to default
+- expose a hook such as useAppTheme() or useTheme()
+
+Acceptance criteria:
+- user selects a theme
+- app changes theme
+- user closes/reopens app
+- selected theme remains active
+
+---
+
+PART 4 — Settings / Appearance theme selector
+
+Add a Settings section for Appearance / Theme.
+
+Requirements:
+- Settings should include a clear Theme / Appearance row or section
+- user can select North, Atelier, or Kiosk
+- theme options should render as preview cards
+- each preview card should show:
+  - theme name
+  - short descriptor
+  - mini color palette
+  - selected state
+  - optionally a tiny sample card
+- theme selection should apply immediately or after a simple confirmation
+- selected state should be obvious
+
+Acceptance criteria:
+- theme picker is discoverable in Settings
+- user can switch themes
+- selected theme is clearly marked
+- UI does not feel like a developer/debug tool
+
+---
+
+PART 5 — Apply themes to core surfaces first
+
+Apply the theme system to the highest-visibility app surfaces.
+
+Prioritize:
+1. App shell / tab bar
+2. Home
+3. Reading Progress
+4. For You / recommendation cards
+5. Library
+6. Book detail
+7. Profile / Settings
+8. Auth screen if straightforward
+
+Requirements:
+- replace hardcoded high-impact colors with semantic theme tokens
+- tab bar should reflect selected theme
+- progress bars should use theme progress tokens
+- cards/surfaces should use theme surface/card tokens
+- buttons and badges should use theme accent tokens
+- text should use theme text tokens
+- avoid old sage/green tokens fighting the selected theme
+
+Do not try to theme every obscure/developer-only screen in this pass if that would destabilize the app. Document anything deferred.
+
+Acceptance criteria:
+- switching themes visibly changes the app mood
+- core screens feel coherent under all three themes
+- no unreadable text
+- no broken dark-mode contrast in Atelier
+- no random old green styles dominating non-green themes
+
+---
+
+PART 6 — Typography strategy
+
+Use tokens.json if it contains typography direction.
+
+Important:
+Do not introduce unsupported custom fonts in a way that can crash the app.
+
+Requirements:
+- audit currently available fonts
+- if the desired fonts are not available, create typography token placeholders and use safe existing font fallbacks
+- do not block the theme system on custom font loading
+- document ideal future fonts if they are not currently bundled
+- preserve readability on mobile
+
+Acceptance criteria:
+- no missing-font runtime errors
+- typography responds to theme where safely possible
+- future custom-font support is straightforward
+
+---
+
+PART 7 — Dark theme handling for Atelier
+
+Atelier is a dark theme and needs extra care.
+
+Requirements:
+- status bar style should be appropriate
+- cards, sheets, inputs, tabs, and modals must remain readable
+- borders should not disappear
+- muted text should still pass reasonable contrast
+- disabled states should still be visible
+- selected states should be obvious
+
+Acceptance criteria:
+- Atelier does not look like a broken dark mode
+- app remains usable across core flows
+- no black text on black surfaces or low-contrast labels
+
+---
+
+PART 8 — Migration strategy from current tokens
+
+The app already has existing sage/green tokens.
+
+Requirements:
+- do not delete existing tokens blindly
+- map existing tokens into the default/North theme where appropriate
+- migrate high-traffic components to semantic theme tokens
+- leave legacy tokens only where necessary
+- document remaining legacy token usage
+
+Acceptance criteria:
+- no fragile giant rewrite
+- current app remains stable
+- theme system progressively replaces one-off styling
+
+---
+
+PART 9 — Validation
+
+Validate:
+- app boots with default theme
+- switching theme works
+- selected theme persists after app restart
+- all three themes are readable
+- Home renders correctly
+- For You renders correctly
+- Library renders correctly
+- Book detail renders correctly
+- Settings renders correctly
+- Auth screen remains usable
+- tab bar is readable
+- progress bars are visible
+- modals/sheets are readable
+- Atelier dark theme has sufficient contrast
+
+If possible, include screenshots or visual verification notes for North, Atelier, and Kiosk.
+
+---
+
+What I want back:
+
+1. exact files changed
+2. how tokens.json was interpreted/mapped
+3. new theme registry structure
+4. where selected theme is stored
+5. how the Settings theme picker works
+6. which screens now consume theme tokens
+7. what remains unthemed/deferred
+8. typography strategy and any font limitations
+9. dark theme / Atelier contrast notes
+10. validation performed
+11. whether this can be tested through JS reload or requires a new Android/iOS build
+
+Important:
+This is a system-building pass. The first goal is a stable, maintainable theme architecture with three working themes — North, Atelier, and Kiosk — not perfect pixel matching across every screen.

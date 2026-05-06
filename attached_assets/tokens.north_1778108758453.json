@@ -1,0 +1,85 @@
+{
+  "$schema": "https://lovable.dev/schemas/design-tokens.v1.json",
+  "variant": "north",
+  "name": "North",
+  "tagline": "Editorial restraint",
+  "color": {
+    "paper": "#F4EFE6",
+    "paperDeep": "#EDE6D6",
+    "ink": "#15110C",
+    "ember": "#A64426",
+    "moss": "#5D6B4A",
+    "stone": "#7A6F5E",
+    "border": "rgba(21,17,12,0.13)"
+  },
+  "type": {
+    "display": {
+      "family": "Fraunces",
+      "weight": "300\u2013500",
+      "tracking": "-0.02em",
+      "use": "Headlines and editorial titles. Variable opsz 144 above 40px, 36 below."
+    },
+    "italic": {
+      "family": "Instrument Serif",
+      "style": "italic",
+      "use": "Pull quotes, single-word emphasis inside display lines."
+    },
+    "sans": {
+      "family": "Geist",
+      "weight": "300/400/500/600/700",
+      "use": "All UI body, buttons, inputs, dense data."
+    },
+    "mono": {
+      "family": "Geist Mono",
+      "weight": "400/500",
+      "use": "Labels, meta tags, page numbers. Always uppercase + 0.14em + 10px."
+    }
+  },
+  "shadow": {
+    "paper": "0 1px 0 rgba(0,0,0,.06), 0 18px 40px -28px rgba(21,17,12,.25)"
+  },
+  "rules": [
+    "One ember per view \u2014 accent must be scarce.",
+    "Mono labels are uppercase, 10px, 0.14em tracking.",
+    "Body uses Geist; display uses Fraunces; italic accents use Instrument Serif."
+  ],
+  "scale": {
+    "display": [
+      88,
+      64,
+      44,
+      32
+    ],
+    "body": [
+      18,
+      16,
+      14
+    ],
+    "label": 10
+  },
+  "radius": {
+    "sm": 8,
+    "md": 12,
+    "lg": 14,
+    "xl": 18,
+    "pill": 999
+  },
+  "spacing": [
+    4,
+    8,
+    12,
+    16,
+    24,
+    32,
+    48,
+    64,
+    96
+  ],
+  "motion": {
+    "easing-default": "cubic-bezier(.2,.8,.2,1)",
+    "easing-ink": "cubic-bezier(.2,.7,.1,1)",
+    "duration-fast": "240ms",
+    "duration-base": "480ms",
+    "duration-slow": "700ms"
+  }
+}

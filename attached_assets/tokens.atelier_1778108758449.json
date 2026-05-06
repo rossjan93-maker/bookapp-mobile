@@ -1,0 +1,86 @@
+{
+  "$schema": "https://lovable.dev/schemas/design-tokens.v1.json",
+  "variant": "atelier",
+  "name": "Atelier",
+  "tagline": "Quiet luxury",
+  "color": {
+    "paper": "#0E0D0B",
+    "paperDeep": "#070605",
+    "ink": "#ECE5D6",
+    "cognac": "#D4A574",
+    "amber": "#C46A3A",
+    "muted": "#9A8F7A",
+    "border": "rgba(255,255,255,0.08)"
+  },
+  "type": {
+    "display": {
+      "family": "Cormorant Garamond",
+      "weight": "300\u2013500",
+      "style": "italic preferred",
+      "tracking": "-0.01em",
+      "use": "Editorial titles, large numerals. Italic for marquee headlines."
+    },
+    "italic": {
+      "family": "Cormorant Garamond",
+      "style": "italic",
+      "use": "Built into the display \u2014 single typeface, two voices."
+    },
+    "sans": {
+      "family": "Manrope",
+      "weight": "300/500/700",
+      "use": "All UI body, buttons, inputs."
+    },
+    "mono": {
+      "family": "JetBrains Mono",
+      "weight": "400",
+      "use": "Optional micro-labels; prefer Manrope 300 uppercased instead."
+    }
+  },
+  "shadow": {
+    "paper": "0 24px 60px -32px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.04)"
+  },
+  "rules": [
+    "Dark surfaces dominate; cognac is the only true accent.",
+    "Generous letter-spacing on small caps; no all-caps body.",
+    "Hairlines are white at 8% \u2014 never pure white."
+  ],
+  "scale": {
+    "display": [
+      88,
+      64,
+      44,
+      32
+    ],
+    "body": [
+      18,
+      16,
+      14
+    ],
+    "label": 10
+  },
+  "radius": {
+    "sm": 8,
+    "md": 12,
+    "lg": 14,
+    "xl": 18,
+    "pill": 999
+  },
+  "spacing": [
+    4,
+    8,
+    12,
+    16,
+    24,
+    32,
+    48,
+    64,
+    96
+  ],
+  "motion": {
+    "easing-default": "cubic-bezier(.2,.8,.2,1)",
+    "easing-ink": "cubic-bezier(.2,.7,.1,1)",
+    "duration-fast": "240ms",
+    "duration-base": "480ms",
+    "duration-slow": "700ms"
+  }
+}

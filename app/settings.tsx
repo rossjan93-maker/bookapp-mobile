@@ -1,4 +1,5 @@
 import { SAGE_DEEP } from '../lib/tokens';
+import { ThemePickerCard } from '../components/ThemePickerCard';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -709,6 +710,15 @@ export default function SettingsScreen() {
           label="Save Profile"
         />
       )}
+
+      {/* ── Appearance (theme picker) ────────────────────────────────────────
+          The picker is a self-contained component that consumes useAppTheme()
+          directly — switching themes is instant and persists across restarts. */}
+      <SectionHeader>Appearance</SectionHeader>
+      <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18, marginBottom: 12, paddingHorizontal: 2 }}>
+        Pick a theme for the look and feel of Readstack. Your choice is saved on this device.
+      </Text>
+      <ThemePickerCard />
 
       {/* ── Reading (yearly goal) ────────────────────────────────────────────── */}
       <SectionHeader>Reading</SectionHeader>
