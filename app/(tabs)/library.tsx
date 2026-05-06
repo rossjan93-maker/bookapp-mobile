@@ -1363,6 +1363,57 @@ export default function LibraryScreen() {
                     <Ionicons name="close-circle" size={15} color="#9e958d" />
                   </TouchableOpacity>
                 </View>
+                {/* Inline delete affordance for custom shelves — long-press on
+                    the chip works too, but a visible button is clearer on web. */}
+                {custom && (
+                  <TouchableOpacity
+                    hitSlop={6}
+                    onPress={() => {
+                      Alert.alert(
+                        `Delete "${custom.name}"?`,
+                        'Books on this shelf stay in your library; only the shelf is removed.',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Delete', style: 'destructive', onPress: async () => {
+                            try {
+                              await deleteShelfApi(custom.id);
+                              setUserShelves(prev => prev.filter(s => s.id !== custom.id));
+                              setShelfMembership(prev => {
+                                const next = new Map(prev);
+                                for (const [ub, set] of next) {
+                                  if (set.has(custom.id)) {
+                                    const newSet = new Set(set); newSet.delete(custom.id);
+                                    next.set(ub, newSet);
+                                  }
+                                }
+                                return next;
+                              });
+                              setActiveShelf(null);
+                            } catch (e: any) {
+                              Alert.alert('Could not delete shelf', e?.message ?? 'Try again.');
+                            }
+                          } },
+                        ],
+                      );
+                    }}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 5,
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: 16,
+                      borderWidth: 1,
+                      borderColor: '#e7d6d2',
+                      backgroundColor: '#fdf6f5',
+                    }}
+                  >
+                    <Ionicons name="trash-outline" size={13} color="#a8554d" />
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: '#a8554d' }}>
+                      Delete shelf
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
             ) : null;
           })()}
