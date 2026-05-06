@@ -295,7 +295,7 @@ const SERIES_CATALOG: Record<string, SeriesCatalogEntry> = {
     orderedBooks: [
       { title: 'Winter in Paradise',       author: 'Elin Hilderbrand', olCoverId: 8813208 },
       { title: 'What Happens in Paradise', author: 'Elin Hilderbrand', olCoverId: 8945090 },
-      { title: 'Here in Paradise',         author: 'Elin Hilderbrand' },
+      { title: 'Troubles in Paradise',     author: 'Elin Hilderbrand', olCoverId: 12408601 },
     ],
   },
 

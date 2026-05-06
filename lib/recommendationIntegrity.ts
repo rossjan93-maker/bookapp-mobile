@@ -391,7 +391,7 @@ const CURATED: Record<string, Record<string, CuratedEntry>> = {
     // Paradise
     'winter in paradise':                   { series: 'Paradise',                 position: 1 },
     'what happens in paradise':             { series: 'Paradise',                 position: 2 },
-    'here in paradise':                     { series: 'Paradise',                 position: 3 },
+    'troubles in paradise':                 { series: 'Paradise',                 position: 3 },
   },
 
   // ── Colleen Hoover ────────────────────────────────────────────────────
