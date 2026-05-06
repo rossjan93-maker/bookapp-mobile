@@ -1,0 +1,159 @@
+Context:
+
+Batch 2 UI polish is accepted. Now move to Batch 3: Recommendation Intelligence.
+
+Goal:
+Make recommendation reasoning and content warnings feel more specific, reader-aware, and trustworthy.
+
+Current issues:
+1. Recommendation explanations are repetitive and generic.
+2. They do not show enough depth of knowledge about the user's taste.
+3. Content warnings are too broad. For example, "violence" is useful, but "sexual violence" or "graphic violence" would be more helpful when supported by metadata.
+4. We need to improve specificity without inventing unsupported claims.
+
+Important:
+Do not redesign the recommendation UI broadly.
+Do not add a new recommendation system from scratch.
+Improve the explanation/warning logic using the signals already available where possible.
+
+---
+
+PART 1 — Recommendation explanation depth
+
+Current problem:
+Recommendation reasoning often sounds repetitive and templated.
+
+Desired direction:
+The explanation should feel like:
+"You tend to gravitate toward fiction that does X and provides Y. This book appears to offer both."
+
+Use actual reader signals where available:
+- books completed
+- ratings
+- taste tags
+- genres/subjects
+- authors
+- pacing preferences
+- themes
+- recommendation feedback
+- DNF/disliked signals if available
+- onboarding preference answers
+
+Requirements:
+- audit the current explanation-generation logic
+- identify which user taste signals are currently available
+- improve explanation templates so they combine at least two meaningful signals when possible
+- reduce repeated phrasing across cards
+- prefer specific, human language over generic confidence language
+- make low-confidence explanations honest
+
+Examples of better framing:
+- "You’ve responded well to character-driven mysteries with a steady reveal. This has that same slow-burn structure, but with a darker family-secret angle."
+- "Your recent reads suggest you like speculative fiction that balances big ideas with emotional stakes. This pick leans into both."
+- "You’ve rated fast-paced political thrillers highly, and this one matches that momentum without drifting too far from your usual realism."
+
+Acceptance criteria:
+- recommendation reasons feel less repetitive
+- each card should avoid sounding like the previous card
+- explanations clearly connect user taste to the book
+- low-signal users get honest explanation copy, not fake specificity
+
+---
+
+PART 2 — Recommendation rationale variety
+
+Problem:
+Even when explanations are accurate, they repeat the same structure.
+
+Task:
+Add variation to rationale phrasing.
+
+Requirements:
+- create several rationale patterns
+- rotate/select based on available signals
+- avoid overusing "you gravitate toward"
+- avoid overusing "because you liked"
+- avoid repeating the same opening across consecutive recommendations
+- keep copy concise enough for mobile
+
+Acceptance criteria:
+- scrolling through recommendations does not feel like reading the same sentence five times
+- explanation copy remains clear and not overly flowery
+
+---
+
+PART 3 — Content warnings specificity
+
+Problem:
+Warnings are currently too broad.
+
+Desired direction:
+More specific warnings when metadata supports it.
+
+Examples:
+- violence → graphic violence / war violence / domestic violence
+- abuse → emotional abuse / domestic abuse / child abuse
+- sexual content → sexual violence when specifically supported
+- death → grief / death of a loved one / child death
+- mental health → self-harm / suicide / addiction
+- animal harm if supported
+
+Requirements:
+- audit current content-warning detection
+- identify source fields used: subjects, description, metadata, external provider fields, curated tags, etc.
+- add a taxonomy of specific warning labels
+- map broad terms to more specific warnings only when there is evidence
+- do not infer sensitive warnings from weak signals
+- include confidence/strength internally if helpful
+- avoid showing overly alarming warnings when evidence is weak
+
+Acceptance criteria:
+- warnings are more specific where supported
+- warnings remain absent or cautious when evidence is weak
+- app does not invent unsupported content warnings
+- broad warning fallback still works when only broad evidence exists
+
+---
+
+PART 4 — User-facing warning language
+
+Problem:
+Warnings should inform, not scare.
+
+Task:
+Improve warning copy and display language.
+
+Requirements:
+- labels should be concise
+- language should be neutral and useful
+- avoid sensational phrasing
+- if low confidence, use softer language such as "may include"
+- if high confidence, direct label is okay
+
+Acceptance criteria:
+- user can quickly understand difficult themes
+- warnings feel helpful, not heavy-handed
+- mobile display remains compact
+
+---
+
+PART 5 — Validation
+
+Please validate with a small sample of books/recommendations:
+- a thriller/mystery
+- a fantasy/sci-fi title
+- a literary fiction title
+- a nonfiction/memoir title if available
+- one book with known difficult themes
+
+What I want back:
+1. exact files changed
+2. current explanation system before changes
+3. taste signals now used
+4. new rationale patterns added
+5. how repetition is reduced
+6. content-warning taxonomy added
+7. how confidence/weak evidence is handled
+8. sample before/after recommendation explanations
+9. sample before/after content warnings
+10. what remains limited by metadata quality

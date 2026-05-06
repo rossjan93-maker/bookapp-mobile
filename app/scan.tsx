@@ -14,6 +14,7 @@
 // All actions also update the scan_history row via updateScanAction.
 // =============================================================================
 
+import { SAGE_DEEP } from '../lib/tokens';
 import {
   useState, useEffect, useRef, useCallback,
 } from 'react';
@@ -57,8 +58,8 @@ type ActionState = 'idle' | 'saved' | 'dismissed' | 'more_like_this';
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const VERDICT_BADGE: Record<ScanVerdict, { bg: string; text: string }> = {
-  strong_fit:  { bg: '#eaf1ea', text: '#2f6f3a' },
-  likely_fit:  { bg: '#eaf1ea', text: '#2f6f3a' },
+  strong_fit:  { bg: '#eaf1ea', text: SAGE_DEEP },
+  likely_fit:  { bg: '#eaf1ea', text: SAGE_DEEP },
   mixed_fit:   { bg: '#fef9c3', text: '#854d0e' },
   not_for_you: { bg: '#fee2e2', text: '#b91c1c' },
 };
@@ -873,7 +874,7 @@ export default function ScanScreen() {
             </>
           ) : (
             <View style={s.actionConfirm}>
-              <Ionicons name="checkmark-circle" size={22} color="#2f6f3a" style={{ marginRight: 8 }} />
+              <Ionicons name="checkmark-circle" size={22} color={SAGE_DEEP} style={{ marginRight: 8 }} />
               <Text style={s.actionConfirmText}>
                 {actionState === 'saved'
                   ? 'Added to your Want to Read list'

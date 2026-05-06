@@ -1,3 +1,4 @@
+import { SAGE_DEEP } from '../lib/tokens';
 import { createContext, useContext, useEffect, useRef } from 'react';
 import { Animated, Text, TouchableOpacity, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -137,7 +138,7 @@ export function GuidedNotedToast({ onDone }: { onDone: () => void }) {
         left:              16,
         right:             16,
         opacity,
-        backgroundColor:   '#2f6f3a',
+        backgroundColor:   SAGE_DEEP,
         borderRadius:      CARD.borderRadius,
         paddingVertical:   CARD.paddingVertical,
         paddingHorizontal: CARD.paddingHorizontal,

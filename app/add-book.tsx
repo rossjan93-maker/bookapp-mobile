@@ -1,3 +1,4 @@
+import { SAGE_DEEP } from '../lib/tokens';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -53,7 +54,7 @@ const FINISH_YEAR_OPTIONS: { label: string; value: number | null }[] = [
 const STATUS_OPTIONS: { value: BookStatus; label: string; desc: string; activeBg: string; activeText: string }[] = [
   { value: 'want_to_read', label: 'Want to Read', desc: 'Saving it for later',   activeBg: '#f1f5f9', activeText: '#475569' },
   { value: 'reading',      label: 'Reading',      desc: 'Currently in progress', activeBg: '#dbeafe', activeText: '#1d4ed8' },
-  { value: 'finished',     label: 'Finished',     desc: 'Completed it',          activeBg: '#eaf1ea', activeText: '#2f6f3a' },
+  { value: 'finished',     label: 'Finished',     desc: 'Completed it',          activeBg: '#eaf1ea', activeText: SAGE_DEEP },
   { value: 'dnf',          label: 'DNF',          desc: 'Did not finish',        activeBg: '#fee2e2', activeText: '#b91c1c' },
 ];
 

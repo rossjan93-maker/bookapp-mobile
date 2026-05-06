@@ -54,6 +54,8 @@ The Book Recommendation App helps users discover, track, and share personalized 
 - **Three-Pass Subject Enrichment:** Uses Open Library, Google Books, and LLM inference to maximize subject coverage for books, ensuring rich discoverability.
 - **Reading Progress Reset Logic:** Implements "reset-to-0 = start over" rule for reading sessions, ensuring stats like monthly pages and streaks accurately reflect current reading efforts.
 - **Explicit Paused State:** `user_books.paused_at` lets readers self-mark a 'reading' book as Paused (toggle in book detail's Reading Progress card). `inferReadState` returns 'paused' immediately when `pausedAt` is set, overriding the inactivity heuristic. `transitionStatus` always clears `paused_at` so it can never outlive the status it was set under.
+- **Single Green System (sage):** All greens flow through `SAGE`, `SAGE_BG`, `SAGE_DEEP`, `SAGE_INK` in `lib/tokens.ts`. Never reintroduce raw Tailwind greens (`#15803d`, `#16a34a`, `#166534`) or hand-rolled `#2f6f3a` literals — import the token instead. `SAGE_INK` is reserved for sparing emphasis on top of `SAGE_BG`.
+- **Reading Progress motion (home):** The yearly-goal bar (`progressAnim`) eases from 0 → live pct on mount and on goal change; the streak flame (`flameAnim`) loops a subtle scale pulse only when `streakValue > 0`. Both refs live in `app/(tabs)/index.tsx` near the top of the component — keep timing/easing in sync if either is touched.
 
 ## Product
 - **Book Discovery & Recommendations:** Personalized recommendations with a credibility system for recommenders.

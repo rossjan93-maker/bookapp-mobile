@@ -13,6 +13,7 @@
 // Written by this component when any choice is made.
 // Parent (search.tsx) reads it before mounting to decide whether to show entry.
 
+import { SAGE_DEEP } from '../lib/tokens';
 import React, {
   useEffect,
   useRef,
@@ -85,7 +86,7 @@ const INK  = '#231f1b';
 const MUTED = '#9e958d';
 const SUB  = '#78716c';
 const BORD = '#ede9e4';
-const GRN  = '#2f6f3a';
+const GRN  = SAGE_DEEP;
 
 // ─── Quick-intake types ───────────────────────────────────────────────────────
 

@@ -210,7 +210,7 @@ export function canRunExpertRecs(
       allowed:         true,
       reason:          'free_first_use',
       is_free_preview: true,
-      message:         'Your complimentary deep taste analysis is ready.',
+      message:         'Your complimentary taste profile is ready.',
     };
   }
 

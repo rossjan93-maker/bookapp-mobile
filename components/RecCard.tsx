@@ -1,3 +1,4 @@
+import { SAGE_DEEP } from '../lib/tokens';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -603,8 +604,8 @@ export function RecCard({
                           : tier === 'medium'   ? '#f8f8f7'
                           :                      '#f5f1ec';
               const col   = isStarterBadge      ? '#92400e'
-                          : isContinuationBadge ? '#2f6f3a'
-                          : tier === 'high'     ? '#2f6f3a'
+                          : isContinuationBadge ? SAGE_DEEP
+                          : tier === 'high'     ? SAGE_DEEP
                           : tier === 'medium'   ? '#57534e'
                           :                      '#9e958d';
               const bord  = isStarterBadge      ? '#fde68a'
@@ -775,7 +776,7 @@ export function RecCard({
         }}>
           {confirmState === 'save' ? (
             <>
-              <Text style={{ fontSize: 15, fontWeight: '700', color: '#2f6f3a' }}>✓  Added to your list</Text>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: SAGE_DEEP }}>✓  Added to your list</Text>
               <Text style={{ fontSize: 12, color: '#3d5e42' }}>Saved to Want to Read</Text>
             </>
           ) : confirmState === 'dismiss' ? (

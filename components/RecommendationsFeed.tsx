@@ -1,3 +1,4 @@
+import { SAGE_DEEP } from '../lib/tokens';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -712,45 +713,35 @@ export function RecommendationsFeed({
               <Text style={{ fontSize: 16, color: 'rgba(255,255,255,0.35)' }}>›</Text>
             </TouchableOpacity>
 
-            {/* CTA 2 — Add books manually (secondary) */}
-            <TouchableOpacity
-              onPress={() => router.push('/add-book' as any)}
-              activeOpacity={0.8}
-              style={{
-                borderRadius: 12, paddingVertical: 13, paddingHorizontal: 16,
-                flexDirection: 'row', alignItems: 'center', gap: 12,
-                borderWidth: 1.5, borderColor: '#ede9e4', backgroundColor: '#f5f1ec',
-              }}
-            >
-              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#ede9e4', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 15 }}>＋</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', lineHeight: 19 }}>Add a few favourites</Text>
-                <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 1 }}>Search, rate, done — under a minute</Text>
-              </View>
-              <Text style={{ fontSize: 16, color: '#ede9e4' }}>›</Text>
-            </TouchableOpacity>
-
-            {/* CTA 3 — Answer preference questions (tertiary) */}
-            <TouchableOpacity
-              onPress={() => router.push('/edit-preferences' as any)}
-              activeOpacity={0.8}
-              style={{
-                borderRadius: 12, paddingVertical: 13, paddingHorizontal: 16,
-                flexDirection: 'row', alignItems: 'center', gap: 12,
-                borderWidth: 1.5, borderColor: '#ede9e4', backgroundColor: '#f5f1ec',
-              }}
-            >
-              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#ede9e4', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 15 }}>🎯</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', lineHeight: 19 }}>Tell us what you like</Text>
-                <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 1 }}>Genres, pace, style — under 90 seconds</Text>
-              </View>
-              <Text style={{ fontSize: 16, color: '#ede9e4' }}>›</Text>
-            </TouchableOpacity>
+            {/* Secondary row — two compact alternatives, side by side, so the
+                primary Import CTA above is unambiguously the recommended path
+                instead of competing with two equally-weighted full-width rows. */}
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 2 }}>
+              <TouchableOpacity
+                onPress={() => router.push('/add-book' as any)}
+                activeOpacity={0.8}
+                style={{
+                  flex: 1, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 12,
+                  borderWidth: 1.5, borderColor: '#ede9e4', backgroundColor: '#f5f1ec',
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: '600', color: '#231f1b' }}>＋  Add a few</Text>
+                <Text style={{ fontSize: 10.5, color: '#9e958d', marginTop: 2 }}>under a minute</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => router.push('/edit-preferences' as any)}
+                activeOpacity={0.8}
+                style={{
+                  flex: 1, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 12,
+                  borderWidth: 1.5, borderColor: '#ede9e4', backgroundColor: '#f5f1ec',
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: '600', color: '#231f1b' }}>🎯  Quick quiz</Text>
+                <Text style={{ fontSize: 10.5, color: '#9e958d', marginTop: 2 }}>~90 seconds</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </View>
@@ -782,7 +773,7 @@ export function RecommendationsFeed({
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
               <Text style={{ fontSize: 12, color: '#78716c', flex: 1, fontStyle: 'italic' }} numberOfLines={1}>
                 {recMode === 'expert'
-                  ? 'Curated using deep taste analysis'
+                  ? 'Tuned to your reading lanes'
                   : (tasteProfile?.label || 'Based on your stated genres')}
               </Text>
               {recMode === 'expert' && (
@@ -796,7 +787,7 @@ export function RecommendationsFeed({
           {/* Free preview moment */}
           {isFreePreview && (
             <View style={{ backgroundColor: '#eaf1ea', borderRadius: 10, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#7b9e7e' }}>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: '#2f6f3a', marginBottom: 4 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: SAGE_DEEP, marginBottom: 4 }}>
                 Your taste profile is ready
               </Text>
               <Text style={{ fontSize: 12, color: '#3d5e42', lineHeight: 18 }}>
@@ -862,7 +853,7 @@ export function RecommendationsFeed({
           {/* ── Currently Reading bucket ── */}
           {visibleConts.length > 0 && (
             <>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: 6, paddingLeft: 10, borderLeftWidth: 3, borderLeftColor: '#2f6f3a' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: 6, paddingLeft: 10, borderLeftWidth: 3, borderLeftColor: SAGE_DEEP }}>
                 <View>
                   <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', letterSpacing: -0.1 }}>Currently Reading</Text>
                   <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>Pick up where you left off</Text>

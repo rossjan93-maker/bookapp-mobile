@@ -1,3 +1,4 @@
+import { SAGE_DEEP } from '../../lib/tokens';
 import React from 'react';
 import { Text, View } from 'react-native';
 import { useWalkthroughTarget } from '../../lib/walkthroughEngine';
@@ -124,7 +125,7 @@ export function WtDemoLibrary() {
               borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
               borderWidth: 1, borderColor: '#7b9e7e',
             }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', color: '#2f6f3a' }}>
+              <Text style={{ fontSize: 11, fontWeight: '600', color: SAGE_DEEP }}>
                 Finished
               </Text>
             </View>

@@ -1,3 +1,4 @@
+import { SAGE_DEEP } from '../../lib/tokens';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -65,7 +66,7 @@ function _cacheBookMeta(bookId: string, entry: BookMetaEntry): void {
 const STATUS_META: Record<string, { bg: string; text: string; label: string }> = {
   want_to_read: { bg: '#f1f5f9', text: '#475569', label: 'Want to Read' },
   reading:      { bg: '#dbeafe', text: '#1d4ed8', label: 'Reading'      },
-  finished:     { bg: '#eaf1ea', text: '#2f6f3a', label: 'Finished'     },
+  finished:     { bg: '#eaf1ea', text: SAGE_DEEP, label: 'Finished'     },
   dnf:          { bg: '#fee2e2', text: '#b91c1c', label: 'DNF'          },
   sent:         { bg: '#f1f5f9', text: '#475569', label: 'New'          },
   saved:        { bg: '#e0f2fe', text: '#0369a1', label: 'Want to Read' },
@@ -1507,7 +1508,7 @@ export default function BookDetailScreen() {
   const descTruncated   = descText && descText.length > DESC_LIMIT && !descExpanded;
   const displayDesc     = descTruncated ? descText!.slice(0, DESC_LIMIT).trimEnd() + '…' : descText;
 
-  const pacingChipColor  = pacingState === 'ahead' ? '#2f6f3a' : pacingState === 'behind' ? '#b91c1c' : '#78716c';
+  const pacingChipColor  = pacingState === 'ahead' ? SAGE_DEEP : pacingState === 'behind' ? '#b91c1c' : '#78716c';
   const pacingChipBg     = pacingState === 'ahead' ? '#eaf1ea' : pacingState === 'behind' ? '#fef2f2' : '#ede9e4';
   const pacingChipBorder = pacingState === 'ahead' ? '#7b9e7e' : pacingState === 'behind' ? '#fecaca' : '#ede9e4';
 
@@ -1857,18 +1858,18 @@ export default function BookDetailScreen() {
                       <View style={{ width: 24, alignItems: 'center', justifyContent: 'center' }}>
                         {isComplete ? (
                           // Completed — green checkmark
-                          <Text style={{ fontSize: 13, color: '#2f6f3a', lineHeight: 18 }}>✓</Text>
+                          <Text style={{ fontSize: 13, color: SAGE_DEEP, lineHeight: 18 }}>✓</Text>
                         ) : (isCurrent || isInProg) ? (
                           // Current view or in-progress — green filled dot
                           <View style={{
                             width: 8, height: 8, borderRadius: 4,
-                            backgroundColor: '#2f6f3a',
+                            backgroundColor: SAGE_DEEP,
                           }} />
                         ) : isNextAvail ? (
                           // Next allowed, not started — green ring
                           <View style={{
                             width: 8, height: 8, borderRadius: 4,
-                            borderWidth: 1.5, borderColor: '#2f6f3a',
+                            borderWidth: 1.5, borderColor: SAGE_DEEP,
                           }} />
                         ) : (
                           // Locked or pre-load — gray ring
@@ -3396,7 +3397,7 @@ export default function BookDetailScreen() {
 
                       {/* Selection indicator */}
                       {isSelected && !pendingEditionKey && (
-                        <Text style={{ fontSize: 14, color: '#2f6f3a', marginLeft: 8 }}>✓</Text>
+                        <Text style={{ fontSize: 14, color: SAGE_DEEP, marginLeft: 8 }}>✓</Text>
                       )}
                       {savingEdition && ed.editionKey === pendingEditionKey && (
                         <ActivityIndicator size="small" color="#9e958d" style={{ marginLeft: 8 }} />

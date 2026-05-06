@@ -1,3 +1,4 @@
+import { SAGE_DEEP } from '../../lib/tokens';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -62,7 +63,7 @@ function BookRow({
       padding: 14,
       marginBottom: 10,
       borderLeftWidth: 3,
-      borderLeftColor: isRepair ? '#b45309' : isFlag ? '#6b7280' : '#2f6f3a',
+      borderLeftColor: isRepair ? '#b45309' : isFlag ? '#6b7280' : SAGE_DEEP,
     }}>
       <Text style={{ fontSize: 15, fontWeight: '700', color: '#231f1b', marginBottom: 2 }}>
         {row.title}
@@ -73,7 +74,7 @@ function BookRow({
       {isRepair && (
         <View style={{ marginTop: 8, flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
           <StatusBadge text={`Was: ${new Date(row.currentFinishedAt).toLocaleDateString()}`} color="#b91c1c" bg="#fef2f2" />
-          <StatusBadge text={`Fix: ${row.importDateRead}`} color="#2f6f3a" bg="#eaf1ea" />
+          <StatusBadge text={`Fix: ${row.importDateRead}`} color={SAGE_DEEP} bg="#eaf1ea" />
         </View>
       )}
 
@@ -229,19 +230,19 @@ export default function RepairDatesScreen() {
             gap: 16,
           }}>
             <View style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={{ fontSize: 26, fontWeight: '800', color: totalBroken > 0 ? '#b45309' : '#2f6f3a' }}>
+              <Text style={{ fontSize: 26, fontWeight: '800', color: totalBroken > 0 ? '#b45309' : SAGE_DEEP }}>
                 {totalBroken}
               </Text>
               <Text style={{ fontSize: 11, color: '#9e958d', textAlign: 'center', marginTop: 2 }}>needs fix</Text>
             </View>
             <View style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={{ fontSize: 26, fontWeight: '800', color: totalFlagged > 0 ? '#6b7280' : '#2f6f3a' }}>
+              <Text style={{ fontSize: 26, fontWeight: '800', color: totalFlagged > 0 ? '#6b7280' : SAGE_DEEP }}>
                 {totalFlagged}
               </Text>
               <Text style={{ fontSize: 11, color: '#9e958d', textAlign: 'center', marginTop: 2 }}>needs review</Text>
             </View>
             <View style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={{ fontSize: 26, fontWeight: '800', color: '#2f6f3a' }}>{totalOk}</Text>
+              <Text style={{ fontSize: 26, fontWeight: '800', color: SAGE_DEEP }}>{totalOk}</Text>
               <Text style={{ fontSize: 11, color: '#9e958d', textAlign: 'center', marginTop: 2 }}>correct</Text>
             </View>
           </View>
@@ -264,9 +265,9 @@ export default function RepairDatesScreen() {
               padding: 14,
               marginTop: 12,
               borderLeftWidth: 3,
-              borderLeftColor: '#2f6f3a',
+              borderLeftColor: SAGE_DEEP,
             }}>
-              <Text style={{ fontSize: 14, color: '#2f6f3a', fontWeight: '600' }}>{repairMsg}</Text>
+              <Text style={{ fontSize: 14, color: SAGE_DEEP, fontWeight: '600' }}>{repairMsg}</Text>
             </View>
           )}
 
@@ -380,7 +381,7 @@ export default function RepairDatesScreen() {
               alignItems: 'center',
               marginTop: 24,
             }}>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: '#2f6f3a', marginBottom: 6 }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: SAGE_DEEP, marginBottom: 6 }}>
                 All dates look correct
               </Text>
               <Text style={{ fontSize: 14, color: '#78716c', textAlign: 'center' }}>

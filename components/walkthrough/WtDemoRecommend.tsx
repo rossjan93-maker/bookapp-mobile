@@ -1,3 +1,4 @@
+import { SAGE_DEEP } from '../../lib/tokens';
 import React from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { useWalkthroughTarget } from '../../lib/walkthroughEngine';
@@ -69,7 +70,7 @@ export function WtDemoRecommend() {
                 borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2,
               }}>
                 <Text style={{
-                  fontSize: 9, fontWeight: '700', color: '#2f6f3a', letterSpacing: 0.3,
+                  fontSize: 9, fontWeight: '700', color: SAGE_DEEP, letterSpacing: 0.3,
                 }}>
                   TOP PICK
                 </Text>

@@ -39,6 +39,12 @@ export const SAGE_BG = '#eaf1ea';
  *  #166534, #4d7f52) so the app reads as one coherent green system. */
 export const SAGE_DEEP = '#2f6f3a';
 
+/** Sage ink — the deepest green in the palette. Reserved for sparing emphasis
+ *  on top of SAGE_BG (e.g. supporting copy inside a sage notice strip) where
+ *  SAGE_DEEP would compete with primary text. Do NOT use for ordinary body
+ *  text or as a substitute for INK. */
+export const SAGE_INK  = '#3d5e42';
+
 /** Warm amber — for ratings, highlights, and cover glows */
 export const AMBER   = '#c4956a';
 

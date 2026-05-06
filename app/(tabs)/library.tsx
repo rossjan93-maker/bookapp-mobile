@@ -1,3 +1,4 @@
+import { SAGE_DEEP } from '../../lib/tokens';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchGoogleBooksCoverUrl } from '../../lib/googleBooks';
 import { repairBooksMetadata } from '../../lib/metadataRepair';
@@ -128,8 +129,8 @@ const STATUS_LABELS: Record<UserBookStatus, string> = {
 
 const STATUS_BADGE: Record<UserBookStatus, { bg: string; text: string }> = {
   want_to_read: { bg: '#f0ece6', text: '#6b635c' },
-  reading:      { bg: '#eaf1ea', text: '#2f6f3a' },
-  finished:     { bg: '#eaf1ea', text: '#2f6f3a' },
+  reading:      { bg: '#eaf1ea', text: SAGE_DEEP },
+  finished:     { bg: '#eaf1ea', text: SAGE_DEEP },
   dnf:          { bg: '#f0ece6', text: '#7d6f63' },
 };
 
@@ -1599,7 +1600,7 @@ export default function LibraryScreen() {
                   paddingHorizontal: 9,
                   paddingVertical:   4,
                 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '600', color: '#2f6f3a' }}>
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: SAGE_DEEP }}>
                     Complete
                   </Text>
                 </View>
@@ -2265,7 +2266,7 @@ export default function LibraryScreen() {
                   <Text style={{ fontSize: 11.5, color: '#78716c', marginTop: 1 }}>Import your full library — live now</Text>
                 </View>
                 <View style={{ backgroundColor: '#eaf1ea', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2, marginRight: 6 }}>
-                  <Text style={{ fontSize: 10.5, fontWeight: '700', color: '#2f6f3a' }}>Supported</Text>
+                  <Text style={{ fontSize: 10.5, fontWeight: '700', color: SAGE_DEEP }}>Supported</Text>
                 </View>
                 <Text style={{ fontSize: 15, color: '#ede9e4' }}>›</Text>
               </TouchableOpacity>

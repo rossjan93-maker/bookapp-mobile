@@ -1,3 +1,4 @@
+import { SAGE_DEEP } from '../../lib/tokens';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -1282,7 +1283,7 @@ export default function HomeScreen() {
                           <Text style={{
                             fontSize:      28,
                             fontWeight:    '800',
-                            color:         '#2f6f3a',
+                            color:         SAGE_DEEP,
                             letterSpacing: -0.6,
                             lineHeight:    30,
                             textAlign:     'center',
@@ -1378,11 +1379,11 @@ export default function HomeScreen() {
               // chip; barFillColor drives the actual progress fill so the
               // bar visibly carries the same signal as the label.
               const statusColor = effectiveAhead
-                ? '#2f6f3a'
+                ? SAGE_DEEP
                 : effectiveBehind
                 ? '#b45309'
-                : '#2f6f3a';
-              const barFillColor = effectiveBehind ? '#d97706' : '#2f6f3a';
+                : SAGE_DEEP;
+              const barFillColor = effectiveBehind ? '#d97706' : SAGE_DEEP;
               // Where the reader needs to be today to stay on pace, expressed
               // as a percentage of the yearly goal. Used to render a tick on
               // the bar and to derive the "N behind / ahead today" caption,
@@ -1497,7 +1498,7 @@ export default function HomeScreen() {
                   {gapCaption && (
                     <Text style={{
                       fontSize:  11,
-                      color:     gapBooks >= 1 ? '#b45309' : '#2f6f3a',
+                      color:     gapBooks >= 1 ? '#b45309' : SAGE_DEEP,
                       marginTop: 6,
                       fontWeight: '600',
                     }}>
