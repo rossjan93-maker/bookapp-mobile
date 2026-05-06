@@ -1442,11 +1442,12 @@ export default function RecommendationsScreen() {
                 letterSpacing: -1.5,
                 lineHeight: 43,
               }}>For You</Text>
-              <Text style={{ fontSize: 13, color: '#9e958d', fontStyle: 'italic', marginTop: 6, lineHeight: 18 }}>
-                {tasteProfile?.label
-                  ? `Picked for ${tasteProfile.label.toLowerCase().includes('reader') ? 'you' : 'a ' + tasteProfile.label.toLowerCase()}`
-                  : 'Picked based on your taste'}
-              </Text>
+              {/* No italic taste-basis line here — the inner RecommendationsFeed
+                  sub-header already surfaces the user's profile label, and
+                  doubling it up read as repetition (e.g. "Picked for a
+                  high-confidence recommendations" + "High-confidence
+                  recommendations" stacked together). The sage rule alone
+                  carries the brand mark. */}
               <View style={{ width: 28, height: 2.5, backgroundColor: '#7b9e7e', marginTop: 10, borderRadius: 2 }} />
             </View>
             <Pressable
