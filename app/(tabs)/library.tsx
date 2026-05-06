@@ -193,6 +193,12 @@ export default function LibraryScreen() {
   const [updatingId, setUpdatingId]       = useState<string | null>(null);
   const [pendingFeedback, setPendingFeedback]           = useState<PendingFeedback | null>(null);
   const [reasonEditingId, setReasonEditingId]           = useState<string | null>(null);
+  // Per-row expansion for the Want-to-Read action drawer. Default state shows
+  // only the primary "Start Reading" CTA + a compact ··· toggle; tapping the
+  // toggle reveals "Mark Finished" and "Set aside". Keeping a single id (not a
+  // Set) means only one drawer is open at a time, which matches the rest of
+  // the row-level interaction pattern (reasonEditingId, quickLogId).
+  const [wtrExpandedId,   setWtrExpandedId]             = useState<string | null>(null);
   // Quick-page-log state (inline progress update on reading cards)
   const [quickLogId, setQuickLogId]       = useState<string | null>(null);
   const [quickLogInput, setQuickLogInput] = useState('');
@@ -1935,19 +1941,28 @@ export default function LibraryScreen() {
           );
         }
 
-        // ── Non-reading row: flat archival style ─────────────────────────────
+        // ── Non-reading row: card style with clear separation ───────────────
+        // Each row is its own bordered card so the list reads as discrete
+        // entries instead of a continuous strip. Cream-on-cream with a soft
+        // border keeps the editorial tone but makes scrollability legible.
+        // Group members keep the left rule cue so series chains still read
+        // as related, but each member is its own card.
         return (
           <View>
             <View
               ref={wtStep === 'library' && index === 0 ? firstRowRef : undefined}
               style={{
-              paddingTop: 18,
-              paddingBottom: hasExtraRow ? 14 : 18,
-              paddingLeft: isGroupMember ? 14 : 0,
-              borderBottomWidth: 1,
-              borderBottomColor: '#ede9e4',
-              borderLeftWidth: isGroupMember ? 2 : 0,
-              borderLeftColor: '#c4b5a5',
+              backgroundColor: '#fefcf9',
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: '#ede9e4',
+              paddingTop: 14,
+              paddingBottom: hasExtraRow ? 12 : 14,
+              paddingLeft: isGroupMember ? 14 : 12,
+              paddingRight: 12,
+              marginBottom: 10,
+              borderLeftWidth: isGroupMember ? 2 : 1,
+              borderLeftColor: isGroupMember ? '#c4b5a5' : '#ede9e4',
             }}>
             <TouchableOpacity
               activeOpacity={0.7}
@@ -2110,11 +2125,42 @@ export default function LibraryScreen() {
             ) : isUpdating ? (
               <ActivityIndicator color="#78716c" style={{ alignSelf: 'flex-start', marginLeft: 58 }} />
             ) : item.status === 'want_to_read' ? (
-              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginLeft: 58 }}>
-                <PrimaryButton label="Start Reading" onPress={() => handleUpdateStatus(item, 'reading')}  disabled={isBlocked} />
-                <OutlineButton label="Mark Finished" onPress={() => handleUpdateStatus(item, 'finished')} disabled={isBlocked} />
-                <DangerButton  label="Set aside"      onPress={() => handleUpdateStatus(item, 'dnf')}      disabled={isBlocked} />
-              </View>
+              // Collapsed by default: only the primary CTA + a small overflow
+              // toggle. Tapping the toggle reveals the secondary actions inline.
+              // This cuts the per-row height roughly in half and turns the
+              // Want-to-Read list from a wall of buttons into a scannable shelf.
+              wtrExpandedId === item.id ? (
+                <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginLeft: 58, alignItems: 'center' }}>
+                  <PrimaryButton label="Start Reading" onPress={() => handleUpdateStatus(item, 'reading')}  disabled={isBlocked} />
+                  <OutlineButton label="Mark Finished" onPress={() => handleUpdateStatus(item, 'finished')} disabled={isBlocked} />
+                  <DangerButton  label="Set aside"      onPress={() => handleUpdateStatus(item, 'dnf')}      disabled={isBlocked} />
+                  <TouchableOpacity
+                    onPress={() => setWtrExpandedId(null)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={{ paddingHorizontal: 6, paddingVertical: 4 }}
+                  >
+                    <Text style={{ fontSize: 12, color: '#9e958d' }}>Less</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginLeft: 58 }}>
+                  <PrimaryButton label="Start Reading" onPress={() => handleUpdateStatus(item, 'reading')} disabled={isBlocked} />
+                  <TouchableOpacity
+                    onPress={() => setWtrExpandedId(item.id)}
+                    disabled={isBlocked}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityLabel="More actions"
+                    style={{
+                      width: 36, height: 36, borderRadius: 18,
+                      borderWidth: 1, borderColor: '#ede9e4',
+                      alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: '#fefcf9',
+                    }}
+                  >
+                    <Ionicons name="ellipsis-horizontal" size={16} color="#78716c" />
+                  </TouchableOpacity>
+                </View>
+              )
             ) : item.status === 'dnf' ? (
               reasonEditingId === item.id ? (
                 <View style={{ marginLeft: 58, marginTop: 6 }}>
