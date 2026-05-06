@@ -1349,16 +1349,33 @@ export default function HomeScreen() {
               const projectedTotal = dayOfYear > 0
                 ? Math.round((read / dayOfYear) * 365)
                 : read;
-              const status = goalIsAhead
+              // Reconcile the headline status with the projection. The raw
+              // computePaceStatus() compares today's count against today's
+              // prorated expectation, which can read "On pace" while the
+              // year-end projection sits well below the goal (e.g. 10 read
+              // by day 125 of a 35-book goal: expected ≈ 11, deficit 1, so
+              // the prorated check passes — but we'd still finish ~29).
+              // After the first week of the year the projection is the more
+              // honest signal, so we let it override when it disagrees by
+              // more than the same 2-book buffer used inside pacing.ts.
+              const PROJ_BUFFER = 2;
+              let projectedState: 'ahead' | 'behind' | null = null;
+              if (dayOfYear >= 7) {
+                if (projectedTotal >= yearlyGoal + PROJ_BUFFER)      projectedState = 'ahead';
+                else if (projectedTotal <= yearlyGoal - PROJ_BUFFER) projectedState = 'behind';
+              }
+              const effectiveAhead  = goalIsAhead  || projectedState === 'ahead';
+              const effectiveBehind = (goalIsBehind || projectedState === 'behind') && !effectiveAhead;
+              const status = effectiveAhead
                 ? 'Ahead of pace'
-                : goalIsBehind
+                : effectiveBehind
                 ? 'Behind pace'
                 : (paceStatus?.expected ?? 0) === 0
                 ? 'Just getting started'
                 : 'On pace';
-              const statusColor = goalIsAhead
+              const statusColor = effectiveAhead
                 ? '#2f6f3a'
-                : goalIsBehind
+                : effectiveBehind
                 ? '#92400e'
                 : '#2f6f3a';
               // Wait at least a week before reporting a projection — early-year
@@ -1438,7 +1455,7 @@ export default function HomeScreen() {
                       marginRight:     8,
                     }}>
                       <Ionicons
-                        name={goalIsAhead ? 'arrow-up' : goalIsBehind ? 'arrow-down' : 'arrow-forward'}
+                        name={effectiveAhead ? 'arrow-up' : effectiveBehind ? 'arrow-down' : 'arrow-forward'}
                         size={11}
                         color="#fff"
                       />
