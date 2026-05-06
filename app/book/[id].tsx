@@ -26,7 +26,12 @@ import { computeDatePacing, computePagePacing, estimatePaceFinish, formatLastUpd
 import { fetchGoogleBooksMetadata } from '../../lib/googleBooks';
 import { fetchOLMeta, fetchEditions, rankEditions, searchOLWork, isOLId } from '../../lib/openLibrary';
 import type { OLMeta, OLEdition } from '../../lib/openLibrary';
-import { deriveContentWarnings, isCoveragePartial } from '../../lib/contentWarnings';
+import {
+  deriveContentWarnings,
+  deriveContentWarningsDetailed,
+  isCoveragePartial,
+  type ContentWarning,
+} from '../../lib/contentWarnings';
 import { transitionStatus, editUserBook, softDeleteBook, restoreSnapshot, saveCurrentPage, setEditionKey as persistEditionKey, setPaused as persistPaused } from '../../lib/userBookActions';
 import type { UserBookStatus, BookSnapshot, FinishedDateInput, StartedDateInput } from '../../lib/userBookActions';
 import { useUndoBar } from '../../lib/useUndoBar';
@@ -46,7 +51,7 @@ type BookMetaEntry = {
   description:     string | null;
   subjects:        string[];
   pageCount:       number | null;
-  contentWarnings: string[];
+  contentWarnings: ContentWarning[];
 };
 
 const _bookMetaCache = new Map<string, BookMetaEntry>();
@@ -93,7 +98,7 @@ function SectionLabel({ children }: { children: string }) {
 // ─── ContentWarnings ──────────────────────────────────────────────────────────
 
 type ContentWarningsProps = {
-  warnings:    string[];
+  warnings:    ContentWarning[];
   subjects:    string[];
   expanded:    boolean;
   onToggle:    () => void;
@@ -103,6 +108,22 @@ function ContentWarnings({ warnings, subjects, expanded, onToggle }: ContentWarn
   if (!warnings || warnings.length === 0) return null;
 
   const showIncompleteNote = isCoveragePartial(subjects);
+  // Split into specific (direct evidence — render as labels) and broad
+  // (weak evidence — render under a softer "may include" preface).
+  const specific = warnings.filter(w => w.confidence === 'specific');
+  const broad    = warnings.filter(w => w.confidence === 'broad');
+
+  // Collapsed-state preview text: surface the strongest 2 specific labels so
+  // the user can see the gist without having to expand. Falls back to the
+  // first broad label only if nothing specific matched.
+  const previewItems = (specific.length > 0 ? specific : broad)
+    .slice(0, 2)
+    .map(w => w.label.toLowerCase());
+  const previewText  = previewItems.length === 0
+    ? null
+    : previewItems.length === 1
+    ? previewItems[0]
+    : `${previewItems[0]}, ${previewItems[1]}${warnings.length > 2 ? ' +' + (warnings.length - 2) : ''}`;
 
   return (
     <View style={{
@@ -119,15 +140,22 @@ function ContentWarnings({ warnings, subjects, expanded, onToggle }: ContentWarn
         hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
         style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
       >
-        <Text style={{
-          fontSize: 11,
-          fontWeight: '700',
-          color: '#9e958d',
-          letterSpacing: 0.9,
-          textTransform: 'uppercase',
-        }}>
-          Heads up
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={{
+            fontSize: 11,
+            fontWeight: '700',
+            color: '#9e958d',
+            letterSpacing: 0.9,
+            textTransform: 'uppercase',
+          }}>
+            Heads up
+          </Text>
+          {!expanded && previewText && (
+            <Text style={{ fontSize: 12, color: '#78716c', marginTop: 3 }} numberOfLines={1}>
+              {previewText}
+            </Text>
+          )}
+        </View>
         <Text style={{ fontSize: 13, color: '#9e958d' }}>
           {expanded ? '▲' : '▼'}
         </Text>
@@ -135,23 +163,56 @@ function ContentWarnings({ warnings, subjects, expanded, onToggle }: ContentWarn
 
       {expanded && (
         <View style={{ marginTop: 12 }}>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {warnings.map((w, i) => (
-              <View
-                key={i}
-                style={{
-                  backgroundColor: '#f5f1ed',
-                  borderRadius: 20,
-                  paddingHorizontal: 12,
-                  paddingVertical: 5,
-                  borderWidth: 1,
-                  borderColor: '#e6e0d9',
-                }}
-              >
-                <Text style={{ fontSize: 12, color: '#78716c' }}>{w}</Text>
+          {/* Specific warnings — direct labels (high confidence). */}
+          {specific.length > 0 && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {specific.map(w => (
+                <View
+                  key={w.filterKey}
+                  style={{
+                    backgroundColor: '#f5f1ed',
+                    borderRadius: 20,
+                    paddingHorizontal: 12,
+                    paddingVertical: 5,
+                    borderWidth: 1,
+                    borderColor: '#e6e0d9',
+                  }}
+                >
+                  <Text style={{ fontSize: 12, color: '#78716c' }}>{w.label}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Broad warnings — softened "may include" preface (weak evidence,
+              typically a description-only match). Visually distinct from the
+              specific row so the user can tell at a glance which is which. */}
+          {broad.length > 0 && (
+            <View style={{ marginTop: specific.length > 0 ? 10 : 0 }}>
+              <Text style={{ fontSize: 11, color: '#b5afa9', marginBottom: 6, fontStyle: 'italic' }}>
+                May include
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {broad.map(w => (
+                  <View
+                    key={w.filterKey}
+                    style={{
+                      backgroundColor: '#fafaf7',
+                      borderRadius: 20,
+                      paddingHorizontal: 12,
+                      paddingVertical: 5,
+                      borderWidth: 1,
+                      borderColor: '#ede9e4',
+                      borderStyle: 'dashed',
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, color: '#9e958d' }}>{w.label}</Text>
+                  </View>
+                ))}
               </View>
-            ))}
-          </View>
+            </View>
+          )}
+
           {showIncompleteNote && (
             <Text style={{
               fontSize: 11,
@@ -233,7 +294,7 @@ export default function BookDetailScreen() {
     { url: string | null; externalId: string | null } | null
   >(null);
   const [metaFromGb, setMetaFromGb]                   = useState(false);
-  const [contentWarnings, setContentWarnings]         = useState<string[]>([]);
+  const [contentWarnings, setContentWarnings]         = useState<ContentWarning[]>([]);
   const [warningsExpanded, setWarningsExpanded]       = useState(false);
 
   // User reading history: rating, finished date, review, private note.
@@ -650,10 +711,11 @@ export default function BookDetailScreen() {
       if (hasCover && hasDesc && hasSubjects && hasPages) {
         const richMeta = { description: dbDesc, subjects: dbSubjects, pageCount: dbPages };
         setOlMeta(richMeta);
-        // Derive content warnings from DB subjects if not already stored.
-        const fastWarnings = dbContentWarnings.length > 0
-          ? dbContentWarnings
-          : deriveContentWarnings(dbSubjects);
+        // Re-derive in detailed form so we get up-to-date confidence flags
+        // even when the DB row was populated by an older taxonomy version.
+        // Subjects + description together drive the matcher; description-only
+        // matches surface as broad/'may include'.
+        const fastWarnings = deriveContentWarningsDetailed(dbSubjects, dbDesc);
         if (fastWarnings.length > 0) setContentWarnings(fastWarnings);
         _cacheBookMeta(bookId!, {
           description: dbDesc,
@@ -661,9 +723,13 @@ export default function BookDetailScreen() {
           pageCount:   dbPages,
           contentWarnings: fastWarnings,
         });
-        // Backfill content_warnings in DB if subjects exist but warnings column was empty.
+        // Backfill content_warnings in DB (labels only) if the column was empty.
         if (dbContentWarnings.length === 0 && fastWarnings.length > 0 && warningsColExists && supabase) {
-          supabase.from('books').update({ content_warnings: fastWarnings }).eq('id', bookId!).then(() => {});
+          supabase
+            .from('books')
+            .update({ content_warnings: fastWarnings.map(w => w.label) })
+            .eq('id', bookId!)
+            .then(() => {});
         }
         setMetaLoading(false);
         return;
@@ -749,11 +815,13 @@ export default function BookDetailScreen() {
       if (foundCover) setEnrichedCoverUrl(foundCover);
       if (foundPages) setPageCount(prev => prev ?? foundPages!);
 
-      // Derive content warnings from the best available subjects.
-      const finalSubjects = foundSubjects.length > 0 ? foundSubjects : dbSubjects;
-      const derivedWarnings = dbContentWarnings.length > 0
-        ? dbContentWarnings
-        : deriveContentWarnings(finalSubjects);
+      // Derive content warnings from the best available subjects + description.
+      // Detailed form preserves confidence (subjects → 'specific',
+      // description-only → 'broad' so the UI can render softer "may include"
+      // copy for weak evidence).
+      const finalSubjects   = foundSubjects.length > 0 ? foundSubjects : dbSubjects;
+      const finalDesc       = foundDesc ?? dbDesc;
+      const derivedWarnings = deriveContentWarningsDetailed(finalSubjects, finalDesc);
       if (derivedWarnings.length > 0) setContentWarnings(derivedWarnings);
 
       const patch: Record<string, unknown> = {};
@@ -763,7 +831,7 @@ export default function BookDetailScreen() {
       if (foundSubjects.length > 0      && subjColExists)       patch.subjects        = foundSubjects;
       if (foundPages    && !hasPages)                           patch.page_count      = foundPages;
       if (dbContentWarnings.length === 0 && derivedWarnings.length > 0 && warningsColExists)
-                                                                patch.content_warnings = derivedWarnings;
+                                                                patch.content_warnings = derivedWarnings.map(w => w.label);
 
       if (Object.keys(patch).length > 0 && supabase) {
         supabase.from('books').update(patch).eq('id', bookId!).then(() => {});

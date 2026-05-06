@@ -146,65 +146,202 @@ export function EvidenceTagsRow({ tags }: { tags: string[] }) {
   );
 }
 
+// ─── Rationale variety system ────────────────────────────────────────────────
+//
+// Each rewrite pattern below has multiple natural-language variants. A stable
+// per-book hash picks one variant deterministically — so the same card always
+// shows the same sentence (preserves snapshot stability and avoids flicker on
+// re-render), but consecutive cards in the same feed cycle through different
+// phrasings instead of all reading "Strong match for X."
+//
+// Phrases banned by product feedback (and so absent from every pool):
+//   • "you gravitate toward"
+//   • "because you liked"
+//
+// Pools mix: signal-direct ("X — squarely in your wheelhouse"), reader-relative
+// ("a quality your ratings reward"), and book-relative ("threads of X run
+// through it") so the feed never reads as one repeating template.
+// =============================================================================
+
+// Stable string hash → non-negative integer. FNV-1a 32-bit. Good distribution
+// across UUIDs and short keys; deterministic across runs/devices.
+function _hashStr(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return h >>> 0;
+}
+
+// Pick one item from a pool deterministically by (book.id, pattern-tag).
+// The pattern tag means different patterns on the same book also rotate
+// independently (e.g. trait-rewrite ≠ theme-rewrite from the same book.id).
+function _pickVariant<T>(pool: readonly T[], bookId: string, tag: string): T {
+  if (pool.length === 1) return pool[0];
+  const idx = _hashStr(`${bookId}::${tag}`) % pool.length;
+  return pool[idx];
+}
+
+const ALIGNS_POOL = [
+  (x: string) => `Strong match for ${x}.`,
+  (x: string) => `Lines up with your taste for ${x}.`,
+  (x: string) => `${capitalize(x)} — squarely in your wheelhouse.`,
+  (x: string) => `Hits the ${x} you keep reaching for.`,
+] as const;
+
+const APPRECIATION_POOL = [
+  (x: string) => `Strong ${x} — exactly the kind you tend to rate highly.`,
+  (x: string) => `Notable ${x}, the kind your highest-rated reads share.`,
+  (x: string) => `Heavy on ${x} — a hallmark of the books you finish strongest.`,
+  (x: string) => `Built on ${x}, the quality your ratings reliably reward.`,
+] as const;
+
+const READERS_TRAIT_POOL = [
+  (q: string) => `Readers especially praise ${q} — a quality your ratings reward.`,
+  (q: string) => `Reviewers single out ${q}, which lands with your taste.`,
+  (q: string) => `Reader consensus highlights ${q} — a strength your library leans on.`,
+  (q: string) => `Standout ${q} by reader consensus, and that aligns with you.`,
+] as const;
+
+const SUBJECT_POOL = [
+  (x: string) => `Covers themes of ${x} that show up in books you've loved.`,
+  (x: string) => `Threads of ${x} run through it — recurring across your library.`,
+  (x: string) => `Built around ${x}, themes that surface in your highest reads.`,
+  (x: string) => `Centers themes of ${x} you've returned to before.`,
+] as const;
+
+const THEMES_SHORT_POOL = [
+  (x: string) => `Themes of ${x} run through it.`,
+  (x: string) => `${capitalize(x)} threads through the book.`,
+  (x: string) => `Carries ${x} themes you've sat with before.`,
+  (x: string) => `Anchored in ${x}, a recurring thread for you.`,
+] as const;
+
+const LANE_FALLBACK_POOL = [
+  (l: string) => `A natural fit for your taste in ${l}.`,
+  (l: string) => `Sits squarely in the ${l} you favor.`,
+  (l: string) => `Lands in the ${l} space you read most.`,
+  (l: string) => `Squarely in your ${l} lane.`,
+] as const;
+
+const AUTHOR_LOYALTY_POOL = [
+  (lane: string, author: string) =>
+    `Consistent ${lane} from an author you keep returning to.`,
+  (lane: string, author: string) =>
+    `Another ${lane} entry from ${author}, who's earned a slot in your rotation.`,
+  (lane: string, author: string) =>
+    `${author} delivering more of the ${lane} you read regularly.`,
+] as const;
+
+// Trait-name → natural quality phrase ("its pace", "its tension", …).
+const TRAIT_QUALITY: Record<string, string> = {
+  pacing:            'its pace',
+  suspense:          'its tension',
+  emotionality:      'its emotional depth',
+  worldbuilding:     'its world-building',
+  literary_prose:    'its prose',
+  insight:           'its insight',
+  originality:       'its originality',
+  romance_intensity: 'its romantic intensity',
+  practicality:      'its practical value',
+};
+
 // ── Reason text rewriter ───────────────────────────────────────────────────────
 // Maps known system-generated reason strings to natural, reader-facing copy.
 // Returns null when the source string is too weak to surface (caller renders nothing).
 // Only handles strings with known patterns — unknown strings pass through unchanged.
-function rewriteReasonText(raw: string, laneLabel: string | null): string | null {
+//
+// The optional `bookId` enables the variety pools above. When omitted (e.g. in
+// unit tests of the matcher), a deterministic 'default' seed is used.
+function rewriteReasonText(raw: string, laneLabel: string | null, bookId: string = 'default'): string | null {
   // ── Generic lane fallback ─────────────────────────────────────────────────
   if (raw === 'Fits a genre you consistently enjoy') {
-    return laneLabel ? `A natural fit for your taste in ${laneLabel}.` : null;
+    return laneLabel ? _pickVariant(LANE_FALLBACK_POOL, bookId, 'lane')(laneLabel) : null;
   }
 
   // ── "Aligns with your preference for X and Y" ──────────────────────────
   const alignsM = raw.match(/^Aligns with your preference for (.+)$/i);
-  if (alignsM) return `Strong match for ${alignsM[1].toLowerCase()}.`;
+  if (alignsM) return _pickVariant(ALIGNS_POOL, bookId, 'aligns')(alignsM[1].toLowerCase());
 
   // ── "Matches your appreciation for X" ─────────────────────────────────
-  // Turn the fragment into a complete sentence that reads as a quality statement.
   const appreciationM = raw.match(/^Matches your appreciation for (.+)$/i);
-  if (appreciationM) return `Strong ${appreciationM[1].toLowerCase()} — a quality you consistently rate highly.`;
+  if (appreciationM) return _pickVariant(APPRECIATION_POOL, bookId, 'appreciation')(appreciationM[1].toLowerCase());
 
   // ── "Readers note strong X — which fits your profile" ─────────────────
-  // Map trait names to natural quality phrases so the sentence is grammatical.
   const readersM = raw.match(/^Readers note strong (.+?) — which fits your profile$/i);
   if (readersM) {
-    const TRAIT_QUALITY: Record<string, string> = {
-      pacing:            'its pace',
-      suspense:          'its tension',
-      emotionality:      'its emotional depth',
-      worldbuilding:     'its world-building',
-      literary_prose:    'its prose',
-      insight:           'its insight',
-      originality:       'its originality',
-      romance_intensity: 'its romantic intensity',
-      practicality:      'its practical value',
-    };
     const traitKey = readersM[1].toLowerCase();
     const quality  = TRAIT_QUALITY[traitKey] ?? `its ${traitKey}`;
-    return `Readers especially praise ${quality} — a quality you consistently rate highly.`;
+    return _pickVariant(READERS_TRAIT_POOL, bookId, 'readers')(quality);
   }
 
   // ── "Covers themes of X and Y that appear in books you've loved" ───────
-  // Subject overlap reason — pass through as-is (already good copy).
   const subjectM = raw.match(/^Covers themes of (.+) that appear in books you've loved$/i);
-  if (subjectM) return `Covers themes of ${subjectM[1]} that appear in books you've loved.`;
+  if (subjectM) return _pickVariant(SUBJECT_POOL, bookId, 'subject')(subjectM[1]);
 
   // ── "Falls within X — a genre you consistently enjoy" (expertRec path) ─
   const fallsM = raw.match(/^Falls within (.+?) — a genre you consistently enjoy$/i);
-  if (fallsM) return laneLabel ? `A natural fit for your taste in ${laneLabel}.` : 'A genre you love.';
+  if (fallsM) return laneLabel
+    ? _pickVariant(LANE_FALLBACK_POOL, bookId, 'falls')(laneLabel)
+    : 'A genre you love.';
 
   // ── "Themes (X, Y) align with your reading history" ───────────────────
   const themesM = raw.match(/^Themes? \((.+?)\) align with your reading history$/i);
-  if (themesM) return `Themes of ${themesM[1]} run through it.`;
+  if (themesM) return _pickVariant(THEMES_SHORT_POOL, bookId, 'themes')(themesM[1]);
 
   // ── "Touches on X, which occasionally appears in your reading" ─────────
-  // Suppress — too weak a signal to surface as an explanation.
+  // Weak signal — only surface as a soft lane fallback, never the primary line.
   const touchesM = raw.match(/^Touches on (.+?), which occasionally appears in your reading$/i);
-  if (touchesM) return laneLabel ? `Fits your taste in ${laneLabel}.` : null;
+  if (touchesM) return laneLabel
+    ? _pickVariant(LANE_FALLBACK_POOL, bookId, 'touches')(laneLabel)
+    : null;
 
   // ── Pass all other strings through unchanged ───────────────────────────
   return raw;
+}
+
+// =============================================================================
+// Signal-category detector + ≥2-signal combination
+// =============================================================================
+//
+// Returns the broad signal category a raw reason represents. Used by
+// buildExplanation to decide whether r0 + r1 carry *different* kinds of
+// evidence (trait + theme = combinable; trait + trait = redundant).
+type SignalCategory = 'trait' | 'theme' | 'lane' | 'author' | 'unknown';
+
+function classifySignal(raw: string): SignalCategory {
+  if (/^Matches your appreciation for /i.test(raw))                     return 'trait';
+  if (/^Readers note strong /i.test(raw))                               return 'trait';
+  if (/^Covers themes of /i.test(raw))                                  return 'theme';
+  if (/^Themes? \(/i.test(raw))                                         return 'theme';
+  if (/^Touches on /i.test(raw))                                        return 'theme';
+  if (/^Aligns with your preference for /i.test(raw))                   return 'lane';
+  if (/^Falls within .+ — a genre you consistently enjoy$/i.test(raw))  return 'lane';
+  if (raw === 'Fits a genre you consistently enjoy')                    return 'lane';
+  return 'unknown';
+}
+
+// Short trailing clause adding a *theme* signal to a primary *trait* sentence.
+// Designed to read naturally after a complete sentence ending in "."
+// Plural-safe by construction: every variant's verb agrees with "themes" (the
+// preceding noun in the templates) rather than the embedded subject string,
+// so multi-item themes like "murder and suspense" never produce ungrammatical
+// "X runs through it" copy.
+const THEME_TAIL_POOL = [
+  (x: string) => ` Themes of ${x} also surface — recurring in your library.`,
+  (x: string) => ` Themes of ${x} thread through it too, echoing your favorites.`,
+  (x: string) => ` Plus ${x} as recurring threads — the kind you return to.`,
+] as const;
+
+// Build the appended-theme tail for a "Covers themes of X..." or similar r1.
+// Returns null when the raw doesn't carry an extractable subject string.
+function _themeTailFor(raw: string, bookId: string): string | null {
+  const m1 = raw.match(/^Covers themes of (.+) that appear in books you've loved$/i);
+  if (m1) return _pickVariant(THEME_TAIL_POOL, bookId, 'theme_tail')(m1[1]);
+  const m2 = raw.match(/^Themes? \((.+?)\) align with your reading history$/i);
+  if (m2) return _pickVariant(THEME_TAIL_POOL, bookId, 'theme_tail')(m2[1]);
+  return null;
 }
 
 // Returns a naturally articled reference to a series/saga name for inline use.
@@ -323,8 +460,25 @@ function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | n
   // that is far more distinctive than a lane-wide summary.
   if (r0IsGeneric && r1 !== null) {
     const specific = capitalize(stripAuthorPrefix(r1, book.author));
-    const rewritten = rewriteReasonText(specific, laneLabel);
+    const rewritten = rewriteReasonText(specific, laneLabel, book.id);
     if (rewritten != null) return rewritten;
+  }
+
+  // ── ≥2-signal combination ──────────────────────────────────────────────────
+  // When r0 is a *specific* trait/quality reason AND r1 carries a *theme* signal,
+  // join them so the card surfaces two distinct kinds of evidence in one
+  // sentence (a quality match AND a thematic overlap), not just one.
+  // We only combine across categories — combining trait+trait or theme+theme
+  // would just be redundant repetition.
+  if (r0 !== null && !r0IsGeneric && r1 !== null) {
+    const r0Cat = classifySignal(r0);
+    const r1Cat = classifySignal(r1);
+    if (r0Cat === 'trait' && r1Cat === 'theme') {
+      const cleaned   = capitalize(stripAuthorPrefix(r0, book.author));
+      const primary   = rewriteReasonText(cleaned, laneLabel, book.id);
+      const themeTail = _themeTailFor(r1, book.id);
+      if (primary != null && themeTail != null) return primary + themeTail;
+    }
   }
 
   // ── Use reasons[0] when it's specific ───────────────────────────────────────
@@ -334,18 +488,20 @@ function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | n
   // on the card) and pass through the rest.
   if (r0 !== null && !r0IsGeneric) {
     const cleaned  = capitalize(stripAuthorPrefix(r0, book.author));
-    const rewritten = rewriteReasonText(cleaned, laneLabel);
+    const rewritten = rewriteReasonText(cleaned, laneLabel, book.id);
     if (rewritten != null) return rewritten;
   }
 
   // ── Author loyalty — only when no specific reason is available ───────────────
+  // Variants are seeded by book.id so the same author yields varied phrasing
+  // across their backlist instead of repeating the same sentence on every card.
   const authorCount = bd.author_books_read ?? 0;
   if (authorCount >= 5) {
-    return `Deep into ${book.author}'s catalog — this fits your pattern.`;
+    return `Deep into ${book.author}'s catalog — this one fits the pattern.`;
   }
   if (authorCount >= 2) {
     return laneLabel
-      ? `Consistent ${laneLabel} from an author you keep returning to.`
+      ? _pickVariant(AUTHOR_LOYALTY_POOL, book.id, 'author')(laneLabel, book.author)
       : `Another strong read from ${book.author}.`;
   }
 
@@ -353,10 +509,12 @@ function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | n
   // If r0 is generic, prefer the laneLabel shortform over the verbose CoG string.
   if (r0 !== null) {
     if (r0IsGeneric) {
-      return laneLabel ? `A strong fit for your taste in ${laneLabel}.` : null;
+      return laneLabel
+        ? _pickVariant(LANE_FALLBACK_POOL, book.id, 'lane_fallback')(laneLabel)
+        : null;
     }
     const cleaned = capitalize(stripAuthorPrefix(r0, book.author));
-    return rewriteReasonText(cleaned, laneLabel);
+    return rewriteReasonText(cleaned, laneLabel, book.id);
   }
 
   return null;
