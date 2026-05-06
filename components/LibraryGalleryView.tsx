@@ -23,6 +23,14 @@ type UserBook = {
   finished_at: string | null;
   current_page: number | null;
   progress_updated_at: string | null;
+  // edition_key — the OL edition the reader has picked for their copy. Threaded
+  // into CoverThumb so the gallery view shows the *same* cover the list view
+  // and book detail show. Without this, switching view mode visibly changes
+  // the cover for any reader who has selected a non-default edition (the trust
+  // bug reported: "Lord of the Rings cover & edition change when I switch to
+  // large covers"). Optional for back-compat with callers that don't yet
+  // select edition_key.
+  edition_key?: string | null;
   // Optional: present when the paused_at migration has been applied AND the
   // caller selected the column. When non-null on a 'reading' book it forces
   // the Paused pill regardless of recency. Treated as undefined when the
@@ -229,6 +237,7 @@ function GalleryBookCard({ book, coverWidth, coverHeight, columns }: CardProps) 
         <CoverThumb
           url={book.book?.cover_url}
           externalId={book.book?.external_id}
+          editionKey={book.edition_key}
           title={book.book?.title}
           width={coverWidth}
           height={coverHeight}
