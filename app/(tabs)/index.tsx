@@ -1,4 +1,4 @@
-import { useThemedTokens } from '../../lib/theme/useThemedTokens';
+import { SAGE_DEEP } from '../../lib/tokens';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -113,19 +113,18 @@ function timeGreeting(): string {
 }
 
 function SectionLabel({ children }: { children: string }) {
-  const T = useThemedTokens();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16, gap: 10 }}>
       <Text style={{
         fontSize: 10,
         fontWeight: '700',
-        color: T.DUST,
+        color: '#9e958d',
         letterSpacing: 1.6,
         textTransform: 'uppercase',
       }}>
         {children}
       </Text>
-      <View style={{ flex: 1, height: 1, backgroundColor: T.BORDER }} />
+      <View style={{ flex: 1, height: 1, backgroundColor: '#ede9e4' }} />
     </View>
   );
 }
@@ -141,7 +140,6 @@ type HeroReadCardProps = {
 };
 
 function HeroReadCard({ book, onPress, accentColor, projectedFinish, readState, pacingStrength }: HeroReadCardProps) {
-  const T = useThemedTokens();
   const barAnim = useRef(new Animated.Value(0)).current;
   const cardAnim = useRef(new Animated.Value(0)).current;
 
@@ -172,7 +170,7 @@ function HeroReadCard({ book, onPress, accentColor, projectedFinish, readState, 
   const hasExtraLine  = !!(projectedFinish || readState === 'paused' || readState === 'stalled');
   const cardHeight    = hasExtraLine ? 192 : 172;
   const coverWidth    = 114;
-  const sageColor     = accentColor === T.BORDER ? T.SAGE : accentColor;
+  const sageColor     = accentColor === '#ede9e4' ? '#7b9e7e' : accentColor;
 
   // Determine the extra-line content.
   // Priority: projected finish > stalled > paused (active shows nothing)
@@ -180,14 +178,14 @@ function HeroReadCard({ book, onPress, accentColor, projectedFinish, readState, 
     if (projectedFinish) {
       // Tone varies with how confident we are in the pace estimate.
       if (pacingStrength === 'weak')     return { text: `~${projectedFinish} · early days`, color: '#b8aca0' };
-      if (pacingStrength === 'strong')   return { text: `Finish ~${projectedFinish}`,       color: T.STONE };
-      /* moderate / undefined */         return { text: `Finish ~${projectedFinish}`,       color: T.DUST };
+      if (pacingStrength === 'strong')   return { text: `Finish ~${projectedFinish}`,       color: '#6b635c' };
+      /* moderate / undefined */         return { text: `Finish ~${projectedFinish}`,       color: '#9e958d' };
     }
     if (readState === 'stalled') {
       return { text: 'Stalled — pick it back up?', color: '#b08d57' };
     }
     if (readState === 'paused') {
-      return { text: 'Paused for a while', color: T.DUST };
+      return { text: 'Paused for a while', color: '#9e958d' };
     }
     return null;
   })();
@@ -199,10 +197,10 @@ function HeroReadCard({ book, onPress, accentColor, projectedFinish, readState, 
     }}>
       <TouchableOpacity activeOpacity={0.82} onPress={onPress}>
         <View style={{
-          backgroundColor: T.CARD,
+          backgroundColor: '#fefcf9',
           borderRadius: 22,
           overflow: 'hidden',
-          shadowColor: T.INK,
+          shadowColor: '#231f1b',
           shadowOpacity: 0.11,
           shadowRadius: 20,
           shadowOffset: { width: 0, height: 6 },
@@ -223,23 +221,23 @@ function HeroReadCard({ book, onPress, accentColor, projectedFinish, readState, 
             <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 18, paddingBottom: 10, justifyContent: 'space-between' }}>
               <View>
                 <Text
-                  style={{ fontSize: 16, fontWeight: '800', color: T.INK, letterSpacing: -0.4, lineHeight: 22, marginBottom: 5 }}
+                  style={{ fontSize: 16, fontWeight: '800', color: '#231f1b', letterSpacing: -0.4, lineHeight: 22, marginBottom: 5 }}
                   numberOfLines={3}
                 >
                   {book.title}
                 </Text>
-                <Text style={{ fontSize: 12, color: T.DUST, fontWeight: '500' }} numberOfLines={1}>
+                <Text style={{ fontSize: 12, color: '#9e958d', fontWeight: '500' }} numberOfLines={1}>
                   {book.author}
                 </Text>
               </View>
               <View>
                 {pct > 0 ? (
-                  <Text style={{ fontSize: 30, fontWeight: '900', color: T.INK, letterSpacing: -1, lineHeight: 34 }}>
+                  <Text style={{ fontSize: 30, fontWeight: '900', color: '#231f1b', letterSpacing: -1, lineHeight: 34 }}>
                     {Math.round(pct * 100)}
-                    <Text style={{ fontSize: 13, fontWeight: '400', color: T.DUST, letterSpacing: 0 }}>%</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '400', color: '#9e958d', letterSpacing: 0 }}>%</Text>
                   </Text>
                 ) : null}
-                <Text style={{ fontSize: 11, color: T.DUST, marginTop: 1, fontStyle: 'italic' }}>
+                <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 1, fontStyle: 'italic' }}>
                   {pct > 0
                     ? (book.page_count ? `p. ${book.current_page} of ${book.page_count}` : 'in progress')
                     : 'just started'}
@@ -253,7 +251,7 @@ function HeroReadCard({ book, onPress, accentColor, projectedFinish, readState, 
             </View>
           </View>
           {/* Full-width animated progress bar at base */}
-          <View style={{ height: 5, backgroundColor: T.BORDER }}>
+          <View style={{ height: 5, backgroundColor: '#ede9e4' }}>
             <Animated.View style={{
               height: 5,
               width: barAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'], extrapolate: 'clamp' }),
@@ -276,7 +274,6 @@ function HeroReadCard({ book, onPress, accentColor, projectedFinish, readState, 
  * Tone: reflective, not gamified. No trophies, no fire emojis.
  */
 function StreakPill({ days, longest, monthlyDays }: { days: number; longest: number; monthlyDays: number }) {
-  const T = useThemedTokens();
   const showStreak  = days >= 2;
   const showMonthly = monthlyDays >= 3;
   if (!showStreak && !showMonthly) return null;
@@ -292,12 +289,12 @@ function StreakPill({ days, longest, monthlyDays }: { days: number; longest: num
     <View style={{ marginTop: 10, gap: 3 }}>
       {streakLabel && (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: T.SAGE }} />
-          <Text style={{ fontSize: 12, color: T.SAGE, fontWeight: '600' }}>{streakLabel}</Text>
+          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#7b9e7e' }} />
+          <Text style={{ fontSize: 12, color: '#7b9e7e', fontWeight: '600' }}>{streakLabel}</Text>
         </View>
       )}
       {showMonthly && (
-        <Text style={{ fontSize: 11, color: T.DUST, marginLeft: 11 }}>
+        <Text style={{ fontSize: 11, color: '#9e958d', marginLeft: 11 }}>
           {monthlyDays} reading {monthlyDays === 1 ? 'day' : 'days'} this month
         </Text>
       )}
@@ -311,7 +308,6 @@ function StreakPill({ days, longest, monthlyDays }: { days: number; longest: num
  * Returns null when there is nothing meaningful to surface.
  */
 function ReaderInsightCard({ insights }: { insights: ReaderInsight[] }) {
-  const T = useThemedTokens();
   if (insights.length === 0) return null;
   return (
     <View style={{ marginTop: 10, gap: 5 }}>
@@ -321,11 +317,11 @@ function ReaderInsightCard({ insights }: { insights: ReaderInsight[] }) {
             width: 4,
             height: 4,
             borderRadius: 2,
-            backgroundColor: T.FAINT,
+            backgroundColor: '#c4b5a5',
             marginTop: 7,
             flexShrink: 0,
           }} />
-          <Text style={{ fontSize: 12, color: T.STONE, lineHeight: 18, flex: 1 }}>
+          <Text style={{ fontSize: 12, color: '#6b635c', lineHeight: 18, flex: 1 }}>
             {ins.text}
           </Text>
         </View>
@@ -368,7 +364,6 @@ registerCacheClearer(() => { _homeCache = null; }, 'bookData');
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
-  const T = useThemedTokens();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { newRecCount } = useContext(BadgeContext);
@@ -912,11 +907,11 @@ export default function HomeScreen() {
 
   function homeCardBorderColor(cr: CurrentRead, goal: number | null): string {
     const pageCount = cr.page_count;
-    if (!goal || !pageCount || pageCount <= 0) return T.BORDER;
+    if (!goal || !pageCount || pageCount <= 0) return '#ede9e4';
     const { state } = computePagePacing(cr.current_page ?? 0, pageCount, cr.started_at, goal);
-    if (state === 'ahead' || state === 'on_pace') return T.SAGE;
+    if (state === 'ahead' || state === 'on_pace') return '#7b9e7e';
     if (state === 'behind') return '#fcd34d';
-    return T.BORDER;
+    return '#ede9e4';
   }
 
   function progressLabel(cr: CurrentRead): string {
@@ -939,7 +934,7 @@ export default function HomeScreen() {
   if (wtStep === 'home') {
     return (
       <ScrollView
-        style={{ backgroundColor: T.BG }}
+        style={{ backgroundColor: '#f5f1ec' }}
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: insets.top + 16, paddingBottom: 40 }}
       >
         <WtDemoHome greeting={greeting} />
@@ -950,7 +945,7 @@ export default function HomeScreen() {
   return (
     <>
     <ScrollView
-      style={{ backgroundColor: T.BG }}
+      style={{ backgroundColor: '#f5f1ec' }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: insets.top + 16, paddingBottom: 40 }}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
@@ -963,7 +958,7 @@ export default function HomeScreen() {
             <Text style={{
               fontSize: 10,
               fontWeight: '600',
-              color: T.FAINT,
+              color: '#c4b5a5',
               letterSpacing: 1.4,
               textTransform: 'uppercase',
               marginBottom: 6,
@@ -973,7 +968,7 @@ export default function HomeScreen() {
             <Text style={{
               fontSize: 38,
               fontWeight: '900',
-              color: T.INK,
+              color: '#231f1b',
               letterSpacing: -1.5,
               lineHeight: 43,
             }}>
@@ -991,13 +986,13 @@ export default function HomeScreen() {
               style={{ padding: 4 }}
             >
               <View style={{ position: 'relative' }}>
-                <Ionicons name="person-add-outline" size={22} color={T.STONE} />
+                <Ionicons name="person-add-outline" size={22} color="#6b635c" />
                 {incomingFriendRequestCount > 0 && (
                   <View style={{
                     position: 'absolute',
                     top: -4,
                     right: -5,
-                    backgroundColor: T.INK,
+                    backgroundColor: '#231f1b',
                     borderRadius: 8,
                     minWidth: 16,
                     height: 16,
@@ -1005,7 +1000,7 @@ export default function HomeScreen() {
                     justifyContent: 'center',
                     paddingHorizontal: 3,
                   }}>
-                    <Text style={{ color: T.CARD, fontSize: 9, fontWeight: '700', lineHeight: 12 }}>
+                    <Text style={{ color: '#fefcf9', fontSize: 9, fontWeight: '700', lineHeight: 12 }}>
                       {incomingFriendRequestCount}
                     </Text>
                   </View>
@@ -1020,13 +1015,13 @@ export default function HomeScreen() {
               style={{ padding: 4 }}
             >
               <View style={{ position: 'relative' }}>
-                <Ionicons name="mail-outline" size={24} color={T.STONE} />
+                <Ionicons name="mail-outline" size={24} color="#6b635c" />
                 {newRecCount > 0 && (
                   <View style={{
                     position: 'absolute',
                     top: -4,
                     right: -5,
-                    backgroundColor: T.INK,
+                    backgroundColor: '#231f1b',
                     borderRadius: 8,
                     minWidth: 16,
                     height: 16,
@@ -1034,7 +1029,7 @@ export default function HomeScreen() {
                     justifyContent: 'center',
                     paddingHorizontal: 3,
                   }}>
-                    <Text style={{ color: T.CARD, fontSize: 9, fontWeight: '700', lineHeight: 12 }}>
+                    <Text style={{ color: '#fefcf9', fontSize: 9, fontWeight: '700', lineHeight: 12 }}>
                       {newRecCount}
                     </Text>
                   </View>
@@ -1045,7 +1040,7 @@ export default function HomeScreen() {
         </View>
 
         {currentReads.length > 0 && (
-          <Text style={{ fontSize: 13, color: T.SAGE, fontWeight: '600', marginTop: 8, letterSpacing: 0.1 }}>
+          <Text style={{ fontSize: 13, color: '#7b9e7e', fontWeight: '600', marginTop: 8, letterSpacing: 0.1 }}>
             {currentReads.length === 1
               ? 'Reading 1 book right now'
               : `Reading ${currentReads.length} books right now`}
@@ -1135,7 +1130,7 @@ export default function HomeScreen() {
                     })}
                   >
                     <View style={{
-                      backgroundColor: T.CARD,
+                      backgroundColor: '#fefcf9',
                       borderRadius: 14,
                       padding: 14,
                       width: 220,
@@ -1151,7 +1146,7 @@ export default function HomeScreen() {
                         <CoverThumb url={cr.cover_url} externalId={cr.external_id} editionKey={cr.edition_key} title={cr.title} width={44} height={64} />
                         <View style={{ flex: 1, marginLeft: 10 }}>
                           <Text numberOfLines={2} style={{
-                            fontSize: 14, fontWeight: '700', color: T.INK, lineHeight: 19, marginBottom: 3,
+                            fontSize: 14, fontWeight: '700', color: '#231f1b', lineHeight: 19, marginBottom: 3,
                           }}>{cr.title}</Text>
                           <Text numberOfLines={1} style={{ fontSize: 12, color: '#78716c' }}>{cr.author}</Text>
                         </View>
@@ -1159,23 +1154,23 @@ export default function HomeScreen() {
                       {hasProgress ? (
                         <>
                           <View style={{
-                            height: 3, backgroundColor: T.BORDER, borderRadius: 2, overflow: 'hidden', marginBottom: 4,
+                            height: 3, backgroundColor: '#ede9e4', borderRadius: 2, overflow: 'hidden', marginBottom: 4,
                           }}>
                             <View style={{
-                              height: 3, width: `${pct ?? 0}%`, backgroundColor: T.INK, borderRadius: 2,
+                              height: 3, width: `${pct ?? 0}%`, backgroundColor: '#231f1b', borderRadius: 2,
                             }} />
                           </View>
-                          <Text style={{ fontSize: 10, color: T.DUST, marginBottom: subLine ? 4 : 0 }}>
+                          <Text style={{ fontSize: 10, color: '#9e958d', marginBottom: subLine ? 4 : 0 }}>
                             {progressLabel(cr)}
                           </Text>
                         </>
                       ) : (
-                        <Text style={{ fontSize: 10, color: T.DUST, marginBottom: subLine ? 4 : 0 }}>
+                        <Text style={{ fontSize: 10, color: '#9e958d', marginBottom: subLine ? 4 : 0 }}>
                           In progress
                         </Text>
                       )}
                       {subLine && (
-                        <Text style={{ fontSize: 10, color: T.DUST, fontStyle: 'italic' }}>{subLine}</Text>
+                        <Text style={{ fontSize: 10, color: '#9e958d', fontStyle: 'italic' }}>{subLine}</Text>
                       )}
                     </View>
                   </TouchableOpacity>
@@ -1288,7 +1283,7 @@ export default function HomeScreen() {
                           <Text style={{
                             fontSize:      28,
                             fontWeight:    '800',
-                            color:         T.SAGE_DEEP,
+                            color:         SAGE_DEEP,
                             letterSpacing: -0.6,
                             lineHeight:    30,
                             textAlign:     'center',
@@ -1314,7 +1309,7 @@ export default function HomeScreen() {
                         </View>
                         <Text style={{
                           fontSize:   12,
-                          color:      T.STONE,
+                          color:      '#6b635c',
                           marginTop:  6,
                           lineHeight: 15,
                           textAlign:  'center',
@@ -1384,11 +1379,11 @@ export default function HomeScreen() {
               // chip; barFillColor drives the actual progress fill so the
               // bar visibly carries the same signal as the label.
               const statusColor = effectiveAhead
-                ? T.SAGE_DEEP
+                ? SAGE_DEEP
                 : effectiveBehind
                 ? '#b45309'
-                : T.SAGE_DEEP;
-              const barFillColor = effectiveBehind ? '#d97706' : T.SAGE_DEEP;
+                : SAGE_DEEP;
+              const barFillColor = effectiveBehind ? '#d97706' : SAGE_DEEP;
               // Where the reader needs to be today to stay on pace, expressed
               // as a percentage of the yearly goal. Used to render a tick on
               // the bar and to derive the "N behind / ahead today" caption,
@@ -1413,7 +1408,7 @@ export default function HomeScreen() {
                   marginTop:      28,
                   paddingTop:     28,
                   borderTopWidth: 1,
-                  borderTopColor: T.BORDER,
+                  borderTopColor: '#ede9e4',
                 }}>
                   {/* Sub-label sits above the count to title this sub-block
                       as the user's yearly reading progress, distinct from
@@ -1421,7 +1416,7 @@ export default function HomeScreen() {
                   <Text style={{
                     fontSize:       10,
                     fontWeight:     '700',
-                    color:          T.DUST,
+                    color:          '#9e958d',
                     letterSpacing:  1.6,
                     textTransform:  'uppercase',
                     marginBottom:   10,
@@ -1431,21 +1426,21 @@ export default function HomeScreen() {
                   <Text style={{
                     fontSize:      32,
                     fontWeight:    '800',
-                    color:         T.INK,
+                    color:         '#231f1b',
                     letterSpacing: -0.8,
                     lineHeight:    36,
                   }}>
                     {read}
-                    <Text style={{ fontSize: 18, fontWeight: '500', color: T.DUST }}>
+                    <Text style={{ fontSize: 18, fontWeight: '500', color: '#9e958d' }}>
                       {` / ${yearlyGoal}`}
                     </Text>
                   </Text>
-                  <Text style={{ fontSize: 12, color: T.STONE, marginTop: 4 }}>
+                  <Text style={{ fontSize: 12, color: '#6b635c', marginTop: 4 }}>
                     books this year
                   </Text>
                   <View style={{
                     height:          10,
-                    backgroundColor: T.BORDER,
+                    backgroundColor: '#ede9e4',
                     borderRadius:    5,
                     marginTop:       14,
                     position:        'relative',
@@ -1503,7 +1498,7 @@ export default function HomeScreen() {
                   {gapCaption && (
                     <Text style={{
                       fontSize:  11,
-                      color:     gapBooks >= 1 ? '#b45309' : T.SAGE_DEEP,
+                      color:     gapBooks >= 1 ? '#b45309' : SAGE_DEEP,
                       marginTop: 6,
                       fontWeight: '600',
                     }}>
@@ -1541,10 +1536,10 @@ export default function HomeScreen() {
                     </Text>
                     {projectionSentence && (
                       <>
-                        <Text style={{ color: T.FAINT, marginRight: 10, fontSize: 13 }}>·</Text>
+                        <Text style={{ color: '#c4b5a5', marginRight: 10, fontSize: 13 }}>·</Text>
                         <Text style={{
                           fontSize:  13,
-                          color:     T.STONE,
+                          color:     '#6b635c',
                           flexShrink: 1,
                         }}>
                           {projectionSentence}
@@ -1566,7 +1561,7 @@ export default function HomeScreen() {
                           flexDirection:     'row',
                           alignItems:        'center',
                           gap:               6,
-                          backgroundColor:   T.BORDER,
+                          backgroundColor:   '#ede9e4',
                           paddingHorizontal: 14,
                           paddingVertical:   6,
                           borderRadius:      999,
@@ -1574,7 +1569,7 @@ export default function HomeScreen() {
                       >
                         <Text style={{
                           fontSize:   12,
-                          color:      T.STONE,
+                          color:      '#6b635c',
                           fontWeight: '600',
                         }}>
                           {coversExpanded ? 'Hide' : 'View'} {booksThisYear.length} {booksThisYear.length === 1 ? 'book' : 'books'}
@@ -1582,7 +1577,7 @@ export default function HomeScreen() {
                         <Ionicons
                           name={coversExpanded ? 'chevron-up' : 'chevron-down'}
                           size={12}
-                          color={T.STONE}
+                          color="#6b635c"
                         />
                       </TouchableOpacity>
                     </View>
@@ -1609,7 +1604,7 @@ export default function HomeScreen() {
                 marginTop:      28,
                 paddingTop:     28,
                 borderTopWidth: 1,
-                borderTopColor: T.BORDER,
+                borderTopColor: '#ede9e4',
               }}>
                 <View>
                   <ScrollView
@@ -1756,7 +1751,7 @@ export default function HomeScreen() {
             style={{ marginBottom: 12 }}
           >
             <View style={{
-              backgroundColor: T.CARD,
+              backgroundColor: '#fefcf9',
               borderRadius: 14,
               paddingHorizontal: 16,
               paddingVertical: 14,
@@ -1770,23 +1765,23 @@ export default function HomeScreen() {
             }}>
               <View style={{
                 width: 38, height: 38, borderRadius: 19,
-                backgroundColor: T.BORDER,
+                backgroundColor: '#ede9e4',
                 alignItems: 'center', justifyContent: 'center',
                 marginRight: 12,
               }}>
                 <Text style={{ fontSize: 18 }}>📬</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: '600', color: T.INK, marginBottom: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', marginBottom: 1 }}>
                   {pendingRecCount === 1
                     ? '1 recommendation waiting'
                     : `${pendingRecCount} recommendations waiting`}
                 </Text>
-                <Text style={{ fontSize: 12, color: T.DUST }}>
+                <Text style={{ fontSize: 12, color: '#9e958d' }}>
                   See what your friends picked for you
                 </Text>
               </View>
-              <Text style={{ fontSize: 18, color: T.BORDER }}>›</Text>
+              <Text style={{ fontSize: 18, color: '#ede9e4' }}>›</Text>
             </View>
           </TouchableOpacity>
         )}
@@ -1796,9 +1791,9 @@ export default function HomeScreen() {
             <Text style={{ color: '#b91c1c', fontSize: 14, marginBottom: 10 }}>{feedError}</Text>
             <TouchableOpacity
               onPress={() => { setFeedError(null); loadAll(); }}
-              style={{ alignSelf: 'flex-start', borderWidth: 1, borderColor: T.BORDER, borderRadius: 8, paddingVertical: 7, paddingHorizontal: 14 }}
+              style={{ alignSelf: 'flex-start', borderWidth: 1, borderColor: '#ede9e4', borderRadius: 8, paddingVertical: 7, paddingHorizontal: 14 }}
             >
-              <Text style={{ fontSize: 13, color: T.STONE, fontWeight: '500' }}>Try again</Text>
+              <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500' }}>Try again</Text>
             </TouchableOpacity>
           </View>
         ) : totalFeedWithVerb === 0 && pendingRecCount === 0 ? (
@@ -1806,7 +1801,7 @@ export default function HomeScreen() {
             ref={(!currentReads.length && !(yearlyGoal && yearlyGoal > 0)) ? homeTargetRef : undefined}
             onLayout={(!currentReads.length && !(yearlyGoal && yearlyGoal > 0)) ? measureHomeContent : undefined}
             style={{
-              backgroundColor: T.CARD,
+              backgroundColor: '#fefcf9',
               borderRadius: 14,
               padding: 24,
               alignItems: 'center',
@@ -1817,7 +1812,7 @@ export default function HomeScreen() {
               elevation: 1,
             }}
           >
-            <Text style={{ color: T.DUST, fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
+            <Text style={{ color: '#9e958d', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
               Nothing yet.{'\n'}Finish or rate a book to get started.
             </Text>
           </View>
@@ -1834,13 +1829,13 @@ export default function HomeScreen() {
               const card = (
                 <View
                   style={{
-                    backgroundColor: T.CARD,
+                    backgroundColor: '#fefcf9',
                     borderRadius: 14,
                     paddingVertical: 14,
                     paddingLeft: 16,
                     paddingRight: 14,
                     marginBottom: 8,
-                    shadowColor: T.INK,
+                    shadowColor: '#231f1b',
                     shadowOpacity: 0.04,
                     shadowRadius: 8,
                     shadowOffset: { width: 0, height: 2 },
@@ -1851,26 +1846,26 @@ export default function HomeScreen() {
                 >
                   {/* Text on LEFT — actor name immediately visible */}
                   <View style={{ flex: 1, marginRight: 12 }}>
-                    <Text style={{ fontSize: 12, color: T.DUST, marginBottom: 3 }}>
-                      <Text style={{ fontWeight: '700', color: T.STONE }}>{actor}</Text>
+                    <Text style={{ fontSize: 12, color: '#9e958d', marginBottom: 3 }}>
+                      <Text style={{ fontWeight: '700', color: '#6b635c' }}>{actor}</Text>
                       {' '}{verb}
                     </Text>
                     {title ? (
-                      <Text style={{ fontSize: 14, fontWeight: '700', color: T.INK, lineHeight: 20, letterSpacing: -0.2 }} numberOfLines={2}>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#231f1b', lineHeight: 20, letterSpacing: -0.2 }} numberOfLines={2}>
                         {title}
                       </Text>
                     ) : null}
                     {author ? (
-                      <Text style={{ fontSize: 11, color: T.DUST, marginTop: 2 }} numberOfLines={1}>
+                      <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2 }} numberOfLines={1}>
                         {author}
                       </Text>
                     ) : null}
                     {event.rating != null ? (
-                      <Text style={{ fontSize: 12, color: T.SAGE, marginTop: 3, fontWeight: '600' }}>
+                      <Text style={{ fontSize: 12, color: '#7b9e7e', marginTop: 3, fontWeight: '600' }}>
                         {'★'.repeat(event.rating)}{'☆'.repeat(5 - event.rating)}
                       </Text>
                     ) : null}
-                    <Text style={{ fontSize: 10, color: T.FAINT, marginTop: 4 }}>
+                    <Text style={{ fontSize: 10, color: '#c4b5a5', marginTop: 4 }}>
                       {relativeTime(event.created_at)}
                     </Text>
                   </View>
@@ -1911,7 +1906,7 @@ export default function HomeScreen() {
               <Text
                 onPress={() => router.push('/(tabs)/notes')}
                 style={{
-                  color: T.DUST,
+                  color: '#9e958d',
                   fontSize: 13,
                   textAlign: 'center',
                   marginTop: 8,

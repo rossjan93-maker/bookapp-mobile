@@ -8,7 +8,6 @@ import { supabase } from '../lib/supabase';
 import { clearAllTabCaches } from '../lib/tabCache';
 import { readOnboardingStage, writeOnboardingStage } from '../lib/onboardingStage';
 import { clearLocalOnboardingState } from '../lib/localStateClear';
-import { ThemeProvider } from '../lib/theme/ThemeProvider';
 
 // ─── Bootstrap context ─────────────────────────────────────────────────────────
 // Exposes live session + needsOnboarding so child routes (especially
@@ -627,20 +626,18 @@ export default function RootLayout() {
   }, [session, segments, needsOnboarding, passwordRecovery]);
 
   return (
-    <ThemeProvider>
-      <BootstrapContext.Provider value={{
-        session,
-        needsOnboarding,
-        passwordRecovery,
-        clearPasswordRecovery: () => setPasswordRecovery(false),
-      }}>
-        <OnboardingBridgeContext.Provider value={{ completeOnboarding: () => setNeedsOnboarding(false) }}>
-          <View style={{ flex: 1 }}>
-            <Stack screenOptions={{ headerShown: false }} />
-            <ToastContainer />
-          </View>
-        </OnboardingBridgeContext.Provider>
-      </BootstrapContext.Provider>
-    </ThemeProvider>
+    <BootstrapContext.Provider value={{
+      session,
+      needsOnboarding,
+      passwordRecovery,
+      clearPasswordRecovery: () => setPasswordRecovery(false),
+    }}>
+      <OnboardingBridgeContext.Provider value={{ completeOnboarding: () => setNeedsOnboarding(false) }}>
+        <View style={{ flex: 1 }}>
+          <Stack screenOptions={{ headerShown: false }} />
+          <ToastContainer />
+        </View>
+      </OnboardingBridgeContext.Provider>
+    </BootstrapContext.Provider>
   );
 }

@@ -1,5 +1,4 @@
-import { ThemePickerCard } from '../components/ThemePickerCard';
-import { useThemedTokens } from '../lib/theme/useThemedTokens';
+import { SAGE_DEEP } from '../lib/tokens';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -27,18 +26,12 @@ import {
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
-// NOTE: All sub-components below call useThemedTokens() themselves so they
-// remain themable when reused from anywhere in the file (they are defined
-// at module scope, so the screen-level `T` constant is not in their lexical
-// scope).
-
 function SectionHeader({ children }: { children: string }) {
-  const T = useThemedTokens();
   return (
     <Text style={{
       fontSize: 11,
       fontWeight: '700',
-      color: T.DUST,
+      color: '#9e958d',
       letterSpacing: 0.9,
       textTransform: 'uppercase',
       marginBottom: 8,
@@ -51,10 +44,9 @@ function SectionHeader({ children }: { children: string }) {
 }
 
 function SettingsCard({ children }: { children: React.ReactNode }) {
-  const T = useThemedTokens();
   return (
     <View style={{
-      backgroundColor: T.CARD,
+      backgroundColor: '#fefcf9',
       borderRadius: 14,
       overflow: 'hidden',
       shadowColor: '#000',
@@ -69,7 +61,6 @@ function SettingsCard({ children }: { children: React.ReactNode }) {
 }
 
 function SettingsRow({ last, children }: { last?: boolean; children: React.ReactNode }) {
-  const T = useThemedTokens();
   return (
     <View style={{
       flexDirection: 'row',
@@ -77,7 +68,7 @@ function SettingsRow({ last, children }: { last?: boolean; children: React.React
       paddingHorizontal: 16,
       paddingVertical: 14,
       borderBottomWidth: last ? 0 : 1,
-      borderBottomColor: T.BORDER,
+      borderBottomColor: '#ede9e4',
       minHeight: 52,
     }}>
       {children}
@@ -86,11 +77,10 @@ function SettingsRow({ last, children }: { last?: boolean; children: React.React
 }
 
 function RowLabel({ children }: { children: string }) {
-  const T = useThemedTokens();
   return (
     <Text style={{
       fontSize: 14,
-      color: T.STONE,
+      color: '#57534e',
       width: 96,
       fontWeight: '500',
       flexShrink: 0,
@@ -101,14 +91,13 @@ function RowLabel({ children }: { children: string }) {
 }
 
 function CardFooter({ children }: { children: React.ReactNode }) {
-  const T = useThemedTokens();
   return (
     <View style={{
       paddingHorizontal: 16,
       paddingVertical: 10,
       borderTopWidth: 1,
-      borderTopColor: T.BORDER,
-      backgroundColor: T.BG,
+      borderTopColor: '#ede9e4',
+      backgroundColor: '#f5f1ec',
     }}>
       {children}
     </View>
@@ -128,7 +117,6 @@ function SaveButton({
   disabled?: boolean;
   label: string;
 }) {
-  const T = useThemedTokens();
   const isDisabled = saving || saved || !!disabled;
   return (
     <TouchableOpacity
@@ -136,7 +124,7 @@ function SaveButton({
       disabled={isDisabled}
       style={{
         marginTop: 10,
-        backgroundColor: saved ? T.SAGE_DEEP : isDisabled ? T.BORDER : T.INK,
+        backgroundColor: saved ? SAGE_DEEP : isDisabled ? '#ede9e4' : '#231f1b',
         borderRadius: 10,
         paddingVertical: 13,
         alignItems: 'center',
@@ -156,7 +144,6 @@ function SaveButton({
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function SettingsScreen() {
-  const T = useThemedTokens();
   const router = useRouter();
 
   const [userId, setUserId]         = useState<string | null>(null);
@@ -488,7 +475,7 @@ export default function SettingsScreen() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: T.BG }}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f1ec' }}>
         <ActivityIndicator color="#78716c" />
       </View>
     );
@@ -496,7 +483,7 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: T.BG }}
+      style={{ flex: 1, backgroundColor: '#f5f1ec' }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 60 }}
       keyboardShouldPersistTaps="handled"
     >
@@ -505,13 +492,13 @@ export default function SettingsScreen() {
       <Text style={{
         fontSize: 28,
         fontWeight: '800',
-        color: T.INK,
+        color: '#231f1b',
         letterSpacing: -0.5,
         marginBottom: 4,
       }}>
         Settings
       </Text>
-      <Text style={{ fontSize: 13, color: T.DUST, lineHeight: 20 }}>
+      <Text style={{ fontSize: 13, color: '#9e958d', lineHeight: 20 }}>
         Profile, reading goals, and preferences.
       </Text>
 
@@ -526,21 +513,21 @@ export default function SettingsScreen() {
         </SettingsRow>
         <SettingsRow last>
           <RowLabel>Username</RowLabel>
-          <Text style={{ fontSize: 15, color: T.DUST, paddingVertical: 2 }}>@</Text>
+          <Text style={{ fontSize: 15, color: '#9e958d', paddingVertical: 2 }}>@</Text>
           <TextInput
             value={username}
             onChangeText={v => { setUsername(v); setAccountDirty(true); setAccountSaved(false); setAccountError(null); }}
             placeholder="your_username"
-            placeholderTextColor={T.FAINT}
+            placeholderTextColor="#c4b5a5"
             autoCapitalize="none"
             autoCorrect={false}
-            style={{ flex: 1, fontSize: 15, color: T.INK, paddingVertical: 2, marginLeft: 2 }}
+            style={{ flex: 1, fontSize: 15, color: '#231f1b', paddingVertical: 2, marginLeft: 2 }}
           />
           {usernameStatus === 'checking' && (
-            <ActivityIndicator size="small" color={T.DUST} style={{ marginLeft: 6 }} />
+            <ActivityIndicator size="small" color="#9e958d" style={{ marginLeft: 6 }} />
           )}
           {usernameStatus === 'available' && (
-            <Text style={{ fontSize: 15, color: T.SAGE_DEEP, marginLeft: 6 }}>✓</Text>
+            <Text style={{ fontSize: 15, color: SAGE_DEEP, marginLeft: 6 }}>✓</Text>
           )}
           {usernameStatus === 'taken' && (
             <Text style={{ fontSize: 15, color: '#dc2626', marginLeft: 6 }}>✕</Text>
@@ -559,7 +546,7 @@ export default function SettingsScreen() {
         </Text>
       )}
       {usernameStatus === 'available' && !accountError && (
-        <Text style={{ fontSize: 12, color: T.SAGE_DEEP, marginTop: 8, paddingHorizontal: 2 }}>
+        <Text style={{ fontSize: 12, color: SAGE_DEEP, marginTop: 8, paddingHorizontal: 2 }}>
           Username is available.
         </Text>
       )}
@@ -597,7 +584,7 @@ export default function SettingsScreen() {
               <SettingsRow last={!showApple}>
                 <RowLabel>Google</RowLabel>
                 {hasGoogle ? (
-                  <Text style={{ fontSize: 14, color: T.SAGE_DEEP, paddingVertical: 2 }}>
+                  <Text style={{ fontSize: 14, color: SAGE_DEEP, paddingVertical: 2 }}>
                     Connected ✓
                   </Text>
                 ) : (
@@ -608,14 +595,14 @@ export default function SettingsScreen() {
                       paddingVertical: 6,
                       paddingHorizontal: 12,
                       borderRadius: 8,
-                      backgroundColor: linkingProvider === 'google' ? '#e7e5e0' : T.INK,
+                      backgroundColor: linkingProvider === 'google' ? '#e7e5e0' : '#231f1b',
                       opacity: linkingProvider !== null && linkingProvider !== 'google' ? 0.5 : 1,
                     }}
                   >
                     {linkingProvider === 'google' ? (
-                      <ActivityIndicator size="small" color={T.INK} />
+                      <ActivityIndicator size="small" color="#231f1b" />
                     ) : (
-                      <Text style={{ color: T.CARD, fontSize: 13, fontWeight: '600' }}>
+                      <Text style={{ color: '#fefcf9', fontSize: 13, fontWeight: '600' }}>
                         Connect
                       </Text>
                     )}
@@ -627,7 +614,7 @@ export default function SettingsScreen() {
                 <SettingsRow last>
                   <RowLabel>Apple</RowLabel>
                   {hasApple ? (
-                    <Text style={{ fontSize: 14, color: T.SAGE_DEEP, paddingVertical: 2 }}>
+                    <Text style={{ fontSize: 14, color: SAGE_DEEP, paddingVertical: 2 }}>
                       Connected ✓
                     </Text>
                   ) : (
@@ -638,14 +625,14 @@ export default function SettingsScreen() {
                         paddingVertical: 6,
                         paddingHorizontal: 12,
                         borderRadius: 8,
-                        backgroundColor: linkingProvider === 'apple' ? '#e7e5e0' : T.INK,
+                        backgroundColor: linkingProvider === 'apple' ? '#e7e5e0' : '#231f1b',
                         opacity: linkingProvider !== null && linkingProvider !== 'apple' ? 0.5 : 1,
                       }}
                     >
                       {linkingProvider === 'apple' ? (
-                        <ActivityIndicator size="small" color={T.INK} />
+                        <ActivityIndicator size="small" color="#231f1b" />
                       ) : (
-                        <Text style={{ color: T.CARD, fontSize: 13, fontWeight: '600' }}>
+                        <Text style={{ color: '#fefcf9', fontSize: 13, fontWeight: '600' }}>
                           Connect
                         </Text>
                       )}
@@ -658,7 +645,7 @@ export default function SettingsScreen() {
         })()}
       </SettingsCard>
       {linkSuccess && (
-        <Text style={{ fontSize: 12, color: T.SAGE_DEEP, marginTop: 8, paddingHorizontal: 2 }}>
+        <Text style={{ fontSize: 12, color: SAGE_DEEP, marginTop: 8, paddingHorizontal: 2 }}>
           {linkSuccess}
         </Text>
       )}
@@ -677,9 +664,9 @@ export default function SettingsScreen() {
             value={firstName}
             onChangeText={v => { setFirstName(v); setProfileDirty(true); setProfileSaved(false); }}
             placeholder="First"
-            placeholderTextColor={T.FAINT}
+            placeholderTextColor="#c4b5a5"
             autoCapitalize="words"
-            style={{ flex: 1, fontSize: 15, color: T.INK, paddingVertical: 2 }}
+            style={{ flex: 1, fontSize: 15, color: '#231f1b', paddingVertical: 2 }}
           />
         </SettingsRow>
         <SettingsRow last>
@@ -688,20 +675,20 @@ export default function SettingsScreen() {
             value={lastName}
             onChangeText={v => { setLastName(v); setProfileDirty(true); setProfileSaved(false); }}
             placeholder="Last"
-            placeholderTextColor={T.FAINT}
+            placeholderTextColor="#c4b5a5"
             autoCapitalize="words"
-            style={{ flex: 1, fontSize: 15, color: T.INK, paddingVertical: 2 }}
+            style={{ flex: 1, fontSize: 15, color: '#231f1b', paddingVertical: 2 }}
           />
         </SettingsRow>
         <CardFooter>
           {hasName ? (
-            <Text style={{ fontSize: 12, color: T.DUST, lineHeight: 18 }}>
+            <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
               Shown as{' '}
-              <Text style={{ fontWeight: '600', color: T.STONE }}>{displayPreview}</Text>
+              <Text style={{ fontWeight: '600', color: '#57534e' }}>{displayPreview}</Text>
               {' '}to friends across the app.
             </Text>
           ) : (
-            <Text style={{ fontSize: 12, color: T.DUST, lineHeight: 18 }}>
+            <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
               Add your name — shown to friends instead of your username.
             </Text>
           )}
@@ -723,15 +710,6 @@ export default function SettingsScreen() {
         />
       )}
 
-      {/* ── Appearance (theme picker) ────────────────────────────────────────
-          The picker is a self-contained component that consumes useAppTheme()
-          directly — switching themes is instant and persists across restarts. */}
-      <SectionHeader>Appearance</SectionHeader>
-      <Text style={{ fontSize: 12, color: T.DUST, lineHeight: 18, marginBottom: 12, paddingHorizontal: 2 }}>
-        Pick a theme for the look and feel of Readstack. Your choice is saved on this device.
-      </Text>
-      <ThemePickerCard />
-
       {/* ── Reading (yearly goal) ────────────────────────────────────────────── */}
       <SectionHeader>Reading</SectionHeader>
       <SettingsCard>
@@ -746,16 +724,16 @@ export default function SettingsScreen() {
               setGoalError(null);
             }}
             placeholder="e.g. 24"
-            placeholderTextColor={T.FAINT}
+            placeholderTextColor="#c4b5a5"
             keyboardType="number-pad"
             returnKeyType="done"
             onSubmitEditing={handleSaveGoal}
-            style={{ flex: 1, fontSize: 17, fontWeight: '600', color: T.INK, paddingVertical: 2 }}
+            style={{ flex: 1, fontSize: 17, fontWeight: '600', color: '#231f1b', paddingVertical: 2 }}
           />
-          <Text style={{ fontSize: 13, color: T.DUST, marginLeft: 8 }}>books / yr</Text>
+          <Text style={{ fontSize: 13, color: '#9e958d', marginLeft: 8 }}>books / yr</Text>
         </SettingsRow>
         <CardFooter>
-          <Text style={{ fontSize: 12, color: T.DUST, lineHeight: 18 }}>
+          <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
             Books you aim to finish by Dec 31. Drives pacing on your dashboard.
           </Text>
         </CardFooter>
@@ -786,17 +764,17 @@ export default function SettingsScreen() {
         >
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: T.INK, marginBottom: 3 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', marginBottom: 3 }}>
                 Import from Goodreads
               </Text>
-              <Text style={{ fontSize: 12, color: T.DUST, lineHeight: 18 }}>
+              <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
                 Bring your reading history into readstack
               </Text>
             </View>
-            <Text style={{ fontSize: 20, color: T.FAINT, marginLeft: 10 }}>›</Text>
+            <Text style={{ fontSize: 20, color: '#c4b5a5', marginLeft: 10 }}>›</Text>
           </View>
         </TouchableOpacity>
-        <View style={{ height: 1, backgroundColor: T.BORDER, marginHorizontal: 16 }} />
+        <View style={{ height: 1, backgroundColor: '#ede9e4', marginHorizontal: 16 }} />
         <TouchableOpacity
           onPress={() => router.push('/import/repair-dates')}
           activeOpacity={0.75}
@@ -804,14 +782,14 @@ export default function SettingsScreen() {
         >
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: T.INK, marginBottom: 3 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', marginBottom: 3 }}>
                 Repair reading dates
               </Text>
-              <Text style={{ fontSize: 12, color: T.DUST, lineHeight: 18 }}>
+              <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
                 Fix yearly goal count if old books appear as finished this year
               </Text>
             </View>
-            <Text style={{ fontSize: 20, color: T.FAINT, marginLeft: 10 }}>›</Text>
+            <Text style={{ fontSize: 20, color: '#c4b5a5', marginLeft: 10 }}>›</Text>
           </View>
         </TouchableOpacity>
       </SettingsCard>
@@ -828,21 +806,21 @@ export default function SettingsScreen() {
             >
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: T.INK, marginBottom: 3 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', marginBottom: 3 }}>
                     Developer tools
                   </Text>
-                  <Text style={{ fontSize: 12, color: T.DUST, lineHeight: 18 }}>
+                  <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
                     {advancedExpanded ? 'Tap to collapse' : 'Tap to reveal'}
                   </Text>
                 </View>
-                <Text style={{ fontSize: 14, color: T.FAINT, marginLeft: 10 }}>
+                <Text style={{ fontSize: 14, color: '#c4b5a5', marginLeft: 10 }}>
                   {advancedExpanded ? '↑' : '↓'}
                 </Text>
               </View>
             </TouchableOpacity>
             {advancedExpanded && (
               <>
-                <View style={{ height: 1, backgroundColor: T.BORDER, marginHorizontal: 16 }} />
+                <View style={{ height: 1, backgroundColor: '#ede9e4', marginHorizontal: 16 }} />
                 <TouchableOpacity
                   onPress={handleSubjectRepair}
                   disabled={subjectRepairRunning}
@@ -851,17 +829,17 @@ export default function SettingsScreen() {
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontWeight: '500', color: T.INK, marginBottom: 3 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '500', color: '#231f1b', marginBottom: 3 }}>
                         Repair Subject Coverage
                       </Text>
-                      <Text style={{ fontSize: 12, color: T.DUST, lineHeight: 18 }}>
+                      <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
                         Enrich books with null or sparse subjects via Open Library
                       </Text>
                     </View>
                     {subjectRepairRunning ? (
-                      <ActivityIndicator size="small" color={T.DUST} style={{ marginLeft: 10 }} />
+                      <ActivityIndicator size="small" color="#9e958d" style={{ marginLeft: 10 }} />
                     ) : (
-                      <Text style={{ fontSize: 20, color: T.FAINT, marginLeft: 10 }}>›</Text>
+                      <Text style={{ fontSize: 20, color: '#c4b5a5', marginLeft: 10 }}>›</Text>
                     )}
                   </View>
                 </TouchableOpacity>
@@ -895,7 +873,7 @@ export default function SettingsScreen() {
         {/* Delete account — collapsed trigger */}
         {!deleteExpanded && (
           <>
-            <View style={{ height: 1, backgroundColor: T.BORDER }} />
+            <View style={{ height: 1, backgroundColor: '#ede9e4' }} />
             <TouchableOpacity
               onPress={() => {
                 setDeleteExpanded(true);
@@ -905,7 +883,7 @@ export default function SettingsScreen() {
               }}
               style={{ paddingHorizontal: 16, paddingVertical: 15 }}
             >
-              <Text style={{ fontSize: 14, color: T.DUST, fontWeight: '400' }}>Delete Account…</Text>
+              <Text style={{ fontSize: 14, color: '#9e958d', fontWeight: '400' }}>Delete Account…</Text>
             </TouchableOpacity>
           </>
         )}
@@ -913,7 +891,7 @@ export default function SettingsScreen() {
         {/* Delete account — expanded confirmation */}
         {deleteExpanded && (
           <>
-            <View style={{ height: 1, backgroundColor: T.BORDER }} />
+            <View style={{ height: 1, backgroundColor: '#ede9e4' }} />
             <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 18 }}>
               <Text style={{
                 fontSize: 13,
@@ -932,7 +910,7 @@ export default function SettingsScreen() {
                 This permanently removes your library, ratings, recommendations, and all activity.
                 Books in the shared catalog are not affected.{'\n\n'}
                 Type{' '}
-                <Text style={{ fontFamily: 'System', fontWeight: '700', color: T.STONE }}>DELETE</Text>
+                <Text style={{ fontFamily: 'System', fontWeight: '700', color: '#57534e' }}>DELETE</Text>
                 {' '}to confirm. This cannot be undone.
               </Text>
 
@@ -943,15 +921,15 @@ export default function SettingsScreen() {
                 onChangeText={v => { setDeleteConfirm(v); setDeleteError(null); }}
                 autoCapitalize="characters"
                 autoCorrect={false}
-                placeholderTextColor={T.FAINT}
+                placeholderTextColor="#c4b5a5"
                 style={{
                   borderWidth: 1,
-                  borderColor: deleteConfirm.toUpperCase() === 'DELETE' ? '#b91c1c' : T.BORDER,
+                  borderColor: deleteConfirm.toUpperCase() === 'DELETE' ? '#b91c1c' : '#ede9e4',
                   borderRadius: 8,
                   padding: 11,
                   fontSize: 15,
-                  color: T.INK,
-                  backgroundColor: T.CARD,
+                  color: '#231f1b',
+                  backgroundColor: '#fefcf9',
                   marginBottom: 4,
                   letterSpacing: 1,
                 }}
@@ -974,14 +952,14 @@ export default function SettingsScreen() {
                   style={{
                     flex: 1,
                     borderWidth: 1,
-                    borderColor: T.BORDER,
+                    borderColor: '#ede9e4',
                     borderRadius: 9,
                     paddingVertical: 11,
                     alignItems: 'center',
-                    backgroundColor: T.CARD,
+                    backgroundColor: '#fefcf9',
                   }}
                 >
-                  <Text style={{ fontSize: 13, color: T.STONE, fontWeight: '500' }}>Cancel</Text>
+                  <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '500' }}>Cancel</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -992,7 +970,7 @@ export default function SettingsScreen() {
                     borderRadius: 9,
                     paddingVertical: 11,
                     alignItems: 'center',
-                    backgroundColor: deleteConfirm.trim().toUpperCase() === 'DELETE' ? '#b91c1c' : T.BORDER,
+                    backgroundColor: deleteConfirm.trim().toUpperCase() === 'DELETE' ? '#b91c1c' : '#ede9e4',
                   }}
                 >
                   {deletingAccount ? (
@@ -1001,7 +979,7 @@ export default function SettingsScreen() {
                     <Text style={{
                       fontSize: 13,
                       fontWeight: '600',
-                      color: deleteConfirm.trim().toUpperCase() === 'DELETE' ? '#fff' : T.DUST,
+                      color: deleteConfirm.trim().toUpperCase() === 'DELETE' ? '#fff' : '#9e958d',
                     }}>
                       Delete Account
                     </Text>
