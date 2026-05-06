@@ -1,4 +1,4 @@
-import { SAGE_BG, SAGE_DEEP } from '../../lib/tokens';
+import { useThemedTokens } from '../../lib/theme/useThemedTokens';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchGoogleBooksCoverUrl } from '../../lib/googleBooks';
 import { repairBooksMetadata } from '../../lib/metadataRepair';
@@ -137,9 +137,9 @@ const STATUS_LABELS: Record<UserBookStatus, string> = {
 };
 
 const STATUS_BADGE: Record<UserBookStatus, { bg: string; text: string }> = {
-  want_to_read: { bg: '#f0ece6', text: '#6b635c' },
-  reading:      { bg: '#eaf1ea', text: SAGE_DEEP },
-  finished:     { bg: '#eaf1ea', text: SAGE_DEEP },
+  want_to_read: { bg: '#f0ece6', text: T.STONE },
+  reading:      { bg: T.SAGE_BG, text: T.SAGE_DEEP },
+  finished:     { bg: T.SAGE_BG, text: T.SAGE_DEEP },
   dnf:          { bg: '#f0ece6', text: '#7d6f63' },
 };
 
@@ -193,6 +193,7 @@ registerCacheClearer(() => { _libCache = null; }, 'bookData');
 const VALID_FILTERS = new Set<FilterKey>(['all', 'want_to_read', 'reading', 'finished', 'dnf', 'clubs']);
 
 export default function LibraryScreen() {
+  const T = useThemedTokens();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
@@ -1111,11 +1112,11 @@ export default function LibraryScreen() {
 
   if (error) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#f5f1ec', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <View style={{ flex: 1, backgroundColor: T.BG, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <Text style={{ color: '#b91c1c', textAlign: 'center', fontSize: 14, marginBottom: 18 }}>{error}</Text>
         <TouchableOpacity
           onPress={() => { setError(null); setLoading(true); loadBooks(); }}
-          style={{ backgroundColor: '#231f1b', borderRadius: 10, paddingVertical: 11, paddingHorizontal: 24 }}
+          style={{ backgroundColor: T.INK, borderRadius: 10, paddingVertical: 11, paddingHorizontal: 24 }}
         >
           <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Try again</Text>
         </TouchableOpacity>
@@ -1141,14 +1142,14 @@ export default function LibraryScreen() {
               <Text style={{
                 fontSize: 32,
                 fontWeight: '800',
-                color: '#231f1b',
+                color: T.INK,
                 letterSpacing: -1,
                 lineHeight: 38,
               }}>Library</Text>
-              <Text style={{ fontSize: 12, color: '#9e958d', fontWeight: '500', marginTop: 3 }}>
+              <Text style={{ fontSize: 12, color: T.DUST, fontWeight: '500', marginTop: 3 }}>
                 {items.length > 0 ? `${items.length} book${items.length === 1 ? '' : 's'}` : ''}
               </Text>
-              <View style={{ width: 28, height: 2.5, backgroundColor: '#7b9e7e', marginTop: 10, borderRadius: 2 }} />
+              <View style={{ width: 28, height: 2.5, backgroundColor: T.SAGE, marginTop: 10, borderRadius: 2 }} />
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               {/* View mode toggle */}
@@ -1164,8 +1165,8 @@ export default function LibraryScreen() {
                     height: 36,
                     borderRadius: 18,
                     borderWidth: 1,
-                    borderColor: '#ede9e4',
-                    backgroundColor: viewMode === 'gallery' ? '#231f1b' : '#fefcf9',
+                    borderColor: T.BORDER,
+                    backgroundColor: viewMode === 'gallery' ? T.INK : T.CARD,
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
@@ -1173,7 +1174,7 @@ export default function LibraryScreen() {
                   <Ionicons
                     name={viewMode === 'gallery' ? 'list' : 'grid-outline'}
                     size={16}
-                    color={viewMode === 'gallery' ? '#f5f1ec' : '#78716c'}
+                    color={viewMode === 'gallery' ? T.BG : '#78716c'}
                   />
                 </TouchableOpacity>
               )}
@@ -1182,13 +1183,13 @@ export default function LibraryScreen() {
                 style={{
                   flexDirection:    'row',
                   alignItems:       'center',
-                  backgroundColor:  '#231f1b',
+                  backgroundColor:  T.INK,
                   borderRadius:     20,
                   paddingHorizontal: 16,
                   paddingVertical:  9,
                 }}
               >
-                <Text style={{ color: '#f5f1ec', fontSize: 13, fontWeight: '700', letterSpacing: 0.2 }}>+ Add book</Text>
+                <Text style={{ color: T.BG, fontSize: 13, fontWeight: '700', letterSpacing: 0.2 }}>+ Add book</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1251,10 +1252,10 @@ export default function LibraryScreen() {
             style={{
               flexDirection: 'row',
               alignItems: 'center',
-              backgroundColor: '#fefcf9',
+              backgroundColor: T.CARD,
               borderRadius: 14,
               borderWidth: 1,
-              borderColor: '#ede9e4',
+              borderColor: T.BORDER,
               paddingHorizontal: 13,
               paddingVertical: 11,
               marginTop: 16,
@@ -1262,14 +1263,14 @@ export default function LibraryScreen() {
               gap: 8,
             }}
           >
-            <Ionicons name="search-outline" size={16} color="#9e958d" />
+            <Ionicons name="search-outline" size={16} color={T.DUST} />
             <TextInput
               ref={searchInputRef}
               value={searchQuery}
               onChangeText={setSearchQuery}
               placeholder="Search your library"
-              placeholderTextColor="#c4b5a5"
-              style={{ flex: 1, fontSize: 14, color: '#231f1b', padding: 0 }}
+              placeholderTextColor={T.FAINT}
+              style={{ flex: 1, fontSize: 14, color: T.INK, padding: 0 }}
               returnKeyType="search"
               onSubmitEditing={() => Keyboard.dismiss()}
             />
@@ -1278,13 +1279,13 @@ export default function LibraryScreen() {
                 hitSlop={10}
                 onPress={() => { setSearchQuery(''); searchInputRef.current?.blur(); }}
               >
-                <Ionicons name="close-circle" size={17} color="#c4b5a5" />
+                <Ionicons name="close-circle" size={17} color={T.FAINT} />
               </TouchableOpacity>
             )}
           </TouchableOpacity>
 
           {!searchActive && contextSubtitle && (
-            <Text style={{ fontSize: 13, color: '#9e958d', marginBottom: 18 }}>
+            <Text style={{ fontSize: 13, color: T.DUST, marginBottom: 18 }}>
               {contextSubtitle}
             </Text>
           )}
@@ -1320,14 +1321,14 @@ export default function LibraryScreen() {
                       paddingVertical: 7,
                       borderRadius: 20,
                       borderWidth: 1,
-                      backgroundColor: active ? '#7b9e7e' : readingAccent ? '#eaf1ea' : 'transparent',
-                      borderColor:     active ? '#7b9e7e' : readingAccent ? '#7b9e7e' : '#ede9e4',
+                      backgroundColor: active ? T.SAGE : readingAccent ? T.SAGE_BG : 'transparent',
+                      borderColor:     active ? T.SAGE : readingAccent ? T.SAGE : T.BORDER,
                     }}
                   >
                     <Text style={{
                       fontSize: 13,
                       fontWeight: active ? '600' : '400',
-                      color: active ? '#fff' : '#6b635c',
+                      color: active ? '#fff' : T.STONE,
                     }}>
                       {f.label}{count}
                     </Text>
@@ -1353,14 +1354,14 @@ export default function LibraryScreen() {
                   paddingVertical: 7,
                   gap: 6,
                 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#f5f1ec' }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: T.BG }}>
                     {def.label}
                   </Text>
                   <TouchableOpacity
                     hitSlop={10}
                     onPress={() => setActiveShelf(null)}
                   >
-                    <Ionicons name="close-circle" size={15} color="#9e958d" />
+                    <Ionicons name="close-circle" size={15} color={T.DUST} />
                   </TouchableOpacity>
                 </View>
                 {/* Inline delete affordance for custom shelves — long-press on
@@ -1424,27 +1425,27 @@ export default function LibraryScreen() {
               <View style={{
                 flexDirection:    'row',
                 alignItems:       'center',
-                backgroundColor:  '#fefcf9',
+                backgroundColor:  T.CARD,
                 borderRadius:     14,
                 borderWidth:      1,
-                borderColor:      '#ede9e4',
+                borderColor:      T.BORDER,
                 paddingHorizontal: 13,
                 paddingVertical:  10,
                 gap: 8,
               }}>
-                <Ionicons name="sparkles-outline" size={16} color="#9e958d" />
+                <Ionicons name="sparkles-outline" size={16} color={T.DUST} />
                 <TextInput
                   value={wtrQuery}
                   onChangeText={setWtrQuery}
                   placeholder='Find in your saved — try "mystery", "short", "fast paced"'
-                  placeholderTextColor="#c4b5a5"
-                  style={{ flex: 1, fontSize: 13, color: '#231f1b', padding: 0 }}
+                  placeholderTextColor={T.FAINT}
+                  style={{ flex: 1, fontSize: 13, color: T.INK, padding: 0 }}
                   returnKeyType="search"
                   onSubmitEditing={() => Keyboard.dismiss()}
                 />
                 {wtrQuery.length > 0 && (
                   <TouchableOpacity hitSlop={10} onPress={() => setWtrQuery('')}>
-                    <Ionicons name="close-circle" size={16} color="#c4b5a5" />
+                    <Ionicons name="close-circle" size={16} color={T.FAINT} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -1455,12 +1456,12 @@ export default function LibraryScreen() {
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
                     {sigs.map((s, i) => (
                       <View key={`${s.kind}_${i}`} style={{
-                        backgroundColor:  SAGE_BG,
+                        backgroundColor:  T.SAGE_BG,
                         borderRadius:     12,
                         paddingHorizontal: 9,
                         paddingVertical:  3,
                       }}>
-                        <Text style={{ fontSize: 11, color: SAGE_DEEP, fontWeight: '500' }}>{s.reason}</Text>
+                        <Text style={{ fontSize: 11, color: T.SAGE_DEEP, fontWeight: '500' }}>{s.reason}</Text>
                       </View>
                     ))}
                   </View>
@@ -1477,25 +1478,25 @@ export default function LibraryScreen() {
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
-                backgroundColor: '#fefcf9',
+                backgroundColor: T.CARD,
                 borderRadius: 12,
                 paddingHorizontal: 14,
                 paddingVertical: 12,
                 marginBottom: 14,
                 borderWidth: 1,
-                borderColor: '#ede9e4',
+                borderColor: T.BORDER,
               }}
             >
               <Text style={{ fontSize: 16, marginRight: 10 }}>⤵</Text>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 13, fontWeight: '600', color: '#231f1b' }}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: T.INK }}>
                   Import your library
                 </Text>
-                <Text style={{ fontSize: 12, color: '#9e958d', marginTop: 1 }}>
+                <Text style={{ fontSize: 12, color: T.DUST, marginTop: 1 }}>
                   Bring in your reading history to improve recommendations.
                 </Text>
               </View>
-              <Text style={{ fontSize: 16, color: '#ede9e4' }}>›</Text>
+              <Text style={{ fontSize: 16, color: T.BORDER }}>›</Text>
             </TouchableOpacity>
           )}
 
@@ -1507,21 +1508,21 @@ export default function LibraryScreen() {
               justifyContent: 'flex-end',
               paddingBottom: 10,
             }}>
-              <Text style={{ fontSize: 11, color: '#c4b5a5', marginRight: 8 }}>Sort</Text>
+              <Text style={{ fontSize: 11, color: T.FAINT, marginRight: 8 }}>Sort</Text>
               {activeFilter === 'reading' ? (
                 <>
                   <TouchableOpacity onPress={() => setSort('recent')}>
                     <Text style={{
                       fontSize: 12,
-                      color: sort === 'recent' ? '#231f1b' : '#9e958d',
+                      color: sort === 'recent' ? T.INK : T.DUST,
                       fontWeight: sort === 'recent' ? '600' : '400',
                     }}>Recent</Text>
                   </TouchableOpacity>
-                  <Text style={{ fontSize: 12, color: '#ede9e4', marginHorizontal: 8 }}>·</Text>
+                  <Text style={{ fontSize: 12, color: T.BORDER, marginHorizontal: 8 }}>·</Text>
                   <TouchableOpacity onPress={() => setSort('progress')}>
                     <Text style={{
                       fontSize: 12,
-                      color: sort === 'progress' ? '#231f1b' : '#9e958d',
+                      color: sort === 'progress' ? T.INK : T.DUST,
                       fontWeight: sort === 'progress' ? '600' : '400',
                     }}>Progress</Text>
                   </TouchableOpacity>
@@ -1531,15 +1532,15 @@ export default function LibraryScreen() {
                   <TouchableOpacity onPress={() => setSort('finished_date')}>
                     <Text style={{
                       fontSize: 12,
-                      color: sort === 'finished_date' ? '#231f1b' : '#9e958d',
+                      color: sort === 'finished_date' ? T.INK : T.DUST,
                       fontWeight: sort === 'finished_date' ? '600' : '400',
                     }}>Finished</Text>
                   </TouchableOpacity>
-                  <Text style={{ fontSize: 12, color: '#ede9e4', marginHorizontal: 8 }}>·</Text>
+                  <Text style={{ fontSize: 12, color: T.BORDER, marginHorizontal: 8 }}>·</Text>
                   <TouchableOpacity onPress={() => setSort('recent')}>
                     <Text style={{
                       fontSize: 12,
-                      color: sort === 'recent' ? '#231f1b' : '#9e958d',
+                      color: sort === 'recent' ? T.INK : T.DUST,
                       fontWeight: sort === 'recent' ? '600' : '400',
                     }}>Added</Text>
                   </TouchableOpacity>
@@ -1555,7 +1556,7 @@ export default function LibraryScreen() {
               alignItems: 'center',
               paddingBottom: 12,
             }}>
-              <Text style={{ fontSize: 12, color: '#9e958d' }}>
+              <Text style={{ fontSize: 12, color: T.DUST }}>
                 Your reading pace · avg <Text style={{ color: '#78716c', fontWeight: '600' }}>{avgPace} pages/day</Text>
               </Text>
             </View>
@@ -1563,7 +1564,7 @@ export default function LibraryScreen() {
 
           {/* ── Divider ── */}
           {!searchActive && items.length > 0 && activeFilter !== 'reading' && (
-            <View style={{ height: 1, backgroundColor: '#ede9e4' }} />
+            <View style={{ height: 1, backgroundColor: T.BORDER }} />
           )}
         </View>
   );
@@ -1573,7 +1574,7 @@ export default function LibraryScreen() {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#f5f1ec' }}>
+    <View style={{ flex: 1, backgroundColor: T.BG }}>
     {activeFilter === 'clubs' ? (
       <FlatList
         data={clubs}
@@ -1586,15 +1587,15 @@ export default function LibraryScreen() {
         ListEmptyComponent={
           clubsLoading ? (
             <View style={{ paddingTop: 40, alignItems: 'center' }}>
-              <ActivityIndicator size="large" color="#7b9e7e" />
+              <ActivityIndicator size="large" color={T.SAGE} />
             </View>
           ) : (
             <View style={{ paddingTop: 48, paddingHorizontal: 24, alignItems: 'center' }}>
-              <Ionicons name="people-outline" size={40} color="#c4b5a5" style={{ marginBottom: 14 }} />
-              <Text style={{ fontSize: 18, fontWeight: '700', color: '#231f1b', marginBottom: 8, textAlign: 'center' }}>
+              <Ionicons name="people-outline" size={40} color={T.FAINT} style={{ marginBottom: 14 }} />
+              <Text style={{ fontSize: 18, fontWeight: '700', color: T.INK, marginBottom: 8, textAlign: 'center' }}>
                 {FILTER_EMPTY.clubs.title}
               </Text>
-              <Text style={{ fontSize: 14, color: '#9e958d', textAlign: 'center', lineHeight: 22 }}>
+              <Text style={{ fontSize: 14, color: T.DUST, textAlign: 'center', lineHeight: 22 }}>
                 {FILTER_EMPTY.clubs.body}
               </Text>
             </View>
@@ -1603,10 +1604,10 @@ export default function LibraryScreen() {
         renderItem={({ item }) => (
           <TouchableOpacity
             style={{
-              backgroundColor: '#fefcf9',
+              backgroundColor: T.CARD,
               borderRadius: 14,
               padding: 14,
-              shadowColor: '#231f1b',
+              shadowColor: T.INK,
               shadowOpacity: 0.07,
               shadowRadius: 8,
               shadowOffset: { width: 0, height: 2 },
@@ -1628,30 +1629,30 @@ export default function LibraryScreen() {
               ) : (
                 <View style={{
                   width: 44, height: 64, borderRadius: 6,
-                  backgroundColor: '#ede9e4', alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: T.BORDER, alignItems: 'center', justifyContent: 'center',
                 }}>
-                  <Ionicons name="book-outline" size={20} color="#9e958d" />
+                  <Ionicons name="book-outline" size={20} color={T.DUST} />
                 </View>
               )}
               <View style={{ flex: 1, gap: 4 }}>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#231f1b' }} numberOfLines={1}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: T.INK }} numberOfLines={1}>
                   {item.name}
                 </Text>
                 {item.activeBook ? (
-                  <Text style={{ fontSize: 12, color: '#9e958d' }} numberOfLines={1}>
+                  <Text style={{ fontSize: 12, color: T.DUST }} numberOfLines={1}>
                     Reading: {item.activeBook.title}
                   </Text>
                 ) : (
-                  <Text style={{ fontSize: 12, color: '#9e958d', fontStyle: 'italic' }}>No active book</Text>
+                  <Text style={{ fontSize: 12, color: T.DUST, fontStyle: 'italic' }}>No active book</Text>
                 )}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                  <Ionicons name="people-outline" size={12} color="#9e958d" />
-                  <Text style={{ fontSize: 11, color: '#9e958d' }}>
+                  <Ionicons name="people-outline" size={12} color={T.DUST} />
+                  <Text style={{ fontSize: 11, color: T.DUST }}>
                     {item.memberCount} {item.memberCount === 1 ? 'member' : 'members'}
                   </Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={18} color="#9e958d" />
+              <Ionicons name="chevron-forward" size={18} color={T.DUST} />
             </View>
           </TouchableOpacity>
         )}
@@ -1667,25 +1668,25 @@ export default function LibraryScreen() {
         emptyComponent={
           items.length === 0 ? (
             <View style={{ paddingTop: 36, paddingHorizontal: 24, alignItems: 'center' }}>
-              <Text style={{ fontSize: 18, fontWeight: '700', color: '#231f1b', marginBottom: 8, textAlign: 'center' }}>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: T.INK, marginBottom: 8, textAlign: 'center' }}>
                 {FILTER_EMPTY.all.title}
               </Text>
-              <Text style={{ fontSize: 14, color: '#9e958d', textAlign: 'center', lineHeight: 22, marginBottom: 24 }}>
+              <Text style={{ fontSize: 14, color: T.DUST, textAlign: 'center', lineHeight: 22, marginBottom: 24 }}>
                 {FILTER_EMPTY.all.body}
               </Text>
               <TouchableOpacity
                 onPress={() => router.push('/add-book')}
-                style={{ backgroundColor: '#231f1b', borderRadius: 12, paddingVertical: 13, paddingHorizontal: 26 }}
+                style={{ backgroundColor: T.INK, borderRadius: 12, paddingVertical: 13, paddingHorizontal: 26 }}
               >
                 <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Add your first book</Text>
               </TouchableOpacity>
             </View>
           ) : (
             <View style={{ paddingTop: 48, paddingHorizontal: 24, alignItems: 'center' }}>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: '#231f1b', marginBottom: 8, textAlign: 'center' }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: T.INK, marginBottom: 8, textAlign: 'center' }}>
                 {FILTER_EMPTY[activeFilter].title}
               </Text>
-              <Text style={{ fontSize: 14, color: '#9e958d', textAlign: 'center', lineHeight: 22 }}>
+              <Text style={{ fontSize: 14, color: T.DUST, textAlign: 'center', lineHeight: 22 }}>
                 {FILTER_EMPTY[activeFilter].body}
               </Text>
             </View>
@@ -1707,13 +1708,13 @@ export default function LibraryScreen() {
             <View style={{ paddingTop: index === 0 ? 10 : 22, paddingBottom: 6 }}>
               <Text style={{
                 fontSize: 11, fontWeight: '700',
-                color: item.muted ? '#c4b5a5' : '#9e958d',
+                color: item.muted ? T.FAINT : T.DUST,
                 letterSpacing: 1, textTransform: 'uppercase',
               }}>
                 {item.title}
               </Text>
               {item.subtitle ? (
-                <Text style={{ fontSize: 12, color: '#c4b5a5', marginTop: 3 }}>
+                <Text style={{ fontSize: 12, color: T.FAINT, marginTop: 3 }}>
                   {item.subtitle}
                 </Text>
               ) : null}
@@ -1734,17 +1735,17 @@ export default function LibraryScreen() {
                 paddingVertical: 14,
                 marginTop: 6,
                 borderBottomWidth: 1,
-                borderBottomColor: '#ede9e4',
+                borderBottomColor: T.BORDER,
               }}
             >
-              <Text style={{ fontSize: 15, fontWeight: '700', color: '#231f1b', letterSpacing: -0.2 }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: T.INK, letterSpacing: -0.2 }}>
                 Archive
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ fontSize: 12, color: '#9e958d' }}>
+                <Text style={{ fontSize: 12, color: T.DUST }}>
                   {item.count} {item.count === 1 ? 'book' : 'books'}
                 </Text>
-                <Text style={{ fontSize: 14, color: '#9e958d' }}>
+                <Text style={{ fontSize: 14, color: T.DUST }}>
                   {item.expanded ? '▾' : '›'}
                 </Text>
               </View>
@@ -1762,26 +1763,26 @@ export default function LibraryScreen() {
               paddingTop:     index === 0 ? 10 : 24,
               paddingBottom:  8,
               borderLeftWidth: 3,
-              borderLeftColor: '#7b9e7e',
+              borderLeftColor: T.SAGE,
               paddingLeft:     10,
               marginLeft:      -2,
             }}>
               <View style={{ flex: 1, marginRight: 10 }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', letterSpacing: -0.1 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: T.INK, letterSpacing: -0.1 }}>
                   {item.displayName}
                 </Text>
-                <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2 }}>
+                <Text style={{ fontSize: 11, color: T.DUST, marginTop: 2 }}>
                   {item.readCount} of {item.total} {item.readCount === 1 ? 'book' : 'books'}
                 </Text>
               </View>
               {item.status === 'complete' ? (
                 <View style={{
-                  backgroundColor: '#eaf1ea',
+                  backgroundColor: T.SAGE_BG,
                   borderRadius:    6,
                   paddingHorizontal: 9,
                   paddingVertical:   4,
                 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '600', color: SAGE_DEEP }}>
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: T.SAGE_DEEP }}>
                     Complete
                   </Text>
                 </View>
@@ -1789,11 +1790,11 @@ export default function LibraryScreen() {
                 <View style={{
                   borderRadius:    6,
                   borderWidth:     1,
-                  borderColor:     '#c4b5a5',
+                  borderColor:     T.FAINT,
                   paddingHorizontal: 9,
                   paddingVertical:   3,
                 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '500', color: '#6b635c' }}>
+                  <Text style={{ fontSize: 11, fontWeight: '500', color: T.STONE }}>
                     In Progress
                   </Text>
                 </View>
@@ -1823,17 +1824,17 @@ export default function LibraryScreen() {
                 paddingVertical: 14,
                 marginTop: index === 0 ? 4 : 6,
                 borderBottomWidth: 1,
-                borderBottomColor: '#ede9e4',
+                borderBottomColor: T.BORDER,
               }}
             >
-              <Text style={{ fontSize: 15, fontWeight: '700', color: '#231f1b', letterSpacing: -0.2 }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: T.INK, letterSpacing: -0.2 }}>
                 {item.year}
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ fontSize: 12, color: '#9e958d' }}>
+                <Text style={{ fontSize: 12, color: T.DUST }}>
                   {item.count} {item.count === 1 ? 'book' : 'books'}
                 </Text>
-                <Text style={{ fontSize: 14, color: '#9e958d' }}>
+                <Text style={{ fontSize: 14, color: T.DUST }}>
                   {isExpanded ? '▾' : '›'}
                 </Text>
               </View>
@@ -1873,11 +1874,11 @@ export default function LibraryScreen() {
             : null;
 
           const accentColor = (() => {
-            if (!borderPacing) return '#ede9e4';
+            if (!borderPacing) return T.BORDER;
             const s = borderPacing.state;
-            if (s === 'ahead' || s === 'on_pace') return '#7b9e7e';
+            if (s === 'ahead' || s === 'on_pace') return T.SAGE;
             if (s === 'behind') return '#fcd34d';
-            return '#ede9e4';
+            return T.BORDER;
           })();
           const pacingNote     = hasProgress ? borderPacing?.note ?? null : datePacing?.note ?? null;
           const lastUpdatedText = formatLastUpdated(item.progress_updated_at);
@@ -1892,14 +1893,14 @@ export default function LibraryScreen() {
           return (
             <View>
               {showNowReadingHeader && (
-                <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 8 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: T.DUST, letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 8 }}>
                   Currently Reading
                 </Text>
               )}
               <View
                 ref={wtStep === 'library' && index === 0 ? firstRowRef : undefined}
                 style={{
-                backgroundColor: '#fefcf9',
+                backgroundColor: T.CARD,
                 borderRadius: 14,
                 marginVertical: 6,
                 marginLeft: isGroupMember ? 12 : 0,
@@ -1953,7 +1954,7 @@ export default function LibraryScreen() {
                   height={70}
                 />
                 <View style={{ flex: 1, marginLeft: 14 }}>
-                  <Text style={{ fontWeight: '700', fontSize: 16, color: '#231f1b', marginBottom: 3, lineHeight: 22 }}>
+                  <Text style={{ fontWeight: '700', fontSize: 16, color: T.INK, marginBottom: 3, lineHeight: 22 }}>
                     {item.book?.title ?? '—'}
                   </Text>
                   <Text style={{ color: '#78716c', fontSize: 13, marginBottom: (() => {
@@ -1968,7 +1969,7 @@ export default function LibraryScreen() {
                     const cat = getSeriesCatalog(ctx.seriesName);
                     if (!cat) return null;
                     return (
-                      <Text style={{ fontSize: 11, color: '#c4b5a5', marginTop: 2, marginBottom: hasProgress ? 10 : 4 }}>
+                      <Text style={{ fontSize: 11, color: T.FAINT, marginTop: 2, marginBottom: hasProgress ? 10 : 4 }}>
                         {cat.displayName} · Book {ctx.seriesPosition}
                       </Text>
                     );
@@ -1977,7 +1978,7 @@ export default function LibraryScreen() {
                     <>
                       <View style={{
                         height: 4,
-                        backgroundColor: '#ede9e4',
+                        backgroundColor: T.BORDER,
                         borderRadius: 2,
                         overflow: 'hidden',
                         marginBottom: 5,
@@ -1985,27 +1986,27 @@ export default function LibraryScreen() {
                         <View style={{
                           height: 4,
                           width: `${progressPct ?? 0}%`,
-                          backgroundColor: '#231f1b',
+                          backgroundColor: T.INK,
                           borderRadius: 2,
                         }} />
                       </View>
-                      <Text style={{ fontSize: 11, color: '#57534e', fontWeight: '500' }}>
+                      <Text style={{ fontSize: 11, color: T.STONE, fontWeight: '500' }}>
                         Page {item.current_page} of {item.book?.page_count} · {progressPct}%
                       </Text>
                       {pacingNote && (
-                        <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2 }}>
+                        <Text style={{ fontSize: 11, color: T.DUST, marginTop: 2 }}>
                           {pacingNote}
                         </Text>
                       )}
                     </>
                   )}
                   {!hasProgress && item.status === 'reading' && (
-                    <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 6 }}>
+                    <Text style={{ fontSize: 11, color: T.DUST, marginTop: 6 }}>
                       {pacingNote ? pacingNote : 'In progress'}
                     </Text>
                   )}
                   {lastUpdatedText && (
-                    <Text style={{ fontSize: 11, color: '#c4b5a5', marginTop: 4 }}>
+                    <Text style={{ fontSize: 11, color: T.FAINT, marginTop: 4 }}>
                       {lastUpdatedText}
                     </Text>
                   )}
@@ -2015,7 +2016,7 @@ export default function LibraryScreen() {
                     </Text>
                   )}
                   {readState === 'paused' && (
-                    <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 3, fontStyle: 'italic' }}>
+                    <Text style={{ fontSize: 11, color: T.DUST, marginTop: 3, fontStyle: 'italic' }}>
                       Paused for now
                     </Text>
                   )}
@@ -2043,7 +2044,7 @@ export default function LibraryScreen() {
                       </TouchableOpacity>
                     ))}
                     <TouchableOpacity onPress={() => setPendingFeedback(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Text style={{ fontSize: 12, color: '#9e958d', marginLeft: 12 }}>Skip</Text>
+                      <Text style={{ fontSize: 12, color: T.DUST, marginLeft: 12 }}>Skip</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -2058,24 +2059,24 @@ export default function LibraryScreen() {
                       onChangeText={setQuickLogInput}
                       keyboardType="number-pad"
                       placeholder={item.current_page != null ? String(item.current_page) : '0'}
-                      placeholderTextColor="#9e958d"
+                      placeholderTextColor={T.DUST}
                       returnKeyType="done"
                       onSubmitEditing={() => handleQuickLog(item)}
                       style={{
                         width: 72,
                         height: 40,
                         borderWidth: 1.5,
-                        borderColor: '#ede9e4',
+                        borderColor: T.BORDER,
                         borderRadius: 10,
                         paddingHorizontal: 10,
                         fontSize: 15,
                         fontWeight: '700',
-                        color: '#231f1b',
+                        color: T.INK,
                         textAlign: 'center',
                       }}
                     />
                     {item.book?.page_count != null && (
-                      <Text style={{ fontSize: 12, color: '#9e958d' }}>
+                      <Text style={{ fontSize: 12, color: T.DUST }}>
                         of {item.book.page_count}
                       </Text>
                     )}
@@ -2083,7 +2084,7 @@ export default function LibraryScreen() {
                       onPress={() => handleQuickLog(item)}
                       disabled={quickLogSaving}
                       style={{
-                        backgroundColor: quickLogSaving ? '#ede9e4' : '#231f1b',
+                        backgroundColor: quickLogSaving ? T.BORDER : T.INK,
                         borderRadius: 10,
                         paddingHorizontal: 16,
                         paddingVertical: 10,
@@ -2097,7 +2098,7 @@ export default function LibraryScreen() {
                       onPress={() => { setQuickLogId(null); setQuickLogError(null); }}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
-                      <Text style={{ fontSize: 13, color: '#9e958d' }}>Cancel</Text>
+                      <Text style={{ fontSize: 13, color: T.DUST }}>Cancel</Text>
                     </TouchableOpacity>
                   </View>
                   {quickLogError && (
@@ -2118,7 +2119,7 @@ export default function LibraryScreen() {
                     disabled={isBlocked}
                     style={{
                       flex: 1,
-                      backgroundColor: isBlocked ? '#ede9e4' : '#231f1b',
+                      backgroundColor: isBlocked ? T.BORDER : T.INK,
                       borderRadius: 10,
                       paddingVertical: 10,
                       alignItems: 'center',
@@ -2148,17 +2149,17 @@ export default function LibraryScreen() {
             <View
               ref={wtStep === 'library' && index === 0 ? firstRowRef : undefined}
               style={{
-              backgroundColor: '#fefcf9',
+              backgroundColor: T.CARD,
               borderRadius: 12,
               borderWidth: 1,
-              borderColor: '#ede9e4',
+              borderColor: T.BORDER,
               paddingTop: 14,
               paddingBottom: hasExtraRow ? 12 : 14,
               paddingLeft: isGroupMember ? 14 : 12,
               paddingRight: 12,
               marginBottom: 10,
               borderLeftWidth: isGroupMember ? 2 : 1,
-              borderLeftColor: isGroupMember ? '#c4b5a5' : '#ede9e4',
+              borderLeftColor: isGroupMember ? T.FAINT : T.BORDER,
             }}>
             <TouchableOpacity
               activeOpacity={0.7}
@@ -2199,7 +2200,7 @@ export default function LibraryScreen() {
               <View style={{ flex: 1, marginLeft: 14 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <View style={{ flex: 1, marginRight: 10 }}>
-                    <Text style={{ fontWeight: '700', fontSize: 16, color: '#231f1b', marginBottom: 3 }}>
+                    <Text style={{ fontWeight: '700', fontSize: 16, color: T.INK, marginBottom: 3 }}>
                       {item.book?.title ?? '—'}
                     </Text>
                     <Text style={{ color: '#78716c', fontSize: 13 }}>
@@ -2218,13 +2219,13 @@ export default function LibraryScreen() {
                             paddingVertical:   3,
                             borderRadius:      6,
                             borderWidth:       1,
-                            borderColor:       isStartChip ? '#c4956a' : '#c4b5a5',
+                            borderColor:       isStartChip ? T.AMBER : T.FAINT,
                             backgroundColor:   isStartChip ? '#fef9f4' : 'transparent',
                           }}>
                             <Text style={{
                               fontSize:   11,
                               fontWeight: '600',
-                              color:      isStartChip ? '#a07040' : '#6b635c',
+                              color:      isStartChip ? '#a07040' : T.STONE,
                               letterSpacing: 0.1,
                             }}>
                               {wtrLabel}
@@ -2238,7 +2239,7 @@ export default function LibraryScreen() {
                         const cat = getSeriesCatalog(ctx.seriesName);
                         if (cat) {
                           return (
-                            <Text style={{ fontSize: 11, color: '#c4b5a5', marginTop: 3 }}>
+                            <Text style={{ fontSize: 11, color: T.FAINT, marginTop: 3 }}>
                               {cat.displayName} · Book {ctx.seriesPosition}
                             </Text>
                           );
@@ -2247,7 +2248,7 @@ export default function LibraryScreen() {
                       return null;
                     })()}
                     {item.finished_at && (item.status === 'finished' || item.status === 'dnf') && (
-                      <Text style={{ fontSize: 11, color: '#c4b5a5', marginTop: 3 }}>
+                      <Text style={{ fontSize: 11, color: T.FAINT, marginTop: 3 }}>
                         {new Date(item.finished_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                       </Text>
                     )}
@@ -2258,12 +2259,12 @@ export default function LibraryScreen() {
                           hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                           style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, alignSelf: 'flex-start' }}
                         >
-                          <View style={{ backgroundColor: '#ede9e4', borderRadius: 12, paddingHorizontal: 9, paddingVertical: 3 }}>
-                            <Text style={{ fontSize: 11, color: '#6b635c' }}>
+                          <View style={{ backgroundColor: T.BORDER, borderRadius: 12, paddingHorizontal: 9, paddingVertical: 3 }}>
+                            <Text style={{ fontSize: 11, color: T.STONE }}>
                               {DNF_REASON_LABELS[item.taste_tags.dnf_reason as string] ?? item.taste_tags.dnf_reason}
                             </Text>
                           </View>
-                          <Text style={{ fontSize: 11, color: '#c4b5a5', marginLeft: 7 }}>change</Text>
+                          <Text style={{ fontSize: 11, color: T.FAINT, marginLeft: 7 }}>change</Text>
                         </TouchableOpacity>
                       ) : (
                         <TouchableOpacity
@@ -2271,7 +2272,7 @@ export default function LibraryScreen() {
                           hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                           style={{ marginTop: 6 }}
                         >
-                          <Text style={{ fontSize: 11, color: '#c4b5a5', fontStyle: 'italic' }}>Add a note</Text>
+                          <Text style={{ fontSize: 11, color: T.FAINT, fontStyle: 'italic' }}>Add a note</Text>
                         </TouchableOpacity>
                       )
                     )}
@@ -2279,7 +2280,7 @@ export default function LibraryScreen() {
                       const bp = computeBookPace(item.started_at, item.finished_at, item.book?.page_count);
                       if (!bp) return null;
                       return (
-                        <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2 }}>
+                        <Text style={{ fontSize: 11, color: T.DUST, marginTop: 2 }}>
                           {formatPaceChip(bp.pagesPerDay, bp.daysToFinish)}
                         </Text>
                       );
@@ -2319,7 +2320,7 @@ export default function LibraryScreen() {
                     </TouchableOpacity>
                   ))}
                   <TouchableOpacity onPress={() => setPendingFeedback(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Text style={{ fontSize: 12, color: '#9e958d', marginLeft: 12 }}>Skip</Text>
+                    <Text style={{ fontSize: 12, color: T.DUST, marginLeft: 12 }}>Skip</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -2340,7 +2341,7 @@ export default function LibraryScreen() {
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     style={{ paddingHorizontal: 6, paddingVertical: 4 }}
                   >
-                    <Text style={{ fontSize: 12, color: '#9e958d' }}>Less</Text>
+                    <Text style={{ fontSize: 12, color: T.DUST }}>Less</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
@@ -2353,9 +2354,9 @@ export default function LibraryScreen() {
                     accessibilityLabel="More actions"
                     style={{
                       width: 36, height: 36, borderRadius: 18,
-                      borderWidth: 1, borderColor: '#ede9e4',
+                      borderWidth: 1, borderColor: T.BORDER,
                       alignItems: 'center', justifyContent: 'center',
-                      backgroundColor: '#fefcf9',
+                      backgroundColor: T.CARD,
                     }}
                   >
                     <Ionicons name="ellipsis-horizontal" size={16} color="#78716c" />
@@ -2383,12 +2384,12 @@ export default function LibraryScreen() {
       ListEmptyComponent={
         searchActive ? (
           <View style={{ paddingTop: 60, paddingHorizontal: 24, alignItems: 'center' }}>
-            <Ionicons name="search-outline" size={32} color="#c4b5a5" style={{ marginBottom: 12 }} />
-            <Text style={{ fontSize: 16, fontWeight: '700', color: '#231f1b', marginBottom: 6, textAlign: 'center' }}>
+            <Ionicons name="search-outline" size={32} color={T.FAINT} style={{ marginBottom: 12 }} />
+            <Text style={{ fontSize: 16, fontWeight: '700', color: T.INK, marginBottom: 6, textAlign: 'center' }}>
               Not in your library
             </Text>
-            <Text style={{ fontSize: 14, color: '#9e958d', textAlign: 'center', lineHeight: 21, marginBottom: 24 }}>
-              Nothing matching <Text style={{ color: '#231f1b', fontStyle: 'italic' }}>"{searchQuery.trim()}"</Text>{' '}
+            <Text style={{ fontSize: 14, color: T.DUST, textAlign: 'center', lineHeight: 21, marginBottom: 24 }}>
+              Nothing matching <Text style={{ color: T.INK, fontStyle: 'italic' }}>"{searchQuery.trim()}"</Text>{' '}
               was found in your library.
             </Text>
             <TouchableOpacity
@@ -2397,20 +2398,20 @@ export default function LibraryScreen() {
                 flexDirection: 'row',
                 alignItems: 'center',
                 gap: 6,
-                backgroundColor: '#231f1b',
+                backgroundColor: T.INK,
                 borderRadius: 12,
                 paddingVertical: 13,
                 paddingHorizontal: 22,
               }}
             >
-              <Ionicons name="search-outline" size={14} color="#f5f1ec" />
-              <Text style={{ color: '#f5f1ec', fontSize: 14, fontWeight: '700' }}>Search all books to add it</Text>
+              <Ionicons name="search-outline" size={14} color={T.BG} />
+              <Text style={{ color: T.BG, fontSize: 14, fontWeight: '700' }}>Search all books to add it</Text>
             </TouchableOpacity>
           </View>
         ) : items.length === 0 && activeFilter === 'all' ? (
           <View ref={libEmptyRef} style={{ paddingTop: 24, paddingHorizontal: 22 }}>
             {/* Heading + value prop */}
-            <Text style={{ fontSize: 20, fontWeight: '800', color: '#231f1b', marginBottom: 6, letterSpacing: -0.4 }}>
+            <Text style={{ fontSize: 20, fontWeight: '800', color: T.INK, marginBottom: 6, letterSpacing: -0.4 }}>
               Start your library
             </Text>
             <Text style={{ color: '#78716c', fontSize: 13.5, lineHeight: 20, marginBottom: 18 }}>
@@ -2422,7 +2423,7 @@ export default function LibraryScreen() {
               onPress={() => router.push('/import/goodreads')}
               style={{
                 width: '100%',
-                backgroundColor: '#231f1b',
+                backgroundColor: T.INK,
                 borderRadius: 12,
                 paddingVertical: 13,
                 alignItems: 'center',
@@ -2430,19 +2431,19 @@ export default function LibraryScreen() {
               }}
             >
               <Text style={{ color: '#fff', fontSize: 14.5, fontWeight: '700' }}>Import from Goodreads</Text>
-              <Text style={{ color: '#9e958d', fontSize: 11.5, marginTop: 2 }}>Brings in your full reading history at once</Text>
+              <Text style={{ color: T.DUST, fontSize: 11.5, marginTop: 2 }}>Brings in your full reading history at once</Text>
             </TouchableOpacity>
 
             {/* Platform guidance panel */}
             <View style={{
               borderWidth: 1,
-              borderColor: '#ede9e4',
+              borderColor: T.BORDER,
               borderRadius: 12,
               overflow: 'hidden',
               marginBottom: 12,
             }}>
-              <View style={{ paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#ede9e4', backgroundColor: '#f5f1ec' }}>
-                <Text style={{ fontSize: 10.5, fontWeight: '700', color: '#9e958d', letterSpacing: 0.6, textTransform: 'uppercase' }}>
+              <View style={{ paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: T.BORDER, backgroundColor: T.BG }}>
+                <Text style={{ fontSize: 10.5, fontWeight: '700', color: T.DUST, letterSpacing: 0.6, textTransform: 'uppercase' }}>
                   Where do you track books?
                 </Text>
               </View>
@@ -2450,22 +2451,22 @@ export default function LibraryScreen() {
               {/* Goodreads row */}
               <TouchableOpacity
                 onPress={() => router.push('/import/goodreads')}
-                style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#ede9e4', backgroundColor: '#fefcf9' }}
+                style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: T.BORDER, backgroundColor: T.CARD }}
               >
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 13.5, fontWeight: '600', color: '#231f1b' }}>Goodreads</Text>
+                  <Text style={{ fontSize: 13.5, fontWeight: '600', color: T.INK }}>Goodreads</Text>
                   <Text style={{ fontSize: 11.5, color: '#78716c', marginTop: 1 }}>Import your full library — live now</Text>
                 </View>
-                <View style={{ backgroundColor: '#eaf1ea', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2, marginRight: 6 }}>
-                  <Text style={{ fontSize: 10.5, fontWeight: '700', color: SAGE_DEEP }}>Supported</Text>
+                <View style={{ backgroundColor: T.SAGE_BG, borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2, marginRight: 6 }}>
+                  <Text style={{ fontSize: 10.5, fontWeight: '700', color: T.SAGE_DEEP }}>Supported</Text>
                 </View>
-                <Text style={{ fontSize: 15, color: '#ede9e4' }}>›</Text>
+                <Text style={{ fontSize: 15, color: T.BORDER }}>›</Text>
               </TouchableOpacity>
 
               {/* StoryGraph row */}
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#ede9e4', backgroundColor: '#fefcf9' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: T.BORDER, backgroundColor: T.CARD }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 13.5, fontWeight: '600', color: '#231f1b' }}>StoryGraph</Text>
+                  <Text style={{ fontSize: 13.5, fontWeight: '600', color: T.INK }}>StoryGraph</Text>
                   <Text style={{ fontSize: 11.5, color: '#78716c', marginTop: 1, lineHeight: 16 }}>
                     Export from StoryGraph, then add manually below. Direct import is on the roadmap.
                   </Text>
@@ -2476,9 +2477,9 @@ export default function LibraryScreen() {
               </View>
 
               {/* Other sources row */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, backgroundColor: '#fefcf9' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11, backgroundColor: T.CARD }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 13.5, fontWeight: '600', color: '#231f1b' }}>Elsewhere</Text>
+                  <Text style={{ fontSize: 13.5, fontWeight: '600', color: T.INK }}>Elsewhere</Text>
                   <Text style={{ fontSize: 11.5, color: '#78716c', marginTop: 1 }}>Libby, Amazon, a spreadsheet? Add them manually below.</Text>
                 </View>
               </View>
@@ -2490,27 +2491,27 @@ export default function LibraryScreen() {
               style={{
                 width: '100%',
                 borderWidth: 1,
-                borderColor: '#ede9e4',
+                borderColor: T.BORDER,
                 borderRadius: 12,
                 paddingVertical: 12,
                 alignItems: 'center',
                 marginBottom: 8,
               }}
             >
-              <Text style={{ color: '#57534e', fontSize: 13.5, fontWeight: '500' }}>Add your first book manually</Text>
+              <Text style={{ color: T.STONE, fontSize: 13.5, fontWeight: '500' }}>Add your first book manually</Text>
             </TouchableOpacity>
           </View>
         ) : items.length === 0 ? (
           <View style={{ alignItems: 'center', paddingTop: 52, paddingHorizontal: 32 }}>
-            <Text style={{ fontSize: 17, fontWeight: '700', color: '#231f1b', marginBottom: 10, textAlign: 'center' }}>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: T.INK, marginBottom: 10, textAlign: 'center' }}>
               {FILTER_EMPTY.all.title}
             </Text>
-            <Text style={{ color: '#9e958d', fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 28 }}>
+            <Text style={{ color: T.DUST, fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 28 }}>
               {FILTER_EMPTY.all.body}
             </Text>
             <TouchableOpacity
               onPress={() => router.push('/add-book')}
-              style={{ backgroundColor: '#231f1b', borderRadius: 12, paddingVertical: 13, paddingHorizontal: 26 }}
+              style={{ backgroundColor: T.INK, borderRadius: 12, paddingVertical: 13, paddingHorizontal: 26 }}
             >
               <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Add your first book</Text>
             </TouchableOpacity>
@@ -2518,24 +2519,24 @@ export default function LibraryScreen() {
         ) : (
           // Library has books but the active filter has zero matches
           <View style={{ paddingTop: 48, paddingHorizontal: 24, alignItems: 'center' }}>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: '#231f1b', marginBottom: 8, textAlign: 'center' }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: T.INK, marginBottom: 8, textAlign: 'center' }}>
               {FILTER_EMPTY[activeFilter].title}
             </Text>
-            <Text style={{ fontSize: 14, color: '#9e958d', textAlign: 'center', lineHeight: 22, marginBottom: activeFilter === 'reading' || activeFilter === 'want_to_read' ? 20 : 0 }}>
+            <Text style={{ fontSize: 14, color: T.DUST, textAlign: 'center', lineHeight: 22, marginBottom: activeFilter === 'reading' || activeFilter === 'want_to_read' ? 20 : 0 }}>
               {FILTER_EMPTY[activeFilter].body}
             </Text>
             {activeFilter === 'reading' && (
               statusCounts.want_to_read > 0 ? (
                 <TouchableOpacity
                   onPress={() => setActiveFilter('want_to_read')}
-                  style={{ borderWidth: 1, borderColor: '#ede9e4', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 }}
+                  style={{ borderWidth: 1, borderColor: T.BORDER, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 }}
                 >
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#57534e' }}>See your reading list</Text>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: T.STONE }}>See your reading list</Text>
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
                   onPress={() => router.push('/add-book')}
-                  style={{ backgroundColor: '#231f1b', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 }}
+                  style={{ backgroundColor: T.INK, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 }}
                 >
                   <Text style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>Add a book</Text>
                 </TouchableOpacity>
@@ -2557,7 +2558,7 @@ export default function LibraryScreen() {
                   (needs.needsPageCount && havePages    < wtrItems.length / 3) ||
                   (needs.needsSubjects  && haveSubjects < wtrItems.length / 3);
                 return (
-                  <Text style={{ fontSize: 12, color: '#9e958d', textAlign: 'center', marginTop: 6, lineHeight: 18 }}>
+                  <Text style={{ fontSize: 12, color: T.DUST, textAlign: 'center', marginTop: 6, lineHeight: 18 }}>
                     {sparse
                       ? "Most of your saved books don't have enough metadata to match this filter yet."
                       : 'Try a broader query, or clear it to see everything you saved.'}
@@ -2567,7 +2568,7 @@ export default function LibraryScreen() {
               return (
                 <TouchableOpacity
                   onPress={() => router.push('/add-book')}
-                  style={{ backgroundColor: '#231f1b', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 }}
+                  style={{ backgroundColor: T.INK, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 }}
                 >
                   <Text style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>Add Book</Text>
                 </TouchableOpacity>
@@ -2592,14 +2593,14 @@ export default function LibraryScreen() {
     >
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
         <View style={{
-          backgroundColor: '#fefcf9',
+          backgroundColor: T.CARD,
           borderTopLeftRadius: 22,
           borderTopRightRadius: 22,
           padding: 28,
           paddingBottom: 44,
         }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-            <Text style={{ flex: 1, fontSize: 17, fontWeight: '700', color: '#231f1b' }}>
+            <Text style={{ flex: 1, fontSize: 17, fontWeight: '700', color: T.INK }}>
               What stood out?
             </Text>
             <TouchableOpacity
@@ -2610,10 +2611,10 @@ export default function LibraryScreen() {
               }}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Text style={{ fontSize: 13, color: '#9e958d' }}>Skip</Text>
+              <Text style={{ fontSize: 13, color: T.DUST }}>Skip</Text>
             </TouchableOpacity>
           </View>
-          <Text style={{ fontSize: 13, color: '#9e958d', marginBottom: 22 }}>
+          <Text style={{ fontSize: 13, color: T.DUST, marginBottom: 22 }}>
             Optional — helps us find books you'll love.
           </Text>
 
@@ -2622,7 +2623,7 @@ export default function LibraryScreen() {
             const selected = isLiked ? likedTags : dislikedTags;
             return (
               <View key={groupLabel} style={{ marginBottom: 20 }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 10 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: T.DUST, letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 10 }}>
                   {groupLabel}
                 </Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
@@ -2641,13 +2642,13 @@ export default function LibraryScreen() {
                           }
                         }}
                         style={{
-                          backgroundColor: isSelected ? '#231f1b' : '#ede9e4',
+                          backgroundColor: isSelected ? T.INK : T.BORDER,
                           borderRadius: 20,
                           paddingHorizontal: 12,
                           paddingVertical: 6,
                         }}
                       >
-                        <Text style={{ fontSize: 13, color: isSelected ? '#fff' : '#57534e', fontWeight: isSelected ? '600' : '400' }}>
+                        <Text style={{ fontSize: 13, color: isSelected ? '#fff' : T.STONE, fontWeight: isSelected ? '600' : '400' }}>
                           {tag}
                         </Text>
                       </TouchableOpacity>
@@ -2662,7 +2663,7 @@ export default function LibraryScreen() {
             onPress={saveTasteTags}
             disabled={savingTaste}
             style={{
-              backgroundColor: '#231f1b',
+              backgroundColor: T.INK,
               borderRadius: 12,
               paddingVertical: 14,
               alignItems: 'center',
@@ -2716,25 +2717,25 @@ export default function LibraryScreen() {
       onRequestClose={() => setShowCreateShelfModal(false)}
     >
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <View style={{ width: '100%', maxWidth: 360, backgroundColor: '#fefcf9', borderRadius: 16, padding: 22 }}>
-          <Text style={{ fontSize: 16, fontWeight: '700', color: '#231f1b', marginBottom: 6 }}>New shelf</Text>
-          <Text style={{ fontSize: 13, color: '#9e958d', marginBottom: 16 }}>
+        <View style={{ width: '100%', maxWidth: 360, backgroundColor: T.CARD, borderRadius: 16, padding: 22 }}>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: T.INK, marginBottom: 6 }}>New shelf</Text>
+          <Text style={{ fontSize: 13, color: T.DUST, marginBottom: 16 }}>
             Group books however you like — for example "Summer reading" or "Recommended by Sam".
           </Text>
           <TextInput
             value={newShelfName}
             onChangeText={setNewShelfName}
             placeholder="Shelf name"
-            placeholderTextColor="#c4b5a5"
+            placeholderTextColor={T.FAINT}
             autoFocus
             maxLength={60}
             style={{
-              backgroundColor: '#f5f1ec',
+              backgroundColor: T.BG,
               borderRadius: 10,
               paddingHorizontal: 12,
               paddingVertical: 11,
               fontSize: 14,
-              color: '#231f1b',
+              color: T.INK,
               marginBottom: createShelfError ? 8 : 16,
             }}
           />
@@ -2746,7 +2747,7 @@ export default function LibraryScreen() {
               onPress={() => { setShowCreateShelfModal(false); setNewShelfName(''); setCreateShelfError(null); }}
               style={{ paddingVertical: 10, paddingHorizontal: 14 }}
             >
-              <Text style={{ fontSize: 14, color: '#9e958d', fontWeight: '600' }}>Cancel</Text>
+              <Text style={{ fontSize: 14, color: T.DUST, fontWeight: '600' }}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
               disabled={createShelfBusy || newShelfName.trim().length === 0 || !currentUserId}
@@ -2766,7 +2767,7 @@ export default function LibraryScreen() {
                 }
               }}
               style={{
-                backgroundColor: newShelfName.trim().length === 0 ? '#d8d3cc' : '#231f1b',
+                backgroundColor: newShelfName.trim().length === 0 ? '#d8d3cc' : T.INK,
                 borderRadius: 10,
                 paddingVertical: 10,
                 paddingHorizontal: 18,
@@ -2821,10 +2822,10 @@ function DnfReasonChips({ onSelect, onSkip }: { onSelect: (reason: string) => vo
               borderRadius: 20,
               paddingHorizontal: 11,
               paddingVertical: 5,
-              backgroundColor: '#fefcf9',
+              backgroundColor: T.CARD,
             }}
           >
-            <Text style={{ fontSize: 12, color: '#6b635c' }}>{r.label}</Text>
+            <Text style={{ fontSize: 12, color: T.STONE }}>{r.label}</Text>
           </TouchableOpacity>
         ))}
         <TouchableOpacity
@@ -2832,7 +2833,7 @@ function DnfReasonChips({ onSelect, onSkip }: { onSelect: (reason: string) => vo
           hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           style={{ paddingHorizontal: 4, paddingVertical: 5 }}
         >
-          <Text style={{ fontSize: 12, color: '#9e958d' }}>Skip</Text>
+          <Text style={{ fontSize: 12, color: T.DUST }}>Skip</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -2847,7 +2848,7 @@ function PrimaryButton({ label, onPress, disabled }: { label: string; onPress: (
       onPress={onPress}
       disabled={disabled}
       style={{
-        backgroundColor: disabled ? '#ede9e4' : '#231f1b',
+        backgroundColor: disabled ? T.BORDER : T.INK,
         borderRadius: 10,
         paddingHorizontal: 16,
         paddingVertical: 10,
@@ -2866,14 +2867,14 @@ function OutlineButton({ label, onPress, disabled }: { label: string; onPress: (
       disabled={disabled}
       style={{
         borderWidth: 1,
-        borderColor: disabled ? '#ede9e4' : '#ede9e4',
+        borderColor: disabled ? T.BORDER : T.BORDER,
         borderRadius: 10,
         paddingHorizontal: 16,
         paddingVertical: 10,
         alignItems: 'center',
       }}
     >
-      <Text style={{ color: disabled ? '#9e958d' : '#44403c', fontSize: 13, fontWeight: '500' }}>{label}</Text>
+      <Text style={{ color: disabled ? T.DUST : '#44403c', fontSize: 13, fontWeight: '500' }}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -2885,14 +2886,14 @@ function DangerButton({ label, onPress, disabled }: { label: string; onPress: ()
       disabled={disabled}
       style={{
         borderWidth: 1,
-        borderColor: disabled ? '#ede9e4' : '#fca5a5',
+        borderColor: disabled ? T.BORDER : '#fca5a5',
         borderRadius: 10,
         paddingHorizontal: 14,
         paddingVertical: 10,
         alignItems: 'center',
       }}
     >
-      <Text style={{ color: disabled ? '#9e958d' : '#b91c1c', fontSize: 13, fontWeight: '500' }}>{label}</Text>
+      <Text style={{ color: disabled ? T.DUST : '#b91c1c', fontSize: 13, fontWeight: '500' }}>{label}</Text>
     </TouchableOpacity>
   );
 }

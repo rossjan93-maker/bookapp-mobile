@@ -1,3 +1,4 @@
+import { useThemedTokens } from '../../lib/theme/useThemedTokens';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -134,8 +135,8 @@ const INPUT: object = {
   borderRadius: 12,
   padding: 14,
   fontSize: 15,
-  color: '#231f1b',
-  backgroundColor: '#f5f1ec',
+  color: T.INK,
+  backgroundColor: T.BG,
   marginBottom: 10,
 };
 
@@ -144,7 +145,7 @@ function BookGlyph() {
   return (
     <View style={{ alignItems: 'center', marginBottom: 16 }}>
       {[
-        { w: 28, c: '#7b9e7e', dx:  1 },
+        { w: 28, c: T.SAGE, dx:  1 },
         { w: 36, c: '#b5c4b1', dx: -2 },
         { w: 44, c: '#c9bdb0', dx:  1 },
       ].map((b, i) => (
@@ -166,10 +167,11 @@ function BookGlyph() {
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
 export default function LoginScreen() {
+  const T = useThemedTokens();
   if (!hasSupabaseConfig || !supabase) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f1ec' }}>
-        <Text style={{ color: '#6b635c', fontSize: 14 }}>Supabase not configured.</Text>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: T.BG }}>
+        <Text style={{ color: T.STONE, fontSize: 14 }}>Supabase not configured.</Text>
       </View>
     );
   }
@@ -529,7 +531,7 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: '#f5f1ec' }}
+      style={{ flex: 1, backgroundColor: T.BG }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
     <ScrollView
@@ -539,7 +541,7 @@ export default function LoginScreen() {
         padding: 28,
         paddingTop: Platform.OS === 'ios' ? 80 : 52,
         paddingBottom: 48,
-        backgroundColor: '#f5f1ec',
+        backgroundColor: T.BG,
       }}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
@@ -556,15 +558,15 @@ export default function LoginScreen() {
         <Text style={{
           fontSize:      46,
           fontWeight:    '800',
-          color:         '#231f1b',
+          color:         T.INK,
           letterSpacing: -1.5,
           lineHeight:    52,
           marginBottom:  6,
         }}>
           readstack
         </Text>
-        <View style={{ width: 32, height: 3, borderRadius: 2, backgroundColor: '#7b9e7e', marginBottom: 10 }} />
-        <Text style={{ fontSize: 12, color: '#9e958d', letterSpacing: 0.8, textTransform: 'uppercase' }}>
+        <View style={{ width: 32, height: 3, borderRadius: 2, backgroundColor: T.SAGE, marginBottom: 10 }} />
+        <Text style={{ fontSize: 12, color: T.DUST, letterSpacing: 0.8, textTransform: 'uppercase' }}>
           your reading, together.
         </Text>
         {mode === 'signup' && (
@@ -577,12 +579,12 @@ export default function LoginScreen() {
       {/* ── Form card — floats above the ivory background ─────────────────────── */}
       <Animated.View style={{
         width:           '100%',
-        backgroundColor: '#fefcf9',
+        backgroundColor: T.CARD,
         borderRadius:    24,
         paddingHorizontal: 22,
         paddingTop:      22,
         paddingBottom:   24,
-        shadowColor:     '#231f1b',
+        shadowColor:     T.INK,
         shadowOpacity:   0.07,
         shadowRadius:    24,
         shadowOffset:    { width: 0, height: 8 },
@@ -596,7 +598,7 @@ export default function LoginScreen() {
         <Text style={{
           fontSize:     20,
           fontWeight:   '800',
-          color:        '#231f1b',
+          color:        T.INK,
           letterSpacing: -0.5,
           marginBottom: 18,
           alignSelf:    'flex-start',
@@ -617,7 +619,7 @@ export default function LoginScreen() {
               <Text style={{
                 fontSize:      17,
                 fontWeight:    mode === m ? '700' : '400',
-                color:         mode === m ? '#231f1b' : '#9e958d',
+                color:         mode === m ? T.INK : T.DUST,
                 letterSpacing: mode === m ? -0.3 : 0,
               }}>
                 {m === 'signin' ? 'Sign in' : 'Create account'}
@@ -625,7 +627,7 @@ export default function LoginScreen() {
               <View style={{
                 height:          2,
                 borderRadius:    1,
-                backgroundColor: mode === m ? '#7b9e7e' : 'transparent',
+                backgroundColor: mode === m ? T.SAGE : 'transparent',
                 marginTop:       5,
               }} />
             </TouchableOpacity>
@@ -649,17 +651,17 @@ export default function LoginScreen() {
               borderColor:      '#e8e3dc',
               borderRadius:     12,
               paddingVertical:  13,
-              backgroundColor:  '#f5f1ec',
+              backgroundColor:  T.BG,
               gap:              10,
               opacity:          socialLoading !== null || loading ? 0.65 : 1,
             }}
           >
             {socialLoading === 'google' ? (
-              <ActivityIndicator size="small" color="#9e958d" />
+              <ActivityIndicator size="small" color={T.DUST} />
             ) : (
               <>
                 <Ionicons name="logo-google" size={18} color="#4285F4" />
-                <Text style={{ fontSize: 15, fontWeight: '600', color: '#231f1b' }}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: T.INK }}>
                   Continue with Google
                 </Text>
               </>
@@ -717,7 +719,7 @@ export default function LoginScreen() {
             marginTop:     20,
           }}>
             <View style={{ flex: 1, height: 1, backgroundColor: '#ddd8d0' }} />
-            <Text style={{ fontSize: 12, color: '#9e958d', fontWeight: '500' }}>or</Text>
+            <Text style={{ fontSize: 12, color: T.DUST, fontWeight: '500' }}>or</Text>
             <View style={{ flex: 1, height: 1, backgroundColor: '#ddd8d0' }} />
           </View>
 
@@ -730,7 +732,7 @@ export default function LoginScreen() {
           onPress={() => switchMode('signin')}
           style={{ alignSelf: 'flex-start', marginBottom: 20 }}
         >
-          <Text style={{ fontSize: 13, color: '#6b635c' }}>← Back to sign in</Text>
+          <Text style={{ fontSize: 13, color: T.STONE }}>← Back to sign in</Text>
         </TouchableOpacity>
       )}
 
@@ -743,7 +745,7 @@ export default function LoginScreen() {
               value={firstName}
               onChangeText={setFirstName}
               autoCapitalize="words"
-              placeholderTextColor="#9e958d"
+              placeholderTextColor={T.DUST}
               style={[INPUT, { flex: 1, marginBottom: 0 }]}
             />
             <TextInput
@@ -751,7 +753,7 @@ export default function LoginScreen() {
               value={lastName}
               onChangeText={setLastName}
               autoCapitalize="words"
-              placeholderTextColor="#9e958d"
+              placeholderTextColor={T.DUST}
               style={[INPUT, { flex: 1, marginBottom: 0 }]}
             />
           </View>
@@ -762,22 +764,22 @@ export default function LoginScreen() {
             borderWidth: 1,
             borderColor: '#e8e3dc',
             borderRadius: 12,
-            backgroundColor: '#f5f1ec',
+            backgroundColor: T.BG,
             marginBottom: 10,
             paddingHorizontal: 13,
           }}>
-            <Text style={{ fontSize: 15, color: '#9e958d', paddingVertical: 13 }}>@</Text>
+            <Text style={{ fontSize: 15, color: T.DUST, paddingVertical: 13 }}>@</Text>
             <TextInput
               placeholder="username"
               value={username}
               onChangeText={setUsername}
               autoCapitalize="none"
               autoCorrect={false}
-              placeholderTextColor="#9e958d"
-              style={{ flex: 1, fontSize: 15, color: '#231f1b', paddingVertical: 13 }}
+              placeholderTextColor={T.DUST}
+              style={{ flex: 1, fontSize: 15, color: T.INK, paddingVertical: 13 }}
             />
           </View>
-          <Text style={{ fontSize: 12, color: '#9e958d', marginBottom: 16, marginTop: -4, lineHeight: 17 }}>
+          <Text style={{ fontSize: 12, color: T.DUST, marginBottom: 16, marginTop: -4, lineHeight: 17 }}>
             3–20 characters, letters, numbers, or underscores.
           </Text>
         </View>
@@ -790,7 +792,7 @@ export default function LoginScreen() {
         onChangeText={setEmail}
         autoCapitalize="none"
         keyboardType="email-address"
-        placeholderTextColor="#9e958d"
+        placeholderTextColor={T.DUST}
         style={INPUT}
       />
 
@@ -803,7 +805,7 @@ export default function LoginScreen() {
           borderWidth: 1,
           borderColor: '#e8e3dc',
           borderRadius: 12,
-          backgroundColor: '#f5f1ec',
+          backgroundColor: T.BG,
           marginBottom: 10,
           paddingRight: 4,
         }}>
@@ -812,8 +814,8 @@ export default function LoginScreen() {
             value={password}
             onChangeText={setPassword}
             secureTextEntry={!showPassword}
-            placeholderTextColor="#9e958d"
-            style={{ flex: 1, fontSize: 15, color: '#231f1b', padding: 14 }}
+            placeholderTextColor={T.DUST}
+            style={{ flex: 1, fontSize: 15, color: T.INK, padding: 14 }}
           />
           <TouchableOpacity
             onPress={() => setShowPassword(p => !p)}
@@ -823,7 +825,7 @@ export default function LoginScreen() {
             <Ionicons
               name={showPassword ? 'eye-off-outline' : 'eye-outline'}
               size={20}
-              color="#9e958d"
+              color={T.DUST}
             />
           </TouchableOpacity>
         </View>
@@ -838,7 +840,7 @@ export default function LoginScreen() {
           borderWidth: 1,
           borderColor: '#e8e3dc',
           borderRadius: 12,
-          backgroundColor: '#f5f1ec',
+          backgroundColor: T.BG,
           marginBottom: 18,
           paddingRight: 4,
         }}>
@@ -847,8 +849,8 @@ export default function LoginScreen() {
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             secureTextEntry={!showConfirm}
-            placeholderTextColor="#9e958d"
-            style={{ flex: 1, fontSize: 15, color: '#231f1b', padding: 14 }}
+            placeholderTextColor={T.DUST}
+            style={{ flex: 1, fontSize: 15, color: T.INK, padding: 14 }}
           />
           <TouchableOpacity
             onPress={() => setShowConfirm(p => !p)}
@@ -858,7 +860,7 @@ export default function LoginScreen() {
             <Ionicons
               name={showConfirm ? 'eye-off-outline' : 'eye-outline'}
               size={20}
-              color="#9e958d"
+              color={T.DUST}
             />
           </TouchableOpacity>
         </View>
@@ -869,7 +871,7 @@ export default function LoginScreen() {
 
       {/* ── Submit button ─────────────────────────────────────────────────────── */}
       {loading ? (
-        <ActivityIndicator color="#9e958d" style={{ marginBottom: 12 }} />
+        <ActivityIndicator color={T.DUST} style={{ marginBottom: 12 }} />
       ) : (
         <TouchableOpacity
           onPress={
@@ -881,13 +883,13 @@ export default function LoginScreen() {
           disabled={emailSent}
           style={{
             width: '100%',
-            backgroundColor: emailSent ? '#9e958d' : '#231f1b',
+            backgroundColor: emailSent ? T.DUST : T.INK,
             paddingVertical: 16,
             borderRadius: 14,
             alignItems: 'center',
           }}
         >
-          <Text style={{ color: '#f5f1ec', fontSize: 15, fontWeight: '700', letterSpacing: -0.2 }}>
+          <Text style={{ color: T.BG, fontSize: 15, fontWeight: '700', letterSpacing: -0.2 }}>
             {mode === 'signin'  ? 'Sign in →' :
              mode === 'signup'  ? 'Create account →' :
              mode === 'forgot'  ? (emailSent ? 'Link sent ✓' : 'Send reset link →') :
@@ -900,12 +902,12 @@ export default function LoginScreen() {
       {mode === 'signin' && (
         <View style={{ width: '100%', marginTop: 18, gap: 10 }}>
           <TouchableOpacity onPress={() => switchMode('forgot')}>
-            <Text style={{ fontSize: 13, color: '#6b635c', textAlign: 'center' }}>
+            <Text style={{ fontSize: 13, color: T.STONE, textAlign: 'center' }}>
               Forgot your password?
             </Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => switchMode('resend')}>
-            <Text style={{ fontSize: 13, color: '#6b635c', textAlign: 'center' }}>
+            <Text style={{ fontSize: 13, color: T.STONE, textAlign: 'center' }}>
               Didn't receive a confirmation email?
             </Text>
           </TouchableOpacity>
@@ -920,7 +922,7 @@ export default function LoginScreen() {
           <Text style={{
             textAlign: 'center',
             fontSize: 13,
-            color: statusIsError ? '#b91c1c' : '#6b635c',
+            color: statusIsError ? '#b91c1c' : T.STONE,
             lineHeight: 20,
           }}>
             {status}
@@ -931,7 +933,7 @@ export default function LoginScreen() {
               onPress={() => switchMode('resend')}
               style={{ marginTop: 10, alignItems: 'center' }}
             >
-              <Text style={{ fontSize: 13, color: '#231f1b', fontWeight: '600', textDecorationLine: 'underline' }}>
+              <Text style={{ fontSize: 13, color: T.INK, fontWeight: '600', textDecorationLine: 'underline' }}>
                 Resend confirmation email
               </Text>
             </TouchableOpacity>
@@ -949,12 +951,12 @@ export default function LoginScreen() {
               marginTop: 14,
               paddingTop: 14,
               borderTopWidth: 1,
-              borderTopColor: '#ede9e4',
+              borderTopColor: T.BORDER,
             }}>
               <Text style={{
                 textAlign: 'center',
                 fontSize: 12,
-                color: '#6b635c',
+                color: T.STONE,
                 lineHeight: 18,
               }}>
                 If you originally signed up with Google{appleAvailable ? ' or Apple' : ''},
@@ -967,7 +969,7 @@ export default function LoginScreen() {
               >
                 <Text style={{
                   fontSize: 13,
-                  color: '#231f1b',
+                  color: T.INK,
                   fontWeight: '600',
                   textDecorationLine: 'underline',
                 }}>
@@ -987,12 +989,12 @@ export default function LoginScreen() {
               marginTop: 14,
               paddingTop: 14,
               borderTopWidth: 1,
-              borderTopColor: '#ede9e4',
+              borderTopColor: T.BORDER,
             }}>
               <Text style={{
                 textAlign: 'center',
                 fontSize: 12,
-                color: '#6b635c',
+                color: T.STONE,
                 lineHeight: 18,
               }}>
                 No email arriving? If you originally signed up with Google
@@ -1006,7 +1008,7 @@ export default function LoginScreen() {
               >
                 <Text style={{
                   fontSize: 13,
-                  color: '#231f1b',
+                  color: T.INK,
                   fontWeight: '600',
                   textDecorationLine: 'underline',
                 }}>
@@ -1032,14 +1034,14 @@ export default function LoginScreen() {
           <Text style={{
             fontSize: 14,
             fontWeight: '700',
-            color: '#231f1b',
+            color: T.INK,
             marginBottom: 6,
           }}>
             Too many emails sent
           </Text>
           <Text style={{
             fontSize: 13,
-            color: '#6b635c',
+            color: T.STONE,
             lineHeight: 20,
             marginBottom: 16,
           }}>
@@ -1049,14 +1051,14 @@ export default function LoginScreen() {
             onPress={() => setSignUpRateLimited(false)}
             style={{
               borderWidth: 1,
-              borderColor: '#ede9e4',
+              borderColor: T.BORDER,
               borderRadius: 10,
               paddingVertical: 10,
               alignItems: 'center',
-              backgroundColor: '#fefcf9',
+              backgroundColor: T.CARD,
             }}
           >
-            <Text style={{ fontSize: 13, color: '#6b635c', fontWeight: '600' }}>Try again later</Text>
+            <Text style={{ fontSize: 13, color: T.STONE, fontWeight: '600' }}>Try again later</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -1075,14 +1077,14 @@ export default function LoginScreen() {
           <Text style={{
             fontSize: 14,
             fontWeight: '700',
-            color: '#231f1b',
+            color: T.INK,
             marginBottom: 6,
           }}>
             Almost there — check your email
           </Text>
           <Text style={{
             fontSize: 13,
-            color: '#6b635c',
+            color: T.STONE,
             lineHeight: 20,
             marginBottom: 16,
           }}>
@@ -1091,7 +1093,7 @@ export default function LoginScreen() {
 
           {/* Inline resend feedback */}
           {resendSent && (
-            <Text style={{ fontSize: 13, color: '#7b9e7e', fontWeight: '600', marginBottom: 10, textAlign: 'center' }}>
+            <Text style={{ fontSize: 13, color: T.SAGE, fontWeight: '600', marginBottom: 10, textAlign: 'center' }}>
               Sent! Check your inbox again.
             </Text>
           )}
@@ -1104,7 +1106,7 @@ export default function LoginScreen() {
               borderColor: '#d8c9b4',
               marginBottom: 10,
             }}>
-              <Text style={{ fontSize: 13, color: '#6b635c', lineHeight: 19 }}>
+              <Text style={{ fontSize: 13, color: T.STONE, lineHeight: 19 }}>
                 We've sent too many emails to this address recently. Please wait a minute before trying again.
               </Text>
             </View>
@@ -1116,14 +1118,14 @@ export default function LoginScreen() {
               disabled={loading}
               style={{
                 borderWidth: 1,
-                borderColor: '#ede9e4',
+                borderColor: T.BORDER,
                 borderRadius: 10,
                 paddingVertical: 10,
                 alignItems: 'center',
-                backgroundColor: '#fefcf9',
+                backgroundColor: T.CARD,
               }}
             >
-              <Text style={{ fontSize: 13, color: '#6b635c', fontWeight: '600' }}>
+              <Text style={{ fontSize: 13, color: T.STONE, fontWeight: '600' }}>
                 {resendRateLimited ? 'Try resending later' : 'Resend confirmation email'}
               </Text>
             </TouchableOpacity>
@@ -1145,14 +1147,14 @@ export default function LoginScreen() {
           <Text style={{
             fontSize: 14,
             fontWeight: '700',
-            color: '#231f1b',
+            color: T.INK,
             marginBottom: 6,
           }}>
             An account already exists with this email.
           </Text>
           <Text style={{
             fontSize: 13,
-            color: '#6b635c',
+            color: T.STONE,
             lineHeight: 20,
             marginBottom: 18,
           }}>
@@ -1162,34 +1164,34 @@ export default function LoginScreen() {
           <TouchableOpacity
             onPress={() => switchMode('signin')}
             style={{
-              backgroundColor: '#231f1b',
+              backgroundColor: T.INK,
               borderRadius: 10,
               paddingVertical: 11,
               alignItems: 'center',
               marginBottom: 8,
             }}
           >
-            <Text style={{ color: '#f5f1ec', fontSize: 14, fontWeight: '600' }}>Sign In</Text>
+            <Text style={{ color: T.BG, fontSize: 14, fontWeight: '600' }}>Sign In</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             onPress={() => switchMode('forgot')}
             style={{
               borderWidth: 1,
-              borderColor: '#ede9e4',
+              borderColor: T.BORDER,
               borderRadius: 10,
               paddingVertical: 10,
               alignItems: 'center',
-              backgroundColor: '#fefcf9',
+              backgroundColor: T.CARD,
               marginBottom: 8,
             }}
           >
-            <Text style={{ fontSize: 13, color: '#6b635c', fontWeight: '500' }}>Reset Password</Text>
+            <Text style={{ fontSize: 13, color: T.STONE, fontWeight: '500' }}>Reset Password</Text>
           </TouchableOpacity>
 
           {/* Resend confirmation — for unconfirmed accounts */}
           {resendSent ? (
-            <Text style={{ fontSize: 13, color: '#7b9e7e', fontWeight: '600', textAlign: 'center', marginTop: 4 }}>
+            <Text style={{ fontSize: 13, color: T.SAGE, fontWeight: '600', textAlign: 'center', marginTop: 4 }}>
               Confirmation email sent — check your inbox.
             </Text>
           ) : (
@@ -1203,7 +1205,7 @@ export default function LoginScreen() {
                   borderColor: '#d8c9b4',
                   marginBottom: 8,
                 }}>
-                  <Text style={{ fontSize: 12, color: '#6b635c', lineHeight: 18 }}>
+                  <Text style={{ fontSize: 12, color: T.STONE, lineHeight: 18 }}>
                     Too many emails sent recently — wait a minute before trying again.
                   </Text>
                 </View>
@@ -1213,14 +1215,14 @@ export default function LoginScreen() {
                 disabled={loading}
                 style={{
                   borderWidth: 1,
-                  borderColor: '#ede9e4',
+                  borderColor: T.BORDER,
                   borderRadius: 10,
                   paddingVertical: 10,
                   alignItems: 'center',
-                  backgroundColor: '#fefcf9',
+                  backgroundColor: T.CARD,
                 }}
               >
-                <Text style={{ fontSize: 13, color: '#6b635c', fontWeight: '500' }}>
+                <Text style={{ fontSize: 13, color: T.STONE, fontWeight: '500' }}>
                   {resendRateLimited ? 'Try resending later' : 'Resend confirmation email'}
                 </Text>
               </TouchableOpacity>
@@ -1235,7 +1237,7 @@ export default function LoginScreen() {
           onPress={() => switchMode('signin')}
           style={{ marginTop: 18 }}
         >
-          <Text style={{ fontSize: 13, color: '#6b635c', textAlign: 'center' }}>← Back to sign in</Text>
+          <Text style={{ fontSize: 13, color: T.STONE, textAlign: 'center' }}>← Back to sign in</Text>
         </TouchableOpacity>
       )}
     </ScrollView>
@@ -1248,13 +1250,13 @@ export default function LoginScreen() {
       <View style={{
         position:        'absolute',
         top: 0, left: 0, right: 0, bottom: 0,
-        backgroundColor: '#f5f1ec',
+        backgroundColor: T.BG,
         alignItems:      'center',
         justifyContent:  'center',
         gap:             20,
       }}>
         <BookStackLoader size="sm" />
-        <Text style={{ fontSize: 15, fontWeight: '600', color: '#231f1b', letterSpacing: -0.2 }}>
+        <Text style={{ fontSize: 15, fontWeight: '600', color: T.INK, letterSpacing: -0.2 }}>
           Signed in — loading your account…
         </Text>
       </View>

@@ -1,7 +1,21 @@
+/**
+ * components/CustomTabBar.tsx
+ *
+ * Themable bottom tab bar. Reads the active theme via `useAppTheme()` so
+ * tab pill, active/inactive icon tint, label colors, and badge background
+ * all switch with the user's theme choice.
+ *
+ * Style architecture:
+ *   - The static, theme-agnostic geometry (radii, paddings, dimensions)
+ *     lives in `StyleSheet.create` for performance.
+ *   - All theme-dependent values (backgroundColor, color, shadowColor) are
+ *     applied inline so they re-evaluate on theme change.
+ */
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { useAppTheme } from '../lib/theme/ThemeProvider';
 
 type TabConfig = {
   name:         string;
@@ -20,16 +34,26 @@ const TABS: TabConfig[] = [
 const TAB_NAMES = new Set(TABS.map(t => t.name));
 const TAB_MAP   = new Map(TABS.map(t => [t.name, t]));
 
-const INK      = '#231f1b';
-const DUST     = '#9e958d';
-const SAGE     = '#7b9e7e';
-
 export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const { theme } = useAppTheme();
+  const c = theme.colors;
 
   return (
     <View style={[styles.outerWrap, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-      <View style={styles.pill}>
+      <View
+        style={[
+          styles.pill,
+          {
+            backgroundColor: c.tabBar,
+            shadowColor:     theme.isDark ? '#000' : '#231f1b',
+            shadowOpacity:   theme.isDark ? 0.45 : 0.11,
+            // A faint border helps the bar stand off the page on Atelier (dark)
+            borderWidth:     theme.isDark ? 1 : 0,
+            borderColor:     theme.isDark ? c.border : 'transparent',
+          },
+        ]}
+      >
         {state.routes.filter(r => TAB_NAMES.has(r.name)).map((route) => {
           const routeIndex = state.routes.indexOf(route);
           const isFocused  = state.index === routeIndex;
@@ -61,22 +85,36 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
               activeOpacity={0.7}
               style={styles.tab}
             >
-              {/* Active tab gets a sage tinted pill background */}
-              <View style={[styles.iconPill, isFocused && styles.iconPillActive]}>
+              {/* Active tab gets a tinted pill in the active accent */}
+              <View
+                style={[
+                  styles.iconPill,
+                  isFocused && { backgroundColor: c.accentSoft },
+                ]}
+              >
                 <Ionicons
                   name={isFocused ? tab.iconFocused : tab.icon}
                   size={21}
-                  color={isFocused ? SAGE : DUST}
+                  color={isFocused ? c.accent : c.tabInactive}
                 />
                 {badge !== undefined && badge !== null && (
-                  <View style={[styles.badge, badgeStyle as any]}>
-                    <Text style={styles.badgeText}>{badge}</Text>
+                  <View
+                    style={[
+                      styles.badge,
+                      { backgroundColor: c.textPrimary },
+                      badgeStyle as any,
+                    ]}
+                  >
+                    <Text style={[styles.badgeText, { color: c.tabBar }]}>{badge}</Text>
                   </View>
                 )}
               </View>
 
               <Text
-                style={[styles.label, isFocused && styles.labelActive]}
+                style={[
+                  styles.label,
+                  { color: isFocused ? c.accent : c.tabInactive, fontWeight: isFocused ? '700' : '500' },
+                ]}
                 numberOfLines={1}
                 allowFontScaling={false}
               >
@@ -99,11 +137,8 @@ const styles = StyleSheet.create({
 
   pill: {
     flexDirection:   'row',
-    backgroundColor: '#fefcf9',
     borderRadius:    28,
     paddingVertical: 8,
-    shadowColor:     '#231f1b',
-    shadowOpacity:   0.11,
     shadowRadius:    18,
     shadowOffset:    { width: 0, height: 4 },
     elevation:       8,
@@ -124,15 +159,11 @@ const styles = StyleSheet.create({
     justifyContent:'center',
     position:      'relative',
   },
-  iconPillActive: {
-    backgroundColor: '#eef4ee',
-  },
 
   badge: {
     position:          'absolute',
     top:               -3,
     right:             -4,
-    backgroundColor:   '#231f1b',
     borderRadius:      8,
     minWidth:          15,
     height:            15,
@@ -141,7 +172,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   badgeText: {
-    color:      '#fefcf9',
     fontSize:   8.5,
     fontWeight: '700',
     lineHeight: 11,
@@ -149,12 +179,6 @@ const styles = StyleSheet.create({
 
   label: {
     fontSize:      10,
-    fontWeight:    '500',
-    color:         DUST,
     letterSpacing: 0.1,
-  },
-  labelActive: {
-    color:      SAGE,
-    fontWeight: '700',
   },
 });

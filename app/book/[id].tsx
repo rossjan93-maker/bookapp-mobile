@@ -1,4 +1,4 @@
-import { SAGE, SAGE_BG, SAGE_DEEP } from '../../lib/tokens';
+import { useThemedTokens } from '../../lib/theme/useThemedTokens';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -73,7 +73,7 @@ function _cacheBookMeta(bookId: string, entry: BookMetaEntry): void {
 const STATUS_META: Record<string, { bg: string; text: string; label: string }> = {
   want_to_read: { bg: '#f1f5f9', text: '#475569', label: 'Want to Read' },
   reading:      { bg: '#dbeafe', text: '#1d4ed8', label: 'Reading'      },
-  finished:     { bg: '#eaf1ea', text: SAGE_DEEP, label: 'Finished'     },
+  finished:     { bg: T.SAGE_BG, text: T.SAGE_DEEP, label: 'Finished'     },
   dnf:          { bg: '#fee2e2', text: '#b91c1c', label: 'DNF'          },
   sent:         { bg: '#f1f5f9', text: '#475569', label: 'New'          },
   saved:        { bg: '#e0f2fe', text: '#0369a1', label: 'Want to Read' },
@@ -87,7 +87,7 @@ function SectionLabel({ children }: { children: string }) {
     <Text style={{
       fontSize: 11,
       fontWeight: '700',
-      color: '#9e958d',
+      color: T.DUST,
       letterSpacing: 0.9,
       textTransform: 'uppercase',
       marginBottom: 10,
@@ -129,12 +129,12 @@ function ContentWarnings({ warnings, subjects, expanded, onToggle }: ContentWarn
 
   return (
     <View style={{
-      backgroundColor: '#fefcf9',
+      backgroundColor: T.CARD,
       borderRadius: 14,
       padding: 18,
       marginBottom: 20,
       borderWidth: 1,
-      borderColor: '#ede9e4',
+      borderColor: T.BORDER,
     }}>
       <TouchableOpacity
         onPress={onToggle}
@@ -146,7 +146,7 @@ function ContentWarnings({ warnings, subjects, expanded, onToggle }: ContentWarn
           <Text style={{
             fontSize: 11,
             fontWeight: '700',
-            color: '#9e958d',
+            color: T.DUST,
             letterSpacing: 0.9,
             textTransform: 'uppercase',
           }}>
@@ -158,7 +158,7 @@ function ContentWarnings({ warnings, subjects, expanded, onToggle }: ContentWarn
             </Text>
           )}
         </View>
-        <Text style={{ fontSize: 13, color: '#9e958d' }}>
+        <Text style={{ fontSize: 13, color: T.DUST }}>
           {expanded ? '▲' : '▼'}
         </Text>
       </TouchableOpacity>
@@ -204,11 +204,11 @@ function ContentWarnings({ warnings, subjects, expanded, onToggle }: ContentWarn
                       paddingHorizontal: 12,
                       paddingVertical: 5,
                       borderWidth: 1,
-                      borderColor: '#ede9e4',
+                      borderColor: T.BORDER,
                       borderStyle: 'dashed',
                     }}
                   >
-                    <Text style={{ fontSize: 12, color: '#9e958d' }}>{w.label}</Text>
+                    <Text style={{ fontSize: 12, color: T.DUST }}>{w.label}</Text>
                   </View>
                 ))}
               </View>
@@ -234,6 +234,7 @@ function ContentWarnings({ warnings, subjects, expanded, onToggle }: ContentWarn
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function BookDetailScreen() {
+  const T = useThemedTokens();
   const router     = useRouter();
   const navigation = useNavigation();
 
@@ -1579,9 +1580,9 @@ export default function BookDetailScreen() {
   const descTruncated   = descText && descText.length > DESC_LIMIT && !descExpanded;
   const displayDesc     = descTruncated ? descText!.slice(0, DESC_LIMIT).trimEnd() + '…' : descText;
 
-  const pacingChipColor  = pacingState === 'ahead' ? SAGE_DEEP : pacingState === 'behind' ? '#b91c1c' : '#78716c';
-  const pacingChipBg     = pacingState === 'ahead' ? '#eaf1ea' : pacingState === 'behind' ? '#fef2f2' : '#ede9e4';
-  const pacingChipBorder = pacingState === 'ahead' ? '#7b9e7e' : pacingState === 'behind' ? '#fecaca' : '#ede9e4';
+  const pacingChipColor  = pacingState === 'ahead' ? T.SAGE_DEEP : pacingState === 'behind' ? '#b91c1c' : '#78716c';
+  const pacingChipBg     = pacingState === 'ahead' ? T.SAGE_BG : pacingState === 'behind' ? '#fef2f2' : T.BORDER;
+  const pacingChipBorder = pacingState === 'ahead' ? T.SAGE : pacingState === 'behind' ? '#fecaca' : T.BORDER;
 
   // Series section — synchronous from static catalog + route params.
   // No async dependency: if seriesName and seriesPosition are in the params,
@@ -1613,7 +1614,7 @@ export default function BookDetailScreen() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#f5f1ec' }}>
+    <View style={{ flex: 1, backgroundColor: T.BG }}>
     <ScrollView
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingBottom: 64 }}
@@ -1724,7 +1725,7 @@ export default function BookDetailScreen() {
 
             {/* Bottom fade: hero bleeds into page bg */}
             <LinearGradient
-              colors={['rgba(238,233,226,0)', '#f5f1ec']}
+              colors={['rgba(238,233,226,0)', T.BG]}
               start={{ x: 0, y: 0 }}
               end={{ x: 0, y: 1 }}
               pointerEvents="none"
@@ -1764,7 +1765,7 @@ export default function BookDetailScreen() {
             activeOpacity={editions.length > 1 ? 0.6 : 1}
             style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 4 }}
           >
-            <Text style={{ fontSize: 12, color: '#9e958d' }}>
+            <Text style={{ fontSize: 12, color: T.DUST }}>
               {(() => {
                 const pub = displayEdition.publisher?.toLowerCase().trim();
                 const hasPublisher = !!pub && pub !== 'n/a' && pub !== 'na';
@@ -1799,7 +1800,7 @@ export default function BookDetailScreen() {
                 onPress={openBookEditSheet}
                 hitSlop={{ top: 10, bottom: 10, left: 12, right: 0 }}
               >
-                <Text style={{ fontSize: 13, color: '#9e958d', fontWeight: '500' }}>Edit</Text>
+                <Text style={{ fontSize: 13, color: T.DUST, fontWeight: '500' }}>Edit</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -1815,11 +1816,11 @@ export default function BookDetailScreen() {
              user_books fetch — no layout change, only color/text swap.       */}
         {hasSagaMeta && sagaCatalogEntry && (
           <View style={{
-            backgroundColor: '#fefcf9',
+            backgroundColor: T.CARD,
             borderRadius: 14,
             marginBottom: 16,
             borderWidth: 1,
-            borderColor: '#ede9e4',
+            borderColor: T.BORDER,
             overflow: 'hidden',
           }}>
 
@@ -1837,7 +1838,7 @@ export default function BookDetailScreen() {
                 <Text style={{
                   fontSize:      10,
                   fontWeight:    '700',
-                  color:         '#9e958d',
+                  color:         T.DUST,
                   letterSpacing: 0.9,
                   textTransform: 'uppercase',
                   marginBottom:  3,
@@ -1847,21 +1848,21 @@ export default function BookDetailScreen() {
                 <Text style={{
                   fontSize:   13,
                   fontWeight: '500',
-                  color:      '#231f1b',
+                  color:      T.INK,
                 }}>
                   {'Continue your journey'}
                   {seriesMeta ? ` · ${seriesMeta.displayName}` : ''}
                 </Text>
               </View>
               {/* Chevron — down when collapsed, up when expanded */}
-              <Text style={{ fontSize: 14, color: '#9e958d', marginLeft: 12 }}>
+              <Text style={{ fontSize: 14, color: T.DUST, marginLeft: 12 }}>
                 {sagaExpanded ? '∧' : '›'}
               </Text>
             </TouchableOpacity>
 
             {/* ── Expanded: full sub-series rows ──────────────────────────── */}
             {sagaExpanded && (
-              <View style={{ borderTopWidth: 1, borderTopColor: '#ede9e4' }}>
+              <View style={{ borderTopWidth: 1, borderTopColor: T.BORDER }}>
                 {sagaCatalogEntry.series_order.map((sKey, i) => {
                   const cat        = getSeriesCatalog(sKey);
                   if (!cat) return null;
@@ -1883,7 +1884,7 @@ export default function BookDetailScreen() {
                   const targetBook = cat.orderedBooks[targetPos - 1] ?? cat.orderedBooks[0];
 
                   // Name color — locked is muted, current is dark, else medium
-                  const nameColor = isLocked ? '#c0bbb6' : isCurrent ? '#231f1b' : '#57534e';
+                  const nameColor = isLocked ? '#c0bbb6' : isCurrent ? T.INK : T.STONE;
 
                   // Subtitle — always rendered so row height is deterministic
                   const subtitleText = !hasLoaded
@@ -1929,24 +1930,24 @@ export default function BookDetailScreen() {
                       <View style={{ width: 24, alignItems: 'center', justifyContent: 'center' }}>
                         {isComplete ? (
                           // Completed — green checkmark
-                          <Text style={{ fontSize: 13, color: SAGE_DEEP, lineHeight: 18 }}>✓</Text>
+                          <Text style={{ fontSize: 13, color: T.SAGE_DEEP, lineHeight: 18 }}>✓</Text>
                         ) : (isCurrent || isInProg) ? (
                           // Current view or in-progress — green filled dot
                           <View style={{
                             width: 8, height: 8, borderRadius: 4,
-                            backgroundColor: SAGE_DEEP,
+                            backgroundColor: T.SAGE_DEEP,
                           }} />
                         ) : isNextAvail ? (
                           // Next allowed, not started — green ring
                           <View style={{
                             width: 8, height: 8, borderRadius: 4,
-                            borderWidth: 1.5, borderColor: SAGE_DEEP,
+                            borderWidth: 1.5, borderColor: T.SAGE_DEEP,
                           }} />
                         ) : (
                           // Locked or pre-load — gray ring
                           <View style={{
                             width: 8, height: 8, borderRadius: 4,
-                            borderWidth: 1.5, borderColor: '#ede9e4',
+                            borderWidth: 1.5, borderColor: T.BORDER,
                           }} />
                         )}
                       </View>
@@ -1962,7 +1963,7 @@ export default function BookDetailScreen() {
                         </Text>
                         <Text style={{
                           fontSize:  11,
-                          color:     isLocked ? '#ede9e4' : '#9e958d',
+                          color:     isLocked ? T.BORDER : T.DUST,
                           marginTop: 2,
                           lineHeight: 15,
                         }}>
@@ -1974,7 +1975,7 @@ export default function BookDetailScreen() {
                       {!isCurrent && (
                         <Text style={{
                           fontSize:   16,
-                          color:      isLocked ? '#ede9e4' : '#c0bbb6',
+                          color:      isLocked ? T.BORDER : '#c0bbb6',
                           marginLeft: 8,
                         }}>›</Text>
                       )}
@@ -1992,17 +1993,17 @@ export default function BookDetailScreen() {
              Cover images start as placeholder boxes and fill in post-mount. */}
         {hasSeriesMeta && (
           <View style={{
-            backgroundColor: '#fefcf9',
+            backgroundColor: T.CARD,
             borderRadius: 14,
             padding: 16,
             marginBottom: 24,
             borderWidth: 1,
-            borderColor: '#ede9e4',
+            borderColor: T.BORDER,
           }}>
             <Text style={{
               fontSize: 11,
               fontWeight: '700',
-              color: '#9e958d',
+              color: T.DUST,
               letterSpacing: 0.9,
               textTransform: 'uppercase',
               marginBottom: 12,
@@ -2104,7 +2105,7 @@ export default function BookDetailScreen() {
                     >
                       <View style={{
                         borderWidth:  isCurrent ? 2 : 0,
-                        borderColor:  '#231f1b',
+                        borderColor:  T.INK,
                         borderRadius: 5,
                       }}>
                         {coverUri ? (
@@ -2114,7 +2115,7 @@ export default function BookDetailScreen() {
                               width:           coverW,
                               height:          coverH,
                               borderRadius:    4,
-                              backgroundColor: '#ede9e4',
+                              backgroundColor: T.BORDER,
                             }}
                           />
                         ) : (
@@ -2131,7 +2132,7 @@ export default function BookDetailScreen() {
                       {stripLabel ? (
                         <Text style={{
                           fontSize:   10,
-                          color:      '#9e958d',
+                          color:      T.DUST,
                           marginTop:  5,
                           textAlign:  'center',
                           lineHeight: 13,
@@ -2160,7 +2161,7 @@ export default function BookDetailScreen() {
               onPress={() => handleTransition('reading')}
               disabled={transitioning}
               style={{
-                backgroundColor: transitioning ? '#ede9e4' : '#231f1b',
+                backgroundColor: transitioning ? T.BORDER : T.INK,
                 borderRadius: 12,
                 paddingVertical: 15,
                 alignItems: 'center',
@@ -2182,12 +2183,12 @@ export default function BookDetailScreen() {
         {/* ── Reading Progress card (primary module) ── */}
         {isReading && (
           <View style={{
-            backgroundColor: '#fefcf9',
+            backgroundColor: T.CARD,
             borderRadius: 16,
             padding: 20,
             marginBottom: 20,
             borderTopWidth: 3,
-            borderTopColor: '#231f1b',
+            borderTopColor: T.INK,
             shadowColor: '#000',
             shadowOpacity: 0.06,
             shadowRadius: 10,
@@ -2206,7 +2207,7 @@ export default function BookDetailScreen() {
                     <Text style={{
                       fontSize: 36,
                       fontWeight: '800',
-                      color: '#231f1b',
+                      color: T.INK,
                       letterSpacing: -1,
                       marginBottom: 8,
                     }}>
@@ -2214,7 +2215,7 @@ export default function BookDetailScreen() {
                     </Text>
                     <View style={{
                       height: 8,
-                      backgroundColor: '#ede9e4',
+                      backgroundColor: T.BORDER,
                       borderRadius: 4,
                       overflow: 'hidden',
                       marginBottom: 8,
@@ -2222,7 +2223,7 @@ export default function BookDetailScreen() {
                       <View style={{
                         height: 8,
                         width: `${progressPct ?? 0}%`,
-                        backgroundColor: '#231f1b',
+                        backgroundColor: T.INK,
                         borderRadius: 4,
                       }} />
                     </View>
@@ -2239,7 +2240,7 @@ export default function BookDetailScreen() {
                   </Text>
                 )}
                 {hasPaging && paceEstimate == null && avgUserPace != null && effectivePageCount != null && currentPage != null && effectivePageCount > 0 && (
-                  <Text style={{ fontSize: 13, color: '#9e958d', marginBottom: 14 }}>
+                  <Text style={{ fontSize: 13, color: T.DUST, marginBottom: 14 }}>
                     Finish by {shortDate(new Date(Date.now() + ((effectivePageCount - currentPage) / avgUserPace) * 86_400_000))} at your usual pace
                   </Text>
                 )}
@@ -2264,12 +2265,12 @@ export default function BookDetailScreen() {
                 {!pagePacing && datePacing && (
                   <View style={{
                     alignSelf: 'flex-start',
-                    backgroundColor: datePacing.state === 'behind' ? '#fef9f0' : '#ede9e4',
+                    backgroundColor: datePacing.state === 'behind' ? '#fef9f0' : T.BORDER,
                     borderRadius: 20,
                     paddingHorizontal: 12,
                     paddingVertical: 6,
                     borderWidth: 1,
-                    borderColor: datePacing.state === 'behind' ? '#fde68a' : '#ede9e4',
+                    borderColor: datePacing.state === 'behind' ? '#fde68a' : T.BORDER,
                     marginBottom: 14,
                   }}>
                     <Text style={{ fontSize: 13, fontWeight: '600', color: datePacing.state === 'behind' ? '#92400e' : '#78716c' }}>
@@ -2281,14 +2282,14 @@ export default function BookDetailScreen() {
                   <TouchableOpacity
                     onPress={() => router.push('/settings')}
                     style={{
-                      backgroundColor: '#f5f1ec',
+                      backgroundColor: T.BG,
                       borderRadius: 8,
                       paddingHorizontal: 12,
                       paddingVertical: 9,
                       marginBottom: 14,
                     }}
                   >
-                    <Text style={{ fontSize: 12, color: '#9e958d' }}>
+                    <Text style={{ fontSize: 12, color: T.DUST }}>
                       Set a yearly reading goal in Settings to get pacing guidance →
                     </Text>
                   </TouchableOpacity>
@@ -2300,14 +2301,14 @@ export default function BookDetailScreen() {
                     flexDirection: 'row',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    backgroundColor: '#f5f1ec',
+                    backgroundColor: T.BG,
                     borderRadius: 8,
                     paddingHorizontal: 12,
                     paddingVertical: 10,
                     marginBottom: 14,
                     gap: 12,
                   }}>
-                    <Text style={{ fontSize: 13, color: '#9e958d', flex: 1, lineHeight: 18 }}>
+                    <Text style={{ fontSize: 13, color: T.DUST, flex: 1, lineHeight: 18 }}>
                       Total pages unknown — add them to unlock progress tracking.
                     </Text>
                     <TouchableOpacity
@@ -2319,7 +2320,7 @@ export default function BookDetailScreen() {
                       }}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
-                      <Text style={{ fontSize: 13, color: '#57534e', fontWeight: '600', textDecorationLine: 'underline' }}>
+                      <Text style={{ fontSize: 13, color: T.STONE, fontWeight: '600', textDecorationLine: 'underline' }}>
                         Set pages
                       </Text>
                     </TouchableOpacity>
@@ -2337,20 +2338,20 @@ export default function BookDetailScreen() {
                         onChangeText={setPageCountInput}
                         keyboardType="number-pad"
                         placeholder="e.g. 320"
-                        placeholderTextColor="#9e958d"
+                        placeholderTextColor={T.DUST}
                         returnKeyType="done"
                         onSubmitEditing={handleSavePageCount}
                         style={{
                           width: 100,
                           height: 44,
                           borderWidth: 1.5,
-                          borderColor: '#ede9e4',
+                          borderColor: T.BORDER,
                           borderRadius: 8,
                           paddingHorizontal: 12,
                           fontSize: 18,
                           fontWeight: '700',
-                          color: '#231f1b',
-                          backgroundColor: '#fefcf9',
+                          color: T.INK,
+                          backgroundColor: T.CARD,
                           textAlign: 'center',
                         }}
                       />
@@ -2358,7 +2359,7 @@ export default function BookDetailScreen() {
                         onPress={handleSavePageCount}
                         disabled={savingPageCount}
                         style={{
-                          backgroundColor: savingPageCount ? '#ede9e4' : '#231f1b',
+                          backgroundColor: savingPageCount ? T.BORDER : T.INK,
                           borderRadius: 8,
                           paddingHorizontal: 16,
                           paddingVertical: 11,
@@ -2373,7 +2374,7 @@ export default function BookDetailScreen() {
                         onPress={() => { setEditingPageCount(false); setPageCountError(null); Keyboard.dismiss(); }}
                         style={{ paddingHorizontal: 8, paddingVertical: 11 }}
                       >
-                        <Text style={{ fontSize: 13, color: '#9e958d' }}>Cancel</Text>
+                        <Text style={{ fontSize: 13, color: T.DUST }}>Cancel</Text>
                       </TouchableOpacity>
                     </View>
                     {pageCountError && (
@@ -2384,12 +2385,12 @@ export default function BookDetailScreen() {
 
                 {/* ── 4. Tertiary: last updated + stale nudge ── */}
                 {lastUpdatedLabel && !editingProgress && !editingPageCount && (
-                  <Text style={{ fontSize: 12, color: '#c4b5a5', marginBottom: isStale ? 3 : 16 }}>
+                  <Text style={{ fontSize: 12, color: T.FAINT, marginBottom: isStale ? 3 : 16 }}>
                     {lastUpdatedLabel}
                   </Text>
                 )}
                 {isStale && !editingProgress && !editingPageCount && (
-                  <Text style={{ fontSize: 12, color: '#9e958d', fontStyle: 'italic', marginBottom: 16 }}>
+                  <Text style={{ fontSize: 12, color: T.DUST, fontStyle: 'italic', marginBottom: 16 }}>
                     Pick this back up?
                   </Text>
                 )}
@@ -2405,7 +2406,7 @@ export default function BookDetailScreen() {
                         setTimeout(() => pageInputRef.current?.focus(), 80);
                       }}
                       style={{
-                        backgroundColor: '#231f1b',
+                        backgroundColor: T.INK,
                         borderRadius: 10,
                         paddingVertical: 13,
                         alignItems: 'center',
@@ -2426,7 +2427,7 @@ export default function BookDetailScreen() {
                         disabled={pausing || transitioning}
                         style={{
                           borderWidth: 1,
-                          borderColor: pausedAt ? '#fcd34d' : '#ede9e4',
+                          borderColor: pausedAt ? '#fcd34d' : T.BORDER,
                           backgroundColor: pausedAt ? '#fef9c3' : 'transparent',
                           borderRadius: 10,
                           paddingVertical: 11,
@@ -2456,7 +2457,7 @@ export default function BookDetailScreen() {
                           style={{
                             flex: 1,
                             borderWidth: 1,
-                            borderColor: transitioning ? '#ede9e4' : '#ede9e4',
+                            borderColor: transitioning ? T.BORDER : T.BORDER,
                             borderRadius: 10,
                             paddingVertical: 11,
                             alignItems: 'center',
@@ -2464,7 +2465,7 @@ export default function BookDetailScreen() {
                         >
                           {transitioning
                             ? <ActivityIndicator color="#78716c" size="small" />
-                            : <Text style={{ color: transitioning ? '#9e958d' : '#44403c', fontSize: 13, fontWeight: '500' }}>Mark Finished</Text>
+                            : <Text style={{ color: transitioning ? T.DUST : '#44403c', fontSize: 13, fontWeight: '500' }}>Mark Finished</Text>
                           }
                         </TouchableOpacity>
                         <TouchableOpacity
@@ -2473,14 +2474,14 @@ export default function BookDetailScreen() {
                           style={{
                             flex: 1,
                             borderWidth: 1,
-                            borderColor: transitioning ? '#ede9e4' : '#ede9e4',
+                            borderColor: transitioning ? T.BORDER : T.BORDER,
                             borderRadius: 10,
                             paddingVertical: 11,
                             alignItems: 'center',
                             opacity: transitioning ? 0.5 : 1,
                           }}
                         >
-                          <Text style={{ color: transitioning ? '#9e958d' : '#78716c', fontSize: 13, fontWeight: '500' }}>DNF</Text>
+                          <Text style={{ color: transitioning ? T.DUST : '#78716c', fontSize: 13, fontWeight: '500' }}>DNF</Text>
                         </TouchableOpacity>
                       </View>
                     )}
@@ -2497,20 +2498,20 @@ export default function BookDetailScreen() {
                         onChangeText={setPageInput}
                         keyboardType="number-pad"
                         placeholder="0"
-                        placeholderTextColor="#9e958d"
+                        placeholderTextColor={T.DUST}
                         returnKeyType="done"
                         onSubmitEditing={handleSaveProgress}
                         style={{
                           width: 80,
                           height: 44,
                           borderWidth: 1.5,
-                          borderColor: '#ede9e4',
+                          borderColor: T.BORDER,
                           borderRadius: 8,
                           paddingHorizontal: 12,
                           fontSize: 18,
                           fontWeight: '700',
-                          color: '#231f1b',
-                          backgroundColor: '#fefcf9',
+                          color: T.INK,
+                          backgroundColor: T.CARD,
                           textAlign: 'center',
                         }}
                       />
@@ -2518,7 +2519,7 @@ export default function BookDetailScreen() {
                         onPress={handleSaveProgress}
                         disabled={savingProgress}
                         style={{
-                          backgroundColor: savingProgress ? '#ede9e4' : '#231f1b',
+                          backgroundColor: savingProgress ? T.BORDER : T.INK,
                           borderRadius: 8,
                           paddingHorizontal: 16,
                           paddingVertical: 11,
@@ -2533,7 +2534,7 @@ export default function BookDetailScreen() {
                         onPress={() => { setEditingProgress(false); setProgressError(null); Keyboard.dismiss(); }}
                         style={{ paddingHorizontal: 8, paddingVertical: 11 }}
                       >
-                        <Text style={{ fontSize: 13, color: '#9e958d' }}>Cancel</Text>
+                        <Text style={{ fontSize: 13, color: T.DUST }}>Cancel</Text>
                       </TouchableOpacity>
                     </View>
                     {progressError && (
@@ -2588,16 +2589,16 @@ export default function BookDetailScreen() {
                 <Text style={{
                   fontSize: 15,
                   fontStyle: 'italic',
-                  color: '#57534e',
+                  color: T.STONE,
                   lineHeight: 24,
                 }}>
                   "{note}"
                 </Text>
                 {fromUser && (
-                  <Text style={{ fontSize: 13, color: '#9e958d', marginTop: 8, fontWeight: '500' }}>— {fromUser}</Text>
+                  <Text style={{ fontSize: 13, color: T.DUST, marginTop: 8, fontWeight: '500' }}>— {fromUser}</Text>
                 )}
                 {toUser && !fromUser && (
-                  <Text style={{ fontSize: 13, color: '#9e958d', marginTop: 8, fontWeight: '500' }}>— You</Text>
+                  <Text style={{ fontSize: 13, color: T.DUST, marginTop: 8, fontWeight: '500' }}>— You</Text>
                 )}
               </View>
             )}
@@ -2607,19 +2608,19 @@ export default function BookDetailScreen() {
         {/* ── Your History ── */}
         {userHistory && (
           <View style={{
-            backgroundColor: '#fefcf9',
+            backgroundColor: T.CARD,
             borderRadius: 14,
             padding: 18,
             marginBottom: 20,
             borderWidth: 1,
-            borderColor: '#ede9e4',
+            borderColor: T.BORDER,
           }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
               <Text style={{
                 flex: 1,
                 fontSize: 11,
                 fontWeight: '700',
-                color: '#9e958d',
+                color: T.DUST,
                 letterSpacing: 0.9,
                 textTransform: 'uppercase',
               }}>
@@ -2633,14 +2634,14 @@ export default function BookDetailScreen() {
                 }}
                 hitSlop={{ top: 8, bottom: 8, left: 12, right: 0 }}
               >
-                <Text style={{ fontSize: 12, color: '#9e958d' }}>Edit</Text>
+                <Text style={{ fontSize: 12, color: T.DUST }}>Edit</Text>
               </TouchableOpacity>
             </View>
 
             {userHistory.rating != null && (
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
                 <Text style={{ fontSize: 13, color: '#78716c', width: 90 }}>Rating</Text>
-                <Text style={{ fontSize: 14, color: '#231f1b', fontWeight: '600' }}>
+                <Text style={{ fontSize: 14, color: T.INK, fontWeight: '600' }}>
                   {'★'.repeat(userHistory.rating)}{'☆'.repeat(5 - userHistory.rating)} · {userHistory.rating}/5
                 </Text>
               </View>
@@ -2649,7 +2650,7 @@ export default function BookDetailScreen() {
             {userHistory.finishedAt && (
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
                 <Text style={{ fontSize: 13, color: '#78716c', width: 90 }}>Finished</Text>
-                <Text style={{ fontSize: 14, color: '#231f1b' }}>
+                <Text style={{ fontSize: 14, color: T.INK }}>
                   {new Date(userHistory.finishedAt).toLocaleDateString('en-US', {
                     year: 'numeric', month: 'long', day: 'numeric',
                   })}
@@ -2667,11 +2668,11 @@ export default function BookDetailScreen() {
             ) : null}
 
             {userHistory.privateNote ? (
-              <View style={{ marginTop: 12, backgroundColor: '#f5f1ec', borderRadius: 8, padding: 12 }}>
-                <Text style={{ fontSize: 11, color: '#9e958d', marginBottom: 4, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase' }}>
+              <View style={{ marginTop: 12, backgroundColor: T.BG, borderRadius: 8, padding: 12 }}>
+                <Text style={{ fontSize: 11, color: T.DUST, marginBottom: 4, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase' }}>
                   Private note
                 </Text>
-                <Text style={{ fontSize: 13, color: '#57534e', lineHeight: 20 }}>
+                <Text style={{ fontSize: 13, color: T.STONE, lineHeight: 20 }}>
                   {userHistory.privateNote}
                 </Text>
               </View>
@@ -2688,16 +2689,16 @@ export default function BookDetailScreen() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 8,
-                  backgroundColor: SAGE_BG,
+                  backgroundColor: T.SAGE_BG,
                   borderWidth: 1,
-                  borderColor: SAGE,
+                  borderColor: T.SAGE,
                   borderRadius: 12,
                   paddingVertical: 12,
                   marginTop: 16,
                 }}
               >
-                <Ionicons name="paper-plane-outline" size={15} color={SAGE_DEEP} />
-                <Text style={{ fontSize: 14, fontWeight: '700', color: SAGE_DEEP }}>
+                <Ionicons name="paper-plane-outline" size={15} color={T.SAGE_DEEP} />
+                <Text style={{ fontSize: 14, fontWeight: '700', color: T.SAGE_DEEP }}>
                   Recommend to a friend
                 </Text>
               </TouchableOpacity>
@@ -2710,26 +2711,26 @@ export default function BookDetailScreen() {
           <DescriptionSkeleton />
         ) : (displayDesc || (olMeta && olMeta.subjects.length > 0)) ? (
           <View style={{
-            backgroundColor: '#fefcf9',
+            backgroundColor: T.CARD,
             borderRadius: 14,
             padding: 18,
             marginBottom: 20,
             borderWidth: 1,
-            borderColor: '#ede9e4',
+            borderColor: T.BORDER,
           }}>
             {displayDesc && (
               <View style={{ marginBottom: olMeta && olMeta.subjects.length > 0 ? 16 : 0 }}>
                 <Text style={{
                   fontSize: 11,
                   fontWeight: '700',
-                  color: '#9e958d',
+                  color: T.DUST,
                   letterSpacing: 0.9,
                   textTransform: 'uppercase',
                   marginBottom: 10,
                 }}>
                   About
                 </Text>
-                <Text style={{ fontSize: 14, color: '#57534e', lineHeight: 24 }}>{displayDesc}</Text>
+                <Text style={{ fontSize: 14, color: T.STONE, lineHeight: 24 }}>{displayDesc}</Text>
                 {descText && descText.length > DESC_LIMIT && (
                   <TouchableOpacity
                     onPress={() => setDescExpanded(v => !v)}
@@ -2746,12 +2747,12 @@ export default function BookDetailScreen() {
             {olMeta && olMeta.subjects.length > 0 && (
               <View>
                 {displayDesc && (
-                  <View style={{ height: 1, backgroundColor: '#ede9e4', marginBottom: 14 }} />
+                  <View style={{ height: 1, backgroundColor: T.BORDER, marginBottom: 14 }} />
                 )}
                 <Text style={{
                   fontSize: 11,
                   fontWeight: '700',
-                  color: '#9e958d',
+                  color: T.DUST,
                   letterSpacing: 0.9,
                   textTransform: 'uppercase',
                   marginBottom: 10,
@@ -2763,13 +2764,13 @@ export default function BookDetailScreen() {
                     <View
                       key={i}
                       style={{
-                        backgroundColor: '#ede9e4',
+                        backgroundColor: T.BORDER,
                         borderRadius: 20,
                         paddingHorizontal: 12,
                         paddingVertical: 5,
                       }}
                     >
-                      <Text style={{ fontSize: 12, color: '#57534e' }}>{subject}</Text>
+                      <Text style={{ fontSize: 12, color: T.STONE }}>{subject}</Text>
                     </View>
                   ))}
                 </View>
@@ -2778,7 +2779,7 @@ export default function BookDetailScreen() {
             {metaFromGb && (
               <Text style={{
                 fontSize: 11,
-                color: '#9e958d',
+                color: T.DUST,
                 marginTop: 14,
                 textAlign: 'right',
               }}>
@@ -2792,17 +2793,17 @@ export default function BookDetailScreen() {
              Only shown after the enrichment pipeline has run (metaLoading=false)
              and genuinely found nothing to display.                          */
           <View style={{
-            backgroundColor: '#fefcf9',
+            backgroundColor: T.CARD,
             borderRadius: 14,
             padding: 18,
             marginBottom: 20,
             borderWidth: 1,
-            borderColor: '#ede9e4',
+            borderColor: T.BORDER,
           }}>
             <Text style={{
               fontSize: 11,
               fontWeight: '700',
-              color: '#9e958d',
+              color: T.DUST,
               letterSpacing: 0.9,
               textTransform: 'uppercase',
               marginBottom: 10,
@@ -2812,7 +2813,7 @@ export default function BookDetailScreen() {
             <Text style={{
               fontSize: 14,
               fontStyle: 'italic',
-              color: '#9e958d',
+              color: T.DUST,
               lineHeight: 22,
             }}>
               No summary available for this edition.
@@ -2839,16 +2840,16 @@ export default function BookDetailScreen() {
         {externalId && (!localStatus || localStatus === 'want_to_read' || localStatus === 'sent' || localStatus === 'saved') ? (
           recCtx ? (
             <View style={{
-              backgroundColor: '#fefcf9',
+              backgroundColor: T.CARD,
               borderRadius: 14,
               padding: 18,
               borderWidth: 1,
-              borderColor: '#ede9e4',
+              borderColor: T.BORDER,
             }}>
               <Text style={{
                 fontSize: 11,
                 fontWeight: '700',
-                color: '#9e958d',
+                color: T.DUST,
                 letterSpacing: 0.9,
                 textTransform: 'uppercase',
                 marginBottom: 10,
@@ -2856,7 +2857,7 @@ export default function BookDetailScreen() {
                 Why this book?
               </Text>
               {recCtx.explanation ? (
-                <Text style={{ fontSize: 14, color: '#231f1b', lineHeight: 21, fontWeight: '500' }}>
+                <Text style={{ fontSize: 14, color: T.INK, lineHeight: 21, fontWeight: '500' }}>
                   {recCtx.explanation}
                 </Text>
               ) : null}
@@ -2866,13 +2867,13 @@ export default function BookDetailScreen() {
             </View>
           ) : hasTastePrefs === false ? (
             <View style={{
-              backgroundColor: '#f5f1ec',
+              backgroundColor: T.BG,
               borderRadius: 14,
               padding: 18,
               borderWidth: 1,
-              borderColor: '#ede9e4',
+              borderColor: T.BORDER,
             }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 8 }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: T.DUST, letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 8 }}>
                 Why this book?
               </Text>
               <Text style={{ fontSize: 13, color: '#78716c', lineHeight: 20 }}>
@@ -2882,7 +2883,7 @@ export default function BookDetailScreen() {
                 onPress={() => router.push('/edit-preferences')}
                 style={{ marginTop: 10 }}
               >
-                <Text style={{ fontSize: 13, color: '#6b635c', fontWeight: '600' }}>
+                <Text style={{ fontSize: 13, color: T.STONE, fontWeight: '600' }}>
                   Set preferences →
                 </Text>
               </TouchableOpacity>
@@ -2900,7 +2901,7 @@ export default function BookDetailScreen() {
         bottom:          24,
         left:            20,
         right:           20,
-        backgroundColor: '#231f1b',
+        backgroundColor: T.INK,
         borderRadius:    14,
         paddingVertical: 14,
         paddingHorizontal: 18,
@@ -2913,7 +2914,7 @@ export default function BookDetailScreen() {
         elevation:       8,
         zIndex:          9999,
       }}>
-        <Text style={{ flex: 1, fontSize: 14, color: '#f5f1ec', fontWeight: '500' }}>
+        <Text style={{ flex: 1, fontSize: 14, color: T.BG, fontWeight: '500' }}>
           {undoBar.message}
         </Text>
         <TouchableOpacity
@@ -2934,7 +2935,7 @@ export default function BookDetailScreen() {
     >
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
         <View style={{
-          backgroundColor: '#f5f1ec',
+          backgroundColor: T.BG,
           borderTopLeftRadius:  22,
           borderTopRightRadius: 22,
           paddingTop:    8,
@@ -2942,23 +2943,23 @@ export default function BookDetailScreen() {
         }}>
           {/* Handle */}
           <View style={{ alignItems: 'center', marginBottom: 18 }}>
-            <View style={{ width: 36, height: 4, backgroundColor: '#ede9e4', borderRadius: 2 }} />
+            <View style={{ width: 36, height: 4, backgroundColor: T.BORDER, borderRadius: 2 }} />
           </View>
 
           <View style={{ paddingHorizontal: 24 }}>
 
             {/* ── Header ── */}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 26 }}>
-              <Text style={{ flex: 1, fontSize: 18, fontWeight: '800', color: '#231f1b', letterSpacing: -0.3 }}>
+              <Text style={{ flex: 1, fontSize: 18, fontWeight: '800', color: T.INK, letterSpacing: -0.3 }}>
                 Edit book
               </Text>
               <TouchableOpacity onPress={() => setShowBookEditSheet(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 0 }}>
-                <Text style={{ fontSize: 14, color: '#9e958d' }}>Cancel</Text>
+                <Text style={{ fontSize: 14, color: T.DUST }}>Cancel</Text>
               </TouchableOpacity>
             </View>
 
             {/* ── Status ── */}
-            <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 }}>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: T.DUST, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 }}>
               Status
             </Text>
             <View style={{ flexDirection: 'row', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
@@ -2970,7 +2971,7 @@ export default function BookDetailScreen() {
                     key={s}
                     onPress={() => setEditSheetStatus(s)}
                     style={{
-                      backgroundColor: selected ? m.bg : '#ede9e4',
+                      backgroundColor: selected ? m.bg : T.BORDER,
                       borderRadius: 8,
                       paddingHorizontal: 14,
                       paddingVertical: 8,
@@ -2989,7 +2990,7 @@ export default function BookDetailScreen() {
             {/* ── Finished date ── */}
             {(editSheetStatus === 'finished' || editSheetStatus === 'dnf') && (
               <>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: T.DUST, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 }}>
                   Finished date
                 </Text>
                 <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -2998,7 +2999,7 @@ export default function BookDetailScreen() {
                       key={mode}
                       onPress={() => setEditSheetFinishedMode(mode)}
                       style={{
-                        backgroundColor: editSheetFinishedMode === mode ? '#231f1b' : '#ede9e4',
+                        backgroundColor: editSheetFinishedMode === mode ? T.INK : T.BORDER,
                         borderRadius: 8,
                         paddingHorizontal: 14,
                         paddingVertical: 8,
@@ -3016,16 +3017,16 @@ export default function BookDetailScreen() {
                     value={editSheetFinishedExact}
                     onChangeText={setEditSheetFinishedExact}
                     placeholder="YYYY-MM-DD"
-                    placeholderTextColor="#c4b5a5"
+                    placeholderTextColor={T.FAINT}
                     keyboardType="numeric"
                     style={{
                       borderWidth: 1,
-                      borderColor: '#ede9e4',
+                      borderColor: T.BORDER,
                       borderRadius: 10,
                       padding: 12,
                       fontSize: 15,
-                      color: '#231f1b',
-                      backgroundColor: '#fefcf9',
+                      color: T.INK,
+                      backgroundColor: T.CARD,
                       marginBottom: 12,
                     }}
                   />
@@ -3039,7 +3040,7 @@ export default function BookDetailScreen() {
                           key={yr}
                           onPress={() => setEditSheetFinishedYear(yr)}
                           style={{
-                            backgroundColor: editSheetFinishedYear === yr ? '#231f1b' : '#ede9e4',
+                            backgroundColor: editSheetFinishedYear === yr ? T.INK : T.BORDER,
                             borderRadius: 8,
                             paddingHorizontal: 16,
                             paddingVertical: 9,
@@ -3060,8 +3061,8 @@ export default function BookDetailScreen() {
             {/* ── Started date ── */}
             {(editSheetStatus === 'reading' || editSheetStatus === 'finished') && (
               <>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 }}>
-                  Started date <Text style={{ fontWeight: '400', color: '#c4b5a5' }}>(optional)</Text>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: T.DUST, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 }}>
+                  Started date <Text style={{ fontWeight: '400', color: T.FAINT }}>(optional)</Text>
                 </Text>
                 <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
                   {(['date', 'unknown'] as const).map(mode => (
@@ -3069,7 +3070,7 @@ export default function BookDetailScreen() {
                       key={mode}
                       onPress={() => setEditSheetStartedMode(mode)}
                       style={{
-                        backgroundColor: editSheetStartedMode === mode ? '#231f1b' : '#ede9e4',
+                        backgroundColor: editSheetStartedMode === mode ? T.INK : T.BORDER,
                         borderRadius: 8,
                         paddingHorizontal: 14,
                         paddingVertical: 8,
@@ -3086,16 +3087,16 @@ export default function BookDetailScreen() {
                     value={editSheetStartedExact}
                     onChangeText={setEditSheetStartedExact}
                     placeholder="YYYY-MM-DD"
-                    placeholderTextColor="#c4b5a5"
+                    placeholderTextColor={T.FAINT}
                     keyboardType="numeric"
                     style={{
                       borderWidth: 1,
-                      borderColor: '#ede9e4',
+                      borderColor: T.BORDER,
                       borderRadius: 10,
                       padding: 12,
                       fontSize: 15,
-                      color: '#231f1b',
-                      backgroundColor: '#fefcf9',
+                      color: T.INK,
+                      backgroundColor: T.CARD,
                       marginBottom: 12,
                     }}
                   />
@@ -3112,7 +3113,7 @@ export default function BookDetailScreen() {
               onPress={handleBookEditSave}
               disabled={savingBookEdit}
               style={{
-                backgroundColor: savingBookEdit ? '#ede9e4' : '#231f1b',
+                backgroundColor: savingBookEdit ? T.BORDER : T.INK,
                 borderRadius: 12,
                 paddingVertical: 15,
                 alignItems: 'center',
@@ -3141,7 +3142,7 @@ export default function BookDetailScreen() {
                 borderWidth: 1,
                 borderColor: '#fecdd3',
               }}>
-                <Text style={{ fontSize: 14, color: '#231f1b', fontWeight: '600', marginBottom: 6 }}>
+                <Text style={{ fontSize: 14, color: T.INK, fontWeight: '600', marginBottom: 6 }}>
                   Remove from library?
                 </Text>
                 <Text style={{ fontSize: 13, color: '#78716c', marginBottom: 14, lineHeight: 20 }}>
@@ -3150,7 +3151,7 @@ export default function BookDetailScreen() {
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   <TouchableOpacity
                     onPress={() => setDeleteConfirmVisible(false)}
-                    style={{ flex: 1, borderWidth: 1, borderColor: '#ede9e4', borderRadius: 9, paddingVertical: 11, alignItems: 'center', backgroundColor: '#fefcf9' }}
+                    style={{ flex: 1, borderWidth: 1, borderColor: T.BORDER, borderRadius: 9, paddingVertical: 11, alignItems: 'center', backgroundColor: T.CARD }}
                   >
                     <Text style={{ fontSize: 14, color: '#78716c' }}>Keep</Text>
                   </TouchableOpacity>
@@ -3186,7 +3187,7 @@ export default function BookDetailScreen() {
         justifyContent: 'flex-end',
       }}>
         <View style={{
-          backgroundColor: '#fefcf9',
+          backgroundColor: T.CARD,
           borderTopLeftRadius: 20,
           borderTopRightRadius: 20,
           padding: 28,
@@ -3195,13 +3196,13 @@ export default function BookDetailScreen() {
           <Text style={{
             fontSize: 16,
             fontWeight: '700',
-            color: '#231f1b',
+            color: T.INK,
             marginBottom: 22,
           }}>
             Edit your history
           </Text>
 
-          <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 12 }}>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: T.DUST, letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 12 }}>
             Rating
           </Text>
           <View style={{ flexDirection: 'row', gap: 6, marginBottom: 24 }}>
@@ -3213,7 +3214,7 @@ export default function BookDetailScreen() {
               >
                 <Text style={{
                   fontSize: 34,
-                  color: editRating !== null && n <= editRating ? '#f59e0b' : '#ede9e4',
+                  color: editRating !== null && n <= editRating ? '#f59e0b' : T.BORDER,
                 }}>
                   ★
                 </Text>
@@ -3221,24 +3222,24 @@ export default function BookDetailScreen() {
             ))}
           </View>
 
-          <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 8 }}>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: T.DUST, letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 8 }}>
             Review / note
-            <Text style={{ fontWeight: '400', color: '#c4b5a5' }}> (optional)</Text>
+            <Text style={{ fontWeight: '400', color: T.FAINT }}> (optional)</Text>
           </Text>
           <TextInput
             value={editNote}
             onChangeText={setEditNote}
             placeholder="What did you think?"
-            placeholderTextColor="#c4b5a5"
+            placeholderTextColor={T.FAINT}
             multiline
             numberOfLines={3}
             style={{
               borderWidth: 1,
-              borderColor: '#ede9e4',
+              borderColor: T.BORDER,
               borderRadius: 10,
               padding: 12,
               fontSize: 14,
-              color: '#231f1b',
+              color: T.INK,
               lineHeight: 22,
               minHeight: 80,
               textAlignVertical: 'top',
@@ -3252,7 +3253,7 @@ export default function BookDetailScreen() {
               style={{
                 flex: 1,
                 borderWidth: 1,
-                borderColor: '#ede9e4',
+                borderColor: T.BORDER,
                 borderRadius: 10,
                 paddingVertical: 13,
                 alignItems: 'center',
@@ -3265,7 +3266,7 @@ export default function BookDetailScreen() {
               disabled={savingEdit}
               style={{
                 flex: 2,
-                backgroundColor: '#231f1b',
+                backgroundColor: T.INK,
                 borderRadius: 10,
                 paddingVertical: 13,
                 alignItems: 'center',
@@ -3295,7 +3296,7 @@ export default function BookDetailScreen() {
         justifyContent: 'flex-end',
       }}>
         <View style={{
-          backgroundColor: '#fefcf9',
+          backgroundColor: T.CARD,
           borderTopLeftRadius: 20,
           borderTopRightRadius: 20,
           padding: 28,
@@ -3304,14 +3305,14 @@ export default function BookDetailScreen() {
           <Text style={{
             fontSize: 17,
             fontWeight: '700',
-            color: '#231f1b',
+            color: T.INK,
             marginBottom: 6,
           }}>
             How was it?
           </Text>
           <Text style={{
             fontSize: 13,
-            color: '#9e958d',
+            color: T.DUST,
             marginBottom: 24,
           }}>
             {title ?? 'This book'}
@@ -3325,7 +3326,7 @@ export default function BookDetailScreen() {
               >
                 <Text style={{
                   fontSize: 40,
-                  color: detailRating != null && n <= detailRating ? '#f59e0b' : '#ede9e4',
+                  color: detailRating != null && n <= detailRating ? '#f59e0b' : T.BORDER,
                 }}>
                   ★
                 </Text>
@@ -3336,7 +3337,7 @@ export default function BookDetailScreen() {
             onPress={() => detailRating != null && handleDetailRating(detailRating)}
             disabled={detailRating == null || savingDetailRating}
             style={{
-              backgroundColor: detailRating == null ? '#ede9e4' : '#231f1b',
+              backgroundColor: detailRating == null ? T.BORDER : T.INK,
               borderRadius: 10,
               paddingVertical: 14,
               alignItems: 'center',
@@ -3346,7 +3347,7 @@ export default function BookDetailScreen() {
             {savingDetailRating
               ? <ActivityIndicator color="#fff" size="small" />
               : <Text style={{
-                  color: detailRating == null ? '#9e958d' : '#fff',
+                  color: detailRating == null ? T.DUST : '#fff',
                   fontSize: 14,
                   fontWeight: '600',
                 }}>Save rating</Text>
@@ -3356,7 +3357,7 @@ export default function BookDetailScreen() {
             onPress={() => { setPendingDetailRating(null); setDetailRating(null); safeBack(); }}
             style={{ alignItems: 'center', paddingVertical: 8 }}
           >
-            <Text style={{ fontSize: 13, color: '#9e958d' }}>Skip</Text>
+            <Text style={{ fontSize: 13, color: T.DUST }}>Skip</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -3375,7 +3376,7 @@ export default function BookDetailScreen() {
         justifyContent: 'flex-end',
       }}>
         <View style={{
-          backgroundColor: '#fefcf9',
+          backgroundColor: T.CARD,
           borderTopLeftRadius: 20,
           borderTopRightRadius: 20,
           paddingTop: 20,
@@ -3386,7 +3387,7 @@ export default function BookDetailScreen() {
           <View style={{
             width: 36,
             height: 4,
-            backgroundColor: '#ede9e4',
+            backgroundColor: T.BORDER,
             borderRadius: 2,
             alignSelf: 'center',
             marginBottom: 16,
@@ -3395,7 +3396,7 @@ export default function BookDetailScreen() {
           <Text style={{
             fontSize: 15,
             fontWeight: '700',
-            color: '#231f1b',
+            color: T.INK,
             paddingHorizontal: 24,
             marginBottom: 4,
           }}>
@@ -3403,7 +3404,7 @@ export default function BookDetailScreen() {
           </Text>
           <Text style={{
             fontSize: 12,
-            color: '#9e958d',
+            color: T.DUST,
             paddingHorizontal: 24,
             marginBottom: 16,
           }}>
@@ -3451,9 +3452,9 @@ export default function BookDetailScreen() {
                         paddingHorizontal: 12,
                         borderRadius: 12,
                         marginBottom: 6,
-                        backgroundColor: isSelected ? '#eaf1ea' : '#f5f1ec',
+                        backgroundColor: isSelected ? T.SAGE_BG : T.BG,
                         borderWidth: 1.5,
-                        borderColor: isSelected ? '#7b9e7e' : 'transparent',
+                        borderColor: isSelected ? T.SAGE : 'transparent',
                       }}
                     >
                       {/* Cover thumbnail */}
@@ -3462,7 +3463,7 @@ export default function BookDetailScreen() {
                         height: 52,
                         borderRadius: 4,
                         overflow: 'hidden',
-                        backgroundColor: '#ede9e4',
+                        backgroundColor: T.BORDER,
                         marginRight: 12,
                         flexShrink: 0,
                       }}>
@@ -3482,22 +3483,22 @@ export default function BookDetailScreen() {
                         <Text style={{
                           fontSize: 13,
                           fontWeight: isSelected ? '600' : '400',
-                          color: '#231f1b',
+                          color: T.INK,
                           marginBottom: 2,
                         }} numberOfLines={1}>
                           {label}
                         </Text>
                         {ed.isbn && (
-                          <Text style={{ fontSize: 11, color: '#9e958d' }}>ISBN {ed.isbn}</Text>
+                          <Text style={{ fontSize: 11, color: T.DUST }}>ISBN {ed.isbn}</Text>
                         )}
                       </View>
 
                       {/* Selection indicator */}
                       {isSelected && !pendingEditionKey && (
-                        <Text style={{ fontSize: 14, color: SAGE_DEEP, marginLeft: 8 }}>✓</Text>
+                        <Text style={{ fontSize: 14, color: T.SAGE_DEEP, marginLeft: 8 }}>✓</Text>
                       )}
                       {savingEdition && ed.editionKey === pendingEditionKey && (
-                        <ActivityIndicator size="small" color="#9e958d" style={{ marginLeft: 8 }} />
+                        <ActivityIndicator size="small" color={T.DUST} style={{ marginLeft: 8 }} />
                       )}
                     </TouchableOpacity>
                   );
@@ -3517,7 +3518,7 @@ export default function BookDetailScreen() {
                       alignItems: 'center',
                     }}
                   >
-                    <Text style={{ fontSize: 13, color: '#9e958d' }}>
+                    <Text style={{ fontSize: 13, color: T.DUST }}>
                       Show all editions ({editions.length} total, including translations)
                     </Text>
                   </TouchableOpacity>
@@ -3532,7 +3533,7 @@ export default function BookDetailScreen() {
               marginHorizontal: 24,
               marginTop: 8,
               borderWidth: 1,
-              borderColor: '#ede9e4',
+              borderColor: T.BORDER,
               borderRadius: 10,
               paddingVertical: 13,
               alignItems: 'center',

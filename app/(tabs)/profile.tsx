@@ -1,3 +1,4 @@
+import { useThemedTokens } from '../../lib/theme/useThemedTokens';
 import { useCallback, useState } from 'react';
 import {
   RefreshControl,
@@ -68,10 +69,10 @@ type ReadingPatterns = {
 };
 
 const REC_STATUS: Record<string, { bg: string; text: string; label: string }> = {
-  sent:     { bg: '#f0ece6', text: '#6b635c', label: 'Sent'          },
-  saved:    { bg: '#eaf1ea', text: '#2f6f3a', label: 'Want to Read'  },
-  started:  { bg: '#eaf1ea', text: '#2f6f3a', label: 'Reading'       },
-  finished: { bg: '#eaf1ea', text: '#2f6f3a', label: 'Finished'      },
+  sent:     { bg: '#f0ece6', text: T.STONE, label: 'Sent'          },
+  saved:    { bg: T.SAGE_BG, text: T.SAGE_DEEP, label: 'Want to Read'  },
+  started:  { bg: T.SAGE_BG, text: T.SAGE_DEEP, label: 'Reading'       },
+  finished: { bg: T.SAGE_BG, text: T.SAGE_DEEP, label: 'Finished'      },
   dnf:      { bg: '#fee2e2', text: '#b91c1c', label: 'Did Not Finish' },
 };
 
@@ -80,7 +81,7 @@ function SectionLabel({ children }: { children: string }) {
     <Text style={{
       fontSize: 11,
       fontWeight: '700',
-      color: '#9e958d',
+      color: T.DUST,
       letterSpacing: 0.9,
       textTransform: 'uppercase',
       marginBottom: 12,
@@ -104,6 +105,7 @@ let _profileCache: ProfileSnapshot | null = null;
 registerCacheClearer(() => { _profileCache = null; });
 
 export default function ProfileScreen() {
+  const T = useThemedTokens();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [email, setEmail]               = useState<string | null>(null);
@@ -314,7 +316,7 @@ export default function ProfileScreen() {
         <Text style={{ color: '#b91c1c', textAlign: 'center', fontSize: 14, marginBottom: 18 }}>{error}</Text>
         <TouchableOpacity
           onPress={() => { setError(null); setLoading(true); loadProfile(true); }}
-          style={{ backgroundColor: '#231f1b', borderRadius: 10, paddingVertical: 11, paddingHorizontal: 24 }}
+          style={{ backgroundColor: T.INK, borderRadius: 10, paddingVertical: 11, paddingHorizontal: 24 }}
         >
           <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>Try again</Text>
         </TouchableOpacity>
@@ -339,10 +341,10 @@ export default function ProfileScreen() {
     ? 'On pace'
     : '';
   const paceColor  = paceStatus?.state === 'ahead'
-    ? '#2f6f3a'
+    ? T.SAGE_DEEP
     : paceStatus?.state === 'on_pace'
-    ? '#2f6f3a'
-    : '#9e958d';
+    ? T.SAGE_DEEP
+    : T.DUST;
 
   const hasTasteData = prefs && (
     (prefs.favorite_genres?.length ?? 0) > 0 ||
@@ -359,7 +361,7 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: '#f5f1ec' }}
+      style={{ flex: 1, backgroundColor: T.BG }}
       contentContainerStyle={{ paddingBottom: 48 }}
       keyboardShouldPersistTaps="handled"
       refreshControl={
@@ -372,7 +374,7 @@ export default function ProfileScreen() {
         paddingTop: insets.top + 16,
         paddingBottom: 28,
         borderBottomWidth: 1,
-        borderBottomColor: '#ede9e4',
+        borderBottomColor: T.BORDER,
       }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
           {/* Avatar */}
@@ -380,7 +382,7 @@ export default function ProfileScreen() {
             width: 60,
             height: 60,
             borderRadius: 30,
-            backgroundColor: '#231f1b',
+            backgroundColor: T.INK,
             alignItems: 'center',
             justifyContent: 'center',
             marginRight: 16,
@@ -393,14 +395,14 @@ export default function ProfileScreen() {
 
           {/* Identity */}
           <View style={{ flex: 1, paddingTop: 2 }}>
-            <Text style={{ fontSize: 22, fontWeight: '800', color: '#231f1b', letterSpacing: -0.5, lineHeight: 28 }}>
+            <Text style={{ fontSize: 22, fontWeight: '800', color: T.INK, letterSpacing: -0.5, lineHeight: 28 }}>
               {displayName}
             </Text>
             {hasChosenUsername ? (
-              <Text style={{ fontSize: 13, color: '#9e958d', marginTop: 4 }}>@{username}</Text>
+              <Text style={{ fontSize: 13, color: T.DUST, marginTop: 4 }}>@{username}</Text>
             ) : (
               <TouchableOpacity onPress={() => router.push('/settings')} style={{ marginTop: 5 }}>
-                <Text style={{ fontSize: 13, color: '#c4b5a5' }}>Choose a username →</Text>
+                <Text style={{ fontSize: 13, color: T.FAINT }}>Choose a username →</Text>
               </TouchableOpacity>
             )}
             {stats && stats.finishedBooks > 0 && (
@@ -415,7 +417,7 @@ export default function ProfileScreen() {
             onPress={() => router.push('/settings')}
             style={{ paddingTop: 3, paddingLeft: 12 }}
           >
-            <Text style={{ fontSize: 13, color: '#9e958d' }}>Settings</Text>
+            <Text style={{ fontSize: 13, color: T.DUST }}>Settings</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -425,7 +427,7 @@ export default function ProfileScreen() {
         <View style={{ paddingHorizontal: 24, marginTop: 22 }}>
           {yearlyGoal ? (
             <View>
-              <Text style={{ fontSize: 15, fontWeight: '600', color: '#231f1b' }}>
+              <Text style={{ fontSize: 15, fontWeight: '600', color: T.INK }}>
                 {stats.finishedThisYear} / {yearlyGoal} books this year
               </Text>
               <Text style={{ fontSize: 13, color: paceColor, marginTop: 4 }}>
@@ -434,7 +436,7 @@ export default function ProfileScreen() {
             </View>
           ) : (
             <TouchableOpacity onPress={() => router.push('/settings')}>
-              <Text style={{ fontSize: 13, color: '#9e958d' }}>Set a yearly reading goal →</Text>
+              <Text style={{ fontSize: 13, color: T.DUST }}>Set a yearly reading goal →</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -445,7 +447,7 @@ export default function ProfileScreen() {
         <TouchableOpacity
           onPress={() => router.push('/edit-preferences')}
           style={{
-            backgroundColor: '#fefcf9',
+            backgroundColor: T.CARD,
             borderRadius: 14,
             padding: 16,
             shadowColor: '#000',
@@ -457,7 +459,7 @@ export default function ProfileScreen() {
         >
           <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', marginBottom: hasTasteData ? 12 : 4 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: T.INK, marginBottom: hasTasteData ? 12 : 4 }}>
                 {hasTasteData ? 'Reading Taste' : 'Build your taste profile'}
               </Text>
               {hasTasteData ? (
@@ -465,16 +467,16 @@ export default function ProfileScreen() {
                   {(prefs!.favorite_genres?.length ?? 0) > 0 && (
                     <View>
                       <Text style={{
-                        fontSize: 10, fontWeight: '700', color: '#9e958d',
+                        fontSize: 10, fontWeight: '700', color: T.DUST,
                         letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 6,
                       }}>Genres</Text>
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
                         {prefs!.favorite_genres.slice(0, 4).map(g => (
                           <View key={g} style={{
-                            backgroundColor: '#ede9e4', borderRadius: 20,
+                            backgroundColor: T.BORDER, borderRadius: 20,
                             paddingHorizontal: 10, paddingVertical: 4,
                           }}>
-                            <Text style={{ fontSize: 12, color: '#57534e' }}>{g}</Text>
+                            <Text style={{ fontSize: 12, color: T.STONE }}>{g}</Text>
                           </View>
                         ))}
                       </View>
@@ -483,15 +485,15 @@ export default function ProfileScreen() {
                   {(prefs!.reading_styles?.length ?? 0) > 0 && (
                     <View>
                       <Text style={{
-                        fontSize: 10, fontWeight: '700', color: '#9e958d',
+                        fontSize: 10, fontWeight: '700', color: T.DUST,
                         letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 6,
                       }}>Style</Text>
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
                         {prefs!.reading_styles.slice(0, 3).map(s => (
                           <View key={s} style={{
-                            backgroundColor: '#f5f1ec', borderRadius: 20,
+                            backgroundColor: T.BG, borderRadius: 20,
                             paddingHorizontal: 10, paddingVertical: 4,
-                            borderWidth: 1, borderColor: '#ede9e4',
+                            borderWidth: 1, borderColor: T.BORDER,
                           }}>
                             <Text style={{ fontSize: 12, color: '#78716c' }}>{s}</Text>
                           </View>
@@ -500,18 +502,18 @@ export default function ProfileScreen() {
                     </View>
                   )}
                   {!!prefs!.favorite_authors && (
-                    <Text style={{ fontSize: 12, color: '#9e958d' }}>
+                    <Text style={{ fontSize: 12, color: T.DUST }}>
                       Incl. {prefs!.favorite_authors.split(',')[0].trim()}
                     </Text>
                   )}
                 </View>
               ) : (
-                <Text style={{ fontSize: 13, color: '#9e958d', lineHeight: 19 }}>
+                <Text style={{ fontSize: 13, color: T.DUST, lineHeight: 19 }}>
                   Genres, styles, and authors — unlocks future taste insights.
                 </Text>
               )}
             </View>
-            <Text style={{ fontSize: 20, color: '#ede9e4', marginLeft: 12, marginTop: 2 }}>›</Text>
+            <Text style={{ fontSize: 20, color: T.BORDER, marginLeft: 12, marginTop: 2 }}>›</Text>
           </View>
         </TouchableOpacity>
       </View>
@@ -529,15 +531,15 @@ export default function ProfileScreen() {
                 justifyContent: 'space-between',
                 paddingVertical: 12,
                 borderBottomWidth: 1,
-                borderBottomColor: '#ede9e4',
+                borderBottomColor: T.BORDER,
               }}
             >
-              <Text style={{ fontSize: 15, color: '#231f1b' }}>
+              <Text style={{ fontSize: 15, color: T.INK }}>
                 {getDisplayName(req.requester) !== 'Unknown' ? getDisplayName(req.requester) : req.requester_id}
               </Text>
               <TouchableOpacity
                 onPress={() => handleAccept(req.id)}
-                style={{ paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#231f1b', borderRadius: 8 }}
+                style={{ paddingHorizontal: 14, paddingVertical: 7, backgroundColor: T.INK, borderRadius: 8 }}
               >
                 <Text style={{ color: '#fff', fontSize: 13, fontWeight: '500' }}>Accept</Text>
               </TouchableOpacity>
@@ -551,7 +553,7 @@ export default function ProfileScreen() {
         <View style={{ paddingHorizontal: 24, marginBottom: 28 }}>
           <SectionLabel>Friends</SectionLabel>
           <View style={{
-            backgroundColor: '#fefcf9',
+            backgroundColor: T.CARD,
             borderRadius: 14,
             overflow: 'hidden',
             shadowColor: '#000',
@@ -583,33 +585,33 @@ export default function ProfileScreen() {
                     paddingVertical: 13,
                     paddingHorizontal: 16,
                     borderTopWidth: idx > 0 ? 1 : 0,
-                    borderTopColor: '#ede9e4',
+                    borderTopColor: T.BORDER,
                   }}
                 >
                   <View style={{
                     width: 36,
                     height: 36,
                     borderRadius: 18,
-                    backgroundColor: '#ede9e4',
+                    backgroundColor: T.BORDER,
                     alignItems: 'center',
                     justifyContent: 'center',
                     marginRight: 12,
                   }}>
-                    <Text style={{ fontSize: 15, fontWeight: '600', color: '#57534e' }}>
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: T.STONE }}>
                       {initial}
                     </Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 15, color: '#231f1b', fontWeight: '500' }}>
+                    <Text style={{ fontSize: 15, color: T.INK, fontWeight: '500' }}>
                       {name}
                     </Text>
                     {showUsername && (
-                      <Text style={{ fontSize: 12, color: '#9e958d', marginTop: 1 }}>
+                      <Text style={{ fontSize: 12, color: T.DUST, marginTop: 1 }}>
                         @{friend.username}
                       </Text>
                     )}
                   </View>
-                  <Text style={{ fontSize: 18, color: '#ede9e4', marginLeft: 8 }}>›</Text>
+                  <Text style={{ fontSize: 18, color: T.BORDER, marginLeft: 8 }}>›</Text>
                 </TouchableOpacity>
               );
             })}
@@ -643,7 +645,7 @@ export default function ProfileScreen() {
                 style={{
                   paddingVertical: 14,
                   borderBottomWidth: 1,
-                  borderBottomColor: '#ede9e4',
+                  borderBottomColor: T.BORDER,
                   flexDirection: 'row',
                   alignItems: 'center',
                 }}
@@ -656,10 +658,10 @@ export default function ProfileScreen() {
                   height={46}
                 />
                 <View style={{ flex: 1, marginLeft: 12, marginRight: 10 }}>
-                  <Text style={{ fontWeight: '600', fontSize: 14, color: '#231f1b', marginBottom: 3 }}>
+                  <Text style={{ fontWeight: '600', fontSize: 14, color: T.INK, marginBottom: 3 }}>
                     {rec.book?.title ?? '—'}
                   </Text>
-                  <Text style={{ fontSize: 12, color: '#9e958d' }}>
+                  <Text style={{ fontSize: 12, color: T.DUST }}>
                     → {getFirstName(rec.to_user)}
                   </Text>
                   {rec.note ? (
@@ -685,7 +687,7 @@ export default function ProfileScreen() {
               onPress={() => setRecsExpanded(e => !e)}
               style={{ paddingVertical: 13, alignItems: 'center' }}
             >
-              <Text style={{ fontSize: 13, color: '#9e958d' }}>
+              <Text style={{ fontSize: 13, color: T.DUST }}>
                 {recsExpanded ? 'Show less' : `${sentRecs.length - 3} more`}
               </Text>
             </TouchableOpacity>
@@ -702,7 +704,7 @@ export default function ProfileScreen() {
               flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'space-between',
-              backgroundColor: '#fefcf9',
+              backgroundColor: T.CARD,
               borderRadius: 12,
               paddingVertical: 14,
               paddingHorizontal: 16,
@@ -713,10 +715,10 @@ export default function ProfileScreen() {
               elevation: 1,
             }}
           >
-            <Text style={{ fontSize: 14, color: '#57534e' }}>
+            <Text style={{ fontSize: 14, color: T.STONE }}>
               Find friends &amp; share what you&apos;re reading
             </Text>
-            <Text style={{ fontSize: 16, color: '#ede9e4' }}>›</Text>
+            <Text style={{ fontSize: 16, color: T.BORDER }}>›</Text>
           </TouchableOpacity>
         </View>
       )}
