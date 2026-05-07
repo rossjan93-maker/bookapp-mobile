@@ -36,6 +36,7 @@ import { transitionStatus, editUserBook, softDeleteBook, restoreSnapshot, saveCu
 import type { UserBookStatus, BookSnapshot, FinishedDateInput, StartedDateInput } from '../../lib/userBookActions';
 import { useUndoBar } from '../../lib/useUndoBar';
 import { invalidateBookDataCaches } from '../../lib/tabCache';
+import { clearRecSession } from '../../lib/recSession';
 import { getRecContext } from '../../lib/recContext';
 import type { RecContext } from '../../lib/recContext';
 import { getRecSnapshot } from '../../lib/recSnapshot';
@@ -1334,6 +1335,11 @@ export default function BookDetailScreen() {
     if (data?.startedAt) setLocalStartedAt(data.startedAt);
     // Status changed — Library and Home must re-fetch on next focus
     invalidateBookDataCaches();
+    // Wipe the cached For-You session so the next time the home tab gains
+    // focus, RecommendationsFeed reruns the pipeline and the new
+    // status (e.g. starting a book → it should appear in Currently
+    // Reading) is reflected in the continuations bucket immediately.
+    clearRecSession();
 
     // Undo bar for status change (only for non-finish transitions — finish has its own rating modal)
     if (newStatus !== 'finished' && newStatus !== 'dnf' && snapshot) {

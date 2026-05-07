@@ -265,6 +265,21 @@ export function RecommendationsFeed({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tasteProfile?.strongSignalCount, userId, entitlement?.expert_recs_enabled]);
 
+  // ── Tab revisit: rerun pipeline when session was wiped ───────────────────
+  // Status changes on the book detail screen call clearRecSession() so
+  // continuations (Currently Reading) reflect the new state. When the
+  // user navigates back to the home tab, we detect the missing session
+  // and force a pipeline rerun so the bucket repopulates immediately
+  // instead of waiting for the 4-min TTL or a signal-count change.
+  useFocusEffect(useCallback(() => {
+    if (!tasteProfile || tasteProfile.tier < 1 || !userId || !supabase) return;
+    if (getRecSession()) return; // session still valid — nothing to do
+    if (__DEV__) console.log('[REC_REFRESH]', 'reason=session_cleared_on_focus');
+    setIsInitialLoading(true);
+    runPipeline({ isBgRefresh: false });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, tasteProfile?.tier]));
+
   // ── Tab revisit: restore pending dismiss toast ────────────────────────────
   useFocusEffect(useCallback(() => {
     const rec = getPendingDismiss();

@@ -198,18 +198,44 @@ export function _dedupKey(title: string, author?: string): string {
   return `${t}::${a}`;
 }
 
+// ─── Quality filter ──────────────────────────────────────────────────────────
+// Drops results that are almost certainly junk: missing/unknown author *and*
+// no cover artwork. A legitimate book may lack a cover OR an author, but
+// almost never both — those rows are typically OCR fragments, ghost
+// editions, or library catalog placeholders that confuse users.
+function isJunkResult(b: BookResult): boolean {
+  const rawAuthor = (b.author_name ?? [])[0]?.trim() ?? '';
+  const author    = rawAuthor.toLowerCase();
+  const hasAuthor = !!author && author !== 'unknown' && author !== 'unknown author';
+  const hasCover  = !!b.cover_i || !!(b as { cover_url?: string }).cover_url;
+  return !hasAuthor && !hasCover;
+}
+
 // ─── Hybrid merge ─────────────────────────────────────────────────────────────
-// GB results first; OL results appended only when not already represented by GB.
+// (1) Dedupe internally within Google Books results by title+author —
+//     GB happily returns the same work three times across editions /
+//     publisher metadata so the user sees three identical rows.
+// (2) Append OL results only when not already represented by GB.
+// (3) Drop junk rows (no author + no cover) at every stage.
 
 export function hybridMerge(gbBooks: BookResult[], olBooks: BookResult[]): BookResult[] {
-  const seen = new Set(gbBooks.map(b => _dedupKey(b.title, b.author_name?.[0])));
-  const filtered = olBooks.filter(b => {
+  const seen: Set<string> = new Set();
+  const dedupedGb: BookResult[] = [];
+  for (const b of gbBooks) {
+    if (isJunkResult(b)) continue;
+    const k = _dedupKey(b.title, b.author_name?.[0]);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    dedupedGb.push(b);
+  }
+  const filteredOl = olBooks.filter(b => {
+    if (isJunkResult(b)) return false;
     const k = _dedupKey(b.title, b.author_name?.[0]);
     if (seen.has(k)) return false;
     seen.add(k);
     return true;
   });
-  return [...gbBooks, ...filtered];
+  return [...dedupedGb, ...filteredOl];
 }
 
 // ─── Word completion via Datamuse ─────────────────────────────────────────────
