@@ -1,0 +1,89 @@
+P0 and P0.5 security hardening are accepted and verified live.
+
+Now implement the next P1 security hardening batch. Do not touch unrelated P2/GA items.
+
+Goal:
+Close the next set of pre-beta security and abuse-resistance gaps without disrupting existing app behavior.
+
+Scope for this batch:
+
+1. Add database length constraints for user-generated text fields:
+   - recommendations.note
+   - user_books.review_body
+   - user_books.private_note
+   - book_club_comments.body
+
+Requirements:
+- Inspect current schema and existing data before adding constraints.
+- Choose reasonable beta-safe limits.
+- If existing rows violate the proposed limits, report them before changing behavior.
+- Add client-side trim/limit handling only where necessary.
+- Confirm app rendering still works and no text field can create unbounded storage growth.
+
+2. Add current_page sanity protection:
+   - current_page must be NULL or >= 0
+   - current_page must not exceed page_count when page_count is known
+   - preserve legitimate reading progress flows
+
+Requirements:
+- Inspect all current_page write paths before changing anything.
+- Prefer DB constraints where safe.
+- If a strict DB constraint would break existing flows, explain why and propose a safer staged approach.
+- Verify reading progress, manual page updates, and reading sessions still work.
+
+3. Add friendship lifecycle support:
+   - requester can cancel a pending request
+   - addressee can decline/delete a received request
+   - either user can remove an accepted friendship
+
+Requirements:
+- Add/adjust RLS DELETE policy on friendships.
+- Add the smallest app-side changes needed to expose or preserve the lifecycle.
+- Do not weaken existing requester/addressee visibility rules.
+- Verify both users’ perspectives.
+
+4. Add pending friend-request abuse guard:
+   - prevent one user from sending unlimited pending friend requests
+   - enforce this at the database/RPC layer, not only in the client
+   - choose a reasonable temporary beta limit and document it
+
+Requirements:
+- Audit the current friend-request insert path.
+- Prefer a SECURITY DEFINER RPC like send_friend_request(addressee_id) if direct INSERT cannot enforce the cap cleanly.
+- Preserve duplicate-pair protection.
+- Prevent self-requests.
+- Return clear errors for rate/cap failures.
+
+5. Review authenticated books INSERT first-write poisoning:
+   - Do not redesign the full catalog architecture in this batch unless the fix is small and safe.
+   - Audit all current books INSERT paths.
+   - Identify whether a malicious authenticated user can create a bad shared catalog row as the first writer.
+   - Recommend the smallest safe mitigation path.
+
+Possible outcomes:
+- If a lightweight mitigation is safe, implement it.
+- If it requires a larger trusted metadata ingestion design, document it as P1.5 with exact recommended architecture.
+- Do not break add-book, import, scan, recommendation, or metadata repair flows.
+
+Hard requirements:
+- Use migrations for database changes.
+- Do not weaken RLS.
+- Do not modify P0/P0.5 protections unless strictly necessary.
+- Keep changes small and reviewable.
+- Run TypeScript checks on touched files.
+- Run live verification against Supabase after migrations are applied.
+- Use real end-user JWTs for behavioral RLS tests where possible.
+- Use service role only for setup, teardown, or trusted-control checks.
+- Clean up all test users and rows.
+
+Deliverables:
+1. Files changed
+2. Migration files added
+3. Before/after policy and constraint summary
+4. Existing-data preflight results
+5. Live verification matrix with pass/fail results
+6. Any app flows tested
+7. Any out-of-scope findings added to backlog
+8. Clear accept / do-not-accept recommendation
+
+Stop after this P1 batch. Do not proceed to P2.
