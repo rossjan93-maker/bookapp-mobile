@@ -12,15 +12,16 @@
 --
 --   (2) STRICTER CLASSIFICATION. The previous trigger protected only 5 columns
 --       (title, author, external_id, cover_url, description). The remaining
---       8 catalog columns we now consider sensitive — isbn, isbn13,
---       published_year, additional_authors, subjects, content_warnings,
---       cover_source, metadata_confidence — could all be freely rewritten by
---       any authenticated user who had the book in their library. The provider
---       columns in particular (subjects/content_warnings/cover_source/
---       metadata_confidence) are read by recommender + content-warning code
---       paths shared across every user of that books row, so a single rewrite
---       could reshape the experience for everyone. This migration extends
---       trigger coverage to all 13 protected columns (5 retained + 8 added).
+--       9 catalog columns we now consider sensitive — isbn, isbn13,
+--       publication_year, original_publication_year, additional_authors,
+--       subjects, content_warnings, cover_source, metadata_confidence — could
+--       all be freely rewritten by any authenticated user who had the book in
+--       their library. The provider columns in particular (subjects /
+--       content_warnings / cover_source / metadata_confidence) are read by
+--       recommender + content-warning code paths shared across every user of
+--       that books row, so a single rewrite could reshape the experience for
+--       everyone. This migration extends trigger coverage to all 14 protected
+--       columns (5 retained + 9 added).
 --
 -- Bypass semantics:
 --   The trigger short-circuits when auth.uid() IS NULL — i.e. the request
@@ -41,8 +42,8 @@
 --   shared catalog identity (immutable post-insert):
 --     title, author
 --   identity / metadata backfill (NULL → non-NULL only):
---     external_id, cover_url, description, isbn, isbn13, published_year,
---     additional_authors
+--     external_id, cover_url, description, isbn, isbn13, publication_year,
+--     original_publication_year, additional_authors
 --   provider / trusted-write only (fill-empty enforced — empty array or NULL
 --   counts as "empty" for array columns; NULL counts as "empty" for text):
 --     subjects, content_warnings, cover_source, metadata_confidence
@@ -81,7 +82,7 @@
 
 
 -- =============================================================================
--- A. books — fail-loud + stricter classification (13 protected columns)
+-- A. books — fail-loud + stricter classification (14 protected columns)
 -- =============================================================================
 
 create or replace function public._books_protect_identity_columns()
@@ -148,12 +149,22 @@ begin
       'isbn13 (fill-empty; current=%L attempted=%L)', old.isbn13, new.isbn13);
   end if;
 
-  -- published_year is integer, not text — no empty-string case applies.
-  if old.published_year is not null
-     and new.published_year is distinct from old.published_year then
+  -- publication_year / original_publication_year are integers — no empty-string
+  -- case applies; NULL is the only "empty" sentinel. Both year fields are
+  -- written by Goodreads import (Year Published / Original Publication Year),
+  -- both are catalog-shared, both fill-empty.
+  if old.publication_year is not null
+     and new.publication_year is distinct from old.publication_year then
     v_violations := v_violations || format(
-      'published_year (fill-empty; current=%L attempted=%L)',
-      old.published_year, new.published_year);
+      'publication_year (fill-empty; current=%L attempted=%L)',
+      old.publication_year, new.publication_year);
+  end if;
+
+  if old.original_publication_year is not null
+     and new.original_publication_year is distinct from old.original_publication_year then
+    v_violations := v_violations || format(
+      'original_publication_year (fill-empty; current=%L attempted=%L)',
+      old.original_publication_year, new.original_publication_year);
   end if;
 
   if old.additional_authors is not null and old.additional_authors <> ''
@@ -203,7 +214,8 @@ begin
       using errcode = '42501',
             hint = 'title and author are immutable post-insert. '
                 || 'external_id, cover_url, description, isbn, isbn13, '
-                || 'published_year, additional_authors are fill-if-empty. '
+                || 'publication_year, original_publication_year, '
+                || 'additional_authors are fill-if-empty. '
                 || 'subjects, content_warnings, cover_source, metadata_confidence '
                 || 'are provider-only fill-empty (NULL or empty allowed → set; '
                 || 'overwriting an existing value requires a service-role write).';
