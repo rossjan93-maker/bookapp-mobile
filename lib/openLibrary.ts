@@ -45,6 +45,97 @@ export type AuthorReleaseOrder = {
 //    re-issues / collected-edition rows that share a title.
 //  - Returns null when this title doesn't appear in the catalog OR the
 //    catalog has < 2 entries (no useful ordering signal for a 1-book author).
+export type AuthorBibliographyEntry = {
+  olKey:       string;          // "/works/OL12345W" — useful if we later wire tap-through
+  title:       string;
+  year:        number | null;   // first_publish_year
+  coverUrl:    string | null;   // covers.openlibrary.org URL or null
+  pageCount:   number | null;   // number_of_pages_median
+  rating:      number | null;   // ratings_average (0–5)
+  ratingCount: number | null;   // ratings_count
+};
+
+export type AuthorBibliography = {
+  author:    string;
+  entries:   AuthorBibliographyEntry[];   // sorted oldest → newest
+  yearRange: { from: number; to: number } | null;
+};
+
+// Full author catalog fetch — richer cousin of fetchAuthorReleaseOrder.
+// Used by the AuthorBibliographySheet on the Add-to-Library confirm card so
+// readers can browse the author's entire body of work and see where this
+// book sits in context. Same dedupe / language filtering / sort rules as
+// the lighter helper above; in-memory cached per (lowercased) author name.
+const _authorBibCache = new Map<string, AuthorBibliography | null>();
+export async function fetchAuthorBibliography(
+  author: string,
+): Promise<AuthorBibliography | null> {
+  const cacheKey = author.toLowerCase();
+  if (_authorBibCache.has(cacheKey)) return _authorBibCache.get(cacheKey) ?? null;
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const url =
+      `https://openlibrary.org/search.json?author=${encodeURIComponent(author)}` +
+      `&fields=key,title,first_publish_year,cover_i,number_of_pages_median,language,ratings_average,ratings_count` +
+      `&limit=100&sort=old`;
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) { _authorBibCache.set(cacheKey, null); return null; }
+    const data = await res.json() as {
+      docs?: {
+        key?: string;
+        title?: string;
+        first_publish_year?: number;
+        cover_i?: number;
+        number_of_pages_median?: number;
+        language?: string[];
+        ratings_average?: number;
+        ratings_count?: number;
+      }[];
+    };
+    const docs = data.docs ?? [];
+    const seen = new Set<string>();
+    const entries: AuthorBibliographyEntry[] = [];
+    for (const d of docs) {
+      if (typeof d.title !== 'string' || typeof d.key !== 'string') continue;
+      if (Array.isArray(d.language) && d.language.length > 0 && !d.language.includes('eng')) continue;
+      const tkey = d.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      if (!tkey || seen.has(tkey)) continue;
+      seen.add(tkey);
+      entries.push({
+        olKey:       d.key,
+        title:       d.title,
+        year:        typeof d.first_publish_year === 'number' ? d.first_publish_year : null,
+        coverUrl:    d.cover_i ? `https://covers.openlibrary.org/b/id/${d.cover_i}-M.jpg` : null,
+        pageCount:   typeof d.number_of_pages_median === 'number' ? d.number_of_pages_median : null,
+        rating:      typeof d.ratings_average === 'number' ? d.ratings_average : null,
+        ratingCount: typeof d.ratings_count === 'number' ? d.ratings_count : null,
+      });
+    }
+    if (entries.length < 1) { _authorBibCache.set(cacheKey, null); return null; }
+    // Sort: titles WITH a year first (oldest → newest), then year-less
+    // entries at the bottom alphabetically.
+    entries.sort((a, b) => {
+      if (a.year != null && b.year != null) return a.year - b.year || a.title.localeCompare(b.title);
+      if (a.year != null) return -1;
+      if (b.year != null) return 1;
+      return a.title.localeCompare(b.title);
+    });
+    const dated = entries.filter(e => e.year != null) as (AuthorBibliographyEntry & { year: number })[];
+    const yearRange = dated.length > 0
+      ? { from: dated[0].year, to: dated[dated.length - 1].year }
+      : null;
+    const result: AuthorBibliography = { author, entries, yearRange };
+    _authorBibCache.set(cacheKey, result);
+    return result;
+  } catch {
+    _authorBibCache.set(cacheKey, null);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const _authorOrderCache = new Map<string, AuthorReleaseOrder | null>();
 export async function fetchAuthorReleaseOrder(
   author: string,

@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { BackButton } from '../components/BackButton';
 import { supabase } from '../lib/supabase';
 import { CoverThumb } from '../components/CoverThumb';
@@ -20,6 +21,7 @@ import {
 } from '../lib/bookSearch';
 import { findSeriesForBook, getSeriesCatalog } from '../lib/seriesCatalog';
 import { fetchOLMeta, fetchAuthorReleaseOrder, type AuthorReleaseOrder } from '../lib/openLibrary';
+import { AuthorBibliographySheet } from '../components/AuthorBibliographySheet';
 import { invalidateBookDataCaches } from '../lib/tabCache';
 import { clearRecSession } from '../lib/recSession';
 import { transitionStatus } from '../lib/userBookActions';
@@ -131,6 +133,11 @@ export default function AddBookScreen() {
   // typical) get clipped to 5 lines with a "Show more" affordance so the
   // confirm card stays scannable.
   const [descExpanded, setDescExpanded] = useState(false);
+
+  // Author bibliography sheet — opened from the bibliography chip on the
+  // confirm card. Lets the reader explore the author's full catalog with
+  // covers, years, and ratings before committing this book to a shelf.
+  const [bibSheetOpen, setBibSheetOpen] = useState(false);
 
   // Stale-request guard: each search increments this; responses only committed
   // when the seq value at response time still matches the current value.
@@ -914,22 +921,30 @@ export default function AddBookScreen() {
               </View>
             )}
 
-            {/* Author bibliography chip — fallback when there's no series */}
-            {!selectedBook?.seriesName && authorOrder && (
-              <View style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                alignSelf: 'flex-start',
-                backgroundColor: '#eaf1ea',
-                borderRadius: 6,
-                paddingHorizontal: 8,
-                paddingVertical: 3,
-                marginTop: 8,
-              }}>
+            {/* Author bibliography chip — fallback when there's no series.
+                Tappable: opens the AuthorBibliographySheet so readers can
+                explore the author's full catalog before committing. */}
+            {!selectedBook?.seriesName && authorOrder && selectedBook?.author && (
+              <TouchableOpacity
+                onPress={() => setBibSheetOpen(true)}
+                activeOpacity={0.7}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  alignSelf: 'flex-start',
+                  backgroundColor: '#eaf1ea',
+                  borderRadius: 6,
+                  paddingHorizontal: 8,
+                  paddingVertical: 3,
+                  marginTop: 8,
+                }}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
                 <Text style={{ fontSize: 11, color: SAGE_DEEP, fontWeight: '700', letterSpacing: 0.2 }}>
-                  {`${_ordinal(authorOrder.position)} of ${authorOrder.total} by ${selectedBook?.author}`}
+                  {`${_ordinal(authorOrder.position)} of ${authorOrder.total} by ${selectedBook.author}`}
                 </Text>
-              </View>
+                <Ionicons name="chevron-forward" size={11} color={SAGE_DEEP} style={{ marginLeft: 3 }} />
+              </TouchableOpacity>
             )}
 
             {/* Year · pages meta line */}
@@ -1151,6 +1166,15 @@ export default function AddBookScreen() {
                 : 'Add to Library'}
           </Text>
         </TouchableOpacity>
+
+        {/* Bibliography sheet — mounted inside the confirm step's tree so
+            it tears down cleanly when the user navigates away. */}
+        <AuthorBibliographySheet
+          visible={bibSheetOpen}
+          onClose={() => setBibSheetOpen(false)}
+          author={selectedBook?.author ?? ''}
+          currentTitle={selectedBook?.title ?? null}
+        />
       </ScrollView>
     );
   }
