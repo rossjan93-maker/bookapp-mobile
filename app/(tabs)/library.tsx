@@ -4,7 +4,29 @@ import { fetchGoogleBooksCoverUrl } from '../../lib/googleBooks';
 import { repairBooksMetadata } from '../../lib/metadataRepair';
 import { registerCacheClearer } from '../../lib/tabCache';
 import { mountDevInspector } from '../../lib/devInspector';
-import { ActivityIndicator, Alert, FlatList, Keyboard, Modal, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Keyboard, Modal, Platform, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+
+// Cross-platform confirm: react-native-web's Alert.alert silently drops
+// multi-button dialogs (the destructive `onPress` never fires), so the
+// "Delete shelf" action did nothing on web. window.confirm gives us a real
+// blocking yes/no on web; native iOS/Android keep the styled action sheet.
+function confirmDestructive(
+  title: string,
+  message: string,
+  onConfirm: () => void,
+  confirmLabel: string = 'Delete',
+) {
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}`)) {
+      onConfirm();
+    }
+    return;
+  }
+  Alert.alert(title, message, [
+    { text: 'Cancel', style: 'cancel' },
+    { text: confirmLabel, style: 'destructive', onPress: onConfirm },
+  ]);
+}
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -1213,31 +1235,32 @@ export default function LibraryScreen() {
                 onLongPressShelf={(shelfId) => {
                   const sh = userShelves.find(s => s.id === shelfId);
                   if (!sh) return;
-                  Alert.alert(
+                  confirmDestructive(
                     `Delete "${sh.name}"?`,
                     'Books on this shelf stay in your library; only the shelf is removed.',
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Delete', style: 'destructive', onPress: async () => {
-                        try {
-                          await deleteShelfApi(sh.id);
-                          setUserShelves(prev => prev.filter(s => s.id !== sh.id));
-                          setShelfMembership(prev => {
-                            const next = new Map(prev);
-                            for (const [ub, set] of next) {
-                              if (set.has(sh.id)) {
-                                const newSet = new Set(set); newSet.delete(sh.id);
-                                next.set(ub, newSet);
-                              }
+                    async () => {
+                      try {
+                        await deleteShelfApi(sh.id);
+                        setUserShelves(prev => prev.filter(s => s.id !== sh.id));
+                        setShelfMembership(prev => {
+                          const next = new Map(prev);
+                          for (const [ub, set] of next) {
+                            if (set.has(sh.id)) {
+                              const newSet = new Set(set); newSet.delete(sh.id);
+                              next.set(ub, newSet);
                             }
-                            return next;
-                          });
-                          if (activeShelf === sh.id) setActiveShelf(null);
-                        } catch (e: any) {
+                          }
+                          return next;
+                        });
+                        if (activeShelf === sh.id) setActiveShelf(null);
+                      } catch (e: any) {
+                        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                          window.alert(`Could not delete shelf\n\n${e?.message ?? 'Try again.'}`);
+                        } else {
                           Alert.alert('Could not delete shelf', e?.message ?? 'Try again.');
                         }
-                      } },
-                    ],
+                      }
+                    },
                   );
                 }}
               />
@@ -1369,31 +1392,32 @@ export default function LibraryScreen() {
                   <TouchableOpacity
                     hitSlop={6}
                     onPress={() => {
-                      Alert.alert(
+                      confirmDestructive(
                         `Delete "${custom.name}"?`,
                         'Books on this shelf stay in your library; only the shelf is removed.',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          { text: 'Delete', style: 'destructive', onPress: async () => {
-                            try {
-                              await deleteShelfApi(custom.id);
-                              setUserShelves(prev => prev.filter(s => s.id !== custom.id));
-                              setShelfMembership(prev => {
-                                const next = new Map(prev);
-                                for (const [ub, set] of next) {
-                                  if (set.has(custom.id)) {
-                                    const newSet = new Set(set); newSet.delete(custom.id);
-                                    next.set(ub, newSet);
-                                  }
+                        async () => {
+                          try {
+                            await deleteShelfApi(custom.id);
+                            setUserShelves(prev => prev.filter(s => s.id !== custom.id));
+                            setShelfMembership(prev => {
+                              const next = new Map(prev);
+                              for (const [ub, set] of next) {
+                                if (set.has(custom.id)) {
+                                  const newSet = new Set(set); newSet.delete(custom.id);
+                                  next.set(ub, newSet);
                                 }
-                                return next;
-                              });
-                              setActiveShelf(null);
-                            } catch (e: any) {
+                              }
+                              return next;
+                            });
+                            setActiveShelf(null);
+                          } catch (e: any) {
+                            if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                              window.alert(`Could not delete shelf\n\n${e?.message ?? 'Try again.'}`);
+                            } else {
                               Alert.alert('Could not delete shelf', e?.message ?? 'Try again.');
                             }
-                          } },
-                        ],
+                          }
+                        },
                       );
                     }}
                     style={{
