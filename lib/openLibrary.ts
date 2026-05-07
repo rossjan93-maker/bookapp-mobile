@@ -15,6 +15,7 @@
 // =============================================================================
 
 import { titleSearchVariants } from './titleNormalize';
+import { isBoxSet } from './boxSetDetection';
 
 export type OLMeta = {
   description: string | null;
@@ -161,6 +162,13 @@ export async function fetchAuthorBibliography(
         });
         if (!ok) continue;
       }
+      // Skip box sets / omnibuses / multi-volume bundles — they're just
+      // repackaging of books already in the bibliography (e.g. Lucy Foley's
+      // 2023 3-book boxset duplicating titles already listed). Done at the
+      // query layer so the UI never sees them; if a future bundle ever
+      // contains genuinely new material it would still be captured by its
+      // own non-bundle title elsewhere in the response.
+      if (isBoxSet({ title: d.title })) continue;
       const tkey = d.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
       if (!tkey || seen.has(tkey)) continue;
       seen.add(tkey);
