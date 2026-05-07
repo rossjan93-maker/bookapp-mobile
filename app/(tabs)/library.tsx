@@ -61,7 +61,7 @@ const LIB_VIEW_MODE_KEY = 'libraryViewMode';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type UserBookStatus = 'want_to_read' | 'reading' | 'finished' | 'dnf';
-type FilterKey      = 'all' | UserBookStatus | 'clubs';
+type FilterKey      = 'all' | UserBookStatus | 'clubs' | 'priority';
 type SortKey        = 'recent' | 'progress' | 'finished_date';
 
 type UserBook = {
@@ -78,6 +78,11 @@ type UserBook = {
   // selects below probe and fall back, so consumers must treat it as
   // possibly-undefined and pass through to inferReadState as-is.
   paused_at?: string | null;
+  // See supabase/migrations/20260507000001_user_books_year_goal.sql.
+  // Optional / undefined when the column isn't present in this DB —
+  // selects probe and fall back. When equal to the current calendar
+  // year the book is part of the "Priority" filter / home stack.
+  year_goal_year?: number | null;
   taste_tags: Record<string, any> | null;
   rating: number | null;
   sentiment: string | null;
@@ -168,6 +173,7 @@ const STATUS_BADGE: Record<UserBookStatus, { bg: string; text: string }> = {
 
 const FILTER_OPTIONS: Array<{ key: FilterKey; label: string }> = [
   { key: 'all',          label: 'All'          },
+  { key: 'priority',     label: 'Priority'     },
   { key: 'reading',      label: 'Reading'      },
   { key: 'want_to_read', label: 'Want to Read' },
   { key: 'finished',     label: 'Finished'     },
@@ -182,6 +188,7 @@ const FILTER_EMPTY: Record<FilterKey, { title: string; body: string }> = {
   finished:     { title: 'No finished books yet',  body: 'Finished books will appear here.' },
   dnf:          { title: 'Nothing set aside',      body: 'Sometimes a book isn\'t the right fit for now.' },
   clubs:        { title: 'No clubs yet',            body: 'Start a book club and invite your friends to read together.' },
+  priority:     { title: 'No priority reads yet',  body: 'Open a book and tap "Add to goal stack" to flag it as a priority for this year.' },
 };
 
 // ─── Module-level session cache ───────────────────────────────────────────────
@@ -213,7 +220,7 @@ registerCacheClearer(() => { _libCache = null; }, 'bookData');
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
-const VALID_FILTERS = new Set<FilterKey>(['all', 'want_to_read', 'reading', 'finished', 'dnf', 'clubs']);
+const VALID_FILTERS = new Set<FilterKey>(['all', 'priority', 'want_to_read', 'reading', 'finished', 'dnf', 'clubs']);
 
 export default function LibraryScreen() {
   const insets = useSafeAreaInsets();
@@ -375,7 +382,7 @@ export default function LibraryScreen() {
         .single(),
       supabase
         .from('user_books')
-        .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, edition_key, paused_at, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, page_count, subjects)')
+        .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, edition_key, paused_at, year_goal_year, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, page_count, subjects)')
         .eq('user_id', user.id)
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
@@ -443,7 +450,7 @@ export default function LibraryScreen() {
           // May have more — fetch from offset 50 onwards
           let remResult = await supabase!
             .from('user_books')
-            .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, edition_key, paused_at, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, page_count, subjects)')
+            .select('id, book_id, status, started_at, finished_at, current_page, progress_updated_at, edition_key, paused_at, year_goal_year, taste_tags, rating, sentiment, book:books(title, author, cover_url, external_id, page_count, subjects)')
             .eq('user_id', user.id)
             .is('deleted_at', null)
             .order('created_at', { ascending: false })
@@ -751,13 +758,24 @@ export default function LibraryScreen() {
   // new status doesn't match the active filter — otherwise marking a
   // "Reading" book as Finished from the Reading filter makes the row vanish
   // before the user ever sees the rating prompt.
+  // Priority filter: books earmarked for this calendar year via the
+  // year-goal stack (user_books.year_goal_year === currentYear). We keep
+  // finished books in the list so the reader can see what they've already
+  // checked off this year alongside the queue — the home-screen strip
+  // hides finished books because they roll into booksThisYear there, but
+  // here in the library the unified view is more useful.
+  const _currentYear = new Date().getFullYear();
   const filteredItems = activeShelf
     ? shelfFilteredItems
     : (activeFilter === 'all' || activeFilter === 'clubs'
       ? items
-      : items.filter(i =>
-          i.status === activeFilter || pendingFeedback?.userBookId === i.id,
-        ));
+      : activeFilter === 'priority'
+        ? items.filter(i =>
+            i.year_goal_year === _currentYear || pendingFeedback?.userBookId === i.id,
+          )
+        : items.filter(i =>
+            i.status === activeFilter || pendingFeedback?.userBookId === i.id,
+          ));
 
   // Sort + ordering:
   //   All filter    → reading first, then finished (finished_at desc), then want-to-read, then dnf.
@@ -1108,6 +1126,7 @@ export default function LibraryScreen() {
     finished:     items.filter(i => i.status === 'finished').length,
     dnf:          items.filter(i => i.status === 'dnf').length,
     clubs:        0,
+    priority:     items.filter(i => i.year_goal_year === _currentYear).length,
   };
 
   const contextSubtitle = (() => {
