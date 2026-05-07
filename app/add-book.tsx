@@ -18,6 +18,8 @@ import {
   searchBooks,
   resolveOLKeyFromIsbn,
 } from '../lib/bookSearch';
+import { findSeriesForBook, getSeriesCatalog } from '../lib/seriesCatalog';
+import { fetchOLMeta } from '../lib/openLibrary';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,6 +33,11 @@ type SelectedBook = {
   isManual: boolean;
   pageCount: number | null;
   editionKey: string | null;
+  firstPublishYear: number | null;
+  seriesName: string | null;
+  seriesPosition: number | null;
+  seriesTotal: number | null;
+  description: string | null;
   _source?: 'ol' | 'gb';
   _isbn13?: string;
   _isbn10?: string;
@@ -168,14 +175,24 @@ export default function AddBookScreen() {
       ?? (editionKey ? `https://covers.openlibrary.org/b/olid/${editionKey}-M.jpg` : olCoverUrl(book.cover_i));
     const rawPages = book.number_of_pages_median;
     const pageCount = typeof rawPages === 'number' && rawPages >= 30 ? rawPages : null;
+    // Series lookup is synchronous against a static catalog — populate up
+    // front so the confirm card renders the chip on first paint.
+    const author = book.author_name?.[0] ?? 'Unknown author';
+    const series = findSeriesForBook(book.title, author);
+    const seriesEntry = series ? getSeriesCatalog(series.seriesName) : null;
     setSelectedBook({
       externalId: book.key,
       title: book.title,
-      author: book.author_name?.[0] ?? 'Unknown author',
+      author,
       coverUrl,
       isManual: false,
       pageCount,
       editionKey,
+      firstPublishYear: typeof book.first_publish_year === 'number' ? book.first_publish_year : null,
+      seriesName:      seriesEntry?.displayName ?? series?.seriesName ?? null,
+      seriesPosition:  series?.seriesPosition ?? null,
+      seriesTotal:     seriesEntry?.total ?? null,
+      description:     null,
       _source: book._source,
       _isbn13: book._isbn13,
       _isbn10: book._isbn10,
@@ -193,9 +210,42 @@ export default function AddBookScreen() {
       isManual: true,
       pageCount: null,
       editionKey: null,
+      firstPublishYear: null,
+      seriesName: null,
+      seriesPosition: null,
+      seriesTotal: null,
+      description: null,
     });
     setStep('confirm');
   }
+
+  // ── Async enrichment of confirm card ─────────────────────────────────────
+  // When the user lands on the confirm step with an Open Library work id,
+  // fetch description + (improved) page count in the background so the
+  // card grows from "title + author" to "title + author + series + year +
+  // pages + 3-line synopsis" without blocking the screen. Stale-guarded
+  // by externalId so a quick back-and-forth between rows can't write the
+  // wrong description into a different selection.
+  useEffect(() => {
+    if (step !== 'confirm') return;
+    if (!selectedBook?.externalId) return;
+    if (selectedBook.description !== null) return; // already enriched
+    const id = selectedBook.externalId;
+    if (!id.startsWith('/works/')) return; // OL works only — GB rows skip
+    let cancelled = false;
+    fetchOLMeta(id).then(meta => {
+      if (cancelled) return;
+      setSelectedBook(prev => {
+        if (!prev || prev.externalId !== id) return prev; // selection changed
+        return {
+          ...prev,
+          description: meta.description,
+          pageCount:   prev.pageCount ?? meta.pageCount ?? null,
+        };
+      });
+    }).catch(() => { /* enrichment failure is silent — card just stays minimal */ });
+    return () => { cancelled = true; };
+  }, [step, selectedBook?.externalId]);
 
   async function handleSave() {
     if (!supabase || !userId || !selectedBook) return;
@@ -670,6 +720,38 @@ export default function AddBookScreen() {
               {selectedBook?.title}
             </Text>
             <Text style={{ fontSize: 14, color: '#78716c' }}>{selectedBook?.author}</Text>
+
+            {/* Series chip — only when we matched the static catalog */}
+            {selectedBook?.seriesName && (
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                alignSelf: 'flex-start',
+                backgroundColor: '#eaf1ea',
+                borderRadius: 6,
+                paddingHorizontal: 8,
+                paddingVertical: 3,
+                marginTop: 8,
+              }}>
+                <Text style={{ fontSize: 11, color: SAGE_DEEP, fontWeight: '700', letterSpacing: 0.2 }}>
+                  {selectedBook.seriesName}
+                  {selectedBook.seriesPosition
+                    ? ` · #${selectedBook.seriesPosition}${selectedBook.seriesTotal ? ` of ${selectedBook.seriesTotal}` : ''}`
+                    : ''}
+                </Text>
+              </View>
+            )}
+
+            {/* Year · pages meta line */}
+            {(selectedBook?.firstPublishYear || selectedBook?.pageCount) && (
+              <Text style={{ fontSize: 12, color: '#9e958d', marginTop: 6 }}>
+                {[
+                  selectedBook?.firstPublishYear ? String(selectedBook.firstPublishYear) : null,
+                  selectedBook?.pageCount ? `${selectedBook.pageCount} pages` : null,
+                ].filter(Boolean).join(' · ')}
+              </Text>
+            )}
+
             {selectedBook?.isManual && (
               <View style={{
                 backgroundColor: '#fef3c7',
@@ -684,6 +766,36 @@ export default function AddBookScreen() {
             )}
           </View>
         </View>
+
+        {/* Description blurb — appears once async enrichment lands */}
+        {selectedBook?.description && (
+          <View style={{
+            backgroundColor: '#fefcf9',
+            borderRadius: 12,
+            padding: 14,
+            marginTop: -20,
+            marginBottom: 28,
+            borderWidth: 1,
+            borderColor: '#ede9e4',
+          }}>
+            <Text style={{
+              fontSize: 10,
+              fontWeight: '700',
+              color: '#9e958d',
+              letterSpacing: 0.9,
+              textTransform: 'uppercase',
+              marginBottom: 6,
+            }}>
+              About this book
+            </Text>
+            <Text
+              numberOfLines={4}
+              style={{ fontSize: 13, color: '#57534e', lineHeight: 19 }}
+            >
+              {selectedBook.description.replace(/\s+/g, ' ').trim()}
+            </Text>
+          </View>
+        )}
 
         {/* Status picker */}
         <Text style={{

@@ -22,6 +22,7 @@ export type BookResult = {
   cover_i?: number;
   cover_edition_key?: string;
   number_of_pages_median?: number;
+  first_publish_year?: number;
   _source?: 'ol' | 'gb';
   _gbCoverUrl?: string;
   _gbId?: string;
@@ -48,7 +49,7 @@ function warnMissingGbKey(): void {
 
 // ─── OL field list ────────────────────────────────────────────────────────────
 
-const OL_FIELDS = 'key,title,author_name,cover_i,cover_edition_key,number_of_pages_median';
+const OL_FIELDS = 'key,title,author_name,cover_i,cover_edition_key,number_of_pages_median,first_publish_year';
 
 // ─── Network helpers ──────────────────────────────────────────────────────────
 // Mobile networks routinely drop or stall fetches. Without timeouts a single
