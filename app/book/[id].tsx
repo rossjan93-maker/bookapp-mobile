@@ -1638,8 +1638,18 @@ export default function BookDetailScreen() {
         // the resolver has already rejected. correctedCover.url === null
         // means "the resolver explicitly suppressed the cover" → render
         // CoverThumb's typographic placeholder, do not fall through.
+        // Final fallback: when none of the above resolved a cover but the
+        // book belongs to a series and the offline catalog already gave us
+        // an OL coverId for this position, use it. This is what makes the
+        // strip thumbnail render even when the hero would otherwise be
+        // blank — surface the same art in the hero so users opening a
+        // series book via search/library see real cover art on first
+        // paint instead of the "NO COVER" placeholder.
+        const seriesCatalogCover = (seriesPos != null && seriesCovers[seriesPos - 1]?.coverId)
+          ? `https://covers.openlibrary.org/b/id/${seriesCovers[seriesPos - 1]!.coverId}-L.jpg`
+          : null;
         const activeCoverUrl = editionCoverUrl
-          ?? (correctedCover ? correctedCover.url : (coverUrl || enrichedCoverUrl || null));
+          ?? (correctedCover ? correctedCover.url : (coverUrl || enrichedCoverUrl || seriesCatalogCover || null));
         const isGoogleBooks = !!(activeCoverUrl && (activeCoverUrl.includes('books.google') || activeCoverUrl.includes('googleapis')));
         const glowColor = isGoogleBooks
           ? 'rgba(220, 232, 252, 0.72)'
