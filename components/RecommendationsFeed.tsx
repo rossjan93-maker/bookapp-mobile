@@ -903,14 +903,49 @@ export function RecommendationsFeed({
           {/* Guided tour step 0 */}
           {guidedStep === 0 && hasCards && <GuidedActionBanner />}
 
+          {/* ── Currently Reading bucket ──
+              Rendered ABOVE the intent-filter panel because Currently
+              Reading is the user's in-progress series continuations —
+              not affected by the mood/pace/tone chips. Putting the
+              filter directly above the bucket it actually steers
+              (Discover Next) keeps the cause→effect relationship
+              visually adjacent. */}
+          {visibleConts.length > 0 && (
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: 6, paddingLeft: 10, borderLeftWidth: 3, borderLeftColor: SAGE_DEEP }}>
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', letterSpacing: -0.1 }}>Currently Reading</Text>
+                  <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>Pick up where you left off</Text>
+                </View>
+              </View>
+              {visibleConts.map((rec, idx) => {
+                const card = (
+                  <RecCard
+                    key={rec.id}
+                    book={rec}
+                    featured={idx === 0}
+                    isExpert={recMode === 'expert'}
+                    onSave={() => handleSave(rec)}
+                    onDismiss={() => handleDismiss(rec)}
+                    onMoreLikeThis={() => handleMoreLikeThis(rec)}
+                    onImpression={() => handleImpression(rec)}
+                    onExplanationOpen={() => handleExplanationOpen(rec)}
+                  />
+                );
+                return idx === 0 && wtRef
+                  ? <View key={rec.id} ref={wtRef}>{card}</View>
+                  : card;
+              })}
+              <View style={{ height: 14 }} />
+            </>
+          )}
+
           {/* ── Your Next Read — mood / reading energy panel ──
-              Rendered ABOVE the recommendation buckets so it acts as an
-              optional steering filter the user can reach for if the
-              initial picks don't match their current mood. The panel
-              defaults to its compact collapsed pill so it never crowds
-              the recs themselves; expanding it reveals the chip groups
-              and Apply/Clear actions that re-run the rec pipeline with
-              an active NextReadIntent. */}
+              Sits directly above Discover Next because that's the bucket
+              it actually filters. Defaults to its compact collapsed
+              pill so it never crowds the recs themselves; expanding it
+              reveals the chip groups and Apply/Clear actions that
+              re-run the rec pipeline with an active NextReadIntent. */}
           <View style={{ marginBottom: 14 }}>
             {/* ── Collapsed trigger row ── */}
             {!intentPanelOpen && (
@@ -1141,41 +1176,10 @@ export function RecommendationsFeed({
             )}
           </View>
 
-          {/* ── Currently Reading bucket ── */}
-          {visibleConts.length > 0 && (
-            <>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: 6, paddingLeft: 10, borderLeftWidth: 3, borderLeftColor: SAGE_DEEP }}>
-                <View>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', letterSpacing: -0.1 }}>Currently Reading</Text>
-                  <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>Pick up where you left off</Text>
-                </View>
-              </View>
-              {visibleConts.map((rec, idx) => {
-                const card = (
-                  <RecCard
-                    key={rec.id}
-                    book={rec}
-                    featured={idx === 0}
-                    isExpert={recMode === 'expert'}
-                    onSave={() => handleSave(rec)}
-                    onDismiss={() => handleDismiss(rec)}
-                    onMoreLikeThis={() => handleMoreLikeThis(rec)}
-                    onImpression={() => handleImpression(rec)}
-                    onExplanationOpen={() => handleExplanationOpen(rec)}
-                  />
-                );
-                return idx === 0 && wtRef
-                  ? <View key={rec.id} ref={wtRef}>{card}</View>
-                  : card;
-              })}
-              {visibleDiscs.length > 0 && <View style={{ height: 6 }} />}
-            </>
-          )}
-
           {/* ── Discover Next bucket ── */}
           {visibleDiscs.length > 0 && (
             <>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: visibleConts.length === 0 ? 0 : 2, paddingLeft: 10, borderLeftWidth: 3, borderLeftColor: '#ede9e4' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: 0, paddingLeft: 10, borderLeftWidth: 3, borderLeftColor: '#ede9e4' }}>
                 <View>
                   <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', letterSpacing: -0.1 }}>Discover Next</Text>
                   <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>Fresh picks based on what you've loved</Text>
