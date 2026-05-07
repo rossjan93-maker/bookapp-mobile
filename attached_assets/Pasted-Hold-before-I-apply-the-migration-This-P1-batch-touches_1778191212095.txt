@@ -1,0 +1,60 @@
+Hold before I apply the migration.
+
+This P1 batch touches RLS, a new SECURITY DEFINER RPC, table privileges, constraints, triggers, and app behavior. Before anything touches Supabase, please paste the review artifacts.
+
+Please provide:
+
+1. Full contents of:
+   supabase/migrations/20260510000000_p1_security_hardening.sql
+
+2. Full contents of:
+   lib/friendshipActions.ts
+
+3. Exact diff for:
+   components/FriendsSheet.tsx
+
+4. Exact replit.md additions
+
+5. Confirm the migration is idempotent:
+   - CREATE OR REPLACE where appropriate
+   - DROP POLICY IF EXISTS before CREATE POLICY where appropriate
+   - DROP TRIGGER IF EXISTS before CREATE TRIGGER where appropriate
+   - safe to run once in the dashboard
+   - no accidental destructive data changes
+
+6. Clarify the book_club_comments preflight:
+   You said book_club_comments.body was not exposed to PostgREST and “counts as 0 rows for safety.”
+   That is not enough. Please verify through SQL/migration-safe logic whether the table exists and whether any existing body values exceed the proposed 2000-char limit.
+   If direct live SQL inspection is not available, include a safe preflight DO block or explain how the migration avoids failing unexpectedly.
+
+7. Clarify the friendships model:
+   - Is direct INSERT fully revoked from authenticated clients?
+   - Is send_friend_request(addressee_id) the only creation path?
+   - Does the RPC enforce self-check, duplicate pair check, addressee exists, and 50 pending cap?
+   - Does the RPC use SECURITY DEFINER with SET search_path = public?
+   - Are EXECUTE grants explicit and minimal?
+
+8. Clarify DELETE behavior:
+   - Can requester cancel pending?
+   - Can addressee decline pending?
+   - Can either party remove accepted friendship?
+   - Does DELETE expose any ability to delete unrelated friendships?
+
+9. Clarify current_page behavior:
+   - Is current_page >= 0 enforced by CHECK?
+   - Is current_page <= books.page_count enforced fail-loud only when page_count is known?
+   - Does NULL current_page remain allowed?
+   - Does this preserve legitimate reading-session updates?
+
+10. Clarify books INSERT mitigation:
+   - Non-service-role inserts require non-empty title and author
+   - blank external_id is rejected when provided
+   - NULL external_id remains allowed for add-book fallback and Goodreads import
+   - external_id NOT NULL is deferred to P1.5
+
+11. Provide the live verification matrix before I apply:
+   - expected number of assertions
+   - what each group tests
+   - cleanup behavior
+
+After I review the SQL and diffs, I’ll apply the migration manually and ask you to run verification.
