@@ -10,12 +10,30 @@
 --       was thrown away") and made write semantics impossible to reason about
 --       from the client.
 --
---   (2) STRICTER CLASSIFICATION. The previous trigger only protected 5 of the
---       9 columns that should be locked down. metadata_confidence, cover_source,
---       subjects, and content_warnings could all be freely rewritten by any
---       authenticated user who had the book in their library — and books rows
---       are shared, so a single rewrite reshapes the experience for everyone.
---       This migration extends protection to all 9.
+--   (2) STRICTER CLASSIFICATION. The previous trigger protected only 5 columns
+--       (title, author, external_id, cover_url, description). The remaining
+--       8 catalog columns we now consider sensitive — isbn, isbn13,
+--       published_year, additional_authors, subjects, content_warnings,
+--       cover_source, metadata_confidence — could all be freely rewritten by
+--       any authenticated user who had the book in their library. The provider
+--       columns in particular (subjects/content_warnings/cover_source/
+--       metadata_confidence) are read by recommender + content-warning code
+--       paths shared across every user of that books row, so a single rewrite
+--       could reshape the experience for everyone. This migration extends
+--       trigger coverage to all 13 protected columns (5 retained + 8 added).
+--
+-- Bypass semantics:
+--   The trigger short-circuits when auth.uid() IS NULL — i.e. the request
+--   reached the database with no end-user JWT context. This branch is taken
+--   by: (a) service-role JWTs (no `sub` claim → auth.uid() returns NULL),
+--   (b) direct DB sessions used by migrations / edge functions running as
+--   the table owner, (c) anonymous PostgREST requests with no Authorization
+--   header. Cases (a) and (b) are the trusted-write paths; case (c) is safe
+--   because RLS on books UPDATE requires the row to belong to the caller's
+--   library, so an anon UPDATE matches 0 rows and the trigger never fires.
+--   The bypass therefore covers "no end-user context" rather than "service
+--   role specifically," which is the correct narrowing for a BEFORE UPDATE
+--   trigger that runs after RLS has already filtered the row set.
 --
 -- Field classification (books):
 --   user-mutable (untouched by trigger; gated by RLS library-ownership only):
@@ -38,9 +56,14 @@
 --   immutable post-insert: external_id          (PK / ON CONFLICT key)
 --   mutable by library owner via RLS:           every other column
 --
--- Service-role / superuser writes (auth.uid() IS NULL — migrations, edge
--- functions, the maintenance scripts under SUPABASE_SERVICE_ROLE_KEY) bypass
--- every check below.
+-- Empty-string handling for text columns: a string column is treated as
+-- "empty" when its value is NULL or ''. This matters because Goodreads import
+-- and some legacy CSV paths can persist '' rather than NULL when a field was
+-- absent in the source row. Both NULL → set and '' → set are allowed for the
+-- 8 fill-empty / provider-fill-empty text columns (external_id, cover_url,
+-- description, isbn, isbn13, additional_authors, cover_source,
+-- metadata_confidence). Array columns (subjects, content_warnings) treat NULL
+-- and zero-cardinality arrays as empty.
 --
 -- Error contract for clients:
 --   * SQLSTATE 42501 (insufficient_privilege)  → PostgREST returns HTTP 403.
@@ -58,7 +81,7 @@
 
 
 -- =============================================================================
--- A. books — fail-loud + stricter classification (9 columns)
+-- A. books — fail-loud + stricter classification (13 protected columns)
 -- =============================================================================
 
 create or replace function public._books_protect_identity_columns()
@@ -70,7 +93,12 @@ as $$
 declare
   v_violations text[] := array[]::text[];
 begin
-  -- Service-role / migration / maintenance-script writes bypass entirely.
+  -- No end-user JWT context (service-role JWT, direct DB session run by
+  -- migrations / edge functions, or unauthenticated request). Anon is safe
+  -- here because RLS on books UPDATE requires library ownership and matches
+  -- 0 rows for an anon caller before this trigger ever fires; service-role
+  -- and DB-owner sessions are the trusted-write paths. See header for full
+  -- bypass-semantics discussion.
   if auth.uid() is null then
     return new;
   end if;
@@ -86,37 +114,41 @@ begin
       'author (immutable; current=%L attempted=%L)', old.author, new.author);
   end if;
 
-  -- ── Fill-if-empty (text / scalar): NULL → non-NULL allowed ───────────────
-  if old.external_id is not null
+  -- ── Fill-if-empty (text columns): NULL or '' → non-empty allowed ─────────
+  -- Goodreads import and legacy CSV paths can persist '' rather than NULL
+  -- when a field was absent upstream, so '' counts as "empty" for fill-empty
+  -- semantics. The check is `old.X is not null and old.X <> ''`.
+  if old.external_id is not null and old.external_id <> ''
      and new.external_id is distinct from old.external_id then
     v_violations := v_violations || format(
       'external_id (fill-empty; current=%L attempted=%L)',
       old.external_id, new.external_id);
   end if;
 
-  if old.cover_url is not null
+  if old.cover_url is not null and old.cover_url <> ''
      and new.cover_url is distinct from old.cover_url then
     v_violations := v_violations || format(
       'cover_url (fill-empty; currently set, attempted change to %L)', new.cover_url);
   end if;
 
-  if old.description is not null
+  if old.description is not null and old.description <> ''
      and new.description is distinct from old.description then
     v_violations := v_violations || 'description (fill-empty; currently set, attempted change)';
   end if;
 
-  if old.isbn is not null
+  if old.isbn is not null and old.isbn <> ''
      and new.isbn is distinct from old.isbn then
     v_violations := v_violations || format(
       'isbn (fill-empty; current=%L attempted=%L)', old.isbn, new.isbn);
   end if;
 
-  if old.isbn13 is not null
+  if old.isbn13 is not null and old.isbn13 <> ''
      and new.isbn13 is distinct from old.isbn13 then
     v_violations := v_violations || format(
       'isbn13 (fill-empty; current=%L attempted=%L)', old.isbn13, new.isbn13);
   end if;
 
+  -- published_year is integer, not text — no empty-string case applies.
   if old.published_year is not null
      and new.published_year is distinct from old.published_year then
     v_violations := v_violations || format(
@@ -124,7 +156,7 @@ begin
       old.published_year, new.published_year);
   end if;
 
-  if old.additional_authors is not null
+  if old.additional_authors is not null and old.additional_authors <> ''
      and new.additional_authors is distinct from old.additional_authors then
     v_violations := v_violations || 'additional_authors (fill-empty; currently set, attempted change)';
   end if;
@@ -148,14 +180,16 @@ begin
       coalesce(array_length(old.content_warnings, 1), 0));
   end if;
 
-  if old.cover_source is not null
+  -- Text provider columns — '' counts as empty for the same reason as the
+  -- fill-empty block above.
+  if old.cover_source is not null and old.cover_source <> ''
      and new.cover_source is distinct from old.cover_source then
     v_violations := v_violations || format(
       'cover_source (provider-only fill-empty; current=%L attempted=%L)',
       old.cover_source, new.cover_source);
   end if;
 
-  if old.metadata_confidence is not null
+  if old.metadata_confidence is not null and old.metadata_confidence <> ''
      and new.metadata_confidence is distinct from old.metadata_confidence then
     v_violations := v_violations || format(
       'metadata_confidence (provider-only fill-empty; current=%L attempted=%L)',
@@ -203,6 +237,7 @@ security definer
 set search_path = public
 as $$
 begin
+  -- No end-user JWT context — see books trigger for bypass discussion.
   if auth.uid() is null then
     return new;
   end if;
@@ -251,6 +286,7 @@ security definer
 set search_path = public
 as $$
 begin
+  -- No end-user JWT context — see books trigger for bypass discussion.
   if auth.uid() is null then
     return new;
   end if;
