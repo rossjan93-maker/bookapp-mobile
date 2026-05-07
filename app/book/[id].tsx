@@ -44,6 +44,9 @@ import { getRecSnapshot } from '../../lib/recSnapshot';
 import { EvidenceTagsRow } from '../../components/RecCard';
 import { RecommendBookSheet } from '../../components/RecommendBookSheet';
 import { Ionicons } from '@expo/vector-icons';
+import { persistFeedback } from '../../lib/recFeedback';
+import { saveBookFromRec } from '../../lib/saveBookFromRec';
+import { getMltAutoaddPref, setMltAutoaddPref } from '../../lib/mltAutoaddPref';
 
 // ─── Book-level enrichment cache ──────────────────────────────────────────────
 // Module-level Map keyed by book DB id.  Stores the description / subjects /
@@ -376,6 +379,24 @@ export default function BookDetailScreen() {
 
   // Taste preferences state (used by Why this book? section)
   const [hasTastePrefs, setHasTastePrefs] = useState<boolean | null>(null);
+
+  // ── Rec quick-actions (visible only when arriving from a recommendation
+  // and the book is not already in the user's library) ──────────────────────
+  // recActionDone collapses the panel into a small confirmation row after the
+  // user picks an action so they don't double-tap. recActionBusy disables the
+  // buttons while the upsert is in flight. recActionLockRef is a synchronous
+  // ref-based lock that beats React's batched state updates, so a rapid
+  // double-tap (or "Want to Read" → "Add to stack" within the same render
+  // tick) cannot start two concurrent upserts and race on year_goal_year.
+  type RecActionKind = 'want_to_read' | 'priority' | 'not_for_me' | 'more_like_this';
+  const recActionLockRef = useRef(false);
+  const [recActionBusy, setRecActionBusy]   = useState(false);
+  const [recActionDone, setRecActionDone]   = useState<RecActionKind | null>(null);
+  const [recActionError, setRecActionError] = useState<string | null>(null);
+  // Modal state for the More-Like-This auto-add flow.
+  // 'first-time' = ask user once whether to auto-add MLT picks to Want-to-Read.
+  // 'each-time'  = per-tap confirmation when the user previously chose "Ask".
+  const [mltModal, setMltModal] = useState<null | 'first-time' | 'each-time'>(null);
 
   // Recommendation context — written by RecCard on tap, read here on mount.
   // Primary source: synchronous session cache (getRecContext) — populated on
@@ -1358,6 +1379,143 @@ export default function BookDetailScreen() {
     // faded cover strip on the yearly progress bar reflects this toggle
     // immediately when the reader navigates back.
     invalidateBookDataCaches();
+  }
+
+  // ── Rec quick-action handlers (Want-to-Read / Add to year stack /
+  //    Not for me / More like this) — only used when arriving from a rec
+  //    and the book is not already in the user's library. ───────────────────
+  async function _saveRecBook(opts: { withYearGoal: boolean }): Promise<boolean> {
+    if (!supabase) return false;
+    const uid = userId ?? (await supabase.auth.getUser()).data.user?.id ?? null;
+    if (!uid) return false;
+    const result = await saveBookFromRec(supabase, {
+      userId:       uid,
+      externalId:   externalId ?? null,
+      bookId:       bookId ?? null,
+      title:        title ?? '',
+      author:       author ?? '',
+      coverUrl:     coverUrl ?? null,
+      subjects:     olMeta?.subjects ?? null,
+      pageCount:    olMeta?.pageCount ?? pageCount ?? null,
+      yearGoalYear: opts.withYearGoal ? new Date().getFullYear() : null,
+    });
+    if (result.error) {
+      setRecActionError(result.error);
+      return false;
+    }
+    if (result.userBookId) setUserBookId(result.userBookId);
+    setLocalStatus('want_to_read');
+    if (opts.withYearGoal) setYearGoalYear(new Date().getFullYear());
+    // persistFeedback is best-effort; build a minimal book-like shape.
+    const bookLike = {
+      id:          result.bookDbId ?? `rec:${externalId ?? title ?? ''}`,
+      title:       title ?? '',
+      author:      author ?? '',
+      cover_url:   coverUrl ?? null,
+      external_id: externalId ?? null,
+      subjects:    olMeta?.subjects ?? null,
+      page_count:  olMeta?.pageCount ?? pageCount ?? null,
+      description: null,
+      _source:     'open_library' as const,
+      _retrieval_reason: 'book_detail_rec_action',
+    };
+    persistFeedback(supabase, uid, bookLike as any, 'saved', {
+      book_db_id: result.bookDbId ?? undefined,
+    }).catch(() => {});
+    invalidateBookDataCaches();
+    clearRecSession();
+    return true;
+  }
+
+  async function handleRecWantToRead() {
+    if (recActionLockRef.current || recActionDone) return;
+    recActionLockRef.current = true;
+    setRecActionBusy(true);
+    setRecActionError(null);
+    const ok = await _saveRecBook({ withYearGoal: false });
+    recActionLockRef.current = false;
+    setRecActionBusy(false);
+    if (ok) setRecActionDone('want_to_read');
+  }
+
+  async function handleRecAddToStack() {
+    if (recActionLockRef.current || recActionDone) return;
+    recActionLockRef.current = true;
+    setRecActionBusy(true);
+    setRecActionError(null);
+    const ok = await _saveRecBook({ withYearGoal: true });
+    recActionLockRef.current = false;
+    setRecActionBusy(false);
+    if (ok) setRecActionDone('priority');
+  }
+
+  async function handleRecNotForMe() {
+    if (recActionLockRef.current || recActionDone || !supabase) return;
+    recActionLockRef.current = true;
+    setRecActionBusy(true);
+    setRecActionError(null);
+    const uid = userId ?? (await supabase.auth.getUser()).data.user?.id ?? null;
+    if (!uid) { recActionLockRef.current = false; setRecActionBusy(false); return; }
+    const bookLike = {
+      id:          bookId ?? `rec:${externalId ?? title ?? ''}`,
+      title:       title ?? '', author: author ?? '',
+      cover_url:   coverUrl ?? null, external_id: externalId ?? null,
+      subjects:    null, page_count: null, description: null,
+      _source:     'open_library' as const, _retrieval_reason: 'book_detail_rec_action',
+    };
+    persistFeedback(supabase, uid, bookLike as any, 'dismissed').catch(() => {});
+    clearRecSession();
+    recActionLockRef.current = false;
+    setRecActionBusy(false);
+    setRecActionDone('not_for_me');
+  }
+
+  // More-like-this entry point. Pref values: 'always' (silent auto-add),
+  // 'ask' (per-tap confirm), null (first-tap → ask once how to behave).
+  // The synchronous lock is acquired here (not deeper in _commitMoreLikeThis)
+  // so opening the modal can't race with another button tap.
+  async function handleRecMoreLikeThis() {
+    if (recActionLockRef.current || recActionDone) return;
+    recActionLockRef.current = true;
+    const pref = await getMltAutoaddPref();
+    if (pref === null) { setMltModal('first-time'); return; }
+    if (pref === 'ask') { setMltModal('each-time'); return; }
+    // pref === 'always' → silent auto-add. _commitMoreLikeThis releases the lock.
+    await _commitMoreLikeThis({ alsoSaveWantToRead: true });
+  }
+
+  // Releases the action lock. Called by every exit path of the MLT flow
+  // (modal dismiss, modal cancel-style choice, commit completion) so a
+  // user who closes the first-time modal without choosing isn't stuck
+  // unable to tap any rec action.
+  function releaseRecActionLock() {
+    recActionLockRef.current = false;
+    setRecActionBusy(false);
+  }
+
+  async function _commitMoreLikeThis(opts: { alsoSaveWantToRead: boolean }) {
+    if (!supabase) { releaseRecActionLock(); return; }
+    setRecActionBusy(true);
+    setRecActionError(null);
+    const uid = userId ?? (await supabase.auth.getUser()).data.user?.id ?? null;
+    if (!uid) { releaseRecActionLock(); return; }
+    let savedOk = true;
+    if (opts.alsoSaveWantToRead) {
+      savedOk = await _saveRecBook({ withYearGoal: false });
+    }
+    const bookLike = {
+      id:          bookId ?? `rec:${externalId ?? title ?? ''}`,
+      title:       title ?? '', author: author ?? '',
+      cover_url:   coverUrl ?? null, external_id: externalId ?? null,
+      subjects:    olMeta?.subjects ?? null,
+      page_count:  olMeta?.pageCount ?? pageCount ?? null,
+      description: null,
+      _source:     'open_library' as const, _retrieval_reason: 'book_detail_rec_action',
+    };
+    persistFeedback(supabase, uid, bookLike as any, 'more_like_this').catch(() => {});
+    clearRecSession();
+    releaseRecActionLock();
+    if (savedOk) setRecActionDone('more_like_this');
   }
 
   // ── Status transitions (Start Reading / Mark Finished / DNF) ─────────────
@@ -2999,6 +3157,107 @@ export default function BookDetailScreen() {
             - From rec feed: shows evidence tags + explanation from the recommender.
             - Direct nav, no prefs: shows "Set your preferences" CTA.
             - Direct nav, has prefs: section is hidden (no evidence to show). */}
+        {/* ── Rec quick actions — shown when arriving from a recommendation
+            and the book is not yet saved. After the user picks an action the
+            card collapses into a small confirmation row. ──────────────────── */}
+        {recCtx && !userBookId && (
+          <View style={{
+            backgroundColor: SAGE_BG,
+            borderRadius: 14,
+            padding: 16,
+            borderWidth: 1,
+            borderColor: '#d8e2d6',
+            marginBottom: 14,
+          }}>
+            {recActionDone ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Ionicons
+                  name={recActionDone === 'not_for_me' ? 'close-circle' : 'checkmark-circle'}
+                  size={18}
+                  color={SAGE_DEEP}
+                  style={{ marginRight: 8 }}
+                />
+                <Text style={{ flex: 1, fontSize: 13, color: SAGE_DEEP, fontWeight: '600' }}>
+                  {recActionDone === 'want_to_read'   && 'Added to Want to Read'}
+                  {recActionDone === 'priority'       && `Added to your ${new Date().getFullYear()} stack`}
+                  {recActionDone === 'not_for_me'     && 'Got it — we\'ll show fewer like this'}
+                  {recActionDone === 'more_like_this' && 'Thanks — we\'ll show more like this'}
+                </Text>
+              </View>
+            ) : (
+              <>
+                <Text style={{
+                  fontSize: 11, fontWeight: '700', color: SAGE_DEEP,
+                  letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 10,
+                }}>
+                  What do you think?
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  <TouchableOpacity
+                    onPress={handleRecWantToRead}
+                    disabled={recActionBusy}
+                    style={{
+                      backgroundColor: SAGE,
+                      paddingHorizontal: 14, paddingVertical: 10,
+                      borderRadius: 8, opacity: recActionBusy ? 0.6 : 1,
+                    }}
+                  >
+                    <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: '700' }}>
+                      Want to Read
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleRecAddToStack}
+                    disabled={recActionBusy}
+                    style={{
+                      backgroundColor: '#ffffff',
+                      borderWidth: 1, borderColor: SAGE,
+                      paddingHorizontal: 14, paddingVertical: 10,
+                      borderRadius: 8, opacity: recActionBusy ? 0.6 : 1,
+                    }}
+                  >
+                    <Text style={{ color: SAGE_DEEP, fontSize: 13, fontWeight: '700' }}>
+                      Add to {new Date().getFullYear()} stack
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleRecMoreLikeThis}
+                    disabled={recActionBusy}
+                    style={{
+                      backgroundColor: '#ffffff',
+                      borderWidth: 1, borderColor: '#d8d3cc',
+                      paddingHorizontal: 14, paddingVertical: 10,
+                      borderRadius: 8, opacity: recActionBusy ? 0.6 : 1,
+                    }}
+                  >
+                    <Text style={{ color: '#57534e', fontSize: 13, fontWeight: '600' }}>
+                      More like this
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleRecNotForMe}
+                    disabled={recActionBusy}
+                    style={{
+                      backgroundColor: 'transparent',
+                      paddingHorizontal: 14, paddingVertical: 10,
+                      borderRadius: 8, opacity: recActionBusy ? 0.6 : 1,
+                    }}
+                  >
+                    <Text style={{ color: '#9e958d', fontSize: 13, fontWeight: '500' }}>
+                      Not for me
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                {recActionError && (
+                  <Text style={{ marginTop: 8, fontSize: 12, color: '#b91c1c' }}>
+                    {recActionError}
+                  </Text>
+                )}
+              </>
+            )}
+          </View>
+        )}
+
         {externalId && (!localStatus || localStatus === 'want_to_read' || localStatus === 'sent' || localStatus === 'saved') ? (
           recCtx ? (
             <View style={{
@@ -3703,6 +3962,99 @@ export default function BookDetailScreen() {
       author={Array.isArray(author) ? author[0] ?? '' : author ?? ''}
       externalId={Array.isArray(externalId) ? externalId[0] ?? null : externalId ?? null}
     />
+
+    {/* ── More-Like-This auto-add modal ──────────────────────────────────────
+        First-time variant: asks the reader once whether MLT picks should also
+        be auto-added to Want-to-Read. Choice is persisted in AsyncStorage.
+        Each-time variant: per-tap confirm shown when the reader previously
+        chose "Ask each time". ────────────────────────────────────────────── */}
+    <Modal
+      visible={mltModal !== null}
+      transparent
+      animationType="fade"
+      onRequestClose={() => { setMltModal(null); releaseRecActionLock(); }}
+    >
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 24 }}>
+        <View style={{ backgroundColor: '#fefcf9', borderRadius: 16, padding: 22 }}>
+          <Text style={{ fontSize: 17, fontWeight: '800', color: '#231f1b', marginBottom: 8 }}>
+            {mltModal === 'first-time'
+              ? 'Add to Want to Read?'
+              : 'Save this one to Want to Read?'}
+          </Text>
+          <Text style={{ fontSize: 14, color: '#57534e', lineHeight: 20, marginBottom: 18 }}>
+            {mltModal === 'first-time'
+              ? 'When you tap "More like this", do you want us to also save the book to your Want to Read shelf? You can change this later in settings.'
+              : 'You picked "Ask each time" earlier. Save this one to Want to Read?'}
+          </Text>
+
+          {mltModal === 'first-time' ? (
+            <View style={{ gap: 8 }}>
+              <TouchableOpacity
+                onPress={async () => {
+                  await setMltAutoaddPref('always');
+                  setMltModal(null);
+                  await _commitMoreLikeThis({ alsoSaveWantToRead: true });
+                }}
+                style={{ backgroundColor: SAGE, paddingVertical: 12, borderRadius: 10, alignItems: 'center' }}
+              >
+                <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '700' }}>
+                  Yes, always
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={async () => {
+                  await setMltAutoaddPref('ask');
+                  setMltModal(null);
+                  await _commitMoreLikeThis({ alsoSaveWantToRead: true });
+                }}
+                style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: SAGE, paddingVertical: 12, borderRadius: 10, alignItems: 'center' }}
+              >
+                <Text style={{ color: SAGE_DEEP, fontSize: 14, fontWeight: '700' }}>
+                  Yes, just this time (ask me each time)
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={async () => {
+                  await setMltAutoaddPref('ask');
+                  setMltModal(null);
+                  await _commitMoreLikeThis({ alsoSaveWantToRead: false });
+                }}
+                style={{ paddingVertical: 12, borderRadius: 10, alignItems: 'center' }}
+              >
+                <Text style={{ color: '#78716c', fontSize: 14, fontWeight: '500' }}>
+                  No, just record "more like this"
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={{ gap: 8 }}>
+              <TouchableOpacity
+                onPress={async () => {
+                  setMltModal(null);
+                  await _commitMoreLikeThis({ alsoSaveWantToRead: true });
+                }}
+                style={{ backgroundColor: SAGE, paddingVertical: 12, borderRadius: 10, alignItems: 'center' }}
+              >
+                <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '700' }}>
+                  Yes, save it
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={async () => {
+                  setMltModal(null);
+                  await _commitMoreLikeThis({ alsoSaveWantToRead: false });
+                }}
+                style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#d8d3cc', paddingVertical: 12, borderRadius: 10, alignItems: 'center' }}
+              >
+                <Text style={{ color: '#57534e', fontSize: 14, fontWeight: '600' }}>
+                  No, just "more like this"
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </View>
+    </Modal>
     </View>
   );
 }
