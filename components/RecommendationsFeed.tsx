@@ -165,8 +165,24 @@ export function RecommendationsFeed({
   const [paceChip, setPaceChip]                       = useState<'fast' | 'slow' | null>(null);
   const [toneChip, setToneChip]                       = useState<'light' | 'dark' | null>(null);
   const [intensityChip, setIntensityChip]             = useState<'high' | 'low' | null>(null);
+  const [lengthChip, setLengthChip]                   = useState<'short' | 'medium' | null>(null);
+  const [formatChip, setFormatChip]                   = useState<'fiction' | 'nonfiction' | null>(null);
+  const [seriesChip, setSeriesChip]                   = useState<boolean>(false); // true => standalone only
   const activeIntentRef                               = useRef<NextReadIntent | null>(null);
   const [activeIntentLabel, setActiveIntentLabel]     = useState<string>('');
+
+  // Banner shown for the duration of a filter-triggered pipeline run so the
+  // user gets immediate feedback that Apply/Clear actually did something.
+  // Distinct from `isInitialLoading` (which the deck-assembling skeleton
+  // also reads) so we can show a chip-aware label instead of a generic
+  // loader.
+  const [isFilterRefreshing, setIsFilterRefreshing] = useState(false);
+  const filterPulseAnim     = useRef(new Animated.Value(0.4)).current;
+  // Monotonic counter for filter-refresh requests. Each Apply/Clear bumps it,
+  // captures the value, and the `.finally` only clears the banner if its
+  // captured value still matches — so a fast double-tap doesn't have run #1's
+  // finally turning the banner off while run #2 is still in flight.
+  const filterRefreshReqRef = useRef(0);
 
   // ── Dismiss/undo ──────────────────────────────────────────────────────────
   const [dismissPending, setDismissPendingUI] = useState<{ book: ScoredBook } | null>(null);
@@ -578,6 +594,25 @@ export function RecommendationsFeed({
 
   // ── Your Next Read — intent apply / clear ─────────────────────────────────
 
+  // Drives the sage pulse on the "Updating recommendations…" banner.
+  // Loops a 0.4 ↔ 1.0 opacity ramp while isFilterRefreshing is true and
+  // resets cleanly when the flag flips back to false.
+  useEffect(() => {
+    if (!isFilterRefreshing) {
+      filterPulseAnim.stopAnimation();
+      filterPulseAnim.setValue(0.4);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(filterPulseAnim, { toValue: 1.0, duration: 600, useNativeDriver: true }),
+        Animated.timing(filterPulseAnim, { toValue: 0.4, duration: 600, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isFilterRefreshing, filterPulseAnim]);
+
   function handleApplyIntent() {
     // Build the intent from chip state. Soft boosts alone (±0.05 cap) are
     // too small to visibly reorder books at typical score ranges, so we
@@ -624,6 +659,17 @@ export function RecommendationsFeed({
       hard.max_page_count = 400;
     }
 
+    // Length chip — explicit user pick wins over palate_cleanser default.
+    if (lengthChip === 'short')  hard.max_page_count = 300;
+    if (lengthChip === 'medium') hard.max_page_count = 450;
+
+    // Format chip
+    if (formatChip === 'fiction')    hard.fiction_only    = true;
+    if (formatChip === 'nonfiction') hard.nonfiction_only = true;
+
+    // Series chip
+    if (seriesChip) hard.standalone_only = true;
+
     const intent: NextReadIntent = {
       hard,
       soft: {
@@ -645,13 +691,20 @@ export function RecommendationsFeed({
     clearAll();
     clearRecSession();
     setIsInitialLoading(true);
+    setIsFilterRefreshing(true);
+    const reqId = ++filterRefreshReqRef.current;
     if (__DEV__) {
       console.log('[INTENT_APPLY]', JSON.stringify({
-        mood: moodChip, pace: paceChip, tone: toneChip, intensity: intensityChip,
+        mood:  moodChip,    pace:   paceChip,
+        tone:  toneChip,    int:    intensityChip,
+        len:   lengthChip,  fmt:    formatChip,
+        stand: seriesChip,
         hard, exclude,
       }));
     }
-    runPipeline({ isBgRefresh: false });
+    runPipeline({ isBgRefresh: false }).finally(() => {
+      if (filterRefreshReqRef.current === reqId) setIsFilterRefreshing(false);
+    });
   }
 
   function handleClearIntent() {
@@ -661,11 +714,18 @@ export function RecommendationsFeed({
     setPaceChip(null);
     setToneChip(null);
     setIntensityChip(null);
+    setLengthChip(null);
+    setFormatChip(null);
+    setSeriesChip(false);
     setIntentPanelOpen(false);
     clearAll();
     clearRecSession();
     setIsInitialLoading(true);
-    runPipeline({ isBgRefresh: false });
+    setIsFilterRefreshing(true);
+    const reqId = ++filterRefreshReqRef.current;
+    runPipeline({ isBgRefresh: false }).finally(() => {
+      if (filterRefreshReqRef.current === reqId) setIsFilterRefreshing(false);
+    });
   }
 
   // ── Display state machine ─────────────────────────────────────────────────
@@ -1096,6 +1156,87 @@ export function RecommendationsFeed({
                     })}
                   </View>
 
+                  {/* Length chips — maps to hard.max_page_count */}
+                  <Text style={{
+                    fontSize: 10, fontWeight: '700', color: '#9e958d',
+                    letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10,
+                  }}>
+                    Length
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
+                    {([['short', 'Short (<300p)'], ['medium', 'Medium (<450p)']] as ['short' | 'medium', string][]).map(([lv, label]) => {
+                      const active = lengthChip === lv;
+                      return (
+                        <TouchableOpacity
+                          key={lv}
+                          activeOpacity={0.7}
+                          onPress={() => setLengthChip(active ? null : lv)}
+                          style={{
+                            paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+                            backgroundColor: active ? '#231f1b' : '#f5f1ec',
+                            borderWidth: 1, borderColor: active ? '#231f1b' : '#ede9e4',
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, color: active ? '#fff' : '#6b635c', fontWeight: active ? '600' : '400' }}>
+                            {label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {/* Format chips — maps to hard.fiction_only / nonfiction_only */}
+                  <Text style={{
+                    fontSize: 10, fontWeight: '700', color: '#9e958d',
+                    letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10,
+                  }}>
+                    Format
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
+                    {([['fiction', 'Fiction'], ['nonfiction', 'Nonfiction']] as ['fiction' | 'nonfiction', string][]).map(([fv, label]) => {
+                      const active = formatChip === fv;
+                      return (
+                        <TouchableOpacity
+                          key={fv}
+                          activeOpacity={0.7}
+                          onPress={() => setFormatChip(active ? null : fv)}
+                          style={{
+                            paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+                            backgroundColor: active ? '#231f1b' : '#f5f1ec',
+                            borderWidth: 1, borderColor: active ? '#231f1b' : '#ede9e4',
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, color: active ? '#fff' : '#6b635c', fontWeight: active ? '600' : '400' }}>
+                            {label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {/* Series chip — maps to hard.standalone_only (toggle, not a group) */}
+                  <Text style={{
+                    fontSize: 10, fontWeight: '700', color: '#9e958d',
+                    letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10,
+                  }}>
+                    Series
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={() => setSeriesChip(!seriesChip)}
+                      style={{
+                        paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+                        backgroundColor: seriesChip ? '#231f1b' : '#f5f1ec',
+                        borderWidth: 1, borderColor: seriesChip ? '#231f1b' : '#ede9e4',
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, color: seriesChip ? '#fff' : '#6b635c', fontWeight: seriesChip ? '600' : '400' }}>
+                        Standalones only
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
                   {/* Action row */}
                   <View style={{ flexDirection: 'row', gap: 8 }}>
                     <TouchableOpacity
@@ -1138,6 +1279,31 @@ export function RecommendationsFeed({
               </View>
             )}
           </View>
+
+          {/* ── Filter-refresh banner ──
+              Visible only while a chip-driven runPipeline is in flight.
+              The pulsing sage dot + "Updating recommendations…" copy
+              gives explicit feedback that Apply/Clear actually fired,
+              even before the new cards finish streaming in. */}
+          {isFilterRefreshing && (
+            <Animated.View
+              style={{
+                opacity: filterPulseAnim,
+                flexDirection: 'row', alignItems: 'center', gap: 8,
+                backgroundColor: '#eef4ec',
+                borderRadius: 999,
+                paddingHorizontal: 14, paddingVertical: 8,
+                marginBottom: 12,
+                alignSelf: 'flex-start',
+                borderWidth: 1, borderColor: SAGE_DEEP + '33',
+              }}
+            >
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: SAGE_DEEP }} />
+              <Text style={{ fontSize: 12, color: SAGE_DEEP, fontWeight: '600', letterSpacing: 0.1 }}>
+                Updating recommendations…
+              </Text>
+            </Animated.View>
+          )}
 
           {/* ── Discover Next bucket ── */}
           {visibleDiscs.length > 0 && (
