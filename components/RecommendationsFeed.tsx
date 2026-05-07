@@ -178,6 +178,15 @@ export function RecommendationsFeed({
   // loader.
   const [isFilterRefreshing, setIsFilterRefreshing] = useState(false);
   const filterPulseAnim     = useRef(new Animated.Value(0.4)).current;
+  // Three staggered "typing-indicator" dots inside the curating banner.
+  const dotAnim0            = useRef(new Animated.Value(0)).current;
+  const dotAnim1            = useRef(new Animated.Value(0)).current;
+  const dotAnim2            = useRef(new Animated.Value(0)).current;
+  // Shimmer bar that sweeps left → right across the banner's progress track.
+  const shimmerAnim         = useRef(new Animated.Value(0)).current;
+  // Dims the existing rec-card stack behind the banner so focus shifts to
+  // the curating animation while the new pipeline result is computed.
+  const contentDimAnim      = useRef(new Animated.Value(1)).current;
   // Monotonic counter for filter-refresh requests. Each Apply/Clear bumps it,
   // captures the value, and the `.finally` only clears the banner if its
   // captured value still matches — so a fast double-tap doesn't have run #1's
@@ -594,24 +603,50 @@ export function RecommendationsFeed({
 
   // ── Your Next Read — intent apply / clear ─────────────────────────────────
 
-  // Drives the sage pulse on the "Updating recommendations…" banner.
-  // Loops a 0.4 ↔ 1.0 opacity ramp while isFilterRefreshing is true and
-  // resets cleanly when the flag flips back to false.
+  // Drives the curating banner's full motion ensemble while
+  // isFilterRefreshing is true: subtle banner-glow pulse, three staggered
+  // bouncing dots (typing-indicator pattern), a continuous left→right
+  // shimmer sweep on the progress track, and an opacity dim on the
+  // existing card stack so focus shifts to the banner. All loops stop
+  // and reset cleanly when the flag flips back to false.
   useEffect(() => {
     if (!isFilterRefreshing) {
-      filterPulseAnim.stopAnimation();
+      [filterPulseAnim, dotAnim0, dotAnim1, dotAnim2, shimmerAnim].forEach(a => a.stopAnimation());
       filterPulseAnim.setValue(0.4);
+      dotAnim0.setValue(0); dotAnim1.setValue(0); dotAnim2.setValue(0);
+      shimmerAnim.setValue(0);
+      Animated.timing(contentDimAnim, { toValue: 1, duration: 240, useNativeDriver: true }).start();
       return;
     }
-    const loop = Animated.loop(
+    Animated.timing(contentDimAnim, { toValue: 0.32, duration: 240, useNativeDriver: true }).start();
+
+    const pulse = Animated.loop(
       Animated.sequence([
-        Animated.timing(filterPulseAnim, { toValue: 1.0, duration: 600, useNativeDriver: true }),
-        Animated.timing(filterPulseAnim, { toValue: 0.4, duration: 600, useNativeDriver: true }),
+        Animated.timing(filterPulseAnim, { toValue: 1.0, duration: 700, useNativeDriver: true }),
+        Animated.timing(filterPulseAnim, { toValue: 0.55, duration: 700, useNativeDriver: true }),
       ]),
     );
-    loop.start();
-    return () => loop.stop();
-  }, [isFilterRefreshing, filterPulseAnim]);
+
+    const makeDotLoop = (val: Animated.Value, delay: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(val, { toValue: 1, duration: 380, useNativeDriver: true }),
+          Animated.timing(val, { toValue: 0, duration: 380, useNativeDriver: true }),
+          Animated.delay(380 - delay),
+        ]),
+      );
+    const dot0 = makeDotLoop(dotAnim0, 0);
+    const dot1 = makeDotLoop(dotAnim1, 140);
+    const dot2 = makeDotLoop(dotAnim2, 280);
+
+    const shimmer = Animated.loop(
+      Animated.timing(shimmerAnim, { toValue: 1, duration: 1400, useNativeDriver: true }),
+    );
+
+    pulse.start(); dot0.start(); dot1.start(); dot2.start(); shimmer.start();
+    return () => { pulse.stop(); dot0.stop(); dot1.stop(); dot2.stop(); shimmer.stop(); };
+  }, [isFilterRefreshing, filterPulseAnim, dotAnim0, dotAnim1, dotAnim2, shimmerAnim, contentDimAnim]);
 
   function handleApplyIntent() {
     // Build the intent from chip state. Soft boosts alone (±0.05 cap) are
@@ -1280,30 +1315,81 @@ export function RecommendationsFeed({
             )}
           </View>
 
-          {/* ── Filter-refresh banner ──
+          {/* ── Filter-refresh "curating" banner ──
               Visible only while a chip-driven runPipeline is in flight.
-              The pulsing sage dot + "Updating recommendations…" copy
-              gives explicit feedback that Apply/Clear actually fired,
-              even before the new cards finish streaming in. */}
+              Combines four motion layers (subtle card-glow pulse,
+              three staggered bouncing dots, a sweeping shimmer
+              progress track, and a dim of the rec stack behind it) so
+              the user gets unmistakable feedback that the pipeline is
+              re-curating against their new filter selection. */}
           {isFilterRefreshing && (
             <Animated.View
               style={{
                 opacity: filterPulseAnim,
-                flexDirection: 'row', alignItems: 'center', gap: 8,
                 backgroundColor: '#eef4ec',
-                borderRadius: 999,
-                paddingHorizontal: 14, paddingVertical: 8,
-                marginBottom: 12,
-                alignSelf: 'flex-start',
+                borderRadius: 14,
+                paddingHorizontal: 16, paddingVertical: 14,
+                marginBottom: 14,
                 borderWidth: 1, borderColor: SAGE_DEEP + '33',
+                shadowColor: SAGE_DEEP, shadowOpacity: 0.12,
+                shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
+                elevation: 2,
+                overflow: 'hidden',
               }}
             >
-              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: SAGE_DEEP }} />
-              <Text style={{ fontSize: 12, color: SAGE_DEEP, fontWeight: '600', letterSpacing: 0.1 }}>
-                Updating recommendations…
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                {/* Three bouncing dots */}
+                <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4, height: 14 }}>
+                  {[dotAnim0, dotAnim1, dotAnim2].map((d, i) => (
+                    <Animated.View
+                      key={i}
+                      style={{
+                        width: 7, height: 7, borderRadius: 4,
+                        backgroundColor: SAGE_DEEP,
+                        transform: [{
+                          translateY: d.interpolate({ inputRange: [0, 1], outputRange: [0, -5] }),
+                        }, {
+                          scale: d.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1.15] }),
+                        }],
+                      }}
+                    />
+                  ))}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, color: SAGE_DEEP, fontWeight: '700', letterSpacing: 0.1 }}>
+                    Curating your next read
+                  </Text>
+                  <Text style={{ fontSize: 11, color: SAGE_DEEP, opacity: 0.75, marginTop: 1 }}>
+                    Re-scoring books against your filters…
+                  </Text>
+                </View>
+              </View>
+              {/* Shimmer progress track */}
+              <View style={{
+                height: 4, borderRadius: 2,
+                backgroundColor: SAGE_DEEP + '22',
+                overflow: 'hidden',
+              }}>
+                <Animated.View
+                  style={{
+                    height: '100%', width: '40%', borderRadius: 2,
+                    backgroundColor: SAGE_DEEP,
+                    transform: [{
+                      translateX: shimmerAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [-120, 320],
+                      }),
+                    }],
+                  }}
+                />
+              </View>
             </Animated.View>
           )}
+
+          {/* Animated dim wrapper around both buckets — opacity drops to
+              0.32 while a chip-driven pipeline is in flight so focus
+              shifts to the curating banner above. */}
+          <Animated.View style={{ opacity: contentDimAnim }} pointerEvents={isFilterRefreshing ? 'none' : 'auto'}>
 
           {/* ── Discover Next bucket ── */}
           {visibleDiscs.length > 0 && (
@@ -1365,6 +1451,8 @@ export function RecommendationsFeed({
               ))}
             </>
           )}
+
+          </Animated.View>
 
           {/* Undo toast */}
           {dismissPending && (
