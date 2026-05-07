@@ -1414,7 +1414,7 @@ export default function RecommendationsScreen() {
       <View style={{ flex: 1, backgroundColor: '#f5f1ec' }}>
       <ScrollView
         style={{ flex: 1, backgroundColor: '#f5f1ec' }}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: insets.top + 8, paddingBottom: 48 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: insets.top + 16, paddingBottom: 48 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#78716c" />
         }

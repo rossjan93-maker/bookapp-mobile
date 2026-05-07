@@ -177,7 +177,12 @@ export default function OnboardingScreen() {
   }, [finishing, completeOnboarding, router]);
 
   const isLast = currentSlide === SLIDES.length - 1;
-  const topPad = Platform.OS === 'android' ? 20 : 0;
+  // Skip-button row sits above the SafeAreaView's auto top inset on iOS,
+  // and above the status bar on Android. `topPad` adds the extra breathing
+  // room that matches every other route's `useScreenTopPadding()` (16px) —
+  // hardcoding 20/0 here previously made the iOS layout feel cramped while
+  // Android sat fine, which contributed to the cross-screen drift.
+  const topPad = Platform.OS === 'android' ? 20 : 4;
 
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>

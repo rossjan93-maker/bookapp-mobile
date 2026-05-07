@@ -7,6 +7,7 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackButton } from '../../components/BackButton';
 import { supabase } from '../../lib/supabase';
 import {
@@ -70,6 +71,7 @@ function HypothesisCard({ hyp }: { hyp: TasteHypothesis }) {
 
 export default function DiagnosisScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const [step, setStep]               = useState<Step>('loading');
   const [profile, setProfile]         = useState<TasteProfile | null>(null);
@@ -134,7 +136,7 @@ export default function DiagnosisScreen() {
     return (
       <ScrollView
         style={{ flex: 1, backgroundColor: '#f5f1ec' }}
-        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 56, paddingBottom: 60 }}
+        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: insets.top + 16, paddingBottom: 60 }}
       >
         <BackButton onPress={() => router.back()} style={{ marginBottom: 24 }} />
 
@@ -196,7 +198,7 @@ export default function DiagnosisScreen() {
   if (step === 'questions') {
     const question = DIAGNOSIS_QUESTIONS[questionIdx];
     return (
-      <View style={{ flex: 1, backgroundColor: '#f5f1ec', paddingHorizontal: 24, paddingTop: 56 }}>
+      <View style={{ flex: 1, backgroundColor: '#f5f1ec', paddingHorizontal: 24, paddingTop: insets.top + 16 }}>
         <ProgressDots total={DIAGNOSIS_QUESTIONS.length} current={questionIdx} />
 
         <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 16 }}>
@@ -274,7 +276,7 @@ export default function DiagnosisScreen() {
   const nextAt = profile?.nextTierAt ?? 5;
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#f5f1ec', paddingHorizontal: 24, paddingTop: 56 }}>
+    <View style={{ flex: 1, backgroundColor: '#f5f1ec', paddingHorizontal: 24, paddingTop: insets.top + 16 }}>
       <View style={{
         backgroundColor: '#fff',
         borderRadius: 20,

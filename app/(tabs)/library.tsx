@@ -1186,7 +1186,7 @@ export default function LibraryScreen() {
   if (wtStep === 'library') return <WtDemoLibrary />;
 
   const libraryHeaderEl = (
-        <View ref={libTargetRef} style={{ paddingTop: insets.top + 8 }}>
+        <View ref={libTargetRef} style={{ paddingTop: insets.top + 16 }}>
           {/* ── Hero header ── */}
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginBottom: 4 }}>
             <View style={{ flex: 1 }}>

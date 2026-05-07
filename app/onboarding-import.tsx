@@ -20,7 +20,6 @@
 
 import React, { useEffect, useState } from 'react';
 import {
-  SafeAreaView,
   Text,
   TouchableOpacity,
   View,
@@ -30,6 +29,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { readOnboardingStage, writeOnboardingStage } from '../lib/onboardingStage';
 import { useOnboardingBridge } from './_layout';
 import { supabase } from '../lib/supabase';
+import { useScreenTopPadding } from '../lib/screenLayout';
 
 const BG   = '#f5f1ec';
 const INK  = '#231f1b';
@@ -67,6 +67,7 @@ export default function OnboardingImportPage() {
   const router  = useRouter();
   const { completeOnboarding } = useOnboardingBridge();
   const [ready, setReady] = useState(false);
+  const topPad = useScreenTopPadding();
 
   // Guard: only render content if the onboarding stage is 'final_setup'.
   // Any other value means the user already acted (or arrived here directly
@@ -131,10 +132,11 @@ export default function OnboardingImportPage() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: BG }}>
+    <View style={{ flex: 1, backgroundColor: BG }}>
       <View style={{
         flex:              1,
         paddingHorizontal: 22,
+        paddingTop:        topPad,
         justifyContent:    'center',
         paddingBottom:     24,
       }}>
@@ -285,6 +287,6 @@ export default function OnboardingImportPage() {
         </TouchableOpacity>
 
       </View>
-    </SafeAreaView>
+    </View>
   );
 }

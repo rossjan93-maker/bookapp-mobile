@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackButton } from '../../components/BackButton';
 import { supabase } from '../../lib/supabase';
 import {
@@ -104,6 +105,7 @@ function BookRow({
 
 export default function RepairDatesScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const [loading,    setLoading]    = useState(false);
   const [report,     setReport]     = useState<AuditReport | null>(null);
@@ -187,7 +189,7 @@ export default function RepairDatesScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: '#f5f1ec' }}
-      contentContainerStyle={{ paddingHorizontal: 22, paddingTop: 56, paddingBottom: 60 }}
+      contentContainerStyle={{ paddingHorizontal: 22, paddingTop: insets.top + 16, paddingBottom: 60 }}
     >
       <BackButton onPress={() => router.back()} style={{ marginBottom: 28 }} />
 
