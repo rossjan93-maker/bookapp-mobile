@@ -579,15 +579,62 @@ export function RecommendationsFeed({
   // ── Your Next Read — intent apply / clear ─────────────────────────────────
 
   function handleApplyIntent() {
+    // Build the intent from chip state. Soft boosts alone (±0.05 cap) are
+    // too small to visibly reorder books at typical score ranges, so we
+    // ALSO derive the natural hard filters / exclusions for each chip so
+    // the pool composition actually shifts when the user hits Apply.
+    //
+    // Mapping rationale (kept conservative — only obvious semantic
+    // overlaps map to hard rules; ambiguous chips stay soft):
+    //
+    //   tone='light'          → exclude.avoid_dark
+    //   tone='dark'           → soft only (boost dark, no exclusion)
+    //   intensity='low'       → exclude.avoid_dark   (unless tone='dark')
+    //   intensity='high'      → soft only
+    //   pace='fast' / 'slow'  → soft only (no clean hard signal)
+    //   mood='light_fun'      → exclude.avoid_dark + avoid_literary
+    //                            (unless tone='dark')
+    //   mood='palate_cleanser'→ exclude.avoid_dark (unless tone='dark')
+    //                          + hard.max_page_count = 400
+    //                          (standalone_only intentionally NOT set —
+    //                           series-heavy libraries would empty the
+    //                           pool; page count is enough to enforce
+    //                           "quick read")
+    //   mood='immersive' / 'deep_demanding' / 'emotionally_heavy'
+    //                         → soft only
+    //
+    // A user can still pick tone='dark' WITH intensity='low' or
+    // mood='light_fun' if they want — tone='dark' wins and we don't
+    // exclude dark themes (otherwise the chip would silently filter
+    // itself out and the list would go empty).
+    const wantsDark = toneChip === 'dark';
+
+    const exclude: NextReadIntent['exclude'] = {};
+    const hard:    NextReadIntent['hard']    = {};
+
+    if (toneChip === 'light')                 exclude.avoid_dark     = true;
+    if (intensityChip === 'low' && !wantsDark) exclude.avoid_dark    = true;
+
+    if (moodChip === 'light_fun' && !wantsDark) {
+      exclude.avoid_dark     = true;
+      exclude.avoid_literary = true;
+    }
+    if (moodChip === 'palate_cleanser') {
+      if (!wantsDark) exclude.avoid_dark = true;
+      hard.max_page_count = 400;
+    }
+
     const intent: NextReadIntent = {
-      ...emptyIntent(),
+      hard,
       soft: {
         readingEnergy: moodChip     || undefined,
         pace:          paceChip     || undefined,
         tone:          toneChip     || undefined,
         intensity:     intensityChip || undefined,
       },
+      exclude,
     };
+
     if (!isIntentActive(intent)) {
       handleClearIntent();
       return;
@@ -598,6 +645,12 @@ export function RecommendationsFeed({
     clearAll();
     clearRecSession();
     setIsInitialLoading(true);
+    if (__DEV__) {
+      console.log('[INTENT_APPLY]', JSON.stringify({
+        mood: moodChip, pace: paceChip, tone: toneChip, intensity: intensityChip,
+        hard, exclude,
+      }));
+    }
     runPipeline({ isBgRefresh: false });
   }
 
