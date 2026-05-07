@@ -33,7 +33,7 @@ import {
   isCoveragePartial,
   type ContentWarning,
 } from '../../lib/contentWarnings';
-import { transitionStatus, editUserBook, softDeleteBook, restoreSnapshot, saveCurrentPage, setEditionKey as persistEditionKey, setPaused as persistPaused } from '../../lib/userBookActions';
+import { transitionStatus, editUserBook, softDeleteBook, restoreSnapshot, saveCurrentPage, setEditionKey as persistEditionKey, setPaused as persistPaused, setYearGoal as persistYearGoal } from '../../lib/userBookActions';
 import type { UserBookStatus, BookSnapshot, FinishedDateInput, StartedDateInput } from '../../lib/userBookActions';
 import { useUndoBar } from '../../lib/useUndoBar';
 import { invalidateBookDataCaches } from '../../lib/tabCache';
@@ -356,6 +356,17 @@ export default function BookDetailScreen() {
   const [pausing,     setPausing]     = useState(false);
   const [pauseError,  setPauseError]  = useState<string | null>(null);
 
+  // Year-goal stack flag — mirrors user_books.year_goal_year. Truthy
+  // (an integer year) when the reader has earmarked this book as part
+  // of their reading goal for that calendar year. Compared against the
+  // current year to determine "is in this year's stack". Local state
+  // for instant feedback on the toggle; cleared automatically when the
+  // book is marked finished (the home screen filters the stack to
+  // non-finished books, so the chip just disappears naturally).
+  const [yearGoalYear,    setYearGoalYear]    = useState<number | null>(null);
+  const [yearGoalSaving,  setYearGoalSaving]  = useState(false);
+  const [yearGoalError,   setYearGoalError]   = useState<string | null>(null);
+
   // Edit-history modal state
   const [showEditModal, setShowEditModal] = useState(false);
   const [showRecommendSheet, setShowRecommendSheet] = useState(false);
@@ -465,36 +476,51 @@ export default function BookDetailScreen() {
           e.code === 'PGRST204' ||
           (typeof e.message === 'string' && e.message.includes('does not exist'))
         );
-      const { data: d1, error: e1 } = await supabase
+      // Schema-tolerant cascade: try the widest column set first
+      // (year_goal_year + paused_at + edition_key) and progressively drop
+      // optional columns when the corresponding migration hasn't been
+      // applied to this Supabase project. Order matches the migration
+      // history so newer columns peel off first.
+      const { data: d0, error: e0 } = await supabase
         .from('user_books')
-        .select('id, rating, finished_at, review_body, private_note, edition_key, paused_at')
+        .select('id, rating, finished_at, review_body, private_note, edition_key, paused_at, year_goal_year')
         .eq('user_id', user.id)
         .eq('book_id', bookId!)
         .maybeSingle();
-      if (!e1) {
-        data = d1 as Record<string, unknown> | null;
+      if (!e0) {
+        data = d0 as Record<string, unknown> | null;
       } else {
-        if (!isSchemaErr(e1)) {
-          console.warn('[BOOK_DETAIL] user_books select failed unexpectedly:', e1.code, e1.message);
+        if (!isSchemaErr(e0)) {
+          console.warn('[BOOK_DETAIL] user_books select failed unexpectedly:', e0.code, e0.message);
         }
-        // Try without paused_at (edition_key migration applied, paused_at not).
-        const { data: d2, error: e2 } = await supabase
+        const { data: d1, error: e1 } = await supabase
           .from('user_books')
-          .select('id, rating, finished_at, review_body, private_note, edition_key')
+          .select('id, rating, finished_at, review_body, private_note, edition_key, paused_at')
           .eq('user_id', user.id)
           .eq('book_id', bookId!)
           .maybeSingle();
-        if (!e2) {
-          data = d2 as Record<string, unknown> | null;
+        if (!e1) {
+          data = d1 as Record<string, unknown> | null;
         } else {
-          // Final fallback: drop edition_key too.
-          const { data: d3 } = await supabase
+          // Try without paused_at (edition_key migration applied, paused_at not).
+          const { data: d2, error: e2 } = await supabase
             .from('user_books')
-            .select('id, rating, finished_at, review_body, private_note')
+            .select('id, rating, finished_at, review_body, private_note, edition_key')
             .eq('user_id', user.id)
             .eq('book_id', bookId!)
             .maybeSingle();
-          data = d3 as Record<string, unknown> | null;
+          if (!e2) {
+            data = d2 as Record<string, unknown> | null;
+          } else {
+            // Final fallback: drop edition_key too.
+            const { data: d3 } = await supabase
+              .from('user_books')
+              .select('id, rating, finished_at, review_body, private_note')
+              .eq('user_id', user.id)
+              .eq('book_id', bookId!)
+              .maybeSingle();
+            data = d3 as Record<string, unknown> | null;
+          }
         }
       }
 
@@ -504,6 +530,8 @@ export default function BookDetailScreen() {
         if (data.edition_key) setSelectedEditionKey(data.edition_key as string);
         // Restore explicit pause flag (null when column missing or unset).
         setPausedAt((data.paused_at as string | null) ?? null);
+        // Restore year-goal flag (null when column missing or unset).
+        setYearGoalYear((data.year_goal_year as number | null) ?? null);
         const h = {
           rating:      (data.rating      as number | null) ?? null,
           finishedAt:  (data.finished_at as string | null) ?? null,
@@ -1306,6 +1334,30 @@ export default function BookDetailScreen() {
       setPausedAt(wasPaused ? new Date().toISOString() : null); // rollback
       setPauseError(error);
     }
+  }
+
+  // ── Year-goal stack toggle — earmarks this book for this year's reading
+  // goal. Optimistic local update + rollback on failure, mirroring the
+  // pause toggle pattern. The home-screen progress bar reads from
+  // user_books.year_goal_year and shows the queue as faded covers.
+  async function handleYearGoalToggle() {
+    if (!supabase || !userBookId) return;
+    const wasInGoal = yearGoalYear === new Date().getFullYear();
+    const nextYear  = wasInGoal ? null : new Date().getFullYear();
+    setYearGoalError(null);
+    setYearGoalSaving(true);
+    setYearGoalYear(nextYear); // optimistic
+    const { error } = await persistYearGoal(supabase, { userBookId, year: nextYear });
+    setYearGoalSaving(false);
+    if (error) {
+      setYearGoalYear(wasInGoal ? new Date().getFullYear() : null); // rollback
+      setYearGoalError(error);
+      return;
+    }
+    // Invalidate the home-screen snapshot cache (HOME_STALE_MS=60s) so the
+    // faded cover strip on the yearly progress bar reflects this toggle
+    // immediately when the reader navigates back.
+    invalidateBookDataCaches();
   }
 
   // ── Status transitions (Start Reading / Mark Finished / DNF) ─────────────
@@ -2233,6 +2285,61 @@ export default function BookDetailScreen() {
             )}
           </View>
         )}
+
+        {/* ── Year-goal stack toggle ──
+            Lets the reader earmark this book as part of their reading
+            goal for the current calendar year. Visible while the book
+            is in their library and not yet finished/dnf — i.e. the
+            "queue + active" lifecycle. Sage when enabled (mirrors the
+            single-green system used elsewhere); neutral outline when
+            off. Hidden once finished — the book is then counted via
+            booksThisYear and the queue chip is no longer meaningful. */}
+        {(isReading || localStatus === 'want_to_read') && userBookId && (() => {
+          const currentYear = new Date().getFullYear();
+          const inGoal = yearGoalYear === currentYear;
+          return (
+            <View style={{ marginBottom: 20 }}>
+              <TouchableOpacity
+                onPress={handleYearGoalToggle}
+                disabled={yearGoalSaving}
+                style={{
+                  flexDirection:   'row',
+                  alignItems:      'center',
+                  justifyContent:  'space-between',
+                  borderWidth:     1,
+                  borderColor:     inGoal ? SAGE : '#ede9e4',
+                  backgroundColor: inGoal ? SAGE_BG : '#fefcf9',
+                  borderRadius:    12,
+                  paddingHorizontal: 14,
+                  paddingVertical:   12,
+                  opacity:         yearGoalSaving ? 0.6 : 1,
+                }}
+              >
+                <View style={{ flex: 1, paddingRight: 12 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: inGoal ? SAGE_DEEP : '#44403c' }}>
+                    {inGoal ? `In your ${currentYear} goal stack` : `Add to ${currentYear} goal stack`}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: inGoal ? SAGE_DEEP : '#9e958d', marginTop: 2 }}>
+                    {inGoal
+                      ? 'Showing on your home screen progress bar'
+                      : 'Queue this book toward your yearly reading goal'}
+                  </Text>
+                </View>
+                {yearGoalSaving
+                  ? <ActivityIndicator size="small" color={inGoal ? SAGE_DEEP : '#78716c'} />
+                  : (
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: inGoal ? SAGE_DEEP : '#78716c' }}>
+                      {inGoal ? '✓' : '+'}
+                    </Text>
+                  )
+                }
+              </TouchableOpacity>
+              {yearGoalError && (
+                <Text style={{ fontSize: 12, color: '#b91c1c', marginTop: 6 }}>{yearGoalError}</Text>
+              )}
+            </View>
+          );
+        })()}
 
         {/* ── Reading Progress card (primary module) ── */}
         {isReading && (

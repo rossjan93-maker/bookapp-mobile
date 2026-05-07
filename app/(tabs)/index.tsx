@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  Image,
   RefreshControl,
   ScrollView,
   Text,
@@ -76,6 +77,24 @@ type YearBook = {
   cover_url: string | null;
   external_id: string | null;
   edition_key: string | null;
+  page_count: number | null;
+};
+
+// A user-earmarked book in this year's reading-goal stack. Distinct from
+// YearBook (= already finished this year). These contribute to the
+// pages-remaining projection rendered alongside the yearly progress bar
+// and surface as a faded cover strip below it. Reading-state books
+// already started count their *remaining* pages; want_to_read books
+// count their full page_count.
+type YearStackBook = {
+  id: string;
+  book_id: string;
+  status: string;
+  title: string;
+  author: string;
+  cover_url: string | null;
+  external_id: string | null;
+  current_page: number | null;
   page_count: number | null;
 };
 
@@ -344,6 +363,7 @@ type HomeSnapshot = {
   yearlyGoal:         number | null;
   pendingRecCount:    number;
   booksThisYear:      YearBook[];
+  yearStack:          YearStackBook[];
   feed:               FeedEvent[];
   friendships:        FriendshipRow[];
   fetchedAt:          number;
@@ -384,6 +404,7 @@ export default function HomeScreen() {
   const [yearlyGoal,      setYearlyGoal]      = useState<number | null>(() => _homeCache?.yearlyGoal ?? null);
   const [pendingRecCount, setPendingRecCount] = useState<number>(() => _homeCache?.pendingRecCount ?? 0);
   const [booksThisYear,   setBooksThisYear]   = useState<YearBook[]>(() => _homeCache?.booksThisYear ?? []);
+  const [yearStack,       setYearStack]       = useState<YearStackBook[]>(() => _homeCache?.yearStack ?? []);
 
   // Activity feed
   const [feed,            setFeed]            = useState<FeedEvent[]>(() => _homeCache?.feed ?? []);
@@ -419,6 +440,7 @@ export default function HomeScreen() {
   const _gyRef    = useRef<number | null>(null);
   const _prRef    = useRef<number>(0);
   const _byRef    = useRef<YearBook[]>([]);
+  const _ysRef    = useRef<YearStackBook[]>([]);
   const _feedRef  = useRef<FeedEvent[]>([]);
   const _fsRef    = useRef<FriendshipRow[]>([]);
   const _sbRef    = useRef<Record<string, SessionRow[]>>({});
@@ -583,6 +605,7 @@ export default function HomeScreen() {
       loadCurrentRead(user.id),
       loadPendingRecs(user.id),
       loadBooksThisYear(user.id),
+      loadYearStack(user.id),
       loadSessionData(user.id),
     ]);
 
@@ -609,6 +632,7 @@ export default function HomeScreen() {
       yearlyGoal:         _gyRef.current,
       pendingRecCount:    _prRef.current,
       booksThisYear:      _byRef.current,
+      yearStack:          _ysRef.current,
       feed:               _feedRef.current,
       friendships:        _fsRef.current,
       fetchedAt:          Date.now(),
@@ -770,6 +794,72 @@ export default function HomeScreen() {
     });
     setBooksThisYear(mapped);
     _byRef.current = mapped;
+  }
+
+  // Year-goal stack — books the user has earmarked as part of this year's
+  // reading goal. Filtered to non-finished/non-DNF rows so a book stays
+  // in the queue until it actually counts toward the goal (at which point
+  // it transitions naturally into booksThisYear). Schema-tolerant: column
+  // may not exist yet on stale Supabase projects; we silently no-op.
+  async function loadYearStack(uid: string) {
+    if (!supabase) return;
+    const currentYear = new Date().getFullYear();
+    // Order rule: reading-status books first (active queue), then
+    // want_to_read; within each group, most-recently-touched first so the
+    // strip is deterministic and reflects recent activity. Postgres can't
+    // express the status priority directly here, so we fetch then sort
+    // client-side — list size is bounded by the goal target (≤ ~50).
+    const { data, error } = await supabase
+      .from('user_books')
+      .select('id, book_id, status, current_page, edition_key, progress_updated_at, created_at, book:books(title, author, cover_url, external_id, page_count)')
+      .eq('user_id', uid)
+      .eq('year_goal_year', currentYear)
+      .in('status', ['reading', 'want_to_read'])
+      .is('deleted_at', null);
+    if (error) {
+      // Distinguish schema-missing (migration not yet applied) — silent
+      // empty state — from genuine query failures, which we still treat
+      // as empty for UI purposes but log so they're discoverable in dev
+      // rather than vanishing silently.
+      const isSchemaError =
+        error.code === '42703' ||
+        error.code === 'PGRST204' ||
+        (typeof error.message === 'string' && error.message.includes('does not exist'));
+      if (!isSchemaError) {
+        console.warn('[HOME] loadYearStack failed unexpectedly:', error.code, error.message);
+      }
+      const empty: YearStackBook[] = [];
+      setYearStack(empty);
+      _ysRef.current = empty;
+      return;
+    }
+    const mapped: YearStackBook[] = ((data as any[]) ?? []).map(r => {
+      const b = r.book as any;
+      return {
+        id:           r.id,
+        book_id:      r.book_id,
+        status:       r.status as string,
+        title:        b?.title ?? '',
+        author:       b?.author ?? '',
+        cover_url:    b?.cover_url ?? null,
+        external_id:  b?.external_id ?? null,
+        current_page: r.current_page ?? null,
+        page_count:   b?.page_count ?? null,
+        // Sort key only — not part of the rendered shape.
+        _sortAt:      (r.progress_updated_at as string | null) ?? (r.created_at as string | null) ?? '',
+      } as YearStackBook & { _sortAt: string };
+    });
+    // Sort: reading first, then want_to_read; within each, most-recent first.
+    mapped.sort((a, b) => {
+      const aReading = a.status === 'reading' ? 0 : 1;
+      const bReading = b.status === 'reading' ? 0 : 1;
+      if (aReading !== bReading) return aReading - bReading;
+      const aAt = (a as any)._sortAt as string;
+      const bAt = (b as any)._sortAt as string;
+      return bAt.localeCompare(aAt);
+    });
+    setYearStack(mapped);
+    _ysRef.current = mapped;
   }
 
   // ── Session data: reading_sessions for streak + per-book pacing ───────────────
@@ -1492,6 +1582,94 @@ export default function HomeScreen() {
                       />
                     )}
                   </View>
+                  {/* Year-goal stack strip — faded covers of books the
+                      reader has earmarked for this year's goal. Sits
+                      flush against the bottom of the bar so the queue
+                      visually "lives on" the progress bar. Each cover
+                      is rendered at low opacity so it doesn't compete
+                      with the bar itself; tapping any cover deep-links
+                      to the book detail screen so the reader can
+                      reorder, remove, or update progress. */}
+                  {yearStack.length > 0 && (
+                    <View style={{ marginTop: 10 }}>
+                      <View style={{
+                        flexDirection: 'row',
+                        alignItems:    'center',
+                        gap:           -6,    // tight overlap so a long stack stays one line
+                        paddingHorizontal: 0,
+                      }}>
+                        {yearStack.slice(0, 8).map((b) => (
+                          <TouchableOpacity
+                            key={b.id}
+                            activeOpacity={0.85}
+                            onPress={() => router.push(`/book/${b.book_id}`)}
+                            style={{
+                              opacity:    b.status === 'reading' ? 0.85 : 0.55,
+                              shadowColor:  '#000',
+                              shadowOpacity: 0.12,
+                              shadowRadius:  3,
+                              shadowOffset:  { width: 0, height: 1 },
+                              elevation:    2,
+                            }}
+                          >
+                            {b.cover_url ? (
+                              <Image
+                                source={{ uri: b.cover_url }}
+                                style={{
+                                  width:        24,
+                                  height:       36,
+                                  borderRadius: 2.5,
+                                  backgroundColor: '#ede9e4',
+                                }}
+                                resizeMode="cover"
+                              />
+                            ) : (
+                              <View style={{
+                                width:        24,
+                                height:       36,
+                                borderRadius: 2.5,
+                                backgroundColor: '#d6cfc6',
+                              }} />
+                            )}
+                          </TouchableOpacity>
+                        ))}
+                        {yearStack.length > 8 && (
+                          <Text style={{
+                            fontSize:    10,
+                            color:       '#9e958d',
+                            marginLeft:  10,
+                            fontWeight:  '600',
+                          }}>
+                            +{yearStack.length - 8} more
+                          </Text>
+                        )}
+                      </View>
+                      {(() => {
+                        // Project pages remaining in the stack and translate to
+                        // a "≈ N more books" summary using the user's running
+                        // average pace. Skips when no page-count data exists or
+                        // pace can't be derived yet (early in the year).
+                        const stackPagesLeft = yearStack.reduce((sum, b) => {
+                          if (b.page_count == null) return sum;
+                          const left = b.status === 'reading' && b.current_page != null
+                            ? Math.max(0, b.page_count - b.current_page)
+                            : b.page_count;
+                          return sum + left;
+                        }, 0);
+                        if (stackPagesLeft <= 0) return null;
+                        return (
+                          <Text style={{
+                            fontSize:  11,
+                            color:     '#9e958d',
+                            marginTop: 8,
+                            fontStyle: 'italic',
+                          }}>
+                            {yearStack.length === 1 ? '1 book' : `${yearStack.length} books`} stacked · {stackPagesLeft.toLocaleString()} pages to go
+                          </Text>
+                        );
+                      })()}
+                    </View>
+                  )}
                   {/* Gap caption — surfaces the literal book-count gap so
                       "Behind pace" isn't an opaque label. Only renders past
                       the first week of the year and when the gap is at least

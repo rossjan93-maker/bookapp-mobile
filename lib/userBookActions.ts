@@ -511,6 +511,42 @@ export async function setPaused(
 }
 
 /**
+ * Set or clear the "year goal stack" flag on a user_books row.
+ *
+ * Pass `year` = current calendar year to add the book to this year's
+ * stack; pass `null` to remove it. Stored as an integer (not boolean)
+ * so the historical signal survives — a book stacked for 2026 stays
+ * marked as 2026 even after 2027 begins, and the home screen treats
+ * any year != currentYear as "not currently stacked" without
+ * destroying the value.
+ *
+ * Schema-tolerant: column may not exist yet on this Supabase project
+ * if migration 20260507000001_user_books_year_goal.sql hasn't been
+ * applied — surfaced as a friendly error so the caller can hide the
+ * affordance gracefully.
+ */
+export async function setYearGoal(
+  supabase: SupabaseClient,
+  params: { userBookId: string; year: number | null },
+): Promise<{ error: string | null }> {
+  const { userBookId, year } = params;
+  const { error } = await supabase
+    .from('user_books')
+    .update({ year_goal_year: year })
+    .eq('id', userBookId);
+  if (!error) return { error: null };
+  const isSchemaError =
+    error.code === '42703' ||
+    error.code === 'PGRST204' ||
+    (typeof error.message === 'string' && error.message.includes('does not exist'));
+  return {
+    error: isSchemaError
+      ? 'Year-goal stacking is not yet enabled on this database — apply the latest migration.'
+      : 'Could not save your year-goal selection.',
+  };
+}
+
+/**
  * Save an updated current_page to user_books and append both:
  *   1. reading_progress_events row  — lightweight page snapshot (always)
  *   2. reading_sessions row          — richer session record (forward progress only)
