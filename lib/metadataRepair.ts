@@ -382,7 +382,11 @@ export async function repairBooksMetadata(
 
       // ── Collect OL-sourced fields — only write columns that exist ──────────
       if (foundDesc    && !hasDesc     && descColExists) { patch.description = foundDesc;    described++; }
-      if (foundSubjects.length         && subjColExists) { patch.subjects    = foundSubjects; subjected++; }
+      // subjects are provider-only fill-empty under the P0.5 catalog trigger —
+      // overwriting a non-empty list raises CATALOG_PROTECTED 403. Gate on
+      // !hasSubjects so the legitimate fill-empty patches alongside it
+      // (description/page_count) are not poisoned by an atomic rejection.
+      if (foundSubjects.length && !hasSubjects && subjColExists) { patch.subjects = foundSubjects; subjected++; }
       if (foundPages   && !hasPages)                     { patch.page_count  = foundPages;   paged++; }
 
       // ── metadata_confidence ───────────────────────────────────────────────

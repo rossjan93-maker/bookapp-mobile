@@ -288,10 +288,16 @@ export async function repairSubjectCoverage(
       ? (book.subjects as string[])
       : [];
 
-    // Safety guard — never overwrite subjects already ≥ 3 entries.
-    if (currentSubjects.length >= 3) {
+    // Safety guard — never overwrite subjects when the row already has ANY entries.
+    // Under the P0.5 catalog trigger, subjects are provider-only fill-empty for
+    // anon clients (settings.tsx user-triggered repair). Sparse-overwrite (1–2
+    // entries → richer list) used to run client-side; it now requires the
+    // service-role maintenance script (`scripts/repairSubjectCoverage.ts` with
+    // SUPABASE_SERVICE_ROLE_KEY) to bypass the trigger. Keeping the JS guard
+    // tight avoids a flood of CATALOG_PROTECTED failures in normal runs.
+    if (currentSubjects.length > 0) {
       summary.skipped++;
-      if (__DEV__) console.log(`${LOG} skip "${t}" — already has ${currentSubjects.length} subjects`);
+      if (__DEV__) console.log(`${LOG} skip "${t}" — already has ${currentSubjects.length} subjects (fill-empty only)`);
       continue;
     }
 

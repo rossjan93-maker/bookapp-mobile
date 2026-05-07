@@ -1,34 +1,33 @@
 -- =============================================================================
--- Migration: P1 catalog protection — clarity refinement
+-- Migration: P0.5 catalog protection — clarity + stricter classification
 -- Created:   2026-05-09
 -- =============================================================================
--- Replaces the silent-revert trigger from 20260508000000 with a fail-loud
--- one that returns a clear PostgREST error when a client tries to overwrite
--- a protected catalog field. Silent reversion closed the abuse vector but
--- hid bugs and made the write model hard to reason about (a successful 200
--- response could secretly mean "your patch was thrown away"). The new trigger
--- raises exceptions with structured messages so call sites can observe what
--- happened.
+-- Refines the silent-revert trigger from 20260508000000 in two ways:
+--
+--   (1) FAIL-LOUD. The trigger now RAISEs on any forbidden write instead of
+--       silently dropping the change. Silent reversion closed the abuse vector
+--       but hid bugs (a successful 200 response could secretly mean "your patch
+--       was thrown away") and made write semantics impossible to reason about
+--       from the client.
+--
+--   (2) STRICTER CLASSIFICATION. The previous trigger only protected 5 of the
+--       9 columns that should be locked down. metadata_confidence, cover_source,
+--       subjects, and content_warnings could all be freely rewritten by any
+--       authenticated user who had the book in their library — and books rows
+--       are shared, so a single rewrite reshapes the experience for everyone.
+--       This migration extends protection to all 9.
 --
 -- Field classification (books):
 --   user-mutable (untouched by trigger; gated by RLS library-ownership only):
---     page_count, subjects, content_warnings, cover_source,
---     metadata_confidence, isbn, isbn13, additional_authors, published_year,
---     plus any future column not listed below.
+--     page_count
 --   shared catalog identity (immutable post-insert):
---     title
---     author
---   identity backfill (NULL → non-NULL only):
---     external_id    Goodreads imports start NULL and get an OL works key
---                    during metadata repair.
---     cover_url      Fill-empty only — provider enrichment fills missing
---                    covers. Cover *upgrades* (non-null → different non-null)
---                    are intentionally rejected by this trigger; the only
---                    legitimate upgrade path was the dormant cover-upgrade
---                    branch in lib/metadataRepair.ts which was already
---                    silently broken under the previous silent-revert
---                    trigger and is filed as a follow-up.
---     description    Fill-empty only.
+--     title, author
+--   identity / metadata backfill (NULL → non-NULL only):
+--     external_id, cover_url, description, isbn, isbn13, published_year,
+--     additional_authors
+--   provider / trusted-write only (fill-empty enforced — empty array or NULL
+--   counts as "empty" for array columns; NULL counts as "empty" for text):
+--     subjects, content_warnings, cover_source, metadata_confidence
 --
 -- Field classification (book_source_links):
 --   immutable post-insert: book_id, source     (ON CONFLICT natural key)
@@ -40,18 +39,26 @@
 --   mutable by library owner via RLS:           every other column
 --
 -- Service-role / superuser writes (auth.uid() IS NULL — migrations, edge
--- functions, the future payment webhook) bypass every check below.
+-- functions, the maintenance scripts under SUPABASE_SERVICE_ROLE_KEY) bypass
+-- every check below.
 --
 -- Error contract for clients:
 --   * SQLSTATE 42501 (insufficient_privilege)  → PostgREST returns HTTP 403.
 --   * MESSAGE prefixed `CATALOG_PROTECTED:` so client code can identify the
 --     failure mode without parsing free-form text.
---   * DETAIL/HINT carry diagnostic info (which column, current vs attempted).
+--   * HINT carries the policy summary so logs are self-explanatory.
+--
+-- Reversibility:
+--   Every change here is in-place via CREATE OR REPLACE FUNCTION. To roll back
+--   to the silent-revert behaviour from 20260508000000, re-apply that file's
+--   _books_protect_identity_columns() body and DROP TRIGGER … ; DROP FUNCTION
+--   … for the two new tables (book_source_links, book_enrichment_cache).
+--   No data is mutated by this migration.
 -- =============================================================================
 
 
 -- =============================================================================
--- A. books — replace silent-revert with fail-loud
+-- A. books — fail-loud + stricter classification (9 columns)
 -- =============================================================================
 
 create or replace function public._books_protect_identity_columns()
@@ -63,49 +70,96 @@ as $$
 declare
   v_violations text[] := array[]::text[];
 begin
-  -- Service-role / migration writes bypass the trigger entirely.
+  -- Service-role / migration / maintenance-script writes bypass entirely.
   if auth.uid() is null then
     return new;
   end if;
 
-  -- title — immutable post-insert
+  -- ── Immutable post-insert ────────────────────────────────────────────────
   if new.title is distinct from old.title then
     v_violations := v_violations || format(
-      'title (current=%L, attempted=%L)',
-      old.title, new.title
-    );
+      'title (immutable; current=%L attempted=%L)', old.title, new.title);
   end if;
 
-  -- author — immutable post-insert
   if new.author is distinct from old.author then
     v_violations := v_violations || format(
-      'author (current=%L, attempted=%L)',
-      old.author, new.author
-    );
+      'author (immutable; current=%L attempted=%L)', old.author, new.author);
   end if;
 
-  -- external_id — NULL → non-NULL backfill allowed; any other change rejected
+  -- ── Fill-if-empty (text / scalar): NULL → non-NULL allowed ───────────────
   if old.external_id is not null
      and new.external_id is distinct from old.external_id then
     v_violations := v_violations || format(
-      'external_id (current=%L, attempted=%L)',
-      old.external_id, new.external_id
-    );
+      'external_id (fill-empty; current=%L attempted=%L)',
+      old.external_id, new.external_id);
   end if;
 
-  -- cover_url — fill-empty only
   if old.cover_url is not null
      and new.cover_url is distinct from old.cover_url then
     v_violations := v_violations || format(
-      'cover_url (current is set, attempted change to %L)',
-      new.cover_url
-    );
+      'cover_url (fill-empty; currently set, attempted change to %L)', new.cover_url);
   end if;
 
-  -- description — fill-empty only
   if old.description is not null
      and new.description is distinct from old.description then
-    v_violations := v_violations || 'description (current is set, attempted change)';
+    v_violations := v_violations || 'description (fill-empty; currently set, attempted change)';
+  end if;
+
+  if old.isbn is not null
+     and new.isbn is distinct from old.isbn then
+    v_violations := v_violations || format(
+      'isbn (fill-empty; current=%L attempted=%L)', old.isbn, new.isbn);
+  end if;
+
+  if old.isbn13 is not null
+     and new.isbn13 is distinct from old.isbn13 then
+    v_violations := v_violations || format(
+      'isbn13 (fill-empty; current=%L attempted=%L)', old.isbn13, new.isbn13);
+  end if;
+
+  if old.published_year is not null
+     and new.published_year is distinct from old.published_year then
+    v_violations := v_violations || format(
+      'published_year (fill-empty; current=%L attempted=%L)',
+      old.published_year, new.published_year);
+  end if;
+
+  if old.additional_authors is not null
+     and new.additional_authors is distinct from old.additional_authors then
+    v_violations := v_violations || 'additional_authors (fill-empty; currently set, attempted change)';
+  end if;
+
+  -- ── Provider / trusted-write only (fill-empty for arrays + text) ─────────
+  -- For array columns, "empty" means NULL OR cardinality = 0 — clients store
+  -- []::text[] for content_warnings, so we have to treat both as empty.
+  if old.subjects is not null
+     and coalesce(array_length(old.subjects, 1), 0) > 0
+     and new.subjects is distinct from old.subjects then
+    v_violations := v_violations || format(
+      'subjects (provider-only fill-empty; current has %s entries, attempted overwrite)',
+      coalesce(array_length(old.subjects, 1), 0));
+  end if;
+
+  if old.content_warnings is not null
+     and coalesce(array_length(old.content_warnings, 1), 0) > 0
+     and new.content_warnings is distinct from old.content_warnings then
+    v_violations := v_violations || format(
+      'content_warnings (provider-only fill-empty; current has %s entries, attempted overwrite)',
+      coalesce(array_length(old.content_warnings, 1), 0));
+  end if;
+
+  if old.cover_source is not null
+     and new.cover_source is distinct from old.cover_source then
+    v_violations := v_violations || format(
+      'cover_source (provider-only fill-empty; current=%L attempted=%L)',
+      old.cover_source, new.cover_source);
+  end if;
+
+  if old.metadata_confidence is not null
+     and new.metadata_confidence is distinct from old.metadata_confidence then
+    v_violations := v_violations || format(
+      'metadata_confidence (provider-only fill-empty; current=%L attempted=%L)',
+      old.metadata_confidence, new.metadata_confidence);
   end if;
 
   if array_length(v_violations, 1) is not null then
@@ -114,12 +168,11 @@ begin
       old.id, array_to_string(v_violations, '; ')
       using errcode = '42501',
             hint = 'title and author are immutable post-insert. '
-                || 'external_id, cover_url, and description are fill-if-empty '
-                || '(NULL → non-NULL is allowed; non-NULL → different value is rejected). '
-                || 'Provider enrichment must NOT overwrite a value that is already set. '
-                || 'If a legitimate metadata replacement is required (e.g. a cover '
-                || 'upgrade with stronger provenance), perform it via a service-role '
-                || 'RPC, not a direct PATCH from the client.';
+                || 'external_id, cover_url, description, isbn, isbn13, '
+                || 'published_year, additional_authors are fill-if-empty. '
+                || 'subjects, content_warnings, cover_source, metadata_confidence '
+                || 'are provider-only fill-empty (NULL or empty allowed → set; '
+                || 'overwriting an existing value requires a service-role write).';
   end if;
 
   return new;
@@ -128,10 +181,6 @@ $$;
 
 revoke all on function public._books_protect_identity_columns() from public;
 
--- The trigger itself was created in 20260508000000_p0_security_hardening.sql
--- and points at this function — CREATE OR REPLACE FUNCTION above swaps the
--- behaviour in place. We re-assert the trigger here for idempotency in case
--- this migration is the only one ever applied to a fresh project.
 drop trigger if exists books_protect_identity_columns on public.books;
 create trigger books_protect_identity_columns
   before update on public.books
@@ -141,11 +190,11 @@ create trigger books_protect_identity_columns
 -- =============================================================================
 -- B. book_source_links — identity columns immutable post-insert
 -- =============================================================================
--- (book_id, source) is the natural key used in upsert ON CONFLICT. Updating
+-- (book_id, source) is the natural key used in upsert ON CONFLICT. Mutating
 -- either column would silently corrupt the audit trail (the row would now
 -- describe a different (book, source) pairing than the historical INSERT
 -- captured). RLS already gates UPDATE on library ownership; this trigger
--- adds the column-immutability layer.
+-- adds the column-immutability layer on top.
 
 create or replace function public._book_source_links_protect_identity()
 returns trigger
@@ -193,7 +242,7 @@ create trigger book_source_links_protect_identity
 -- =============================================================================
 -- external_id is the PK and the ON CONFLICT key for the cache upsert. RLS
 -- already gates UPDATE on library ownership; this trigger ensures that even
--- if a row is updated, its identity cannot drift.
+-- when a cache row is updated, its identity cannot drift.
 
 create or replace function public._book_enrichment_cache_protect_identity()
 returns trigger
