@@ -188,7 +188,7 @@ const FILTER_EMPTY: Record<FilterKey, { title: string; body: string }> = {
   finished:     { title: 'No finished books yet',  body: 'Finished books will appear here.' },
   dnf:          { title: 'Nothing set aside',      body: 'Sometimes a book isn\'t the right fit for now.' },
   clubs:        { title: 'No clubs yet',            body: 'Start a book club and invite your friends to read together.' },
-  priority:     { title: 'No priority reads yet',  body: 'Open a book and tap "Add to goal stack" to flag it as a priority for this year.' },
+  priority:     { title: 'No priority reads yet',  body: 'Anything you start reading shows up here automatically. To queue something else, open a want-to-read book and tap "Add to goal stack".' },
 };
 
 // ─── Module-level session cache ───────────────────────────────────────────────
@@ -758,21 +758,28 @@ export default function LibraryScreen() {
   // new status doesn't match the active filter — otherwise marking a
   // "Reading" book as Finished from the Reading filter makes the row vanish
   // before the user ever sees the rating prompt.
-  // Priority filter: books earmarked for this calendar year via the
-  // year-goal stack (user_books.year_goal_year === currentYear). We keep
-  // finished books in the list so the reader can see what they've already
-  // checked off this year alongside the queue — the home-screen strip
-  // hides finished books because they roll into booksThisYear there, but
-  // here in the library the unified view is more useful.
+  // Priority filter: books in scope for this calendar year. Two inclusion
+  // rules:
+  //   1. Anything explicitly earmarked via the year-goal stack
+  //      (user_books.year_goal_year === currentYear).
+  //   2. Anything currently being read — reading is implicitly part of
+  //      this year's goal, so the book-detail "Add to stack" toggle is
+  //      hidden for reading books and the priority view mirrors that
+  //      same implicit-membership rule.
+  // Finished books are kept in the list whenever they were stacked OR
+  // were read this year, so the reader can see what they've checked off
+  // alongside the queue — the home-screen strip hides finished here
+  // because they roll into booksThisYear there, but the unified library
+  // view is more useful with them retained.
   const _currentYear = new Date().getFullYear();
+  const _isPriority  = (i: typeof items[number]) =>
+    i.year_goal_year === _currentYear || i.status === 'reading';
   const filteredItems = activeShelf
     ? shelfFilteredItems
     : (activeFilter === 'all' || activeFilter === 'clubs'
       ? items
       : activeFilter === 'priority'
-        ? items.filter(i =>
-            i.year_goal_year === _currentYear || pendingFeedback?.userBookId === i.id,
-          )
+        ? items.filter(i => _isPriority(i) || pendingFeedback?.userBookId === i.id)
         : items.filter(i =>
             i.status === activeFilter || pendingFeedback?.userBookId === i.id,
           ));
@@ -1126,7 +1133,7 @@ export default function LibraryScreen() {
     finished:     items.filter(i => i.status === 'finished').length,
     dnf:          items.filter(i => i.status === 'dnf').length,
     clubs:        0,
-    priority:     items.filter(i => i.year_goal_year === _currentYear).length,
+    priority:     items.filter(i => _isPriority(i)).length,
   };
 
   const contextSubtitle = (() => {

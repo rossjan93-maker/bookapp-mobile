@@ -797,10 +797,16 @@ export default function HomeScreen() {
   }
 
   // Year-goal stack — books the user has earmarked as part of this year's
-  // reading goal. Filtered to non-finished/non-DNF rows so a book stays
-  // in the queue until it actually counts toward the goal (at which point
-  // it transitions naturally into booksThisYear). Schema-tolerant: column
-  // may not exist yet on stale Supabase projects; we silently no-op.
+  // reading goal. Two inclusion rules combined via .or():
+  //   1. Any book the reader is actively reading — implicitly part of
+  //      this year's goal regardless of the year_goal_year flag (the
+  //      book-detail toggle for reading books is hidden because the
+  //      "add to stack" option would be redundant).
+  //   2. want_to_read books explicitly stacked for the current year.
+  // Finished/DNF rows are excluded so a book stays in the queue until it
+  // actually counts toward the goal (at which point it transitions
+  // naturally into booksThisYear). Schema-tolerant: column may not exist
+  // yet on stale Supabase projects; we silently no-op.
   async function loadYearStack(uid: string) {
     if (!supabase) return;
     const currentYear = new Date().getFullYear();
@@ -813,8 +819,7 @@ export default function HomeScreen() {
       .from('user_books')
       .select('id, book_id, status, current_page, edition_key, progress_updated_at, created_at, book:books(title, author, cover_url, external_id, page_count)')
       .eq('user_id', uid)
-      .eq('year_goal_year', currentYear)
-      .in('status', ['reading', 'want_to_read'])
+      .or(`status.eq.reading,and(status.eq.want_to_read,year_goal_year.eq.${currentYear})`)
       .is('deleted_at', null);
     if (error) {
       // Distinguish schema-missing (migration not yet applied) — silent

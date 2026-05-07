@@ -2447,12 +2447,16 @@ export default function BookDetailScreen() {
         {/* ── Year-goal stack toggle ──
             Lets the reader earmark this book as part of their reading
             goal for the current calendar year. Visible while the book
-            is in their library and not yet finished/dnf — i.e. the
-            "queue + active" lifecycle. Sage when enabled (mirrors the
-            single-green system used elsewhere); neutral outline when
-            off. Hidden once finished — the book is then counted via
-            booksThisYear and the queue chip is no longer meaningful. */}
-        {(isReading || localStatus === 'want_to_read') && userBookId && (() => {
+            is in their want_to_read queue. Sage when enabled (mirrors
+            the single-green system used elsewhere); neutral outline when
+            off. Intentionally NOT shown for `reading` — once a user is
+            actively reading a book it's implicitly part of this year's
+            goal (the home strip surfaces every reading book regardless of
+            year_goal_year), so presenting "add to stack" as an option is
+            redundant. Also hidden once finished — the book is then
+            counted via booksThisYear and the queue chip is no longer
+            meaningful. */}
+        {localStatus === 'want_to_read' && userBookId && (() => {
           const currentYear = new Date().getFullYear();
           const inGoal = yearGoalYear === currentYear;
           return (
