@@ -1903,7 +1903,11 @@ export default function BookDetailScreen() {
                       activeOpacity={0.7}
                       onPress={() => {
                         if (!targetBook) return;
-                        router.push({
+                        // replace (not push) so the Back button always returns
+                        // to the screen the user opened the series from (e.g.
+                        // Library), instead of stepping back through every
+                        // book they toggled within the series.
+                        router.replace({
                           pathname: '/book/[id]',
                           params: {
                             id:             encodeURIComponent(targetBook.title),
@@ -2083,7 +2087,11 @@ export default function BookDetailScreen() {
                       key={`${b.title}-${i}`}
                       disabled={isCurrent}
                       activeOpacity={0.75}
-                      onPress={() => router.push({
+                      onPress={() => router.replace({
+                        // replace (not push) so the Back button always returns
+                        // to the screen the user opened the series from
+                        // instead of stepping back through every series book
+                        // they tapped on the strip.
                         pathname: '/book/[id]',
                         params: {
                           id:             encodeURIComponent(b.title),
