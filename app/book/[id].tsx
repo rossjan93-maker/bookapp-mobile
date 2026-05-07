@@ -1903,6 +1903,13 @@ export default function BookDetailScreen() {
                       activeOpacity={0.7}
                       onPress={() => {
                         if (!targetBook) return;
+                        // Pass a large OL cover URL when the catalog has an
+                        // olCoverId so the hero renders immediately instead
+                        // of showing the "NO COVER" placeholder until the DB
+                        // hydration pass completes.
+                        const targetCover = targetBook.olCoverId
+                          ? `https://covers.openlibrary.org/b/id/${targetBook.olCoverId}-L.jpg`
+                          : '';
                         // replace (not push) so the Back button always returns
                         // to the screen the user opened the series from (e.g.
                         // Library), instead of stepping back through every
@@ -1915,7 +1922,7 @@ export default function BookDetailScreen() {
                             author:         targetBook.author,
                             seriesName:     sKey,
                             seriesPosition: String(targetPos),
-                            coverUrl:       '',
+                            coverUrl:       targetCover,
                           },
                         });
                       }}
@@ -2079,6 +2086,12 @@ export default function BookDetailScreen() {
                   const coverUri  = cover?.coverId
                     ? `https://covers.openlibrary.org/b/id/${cover.coverId}-S.jpg`
                     : null;
+                  // Larger variant for the navigated-to hero. Same cover ID,
+                  // just `-L.jpg` instead of `-S.jpg`, so the next screen's
+                  // hero shows real art on first paint instead of "NO COVER".
+                  const heroCoverUri = cover?.coverId
+                    ? `https://covers.openlibrary.org/b/id/${cover.coverId}-L.jpg`
+                    : '';
                   const coverW    = isCurrent ? 54 : 42;
                   const coverH    = isCurrent ? 80 : 62;
                   const stripLabel = getStripLabel(pos);
@@ -2097,7 +2110,7 @@ export default function BookDetailScreen() {
                           id:             encodeURIComponent(b.title),
                           title:          b.title,
                           author:         b.author,
-                          coverUrl:       coverUri ?? '',
+                          coverUrl:       heroCoverUri,
                           seriesName:     seriesName!,
                           seriesPosition: String(i + 1),
                         },
