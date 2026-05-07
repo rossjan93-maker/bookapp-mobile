@@ -343,6 +343,14 @@ export async function repairBooksMetadata(
         // Apply the conservative upgrade policy from lib/coverUpgrade.ts.
         // Only ISBN-matched GB covers can trigger an upgrade; title-only matches
         // are never sufficient to replace an existing cover.
+        //
+        // The cover-upgrade overwrite is REJECTED by the
+        // _books_protect_identity_columns trigger (cover_url is fill-empty
+        // only). We attempt it anyway in its OWN UPDATE so the expected 403
+        // does not block the legitimate fill-empty patches for description /
+        // subjects / page_count built below. The error is logged and swallowed.
+        // Filed as a follow-up to route this through a service-role RPC if
+        // the upgrade path is ever required to actually function.
         const hasIsbn   = !!(book.isbn13 || book.isbn);
         const candidate = {
           url:        gbCoverUrl,
@@ -355,10 +363,16 @@ export async function repairBooksMetadata(
           candidate,
         );
         if (decision.upgrade) {
-          patch.cover_url    = gbCoverUrl;
-          patch.cover_source = 'google_books';
-          covered++;
-          console.log(`[REPAIR] cover UPGRADED for "${t}" — ${decision.reason}`);
+          const { error: upgradeErr } = await supabase
+            .from('books')
+            .update({ cover_url: gbCoverUrl, cover_source: 'google_books' })
+            .eq('id', bookId);
+          if (upgradeErr) {
+            console.log(`[REPAIR] cover upgrade rejected for "${t}" — ${upgradeErr.message}`);
+          } else {
+            covered++;
+            console.log(`[REPAIR] cover UPGRADED for "${t}" — ${decision.reason}`);
+          }
         } else {
           if (__DEV__) {
             console.log(`[REPAIR] cover upgrade skipped for "${t}" — ${decision.reason}`);
