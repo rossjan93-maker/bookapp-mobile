@@ -18,6 +18,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
+import { HalfStarRating, StarDisplay, ratingToSentiment, formatRating } from '../../components/HalfStarRating';
 import { resolveBookDisplay } from '../../lib/boxSetDetection';
 import { DescriptionSkeleton, ProgressCardSkeleton } from '../../components/Placeholder';
 import { getSeriesCatalog, getSagaForSeries, getAllSagaCatalog, findSeriesForBook } from '../../lib/seriesCatalog';
@@ -1514,10 +1515,7 @@ export default function BookDetailScreen() {
   async function handleDetailRating(rating: number) {
     if (!supabase || !userBookId || !bookId) return;
     setSavingDetailRating(true);
-    const sentiment =
-      rating >= 5 ? 'loved' :
-      rating >= 4 ? 'liked' :
-      rating === 3 ? 'okay' : 'not_for_me';
+    const sentiment = ratingToSentiment(rating);
     await supabase.from('user_books').update({ rating, sentiment }).eq('id', userBookId);
     const eventId = pendingDetailRating?.completionEventId ?? null;
     if (eventId) {
@@ -2697,8 +2695,9 @@ export default function BookDetailScreen() {
             {userHistory.rating != null && (
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
                 <Text style={{ fontSize: 13, color: '#78716c', width: 90 }}>Rating</Text>
-                <Text style={{ fontSize: 14, color: '#231f1b', fontWeight: '600' }}>
-                  {'★'.repeat(userHistory.rating)}{'☆'.repeat(5 - userHistory.rating)} · {userHistory.rating}/5
+                <StarDisplay value={userHistory.rating} size={14} />
+                <Text style={{ fontSize: 13, color: '#231f1b', fontWeight: '600', marginLeft: 8 }}>
+                  {formatRating(userHistory.rating)}
                 </Text>
               </View>
             )}
@@ -3261,22 +3260,16 @@ export default function BookDetailScreen() {
           <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 12 }}>
             Rating
           </Text>
-          <View style={{ flexDirection: 'row', gap: 6, marginBottom: 24 }}>
-            {[1, 2, 3, 4, 5].map(n => (
-              <TouchableOpacity
-                key={n}
-                onPress={() => setEditRating(editRating === n ? null : n)}
-                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-              >
-                <Text style={{
-                  fontSize: 34,
-                  color: editRating !== null && n <= editRating ? '#f59e0b' : '#ede9e4',
-                }}>
-                  ★
-                </Text>
-              </TouchableOpacity>
-            ))}
+          <View style={{ marginBottom: 6 }}>
+            <HalfStarRating
+              value={editRating}
+              onChange={setEditRating}
+              size={34}
+            />
           </View>
+          <Text style={{ fontSize: 11, color: '#c4b5a5', marginBottom: 24 }}>
+            Tap the left half of a star for ½ — tap again to clear
+          </Text>
 
           <Text style={{ fontSize: 11, fontWeight: '700', color: '#9e958d', letterSpacing: 0.7, textTransform: 'uppercase', marginBottom: 8 }}>
             Review / note
@@ -3373,22 +3366,16 @@ export default function BookDetailScreen() {
           }}>
             {title ?? 'This book'}
           </Text>
-          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginBottom: 28 }}>
-            {[1, 2, 3, 4, 5].map(n => (
-              <TouchableOpacity
-                key={n}
-                onPress={() => setDetailRating(detailRating === n ? null : n)}
-                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-              >
-                <Text style={{
-                  fontSize: 40,
-                  color: detailRating != null && n <= detailRating ? '#f59e0b' : '#ede9e4',
-                }}>
-                  ★
-                </Text>
-              </TouchableOpacity>
-            ))}
+          <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 8 }}>
+            <HalfStarRating
+              value={detailRating}
+              onChange={setDetailRating}
+              size={40}
+            />
           </View>
+          <Text style={{ fontSize: 11, color: '#c4b5a5', textAlign: 'center', marginBottom: 24 }}>
+            Tap the left half of a star for ½
+          </Text>
           <TouchableOpacity
             onPress={() => detailRating != null && handleDetailRating(detailRating)}
             disabled={detailRating == null || savingDetailRating}

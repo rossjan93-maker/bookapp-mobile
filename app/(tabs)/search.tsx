@@ -26,6 +26,7 @@ import {
   hybridMerge,
 } from '../../lib/bookSearch';
 import { CoverThumb } from '../../components/CoverThumb';
+import { HalfStarRating, StarDisplay } from '../../components/HalfStarRating';
 import { BackButton } from '../../components/BackButton';
 import { getDisplayName, getFirstName } from '../../lib/displayName';
 import { computeTasteProfile } from '../../lib/tasteProfile';
@@ -338,11 +339,7 @@ function BookRow({ book, rating, small }: { book: BookToRate | BookToTag; rating
         </Text>
       </View>
       {rating != null && rating > 0 && (
-        <View style={{ flexDirection: 'row', gap: 1 }}>
-          {[1, 2, 3, 4, 5].map(s => (
-            <Text key={s} style={{ fontSize: 11, color: s <= rating ? '#f59e0b' : '#ede9e4' }}>★</Text>
-          ))}
-        </View>
+        <StarDisplay value={rating} size={11} />
       )}
     </View>
   );
@@ -395,7 +392,7 @@ type RateMode = 'rate' | 'notes' | 'tags';
 function RateCard({ book, onComplete }: RateCardProps) {
   const [mode, setMode]             = useState<RateMode>('rate');
   const [rating, setRating]         = useState(0);
-  const [pendingRating, setPending] = useState(0);
+  const [pendingRating, setPending] = useState<number>(0);
   const [saving, setSaving]         = useState(false);
   const [noteText, setNoteText]     = useState('');
   const [savingNote, setSavingNote] = useState(false);
@@ -485,21 +482,13 @@ function RateCard({ book, onComplete }: RateCardProps) {
         <BookRow book={book} rating={mode !== 'rate' ? rating : undefined} small />
 
         {mode === 'rate' && (
-          <View style={{ flexDirection: 'row', gap: 2, marginTop: 7, paddingLeft: 38 }}>
-            {[1, 2, 3, 4, 5].map(star => (
-              <TouchableOpacity
-                key={star}
-                activeOpacity={0.7}
-                onPress={() => handleRate(star)}
-                disabled={saving}
-                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-              >
-                <Text style={{
-                  fontSize: 22,
-                  color: star <= (pendingRating || rating) ? '#f59e0b' : '#ede9e4',
-                }}>★</Text>
-              </TouchableOpacity>
-            ))}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 7, paddingLeft: 38 }}>
+            <HalfStarRating
+              value={pendingRating || rating || null}
+              onChange={(v) => v != null && !saving && handleRate(v)}
+              size={22}
+              allowClear={false}
+            />
             {saving && (
               <ActivityIndicator
                 size="small"

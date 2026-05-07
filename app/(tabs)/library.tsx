@@ -33,6 +33,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
 import { CoverThumb } from '../../components/CoverThumb';
+import { HalfStarRating, ratingToSentiment } from '../../components/HalfStarRating';
 import { LibraryScreenSkeleton } from '../../components/Placeholder';
 import { LibraryGalleryView } from '../../components/LibraryGalleryView';
 import { computePagePacing, computeDatePacing, formatLastUpdated, computeBookPace, formatPaceChip, computeUserAvgPace, inferReadState } from '../../lib/pacing';
@@ -548,11 +549,7 @@ export default function LibraryScreen() {
     const wasFinish  = pendingFeedback?.status === 'finished'; // capture before clearing
     setPendingFeedback(null);
     if (!supabase || !currentUserId) return;
-    const sentiment =
-      rating >= 5 ? 'loved' :
-      rating >= 4 ? 'liked' :
-      rating === 3 ? 'okay' :
-      'not_for_me';
+    const sentiment = ratingToSentiment(rating);
     supabase.from('user_books').update({ rating, sentiment }).eq('id', userBookId).then(() => {});
     if (eventId) {
       supabase.from('activity_events').update({ rating }).eq('id', eventId).then(() => {});
@@ -749,11 +746,18 @@ export default function LibraryScreen() {
 
   const readingCount  = items.filter(i => i.status === 'reading').length;
   // When shelf is active, status chip filtering is bypassed (chips are hidden).
+  // Special case: a row that just transitioned status (and is now showing
+  // the inline rating / DNF-reason prompt) must remain visible even if its
+  // new status doesn't match the active filter — otherwise marking a
+  // "Reading" book as Finished from the Reading filter makes the row vanish
+  // before the user ever sees the rating prompt.
   const filteredItems = activeShelf
     ? shelfFilteredItems
     : (activeFilter === 'all' || activeFilter === 'clubs'
       ? items
-      : items.filter(i => i.status === activeFilter));
+      : items.filter(i =>
+          i.status === activeFilter || pendingFeedback?.userBookId === i.id,
+        ));
 
   // Sort + ordering:
   //   All filter    → reading first, then finished (finished_at desc), then want-to-read, then dnf.
@@ -2054,18 +2058,16 @@ export default function LibraryScreen() {
                 />
               ) : hasPendingRating ? (
                 <View style={{ marginTop: 2 }}>
-                  <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 8 }}>How would you rate it?</Text>
+                  <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 8 }}>
+                    How would you rate it? Tap left half of a star for ½.
+                  </Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    {[1, 2, 3, 4, 5].map(n => (
-                      <TouchableOpacity
-                        key={n}
-                        onPress={() => saveRating(item.id, item.book_id, n)}
-                        hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-                        style={{ paddingHorizontal: 3, paddingVertical: 2 }}
-                      >
-                        <Text style={{ fontSize: 30, color: '#f59e0b' }}>★</Text>
-                      </TouchableOpacity>
-                    ))}
+                    <HalfStarRating
+                      value={null}
+                      onChange={(v) => v != null && saveRating(item.id, item.book_id, v)}
+                      size={28}
+                      allowClear={false}
+                    />
                     <TouchableOpacity onPress={() => setPendingFeedback(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                       <Text style={{ fontSize: 12, color: '#9e958d', marginLeft: 12 }}>Skip</Text>
                     </TouchableOpacity>
@@ -2330,18 +2332,16 @@ export default function LibraryScreen() {
               </View>
             ) : hasPendingRating ? (
               <View style={{ marginLeft: 58, marginTop: 6 }}>
-                <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 8 }}>How would you rate it?</Text>
+                <Text style={{ fontSize: 11, color: '#78716c', marginBottom: 8 }}>
+                  How would you rate it? Tap left half of a star for ½.
+                </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  {[1, 2, 3, 4, 5].map(n => (
-                    <TouchableOpacity
-                      key={n}
-                      onPress={() => saveRating(item.id, item.book_id, n)}
-                      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-                      style={{ paddingHorizontal: 3, paddingVertical: 2 }}
-                    >
-                      <Text style={{ fontSize: 30, color: '#f59e0b' }}>★</Text>
-                    </TouchableOpacity>
-                  ))}
+                  <HalfStarRating
+                    value={null}
+                    onChange={(v) => v != null && saveRating(item.id, item.book_id, v)}
+                    size={28}
+                    allowClear={false}
+                  />
                   <TouchableOpacity onPress={() => setPendingFeedback(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                     <Text style={{ fontSize: 12, color: '#9e958d', marginLeft: 12 }}>Skip</Text>
                   </TouchableOpacity>

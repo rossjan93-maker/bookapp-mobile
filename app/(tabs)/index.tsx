@@ -19,6 +19,7 @@ import { WtDemoHome } from '../../components/walkthrough/WtDemoHome';
 import { supabase } from '../../lib/supabase';
 import { registerCacheClearer } from '../../lib/tabCache';
 import { CoverThumb } from '../../components/CoverThumb';
+import { StarDisplay } from '../../components/HalfStarRating';
 import { resolveBookDisplay, type BookDisplay } from '../../lib/boxSetDetection';
 import { HomeScreenSkeleton } from '../../components/Placeholder';
 import { getFirstName } from '../../lib/displayName';
@@ -1861,9 +1862,9 @@ export default function HomeScreen() {
                       </Text>
                     ) : null}
                     {event.rating != null ? (
-                      <Text style={{ fontSize: 12, color: '#7b9e7e', marginTop: 3, fontWeight: '600' }}>
-                        {'★'.repeat(event.rating)}{'☆'.repeat(5 - event.rating)}
-                      </Text>
+                      <View style={{ marginTop: 3 }}>
+                        <StarDisplay value={event.rating} size={12} fillColor="#7b9e7e" />
+                      </View>
                     ) : null}
                     <Text style={{ fontSize: 10, color: '#c4b5a5', marginTop: 4 }}>
                       {relativeTime(event.created_at)}
