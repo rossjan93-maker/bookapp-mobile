@@ -98,6 +98,16 @@ export default function AddBookScreen() {
   const [doneMessage, setDoneMessage] = useState('');
   const [doneIsError, setDoneIsError] = useState(false);
 
+  // Pre-fetched on entering the confirm step. When non-null it means the
+  // selected book is *already* in the user's library — used to (a) default
+  // the Reading Status picker to its current value instead of forcing
+  // "Want to Read", (b) surface the inline "Already in your library" banner,
+  // and (c) relabel the action button so the user understands they're moving
+  // a shelf, not duplicating a row.
+  const [existingLibraryEntry, setExistingLibraryEntry] = useState<
+    { id: string; status: BookStatus; finished_at: string | null } | null
+  >(null);
+
   // Stale-request guard: each search increments this; responses only committed
   // when the seq value at response time still matches the current value.
   const searchSeqRef = useRef(0);
@@ -221,6 +231,56 @@ export default function AddBookScreen() {
     });
     setStep('confirm');
   }
+
+  // ── Already-in-library lookup ────────────────────────────────────────────
+  // Runs the moment the user lands on the confirm step. If the selected
+  // book has an externalId we already know about, see whether *this user*
+  // has it on a shelf. If yes, default the picker to the existing status
+  // and remember the entry so handleSave can short-circuit straight into
+  // transitionStatus() — same propagation the book detail screen uses.
+  // Stale-guarded by externalId so a quick back-and-pick-different-row
+  // can't write the wrong entry into a fresh selection.
+  useEffect(() => {
+    if (step !== 'confirm') return;
+    if (!supabase || !userId) return;
+    if (!selectedBook?.externalId) {
+      setExistingLibraryEntry(null);
+      return;
+    }
+    const id = selectedBook.externalId;
+    let cancelled = false;
+    (async () => {
+      const { data: bookRow } = await supabase
+        .from('books')
+        .select('id')
+        .eq('external_id', id)
+        .maybeSingle();
+      if (cancelled || !bookRow) {
+        if (!cancelled) setExistingLibraryEntry(null);
+        return;
+      }
+      const { data: ub } = await supabase
+        .from('user_books')
+        .select('id, status, finished_at')
+        .eq('user_id', userId)
+        .eq('book_id', bookRow.id)
+        .maybeSingle();
+      if (cancelled) return;
+      if (ub && (ub.status === 'want_to_read' || ub.status === 'reading' || ub.status === 'finished' || ub.status === 'dnf')) {
+        setExistingLibraryEntry({
+          id: ub.id as string,
+          status: ub.status,
+          finished_at: (ub.finished_at as string | null) ?? null,
+        });
+        // Default the picker to the existing status — the user is most
+        // likely re-finding a saved book, not trying to change shelves.
+        setChosenStatus(ub.status);
+      } else {
+        setExistingLibraryEntry(null);
+      }
+    })().catch(() => { if (!cancelled) setExistingLibraryEntry(null); });
+    return () => { cancelled = true; };
+  }, [step, selectedBook?.externalId, userId]);
 
   // ── Async enrichment of confirm card ─────────────────────────────────────
   // When the user lands on the confirm step with an Open Library work id,
@@ -436,6 +496,8 @@ export default function AddBookScreen() {
 
   function resetAndAddAnother() {
     setStep('search');
+    setExistingLibraryEntry(null);
+    setChosenStatus('want_to_read');
     setQuery('');
     setBookResults([]);
     setNoResults(false);
@@ -848,6 +910,30 @@ export default function AddBookScreen() {
           </View>
         )}
 
+        {/* Already-in-library banner — only when the user has this book on a shelf */}
+        {existingLibraryEntry && (
+          <View style={{
+            backgroundColor: '#fef6e7',
+            borderColor: '#f6c863',
+            borderWidth: 1,
+            borderRadius: 12,
+            paddingVertical: 12,
+            paddingHorizontal: 14,
+            marginBottom: 22,
+          }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: '#7a5a10', marginBottom: 2 }}>
+              Already in your library
+            </Text>
+            <Text style={{ fontSize: 12, color: '#8a6a1a', lineHeight: 17 }}>
+              Currently on your{' '}
+              <Text style={{ fontWeight: '700' }}>
+                {STATUS_OPTIONS.find(o => o.value === existingLibraryEntry.status)?.label ?? existingLibraryEntry.status}
+              </Text>
+              {' '}shelf. Pick a different status below to move it, or back out to leave it as is.
+            </Text>
+          </View>
+        )}
+
         {/* Status picker */}
         <Text style={{
           fontSize: 11,
@@ -960,7 +1046,13 @@ export default function AddBookScreen() {
             fontWeight: '700',
             letterSpacing: 0.2,
           }}>
-            {saving ? 'Saving…' : 'Add to Library'}
+            {saving
+              ? 'Saving…'
+              : existingLibraryEntry
+                ? (existingLibraryEntry.status === chosenStatus
+                    ? 'Already on this shelf'
+                    : `Move to ${STATUS_OPTIONS.find(o => o.value === chosenStatus)?.label ?? chosenStatus}`)
+                : 'Add to Library'}
           </Text>
         </TouchableOpacity>
       </ScrollView>
