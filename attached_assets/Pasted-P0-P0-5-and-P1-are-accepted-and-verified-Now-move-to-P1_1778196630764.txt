@@ -1,0 +1,71 @@
+P0, P0.5, and P1 are accepted and verified.
+
+Now move to P1.5: Trusted Catalog Ingestion.
+
+Goal:
+Reduce or eliminate first-write catalog poisoning risk without breaking add-book, import, scan, recommendation, or metadata repair flows.
+
+Context:
+P0.5 protects existing shared catalog rows from malicious overwrites.
+P1 added a basic books INSERT guardrail: non-empty title and author required, blank external_id rejected when provided, NULL external_id still allowed because add-book fallback and Goodreads import currently depend on it.
+Remaining risk:
+A malicious authenticated user can still be the first writer of a plausible-but-bad shared books row.
+
+Scope:
+Audit first. Do not make changes until the current insert model is fully mapped.
+
+Please investigate:
+
+1. Every books INSERT path
+   - app/add-book.tsx
+   - components/RecommendationsFeed.tsx
+   - components/RecEntryScreen.tsx
+   - lib/goodreadsExecutor.ts
+   - scan/barcode paths
+   - metadata repair or enrichment paths
+   - any other insert/upsert path
+
+2. For each insert path, identify:
+   - source of title
+   - source of author
+   - whether external_id is present
+   - whether ISBN/ISBN13 is present
+   - whether the data comes from Open Library, Google Books, Goodreads import, manual user input, or recommendation/intake flow
+   - whether the path creates a shared catalog row directly from client code
+   - whether the path can safely move to an RPC/server-side path
+
+3. Classify insert types:
+   - trusted provider-backed insert
+   - semi-trusted import insert
+   - manual user-created insert
+   - recommendation-generated insert
+   - repair/enrichment insert
+
+4. Recommend the safest architecture:
+   Options to evaluate:
+   - SECURITY DEFINER RPC for book creation
+   - provider-backed upsert_book_from_provider RPC
+   - separate user_book_custom_entries table for manual books with no provider identity
+   - low-confidence/quarantine state for unverified catalog rows
+   - external_id requirement only for provider-backed shared catalog rows
+   - keeping NULL external_id temporarily but marking those rows untrusted
+   - moving Google Books/Open Library lookup to a trusted server/edge function
+
+5. Identify the smallest safe mitigation we can ship now:
+   - Do not break Goodreads import.
+   - Do not break manual add fallback.
+   - Do not break scan flow.
+   - Do not break recommendations.
+   - Do not break metadataRepair.
+   - Do not weaken P0/P0.5/P1 protections.
+
+6. Deliver:
+   - insert-path table
+   - risk assessment by path
+   - recommended target architecture
+   - smallest safe implementation plan
+   - migration/app files likely affected
+   - whether this should be implemented now or split into P1.5a/P1.5b
+   - no code changes until you present the plan
+
+Stop after the audit and proposed plan.
