@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
   fetchAuthorBibliography,
+  fetchOLMeta,
   type AuthorBibliography,
   type AuthorBibliographyEntry,
 } from '../lib/openLibrary';
@@ -29,12 +30,15 @@ type Props = {
 };
 
 type SortMode = 'chronological' | 'rating';
+type DescState = { status: 'loading' } | { status: 'ready'; text: string | null };
+
+const CURRENT_YEAR = new Date().getFullYear();
 
 function _normTitle(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
-// Simple star renderer — half-stars rounded to nearest, capped at 5.
+// Half-star renderer (★★★★½). Caps at 5; rounds to nearest 0.5.
 function _stars(rating: number): string {
   const r = Math.max(0, Math.min(5, Math.round(rating * 2) / 2));
   const full = Math.floor(r);
@@ -42,9 +46,19 @@ function _stars(rating: number): string {
   return '★'.repeat(full) + (half ? '½' : '');
 }
 
-// Group entries by decade for the chronological view. Year-less entries
-// land in their own "Undated" bucket at the end so the timeline stays
-// honest.
+// Title initials for the no-cover placeholder. Skips short connector words
+// so "The Lost Apothecary" → "LA" instead of "TL".
+function _titleInitials(title: string): string {
+  const stop = new Set(['a', 'an', 'the', 'of', 'in', 'on', 'and', 'or', 'to', 'for']);
+  const words = title
+    .split(/[^a-zA-Z0-9]+/)
+    .filter(w => w && !stop.has(w.toLowerCase()));
+  const picks = words.slice(0, 2);
+  if (picks.length === 0) return title.slice(0, 2).toUpperCase();
+  return picks.map(w => w[0]?.toUpperCase() ?? '').join('');
+}
+
+// Group entries by decade. Year-less entries → "Undated" bucket at end.
 function _groupByDecade(entries: AuthorBibliographyEntry[]) {
   const groups = new Map<string, AuthorBibliographyEntry[]>();
   for (const e of entries) {
@@ -61,44 +75,87 @@ export function AuthorBibliographySheet({
 }: Props) {
   const insets = useSafeAreaInsets();
 
-  const [bib, setBib]         = useState<AuthorBibliography | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [sort, setSort]       = useState<SortMode>('chronological');
+  const [bib, setBib]                 = useState<AuthorBibliography | null>(null);
+  const [loading, setLoading]         = useState(false);
+  const [sort, setSort]               = useState<SortMode>('chronological');
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+
+  // Lazy-loaded description cache keyed by entry.olKey ("/works/OL...W").
+  // Uses a ref alongside state so the in-flight fetch dedupe doesn't trigger
+  // unnecessary re-renders. Persists across sort toggles within the sheet.
+  const descCache = useRef<Map<string, DescState>>(new Map());
+  const [, forceTick] = useState(0);
+  const bumpCache = () => forceTick(t => t + 1);
 
   useEffect(() => {
     if (!visible || !author) return;
     let cancelled = false;
     setLoading(true);
     setBib(null);
+    setExpandedKey(null);
     fetchAuthorBibliography(author)
       .then(result => { if (!cancelled) { setBib(result); setLoading(false); } })
       .catch(() => { if (!cancelled) { setBib(null); setLoading(false); } });
     return () => { cancelled = true; };
   }, [visible, author]);
 
+  function toggleExpanded(entry: AuthorBibliographyEntry) {
+    if (expandedKey === entry.olKey) {
+      setExpandedKey(null);
+      return;
+    }
+    setExpandedKey(entry.olKey);
+    if (!descCache.current.has(entry.olKey)) {
+      descCache.current.set(entry.olKey, { status: 'loading' });
+      bumpCache();
+      // fetchOLMeta accepts externalId — works key prefixed with /works/
+      // works because extractOLID strips the prefix internally.
+      fetchOLMeta(entry.olKey)
+        .then(meta => {
+          descCache.current.set(entry.olKey, { status: 'ready', text: meta.description });
+          bumpCache();
+        })
+        .catch(() => {
+          descCache.current.set(entry.olKey, { status: 'ready', text: null });
+          bumpCache();
+        });
+    }
+  }
+
   const currentNorm = currentTitle ? _normTitle(currentTitle) : '';
 
-  // Re-derive the sorted list whenever the user toggles modes. Chronological
-  // is the canonical OL order (already oldest→newest); rating sorts by
-  // ratings_average desc, with unrated entries falling to the bottom in
-  // their original order so the "career view" feel isn't lost.
-  const sortedEntries = useMemo(() => {
+  // Split released vs upcoming. "Upcoming" = year > current year (May 2026
+  // → upcoming starts at 2027). OL routinely lists pre-announced titles
+  // with their planned release year — we surface those at the top so a
+  // reader can spot "new from this author" before they commit a back-list
+  // pick.
+  const upcoming = useMemo(() => {
     if (!bib) return [];
-    if (sort === 'chronological') return bib.entries;
-    return [...bib.entries].sort((a, b) => {
+    return bib.entries.filter(e => e.year != null && e.year > CURRENT_YEAR);
+  }, [bib]);
+
+  const released = useMemo(() => {
+    if (!bib) return [];
+    return bib.entries.filter(e => e.year == null || e.year <= CURRENT_YEAR);
+  }, [bib]);
+
+  // Re-derive the released list whenever the user toggles modes. Released
+  // items are already chronological from OL; rating sorts desc by stars
+  // then count, with unrated falling to the bottom.
+  const sortedReleased = useMemo(() => {
+    if (sort === 'chronological') return released;
+    return [...released].sort((a, b) => {
       const ar = a.rating ?? -1;
       const br = b.rating ?? -1;
       if (br !== ar) return br - ar;
       return (b.ratingCount ?? 0) - (a.ratingCount ?? 0);
     });
-  }, [bib, sort]);
+  }, [released, sort]);
 
   const totalDated = bib ? bib.entries.filter(e => e.year != null).length : 0;
   const currentEntry = bib?.entries.find(e => _normTitle(e.title) === currentNorm) ?? null;
 
-  // Hero cover stack: pick up to 3 visually-strongest covers (rating-weighted)
-  // for the masthead. Falls back to the first 3 chronologically when no
-  // ratings are available.
+  // Hero stack — pick 3 visually-strongest covers (rating × log(count)).
   const heroCovers = useMemo(() => {
     if (!bib) return [];
     const withCovers = bib.entries.filter(e => !!e.coverUrl);
@@ -182,8 +239,6 @@ export function AuthorBibliographySheet({
                   marginBottom: 18,
                 }}>
                   {heroCovers.map((c, i) => {
-                    // Stagger the three covers — center one tallest/forward,
-                    // outer two slightly tilted and dimmed for depth.
                     const isCenter = i === 1 || heroCovers.length === 1;
                     const offset = i === 0 ? -42 : i === 2 ? 42 : 0;
                     const rotate = i === 0 ? '-8deg' : i === 2 ? '8deg' : '0deg';
@@ -222,9 +277,9 @@ export function AuthorBibliographySheet({
               <Text style={{ fontSize: 13, color: '#78716c', textAlign: 'center', marginTop: 6 }}>
                 {totalDated} published {totalDated === 1 ? 'work' : 'works'}
                 {bib.yearRange ? ` · ${bib.yearRange.from}–${bib.yearRange.to}` : ''}
+                {upcoming.length > 0 ? ` · ${upcoming.length} upcoming` : ''}
               </Text>
 
-              {/* Inline "you're viewing" pointer — only when we matched the current book */}
               {currentEntry && (
                 <View style={{
                   marginTop: 14,
@@ -245,46 +300,91 @@ export function AuthorBibliographySheet({
               )}
             </View>
 
-            {/* Sort toggle */}
-            <View style={{
-              flexDirection: 'row',
-              marginHorizontal: 20,
-              marginBottom: 16,
-              backgroundColor: '#ede9e4',
-              borderRadius: 10,
-              padding: 3,
-            }}>
-              {(['chronological', 'rating'] as SortMode[]).map(mode => {
-                const active = sort === mode;
-                return (
-                  <TouchableOpacity
-                    key={mode}
-                    onPress={() => setSort(mode)}
-                    style={{
-                      flex: 1,
-                      paddingVertical: 8,
-                      borderRadius: 8,
-                      alignItems: 'center',
-                      backgroundColor: active ? '#fefcf9' : 'transparent',
-                    }}
-                  >
-                    <Text style={{
-                      fontSize: 12,
-                      fontWeight: '700',
-                      color: active ? '#231f1b' : '#78716c',
-                      letterSpacing: 0.2,
-                    }}>
-                      {mode === 'chronological' ? 'By year' : 'By rating'}
+            {/* Upcoming releases — surfaced above the regular catalog so a
+                reader can spot pre-announced books before browsing back-list. */}
+            {upcoming.length > 0 && (
+              <View style={{ paddingHorizontal: 20, marginBottom: 22 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                  <View style={{
+                    backgroundColor: '#fef0d8',
+                    borderRadius: 4,
+                    paddingHorizontal: 6,
+                    paddingVertical: 2,
+                    marginRight: 8,
+                  }}>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: '#a36a14', letterSpacing: 0.8 }}>
+                      COMING SOON
                     </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+                  </View>
+                  <Text style={{ fontSize: 12, color: '#9e958d' }}>
+                    Announced for future release
+                  </Text>
+                </View>
+                <View style={{
+                  backgroundColor: '#fefcf9',
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: '#f0d9a8',
+                  overflow: 'hidden',
+                }}>
+                  {upcoming.map((entry, idx) => (
+                    <BibRow
+                      key={entry.olKey}
+                      entry={entry}
+                      isCurrent={_normTitle(entry.title) === currentNorm}
+                      isLast={idx === upcoming.length - 1}
+                      isUpcoming
+                      isExpanded={expandedKey === entry.olKey}
+                      descState={descCache.current.get(entry.olKey)}
+                      onToggle={() => toggleExpanded(entry)}
+                    />
+                  ))}
+                </View>
+              </View>
+            )}
 
-            {/* List */}
+            {/* Sort toggle (released only) */}
+            {released.length > 0 && (
+              <View style={{
+                flexDirection: 'row',
+                marginHorizontal: 20,
+                marginBottom: 16,
+                backgroundColor: '#ede9e4',
+                borderRadius: 10,
+                padding: 3,
+              }}>
+                {(['chronological', 'rating'] as SortMode[]).map(mode => {
+                  const active = sort === mode;
+                  return (
+                    <TouchableOpacity
+                      key={mode}
+                      onPress={() => setSort(mode)}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 8,
+                        borderRadius: 8,
+                        alignItems: 'center',
+                        backgroundColor: active ? '#fefcf9' : 'transparent',
+                      }}
+                    >
+                      <Text style={{
+                        fontSize: 12,
+                        fontWeight: '700',
+                        color: active ? '#231f1b' : '#78716c',
+                        letterSpacing: 0.2,
+                      }}>
+                        {mode === 'chronological' ? 'By year' : 'By rating'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* Released catalog */}
             <View style={{ paddingHorizontal: 20 }}>
               {sort === 'chronological' ? (
-                _groupByDecade(sortedEntries).map(([decade, items]) => (
+                _groupByDecade(sortedReleased).map(([decade, items]) => (
                   <View key={decade} style={{ marginBottom: 18 }}>
                     <Text style={{
                       fontSize: 11,
@@ -309,6 +409,9 @@ export function AuthorBibliographySheet({
                           entry={entry}
                           isCurrent={_normTitle(entry.title) === currentNorm}
                           isLast={idx === items.length - 1}
+                          isExpanded={expandedKey === entry.olKey}
+                          descState={descCache.current.get(entry.olKey)}
+                          onToggle={() => toggleExpanded(entry)}
                         />
                       ))}
                     </View>
@@ -323,28 +426,34 @@ export function AuthorBibliographySheet({
                   overflow: 'hidden',
                   marginBottom: 18,
                 }}>
-                  {sortedEntries.map((entry, idx) => (
+                  {sortedReleased.map((entry, idx) => (
                     <BibRow
                       key={entry.olKey}
                       entry={entry}
                       isCurrent={_normTitle(entry.title) === currentNorm}
-                      isLast={idx === sortedEntries.length - 1}
+                      isLast={idx === sortedReleased.length - 1}
+                      isExpanded={expandedKey === entry.olKey}
+                      descState={descCache.current.get(entry.olKey)}
+                      onToggle={() => toggleExpanded(entry)}
                     />
                   ))}
                 </View>
               )}
             </View>
 
-            {/* Footer source attribution */}
-            <Text style={{
-              fontSize: 11,
-              color: '#a8a098',
-              textAlign: 'center',
-              paddingHorizontal: 20,
-              lineHeight: 16,
-            }}>
-              Catalog data from Open Library. Some early or self-published works may be missing.
-            </Text>
+            {/* Footer attribution — both the catalog source AND the rating
+                source must be explicit so readers don't assume these are
+                Readstack community ratings. */}
+            <View style={{ paddingHorizontal: 24, marginTop: 4 }}>
+              <Text style={{
+                fontSize: 11,
+                color: '#a8a098',
+                textAlign: 'center',
+                lineHeight: 16,
+              }}>
+                Catalog and ratings from <Text style={{ fontWeight: '700' }}>Open Library</Text>, an open-data project run by the Internet Archive. Star ratings are aggregated from Open Library readers, not Readstack. Some early or self-published works may be missing artwork or metadata.
+              </Text>
+            </View>
           </ScrollView>
         )}
       </View>
@@ -353,70 +462,148 @@ export function AuthorBibliographySheet({
 }
 
 function BibRow({
-  entry, isCurrent, isLast,
+  entry, isCurrent, isLast, isUpcoming, isExpanded, descState, onToggle,
 }: {
-  entry: AuthorBibliographyEntry;
-  isCurrent: boolean;
-  isLast: boolean;
+  entry:      AuthorBibliographyEntry;
+  isCurrent:  boolean;
+  isLast:     boolean;
+  isUpcoming?: boolean;
+  isExpanded: boolean;
+  descState:  DescState | undefined;
+  onToggle:   () => void;
 }) {
   return (
-    <View style={{
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingVertical: 12,
-      paddingHorizontal: 14,
-      borderBottomWidth: isLast ? 0 : 1,
-      borderBottomColor: '#f0ece6',
-      backgroundColor: isCurrent ? SAGE_BG : 'transparent',
-      borderLeftWidth: isCurrent ? 3 : 0,
-      borderLeftColor: isCurrent ? SAGE : 'transparent',
-    }}>
-      {entry.coverUrl ? (
-        <Image
-          source={{ uri: entry.coverUrl }}
-          style={{ width: 46, height: 68, borderRadius: 3, backgroundColor: '#ede9e4' }}
-          resizeMode="cover"
-        />
-      ) : (
-        <View style={{
-          width: 46,
-          height: 68,
-          borderRadius: 3,
-          backgroundColor: '#ede9e4',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-          <Ionicons name="book-outline" size={20} color="#a8a098" />
-        </View>
-      )}
-      <View style={{ flex: 1, marginLeft: 12 }}>
-        <Text
-          style={{ fontSize: 14, fontWeight: '700', color: '#231f1b', lineHeight: 19 }}
-          numberOfLines={2}
-        >
-          {entry.title}
-        </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
-          <Text style={{ fontSize: 12, color: '#78716c' }}>
-            {entry.year ?? 'Undated'}
-            {entry.pageCount ? ` · ${entry.pageCount} pp` : ''}
+    <TouchableOpacity
+      onPress={onToggle}
+      activeOpacity={0.7}
+      style={{
+        borderBottomWidth: isLast ? 0 : 1,
+        borderBottomColor: '#f0ece6',
+        backgroundColor: isCurrent ? SAGE_BG : 'transparent',
+        borderLeftWidth: isCurrent ? 3 : 0,
+        borderLeftColor: isCurrent ? SAGE : 'transparent',
+      }}
+    >
+      <View style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+      }}>
+        <CoverOrPlaceholder coverUrl={entry.coverUrl} title={entry.title} />
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text
+            style={{ fontSize: 14, fontWeight: '700', color: '#231f1b', lineHeight: 19 }}
+            numberOfLines={2}
+          >
+            {entry.title}
           </Text>
-          {entry.rating != null && entry.ratingCount != null && entry.ratingCount > 0 && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 8 }}>
-              <Text style={{ fontSize: 12, color: '#c8a04a', letterSpacing: 0.5 }}>
-                {_stars(entry.rating)}
-              </Text>
-              <Text style={{ fontSize: 11, color: '#a8a098', marginLeft: 4 }}>
-                {entry.rating.toFixed(1)} · {entry.ratingCount.toLocaleString()}
-              </Text>
-            </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
+            <Text style={{ fontSize: 12, color: '#78716c' }}>
+              {isUpcoming
+                ? `Expected ${entry.year}`
+                : (entry.year ?? 'Undated')}
+              {entry.pageCount ? ` · ${entry.pageCount} pp` : ''}
+            </Text>
+            {entry.rating != null && entry.ratingCount != null && entry.ratingCount > 0 && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 8 }}>
+                <Text style={{ fontSize: 12, color: '#c8a04a', letterSpacing: 0.5 }}>
+                  {_stars(entry.rating)}
+                </Text>
+                <Text style={{ fontSize: 11, color: '#a8a098', marginLeft: 4 }}>
+                  {entry.rating.toFixed(1)} · {entry.ratingCount.toLocaleString()} OL
+                </Text>
+              </View>
+            )}
+          </View>
+          {isCurrent && (
+            <Text style={{ fontSize: 11, fontWeight: '700', color: SAGE_INK, marginTop: 4, letterSpacing: 0.3 }}>
+              CURRENTLY VIEWING
+            </Text>
           )}
         </View>
-        {isCurrent && (
-          <Text style={{ fontSize: 11, fontWeight: '700', color: SAGE_INK, marginTop: 4, letterSpacing: 0.3 }}>
-            CURRENTLY VIEWING
-          </Text>
-        )}
+        <Ionicons
+          name={isExpanded ? 'chevron-up' : 'chevron-down'}
+          size={16}
+          color="#a8a098"
+          style={{ marginLeft: 6 }}
+        />
+      </View>
+
+      {/* Expanded detail strip — lazy-loaded description from /works/.json */}
+      {isExpanded && (
+        <View style={{
+          paddingHorizontal: 14,
+          paddingBottom: 14,
+          paddingTop: 0,
+        }}>
+          <View style={{
+            backgroundColor: '#f5f1ec',
+            borderRadius: 10,
+            padding: 12,
+            marginLeft: 58, // align with the text column above (cover 46 + margin 12)
+          }}>
+            {(!descState || descState.status === 'loading') && (
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <ActivityIndicator size="small" color="#9e958d" />
+                <Text style={{ fontSize: 12, color: '#9e958d', marginLeft: 8 }}>
+                  Loading details…
+                </Text>
+              </View>
+            )}
+            {descState?.status === 'ready' && descState.text && (
+              <Text style={{ fontSize: 12.5, color: '#57534e', lineHeight: 18 }}>
+                {descState.text.replace(/\s+/g, ' ').trim()}
+              </Text>
+            )}
+            {descState?.status === 'ready' && !descState.text && (
+              <Text style={{ fontSize: 12, color: '#a8a098', fontStyle: 'italic' }}>
+                {isUpcoming
+                  ? 'No description available yet — this title hasn\'t been released.'
+                  : 'No description on file at Open Library for this title.'}
+              </Text>
+            )}
+          </View>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+// Cover image with a designed fallback when artwork is missing. The
+// placeholder uses the title's initials on a sage swatch with a faint
+// "spine" stripe so it reads as an intentional design choice rather than
+// a broken image. Same dimensions as the real cover so list rhythm holds.
+function CoverOrPlaceholder({ coverUrl, title }: { coverUrl: string | null; title: string }) {
+  const [errored, setErrored] = useState(false);
+  if (coverUrl && !errored) {
+    return (
+      <Image
+        source={{ uri: coverUrl }}
+        style={{ width: 46, height: 68, borderRadius: 3, backgroundColor: '#ede9e4' }}
+        resizeMode="cover"
+        onError={() => setErrored(true)}
+      />
+    );
+  }
+  return (
+    <View style={{
+      width: 46,
+      height: 68,
+      borderRadius: 3,
+      backgroundColor: SAGE_BG,
+      borderWidth: 1,
+      borderColor: '#d4dfd4',
+      overflow: 'hidden',
+      flexDirection: 'row',
+    }}>
+      {/* Faux spine stripe — sells the "book" silhouette */}
+      <View style={{ width: 4, backgroundColor: SAGE_DEEP, opacity: 0.25 }} />
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ fontSize: 13, fontWeight: '800', color: SAGE_DEEP, letterSpacing: 0.5 }}>
+          {_titleInitials(title)}
+        </Text>
+        <Ionicons name="book-outline" size={10} color={SAGE_DEEP} style={{ marginTop: 3, opacity: 0.5 }} />
       </View>
     </View>
   );
