@@ -1798,10 +1798,23 @@ export default function HomeScreen() {
                       type Item  = { book: typeof booksThisYear[number]; display: BookDisplay };
                       type Group = { seriesName: string | null; items: Item[] };
 
-                      const items: Item[] = booksThisYear.map(book => ({
-                        book,
-                        display: resolveBookDisplay(book),
-                      }));
+                      // Render order: oldest finished on the left → most
+                      // recent finished on the right, matching how a
+                      // physical "books I read this year" shelf fills up
+                      // chronologically as the year goes on. The query
+                      // returns finished_at DESC for other consumers
+                      // (lookups, counts), so we sort ascending here just
+                      // for the strip without disturbing booksThisYear.
+                      const items: Item[] = [...booksThisYear]
+                        .sort((a, b) => {
+                          const aT = a.finished_at ?? '';
+                          const bT = b.finished_at ?? '';
+                          return aT.localeCompare(bT); // ascending: oldest first
+                        })
+                        .map(book => ({
+                          book,
+                          display: resolveBookDisplay(book),
+                        }));
 
                       // Walk the list once, building runs of consecutive
                       // books that share a non-null seriesName. Bundles
