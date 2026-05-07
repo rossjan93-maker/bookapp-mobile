@@ -688,6 +688,17 @@ export default function BookDetailScreen() {
       // We only override when the resolved URL differs from what the screen
       // would otherwise show OR when the resolver flags a bundle (so the
       // externalId-fallback in CoverThumb gets neutralized too).
+      //
+      // IMPORTANT: a `null` resolver result is ONLY meant as suppression
+      // when the resolver flagged a bundle — that's the path where it
+      // actively rejected the cover. For individual-volume returns
+      // (path 3), a null `display.coverUrl` simply means the resolver
+      // had no DB cover to echo back; it does NOT mean "wipe the route
+      // param". Treating it as suppression caused series books opened
+      // without a persisted DB cover to flash the correct hero art and
+      // then snap to "NO COVER" once this hydration pass completed,
+      // because correctedCover.url=null overrides the route-param cover
+      // and the seriesCatalogCover fallback in the precedence chain.
       const incomingCover = coverUrl || dbCover || null;
       const display = resolveBookDisplay({
         title:       (title  ?? '') as string,
@@ -696,9 +707,18 @@ export default function BookDetailScreen() {
         cover_url:   dbCover,
         external_id: rawExtId,
       });
-      if (display.isBundle || display.coverUrl !== incomingCover) {
+      if (display.isBundle) {
+        // Bundle path — resolver's verdict is authoritative even when null
+        // (intentional suppression of box-set / omnibus art).
+        setCorrectedCover({ url: display.coverUrl, externalId: display.externalId });
+      } else if (display.coverUrl != null && display.coverUrl !== incomingCover) {
+        // Individual volume with a *better* canonical cover from the
+        // catalog (e.g. series-suffix path swapping in the right OL id).
         setCorrectedCover({ url: display.coverUrl, externalId: display.externalId });
       } else {
+        // Either the resolver agrees with what we already have, or it
+        // simply has no cover to offer — fall through to the existing
+        // precedence chain (route param → enriched → seriesCatalogCover).
         setCorrectedCover(null);
       }
 
