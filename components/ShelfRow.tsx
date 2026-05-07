@@ -155,6 +155,7 @@ export function ShelfRow({
                         width={THUMB_W}
                         height={THUMB_H}
                         radius={3}
+                        flat
                       />
                     </View>
                   )) : (
