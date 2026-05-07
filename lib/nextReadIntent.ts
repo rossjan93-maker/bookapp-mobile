@@ -242,9 +242,13 @@ export function getIntentExclusionReason(
 // book's subjects align with soft preferences.
 //
 // Principle: soft boosts influence rank within a tier but cannot override the
-// CoG classification. Maximum total boost is capped at ±0.05 per book.
+// CoG classification. Maximum total boost is capped at ±0.30 per book so that
+// matching books can actually overtake non-matching ones at typical 0.5–1.0
+// score ranges (the older ±0.05 cap was invisible to users — books matching
+// the chip stayed buried under higher-base-score non-matches).
 
-const SOFT_BOOST = 0.04;  // per matching soft signal
+const SOFT_BOOST       = 0.12;  // per matching soft signal
+const SOFT_BOOST_CAP   = 0.30;  // total cap across all soft signals
 
 export function computeIntentBoost(
   book: {
@@ -268,8 +272,8 @@ export function computeIntentBoost(
   if (s.intensity === 'high' && anySignal(corpus, INTENSITY_HIGH_SIGNALS)) delta += SOFT_BOOST;
   if (s.intensity === 'low'  && anySignal(corpus, INTENSITY_LOW_SIGNALS))  delta += SOFT_BOOST;
 
-  // Cap: intentional soft signals can nudge scores by at most 0.05
-  return Math.max(-0.05, Math.min(0.05, delta));
+  // Cap: intentional soft signals can nudge scores by at most SOFT_BOOST_CAP
+  return Math.max(-SOFT_BOOST_CAP, Math.min(SOFT_BOOST_CAP, delta));
 }
 
 // ── Public: UI label helpers ───────────────────────────────────────────────────
@@ -448,7 +452,7 @@ export function computeIntentBoostWithReasons(
   if (s.intensity === 'high' && anySignal(corpus, INTENSITY_HIGH_SIGNALS)) { delta += SOFT_BOOST; reasons.push('emotionally intense'); }
   if (s.intensity === 'low'  && anySignal(corpus, INTENSITY_LOW_SIGNALS))  { delta += SOFT_BOOST; reasons.push('low intensity');        }
 
-  return { delta: Math.max(-0.05, Math.min(0.05, delta)), reasons };
+  return { delta: Math.max(-SOFT_BOOST_CAP, Math.min(SOFT_BOOST_CAP, delta)), reasons };
 }
 
 // ── mergeIntents ──────────────────────────────────────────────────────────────

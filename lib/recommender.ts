@@ -2196,7 +2196,7 @@ export function getRankedRecs(
         const enrichment = book.external_id ? enrichmentMap.get(book.external_id) : undefined;
         const ct = enrichment?.consensus_traits;
         if (ct) {
-          const MOOD_BOOST = 0.04;
+          const MOOD_BOOST = 0.12;
           if (moodMode === 'light_fun') {
             if ((ct.emotionality ?? 0.5) < 0.4 && (ct.pacing ?? 0) > 0.6 && (ct.literary_prose ?? 0.5) < 0.4) {
               moodDelta = MOOD_BOOST;
@@ -2226,7 +2226,11 @@ export function getRankedRecs(
         }
       }
 
-      const totalBoost = Math.max(-0.05, Math.min(0.05, boost + moodDelta));
+      // Cap raised from ±0.05 → ±0.30 so chip selections actually move
+      // matching books past non-matching ones at typical 0.5-1.0 scores.
+      // Soft boosts still can't override CoG rejection (those are −9999)
+      // or hard-filter exclusions (handled above).
+      const totalBoost = Math.max(-0.30, Math.min(0.30, boost + moodDelta));
       if (totalBoost !== 0) {
         book.score = +Math.max(0, book.score + totalBoost).toFixed(3);
         if (totalBoost > 0) softBoostedCount++;
