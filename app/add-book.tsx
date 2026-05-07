@@ -20,6 +20,8 @@ import {
 } from '../lib/bookSearch';
 import { findSeriesForBook, getSeriesCatalog } from '../lib/seriesCatalog';
 import { fetchOLMeta } from '../lib/openLibrary';
+import { invalidateBookDataCaches } from '../lib/tabCache';
+import { clearRecSession } from '../lib/recSession';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -375,6 +377,21 @@ export default function AddBookScreen() {
         event_type: 'book_finished',
         book_id:    bookId,
       });
+    }
+
+    // Propagate the new shelf state across every surface that caches book
+    // data: Library tab gallery + smart shelves, For-You feed (rec session),
+    // Stats screen, etc. Without these calls the user lands back on Library
+    // and sees nothing change until a hard refresh — the exact bug the user
+    // keeps hitting after Add-to-Library. Mirrors the propagation that
+    // `transitionStatus` triggers from the book detail screen.
+    invalidateBookDataCaches();
+    if (chosenStatus === 'reading') {
+      // Same rule as in book/[id].tsx handleTransition: any move that affects
+      // what counts as "currently reading" wipes the For-You session so the
+      // next focus on that tab re-runs the recommender against the fresh
+      // shelf state (see RecommendationsFeed's session-cleared focus effect).
+      clearRecSession();
     }
 
     setDoneMessage(`"${selectedBook.title}" added to your library.`);

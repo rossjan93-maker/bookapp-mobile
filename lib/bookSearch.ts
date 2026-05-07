@@ -51,6 +51,95 @@ function warnMissingGbKey(): void {
 
 const OL_FIELDS = 'key,title,author_name,cover_i,cover_edition_key,number_of_pages_median,first_publish_year';
 
+// ─── Typo-tolerant author entity helpers ─────────────────────────────────────
+// Damerau-friendly Levenshtein, capped at distance 3 for early exit. Used to
+// decide whether an Open Library author hit is a plausible fuzzy match for
+// the user's query (e.g. "tara" ↔ "tana" = 1, accept; "tara" ↔ "smith" = 5,
+// reject). Kept inline — pulling in a dependency for ~25 lines isn't worth it.
+function _editDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  const m = a.length, n = b.length;
+  if (Math.abs(m - n) > 3) return 99;
+  const dp: number[] = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0]; dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = dp[j];
+      dp[j] = a.charCodeAt(i - 1) === b.charCodeAt(j - 1)
+        ? prev
+        : Math.min(prev, dp[j], dp[j - 1]) + 1;
+      prev = tmp;
+    }
+  }
+  return dp[n];
+}
+
+// Author name is "close" to the query when every query token has at least one
+// name token within edit-distance 2 AND length-difference 2. This catches
+// 1–2 char typos ("tara french" → "Tana French", "stephne king" → "Stephen
+// King") without admitting wildly different authors.
+function _namesAreClose(query: string, name: string): boolean {
+  const qTokens = query.toLowerCase().split(/\s+/).filter(t => t.length >= 2);
+  const nTokens = name.toLowerCase().replace(/[.,]/g, '').split(/\s+/).filter(t => t.length >= 1);
+  if (qTokens.length === 0 || nTokens.length === 0) return false;
+  return qTokens.every(qt => nTokens.some(nt =>
+    Math.abs(qt.length - nt.length) <= 2 && _editDistance(qt, nt) <= 2,
+  ));
+}
+
+// Open Library has a dedicated author-entity index with built-in fuzzy match.
+// We use it as a typo-tolerance layer: when the query looks like a person's
+// name (e.g. "tara french") we ask OL "which author entities sound like
+// this?", filter to ones whose name is fuzzy-close to the query AND has a
+// real catalog (≥ 3 works), then pull each matched author's catalog via
+// `author_key=`. The returned books are merged in front of the standard
+// scored results — the user typed an author name, so author-confirmed
+// books are the strongest possible signal.
+async function fetchOLByAuthorEntity(query: string): Promise<BookResult[]> {
+  const t0 = Date.now();
+  try {
+    const authRes = await fetchWithTimeout(
+      `https://openlibrary.org/search/authors.json?q=${encodeURIComponent(query)}&limit=5`,
+    );
+    if (!authRes.ok) {
+      if (__DEV__) console.log(`[bookSearch] OL author-entity HTTP ${authRes.status}`);
+      return [];
+    }
+    const authJson = await authRes.json() as {
+      docs?: { key?: string; name?: string; work_count?: number }[];
+    };
+    const candidates = authJson.docs ?? [];
+
+    // Filter to fuzzy-close authors with non-trivial catalogs. Cap at 2 to
+    // avoid drowning the result list with similarly-named distant authors.
+    const matched = candidates
+      .filter(a => typeof a.name === 'string' && a.key
+        && (a.work_count ?? 0) >= 3
+        && _namesAreClose(query, a.name))
+      .slice(0, 2);
+
+    if (__DEV__) {
+      console.log(`[bookSearch] OL author-entity q="${query}" ${Date.now() - t0}ms — ${candidates.length} candidates → ${matched.length} matched (${matched.map(a => a.name).join(', ') || 'none'})`);
+    }
+    if (matched.length === 0) return [];
+
+    const catalogPromises = matched.map(a => {
+      const key = (a.key as string).replace(/^\/?authors\//, '');
+      const url = `https://openlibrary.org/search.json?author_key=${encodeURIComponent(key)}&fields=${OL_FIELDS}&sort=rating&limit=15`;
+      return fetchWithTimeout(url)
+        .then(r => r.ok ? r.json() as Promise<{ docs?: BookResult[] }> : { docs: [] as BookResult[] })
+        .then(j => j.docs ?? [])
+        .catch(() => [] as BookResult[]);
+    });
+    const catalogs = await Promise.all(catalogPromises);
+    return catalogs.flat();
+  } catch (err) {
+    if (__DEV__) console.log('[bookSearch] OL author-entity failed:', (err as Error)?.message ?? err);
+    return [];
+  }
+}
+
 // ─── Network helpers ──────────────────────────────────────────────────────────
 // Mobile networks routinely drop or stall fetches. Without timeouts a single
 // hung request will keep the UI's "Searching…" spinner spinning forever and
@@ -479,8 +568,17 @@ export async function searchBooks(
     }).catch(() => { /* GB errors logged inside fetchGoogleBooks */ });
   }
 
-  const [gbBooks, ...olResponses] = await Promise.all([
+  // Author-entity typo fallback fires in parallel — only adds latency when
+  // the person-name heuristic matches, and even then it's a single OL call
+  // plus up to 2 catalog fetches (worst case ~600ms; usually 200–400ms and
+  // overlapped with the much slower OL keyword variants).
+  const authorEntityPromise: Promise<BookResult[]> = looksLikePersonName
+    ? fetchOLByAuthorEntity(searchQuery)
+    : Promise.resolve([]);
+
+  const [gbBooks, authorEntityBooks, ...olResponses] = await Promise.all([
     gbPromise,
+    authorEntityPromise,
     ...olFetches,
   ]);
 
@@ -500,11 +598,37 @@ export async function searchBooks(
 
   const lastTokenIncomplete = lastTok.length <= 3;
 
-  if (scored.hasHigh || (scored.hasMedium && !lastTokenIncomplete)) {
+  // Prepend author-entity books (deduped) — they're the strongest possible
+  // signal for a person-name query because OL's author index resolved the
+  // name (typo-tolerantly) to a real author entity. Without this, "tara
+  // french" returns only the academic Tara French + Tara Duncan books,
+  // even though the user clearly meant "Tana French". The standard scorer
+  // can't help here: it requires exact author_name token match, which a
+  // typo defeats by definition.
+  let finalResults = scored.results;
+  let finalHasHigh = scored.hasHigh;
+  let finalHasMedium = scored.hasMedium;
+  if (authorEntityBooks.length > 0) {
+    const seen = new Set(scored.results.map(b => _dedupKey(b.title, b.author_name?.[0])));
+    const fresh: BookResult[] = [];
+    for (const b of authorEntityBooks) {
+      const k = _dedupKey(b.title, b.author_name?.[0]);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      fresh.push(b);
+    }
+    if (fresh.length > 0) {
+      finalResults = [...fresh, ...scored.results];
+      finalHasHigh = true;
+      finalHasMedium = true;
+    }
+  }
+
+  if (finalHasHigh || (finalHasMedium && !lastTokenIncomplete)) {
     const mainResult: SearchBooksResult = {
-      results: scored.results,
-      hasHigh: scored.hasHigh,
-      hasMedium: scored.hasMedium,
+      results: finalResults,
+      hasHigh: finalHasHigh,
+      hasMedium: finalHasMedium,
       lastTokenIncomplete,
       noResults: false,
       weakQuery: false,
