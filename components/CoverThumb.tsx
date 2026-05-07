@@ -69,14 +69,20 @@ type Props = {
 // 3D treatment scales softly with the cover's height so a 24×36 thumbnail
 // doesn't get the same shadow weight as a 200×300 hero. Capped on both ends
 // so even tiny / huge covers stay visually consistent.
+//
+// Tuned to read as a book genuinely hovering above the page: broad soft
+// ambient shadow biased downward (no horizontal offset, large blur) so the
+// cover feels lifted rather than just outlined. Combined with the page-edge
+// accents below, this gives every cover a noticeably more dimensional feel
+// than the prior near-shadow values.
 function _shadowFor(height: number) {
   const scale = Math.max(0.55, Math.min(1.4, height / 80));
   return {
     shadowColor:   '#000',
-    shadowOpacity: 0.14,
-    shadowRadius:  3 * scale,
-    shadowOffset:  { width: 1, height: 2 * scale },
-    elevation:     Math.round(2 * scale),
+    shadowOpacity: 0.22,
+    shadowRadius:  9 * scale,
+    shadowOffset:  { width: 0, height: 6 * scale },
+    elevation:     Math.round(6 * scale),
   };
 }
 
@@ -239,26 +245,41 @@ export function CoverThumb({
 function _PageEdgeAccents({ radius }: { radius: number }) {
   return (
     <>
+      {/* Spine — narrow dark gutter on the left edge */}
       <View
         pointerEvents="none"
         style={{
           position: 'absolute',
           top: 0, bottom: 0, left: 0,
-          width: 1,
-          backgroundColor: 'rgba(0,0,0,0.08)',
+          width: 1.5,
+          backgroundColor: 'rgba(0,0,0,0.14)',
           borderTopLeftRadius:    radius,
           borderBottomLeftRadius: radius,
         }}
       />
+      {/* Page sheen — bright catch-light on the right edge (cut pages) */}
       <View
         pointerEvents="none"
         style={{
           position: 'absolute',
           top: 0, bottom: 0, right: 0,
-          width: 1.5,
-          backgroundColor: 'rgba(255,255,255,0.22)',
+          width: 2,
+          backgroundColor: 'rgba(255,255,255,0.32)',
           borderTopRightRadius:    radius,
           borderBottomRightRadius: radius,
+        }}
+      />
+      {/* Top-edge highlight — thin lighter strip suggesting the page-block
+          top, sells the cover as a 3D object catching ambient light. */}
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          top: 0, left: 0, right: 0,
+          height: 1,
+          backgroundColor: 'rgba(255,255,255,0.18)',
+          borderTopLeftRadius:  radius,
+          borderTopRightRadius: radius,
         }}
       />
     </>
