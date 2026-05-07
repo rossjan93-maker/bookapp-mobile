@@ -850,70 +850,15 @@ export function RecommendationsFeed({
           {/* Guided tour step 0 */}
           {guidedStep === 0 && hasCards && <GuidedActionBanner />}
 
-          {/* ── Currently Reading bucket ── */}
-          {visibleConts.length > 0 && (
-            <>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: 6, paddingLeft: 10, borderLeftWidth: 3, borderLeftColor: SAGE_DEEP }}>
-                <View>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', letterSpacing: -0.1 }}>Currently Reading</Text>
-                  <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>Pick up where you left off</Text>
-                </View>
-              </View>
-              {visibleConts.map((rec, idx) => {
-                const card = (
-                  <RecCard
-                    key={rec.id}
-                    book={rec}
-                    featured={idx === 0}
-                    isExpert={recMode === 'expert'}
-                    onSave={() => handleSave(rec)}
-                    onDismiss={() => handleDismiss(rec)}
-                    onMoreLikeThis={() => handleMoreLikeThis(rec)}
-                    onImpression={() => handleImpression(rec)}
-                    onExplanationOpen={() => handleExplanationOpen(rec)}
-                  />
-                );
-                return idx === 0 && wtRef
-                  ? <View key={rec.id} ref={wtRef}>{card}</View>
-                  : card;
-              })}
-              {visibleDiscs.length > 0 && <View style={{ height: 6 }} />}
-            </>
-          )}
-
-          {/* ── Discover Next bucket ── */}
-          {visibleDiscs.length > 0 && (
-            <>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: visibleConts.length === 0 ? 0 : 2, paddingLeft: 10, borderLeftWidth: 3, borderLeftColor: '#ede9e4' }}>
-                <View>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', letterSpacing: -0.1 }}>Discover Next</Text>
-                  <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>Fresh picks based on what you've loved</Text>
-                </View>
-              </View>
-              {visibleDiscs.map((rec, idx) => {
-                const isFirstVisible = idx === 0 && visibleConts.length === 0;
-                const card = (
-                  <RecCard
-                    key={rec.id}
-                    book={rec}
-                    featured={isFirstVisible}
-                    isExpert={recMode === 'expert'}
-                    onSave={() => handleSave(rec)}
-                    onDismiss={() => handleDismiss(rec)}
-                    onMoreLikeThis={() => handleMoreLikeThis(rec)}
-                    onImpression={() => handleImpression(rec)}
-                    onExplanationOpen={() => handleExplanationOpen(rec)}
-                  />
-                );
-                return isFirstVisible && wtRef
-                  ? <View key={rec.id} ref={wtRef}>{card}</View>
-                  : card;
-              })}
-            </>
-          )}
-
-          {/* ── Your Next Read — mood / reading energy panel ── */}
-          <View style={{ marginTop: 12 }}>
+          {/* ── Your Next Read — mood / reading energy panel ──
+              Rendered ABOVE the recommendation buckets so it acts as an
+              optional steering filter the user can reach for if the
+              initial picks don't match their current mood. The panel
+              defaults to its compact collapsed pill so it never crowds
+              the recs themselves; expanding it reveals the chip groups
+              and Apply/Clear actions that re-run the rec pipeline with
+              an active NextReadIntent. */}
+          <View style={{ marginBottom: 14 }}>
             {/* ── Collapsed trigger row ── */}
             {!intentPanelOpen && (
               <TouchableOpacity
@@ -928,11 +873,18 @@ export function RecommendationsFeed({
                   borderColor: activeIntentLabel ? '#7b9e7e' : '#ede9e4',
                 }}
               >
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#9e958d', letterSpacing: 0.6, flex: 1 }}>
-                  {activeIntentLabel
-                    ? `YOUR NEXT READ  ·  ${activeIntentLabel.toUpperCase()}`
-                    : 'YOUR NEXT READ'}
-                </Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#9e958d', letterSpacing: 0.6 }}>
+                    {activeIntentLabel
+                      ? `YOUR NEXT READ  ·  ${activeIntentLabel.toUpperCase()}`
+                      : 'YOUR NEXT READ'}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: '#9e958d', marginTop: 2 }}>
+                    {activeIntentLabel
+                      ? 'Tap to adjust or clear'
+                      : 'Steer the picks below by mood, pace, or tone'}
+                  </Text>
+                </View>
                 <Text style={{ fontSize: 13, color: '#c4b5a5' }}>›</Text>
               </TouchableOpacity>
             )}
@@ -1135,6 +1087,68 @@ export function RecommendationsFeed({
               </View>
             )}
           </View>
+
+          {/* ── Currently Reading bucket ── */}
+          {visibleConts.length > 0 && (
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: 6, paddingLeft: 10, borderLeftWidth: 3, borderLeftColor: SAGE_DEEP }}>
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', letterSpacing: -0.1 }}>Currently Reading</Text>
+                  <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>Pick up where you left off</Text>
+                </View>
+              </View>
+              {visibleConts.map((rec, idx) => {
+                const card = (
+                  <RecCard
+                    key={rec.id}
+                    book={rec}
+                    featured={idx === 0}
+                    isExpert={recMode === 'expert'}
+                    onSave={() => handleSave(rec)}
+                    onDismiss={() => handleDismiss(rec)}
+                    onMoreLikeThis={() => handleMoreLikeThis(rec)}
+                    onImpression={() => handleImpression(rec)}
+                    onExplanationOpen={() => handleExplanationOpen(rec)}
+                  />
+                );
+                return idx === 0 && wtRef
+                  ? <View key={rec.id} ref={wtRef}>{card}</View>
+                  : card;
+              })}
+              {visibleDiscs.length > 0 && <View style={{ height: 6 }} />}
+            </>
+          )}
+
+          {/* ── Discover Next bucket ── */}
+          {visibleDiscs.length > 0 && (
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: visibleConts.length === 0 ? 0 : 2, paddingLeft: 10, borderLeftWidth: 3, borderLeftColor: '#ede9e4' }}>
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#231f1b', letterSpacing: -0.1 }}>Discover Next</Text>
+                  <Text style={{ fontSize: 11, color: '#78716c', marginTop: 1 }}>Fresh picks based on what you've loved</Text>
+                </View>
+              </View>
+              {visibleDiscs.map((rec, idx) => {
+                const isFirstVisible = idx === 0 && visibleConts.length === 0;
+                const card = (
+                  <RecCard
+                    key={rec.id}
+                    book={rec}
+                    featured={isFirstVisible}
+                    isExpert={recMode === 'expert'}
+                    onSave={() => handleSave(rec)}
+                    onDismiss={() => handleDismiss(rec)}
+                    onMoreLikeThis={() => handleMoreLikeThis(rec)}
+                    onImpression={() => handleImpression(rec)}
+                    onExplanationOpen={() => handleExplanationOpen(rec)}
+                  />
+                );
+                return isFirstVisible && wtRef
+                  ? <View key={rec.id} ref={wtRef}>{card}</View>
+                  : card;
+              })}
+            </>
+          )}
 
           {/* Undo toast */}
           {dismissPending && (
