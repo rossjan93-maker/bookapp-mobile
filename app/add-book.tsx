@@ -22,6 +22,7 @@ import { findSeriesForBook, getSeriesCatalog } from '../lib/seriesCatalog';
 import { fetchOLMeta } from '../lib/openLibrary';
 import { invalidateBookDataCaches } from '../lib/tabCache';
 import { clearRecSession } from '../lib/recSession';
+import { transitionStatus } from '../lib/userBookActions';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -330,14 +331,47 @@ export default function AddBookScreen() {
 
     const { data: existingUserBook } = await supabase
       .from('user_books')
-      .select('id, status')
+      .select('id, status, finished_at')
       .eq('user_id', userId)
       .eq('book_id', bookId)
       .maybeSingle();
 
     if (existingUserBook) {
-      const label = STATUS_OPTIONS.find(o => o.value === existingUserBook.status)?.label ?? existingUserBook.status;
-      setDoneMessage(`Already in your library — ${label}.`);
+      // Two cases:
+      //   (a) Same status the user picked → no-op, friendly "already there".
+      //   (b) Different status → user forgot the book was already saved and
+      //       is implicitly asking to change its shelf. Route through
+      //       transitionStatus() so the change picks up history snapshots,
+      //       activity events, recommendation sync, and paused_at clearing
+      //       — exactly the same propagation the book detail screen gets.
+      const oldLabel = STATUS_OPTIONS.find(o => o.value === existingUserBook.status)?.label ?? existingUserBook.status;
+      if (existingUserBook.status === chosenStatus) {
+        setDoneMessage(`Already in your library — ${oldLabel}.`);
+        setDoneIsError(false);
+        setSaving(false);
+        setStep('done');
+        return;
+      }
+
+      const { error: transErr } = await transitionStatus(supabase, {
+        userBookId:         existingUserBook.id,
+        bookId,
+        userId,
+        newStatus:          chosenStatus,
+        existingFinishedAt: existingUserBook.finished_at as string | null | undefined,
+      });
+      if (transErr) {
+        setDoneMessage(transErr);
+        setDoneIsError(true);
+        setSaving(false);
+        setStep('done');
+        return;
+      }
+
+      const newLabel = STATUS_OPTIONS.find(o => o.value === chosenStatus)?.label ?? chosenStatus;
+      invalidateBookDataCaches();
+      if (chosenStatus === 'reading') clearRecSession();
+      setDoneMessage(`Moved "${selectedBook.title}" from ${oldLabel} to ${newLabel}.`);
       setDoneIsError(false);
       setSaving(false);
       setStep('done');
