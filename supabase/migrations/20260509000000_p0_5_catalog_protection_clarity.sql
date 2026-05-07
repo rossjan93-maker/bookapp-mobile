@@ -134,7 +134,9 @@ begin
 
   if old.description is not null and old.description <> ''
      and new.description is distinct from old.description then
-    v_violations := v_violations || 'description (fill-empty; currently set, attempted change)';
+    v_violations := v_violations || format(
+      'description (fill-empty; currently set with %s chars, attempted change)',
+      length(old.description));
   end if;
 
   if old.isbn is not null and old.isbn <> ''
@@ -169,7 +171,9 @@ begin
 
   if old.additional_authors is not null and old.additional_authors <> ''
      and new.additional_authors is distinct from old.additional_authors then
-    v_violations := v_violations || 'additional_authors (fill-empty; currently set, attempted change)';
+    v_violations := v_violations || format(
+      'additional_authors (fill-empty; current=%L attempted=%L)',
+      old.additional_authors, new.additional_authors);
   end if;
 
   -- ── Provider / trusted-write only (fill-empty for arrays + text) ─────────
