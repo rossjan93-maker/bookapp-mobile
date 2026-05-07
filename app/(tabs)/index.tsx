@@ -1291,10 +1291,11 @@ export default function HomeScreen() {
                                         forest-green progress bar and a single
                                         status line ("On pace · …") below.
             ROW 3 · Completed Books  — horizontal scroll of individual volume
-                                        covers (never bundles) standing on a
-                                        subtle wooden shelf with a soft drop
-                                        shadow. Same-series adjacent runs are
-                                        tightened together for visual grouping.
+                                        covers (never bundles), framed by soft
+                                        edge-fades on the left/right so books
+                                        glide in and out of view. Same-series
+                                        adjacent runs are tightened together
+                                        for visual grouping.
           The walkthrough target attaches here whenever the user has no current reads. */}
       {((yearlyGoal && yearlyGoal > 0) ||
         currentMonthWrap.pagesRead > 0 ||
@@ -1771,10 +1772,12 @@ export default function HomeScreen() {
                 If there's no yearly goal (and therefore no progress bar /
                 no toggle), the shelf renders unconditionally so the books
                 are still reachable.
-                Covers stand on a thin wood-toned plank with a soft drop
-                shadow so they feel grounded — never floating. Each book
-                runs through resolveBookDisplay() which returns either an
-                individual-volume cover or a placeholder; bundle artwork
+                Premium horizontal scroller — no faux-wood plank. Covers
+                glide on the page surface itself, framed by soft edge-fades
+                on the left/right so books appear to slide in and out of
+                view rather than getting hard-cut by the column edge. Each
+                book runs through resolveBookDisplay() which returns either
+                an individual-volume cover or a placeholder; bundle artwork
                 is never shown. Same-series adjacent runs sit closer
                 together so the eye reads them as a unit; bundles always
                 render standalone and never join a cluster. */}
@@ -1785,13 +1788,18 @@ export default function HomeScreen() {
                 borderTopWidth: 1,
                 borderTopColor: '#ede9e4',
               }}>
-                <View>
+                <View style={{ position: 'relative' }}>
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
+                    decelerationRate="fast"
+                    overScrollMode="never"
                     contentContainerStyle={{
-                      alignItems:   'flex-end',
-                      paddingRight: 16,
+                      alignItems:    'flex-end',
+                      paddingLeft:   16,
+                      paddingRight:  24,
+                      paddingTop:    4,
+                      paddingBottom: 4,
                     }}
                   >
                     {(() => {
@@ -1901,25 +1909,31 @@ export default function HomeScreen() {
                       });
                     })()}
                   </ScrollView>
-                  {/* Subtle wood plank — a thin warm strip that grounds the
-                      covers without dominating. */}
-                  <LinearGradient
-                    colors={['#d4b896', '#a8845f']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 0, y: 1 }}
-                    style={{
-                      height:       6,
-                      borderRadius: 1,
-                    }}
-                  />
-                  {/* Soft drop shadow under the plank — sells the depth
-                      so the shelf reads as sitting in front of the page. */}
+                  {/* Premium edge fades — covers appear to slide in/out
+                      of view rather than getting hard-cut by the column
+                      edge. Color matches the parent card (#fefcf9) so the
+                      gradient blends invisibly into the surface. */}
                   <LinearGradient
                     pointerEvents="none"
-                    colors={['rgba(60, 40, 20, 0.16)', 'rgba(60, 40, 20, 0)']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 0, y: 1 }}
-                    style={{ height: 8 }}
+                    colors={['#fefcf9', 'rgba(254,252,249,0)']}
+                    start={{ x: 0, y: 0.5 }}
+                    end={{ x: 1, y: 0.5 }}
+                    style={{
+                      position: 'absolute',
+                      top: 0, bottom: 0, left: 0,
+                      width: 22,
+                    }}
+                  />
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={['rgba(254,252,249,0)', '#fefcf9']}
+                    start={{ x: 0, y: 0.5 }}
+                    end={{ x: 1, y: 0.5 }}
+                    style={{
+                      position: 'absolute',
+                      top: 0, bottom: 0, right: 0,
+                      width: 28,
+                    }}
                   />
                 </View>
               </View>
