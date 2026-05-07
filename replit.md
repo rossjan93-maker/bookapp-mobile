@@ -96,6 +96,7 @@ _Populate as you build_
 - **Goodreads dedup:** title+author guard in `lib/goodreadsExecutor.ts` prevents duplicate book rows.
 - **Native changes:** run `npm run build:android:dev` (or iOS equivalent), not just a JS reload.
 - **Top-of-screen padding:** new full-screen routes must use `useScreenTopPadding()` — never bare `SafeAreaView` (no-op on web/Android) and never hardcoded `paddingTop: 56/60`.
+- **Multi-column `books` UPDATE:** the catalog-protection trigger is fail-loud and atomic — a single rejected column rejects the entire patch. Any new code that PATCHes `books` from a non-service-role context must isolate potentially-protected writes (e.g. cover upgrades that overwrite a non-empty `cover_url`) into their own `await` so the expected 403 doesn't poison legitimate fill-empty patches built in the same loop iteration. See `lib/metadataRepair.ts` cover-upgrade branch for the established pattern.
 
 ## Pointers
 - Supabase: https://supabase.com/docs

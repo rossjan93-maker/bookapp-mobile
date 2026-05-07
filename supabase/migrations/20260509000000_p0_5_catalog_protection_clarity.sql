@@ -26,9 +26,10 @@
 -- Bypass semantics:
 --   The trigger short-circuits when auth.uid() IS NULL — i.e. the request
 --   reached the database with no end-user JWT context. This branch is taken
---   by: (a) service-role JWTs (no `sub` claim → auth.uid() returns NULL),
---   (b) direct DB sessions used by migrations / edge functions running as
---   the table owner, (c) anonymous PostgREST requests with no Authorization
+--   by: (a) service-role connections / JWTs (Supabase resolves auth.uid() to
+--   NULL for service-role contexts), (b) direct DB sessions used by
+--   migrations / edge functions running as the table owner, (c) anonymous
+--   PostgREST requests with no Authorization
 --   header. Cases (a) and (b) are the trusted-write paths; case (c) is safe
 --   because RLS on books UPDATE requires the row to belong to the caller's
 --   library, so an anon UPDATE matches 0 rows and the trigger never fires.
