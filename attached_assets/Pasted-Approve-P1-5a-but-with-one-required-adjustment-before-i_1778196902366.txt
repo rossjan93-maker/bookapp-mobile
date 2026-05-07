@@ -1,0 +1,46 @@
+Approve P1.5a, but with one required adjustment before implementation.
+
+Do not fold in P1.5b. Defer the trusted provider-backed RPC / edge-function architecture to a separate task.
+
+Do not normalize the onboarding gb_ prefix in this batch. Accept both gb_ and gb: in validation for now, document the inconsistency, and defer normalization to P1.5b or a later metadata-identity cleanup task.
+
+Required adjustment:
+Handle existing books rows carefully when adding provenance_state.
+
+Concern:
+If the migration adds provenance_state NOT NULL DEFAULT 'unverified', all existing books rows may become unverified with provenance_inserted_by = NULL. Then the proposed Goodreads dedup filter:
+provenance_state = 'verified' OR provenance_inserted_by = auth.uid()
+would ignore existing legacy catalog rows, which could create duplicate books during import.
+
+Please adjust the plan to include one of these approaches:
+
+Preferred:
+- Add provenance_state values: 'unverified', 'verified', and 'legacy'
+- Backfill existing rows to provenance_state = 'legacy'
+- New non-service-role inserts become 'unverified'
+- Service-role/provider-confirmed rows can become 'verified'
+- Goodreads dedup should match:
+  provenance_state IN ('verified', 'legacy') OR provenance_inserted_by = auth.uid()
+
+Alternative:
+- Backfill existing rows to 'verified' for continuity, but document this as a legacy-grandfathering decision, not proof that old rows were truly provider-verified.
+
+I prefer the 'legacy' state because it is more honest and preserves existing behavior without pretending old rows were verified.
+
+Approved P1.5a scope:
+1. Add provenance_state + provenance_inserted_by
+2. Add BEFORE INSERT trigger:
+   - non-service-role inserts are forced to unverified
+   - provenance_inserted_by = auth.uid()
+   - service-role/trusted writes may set verified
+3. Keep NULL external_id allowed
+4. Reject blank external_id when provided
+5. Require non-empty title and author
+6. Add lightweight external_id format validation when external_id is provided, accepting:
+   - /works/OL...W
+   - gb:
+   - gb_
+7. Update Goodreads dedup so one user’s unverified/manual row cannot absorb another user’s import
+8. Update replit.md with the provenance model and the P1.5b backlog
+
+Stop after P1.5a. Present the migration and exact code diff before asking me to apply anything in Supabase.
