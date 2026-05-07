@@ -195,12 +195,15 @@ begin
     end if;
 
     -- Lightweight format allowlist. See header for rationale.
-    --   /works/OL<digits>W   — Open Library works key
+    -- All three patterns are fully anchored ($) so a recognized prefix cannot
+    -- be used to smuggle additional content (e.g. /works/OL1W<script> would
+    -- match a prefix-only regex). Anchoring is the cheap part of safety.
+    --   /works/OL<digits>W   — Open Library works key (canonical clean form)
     --   gb:<volume_id>       — Google Books (recommender / scan / save-from-rec)
     --   gb_<volume_id>       — Google Books (onboarding anchor book; the
     --                          gb_ vs gb: inconsistency is documented in
     --                          replit.md and deferred to P1.5b)
-    if new.external_id !~ '^/works/OL[0-9]+W' and
+    if new.external_id !~ '^/works/OL[0-9]+W$' and
        new.external_id !~ '^gb:[A-Za-z0-9_-]+$' and
        new.external_id !~ '^gb_[A-Za-z0-9_-]+$' then
       raise exception
