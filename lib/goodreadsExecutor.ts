@@ -176,6 +176,11 @@ export async function executeGoodreadsImport(
     const { data: existingBooks } = await supabase
       .from('books')
       .select('id, title, author')
+      // P1.5a: only consider catalog rows that are either trusted (legacy
+      // grandfathered or service-role-verified) or this user's own prior
+      // inserts. Prevents a malicious manual entry from another user being
+      // absorbed as the canonical row for this user's Goodreads import.
+      .or(`provenance_state.in.(verified,legacy),provenance_inserted_by.eq.${userId}`)
       .limit(10000);
 
     function normBookKey(title: string, author: string | null) {
