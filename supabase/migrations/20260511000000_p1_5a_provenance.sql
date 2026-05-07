@@ -163,11 +163,14 @@ create trigger trg_books_set_provenance
 -- external_id is provided AND the caller is non-service-role, it must match
 -- one of the recognized identifier shapes. NULL is still allowed.
 --
--- The shape allowlist is intentionally loose (prefix + permissive body) so
--- that legitimate variations (e.g. /works/OL12345W with optional trailing
--- characters that some OL endpoints emit) are not over-rejected. The goal is
--- to block obviously crafted external_ids ("admin", "../etc/passwd", "<script>"),
--- not to fully validate provider-format correctness.
+-- The shape allowlist is fully anchored (^…$) on all three patterns. A
+-- recognized prefix alone is not enough — the entire string must match,
+-- which blocks smuggling attempts like /works/OL1W<script>. The body
+-- character classes ([0-9]+ for OL works, [A-Za-z0-9_-]+ for GB volume ids)
+-- are deliberately narrow so obviously crafted external_ids ("admin",
+-- "../etc/passwd", "<script>", SQL fragments) cannot slip through. The
+-- goal is identity-shape gating, not full provider-format correctness;
+-- deeper validation belongs in the P1.5b trusted-ingestion path.
 
 create or replace function public._books_validate_insert()
 returns trigger
