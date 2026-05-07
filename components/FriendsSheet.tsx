@@ -11,9 +11,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Alert } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { showToast } from '../lib/toast';
 import { getDisplayName } from '../lib/displayName';
+import { sendFriendRequest, deleteFriendship } from '../lib/friendshipActions';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -147,14 +149,12 @@ export function FriendsSheet({
   async function handleSendRequest(otherId: string) {
     if (!supabase || !userId) return;
     setPendingId(otherId);
-    const { error } = await supabase.from('friendships').insert({
-      requester_id: userId,
-      addressee_id: otherId,
-      status: 'pending',
-    });
-    if (!error) {
+    const result = await sendFriendRequest(otherId);
+    if (result.ok) {
       await onFriendshipsChange();
       showToast('Friend request sent');
+    } else {
+      showToast(result.message);
     }
     setPendingId(null);
   }
@@ -173,17 +173,28 @@ export function FriendsSheet({
     setPendingId(null);
   }
 
+  // Used for: declining a received request, cancelling an outbound request,
+  // and unfriending an accepted friend.  All three DELETE the same row.
   async function handleDecline(friendshipId: string) {
-    if (!supabase) return;
     setPendingId(friendshipId);
-    const { error } = await supabase
-      .from('friendships')
-      .delete()
-      .eq('id', friendshipId);
-    if (!error) {
+    const result = await deleteFriendship(friendshipId);
+    if (result.ok) {
       await onFriendshipsChange();
+    } else if (result.message) {
+      showToast(result.message);
     }
     setPendingId(null);
+  }
+
+  function handleUnfriend(friendshipId: string, friendName: string) {
+    Alert.alert(
+      `Unfriend ${friendName}?`,
+      "You'll no longer see each other's reading activity.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Unfriend', style: 'destructive', onPress: () => handleDecline(friendshipId) },
+      ],
+    );
   }
 
   // ── Derived ───────────────────────────────────────────────────────────────
@@ -198,8 +209,11 @@ export function FriendsSheet({
 
   const acceptedFriends = friendships
     .filter(f => f.status === 'accepted')
-    .map(f => (f.requester_id === userId ? f.addressee : f.requester))
-    .filter(Boolean) as Profile[];
+    .map(f => {
+      const other = f.requester_id === userId ? f.addressee : f.requester;
+      return other ? { ...other, _friendshipId: f.id } : null;
+    })
+    .filter(Boolean) as (Profile & { _friendshipId: string })[];
 
   return (
     <Modal
@@ -563,6 +577,8 @@ export function FriendsSheet({
                       },
                     });
                   }}
+                  onLongPress={() => handleUnfriend(friend._friendshipId, getDisplayName(friend))}
+                  delayLongPress={400}
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',

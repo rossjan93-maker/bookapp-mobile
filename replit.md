@@ -15,6 +15,7 @@ Readstack helps users discover, track, and share personalized book recommendatio
     - `20260507000001_user_books_year_goal.sql`
     - `20260508000000_p0_security_hardening.sql`
     - `20260509000000_p0_5_catalog_protection_clarity.sql`
+    - `20260510000000_p1_security_hardening.sql`
 
 ## Stack
 React Native + Expo Router, Supabase (Postgres + Auth + RLS), TypeScript, Expo build.
@@ -35,6 +36,7 @@ React Native + Expo Router, Supabase (Postgres + Auth + RLS), TypeScript, Expo b
 - `lib/pacing.ts` — reading pacing.
 - `lib/readingWraps.ts` — monthly / yearly wrap aggregation.
 - `lib/socialAuth.ts` — shared OAuth helper.
+- `lib/friendshipActions.ts` — `sendFriendRequest()` (RPC wrapper) + `deleteFriendship()` (cancel / decline / unfriend).
 - `lib/goodreadsExecutor.ts` — Goodreads import + dedup.
 - `lib/userBookActions.ts` — `setYearGoal()` and other user_books mutations.
 - `lib/saveBookFromRec.ts` — save-from-rec path (creates books row by external_id, upserts user_books).
@@ -96,6 +98,10 @@ _Populate as you build_
 - **Goodreads dedup:** title+author guard in `lib/goodreadsExecutor.ts` prevents duplicate book rows.
 - **Native changes:** run `npm run build:android:dev` (or iOS equivalent), not just a JS reload.
 - **Top-of-screen padding:** new full-screen routes must use `useScreenTopPadding()` — never bare `SafeAreaView` (no-op on web/Android) and never hardcoded `paddingTop: 56/60`.
+- **Friend-request ingress is RPC-only:** direct INSERT on `friendships` is REVOKED. All sends route through `sendFriendRequest()` in `lib/friendshipActions.ts` → `public.send_friend_request(p_addressee_id)` SECURITY DEFINER RPC. The RPC enforces no-self, addressee-exists, canonical-pair dedup, and a per-requester pending cap of 50 (raise SQLSTATE 53400 with prefix `FRIEND_REQUEST_PENDING_CAP_EXCEEDED`). Cancel / decline / unfriend all go through `deleteFriendship()` which is a plain DELETE — the RLS DELETE policy (`friendships: either party can delete`) was added in the same migration to make the lifecycle work (it was missing before, so the existing UI's `.delete()` calls silently no-op'd). New gotcha: never re-add a direct INSERT policy on `friendships` — it would bypass the cap.
+- **`current_page` validation is fail-loud:** column-level CHECK enforces `current_page >= 0`; trigger `_user_books_validate_current_page` raises `CURRENT_PAGE_EXCEEDS_PAGE_COUNT` (SQLSTATE 23514) when `current_page > books.page_count` (only when both are known). Any new code that writes `current_page` must clamp upstream — the trigger does NOT clamp silently.
+- **Books INSERT minimal guardrail:** `_books_validate_insert` (BEFORE INSERT, fail-loud) requires non-empty trimmed `title` AND `author` for non-service-role inserts. If `external_id` is provided it must be non-empty after trim (NULL still allowed because add-book ISBN-fallback and `goodreadsExecutor` legitimately INSERT with `external_id` NULL — populated later by `metadataRepair`). Service-role bypass via `auth.uid() IS NULL` (consistent w/ P0.5). The deeper concern — first-write poisoning of plausible-but-bad rows for valid-looking external_ids — is **deferred to P1.5** (trusted catalog ingestion / provider validation / low-confidence quarantine).
+- **User-text length CHECK constraints:** `recommendations.note <= 2000`, `user_books.review_body <= 10000`, `user_books.private_note <= 5000`, `book_club_comments.body <= 2000`. Beta-safe limits; revisit on usage data. Violations are SQLSTATE 23514.
 - **Multi-column `books` UPDATE:** the catalog-protection trigger is fail-loud and atomic — a single rejected column rejects the entire patch. Any new code that PATCHes `books` from a non-service-role context must isolate potentially-protected writes (e.g. cover upgrades that overwrite a non-empty `cover_url`) into their own `await` so the expected 403 doesn't poison legitimate fill-empty patches built in the same loop iteration. See `lib/metadataRepair.ts` cover-upgrade branch for the established pattern.
 
 ## Pointers
