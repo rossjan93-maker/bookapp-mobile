@@ -1,0 +1,101 @@
+P1.5a is accepted and verified.
+
+Now scope P1.5b as an audit/design task only. Do not write code yet.
+
+Goal:
+Design the trusted catalog ingestion architecture that eventually replaces direct client-created shared catalog rows.
+
+Context:
+P1.5a added provenance_state:
+- legacy = pre-provenance rows
+- unverified = new client-created rows
+- verified = trusted/server/provider-confirmed rows
+
+P1.5b should define how rows become verified and how future app flows create books through trusted provider-backed paths.
+
+Please investigate and propose:
+
+1. Trusted ingestion architecture
+Evaluate:
+- Supabase Edge Function
+- SECURITY DEFINER RPC
+- pg_net HTTP from Postgres
+- hybrid RPC → Edge Function model
+
+For each, compare:
+- security
+- implementation complexity
+- latency
+- rate limiting
+- retry behavior
+- provider API key safety
+- Expo/client impact
+- local/dev testing complexity
+
+2. Provider lookup model
+Define how we should verify or create books from:
+- Open Library works key
+- Open Library ISBN lookup
+- Google Books volume ID
+- Goodreads import rows with ISBN/ISBN13
+- manual title/author fallback
+- recommendation-generated candidates
+- scan/barcode flow
+
+3. Verification lifecycle
+Define:
+- how unverified rows become verified
+- whether legacy rows should ever become verified
+- what fields the trusted path can overwrite
+- how this interacts with P0.5 catalog protection
+- what happens when provider data conflicts with existing catalog data
+- what happens when provider lookup fails
+
+4. Client insert path migration
+For each current books INSERT path, propose the target replacement:
+- app/add-book.tsx
+- app/scan.tsx
+- components/RecommendationsFeed.tsx
+- lib/saveBookFromRec.ts
+- components/RecEntryScreen.tsx
+- app/(tabs)/search.tsx
+- lib/goodreadsExecutor.ts
+
+5. User experience
+Explain how to preserve UX when trusted creation is slower or fails:
+- add book
+- scan book
+- save recommendation
+- Goodreads import
+- onboarding anchor books
+- offline or weak network behavior
+
+6. Data model
+Recommend whether to add:
+- provider_verification_status
+- provider_verified_at
+- provider_verified_by
+- canonical_provider
+- provider_error
+- verification_attempt_count
+- separate manual/custom entries table
+- trusted provider source links
+
+7. Rollout plan
+Recommend whether to split into:
+- P1.5b-1: verification job only
+- P1.5b-2: trusted provider create RPC/edge function
+- P1.5b-3: client insert path migration
+- P1.5b-4: cross-user filtering for unverified rows
+
+8. Deliverables:
+- recommended architecture
+- pros/cons of alternatives
+- migration plan
+- files likely touched
+- risk assessment
+- staged implementation plan
+- live verification plan
+- explicit no-code recommendation unless the plan is approved
+
+Stop after the design plan. Do not implement.
