@@ -13,6 +13,7 @@ Readstack helps users discover, track, and share personalized book recommendatio
     - `20260506000001_user_shelves.sql`
     - `20260507000000_rating_half_star.sql`
     - `20260507000001_user_books_year_goal.sql`
+    - `20260508000000_p0_security_hardening.sql`
 
 ## Stack
 React Native + Expo Router, Supabase (Postgres + Auth + RLS), TypeScript, Expo build.

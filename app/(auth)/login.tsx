@@ -286,13 +286,15 @@ export default function LoginScreen() {
 
     // ── Pre-check username availability ──────────────────────────────────────
     // Prevents orphaned auth users when username is already taken.
-    const { data: taken } = await supabase!
-      .from('profiles')
-      .select('id')
-      .eq('username', uname)
-      .maybeSingle();
+    // P0 security: profiles SELECT is restricted to self + accepted friends,
+    // so we cannot read other rows from the anon role. Goes through the
+    // is_username_available SECURITY DEFINER RPC (migration
+    // 20260508000000_p0_security_hardening.sql) which returns only a boolean.
+    const { data: available } = await supabase!.rpc('is_username_available', {
+      p_username: uname,
+    });
 
-    if (taken) {
+    if (available === false) {
       setStatus('That username is already taken. Please choose another.');
       setStatusIsError(true);
       setLoading(false);

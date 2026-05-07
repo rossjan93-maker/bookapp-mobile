@@ -131,12 +131,11 @@ export function FriendsSheet({
     if (!supabase || !userId) return;
     setSearching(true);
     setSearchError(null);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, username, first_name, last_name')
-      .ilike('username', `%${query}%`)
-      .neq('id', userId)
-      .limit(20);
+    // P0 security: profiles SELECT is restricted to self + accepted friends.
+    // Free-text friend discovery goes through the SECURITY DEFINER RPC
+    // search_profiles (migration 20260508000000_p0_security_hardening.sql),
+    // which returns only id/username/first_name/last_name capped at 20 rows.
+    const { data, error } = await supabase.rpc('search_profiles', { q: query });
     if (error) {
       setSearchError('Search failed.');
     } else {

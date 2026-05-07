@@ -248,49 +248,21 @@ export function canRunExpertRecs(
  */
 export async function consumeExpertRefresh(
   client:      SupabaseClient,
-  userId:      string,
+  _userId:     string,
   decision:    ExpertAccessDecision,
-  currentRow?: RecEntitlement,
+  _currentRow?: RecEntitlement,
 ): Promise<void> {
   try {
-    const now = new Date().toISOString();
-    const isFirstUse = decision.reason === 'free_first_use';
-
-    if (isFirstUse) {
-      // Upsert: mark free expert as used, reset period
-      await client.from('rec_entitlements').upsert({
-        user_id:                       userId,
-        plan:                          currentRow?.plan ?? 'free',
-        free_expert_used:              true,
-        free_expert_used_at:           now,
-        expert_refreshes_this_period:  1,
-        period_start_at:               now,
-        last_expert_refresh_at:        now,
-        updated_at:                    now,
-      }, { onConflict: 'user_id' });
-    } else if (decision.reason === 'free_period_refresh') {
-      const periodAgeMs  = Date.now() - new Date(currentRow?._raw.period_start_at ?? now).getTime();
-      const periodExpired = periodAgeMs > FREE_EXPERT_PERIOD_DAYS * 24 * 60 * 60 * 1000;
-
-      await client.from('rec_entitlements').upsert({
-        user_id:                       userId,
-        plan:                          currentRow?.plan ?? 'free',
-        free_expert_used:              true,
-        expert_refreshes_this_period:  periodExpired ? 1 : (currentRow?._raw.expert_refreshes_this_period ?? 0) + 1,
-        period_start_at:               periodExpired ? now : (currentRow?._raw.period_start_at ?? now),
-        last_expert_refresh_at:        now,
-        updated_at:                    now,
-      }, { onConflict: 'user_id' });
-    } else {
-      // Paid / beta — just update last refresh timestamp
-      await client.from('rec_entitlements').upsert({
-        user_id:               userId,
-        plan:                  currentRow?.plan ?? 'paid',
-        free_expert_used:      true,
-        last_expert_refresh_at: now,
-        updated_at:             now,
-      }, { onConflict: 'user_id' });
-    }
+    // P0 security: client INSERT/UPDATE on rec_entitlements is removed
+    // (migration 20260508000000_p0_security_hardening.sql). All counter
+    // mutations go through the consume_expert_refresh SECURITY DEFINER RPC,
+    // which never touches the `plan` column — paid promotion can only happen
+    // via a future server-side payment webhook. The action taken (first-use
+    // vs period-refresh vs quota-exhausted vs paid) is decided server-side
+    // from the current row, NOT from `decision.reason`, so a malicious client
+    // cannot reset its quota by lying about the reason.
+    await client.rpc('consume_expert_refresh');
+    void decision; // reason is intentionally not forwarded — see RPC comment.
   } catch {
     // Best-effort — never throw
   }
