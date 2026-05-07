@@ -29,21 +29,12 @@ type Props = {
   currentTitle?:  string | null;
 };
 
-type SortMode = 'chronological' | 'rating';
 type DescState = { status: 'loading' } | { status: 'ready'; text: string | null };
 
 const CURRENT_YEAR = new Date().getFullYear();
 
 function _normTitle(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-}
-
-// Half-star renderer (★★★★½). Caps at 5; rounds to nearest 0.5.
-function _stars(rating: number): string {
-  const r = Math.max(0, Math.min(5, Math.round(rating * 2) / 2));
-  const full = Math.floor(r);
-  const half = r - full >= 0.5 ? 1 : 0;
-  return '★'.repeat(full) + (half ? '½' : '');
 }
 
 // Title initials for the no-cover placeholder. Skips short connector words
@@ -77,7 +68,6 @@ export function AuthorBibliographySheet({
 
   const [bib, setBib]                 = useState<AuthorBibliography | null>(null);
   const [loading, setLoading]         = useState(false);
-  const [sort, setSort]               = useState<SortMode>('chronological');
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   // Lazy-loaded description cache keyed by entry.olKey ("/works/OL...W").
@@ -139,31 +129,22 @@ export function AuthorBibliographySheet({
     return bib.entries.filter(e => e.year == null || e.year <= CURRENT_YEAR);
   }, [bib]);
 
-  // Re-derive the released list whenever the user toggles modes. Released
-  // items are already chronological from OL; rating sorts desc by stars
-  // then count, with unrated falling to the bottom.
-  const sortedReleased = useMemo(() => {
-    if (sort === 'chronological') return released;
-    return [...released].sort((a, b) => {
-      const ar = a.rating ?? -1;
-      const br = b.rating ?? -1;
-      if (br !== ar) return br - ar;
-      return (b.ratingCount ?? 0) - (a.ratingCount ?? 0);
-    });
-  }, [released, sort]);
+  // Released catalog stays chronological. We deliberately removed the
+  // "By rating" sort because the only signal we had for it was Open
+  // Library's aggregated reader rating, which we no longer surface — the
+  // app should reflect Readstack community ratings only.
+  const sortedReleased = released;
 
   const totalDated = bib ? bib.entries.filter(e => e.year != null).length : 0;
   const currentEntry = bib?.entries.find(e => _normTitle(e.title) === currentNorm) ?? null;
 
-  // Hero stack — pick 3 visually-strongest covers (rating × log(count)).
+  // Hero stack — three covers, picked from the most recent dated works
+  // that have artwork. Recency is a reasonable visual proxy now that we
+  // no longer have rating/popularity signal from OL.
   const heroCovers = useMemo(() => {
     if (!bib) return [];
-    const withCovers = bib.entries.filter(e => !!e.coverUrl);
-    const ranked = [...withCovers].sort((a, b) => {
-      const ar = (a.rating ?? 0) * Math.log10((a.ratingCount ?? 0) + 1);
-      const br = (b.rating ?? 0) * Math.log10((b.ratingCount ?? 0) + 1);
-      return br - ar;
-    });
+    const withCovers = bib.entries.filter(e => !!e.coverUrl && e.year != null);
+    const ranked = [...withCovers].sort((a, b) => (b.year ?? 0) - (a.year ?? 0));
     return ranked.slice(0, 3);
   }, [bib]);
 
@@ -343,107 +324,46 @@ export function AuthorBibliographySheet({
               </View>
             )}
 
-            {/* Sort toggle (released only) */}
-            {released.length > 0 && (
-              <View style={{
-                flexDirection: 'row',
-                marginHorizontal: 20,
-                marginBottom: 16,
-                backgroundColor: '#ede9e4',
-                borderRadius: 10,
-                padding: 3,
-              }}>
-                {(['chronological', 'rating'] as SortMode[]).map(mode => {
-                  const active = sort === mode;
-                  return (
-                    <TouchableOpacity
-                      key={mode}
-                      onPress={() => setSort(mode)}
-                      style={{
-                        flex: 1,
-                        paddingVertical: 8,
-                        borderRadius: 8,
-                        alignItems: 'center',
-                        backgroundColor: active ? '#fefcf9' : 'transparent',
-                      }}
-                    >
-                      <Text style={{
-                        fontSize: 12,
-                        fontWeight: '700',
-                        color: active ? '#231f1b' : '#78716c',
-                        letterSpacing: 0.2,
-                      }}>
-                        {mode === 'chronological' ? 'By year' : 'By rating'}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-
-            {/* Released catalog */}
+            {/* Released catalog — chronological by decade */}
             <View style={{ paddingHorizontal: 20 }}>
-              {sort === 'chronological' ? (
-                _groupByDecade(sortedReleased).map(([decade, items]) => (
-                  <View key={decade} style={{ marginBottom: 18 }}>
-                    <Text style={{
-                      fontSize: 11,
-                      fontWeight: '700',
-                      color: '#9e958d',
-                      letterSpacing: 1.1,
-                      textTransform: 'uppercase',
-                      marginBottom: 10,
-                    }}>
-                      {decade}
-                    </Text>
-                    <View style={{
-                      backgroundColor: '#fefcf9',
-                      borderRadius: 14,
-                      borderWidth: 1,
-                      borderColor: '#ede9e4',
-                      overflow: 'hidden',
-                    }}>
-                      {items.map((entry, idx) => (
-                        <BibRow
-                          key={entry.olKey}
-                          entry={entry}
-                          isCurrent={_normTitle(entry.title) === currentNorm}
-                          isLast={idx === items.length - 1}
-                          isExpanded={expandedKey === entry.olKey}
-                          descState={descCache.current.get(entry.olKey)}
-                          onToggle={() => toggleExpanded(entry)}
-                        />
-                      ))}
-                    </View>
+              {_groupByDecade(sortedReleased).map(([decade, items]) => (
+                <View key={decade} style={{ marginBottom: 18 }}>
+                  <Text style={{
+                    fontSize: 11,
+                    fontWeight: '700',
+                    color: '#9e958d',
+                    letterSpacing: 1.1,
+                    textTransform: 'uppercase',
+                    marginBottom: 10,
+                  }}>
+                    {decade}
+                  </Text>
+                  <View style={{
+                    backgroundColor: '#fefcf9',
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: '#ede9e4',
+                    overflow: 'hidden',
+                  }}>
+                    {items.map((entry, idx) => (
+                      <BibRow
+                        key={entry.olKey}
+                        entry={entry}
+                        isCurrent={_normTitle(entry.title) === currentNorm}
+                        isLast={idx === items.length - 1}
+                        isExpanded={expandedKey === entry.olKey}
+                        descState={descCache.current.get(entry.olKey)}
+                        onToggle={() => toggleExpanded(entry)}
+                      />
+                    ))}
                   </View>
-                ))
-              ) : (
-                <View style={{
-                  backgroundColor: '#fefcf9',
-                  borderRadius: 14,
-                  borderWidth: 1,
-                  borderColor: '#ede9e4',
-                  overflow: 'hidden',
-                  marginBottom: 18,
-                }}>
-                  {sortedReleased.map((entry, idx) => (
-                    <BibRow
-                      key={entry.olKey}
-                      entry={entry}
-                      isCurrent={_normTitle(entry.title) === currentNorm}
-                      isLast={idx === sortedReleased.length - 1}
-                      isExpanded={expandedKey === entry.olKey}
-                      descState={descCache.current.get(entry.olKey)}
-                      onToggle={() => toggleExpanded(entry)}
-                    />
-                  ))}
                 </View>
-              )}
+              ))}
             </View>
 
-            {/* Footer attribution — both the catalog source AND the rating
-                source must be explicit so readers don't assume these are
-                Readstack community ratings. */}
+            {/* Footer attribution — catalog only. Ratings are intentionally
+                absent here; star ratings on Readstack are sourced from app
+                users (`user_books.rating`), not Open Library readers. */}
             <View style={{ paddingHorizontal: 24, marginTop: 4 }}>
               <Text style={{
                 fontSize: 11,
@@ -451,7 +371,7 @@ export function AuthorBibliographySheet({
                 textAlign: 'center',
                 lineHeight: 16,
               }}>
-                Catalog and ratings from <Text style={{ fontWeight: '700' }}>Open Library</Text>, an open-data project run by the Internet Archive. Star ratings are aggregated from Open Library readers, not Readstack. Some early or self-published works may be missing artwork or metadata.
+                Catalog from <Text style={{ fontWeight: '700' }}>Open Library</Text>, an open-data project run by the Internet Archive. Some early or self-published works may be missing artwork or metadata.
               </Text>
             </View>
           </ScrollView>
@@ -505,16 +425,6 @@ function BibRow({
                 : (entry.year ?? 'Undated')}
               {entry.pageCount ? ` · ${entry.pageCount} pp` : ''}
             </Text>
-            {entry.rating != null && entry.ratingCount != null && entry.ratingCount > 0 && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 8 }}>
-                <Text style={{ fontSize: 12, color: '#c8a04a', letterSpacing: 0.5 }}>
-                  {_stars(entry.rating)}
-                </Text>
-                <Text style={{ fontSize: 11, color: '#a8a098', marginLeft: 4 }}>
-                  {entry.rating.toFixed(1)} · {entry.ratingCount.toLocaleString()} OL
-                </Text>
-              </View>
-            )}
           </View>
           {isCurrent && (
             <Text style={{ fontSize: 11, fontWeight: '700', color: SAGE_INK, marginTop: 4, letterSpacing: 0.3 }}>

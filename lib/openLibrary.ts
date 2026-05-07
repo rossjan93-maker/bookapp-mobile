@@ -66,6 +66,42 @@ export type AuthorBibliography = {
 // readers can browse the author's entire body of work and see where this
 // book sits in context. Same dedupe / language filtering / sort rules as
 // the lighter helper above; in-memory cached per (lowercased) author name.
+// Resolve a free-text author name to OL's canonical author key
+// (e.g. "Lucy Foley" → "OL7811248A"). The plain `?author=Lucy Foley`
+// search field on OL is fuzzy and returns ANY work whose author field
+// MENTIONS the query — so different authors with the same or
+// overlapping name (or even a co-author credited as "ed. Lucy Foley")
+// pollute the result with unrelated 1940s/1970s titles. Once we have
+// the canonical key we can pivot to `?author_key=OL...A` which matches
+// exactly one author entity.
+const _authorKeyCache = new Map<string, string | null>();
+async function _resolveAuthorKey(author: string, signal: AbortSignal): Promise<string | null> {
+  const cacheKey = author.toLowerCase().trim();
+  if (_authorKeyCache.has(cacheKey)) return _authorKeyCache.get(cacheKey) ?? null;
+  try {
+    const url = `https://openlibrary.org/search/authors.json?q=${encodeURIComponent(author)}&limit=5`;
+    const res = await fetch(url, { signal });
+    if (!res.ok) { _authorKeyCache.set(cacheKey, null); return null; }
+    const data = await res.json() as {
+      docs?: { key?: string; name?: string; work_count?: number }[];
+    };
+    const docs = data.docs ?? [];
+    if (docs.length === 0) { _authorKeyCache.set(cacheKey, null); return null; }
+    // Prefer an exact (case-insensitive) name match; otherwise pick the
+    // candidate with the largest work_count — that's almost always the
+    // canonical author for popular names.
+    const wanted = author.toLowerCase().trim();
+    const exact = docs.find(d => typeof d.name === 'string' && d.name.toLowerCase().trim() === wanted);
+    const pick = exact ?? [...docs].sort((a, b) => (b.work_count ?? 0) - (a.work_count ?? 0))[0];
+    const key = typeof pick?.key === 'string' ? pick.key : null;
+    _authorKeyCache.set(cacheKey, key);
+    return key;
+  } catch {
+    _authorKeyCache.set(cacheKey, null);
+    return null;
+  }
+}
+
 const _authorBibCache = new Map<string, AuthorBibliography | null>();
 export async function fetchAuthorBibliography(
   author: string,
@@ -73,11 +109,18 @@ export async function fetchAuthorBibliography(
   const cacheKey = author.toLowerCase();
   if (_authorBibCache.has(cacheKey)) return _authorBibCache.get(cacheKey) ?? null;
   const ctrl  = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 6000);
+  const timer = setTimeout(() => ctrl.abort(), 7000);
   try {
+    // Try the canonical-key path first; fall back to the loose name
+    // search if author lookup fails (e.g. very new author with no key
+    // assigned yet).
+    const authorKey = await _resolveAuthorKey(author, ctrl.signal);
+    const filter = authorKey
+      ? `author_key=${encodeURIComponent(authorKey)}`
+      : `author=${encodeURIComponent(author)}`;
     const url =
-      `https://openlibrary.org/search.json?author=${encodeURIComponent(author)}` +
-      `&fields=key,title,first_publish_year,cover_i,number_of_pages_median,language,ratings_average,ratings_count` +
+      `https://openlibrary.org/search.json?${filter}` +
+      `&fields=key,title,first_publish_year,cover_i,number_of_pages_median,language,author_name,author_key` +
       `&limit=100&sort=old`;
     const res = await fetch(url, { signal: ctrl.signal });
     if (!res.ok) { _authorBibCache.set(cacheKey, null); return null; }
@@ -89,16 +132,35 @@ export async function fetchAuthorBibliography(
         cover_i?: number;
         number_of_pages_median?: number;
         language?: string[];
-        ratings_average?: number;
-        ratings_count?: number;
+        author_name?: string[];
+        author_key?: string[];
       }[];
     };
     const docs = data.docs ?? [];
     const seen = new Set<string>();
     const entries: AuthorBibliographyEntry[] = [];
+    // Strict author-name guard backstop. Even when a canonical author_key
+    // resolved we re-check each doc, because OL occasionally returns
+    // co-authored works whose secondary credit happens to be a different
+    // person sharing the requested name. We use *token containment* (every
+    // word of the requested name appears in the credited name) rather than
+    // exact normalized equality, so "Lucy Foley" still matches a doc
+    // credited as "Lucy E. Foley" or "Foley, Lucy".
+    const wantedTokens = author
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(t => t.length >= 2);   // drop single-letter initials from the QUERY only
     for (const d of docs) {
       if (typeof d.title !== 'string' || typeof d.key !== 'string') continue;
       if (Array.isArray(d.language) && d.language.length > 0 && !d.language.includes('eng')) continue;
+      if (Array.isArray(d.author_name) && d.author_name.length > 0 && wantedTokens.length > 0) {
+        const ok = d.author_name.some(n => {
+          if (typeof n !== 'string') return false;
+          const credited = n.toLowerCase();
+          return wantedTokens.every(t => credited.includes(t));
+        });
+        if (!ok) continue;
+      }
       const tkey = d.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
       if (!tkey || seen.has(tkey)) continue;
       seen.add(tkey);
@@ -108,8 +170,8 @@ export async function fetchAuthorBibliography(
         year:        typeof d.first_publish_year === 'number' ? d.first_publish_year : null,
         coverUrl:    d.cover_i ? `https://covers.openlibrary.org/b/id/${d.cover_i}-M.jpg` : null,
         pageCount:   typeof d.number_of_pages_median === 'number' ? d.number_of_pages_median : null,
-        rating:      typeof d.ratings_average === 'number' ? d.ratings_average : null,
-        ratingCount: typeof d.ratings_count === 'number' ? d.ratings_count : null,
+        rating:      null,
+        ratingCount: null,
       });
     }
     if (entries.length < 1) { _authorBibCache.set(cacheKey, null); return null; }
