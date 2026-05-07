@@ -22,6 +22,77 @@ export type OLMeta = {
   pageCount:   number | null;
 };
 
+export type AuthorReleaseOrder = {
+  position: number;        // 1-indexed position of this title within the author's releases
+  total:    number;        // total distinct titles by the author with a known year
+};
+
+// Pulls an author's catalog from Open Library (search.json?author=…), dedupes
+// titles, sorts by first_publish_year ascending, then locates the supplied
+// title to compute "Nth release of M". Used by the Add-to-Library confirm
+// card when the static series catalog has nothing for this book — gives the
+// user useful "where does this fit in the author's bibliography?" context.
+//
+// Heuristics:
+//  - Uses author= (not author_key=) because we only have the display name.
+//    OL exact-matches on tokenized name; close enough for our purposes.
+//  - Filters to docs whose first_publish_year is a 4-digit integer; titles
+//    without a year can't be ranked and would muddy the count.
+//  - Filters to language=eng when the OL doc carries a language list, so a
+//    Lucy Foley title isn't ranked alongside translated foreign editions
+//    that OL counts as separate works.
+//  - Dedupes by lowercased, punctuation-stripped title — OL has many
+//    re-issues / collected-edition rows that share a title.
+//  - Returns null when this title doesn't appear in the catalog OR the
+//    catalog has < 2 entries (no useful ordering signal for a 1-book author).
+const _authorOrderCache = new Map<string, AuthorReleaseOrder | null>();
+export async function fetchAuthorReleaseOrder(
+  author: string,
+  title: string,
+): Promise<AuthorReleaseOrder | null> {
+  const cacheKey = `${author.toLowerCase()}|${title.toLowerCase()}`;
+  if (_authorOrderCache.has(cacheKey)) return _authorOrderCache.get(cacheKey) ?? null;
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    const url =
+      `https://openlibrary.org/search.json?author=${encodeURIComponent(author)}` +
+      `&fields=key,title,first_publish_year,language&limit=100&sort=old`;
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) { _authorOrderCache.set(cacheKey, null); return null; }
+    const data = await res.json() as {
+      docs?: { title?: string; first_publish_year?: number; language?: string[] }[];
+    };
+    const docs = data.docs ?? [];
+    const seen = new Set<string>();
+    const releases: { title: string; year: number }[] = [];
+    for (const d of docs) {
+      if (typeof d.title !== 'string' || typeof d.first_publish_year !== 'number') continue;
+      // Skip non-English when language metadata is present and excludes English.
+      if (Array.isArray(d.language) && d.language.length > 0 && !d.language.includes('eng')) continue;
+      const key = d.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      releases.push({ title: d.title, year: d.first_publish_year });
+    }
+    if (releases.length < 2) { _authorOrderCache.set(cacheKey, null); return null; }
+    releases.sort((a, b) => a.year - b.year || a.title.localeCompare(b.title));
+    const targetKey = title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const idx = releases.findIndex(r =>
+      r.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() === targetKey,
+    );
+    if (idx < 0) { _authorOrderCache.set(cacheKey, null); return null; }
+    const result: AuthorReleaseOrder = { position: idx + 1, total: releases.length };
+    _authorOrderCache.set(cacheKey, result);
+    return result;
+  } catch {
+    _authorOrderCache.set(cacheKey, null);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Normalized shape for a single Open Library edition.
 // editionKey is the bare OL edition ID (e.g. "OL12345M"), not the full /books/ path.
 // coverKey is the same as editionKey when the edition has covers — used to build

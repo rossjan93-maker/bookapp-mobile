@@ -19,7 +19,7 @@ import {
   resolveOLKeyFromIsbn,
 } from '../lib/bookSearch';
 import { findSeriesForBook, getSeriesCatalog } from '../lib/seriesCatalog';
-import { fetchOLMeta } from '../lib/openLibrary';
+import { fetchOLMeta, fetchAuthorReleaseOrder, type AuthorReleaseOrder } from '../lib/openLibrary';
 import { invalidateBookDataCaches } from '../lib/tabCache';
 import { clearRecSession } from '../lib/recSession';
 import { transitionStatus } from '../lib/userBookActions';
@@ -73,6 +73,19 @@ function olCoverUrl(coverId?: number): string | null {
   return `https://covers.openlibrary.org/b/id/${coverId}-M.jpg`;
 }
 
+// English ordinal (1st, 2nd, 3rd, 4th, 11th, 21st, …) for the author
+// bibliography chip. Inline because we only need it in this one screen.
+function _ordinal(n: number): string {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function AddBookScreen() {
@@ -107,6 +120,17 @@ export default function AddBookScreen() {
   const [existingLibraryEntry, setExistingLibraryEntry] = useState<
     { id: string; status: BookStatus; finished_at: string | null } | null
   >(null);
+
+  // Author bibliography position — only fetched when the static series
+  // catalog has nothing to say about this book. Lets a "standalone" author
+  // (Lucy Foley, Tana French standalones, etc.) still get a useful
+  // "her 4th release of 6" badge instead of a totally bare card.
+  const [authorOrder, setAuthorOrder] = useState<AuthorReleaseOrder | null>(null);
+
+  // Description toggle — long synopses (Lucy Foley's 600-word OL blurbs are
+  // typical) get clipped to 5 lines with a "Show more" affordance so the
+  // confirm card stays scannable.
+  const [descExpanded, setDescExpanded] = useState(false);
 
   // Stale-request guard: each search increments this; responses only committed
   // when the seq value at response time still matches the current value.
@@ -281,6 +305,41 @@ export default function AddBookScreen() {
     })().catch(() => { if (!cancelled) setExistingLibraryEntry(null); });
     return () => { cancelled = true; };
   }, [step, selectedBook?.externalId, userId]);
+
+  // ── Author release-order enrichment ──────────────────────────────────────
+  // Skipped when we already matched the static series catalog (the series
+  // chip carries strictly better information). Only runs once per
+  // (selectedBook.externalId) — the helper's own in-memory cache prevents
+  // re-fetching across selections of the same book.
+  useEffect(() => {
+    if (step !== 'confirm') return;
+    if (!selectedBook) return;
+    if (selectedBook.seriesName) { setAuthorOrder(null); return; }
+    if (!selectedBook.title || !selectedBook.author || selectedBook.author === 'Unknown author') {
+      setAuthorOrder(null);
+      return;
+    }
+    const id = selectedBook.externalId;
+    let cancelled = false;
+    setAuthorOrder(null);
+    fetchAuthorReleaseOrder(selectedBook.author, selectedBook.title).then(order => {
+      if (cancelled) return;
+      // Re-check selection identity; user may have backed out and picked
+      // a different book while we were waiting on OL.
+      setSelectedBook(prev => {
+        if (!prev || prev.externalId !== id) return prev;
+        return prev;
+      });
+      setAuthorOrder(order);
+    }).catch(() => { /* enrichment is silent on failure — card stays minimal */ });
+    return () => { cancelled = true; };
+  }, [step, selectedBook?.externalId, selectedBook?.seriesName]);
+
+  // Reset description expand state whenever the user switches selections so
+  // the next book starts clipped, never inheriting the prior toggle state.
+  useEffect(() => {
+    setDescExpanded(false);
+  }, [selectedBook?.externalId]);
 
   // ── Async enrichment of confirm card ─────────────────────────────────────
   // When the user lands on the confirm step with an Open Library work id,
@@ -855,6 +914,24 @@ export default function AddBookScreen() {
               </View>
             )}
 
+            {/* Author bibliography chip — fallback when there's no series */}
+            {!selectedBook?.seriesName && authorOrder && (
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                alignSelf: 'flex-start',
+                backgroundColor: '#eaf1ea',
+                borderRadius: 6,
+                paddingHorizontal: 8,
+                paddingVertical: 3,
+                marginTop: 8,
+              }}>
+                <Text style={{ fontSize: 11, color: SAGE_DEEP, fontWeight: '700', letterSpacing: 0.2 }}>
+                  {`${_ordinal(authorOrder.position)} of ${authorOrder.total} by ${selectedBook?.author}`}
+                </Text>
+              </View>
+            )}
+
             {/* Year · pages meta line */}
             {(selectedBook?.firstPublishYear || selectedBook?.pageCount) && (
               <Text style={{ fontSize: 12, color: '#9e958d', marginTop: 6 }}>
@@ -881,34 +958,53 @@ export default function AddBookScreen() {
         </View>
 
         {/* Description blurb — appears once async enrichment lands */}
-        {selectedBook?.description && (
-          <View style={{
-            backgroundColor: '#fefcf9',
-            borderRadius: 12,
-            padding: 14,
-            marginTop: -20,
-            marginBottom: 28,
-            borderWidth: 1,
-            borderColor: '#ede9e4',
-          }}>
-            <Text style={{
-              fontSize: 10,
-              fontWeight: '700',
-              color: '#9e958d',
-              letterSpacing: 0.9,
-              textTransform: 'uppercase',
-              marginBottom: 6,
+        {selectedBook?.description && (() => {
+          const cleaned = selectedBook.description.replace(/\s+/g, ' ').trim();
+          // Only show the toggle when the description is long enough that
+          // 5-line clipping actually hides content. ~280 chars ≈ 5 lines at
+          // the 13/19 type rhythm; below that the toggle would just flash a
+          // useless "Show more" that opens nothing new.
+          const isLong = cleaned.length > 280;
+          return (
+            <View style={{
+              backgroundColor: '#fefcf9',
+              borderRadius: 12,
+              padding: 14,
+              marginTop: -20,
+              marginBottom: 28,
+              borderWidth: 1,
+              borderColor: '#ede9e4',
             }}>
-              About this book
-            </Text>
-            <Text
-              numberOfLines={4}
-              style={{ fontSize: 13, color: '#57534e', lineHeight: 19 }}
-            >
-              {selectedBook.description.replace(/\s+/g, ' ').trim()}
-            </Text>
-          </View>
-        )}
+              <Text style={{
+                fontSize: 10,
+                fontWeight: '700',
+                color: '#9e958d',
+                letterSpacing: 0.9,
+                textTransform: 'uppercase',
+                marginBottom: 6,
+              }}>
+                About this book
+              </Text>
+              <Text
+                numberOfLines={descExpanded || !isLong ? undefined : 5}
+                style={{ fontSize: 13, color: '#57534e', lineHeight: 19 }}
+              >
+                {cleaned}
+              </Text>
+              {isLong && (
+                <TouchableOpacity
+                  onPress={() => setDescExpanded(v => !v)}
+                  style={{ marginTop: 10, alignSelf: 'flex-start' }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={{ fontSize: 12, color: SAGE_DEEP, fontWeight: '700', letterSpacing: 0.2 }}>
+                    {descExpanded ? 'Show less' : 'Show more'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          );
+        })()}
 
         {/* Already-in-library banner — only when the user has this book on a shelf */}
         {existingLibraryEntry && (
