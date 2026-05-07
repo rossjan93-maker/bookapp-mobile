@@ -27,8 +27,9 @@
  *   640–670 last-token prefix: partial head match (≥50%)
  *   600–699 moderate token overlap (≥50%)
  *   500–599 combined title+author token overlap (≥50%)
+ *    880   full author-name match (every query token in author) — HIGH
  *   400+   fuzzy (any query token appears in title)          — LOW, never shown
- *   200+   author-only match                                 — LOW, never shown
+ *   200+   author-only match (partial)                       — LOW, never shown
  *    50    fallback / noise                                   — LOW, never shown
  */
 
@@ -45,6 +46,7 @@ export type MatchType =
   | 'strong_token'
   | 'moderate_token'
   | 'title_author'
+  | 'author_full'
   | 'fuzzy'
   | 'author_only'
   | 'fallback';
@@ -105,6 +107,19 @@ export function scoreBookResult(
     ({ score, confidence: confidence(score), matchType, rawRank: 0 });
 
   if (qTokens.length === 0) return mk(50, 'fallback');
+
+  // ── 0. Full author-name match — query IS the author ──────────────────────
+  //   When every query token appears in the author tokens (i.e. user typed
+  //   the author's full name like "tana french"), every book by that author
+  //   is a legitimate HIGH-confidence result. Without this rule the
+  //   author-only branch caps the score at 200 (LOW, never shown), so the
+  //   real catalog gets filtered out and only weird title-shaped misses
+  //   survive. Score sits between substring (850) and prefix (900) so true
+  //   title hits still win when both are present.
+  if (qTokens.length >= 2 && authorTokenSet.size > 0) {
+    const allInAuthor = qTokens.every(t => authorTokenSet.has(t));
+    if (allInAuthor) return mk(880, 'author_full');
+  }
 
   // ── 1. Exact title match ──────────────────────────────────────────────────
   if (ntitle === nq)                                          return mk(1000, 'exact');

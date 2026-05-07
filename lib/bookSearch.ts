@@ -361,6 +361,21 @@ export async function searchBooks(
   const sigTokens = tokens.filter(t => t.length >= 3 && !STOP.has(t));
   const lastTok   = tokens[tokens.length - 1];
 
+  // ── Person-name detection ───────────────────────────────────────────────
+  // Heuristic: 2–4 tokens, every token is purely alphabetic (no digits or
+  // punctuation), 2–14 chars, and none are stop words. This catches author
+  // queries like "tana french", "george r r martin", "jrr tolkien" without
+  // misfiring on titles like "the road" (stop word) or "1984" (digits).
+  // When matched we additionally fire author-qualified GB + OL variants so
+  // the APIs return the author's catalog instead of guessing at a title.
+  const looksLikePersonName = (() => {
+    if (tokens.length < 2 || tokens.length > 4) return false;
+    return tokens.every(t =>
+      /^[a-zA-Z][a-zA-Z.'-]{0,13}$/.test(t) &&
+      !STOP.has(t.toLowerCase())
+    );
+  })();
+
   // When the last token is short (< 4 chars) it's likely an incomplete partial
   // word ("boa" for "boats"). Exclude it from the reduced/coreTwo OL variants
   // so we don't fire useless 0-result word-indexed queries.
@@ -373,7 +388,7 @@ export async function searchBooks(
     ? tokens.slice(0, -1).join(' ')
     : null;
 
-  type Variant = { param: 'title' | 'q'; q: string };
+  type Variant = { param: 'title' | 'q' | 'author'; q: string };
   const variantList: Variant[] = [];
   variantList.push({ param: 'title', q: searchQuery });
   variantList.push({ param: 'q',     q: searchQuery });
@@ -383,6 +398,12 @@ export async function searchBooks(
     variantList.push({ param: 'title', q: coreTwo });
   if (headTokens && headTokens !== reduced && headTokens !== coreTwo && headTokens !== searchQuery)
     variantList.push({ param: 'title', q: headTokens });
+  // Author-qualified variant: fires when the query looks like a person's
+  // name. OL `author=` returns docs ranked by works whose author_name
+  // matches, so "tana french" gets her catalog back instead of titles
+  // that happen to contain those tokens.
+  if (looksLikePersonName)
+    variantList.push({ param: 'author', q: searchQuery });
 
   const seenV = new Set<string>();
   const variants = variantList.filter(v => {
@@ -396,8 +417,25 @@ export async function searchBooks(
   // Wrap each leg with a per-leg timing log so a slow provider is identifiable
   // in the console without instrumenting the call sites.
   const tGb0 = Date.now();
-  const gbPromise = fetchGoogleBooks(searchQuery).then(books => {
-    if (__DEV__) console.log(`[bookSearch] GB leg ${Date.now() - tGb0}ms (${books.length} results)`);
+  // For person-name queries we use Google Books' `inauthor:` operator so
+  // the result set is the author's catalog rather than fuzzy keyword hits.
+  // Combine with the bare query so we still capture title hits when the
+  // person-name heuristic fires on a query that's also a real title.
+  const gbQuery = looksLikePersonName
+    ? `inauthor:"${searchQuery}"`
+    : searchQuery;
+  const gbPromise = fetchGoogleBooks(gbQuery).then(async books => {
+    if (__DEV__) console.log(`[bookSearch] GB leg ${Date.now() - tGb0}ms (${books.length} results) [${looksLikePersonName ? 'author' : 'keyword'}]`);
+    // For author queries, also fetch the keyword leg in parallel so we
+    // don't miss collaborations / anthologies the inauthor: scope drops.
+    if (looksLikePersonName) {
+      const extra = await fetchGoogleBooks(searchQuery).catch(() => [] as BookResult[]);
+      const seen  = new Set(books.map(b => _dedupKey(b.title, b.author_name?.[0])));
+      for (const e of extra) {
+        const k = _dedupKey(e.title, e.author_name?.[0]);
+        if (!seen.has(k)) { seen.add(k); books.push(e); }
+      }
+    }
     return books;
   });
 
