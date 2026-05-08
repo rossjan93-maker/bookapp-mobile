@@ -211,6 +211,7 @@ $$;
 
 revoke all on function public.purge_provider_lookup_log() from public;
 revoke all on function public.purge_provider_lookup_log() from anon, authenticated;
+grant execute on function public.purge_provider_lookup_log() to service_role;
 
 -- ---------------------------------------------------------------------------
 -- (6) Advisory lock RPC wrappers for the verify-books-batch Edge Function
@@ -246,8 +247,18 @@ create table if not exists public.verify_books_batch_lock (
 
 alter table public.verify_books_batch_lock enable row level security;
 revoke all on public.verify_books_batch_lock from anon, authenticated;
--- No policies → only service-role / SECURITY DEFINER functions can touch it.
+-- No policies → anon/authenticated denied. service_role bypasses RLS and
+-- retains the default Supabase grants on public.* tables, which is what
+-- the harness uses to inspect the lock row directly. The SECURITY DEFINER
+-- RPCs above are the production access path.
 
+-- Stale-lock threshold: a lock older than this is considered abandoned
+-- (Edge run crashed before its `finally` could release). 30 minutes is a
+-- conservative ceiling — a healthy batch with limit=500 takes far less
+-- (mostly bounded by the 5s-per-provider-call * worst case ~2 calls/row,
+-- so ~5000s only if every single row is a worst-case timeout, which the
+-- rate limiter prevents). Bumping past 30m would mean a real stuck lock
+-- delays the next scheduled run by that long.
 create or replace function public.verify_books_batch_acquire_lock(p_actor text default null)
 returns boolean
 language plpgsql
@@ -255,8 +266,34 @@ security definer
 set search_path = public
 as $$
 declare
+  v_stale_threshold constant interval := interval '30 minutes';
+  v_existing_held_at timestamptz;
+  v_existing_held_by text;
   v_inserted int;
 begin
+  -- Step 1: opportunistic stale-lock takeover. If a lock row exists and
+  -- its held_at is older than the threshold, delete it FIRST so the
+  -- subsequent INSERT can land. The DELETE is filtered by held_at so a
+  -- fresh lock from a peer invocation is never disturbed.
+  select held_at, held_by
+    into v_existing_held_at, v_existing_held_by
+    from public.verify_books_batch_lock
+   where singleton = true;
+
+  if v_existing_held_at is not null
+     and v_existing_held_at < (now() - v_stale_threshold) then
+    -- Log the takeover to the application log via RAISE NOTICE; ops can
+    -- grep this in Postgres logs if a stale takeover ever happens.
+    raise notice 'verify_books_batch_acquire_lock: stale lock takeover (held_by=% held_at=%)',
+      v_existing_held_by, v_existing_held_at;
+    delete from public.verify_books_batch_lock
+     where singleton = true
+       and held_at < (now() - v_stale_threshold);
+  end if;
+
+  -- Step 2: normal acquire path. ON CONFLICT DO NOTHING means a fresh
+  -- lock from a peer (held_at within the threshold) wins and we report
+  -- false. The stale takeover above already cleared truly-abandoned rows.
   insert into public.verify_books_batch_lock (singleton, held_by)
   values (true, p_actor)
   on conflict (singleton) do nothing;
@@ -298,6 +335,14 @@ begin
 end;
 $$;
 
+-- Lock down EXECUTE then explicitly grant to service_role.
+-- RLS bypass for service_role does NOT imply function EXECUTE permission;
+-- they are separate privilege systems. Without these GRANTs the Edge
+-- Function's admin.rpc(...) calls would fail with `permission denied for function`.
 revoke all on function public.verify_books_batch_acquire_lock(text)        from public, anon, authenticated;
 revoke all on function public.verify_books_batch_release_lock()            from public, anon, authenticated;
 revoke all on function public.verify_books_batch_force_release_lock()      from public, anon, authenticated;
+
+grant execute on function public.verify_books_batch_acquire_lock(text)        to service_role;
+grant execute on function public.verify_books_batch_release_lock()            to service_role;
+grant execute on function public.verify_books_batch_force_release_lock()      to service_role;
