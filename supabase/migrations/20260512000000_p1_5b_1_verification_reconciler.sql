@@ -302,6 +302,17 @@ begin
 end;
 $$;
 
+-- Drop the legacy zero-arg release function if a previous draft of this
+-- migration shipped it. Postgres treats verify_books_batch_release_lock()
+-- and verify_books_batch_release_lock(text) as two distinct overloaded
+-- functions, so a CREATE OR REPLACE on the new signature would NOT remove
+-- the old one — leaving an unconditional DELETE callable by service-role
+-- and reintroducing the clobber-fresh-peer-lock race we just closed.
+-- Idempotent: no-op on a clean DB where the zero-arg version was never
+-- created (e.g. fresh projects), and a clean drop on environments that
+-- ran an earlier draft of this migration.
+drop function if exists public.verify_books_batch_release_lock();
+
 -- Actor-aware release.
 --
 -- Why this is not unconditional: with the 30-minute stale-lock takeover in
