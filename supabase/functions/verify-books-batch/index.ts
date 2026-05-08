@@ -100,6 +100,70 @@ function isEmpty(v: unknown): boolean {
   return false;
 }
 
+// ─── P1.5b-1.1 helpers ──────────────────────────────────────────────────────
+// F1: parser for the legacy `onboarding_isbn_<10-or-13-digits>` external_id
+// scheme. The digits ARE an ISBN; the `onboarding_isbn_` prefix is an
+// internal Readstack convention from the onboarding entry flow and is
+// unrecognized by every external provider. We extract the ISBN and inject
+// matching tries into the resolver so these rows can verify against either
+// provider via the standard ISBN/ISBN13 paths.
+//
+// Bounded by the strict 10-or-13-digit regex; nothing else is accepted.
+// Returns null for any input that doesn't match — callers must treat null
+// as "not an onboarding_isbn external_id" (NOT as "verification failure").
+function parseOnboardingIsbn(
+  externalId: string | null,
+): { kind: 'isbn' | 'isbn13'; value: string } | null {
+  if (!externalId) return null;
+  const m = externalId.match(/^onboarding_isbn_(\d{10}|\d{13})$/);
+  if (!m) return null;
+  return m[1].length === 13 ? { kind: 'isbn13', value: m[1] } : { kind: 'isbn', value: m[1] };
+}
+
+// Modified F4: terminal-classification helper.
+//
+// A row is "terminal" when there is no actionable verification path forward
+// — no recognized external_id scheme AND no ISBN/ISBN13 to fall back on.
+// These rows would otherwise spin uselessly through every cron tick,
+// burning provider budget that should serve verifiable rows.
+//
+// Three terminal reasons (the strings are persisted to
+// books.last_verification_error verbatim):
+//   - 'placeholder_manual_entry'        — `/works/other_<slug>` scratch rows
+//   - 'unsupported_external_id_scheme'  — recognized as opaque (e.g. `goodreads:NNN`)
+//                                          but no ISBN to fall back on
+//   - 'missing_supported_identifier'    — no external_id AND no ISBN at all
+//
+// Returns null for rows that DO have a verification path (caller proceeds
+// to the normal resolver loop). Order of checks matters: we accept ISBN as
+// sufficient even when the external_id is unrecognized, because the ISBN
+// path is high-confidence and the row will verify normally via that path.
+//
+// IMPORTANT: this helper does NOT mark rows verified. The caller, when
+// terminal, sets verification_attempt_count = MAX_ATTEMPTS and persists
+// the reason string — the row stays in its existing provenance_state
+// (typically 'legacy'). F5 is the future migration that may move these to
+// `'unverified'` or a new `'manual'` state for surface filtering.
+type TerminalReason =
+  | 'placeholder_manual_entry'
+  | 'unsupported_external_id_scheme'
+  | 'missing_supported_identifier';
+
+function classifyTerminal(row: ReconcilerRow): TerminalReason | null {
+  // ISBN of either form is always an actionable verification path.
+  if (!isEmpty(row.isbn13) || !isEmpty(row.isbn)) return null;
+
+  // External_id schemes the resolver knows how to dispatch on.
+  if (row.external_id) {
+    if (/^\/works\/OL\d+W$/.test(row.external_id)) return null;          // OL works key
+    if (/^gb[:_][A-Za-z0-9_-]+$/.test(row.external_id)) return null;     // GB volume id
+    if (parseOnboardingIsbn(row.external_id)) return null;               // F1: onboarding_isbn_<digits>
+    if (/^\/works\/other_/.test(row.external_id)) return 'placeholder_manual_entry';
+    return 'unsupported_external_id_scheme';
+  }
+  return 'missing_supported_identifier';
+}
+
 // Apply fill-empty / longer-wins policy. The reconciler runs as service-role
 // so the P0.5 trigger lets it write anything; this is the application-layer
 // guard rail.
@@ -225,11 +289,76 @@ async function runReconciler(admin: SupabaseClient, batchLimit: number): Promise
       break;
     }
     processed += 1;
+
+    // Modified F4: pre-flight terminal classification. If the row has no
+    // actionable verification path, mark it terminal and skip provider
+    // attempts entirely. Terminal rows get verification_attempt_count =
+    // MAX_ATTEMPTS so the reconciler's WHERE-clause predicate excludes them
+    // on subsequent runs. Provenance_state is intentionally left unchanged.
+    const terminalReason = classifyTerminal(row);
+    if (terminalReason) {
+      failed += 1;
+      const { error: updErr } = await admin.from('books').update({
+        last_verification_attempt_at: new Date().toISOString(),
+        verification_attempt_count: MAX_ATTEMPTS,
+        last_verification_error: terminalReason,
+      }).eq('id', row.id);
+      if (updErr) {
+        console.error(`[verify-books-batch] terminal update for book ${row.id}:`, updErr.message);
+      }
+      continue;
+    }
+
     const outcomes: LookupOutcome[] = [];
     let success: { provider: 'open_library' | 'google_books'; fields: CanonicalBookFields } | null = null;
 
     // Decide lookup order based on what identifiers we have.
+    //
+    // Ordering rationale (do not reorder casually):
+    //   1. ISBN-first because ISBN is the highest-confidence identifier and
+    //      the OL ISBN endpoint also returns the canonical works key, so a
+    //      successful ISBN call costs the same as a works_key call (OL even
+    //      consolidates them into a single bibkeys request internally).
+    //   2. external_id (works_key or GB volume_id) second — this is what
+    //      F2 implicitly enforces: when a row has BOTH a works_key and an
+    //      ISBN, OL ISBN is tried first; if OL ISBN returns a transient
+    //      5xx/timeout/rate_limit (mapped to status='not_found' or
+    //      'rate_limited'), control falls through to the works_key try
+    //      and then to the GB ISBN try. The for-loop only breaks on
+    //      success or on rate_limit-with-no-providers-available.
+    //   3. GB ISBN last — this is F3: when OL ISBN/works_key both return
+    //      'not_found', GB-by-ISBN gets one final shot before we record
+    //      a failure. Mirrors the symmetrical OL-then-GB ladder we use
+    //      for the cover-fetch path elsewhere in the app.
     const tries: Array<() => Promise<LookupOutcome>> = [];
+
+    // F1: synthesize an ISBN-equivalent identifier for `onboarding_isbn_<digits>`
+    // external_ids when the row's isbn/isbn13 columns are empty. Adds the
+    // synth ISBN to the start of the tries ladder so it benefits from the
+    // same OL→GB fallthrough as natively-ISBN'd rows.
+    const synthIsbn = parseOnboardingIsbn(row.external_id);
+    if (synthIsbn) {
+      const cacheKey = `${synthIsbn.kind}:${synthIsbn.value}`;
+      if (synthIsbn.kind === 'isbn13' && isEmpty(row.isbn13)) {
+        tries.push(async () => {
+          const cached = await getCachedFields(admin as never, cacheKey);
+          if (cached.hit && cached.fields) {
+            return { provider: 'open_library', lookup_kind: 'isbn13', identifier: synthIsbn.value, status: 'cache_hit', latency_ms: 0, http_status: null, error_detail: null, conflict_field: null, fields: cached.fields };
+          }
+          return await lookupOpenLibrary('isbn13', synthIsbn.value);
+        });
+        tries.push(() => lookupGoogleBooks('isbn13', synthIsbn.value));
+      } else if (synthIsbn.kind === 'isbn' && isEmpty(row.isbn)) {
+        tries.push(async () => {
+          const cached = await getCachedFields(admin as never, cacheKey);
+          if (cached.hit && cached.fields) {
+            return { provider: 'open_library', lookup_kind: 'isbn', identifier: synthIsbn.value, status: 'cache_hit', latency_ms: 0, http_status: null, error_detail: null, conflict_field: null, fields: cached.fields };
+          }
+          return await lookupOpenLibrary('isbn', synthIsbn.value);
+        });
+        tries.push(() => lookupGoogleBooks('isbn', synthIsbn.value));
+      }
+    }
 
     // Phase 1: ISBN-first (highest confidence)
     if (row.isbn13) {
@@ -335,12 +464,19 @@ async function runReconciler(admin: SupabaseClient, batchLimit: number): Promise
       }
     } else {
       failed += 1;
+      // Outcomes here are guaranteed non-empty: the pre-flight
+      // classifyTerminal() check above handles the no-actionable-identifier
+      // case (sets count=MAX_ATTEMPTS and emits a diagnostic terminal
+      // string). If we somehow reach this branch with outcomes.length===0,
+      // it means a row had a tries[] entry that didn't run — surface it as
+      // a distinct error string for triage rather than silently incrementing.
+      //
       // Truncate to MAX_ERROR_LEN — defense-in-depth: the books CHECK
       // also enforces the 500-char cap, but we'd rather not surface a
       // CHECK violation from the reconciler when we can avoid it.
       const lastError = outcomes.length > 0
         ? `${outcomes[outcomes.length - 1].status}:${outcomes[outcomes.length - 1].error_detail ?? ''}`.slice(0, MAX_ERROR_LEN)
-        : 'no_attempts_made';
+        : 'tries_built_but_none_executed';
       const { error: updErr } = await admin.from('books').update({
         last_verification_attempt_at: new Date().toISOString(),
         verification_attempt_count: row.verification_attempt_count + 1,

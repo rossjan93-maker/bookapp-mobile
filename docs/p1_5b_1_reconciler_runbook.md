@@ -275,3 +275,47 @@ After 7 days of hourly runs:
 - [ ] Edit `verify-books-batch-hourly` trigger → schedule `0 3 * * *`
       (daily 03:00 UTC); rename to `verify-books-batch-nightly`
 - [ ] Update `replit.md` "P1.5b-1 cadence" note
+
+## 8. Error glossary (`books.last_verification_error`)
+
+Error strings emitted by the reconciler, by category. Use 4b / 4f to query
+distribution. Strings are ≤ 500 chars (CHECK-enforced).
+
+### 8a. Provider outcomes (transient — retry path)
+| String pattern | Meaning | Reconciler behaviour |
+|---|---|---|
+| `rate_limited:local_bucket_empty` | The per-process token bucket was exhausted before the call. | Counter +1, retried per backoff ladder. |
+| `rate_limited:rate_limited` | Provider returned HTTP 429. | Counter +1, provider paused, retried. |
+| `timeout:timeout` | The call exceeded `REQUEST_TIMEOUT_MS` (5 s). | Counter +1, retried. |
+| `not_found:http_503` | Provider returned HTTP 503 (mapped to `not_found` because no fields). | Counter +1, retried. |
+| `not_found:http_<NNN>` | Other non-2xx, non-404, non-429 HTTP response. | Counter +1, retried. |
+| `not_found:not_found` | Provider returned HTTP 404 / empty result for ISBN search. | Counter +1, retried (real catalog gap candidate). |
+| `provider_error:<detail>` | Successful HTTP but unparseable / malformed payload. | Counter +1, retried. |
+
+### 8b. Terminal classifications (P1.5b-1.1 — counter set to MAX_ATTEMPTS, no retry)
+These rows have **no actionable verification path** and are removed from
+the eligible-rows query by the `verification_attempt_count < MAX_ATTEMPTS`
+predicate. Provenance_state is intentionally **left unchanged** (typically
+remains `'legacy'`); F5 will decide whether to migrate them to a different
+state for surface filtering.
+
+| String | Meaning | Example |
+|---|---|---|
+| `placeholder_manual_entry` | external_id matches `^/works/other_<slug>$` — Readstack-internal scratch row, never resolvable against any provider. | `/works/other_movq1ntf` |
+| `unsupported_external_id_scheme` | external_id is non-empty and non-blank but doesn't match any scheme the resolver dispatches on (OL works key, GB volume id, onboarding_isbn) **and** the row has no ISBN to fall back on. | `goodreads:53146871` (no ISBN columns set) |
+| `missing_supported_identifier` | external_id is NULL/empty **and** isbn / isbn13 are both NULL/empty. Nothing to dispatch on. | NULL external_id, both ISBN columns NULL |
+
+**Operational note:** the introduction of these strings means
+`verification_attempt_count = MAX_ATTEMPTS` no longer implies "provider
+failure after 5 attempts". Distinguish the two cases via
+`last_verification_error`:
+- terminal classification → one of the three strings above (no provider
+  call was made; check `provider_lookup_log` — there will be no rows for
+  that book_id from the run that wrote the terminal string)
+- exhausted-retry failure → a Provider-outcomes string from §8a (provider
+  log will contain ≥ 1 row from the corresponding attempt windows)
+
+### 8c. Defensive / should-never-happen
+| String | Meaning | Action |
+|---|---|---|
+| `tries_built_but_none_executed` | A row produced ≥ 1 entry in the resolver's `tries[]` array but the loop didn't run any of them (likely a rate-limit break before the first iteration). | Investigate `provider_lookup_log` and rate-limiter state at the timestamp; previously this was the catch-all `no_attempts_made` string from pre-P1.5b-1.1. |
