@@ -41,6 +41,9 @@ Go to **Database → Scheduled Functions** in the Supabase dashboard.
 - URL: `https://<project>.functions.supabase.co/verify-books-batch?limit=200`
 - Headers:
   - `Authorization: Bearer <service-role-key>`
+    (paste the actual service-role key into the Supabase dashboard's
+    scheduled-trigger header field. **Never** commit it to source files,
+    docs, or env templates — the dashboard stores it encrypted.)
 
 **Week 2+ (steady state):**
 
@@ -177,16 +180,24 @@ update public.books
    and verification_attempt_count >= 5;
 ```
 
-### 5c. Stuck advisory lock
+### 5c. Stuck reconciler lock
 
-If a reconciler invocation crashed without releasing the advisory lock,
+If a reconciler invocation crashed without releasing the lock,
 subsequent invocations will return `skipped: already_running` indefinitely.
-Connection-scoped advisory locks normally release at session end, but to
-force-release:
+
+To inspect the held lock (who/when):
 
 ```sql
-select pg_advisory_unlock(2069037057);  -- key 0x7B5B0001
+select * from public.verify_books_batch_lock;
 ```
+
+To force-release (operator-acknowledged recovery):
+
+```sql
+select public.verify_books_batch_force_release_lock();
+```
+
+The next scheduled or manual invocation will then proceed normally.
 
 ### 5d. Force-cache-bust a provider response
 

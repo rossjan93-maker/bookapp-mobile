@@ -83,13 +83,31 @@ alter table public.books
 -- ---------------------------------------------------------------------------
 
 do $$ begin
+  -- Table-qualified lookup avoids accidental name collisions if a
+  -- similarly-named constraint is later added on a different table.
   if not exists (
-    select 1 from pg_constraint where conname = 'books_canonical_provider_check'
+    select 1 from pg_constraint
+     where conname = 'books_canonical_provider_check'
+       and conrelid = 'public.books'::regclass
   ) then
     alter table public.books
       add constraint books_canonical_provider_check
       check (canonical_provider is null
              or canonical_provider in ('open_library', 'google_books'));
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'books_last_verification_error_length_check'
+       and conrelid = 'public.books'::regclass
+  ) then
+    -- Defense-in-depth: the Edge Function also truncates to 500 before
+    -- writing. Mirror the cap on provider_lookup_log.error_detail so
+    -- both audit surfaces share the same bound.
+    alter table public.books
+      add constraint books_last_verification_error_length_check
+      check (last_verification_error is null
+             or length(last_verification_error) <= 500);
   end if;
 end $$;
 
@@ -193,3 +211,93 @@ $$;
 
 revoke all on function public.purge_provider_lookup_log() from public;
 revoke all on function public.purge_provider_lookup_log() from anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- (6) Advisory lock RPC wrappers for the verify-books-batch Edge Function
+-- ---------------------------------------------------------------------------
+-- pg_try_advisory_lock() and pg_advisory_unlock() are built-in Postgres
+-- functions, but PostgREST does NOT expose built-ins via /rest/v1/rpc by
+-- default — only functions in the exposed schema (public). The Edge Function
+-- needs explicit SECURITY DEFINER wrappers to acquire / release the lock
+-- across its HTTP request lifetime.
+--
+-- IMPORTANT: PostgREST opens a fresh DB session per request. Session-scoped
+-- advisory locks (pg_try_advisory_lock / pg_advisory_unlock) only live for
+-- the duration of that session. Because the Edge Function makes the lock
+-- and unlock calls in TWO separate HTTP requests, session-scoped locks
+-- would auto-release after the lock call returns — defeating the purpose.
+--
+-- We therefore use a small public.verify_books_batch_lock table as an
+-- explicit lock primitive: a single-row table where the row's presence
+-- means "a run is in progress." The acquire RPC uses INSERT ... ON CONFLICT
+-- DO NOTHING and reports whether it acquired; the release RPC DELETEs the
+-- row. Both run as SECURITY DEFINER so the Edge Function can call them
+-- without granting wide privileges to the service-role-backed RPC layer
+-- (defense-in-depth — service-role already bypasses RLS).
+--
+-- The held_at timestamp lets ops detect a stuck lock (crashed Edge run)
+-- and force-release it; the runbook documents the recovery procedure.
+
+create table if not exists public.verify_books_batch_lock (
+  singleton  boolean primary key default true check (singleton = true),
+  held_at    timestamptz not null default now(),
+  held_by    text                                   -- free-text actor label for ops debugging
+);
+
+alter table public.verify_books_batch_lock enable row level security;
+revoke all on public.verify_books_batch_lock from anon, authenticated;
+-- No policies → only service-role / SECURITY DEFINER functions can touch it.
+
+create or replace function public.verify_books_batch_acquire_lock(p_actor text default null)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_inserted int;
+begin
+  insert into public.verify_books_batch_lock (singleton, held_by)
+  values (true, p_actor)
+  on conflict (singleton) do nothing;
+  get diagnostics v_inserted = row_count;
+  return v_inserted = 1;
+end;
+$$;
+
+create or replace function public.verify_books_batch_release_lock()
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_deleted int;
+begin
+  delete from public.verify_books_batch_lock where singleton = true;
+  get diagnostics v_deleted = row_count;
+  return v_deleted = 1;
+end;
+$$;
+
+create or replace function public.verify_books_batch_force_release_lock()
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_deleted int;
+begin
+  -- Identical body to release_lock today, but kept as a separate name
+  -- so the runbook + audit logs can distinguish operator-forced releases
+  -- from normal end-of-run releases.
+  delete from public.verify_books_batch_lock where singleton = true;
+  get diagnostics v_deleted = row_count;
+  return v_deleted = 1;
+end;
+$$;
+
+revoke all on function public.verify_books_batch_acquire_lock(text)        from public, anon, authenticated;
+revoke all on function public.verify_books_batch_release_lock()            from public, anon, authenticated;
+revoke all on function public.verify_books_batch_force_release_lock()      from public, anon, authenticated;

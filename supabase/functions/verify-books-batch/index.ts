@@ -41,11 +41,10 @@ import { anyProviderAvailable } from '../_shared/providers/rateLimiter.ts';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-const ADVISORY_LOCK_KEY = 0x7B5B_0001; // arbitrary stable key for this job
-
 const DEFAULT_BATCH_LIMIT = 100;
 const MAX_BATCH_LIMIT = 500;
 const MAX_ATTEMPTS = 5;
+const MAX_ERROR_LEN = 500; // mirrors books.last_verification_error CHECK
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -77,9 +76,13 @@ function isEmpty(v: unknown): boolean {
 
 // Apply fill-empty / longer-wins policy. The reconciler runs as service-role
 // so the P0.5 trigger lets it write anything; this is the application-layer
-// guard rail. The strict rule for P1.5b-1: NEVER overwrite title/author
-// (those are catalog identity); fill-empty for everything else; for
-// description/subjects, longer/superset wins.
+// guard rail.
+//
+// STRICT P1.5b-1 RULE: title and author are NEVER written by mergeFields,
+// not even when the existing value is empty. Catalog identity is owned by
+// the original inserter (or by the future trusted-write path in P1.5b-2);
+// the reconciler only fills metadata around it. If you ever see a "title":
+// or "author": key emitted from this function, it is a bug.
 function mergeFields(
   existing: ReconcilerRow,
   incoming: CanonicalBookFields,
@@ -95,6 +98,9 @@ function mergeFields(
   }>,
 ): Record<string, unknown> {
   const patch: Record<string, unknown> = {};
+  // (NOTE: title and author are intentionally absent from this function.
+  //  See the docblock above. Adding them here is a P1.5b-1 boundary
+  //  violation — route catalog identity changes through P1.5b-2 instead.)
   // External id: fill if empty.
   if (isEmpty(existing.external_id) && !isEmpty(incoming.external_id)) {
     patch.external_id = incoming.external_id;
@@ -303,8 +309,11 @@ async function runReconciler(admin: SupabaseClient, batchLimit: number): Promise
       }
     } else {
       failed += 1;
+      // Truncate to MAX_ERROR_LEN — defense-in-depth: the books CHECK
+      // also enforces the 500-char cap, but we'd rather not surface a
+      // CHECK violation from the reconciler when we can avoid it.
       const lastError = outcomes.length > 0
-        ? `${outcomes[outcomes.length - 1].status}:${outcomes[outcomes.length - 1].error_detail ?? ''}`.slice(0, 500)
+        ? `${outcomes[outcomes.length - 1].status}:${outcomes[outcomes.length - 1].error_detail ?? ''}`.slice(0, MAX_ERROR_LEN)
         : 'no_attempts_made';
       const { error: updErr } = await admin.from('books').update({
         last_verification_attempt_at: new Date().toISOString(),
@@ -353,16 +362,24 @@ Deno.serve(async (req) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  // Acquire advisory lock to prevent overlapping invocations.
-  // pg_try_advisory_lock returns true when acquired, false otherwise.
-  // The lock auto-releases at session end (when the request finishes).
-  const { data: lockData, error: lockErr } = await admin.rpc('pg_try_advisory_lock', { key: ADVISORY_LOCK_KEY });
+  // Acquire the table-row lock primitive defined in the migration.
+  // We use a row-presence lock (not pg_try_advisory_lock) because PostgREST
+  // opens a fresh DB session per HTTP request — a session-scoped advisory
+  // lock would auto-release after the acquire call returned, defeating the
+  // overlap protection. See the migration header for the rationale.
+  const actorLabel = `verify-books-batch@${new Date().toISOString()}`;
+  const { data: acquired, error: lockErr } = await admin.rpc(
+    'verify_books_batch_acquire_lock',
+    { p_actor: actorLabel },
+  );
   if (lockErr) {
-    // The function may not be exposed via RPC. Fall back to running without
-    // a lock — overlap is rare given the schedule and the partial-index
-    // ordering would mostly process the same rows redundantly, not corrupt.
-    console.warn('[verify-books-batch] advisory lock RPC failed; running without lock:', lockErr.message);
-  } else if (lockData === false) {
+    console.error('[verify-books-batch] acquire-lock RPC failed:', lockErr.message);
+    return Response.json(
+      { ok: false, error: `acquire_lock_failed: ${lockErr.message}` },
+      { status: 500, headers: corsHeaders },
+    );
+  }
+  if (acquired !== true) {
     return Response.json(
       { ok: true, skipped: true, reason: 'already_running' },
       { headers: corsHeaders },
@@ -377,9 +394,11 @@ Deno.serve(async (req) => {
     console.error('[verify-books-batch] ERROR:', message);
     return Response.json({ ok: false, error: message }, { status: 500, headers: corsHeaders });
   } finally {
-    // Best-effort unlock; safe even if we never acquired.
-    if (!lockErr) {
-      await admin.rpc('pg_advisory_unlock', { key: ADVISORY_LOCK_KEY }).catch(() => {});
+    // Always release. If the release fails, log loudly — the runbook covers
+    // the manual recovery procedure (verify_books_batch_force_release_lock).
+    const { error: releaseErr } = await admin.rpc('verify_books_batch_release_lock');
+    if (releaseErr) {
+      console.error('[verify-books-batch] release-lock RPC failed:', releaseErr.message);
     }
   }
 });

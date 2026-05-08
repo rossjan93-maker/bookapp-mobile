@@ -1,0 +1,47 @@
+Hold before apply/deploy.
+
+This P1.5b-1 package looks directionally good, but I want to review the actual artifacts and clarify a few implementation risks before anything touches Supabase.
+
+Please provide:
+
+1. Full migration SQL:
+supabase/migrations/20260512000000_p1_5b_1_verification_reconciler.sql
+
+2. Full Edge Function:
+supabase/functions/verify-books-batch/index.ts
+
+3. Full shared provider utility files:
+- supabase/functions/_shared/providers/types.ts
+- supabase/functions/_shared/providers/rateLimiter.ts
+- supabase/functions/_shared/providers/openLibrary.ts
+- supabase/functions/_shared/providers/googleBooks.ts
+- supabase/functions/_shared/providers/cache.ts
+- supabase/functions/_shared/providers/lookupLogger.ts
+
+4. Clarify the advisory lock implementation:
+You said the Edge Function uses pg_try_advisory_lock(0x7B5B0001).
+How is the Edge Function calling that?
+- Is there a SECURITY DEFINER RPC wrapper in the migration?
+- Is it using an existing RPC?
+- Or is it attempting raw SQL from Supabase JS?
+
+If there is no RPC/helper, please add an explicit lock/unlock RPC or explain the supported mechanism. I do not want the reconciler to deploy with a lock that only exists in pseudocode.
+
+5. Add or confirm a length guard for books.last_verification_error.
+provider_lookup_log.error_detail is capped at 500 chars, but books.last_verification_error appears uncapped. Please add a CHECK constraint or guarantee the Edge Function truncates it before writing. I prefer both:
+- DB CHECK length(last_verification_error) <= 500 when not null
+- Edge truncates to 500
+
+6. Confirm scheduled trigger security:
+The runbook should not hard-code or commit the service-role key anywhere.
+Confirm the service-role token is only configured in Supabase dashboard / secure environment, not in source files or docs with a real value.
+
+7. Confirm idempotency details:
+For CHECK constraints, use table-specific pg_constraint checks where possible, not global conname-only checks, to avoid accidental name collisions later.
+
+8. Confirm the Edge Function does not overwrite title/author.
+Trusted provider writes may fill/upgrade metadata, but title/author should not be overwritten in P1.5b-1.
+
+9. After these confirmations/fixes, give me the exact apply/deploy order again.
+
+Do not apply, deploy, or schedule anything yet.
