@@ -4,7 +4,7 @@ expertMode = true
 
 [nix]
 channel = "stable-25_05"
-packages = ["mailutils"]
+packages = ["mailutils", "supabase-cli"]
 
 [workflows]
 runButton = "Project"

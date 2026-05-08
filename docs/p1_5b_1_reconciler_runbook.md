@@ -17,14 +17,51 @@ supabase functions deploy verify-books-batch
 The function picks up these env vars from the Supabase runtime:
 
 - `SUPABASE_URL` (auto-injected)
-- `SUPABASE_SERVICE_ROLE_KEY` (auto-injected)
+- `READSTACK_SERVICE_ROLE_KEY` (preferred; operator-set via `supabase secrets
+  set` — see below for why), falling back to `SUPABASE_SERVICE_ROLE_KEY`
+  (auto-injected by the runtime).
 - `GOOGLE_BOOKS_API_KEY` (optional; falls back to anonymous Google Books
   requests subject to the public 1000/day quota)
 
-If you need to set `GOOGLE_BOOKS_API_KEY` for the Edge Function:
+### Why `READSTACK_SERVICE_ROLE_KEY` and not `SUPABASE_SERVICE_ROLE_KEY`
+
+The Supabase CLI **refuses to set secrets whose name starts with `SUPABASE_`**
+— that prefix is reserved for runtime-injected values. So although the runtime
+provides a `SUPABASE_SERVICE_ROLE_KEY` automatically, operators cannot
+override or rotate it under that name. We resolve the key with:
+
+```ts
+Deno.env.get('READSTACK_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+```
+
+so the operator-settable alias wins when present, and the runtime fallback
+keeps the function working even if the alias hasn't been set yet (provided
+both decode to `role=service_role` on the same project — they will, because
+they're the same key).
+
+If neither resolves the function returns HTTP 500
+`{"ok":false,"error":"missing_service_role_key"}` rather than 401, so the
+failure mode points at the deploy step instead of the request.
+
+The function logs **boolean presence + key length** of both env vars on
+module load (handy for triaging "is the secret actually set?"), and
+**never** logs the value itself.
+
+### Required secret
 
 ```bash
-supabase secrets set GOOGLE_BOOKS_API_KEY=<key>
+supabase secrets set READSTACK_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY" \
+  --project-ref <project-ref>
+```
+
+Smoke-testing from the shell with `Authorization: Bearer
+$SUPABASE_SERVICE_ROLE_KEY` is still correct — the local shell variable and
+the Edge function's resolved key decode to the same JWT.
+
+### Optional secret
+
+```bash
+supabase secrets set GOOGLE_BOOKS_API_KEY=<key> --project-ref <project-ref>
 ```
 
 ## 2. Schedule (Supabase Dashboard)

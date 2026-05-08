@@ -25,8 +25,19 @@
 //   supabase functions deploy verify-books-batch
 //
 // Env required:
-//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY  (provided by Supabase runtime)
-//   GOOGLE_BOOKS_API_KEY                      (optional; falls back to anon)
+//   SUPABASE_URL                              (auto-injected by Supabase runtime)
+//   READSTACK_SERVICE_ROLE_KEY                (preferred; set via `supabase secrets set`)
+//     ↳ falls back to SUPABASE_SERVICE_ROLE_KEY (auto-injected at runtime)
+//   GOOGLE_BOOKS_API_KEY                      (optional; falls back to anon GB)
+//
+// Why two names: the Supabase CLI refuses to set secrets whose name starts
+// with `SUPABASE_` (reserved prefix). The runtime injects its own
+// SUPABASE_SERVICE_ROLE_KEY automatically — but operators who need to override
+// it (e.g. to lock the function to a rotated key, or to test against a
+// non-default value) cannot do so under that name. READSTACK_SERVICE_ROLE_KEY
+// is the operator-settable alias; if present it wins, otherwise we fall back
+// to the runtime-injected value. Both must decode to role=service_role for
+// the auth gate below to pass.
 // ============================================================================
 
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
@@ -39,7 +50,22 @@ import { LookupLogger } from '../_shared/providers/lookupLogger.ts';
 import { anyProviderAvailable } from '../_shared/providers/rateLimiter.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+// Operator-settable alias wins over the runtime-injected key. See header for
+// rationale. We resolve once at module load; both auth gate and admin client
+// must use the same value, so a single source of truth is important.
+const SERVICE_ROLE_KEY =
+  Deno.env.get('READSTACK_SERVICE_ROLE_KEY') ??
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ??
+  null;
+// Boolean presence + length only — never the value itself. Length is safe to
+// log because JWTs are not secret-by-length and this aids deploy diagnosis.
+console.log(JSON.stringify({
+  evt: 'service_role_key_resolved',
+  readstack_present: !!Deno.env.get('READSTACK_SERVICE_ROLE_KEY'),
+  fallback_present: !!Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),
+  resolved_present: !!SERVICE_ROLE_KEY,
+  resolved_length: SERVICE_ROLE_KEY?.length ?? 0,
+}));
 
 const DEFAULT_BATCH_LIMIT = 100;
 const MAX_BATCH_LIMIT = 500;
@@ -341,11 +367,19 @@ Deno.serve(async (req) => {
     return Response.json({ ok: false, error: 'method_not_allowed' }, { status: 405, headers: corsHeaders });
   }
 
+  // Fail loud if neither secret name resolved. Returning 500 (not 401) here is
+  // deliberate: the request is well-formed but the function is misconfigured,
+  // and we want operators to see a distinct failure mode that points at the
+  // deploy step, not at their request headers.
+  if (!SERVICE_ROLE_KEY) {
+    return Response.json({ ok: false, error: 'missing_service_role_key' }, { status: 500, headers: corsHeaders });
+  }
+
   // Service-role-only auth gate. We compare the JWT to the service-role key
   // directly because the reconciler is a privileged background job — there
   // is no user identity to authenticate, only the operator/cron credential.
   const auth = req.headers.get('Authorization') ?? '';
-  const expected = `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`;
+  const expected = `Bearer ${SERVICE_ROLE_KEY}`;
   if (auth !== expected) {
     return Response.json({ ok: false, error: 'unauthorized' }, { status: 401, headers: corsHeaders });
   }
@@ -358,7 +392,7 @@ Deno.serve(async (req) => {
     if (Number.isFinite(n) && n > 0) batchLimit = Math.min(n, MAX_BATCH_LIMIT);
   }
 
-  const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
