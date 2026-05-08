@@ -302,7 +302,23 @@ begin
 end;
 $$;
 
-create or replace function public.verify_books_batch_release_lock()
+-- Actor-aware release.
+--
+-- Why this is not unconditional: with the 30-minute stale-lock takeover in
+-- acquire_lock, a long-running Run A can have its lock taken over by Run B
+-- after the threshold. If Run A then finally reaches its finally{} block,
+-- an unconditional DELETE would clobber Run B's fresh, healthy lock — and
+-- a third Run C that arrives moments later would acquire on top of B,
+-- defeating overlap protection entirely.
+--
+-- The fix: scope the DELETE to the caller's own actor label. Run A's
+-- release is now a no-op (returns false) once Run B has taken over. The
+-- Edge Function logs that false as a non-fatal warning; ops sees the
+-- earlier RAISE NOTICE from acquire_lock if they need to investigate.
+--
+-- For operator-driven recovery (e.g. an actor label was lost in logs),
+-- verify_books_batch_force_release_lock() below remains unconditional.
+create or replace function public.verify_books_batch_release_lock(p_actor text)
 returns boolean
 language plpgsql
 security definer
@@ -311,12 +327,26 @@ as $$
 declare
   v_deleted int;
 begin
-  delete from public.verify_books_batch_lock where singleton = true;
+  if p_actor is null then
+    -- Refuse silently-broken callers: a NULL actor would match the
+    -- default-NULL held_by column and let any caller delete any lock.
+    raise exception 'verify_books_batch_release_lock: p_actor must not be null'
+      using errcode = '22023';
+  end if;
+  delete from public.verify_books_batch_lock
+   where singleton = true
+     and held_by = p_actor;
   get diagnostics v_deleted = row_count;
   return v_deleted = 1;
 end;
 $$;
 
+-- Operator-only unconditional release. Distinct from release_lock(p_actor)
+-- specifically so that:
+--   (a) end-of-run releases cannot accidentally clobber a fresh peer lock
+--       (they go through release_lock(p_actor) which is actor-scoped), and
+--   (b) operator recovery (lost actor label / wedged state) has a single
+--       documented escape hatch with a distinct name in audit logs.
 create or replace function public.verify_books_batch_force_release_lock()
 returns boolean
 language plpgsql
@@ -326,9 +356,6 @@ as $$
 declare
   v_deleted int;
 begin
-  -- Identical body to release_lock today, but kept as a separate name
-  -- so the runbook + audit logs can distinguish operator-forced releases
-  -- from normal end-of-run releases.
   delete from public.verify_books_batch_lock where singleton = true;
   get diagnostics v_deleted = row_count;
   return v_deleted = 1;
@@ -340,9 +367,9 @@ $$;
 -- they are separate privilege systems. Without these GRANTs the Edge
 -- Function's admin.rpc(...) calls would fail with `permission denied for function`.
 revoke all on function public.verify_books_batch_acquire_lock(text)        from public, anon, authenticated;
-revoke all on function public.verify_books_batch_release_lock()            from public, anon, authenticated;
+revoke all on function public.verify_books_batch_release_lock(text)        from public, anon, authenticated;
 revoke all on function public.verify_books_batch_force_release_lock()      from public, anon, authenticated;
 
 grant execute on function public.verify_books_batch_acquire_lock(text)        to service_role;
-grant execute on function public.verify_books_batch_release_lock()            to service_role;
+grant execute on function public.verify_books_batch_release_lock(text)        to service_role;
 grant execute on function public.verify_books_batch_force_release_lock()      to service_role;

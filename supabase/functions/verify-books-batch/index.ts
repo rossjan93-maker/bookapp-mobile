@@ -394,11 +394,19 @@ Deno.serve(async (req) => {
     console.error('[verify-books-batch] ERROR:', message);
     return Response.json({ ok: false, error: message }, { status: 500, headers: corsHeaders });
   } finally {
-    // Always release. If the release fails, log loudly — the runbook covers
-    // the manual recovery procedure (verify_books_batch_force_release_lock).
-    const { error: releaseErr } = await admin.rpc('verify_books_batch_release_lock');
+    // Actor-scoped release: passes our own actorLabel so that if this run
+    // exceeded the 30-minute stale-lock threshold and a peer took over,
+    // we won't clobber the peer's healthy lock. A `false` return here is
+    // non-fatal and means "we lost the lock to a takeover" — the matching
+    // RAISE NOTICE from acquire_lock is the audit trail.
+    const { data: released, error: releaseErr } = await admin.rpc(
+      'verify_books_batch_release_lock',
+      { p_actor: actorLabel },
+    );
     if (releaseErr) {
       console.error('[verify-books-batch] release-lock RPC failed:', releaseErr.message);
+    } else if (released !== true) {
+      console.warn('[verify-books-batch] release returned false — lock was taken over by a peer (actor=' + actorLabel + ')');
     }
   }
 });
