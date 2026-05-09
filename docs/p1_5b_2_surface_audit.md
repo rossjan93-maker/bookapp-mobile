@@ -264,6 +264,69 @@ The audit data above narrows the open UX questions to:
 **Q5 (I3/I4/I5/I6 normalization):** adopt the I1 pattern in add-book/scan/save-from-rec?
 - These are dedup-reads (id-only), not visual surfaces. The risk is row absorption.
 - **Recommend:** yes, but pair with the B.5 (a)/(b) verification — if `provenance_inserted_by` isn't being populated, the I1 pattern is incomplete.
+- **Implementation finding (post-decision):** see §C.5 — the I1 pattern doesn't transfer cleanly because `books.external_id` is UNIQUE. **Final outcome: I3–I6 deferred to P1.5b-3 (Option A).**
+
+---
+
+## §A addendum — S7: clubs list (post-audit code-review finding)
+
+Added during architect review of P1.5b-2 ship. Surface: `app/(tabs)/clubs.tsx`
+(`fetchMyClubs` and equivalents). Joins clubs → `active_book_id` → `books`
+to render the user's club list with each club's currently-active book.
+**Classification:** social-identity (same family as S5 active-club-book).
+**Today's behavior:** no provenance filter; if a club admin previously
+selected an unverified row as the active book, every member sees that
+row's metadata in their clubs list. Per Q4 (defer S1–S6), S7 is also
+**deferred to P1.5b-3**. The D4 patch (admin search) prevents the
+ingress for *new* selections; S7 only matters for already-selected
+unverified active books, which the reconciler will heal within ~1 tick.
+
+---
+
+## §C.5 — I3–I6 implementation finding & deferral (Option A accepted)
+
+### The blocker
+
+After Q5 was accepted, mid-implementation discovery: `books.external_id`
+is UNIQUE (`supabase/migrations/20260311000000_mvp_foundation.sql:63`).
+The I1 (Goodreads) pattern dedups on title+author (no UNIQUE
+constraint), so "skip the row + insert your own" is safe. For I3–I6
+(scan / add-book / save-from-rec), dedup is by `external_id`, so the
+same skip-then-insert path hits a UNIQUE violation when an unverified
+row from another user already owns the provider key.
+
+### Comparison
+
+| Scenario: User A inserted unverified row with `external_id='/works/OL999W'`. User B then scans an ISBN resolving to the same key. | Today (unfiltered) | I1 pattern (filtered) |
+|---|---|---|
+| Lookup result for B | A's row | NULL |
+| B's INSERT outcome | not attempted | UNIQUE violation (SQLSTATE 23505) |
+| B's UX | sees A's bad metadata in their library | save fails entirely |
+| Reconciler heals it | yes, within ~1 hour | yes, but only after B retries |
+
+The "save fails entirely" path is a strict regression vs. today's silent
+metadata absorption.
+
+### Three options considered
+
+- **Option A (chosen):** skip I3–I6 patches; rely on the verification reconciler's hourly drain to keep the unverified-row leakage window short. Document the finding + file P1.5b-3 follow-up.
+- **Option B:** filter + add SQLSTATE 23505 fallback that re-fetches unfiltered AND substitutes a "verifying…" UX state. More complex, requires a new display state we don't currently have.
+- **Option C:** filter with no fallback. Saves fail on cross-user external_id collisions of unverified rows. Strict provenance over reliability. Rejected.
+
+### Why Option A is defensible today
+
+1. Phase B showed **0 unverified rows** in steady state (reconciler drains hourly, keeps `unverified_remaining=0`).
+2. Phase B showed **0 cross-user terminals** (all 16 owned by 1 user).
+3. The actual leakage window per row is ~1 reconciler tick (<1h).
+4. **D1/D2/D4 (now patched) is where cross-user damage actually manifests** — those are the surfaces where one user's bad row shows up in another user's recommendations or club. Dedup-read absorption at I3–I6 is a quieter form: it gives B a single bad-metadata row, but only if B independently scans the same provider key.
+
+### Trigger for revisiting
+
+P1.5b-3 should re-evaluate I3–I6 when **either** of these telemetry signals appears:
+- `provider_lookup_log` shows ≥1 conflict per week between user-inserted unverified rows and incoming scans/saves, OR
+- A user-reported "bad metadata after scan" issue traces to a cross-user unverified row.
+
+Until then, I3–I6 stays unfiltered.
 
 Once Q1–Q5 are answered, P1.5b-2 implementation scope crystallizes to roughly:
 - 1 SQL migration (only if Q1 = `'manual'` state)
