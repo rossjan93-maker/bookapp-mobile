@@ -61,7 +61,7 @@ All hard-filter via `.or('provenance_state.eq.verified,provenance_inserted_by.eq
 
 ## §6 — P1.5b-3 backlog (in priority order)
 
-1. **I3/I4/I5/I6 dedup-read filtering via Option B-lite** — filter-first read + silent SQLSTATE 23505 fallback to unfiltered `external_id` fetch on insert collision + telemetry log. Avoids the new "verifying…" UX state proposed in §C.5 Option B. Revisit when telemetry shows cross-user `external_id` collisions on unverified rows OR a user-reported "bad metadata after scan" issue.
+1. ~~**I3/I4/I5/I6 dedup-read filtering via Option B-lite**~~ — **shipped 2026-05-09**, see `docs/p1_5b_3_dedup_audit.md`. Helper: `lib/findOrInsertBookByExternalId.ts` (filtered read → insert → unfiltered fallback on SQLSTATE 23505 → structured `console.warn` with `event="cross_user_dedup_fallback"`). I3/I5/I6 use the helper; I4 is filter-only (no insert at that flow point — narrow graceful-degradation case documented at the call site). Bonus dedup sites (`RecommendationsFeed.tsx:495`, `RecEntryScreen.tsx:245-248`, `app/(tabs)/search.tsx:1286`, `lib/recSnapshot.ts:62`) deferred to a follow-up batch.
 2. **Per-row badging for S1–S6 + S7 social surfaces** — revisit when telemetry shows cross-user friend activity referencing a terminal.
 3. **Cover-upgrade RPC** — the upgrade branch in `lib/metadataRepair.ts` still 403s. Phase B.6 found 0 conflicts in 7d so deprioritized.
 4. **`gb_` / `gb:` prefix normalization** — recommender/scan/save-from-rec use `gb:`, onboarding `RecEntryScreen` uses `gb_`; both are allowlisted, normalization deferred.

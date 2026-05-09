@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { findOrInsertBookByExternalId } from './findOrInsertBookByExternalId';
 
 export type SaveBookFromRecInput = {
   userId:      string;
@@ -26,29 +27,27 @@ export async function saveBookFromRec(
 
   try {
     if (!bookDbId && input.externalId) {
-      const { data: existing } = await client
-        .from('books')
-        .select('id')
-        .eq('external_id', input.externalId)
-        .maybeSingle();
-      if (existing) {
-        bookDbId = (existing as { id: string }).id;
-      } else {
-        const { data: created, error: createErr } = await client
-          .from('books')
-          .insert({
+      // I6 — Option B-lite cross-user dedup-read; see
+      // docs/p1_5b_3_dedup_audit.md and docs/p1_5b_2_surface_audit.md §C.5
+      const { row, error: helperErr } = await findOrInsertBookByExternalId<{ id: string }>(
+        client,
+        {
+          userId:        input.userId,
+          externalId:    input.externalId,
+          selectColumns: 'id',
+          insertPayload: {
             title:       input.title,
             author:      input.author,
             external_id: input.externalId,
             cover_url:   input.coverUrl,
             subjects:    input.subjects ?? null,
             page_count:  input.pageCount ?? null,
-          })
-          .select('id')
-          .single();
-        if (createErr) return { bookDbId: null, userBookId: null, error: createErr.message };
-        bookDbId = (created as { id: string } | null)?.id ?? null;
-      }
+          },
+          callSite: 'lib/saveBookFromRec.ts',
+        },
+      );
+      if (helperErr) return { bookDbId: null, userBookId: null, error: helperErr.message };
+      bookDbId = row?.id ?? null;
     }
 
     if (!bookDbId) {

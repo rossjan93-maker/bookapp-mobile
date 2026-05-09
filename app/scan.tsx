@@ -39,6 +39,7 @@ import {
 } from '../lib/scanFitEval';
 import { persistScan, updateScanAction } from '../lib/scanHistory';
 import { resolveISBNToEditionKey } from '../lib/openLibrary';
+import { findOrInsertBookByExternalId } from '../lib/findOrInsertBookByExternalId';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -256,29 +257,29 @@ export default function ScanScreen() {
     (async () => {
       let bookDbId: string | null = null;
       if (fitResult.external_id) {
-        const { data: existing } = await supabase!
-          .from('books')
-          .select('id')
-          .eq('external_id', fitResult.external_id)
-          .maybeSingle();
-
-        if (existing) {
-          bookDbId = (existing as { id: string }).id;
-        } else {
-          const { data: created } = await supabase!
-            .from('books')
-            .insert({
+        // I5 — Option B-lite cross-user dedup-read; see
+        // docs/p1_5b_3_dedup_audit.md and docs/p1_5b_2_surface_audit.md §C.5.
+        // Non-23505 errors preserve current scan UX (silently swallowed in
+        // the fire-and-forget IIFE) — only the 23505 fallback path emits
+        // a structured console.warn from inside the helper.
+        const { row } = await findOrInsertBookByExternalId<{ id: string }>(
+          supabase!,
+          {
+            userId:        user.id,
+            externalId:    fitResult.external_id,
+            selectColumns: 'id',
+            insertPayload: {
               title:       book.title,
               author:      book.author,
               external_id: fitResult.external_id,
               cover_url:   book.cover_url,
               subjects:    book.subjects,
               page_count:  book.page_count,
-            })
-            .select('id')
-            .single();
-          bookDbId = (created as { id: string } | null)?.id ?? null;
-        }
+            },
+            callSite: 'app/scan.tsx#barcode',
+          },
+        );
+        bookDbId = row?.id ?? null;
       }
 
       if (bookDbId) {

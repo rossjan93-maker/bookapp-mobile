@@ -25,6 +25,7 @@ import { AuthorBibliographySheet } from '../components/AuthorBibliographySheet';
 import { invalidateBookDataCaches } from '../lib/tabCache';
 import { clearRecSession } from '../lib/recSession';
 import { transitionStatus } from '../lib/userBookActions';
+import { findOrInsertBookByExternalId } from '../lib/findOrInsertBookByExternalId';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -281,10 +282,19 @@ export default function AddBookScreen() {
     const id = selectedBook.externalId;
     let cancelled = false;
     (async () => {
+      // I4 — Option B-lite filter-only (no insert in this flow point).
+      // See docs/p1_5b_3_dedup_audit.md §A.1.
+      // Edge case: if user B inserted an unverified row and user A also
+      // has a user_books row pointing at it, the filter hides that row
+      // here and the "already in library" hint won't render. Save path
+      // (handleSave → I3) recovers via the helper's 23505 fallback +
+      // user_books upsert(onConflict=user_id,book_id), so no data loss —
+      // only a missing UX hint in that narrow window.
       const { data: bookRow } = await supabase
         .from('books')
         .select('id')
         .eq('external_id', id)
+        .or(`provenance_state.eq.verified,provenance_inserted_by.eq.${userId}`)
         .maybeSingle();
       if (cancelled || !bookRow) {
         if (!cancelled) setExistingLibraryEntry(null);
@@ -396,42 +406,47 @@ export default function AddBookScreen() {
     }
 
     if (externalId) {
-      const { data: existing } = await supabase
-        .from('books')
-        .select('id, cover_url, page_count')
-        .eq('external_id', externalId)
-        .maybeSingle();
-
-      if (existing) {
-        bookId = existing.id;
+      // I3 — Option B-lite cross-user dedup-read; see
+      // docs/p1_5b_3_dedup_audit.md and docs/p1_5b_2_surface_audit.md §C.5.
+      const insertData: Record<string, unknown> = {
+        title:       selectedBook.title,
+        author:      selectedBook.author,
+        external_id: externalId,
+        cover_url:   selectedBook.coverUrl,
+      };
+      if (selectedBook.pageCount) insertData.page_count = selectedBook.pageCount;
+      const { row, via, error } = await findOrInsertBookByExternalId<{
+        id:          string;
+        cover_url:   string | null;
+        page_count:  number | null;
+      }>(
+        supabase,
+        {
+          userId,
+          externalId,
+          selectColumns: 'id, cover_url, page_count',
+          insertPayload: insertData,
+          callSite:      'app/add-book.tsx#handleSave',
+        },
+      );
+      if (error || !row) {
+        setDoneMessage('Could not save book. Please try again.');
+        setDoneIsError(true);
+        setSaving(false);
+        setStep('done');
+        return;
+      }
+      bookId = row.id;
+      // Fill-empty cover_url + page_count when we picked up an existing
+      // row (filtered hit OR unfiltered 23505 fallback) — never on a
+      // fresh insert (we just wrote both via insertPayload).
+      if (via !== 'insert') {
         const updates: Record<string, unknown> = {};
-        if (!existing.cover_url && selectedBook.coverUrl) updates.cover_url = selectedBook.coverUrl;
-        if (!existing.page_count && selectedBook.pageCount) updates.page_count = selectedBook.pageCount;
+        if (!row.cover_url && selectedBook.coverUrl) updates.cover_url = selectedBook.coverUrl;
+        if (!row.page_count && selectedBook.pageCount) updates.page_count = selectedBook.pageCount;
         if (Object.keys(updates).length > 0) {
-          await supabase.from('books').update(updates).eq('id', existing.id);
+          await supabase.from('books').update(updates).eq('id', row.id);
         }
-      } else {
-        const insertData: Record<string, unknown> = {
-          title:       selectedBook.title,
-          author:      selectedBook.author,
-          external_id: externalId,
-          cover_url:   selectedBook.coverUrl,
-        };
-        if (selectedBook.pageCount) insertData.page_count = selectedBook.pageCount;
-        const { data: newBook, error } = await supabase
-          .from('books')
-          .insert(insertData)
-          .select('id')
-          .single();
-
-        if (error || !newBook) {
-          setDoneMessage('Could not save book. Please try again.');
-          setDoneIsError(true);
-          setSaving(false);
-          setStep('done');
-          return;
-        }
-        bookId = newBook.id;
       }
     } else {
       const { data: newBook, error } = await supabase
