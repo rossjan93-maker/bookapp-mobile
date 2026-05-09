@@ -840,6 +840,12 @@ async function getLocalCandidates(
       .from('books')
       .select('id, title, author, cover_url, external_id, subjects, page_count, description, isbn')
       .or('subjects.not.is.null,description.not.is.null,isbn.not.is.null')
+      // P1.5b-2 D1: cross-user discovery hard-filter. Surfaces only verified
+      // catalog rows OR the caller's own inserted rows (which are still in
+      // their library by definition; readIds.has filters them client-side).
+      // Costs ≈5.79% of candidate pool (16 terminals + 2 retryable legacy)
+      // per docs/p1_5b_2_surface_audit.md §B.3.
+      .or(`provenance_state.eq.verified,provenance_inserted_by.eq.${userId}`)
       .limit(CATALOG_QUERY_LIMIT),
   ]);
 
@@ -2589,6 +2595,11 @@ export async function getCandidateBooks(
       .select('id, title, author, cover_url, external_id, subjects, page_count, description, isbn')
       .not('id', 'in', `(${excludeList})`)
       .or('subjects.not.is.null,description.not.is.null,isbn.not.is.null')
+      // P1.5b-2 D2: same hard-filter as D1 — verified or own. The exclude
+      // list above already removes the user's library by id, so the OR-own
+      // branch is defensive (covers the edge case of an unverified row the
+      // user inserted but hasn't added to user_books yet).
+      .or(`provenance_state.eq.verified,provenance_inserted_by.eq.${userId}`)
       .limit(2000);
 
     const existingIds = new Set(local.candidates.map(c => c.id));

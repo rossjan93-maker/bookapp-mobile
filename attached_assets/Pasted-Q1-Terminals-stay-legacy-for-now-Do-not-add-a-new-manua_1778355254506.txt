@@ -1,0 +1,36 @@
+Q1: Terminals stay legacy for now.
+Do not add a new manual state yet. last_verification_error already tells us whether a legacy row is unsupported_external_id_scheme, placeholder_manual_entry, or retryable. Avoid schema churn for 18 rows.
+
+Q2: Hard-filter D1/D2.
+Apply hard filtering to For-You / Discover recommender candidate pools:
+provenance_state = 'verified'
+OR the book belongs to the current user.
+
+The audit says this only costs 5.79% of the candidate pool, so the ranker should not meaningfully suffer.
+
+Q3: Yes, apply the same hard-filter to D4 book club admin search.
+A bad catalog row selected as a club active book becomes visible to the whole club, so this should use the safer query shape.
+
+Q4: Do not badge social feeds now.
+Defer S1–S6 social/friend badging. The audit found zero terminal rows currently surfaced through social paths, and hard-filtering friend activity could erase real social context. Revisit this later if telemetry shows terminals in social surfaces.
+
+Q5: Yes, normalize I3/I4/I5/I6 to the Goodreads dedup pattern, but first run the B.5 verification check.
+Before relying on provenance_inserted_by = userId, prove that trg_books_set_provenance fires on real user-JWT inserts.
+
+Implementation order:
+1. Run the B.5 verification check:
+   - create one test book through a non-service-role user JWT
+   - confirm provenance_state='unverified'
+   - confirm provenance_inserted_by equals that user's auth.uid()
+   - clean up the test row
+2. If B.5 passes, patch D1/D2/D4 hard filters.
+3. Patch I3/I4/I5/I6 dedup reads to match the I1 pattern:
+   provenance_state IN ('verified','legacy') OR provenance_inserted_by = userId
+4. Add a regression harness covering:
+   - recommender candidate pool excludes terminal rows from non-owners
+   - book club admin search excludes terminal rows from non-owners
+   - user can still see/reuse own unverified/manual rows
+   - Goodreads dedup behavior remains unchanged
+   - social/friend surfaces are unchanged
+5. Do not change S1–S6 yet.
+6. Do not add a manual provenance state in this batch.

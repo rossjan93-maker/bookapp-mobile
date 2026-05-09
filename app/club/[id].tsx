@@ -158,11 +158,20 @@ function SetBookModal({
     if (!query.trim() || !supabase) return;
     setLoading(true);
     setError(null);
-    const { data } = await supabase
+    // P1.5b-2 D4: book club admin search hard-filter. The selected row
+    // becomes the club's active book and is visible to every member, so
+    // surface only verified rows OR the admin's own inserted rows.
+    const { data: { user } } = await supabase.auth.getUser();
+    let q = supabase
       .from('books')
       .select('id, title, author, cover_url, external_id, page_count')
-      .ilike('title', `%${query.trim()}%`)
-      .limit(10);
+      .ilike('title', `%${query.trim()}%`);
+    if (user) {
+      q = q.or(`provenance_state.eq.verified,provenance_inserted_by.eq.${user.id}`);
+    } else {
+      q = q.eq('provenance_state', 'verified');
+    }
+    const { data } = await q.limit(10);
     setResults((data ?? []) as BookResult[]);
     setLoading(false);
   }
