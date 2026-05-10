@@ -1,0 +1,80 @@
+P1.5b-3 is accepted.
+
+Now start a Beta Readiness Audit.
+
+Audit only first. Do not make code changes until the plan is reviewed.
+
+Goal:
+Determine whether Readstack is ready for a small closed beta / TestFlight-style user test.
+
+Please audit these areas:
+
+1. New user flow
+- sign up
+- email confirmation / deep link behavior
+- first login
+- onboarding guard
+- walkthrough
+- final setup choices
+- onboarding questions
+- app entry after onboarding
+
+2. Core book actions
+- add book manually
+- add book from provider search
+- scan ISBN / barcode path
+- save recommendation
+- mark want-to-read / currently-reading / finished
+- update current page
+- rate finished book
+- add taste tags
+
+3. Import flow
+- Goodreads import
+- dedup behavior
+- error handling
+- import completion state
+- whether imported rows interact correctly with provenance/verification
+
+4. Recommendation flow
+- recommendations load
+- empty/low-signal states
+- card actions
+- saved/not-for-me/more-like-this behavior
+- whether D1/D2 provenance filtering affected candidate quality
+
+5. Social/friend surfaces
+- friend request
+- cancel/decline/unfriend
+- recommendation inbox
+- friend activity
+- book club surfaces if present
+
+6. Auth/session reliability
+- delete/recreate same-device behavior
+- password reset
+- Apple sign-in / Link Apple if available
+- refresh after app restart
+- logout/login
+- expired session handling
+
+7. Runtime/dev environment
+- Start application workflow failure is documented as Metro watcher noise
+- confirm whether it blocks testing
+- identify the cleanest way to test mobile flows despite that
+
+8. Safety/privacy/compliance basics
+- account deletion
+- data deletion expectations
+- privacy policy / terms placeholders
+- support/contact/report issue path
+- whether users can flag bad recommendations, metadata, or app issues
+
+Deliver:
+- readiness score: green / yellow / red
+- blocker list
+- non-blocking polish list
+- exact files likely involved for fixes
+- recommended order of fixes
+- what can wait until after beta
+- do not write code until I approve the plan
