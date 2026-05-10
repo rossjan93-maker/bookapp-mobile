@@ -93,6 +93,13 @@ Discovery & recommendations (with recommender credibility), library management (
 ## User preferences
 - **Beta-readiness Batch 1 shipped (2026-05-10):** added `app/legal.tsx`, `Help & Legal` section in `app/settings.tsx` (with `Send feedback` mailto row), and `app.json` build metadata (`ios.buildNumber: "1"`, `android.versionCode: 1`). **Placeholder URLs** live at `https://readstack.co/privacy`, `https://readstack.co/terms`, and mailbox `hello@readstack.co` — replace before public launch. Grep `TODO(beta-launch)` to find them. `NSPhotoLibraryUsageDescription` was intentionally NOT added — only declare permissions the app actually uses.
 
+### Pre-submission backlog (must clear before App Store / Play submission)
+1. Stand up live pages at `https://readstack.co/privacy` and `https://readstack.co/terms` (publicly reachable, no auth wall).
+2. Confirm `hello@readstack.co` mailbox exists and is monitored (used by Help & Legal → Contact support / Report a bug, plus Settings → Send feedback).
+3. Mirror the same privacy URL into App Store Connect metadata (consistency check between in-app link and store listing).
+4. Bump `ios.buildNumber` (currently `"1"` in `app.json`) and `android.versionCode` (currently `1`) on every TestFlight / Play upload — Apple/Google reject duplicate build numbers.
+5. *(Optional polish)* Add a "copy email to clipboard" affordance in the mailto-fallback `Alert` (`app/legal.tsx` + `app/settings.tsx` Send-feedback handler) so users without a configured mail client aren't dead-ended.
+
 ## Gotchas
 - **Greens:** only `SAGE_*` tokens. No raw Tailwind greens (`#15803d`, `#16a34a`, `#166534`) or hand-rolled `#2f6f3a`.
 - **Subject / content-warning matching:** word-boundary regex (`\b...\b`), never `includes()`.
