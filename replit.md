@@ -100,6 +100,8 @@ Discovery & recommendations (with recommender credibility), library management (
 4. Bump `ios.buildNumber` (currently `"1"` in `app.json`) and `android.versionCode` (currently `1`) on every TestFlight / Play upload — Apple/Google reject duplicate build numbers.
 5. *(Optional polish)* Add a "copy email to clipboard" affordance in the mailto-fallback `Alert` (`app/legal.tsx` + `app/settings.tsx` Send-feedback handler) so users without a configured mail client aren't dead-ended.
 
+- **Beta-readiness Batch 2 shipped (2026-05-10):** B4 (current_page fail-loud validation) + B6 (cold-start localStage self-heal). `saveCurrentPage` in `lib/userBookActions.ts` now accepts an optional `pageCount` and refuses invalid input up front (`Page cannot be negative.` / `Page can't exceed total pages (${pageCount}).`); when pageCount is unknown it maps the DB trigger's SQLSTATE 23514 to `Page exceeds the book's total page count.` Both callers (`app/book/[id].tsx`, `app/(tabs)/library.tsx`) now pass pageCount. The DB trigger `_user_books_validate_current_page` remains the authority — the helper does NOT clamp silently. Cold-start JWT fast-path in `app/_layout.tsx` now also writes `onboardingStage='done'` to AsyncStorage so subsequent cold-starts hit the localStage fast path (mirrors the SIGNED_IN handler's self-healing).
+
 ## Gotchas
 - **Greens:** only `SAGE_*` tokens. No raw Tailwind greens (`#15803d`, `#16a34a`, `#166534`) or hand-rolled `#2f6f3a`.
 - **Subject / content-warning matching:** word-boundary regex (`\b...\b`), never `includes()`.

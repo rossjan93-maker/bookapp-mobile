@@ -207,6 +207,10 @@ export default function RootLayout() {
         // for why a stale `false` cannot be trusted on cold start.
         const jwtCompleted = readOnboardingFromAppMetadata(data.session);
         if (jwtCompleted === true) {
+          // Repair localStage='done' so subsequent cold-starts hit the
+          // localStage fast path and skip the JWT decode entirely. Mirrors
+          // the SIGNED_IN handler's self-healing behaviour.
+          writeOnboardingStage('done').catch(() => {});
           console.log('[WARM_BOOT] cold-start JWT onboarding_completed=true in', Date.now() - t0, 'ms');
           setNeedsOnboarding(false);
           // Profile upsert in background — does not affect routing.

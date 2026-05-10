@@ -696,12 +696,16 @@ export default function LibraryScreen() {
   async function handleQuickLog(item: UserBook) {
     if (!supabase || !currentUserId || !item.id) return;
     const newPage = parseInt(quickLogInput.trim(), 10);
-    if (isNaN(newPage) || newPage < 0) {
+    if (isNaN(newPage)) {
       setQuickLogError('Enter a valid page number.');
       return;
     }
+    if (newPage < 0) {
+      setQuickLogError('Page cannot be negative.');
+      return;
+    }
     if (item.book?.page_count && newPage > item.book.page_count) {
-      setQuickLogError(`Can't exceed total pages (${item.book.page_count}).`);
+      setQuickLogError(`Page can't exceed total pages (${item.book.page_count}).`);
       return;
     }
     setQuickLogError(null);
@@ -712,6 +716,7 @@ export default function LibraryScreen() {
       userId:      currentUserId,
       newPage,
       currentPage: item.current_page,
+      pageCount:   item.book?.page_count ?? null,
     });
     setQuickLogSaving(false);
     if (!error) {

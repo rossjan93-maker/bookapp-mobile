@@ -566,16 +566,34 @@ export async function saveCurrentPage(
     userId:      string;
     newPage:     number;
     currentPage: number | null;
+    pageCount?:  number | null;
   },
 ): Promise<{ error: string | null }> {
-  const { userBookId, bookId, userId, newPage, currentPage } = params;
+  const { userBookId, bookId, userId, newPage, currentPage, pageCount } = params;
+
+  // ── Fail-loud validation (no silent clamping) ─────────────────────────────
+  // The DB trigger _user_books_validate_current_page is the authority and
+  // raises SQLSTATE 23514 when current_page > books.page_count. We refuse
+  // invalid input up front when we can, and map the trigger's error to a
+  // friendly string when we can't (e.g. caller didn't pass pageCount).
+  if (newPage < 0) {
+    return { error: 'Page cannot be negative.' };
+  }
+  if (typeof pageCount === 'number' && pageCount > 0 && newPage > pageCount) {
+    return { error: `Page can't exceed total pages (${pageCount}).` };
+  }
 
   const { error } = await supabase
     .from('user_books')
     .update({ current_page: newPage, progress_updated_at: new Date().toISOString() })
     .eq('id', userBookId);
 
-  if (error) return { error: 'Could not save — try again.' };
+  if (error) {
+    if (error.code === '23514') {
+      return { error: `Page exceeds the book's total page count.` };
+    }
+    return { error: 'Could not save — try again.' };
+  }
 
   // ── Append reading_progress_events row (any page change) ──────────────────
   if (newPage !== currentPage) {

@@ -1267,12 +1267,16 @@ export default function BookDetailScreen() {
   async function handleSaveProgress() {
     if (!supabase || !userBookId) return;
     const newPage = parseInt(pageInput.trim(), 10);
-    if (isNaN(newPage) || newPage < 0) {
+    if (isNaN(newPage)) {
       setProgressError('Enter a valid page number.');
       return;
     }
+    if (newPage < 0) {
+      setProgressError('Page cannot be negative.');
+      return;
+    }
     if (pageCount && newPage > pageCount) {
-      setProgressError(`Can't exceed total pages (${pageCount}).`);
+      setProgressError(`Page can't exceed total pages (${pageCount}).`);
       return;
     }
     setProgressError(null);
@@ -1286,7 +1290,7 @@ export default function BookDetailScreen() {
     let saveErrMsg: string | null = null;
     if (uid && bookId) {
       const { error } = await saveCurrentPage(supabase, {
-        userBookId, bookId, userId: uid, newPage, currentPage,
+        userBookId, bookId, userId: uid, newPage, currentPage, pageCount,
       });
       saveErrMsg = error;
     } else {
