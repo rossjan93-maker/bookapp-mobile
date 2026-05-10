@@ -33,6 +33,8 @@ import { addActedOnIds, loadActedOnIds } from '../lib/recPayloadCache';
 import { GuidedActionBanner } from './OnboardingWalkthrough';
 
 import { RecCard, UndoToast, DeckAssemblingLoader, RefreshingDot } from './RecCard';
+import { CoverThumb } from './CoverThumb';
+import { SEEDED_PICKS } from '../lib/seededPicks';
 import {
   VISIBLE_STACK_SIZE,
   REPLENISH_WATERMARK,
@@ -105,6 +107,11 @@ export type RecommendationsFeedProps = {
   onGuidedAdvance: () => void;
   /** Walkthrough: ref placed on the first visible targetable element (setup card or first rec card). */
   wtRef?:          React.RefObject<any>;
+  /** Total user_books rows for this user. Used by the tier-0 branch to decide
+   *  whether to surface the seeded "Popular starting points" strip (only when
+   *  the user has zero books in their library). Optional; defaults to undefined
+   *  which is treated as "unknown" → strip is hidden to be safe. */
+  librarySize?:    number;
 };
 
 export function RecommendationsFeed({
@@ -117,6 +124,7 @@ export function RecommendationsFeed({
   guidedStep,
   onGuidedAdvance: _onGuidedAdvance,
   wtRef,
+  librarySize,
 }: RecommendationsFeedProps) {
   const router = useRouter();
 
@@ -826,8 +834,66 @@ export function RecommendationsFeed({
   // is NOT a loading state — it is an insufficient-signal state.
   if (tier < 1) {
     const hasImportedHistory = (tasteProfile?.evidence?.imported_books_count ?? 0) > 0;
+    // Show the seeded "Popular starting points" strip ONLY when we know the
+    // user has zero books in their library. Any non-zero library means the
+    // existing CTAs (rate / add / quiz) are the right next step. Undefined
+    // (unknown) is treated as "hide" to avoid showing the strip to users
+    // mid-import or with stale state.
+    const showSeededPicks = librarySize === 0;
     return (
       <View style={{ marginBottom: 36 }}>
+        {/* ── Seeded starter strip (zero-library, zero-signal users only) ──
+            These are NOT recommendations. They never enter the recommender,
+            never affect feedback, never affect taste profile. The header copy
+            makes the contract explicit. See lib/seededPicks.ts. */}
+        {showSeededPicks && (
+          <View style={{ marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', marginBottom: 10, paddingHorizontal: 2 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: SAGE_DEEP, letterSpacing: 0.4 }}>
+                POPULAR STARTING POINTS
+              </Text>
+              <Text style={{ fontSize: 11, color: '#9e958d', marginLeft: 8, fontStyle: 'italic' }}>
+                · Not personalized yet
+              </Text>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 2, paddingVertical: 6 }}
+            >
+              {SEEDED_PICKS.map((p, idx) => (
+                <TouchableOpacity
+                  key={p.id}
+                  onPress={() => router.push(('/book/' + p.id) as any)}
+                  activeOpacity={0.78}
+                  style={{ width: 92, marginRight: idx === SEEDED_PICKS.length - 1 ? 0 : 12 }}
+                >
+                  <CoverThumb
+                    url={p.cover_url}
+                    externalId={p.external_id}
+                    title={p.title}
+                    width={92}
+                    height={138}
+                    radius={6}
+                  />
+                  <Text
+                    numberOfLines={2}
+                    style={{ fontSize: 11.5, fontWeight: '600', color: '#231f1b', marginTop: 8, lineHeight: 15 }}
+                  >
+                    {p.title}
+                  </Text>
+                  <Text
+                    numberOfLines={1}
+                    style={{ fontSize: 10.5, color: '#78716c', marginTop: 2 }}
+                  >
+                    {p.author}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
         {/* No internal "For You" overline — the parent surface
             (app/(tabs)/search.tsx) already renders the hero header. A second
             heading inside this card read as a duplicated section title. */}

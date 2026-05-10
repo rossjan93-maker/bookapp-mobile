@@ -730,6 +730,12 @@ export default function RecommendationsScreen() {
   const [incomingRecs, setIncomingRecs]       = useState<IncomingRec[]>(() => _hubCache?.incomingRecs ?? []);
   const [sentRecs, setSentRecs]               = useState<SentRec[]>(() => _hubCache?.sentRecs ?? []);
   const [tasteProfile, setTasteProfile]       = useState<TasteProfile | null>(() => _hubCache?.tasteProfile ?? null);
+  // Library size — count of all user_books rows. Drives the seeded
+  // "Popular starting points" strip in RecommendationsFeed (only shown when
+  // tier < 1 AND librarySize === 0). Undefined means "not yet known" so the
+  // strip is hidden until Phase 1 resolves; this avoids a flash of the strip
+  // for users who actually have a library on cold-start.
+  const [librarySize, setLibrarySize]         = useState<number | undefined>(undefined);
 
   // ── Search/send flow state ────────────────────────────────────────────────
   const [query, setQuery]               = useState('');
@@ -1105,7 +1111,7 @@ export default function RecommendationsScreen() {
     const _phase1Start = Date.now();
     if (__DEV__) console.log('[PERF] phase1_start');
 
-    const [rateRes, tagRes, incomingRes, sentRes, tp, ent, fbCtxPhase1] = await Promise.all([
+    const [rateRes, tagRes, incomingRes, sentRes, tp, ent, fbCtxPhase1, librarySizeRes] = await Promise.all([
       // Finished books with no rating
       supabase
         .from('user_books')
@@ -1155,6 +1161,15 @@ export default function RecommendationsScreen() {
       // Feedback context — loaded in parallel to avoid a serial round-trip
       // at Phase 2 start (saves ~50–100 ms off the time-to-first-rec).
       loadFeedbackContext(supabase!, user.id).catch(() => emptyContext()),
+
+      // Library size — count-only, head-only (no row payload). Drives the
+      // seeded "Popular starting points" strip in RecommendationsFeed: when
+      // tier < 1 AND librarySize === 0, the strip is shown so the user has
+      // something concrete to tap. Cheap query — only the count is returned.
+      supabase
+        .from('user_books')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id),
     ]);
 
     if (__DEV__) console.log('[PERF] phase1_end — ms=' + (Date.now() - _phase1Start));
@@ -1202,6 +1217,9 @@ export default function RecommendationsScreen() {
     setTasteProfile(tp);
     setEntitlement(ent);
     setFeedbackCtx(fbCtxPhase1);
+    // Commit librarySize. On error (no count returned), default to undefined
+    // so the seeded strip stays hidden rather than showing optimistically.
+    setLibrarySize(typeof librarySizeRes?.count === 'number' ? librarySizeRes.count : undefined);
     setHubLoading(false);   // clear skeleton (cold path) or no-op (warm path)
 
     // Persist hub snapshot so next visit renders all sections at frame 0
@@ -1510,6 +1528,7 @@ export default function RecommendationsScreen() {
                   setFeedbackCtx={setFeedbackCtx}
                   guidedStep={guidedStep}
                   onGuidedAdvance={advanceGuided}
+                  librarySize={librarySize}
                 />
               </>
             )}

@@ -426,7 +426,7 @@ function EntryOptions({
         style={{ alignItems: 'center', paddingVertical: 18 }}
       >
         <Text style={{ fontSize: 14, color: MUTED, fontWeight: '500' }}>
-          Not right now →
+          Browse popular books →
         </Text>
       </TouchableOpacity>
     </ScrollView>
