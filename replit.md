@@ -52,6 +52,7 @@ React Native + Expo Router, Supabase (Postgres + Auth + RLS), TypeScript, Expo b
 - `app/(tabs)/search.tsx` — Discover/For-You tab.
 - `app/stats/index.tsx` — Reading Insights.
 - `app/onboarding.tsx`, `app/onboarding-import.tsx`, `app/onboarding-questions.tsx` — onboarding flow.
+- `app/legal.tsx` — Help & Legal screen (Contact support, Report a bug, Privacy policy, Terms of service, version/build footer). Placeholder URLs marked `TODO(beta-launch)`.
 - `components/CoverThumb.tsx` — every cover surface (3D treatment, `flat` opt-out).
 - `components/HalfStarRating.tsx` — `HalfStarRating`, `StarDisplay`, `ratingToSentiment`, `formatRating`.
 - `components/RecCard.tsx` — for-you card + rationale variant pools.
@@ -90,7 +91,7 @@ React Native + Expo Router, Supabase (Postgres + Auth + RLS), TypeScript, Expo b
 Discovery & recommendations (with recommender credibility), library management (status, ratings, goals, gallery view), reading progress (streaks, pace, projected finish), social (sharing, friend activity, Goodreads import), edition specificity, barcode "Will I like this?", reading insights / year wraps.
 
 ## User preferences
-_Populate as you build_
+- **Beta-readiness Batch 1 shipped (2026-05-10):** added `app/legal.tsx`, `Help & Legal` section in `app/settings.tsx` (with `Send feedback` mailto row), and `app.json` build metadata (`ios.buildNumber: "1"`, `android.versionCode: 1`). **Placeholder URLs** live at `https://readstack.co/privacy`, `https://readstack.co/terms`, and mailbox `hello@readstack.co` — replace before public launch. Grep `TODO(beta-launch)` to find them. `NSPhotoLibraryUsageDescription` was intentionally NOT added — only declare permissions the app actually uses.
 
 ## Gotchas
 - **Greens:** only `SAGE_*` tokens. No raw Tailwind greens (`#15803d`, `#16a34a`, `#166534`) or hand-rolled `#2f6f3a`.

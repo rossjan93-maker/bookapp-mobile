@@ -3,12 +3,15 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Linking,
+  Platform,
   ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { BackButton } from '../components/BackButton';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -787,6 +790,67 @@ export default function SettingsScreen() {
               </Text>
               <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
                 Fix yearly goal count if old books appear as finished this year
+              </Text>
+            </View>
+            <Text style={{ fontSize: 20, color: '#c4b5a5', marginLeft: 10 }}>›</Text>
+          </View>
+        </TouchableOpacity>
+      </SettingsCard>
+
+      {/* ── Help & Legal ─────────────────────────────────────────────────────── */}
+      <SectionHeader>Help & Legal</SectionHeader>
+      <SettingsCard>
+        <TouchableOpacity
+          onPress={() => router.push('/legal')}
+          activeOpacity={0.75}
+          style={{ paddingHorizontal: 16, paddingVertical: 16 }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', marginBottom: 3 }}>
+                Help & Legal
+              </Text>
+              <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
+                Contact us, report bugs, privacy & terms
+              </Text>
+            </View>
+            <Text style={{ fontSize: 20, color: '#c4b5a5', marginLeft: 10 }}>›</Text>
+          </View>
+        </TouchableOpacity>
+        <View style={{ height: 1, backgroundColor: '#ede9e4', marginHorizontal: 16 }} />
+        <TouchableOpacity
+          onPress={async () => {
+            // TODO(beta-launch): replace placeholder mailbox before public release.
+            const SUPPORT_EMAIL = 'hello@readstack.co';
+            const version = Constants.expoConfig?.version ?? '?';
+            const build =
+              Platform.OS === 'ios'
+                ? Constants.expoConfig?.ios?.buildNumber ?? '?'
+                : String(Constants.expoConfig?.android?.versionCode ?? '?');
+            const body = `\n\n— — —\nDiagnostic info (please keep):\nReadstack v${version} (${Platform.OS} build ${build})\n`;
+            const params = new URLSearchParams({ subject: 'Readstack feedback', body });
+            const url = `mailto:${SUPPORT_EMAIL}?${params.toString()}`;
+            try {
+              const ok = await Linking.canOpenURL(url);
+              if (!ok) {
+                Alert.alert('Cannot open mail', `Email us at ${SUPPORT_EMAIL}`);
+                return;
+              }
+              await Linking.openURL(url);
+            } catch {
+              Alert.alert('Cannot open mail', `Email us at ${SUPPORT_EMAIL}`);
+            }
+          }}
+          activeOpacity={0.75}
+          style={{ paddingHorizontal: 16, paddingVertical: 16 }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#231f1b', marginBottom: 3 }}>
+                Send feedback
+              </Text>
+              <Text style={{ fontSize: 12, color: '#9e958d', lineHeight: 18 }}>
+                Quick email to the team
               </Text>
             </View>
             <Text style={{ fontSize: 20, color: '#c4b5a5', marginLeft: 10 }}>›</Text>
