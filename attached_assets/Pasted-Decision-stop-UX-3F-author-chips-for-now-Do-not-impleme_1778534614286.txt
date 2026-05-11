@@ -1,0 +1,57 @@
+Decision: stop UX-3F author chips for now.
+
+Do not implement Option A.
+
+Reason:
+The preflight surfaced that reader_preferences.favorite_authors already flows into tasteProfile.liked_authors. If we write intake authors into favorite_authors, those self-reported authors may silently influence recommender behavior and author-loyalty explanations. That violates the trust boundary for this batch.
+
+We should not treat self-reported intake authors as derived liked_authors unless the product language and model behavior explicitly support that.
+
+Please do not make code changes for UX-3F.
+
+Instead, run a small audit-only follow-up.
+
+Task type:
+Audit only.
+
+Goal:
+Understand the current favorite_authors → liked_authors behavior and propose a trust-safe way to support self-reported author preferences.
+
+Do not implement.
+
+Audit questions:
+1. Where is reader_preferences.favorite_authors written today?
+2. Where is it read?
+3. How exactly does it merge into tasteProfile.liked_authors?
+4. Where does liked_authors influence:
+   - recommendations
+   - author-loyalty explanations
+   - TasteReadout
+   - RecCard copy
+5. Could current Edit Preferences users already trigger overclaiming author copy?
+6. What is the smallest safe architecture for separating:
+   - stated authors: “authors you mentioned”
+   - derived authors: “authors you rated/read highly”
+7. Can we support stated-author reflection in TasteReadout without affecting recommender/liked_authors?
+8. Would that require:
+   - a new field
+   - a migration
+   - changing tasteProfile
+   - changing RecCard copy
+   - changing recommender behavior
+9. Recommend the safest implementation path and batch sequence.
+
+Constraints:
+- Do not edit code.
+- Do not add schema/migrations.
+- Do not change recommender/tasteProfile/RecCard.
+- Return audit only.
+
+Return format:
+- Current data flow
+- Trust risk
+- Existing overclaim risk
+- Recommended safe architecture
+- Suggested implementation batches
+- Files likely touched
+- Whether this should happen before or after on-device UX testing
