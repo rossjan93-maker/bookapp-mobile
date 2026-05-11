@@ -1,0 +1,99 @@
+Task type:
+Small implementation.
+
+Goal:
+Reflect the new intake answers q_outcome and q_tone in TasteReadout so users see that Readstack heard what kind of reading experience they want.
+
+User problem:
+UX-3C and UX-3D now capture reading outcome and tone, but TasteReadout does not yet surface either signal. Without reflection, the intake can still feel like data collection instead of calibration.
+
+Allowed files:
+- lib/tasteReadoutCopy.ts
+- components/TasteReadout.tsx
+- app/taste-readout.tsx if needed
+- replit.md
+
+File budget:
+Maximum 4 files. If this requires more than 4 files, stop and explain.
+
+Forbidden files/systems:
+- components/RecEntryScreen.tsx
+- lib/intakeDraft.ts
+- recommender scoring
+- recommender ranking
+- recommender retrieval
+- recommendation persistence
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+- HomeShortlist
+- RecCard
+- RecommendationsFeed
+
+Hard constraints:
+- Do not change intake behavior.
+- Do not change how q_outcome or q_tone are saved.
+- Do not change recommender behavior.
+- Do not overclaim. These are stated preferences, not derived reading history.
+- Preserve existing TasteReadout behavior for favorite genres, avoid genres, traits, authors, thin-state handling, and CTA.
+
+Implementation requirements:
+1. Confirm app/taste-readout.tsx already selects diagnosis_answers. If not, add it.
+2. Add safe TasteReadout chip/copy support for q_outcome.
+   Example chip/copy directions:
+   - effortless → “Reading for: escape”
+   - craft_first → “Reading for: depth”
+   - originality_first → “Reading for: surprise”
+   - grip_both → “Reading for: range”
+3. Add safe TasteReadout chip/copy support for q_tone.
+   Example chip/copy directions:
+   - dark_tone → “Tone: darker”
+   - light_tone → “Tone: lighter”
+   - tone_flexible → either render nothing or “Tone: flexible,” whichever feels cleaner
+4. These should be treated as stated-preference chips, not high-confidence history claims.
+5. Cap chips so the row does not become crowded.
+6. If profile is thin but q_outcome/q_tone exists, decide whether to show these chips or preserve the current thin-state no-chip behavior. Prefer preserving the thin-state guard unless there is a clear low-risk way to show “You told us…” chips without overclaiming. Explain the decision.
+7. Avoid duplicate or contradictory chips where possible.
+
+Acceptance criteria:
+1. A user who answers q_outcome sees that signal reflected in TasteReadout, unless intentionally hidden by thin-state guard.
+2. A user who answers q_tone sees that signal reflected in TasteReadout, unless intentionally hidden by thin-state guard.
+3. Copy clearly reads as stated preference, not inferred history.
+4. Existing avoid-genre chips still work.
+5. Existing TasteReadout behavior remains intact.
+6. No recommender/scoring/ranking/retrieval changes.
+7. Typecheck remains at baseline with zero new errors.
+8. Diff scope confirms no forbidden systems were touched.
+
+Validation required:
+- Static review of diagnosis_answers data path.
+- Copy examples for q_outcome values.
+- Copy examples for q_tone values.
+- Copy examples when both outcome and tone exist with liked/avoid genres.
+- Confirmation thin-state behavior.
+- Typecheck delta.
+- Diff scope report.
+- Workflow status, noting if the known Metro FallbackWatcher race appears.
+
+Stop conditions:
+- If diagnosis_answers is not available to TasteReadout without broad data-path changes, stop and explain.
+- If this requires touching intake, stop.
+- If chip crowding requires a broader redesign, stop and propose a smaller option.
+
+Return format:
+- Changed files
+- Implementation summary
+- Before/after TasteReadout examples
+- Thin-state decision
+- Data path confirmation
+- Behavior preservation check
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Any deviations from prompt

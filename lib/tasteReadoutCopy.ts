@@ -179,6 +179,49 @@ export function topAvoidGenres(
   return out;
 }
 
+/**
+ * UX-3E: surface q_outcome (UX-3C) as a "Reading for: X" stated-preference
+ * chip. Reads from reader_preferences.diagnosis_answers — written by the
+ * intake_outcome step in RecEntryScreen. Pure key-to-label lookup. Returns
+ * null when the user skipped the outcome question or picked an unknown key,
+ * so the caller can omit the chip cleanly.
+ */
+const OUTCOME_LABELS: Record<string, string> = {
+  effortless:        'escape',
+  craft_first:       'depth',
+  originality_first: 'surprise',
+  grip_both:         'range',
+};
+
+export function topOutcomeChip(
+  diagnosisAnswers: Record<string, string> | null | undefined,
+): string | null {
+  const ans = diagnosisAnswers?.q_outcome;
+  if (typeof ans !== 'string') return null;
+  const label = OUTCOME_LABELS[ans];
+  return label ? `Reading for: ${label}` : null;
+}
+
+/**
+ * UX-3E: surface q_tone (UX-3D) as a "Tone: X" stated-preference chip.
+ * Pure lookup. tone_flexible deliberately returns null — a "flexible" chip
+ * adds no useful signal to the user and just crowds the row.
+ */
+const TONE_LABELS: Record<string, string> = {
+  dark_tone:  'darker',
+  light_tone: 'lighter',
+  // tone_flexible intentionally omitted — render nothing.
+};
+
+export function topToneChip(
+  diagnosisAnswers: Record<string, string> | null | undefined,
+): string | null {
+  const ans = diagnosisAnswers?.q_tone;
+  if (typeof ans !== 'string') return null;
+  const label = TONE_LABELS[ans];
+  return label ? `Tone: ${label}` : null;
+}
+
 export function topDominantLanes(profile: TasteProfile, n: number = 2): string[] {
   const lanes = profile.det_lanes?.dominant_lanes ?? [];
   return lanes.slice(0, n).map(humanizeLaneKey);
@@ -263,8 +306,11 @@ export function buildLearningLine(profile: TasteProfile | null): string {
 // fall through to thin-state copy".
 
 export type ReadoutChip = {
-  /** "genre" | "trait" | "avoided" | "author" — drives the chip styling. */
-  kind: 'genre' | 'trait' | 'avoided' | 'author';
+  /** "genre" | "trait" | "avoided" | "author" | "stated" — drives the chip
+   *  styling. 'stated' is for UX-3E q_outcome / q_tone intake answers — it
+   *  shares the warm-neutral styling with 'avoided' so the user reads them
+   *  as informational ("you told us") rather than high-confidence derived. */
+  kind: 'genre' | 'trait' | 'avoided' | 'author' | 'stated';
   label: string;
 };
 
@@ -272,6 +318,7 @@ export function buildChips(
   profile: TasteProfile | null,
   favoriteGenres: string[],
   avoidGenres: string[] = [],
+  diagnosisAnswers: Record<string, string> | null = null,
 ): ReadoutChip[] {
   const chips: ReadoutChip[] = [];
 
@@ -286,7 +333,32 @@ export function buildChips(
     }
   }
 
-  // 2. Preferred traits.
+  // 2. Stated outcome / tone (UX-3E) — surfaced near the top because they're
+  // the most recent explicit signal (user literally just answered) and they
+  // anchor the *why* of this session, which complements the *what* (genres).
+  // 'stated' kind = warm-neutral styling so it doesn't read as a derived
+  // claim about the user's history.
+  const outcomeChip = topOutcomeChip(diagnosisAnswers);
+  if (outcomeChip) {
+    chips.push({ kind: 'stated', label: outcomeChip });
+  }
+  const toneChip = topToneChip(diagnosisAnswers);
+  if (toneChip) {
+    chips.push({ kind: 'stated', label: toneChip });
+  }
+  // UX-3E contradiction guard: if the user said dark_tone, suppress any
+  // future "Less of: dark themes" avoided-trait chip below — and vice
+  // versa for light_tone. The avoided-trait pool only surfaces 'darkness'
+  // at high confidence, so the collision is rare but ugly when it happens.
+  const toneAns = diagnosisAnswers?.q_tone;
+  const suppressAvoidedTrait = new Set<string>();
+  if (toneAns === 'dark_tone')  suppressAvoidedTrait.add('Less of: dark themes');
+  if (toneAns === 'light_tone') {
+    // light_tone + "Less of: dark themes" is consistent — keep it.
+    // No suppression needed; both reinforce.
+  }
+
+  // 3. Preferred traits.
   if (profile) {
     for (const t of topPreferredTraits(profile, 2)) {
       if (t && !chips.some(c => c.label === t)) {
@@ -295,7 +367,7 @@ export function buildChips(
     }
   }
 
-  // 3. Avoid genres (UX-3B) — straight from intake, no recommender claim.
+  // 4. Avoid genres (UX-3B) — straight from intake, no recommender claim.
   // Surfaced before avoided traits because they're a stronger explicit signal
   // (the user just told us during intake) and shouldn't be crowded out.
   for (const g of topAvoidGenres(avoidGenres, favoriteGenres, 2)) {
@@ -305,16 +377,20 @@ export function buildChips(
     }
   }
 
-  // 4. Avoided traits — high confidence only (handled inside topAvoidedTraits).
+  // 5. Avoided traits — high confidence only (handled inside topAvoidedTraits).
   if (profile) {
     for (const t of topAvoidedTraits(profile, 1)) {
-      if (t && !chips.some(c => c.label === t)) {
-        chips.push({ kind: 'avoided', label: `Less of: ${t}` });
+      if (t) {
+        const label = `Less of: ${t}`;
+        if (suppressAvoidedTrait.has(label)) continue;
+        if (!chips.some(c => c.label === label)) {
+          chips.push({ kind: 'avoided', label });
+        }
       }
     }
   }
 
-  // 5. Authors — only when we have at least 2 (so a single book's author
+  // 6. Authors — only when we have at least 2 (so a single book's author
   // doesn't get elevated to "your authors").
   if (profile && (profile.liked_authors?.length ?? 0) >= 2) {
     const author = profile.liked_authors[0];
@@ -323,9 +399,10 @@ export function buildChips(
     }
   }
 
-  // Cap at 5 chips so the surface stays calm. Bumped from 4 in UX-3B to
-  // give the new avoid-genre signal room without crowding out authors.
-  return chips.slice(0, 5);
+  // Cap at 6 chips so the surface stays calm. Bumped from 5 in UX-3E to
+  // give the new stated-preference signals room without crowding out
+  // existing avoid-genre / author chips that UX-3B already balanced for.
+  return chips.slice(0, 6);
 }
 
 // ── Thin-state detection ─────────────────────────────────────────────────────

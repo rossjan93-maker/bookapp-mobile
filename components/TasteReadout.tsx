@@ -36,14 +36,32 @@ type Props = {
   /** UX-3B: intake-only avoid genres surfaced as "Less of: X" chips.
    *  Optional with [] default so older callers keep working unchanged. */
   avoidGenres?: string[];
+  /** UX-3E: reader_preferences.diagnosis_answers — used to surface
+   *  q_outcome ("Reading for: X") and q_tone ("Tone: X") as stated-
+   *  preference chips. Optional with null default for backward-compat. */
+  diagnosisAnswers?: Record<string, string> | null;
   onSeeMyPicks: () => void;
 };
 
-export function TasteReadout({ profile, favoriteGenres, avoidGenres = [], onSeeMyPicks }: Props) {
+export function TasteReadout({
+  profile,
+  favoriteGenres,
+  avoidGenres = [],
+  diagnosisAnswers = null,
+  onSeeMyPicks,
+}: Props) {
   const headline = buildHeadline();
   const thin = isThinReadout(profile, favoriteGenres);
+  // UX-3E thin-state decision: preserve the existing thin-state guard.
+  // q_outcome / q_tone alone do not graduate a user out of thin state — in
+  // practice the intake flow gates outcome/tone behind the genres step, so
+  // a user reaching outcome will almost always have at least one liked or
+  // avoid genre and won't be thin. Showing "Reading for: X" with no other
+  // signal would over-isolate a single answer and feel unbalanced.
   const summary = thin ? THIN_READOUT_COPY : buildSummary(profile, favoriteGenres);
-  const chips: ReadoutChip[] = thin ? [] : buildChips(profile, favoriteGenres, avoidGenres);
+  const chips: ReadoutChip[] = thin
+    ? []
+    : buildChips(profile, favoriteGenres, avoidGenres, diagnosisAnswers);
   const learningLine = buildLearningLine(profile);
 
   return (
@@ -178,23 +196,26 @@ export function TasteReadout({ profile, favoriteGenres, avoidGenres = [], onSeeM
 // the same kind of preference as the others.
 
 function Chip({ chip }: { chip: ReadoutChip }) {
-  const isAvoided = chip.kind === 'avoided';
+  // 'avoided' and 'stated' (UX-3E) both use the warm-neutral styling so they
+  // read as informational ("you told us") rather than as derived-history
+  // claims like genre/trait/author chips.
+  const isNeutral = chip.kind === 'avoided' || chip.kind === 'stated';
   return (
     <View
       style={{
         paddingHorizontal: 12,
         paddingVertical: 7,
         borderRadius: 999,
-        backgroundColor: isAvoided ? '#f0ece7' : T.SAGE_BG,
+        backgroundColor: isNeutral ? '#f0ece7' : T.SAGE_BG,
         borderWidth: 1,
-        borderColor: isAvoided ? '#e3ddd5' : '#d9e7da',
+        borderColor: isNeutral ? '#e3ddd5' : '#d9e7da',
       }}
     >
       <Text
         style={{
           fontSize: 13,
           fontWeight: '600',
-          color: isAvoided ? T.STONE : T.SAGE_INK,
+          color: isNeutral ? T.STONE : T.SAGE_INK,
           letterSpacing: 0.1,
         }}
       >
