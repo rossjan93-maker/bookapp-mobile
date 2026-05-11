@@ -1,0 +1,99 @@
+Task type:
+Small implementation.
+
+Goal:
+Improve the non-import onboarding intake by adding an “avoid genres” calibration step.
+
+User problem:
+If a user skips Goodreads/import, the current intake does not learn enough. One of the clearest missing signals is what the reader does not want. Existing schema already has reader_preferences.avoid_genres, but intake currently always writes it as [].
+
+Product rule:
+This should feel like calibration, not a form. The user should feel Readstack is learning what to avoid, without the question feeling negative or judgmental.
+
+Allowed files:
+- components/RecEntryScreen.tsx
+- lib/intakeDraft.ts
+- replit.md
+
+File budget:
+Maximum 3 files. If this requires more than 3 files, stop and explain.
+
+Forbidden files/systems:
+- recommender scoring
+- recommender ranking
+- recommender retrieval
+- recommendation persistence
+- TasteReadout
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+- HomeShortlist
+- RecCard
+- RecommendationsFeed
+
+Hard constraints:
+- Do not surface avoid genres in TasteReadout yet. That is UX-3B.
+- Do not wire avoid genres into recommender scoring yet. That is deferred.
+- Do not change the existing favorite genre step except as required for phase flow.
+- Do not change onboarding routing outside RecEntryScreen/intakeDraft needs.
+- Do not add new DB columns.
+- Do not add new API calls.
+- Keep every step skippable.
+
+Implementation requirements:
+1. Add a new intake phase after liked genres and before taste questions.
+2. Suggested copy:
+   Title: “Anything you usually skip?”
+   Subtitle: “Pick anything you’d rather not see. You can skip this.”
+3. Reuse the existing genre chip options if possible.
+4. Add clear skip behavior:
+   - “Skip this” should continue with avoidGenres = []
+   - existing “Skip all” behavior, if present, should continue to work as before
+5. Extend IntakeState with avoidGenres: string[].
+6. Extend intake draft persistence to support avoidGenres.
+7. Save avoidGenres to reader_preferences.avoid_genres in saveQuickIntake.
+8. Preserve current favorite_genres and diagnosis_answers behavior.
+9. Preserve existing anchor-book behavior.
+10. If intakeDraft has a version/schema concern, prefer backward-compatible migration that fills avoidGenres with [] for older drafts. If that is too risky, stop and explain.
+
+Acceptance criteria:
+1. Non-import intake includes an avoid-genres step.
+2. User can select zero or more avoid genres.
+3. Skipping the step writes avoid_genres as [].
+4. Completing intake writes selected avoid genres to reader_preferences.avoid_genres.
+5. Existing favorite genre, taste question, and anchor-book flows still work.
+6. No TasteReadout changes in this batch.
+7. No recommender/scoring/ranking/retrieval changes.
+8. Typecheck remains at baseline with zero new errors.
+9. Diff scope confirms no forbidden systems were touched.
+
+Validation required:
+- Static review of new phase order.
+- Static review of saveQuickIntake payload.
+- Draft read/write compatibility check.
+- Typecheck delta.
+- Diff scope report.
+- Workflow status, noting if the known Metro FallbackWatcher race appears.
+
+Stop conditions:
+- If avoiding a schema change is not possible, stop.
+- If adding the phase breaks draft compatibility in a way that cannot be handled simply, stop.
+- If this requires touching more than the 3 allowed files, stop.
+
+Return format:
+- Changed files
+- Implementation summary
+- New phase flow
+- Data write confirmation
+- Draft compatibility notes
+- Behavior preservation check
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Any deviations from prompt

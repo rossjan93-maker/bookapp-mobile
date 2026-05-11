@@ -103,6 +103,10 @@ type GBResult = {
 type IntakeState = {
   fictionSplit: 'fiction' | 'nonfiction' | 'both';
   likedGenres:  string[];
+  // UX-3A: genres the user would rather not see. Persisted to
+  // reader_preferences.avoid_genres (column has existed since 20260313 but
+  // intake previously always wrote []). Recommender wiring is deferred.
+  avoidGenres:  string[];
   tasteAnswers: Record<string, string>;
   anchorBook:   GBResult | null;
 };
@@ -222,7 +226,7 @@ async function saveQuickIntake(intake: IntakeState): Promise<void> {
     {
       user_id:           user.id,
       favorite_genres:   intake.likedGenres,
-      avoid_genres:      [],
+      avoid_genres:      intake.avoidGenres,
       diagnosis_answers: { ...intake.tasteAnswers, ...behavioralMeta },
       updated_at:        new Date().toISOString(),
     },
@@ -463,7 +467,7 @@ function IntakeGenres({
 
   return (
     <OnboardingShell
-      progressSlot={<StepDots total={3} current={0} />}
+      progressSlot={<StepDots total={4} current={0} />}
       headerRight={
         <TouchableOpacity onPress={onSkip} hitSlop={{ top: 10, bottom: 10, left: 16, right: 16 }}>
           <Text style={{ fontSize: 13, fontWeight: '500', color: MUTED }}>Skip all →</Text>
@@ -529,6 +533,71 @@ function IntakeGenres({
   );
 }
 
+// ─── Quick intake: avoid-genres screen (UX-3A) ───────────────────────────────
+//
+// Calibration step that captures what the user would rather NOT see.
+// Reuses the same genre pool the user picked from in IntakeGenres (filtered
+// by their fictionSplit choice) so the avoid options feel symmetric, not
+// surprising. Liked genres are visually suppressed so the user can't
+// contradict themselves in a single sitting.
+
+function IntakeAvoid({
+  intake,
+  onContinue,
+  onSkip,
+}: {
+  intake:     IntakeState;
+  onContinue: (avoid: string[]) => void;
+  onSkip:     () => void;
+}) {
+  const [avoid, setAvoid] = useState<string[]>(intake.avoidGenres);
+
+  // Show the same pool the user just picked liked-from, minus the genres
+  // they liked (don't ask the user to label something as both liked and
+  // avoided in the same flow).
+  const likedSet  = new Set(intake.likedGenres);
+  const allGenres = getGenres(intake.fictionSplit);
+  const genres    = allGenres.filter(g => !likedSet.has(g.label));
+
+  return (
+    <OnboardingShell
+      progressSlot={<StepDots total={4} current={1} />}
+      title="Anything you usually skip?"
+      subtitle="Pick anything you'd rather not see. You can skip this."
+      onSkipThis={() => onContinue([])}
+      onSkipAll={onSkip}
+      primaryButton={
+        <BtnPrimary
+          label={avoid.length > 0 ? 'Continue →' : 'Skip →'}
+          onPress={() => onContinue(avoid)}
+        />
+      }
+    >
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: OB.padH, paddingBottom: 20 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {genres.map(g => (
+            <Chip
+              key={g.label}
+              label={g.label}
+              active={avoid.includes(g.label)}
+              onPress={() =>
+                setAvoid(prev =>
+                  prev.includes(g.label)
+                    ? prev.filter(l => l !== g.label)
+                    : [...prev, g.label],
+                )
+              }
+            />
+          ))}
+        </View>
+      </ScrollView>
+    </OnboardingShell>
+  );
+}
+
 // ─── Quick intake: taste screen (3 questions, auto-advance) ───────────────────
 
 function IntakeTaste({
@@ -577,7 +646,7 @@ function IntakeTaste({
       progressSlot={
         // Two stacked rows: major step dots + per-question sub-progress bars
         <View>
-          <StepDots total={3} current={1} />
+          <StepDots total={4} current={2} />
           <SubProgressBar total={TASTE_QS.length} current={qIdx} />
         </View>
       }
@@ -678,7 +747,7 @@ function IntakeAnchor({
 
   return (
     <OnboardingShell
-      progressSlot={<StepDots total={3} current={2} />}
+      progressSlot={<StepDots total={4} current={3} />}
       title="One book that nailed it?"
       subtitle="Optional — a book you've loved is our strongest cold-start signal."
       primaryButton={
@@ -779,7 +848,7 @@ function SavingOverlay() {
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
-type Phase = 'options' | 'intake_genres' | 'intake_taste' | 'intake_anchor' | 'saving';
+type Phase = 'options' | 'intake_genres' | 'intake_avoid' | 'intake_taste' | 'intake_anchor' | 'saving';
 
 export function RecEntryScreen({
   onDone,
@@ -793,6 +862,7 @@ export function RecEntryScreen({
   const [intake, setIntake] = useState<IntakeState>({
     fictionSplit: 'both',
     likedGenres:  [],
+    avoidGenres:  [],
     tasteAnswers: {},
     anchorBook:   null,
   });
@@ -827,6 +897,7 @@ export function RecEntryScreen({
           setIntake({
             fictionSplit: draft.fictionSplit,
             likedGenres:  draft.likedGenres,
+            avoidGenres:  draft.avoidGenres,
             tasteAnswers: draft.tasteAnswers,
             anchorBook:   null,
           });
@@ -844,13 +915,14 @@ export function RecEntryScreen({
   // Persist a draft so a mid-quit user can resume from the same step on
   // cold-restart. Phase+state captured here is what RecEntryScreen will boot
   // back into when readIntakeDraft fires next.
-  function persistDraft(nextPhase: 'intake_genres' | 'intake_taste' | 'intake_anchor', state: IntakeState) {
+  function persistDraft(nextPhase: 'intake_genres' | 'intake_avoid' | 'intake_taste' | 'intake_anchor', state: IntakeState) {
     const uid = userIdRef.current;
     if (!uid) return;
     writeIntakeDraft(uid, {
       phase:        nextPhase,
       fictionSplit: state.fictionSplit,
       likedGenres:  state.likedGenres,
+      avoidGenres:  state.avoidGenres,
       tasteAnswers: state.tasteAnswers,
     });
   }
@@ -884,6 +956,13 @@ export function RecEntryScreen({
     const next = { ...intake, fictionSplit: split, likedGenres: liked };
     setIntake(next);
     // Persist draft pointing at the next phase so cold-restart resumes there.
+    persistDraft('intake_avoid', next);
+    goTo('intake_avoid');
+  }
+
+  function handleAvoidContinue(avoid: string[]) {
+    const next = { ...intake, avoidGenres: avoid };
+    setIntake(next);
     persistDraft('intake_taste', next);
     goTo('intake_taste');
   }
@@ -914,7 +993,11 @@ export function RecEntryScreen({
   async function handleSkipIntake(atStep: string) {
     reIntakeSkipped(atStep);
     // Save whatever has been collected so far
-    if (Object.keys(intake.tasteAnswers).length > 0 || intake.likedGenres.length > 0) {
+    if (
+      Object.keys(intake.tasteAnswers).length > 0 ||
+      intake.likedGenres.length > 0 ||
+      intake.avoidGenres.length > 0
+    ) {
       await saveQuickIntake(intake);
     }
     await markRecEntrySeen();
@@ -943,6 +1026,13 @@ export function RecEntryScreen({
             intake={intake}
             onContinue={handleGenresContinue}
             onSkip={() => handleSkipIntake('genres')}
+          />
+        )}
+        {phase === 'intake_avoid' && (
+          <IntakeAvoid
+            intake={intake}
+            onContinue={handleAvoidContinue}
+            onSkip={() => handleSkipIntake('avoid')}
           />
         )}
         {phase === 'intake_taste' && (
