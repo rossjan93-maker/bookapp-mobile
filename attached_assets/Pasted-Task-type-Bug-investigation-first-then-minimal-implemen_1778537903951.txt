@@ -1,0 +1,97 @@
+Task type:
+Bug investigation first, then minimal implementation only if root cause is clear.
+
+Goal:
+Fix genre multi-select during non-import onboarding intake.
+
+User-reported bug:
+During onboarding intake, selecting multiple genres does not appear to stick. It behaves as if only one genre can remain selected, even though the UI implies multi-select.
+
+Expected behavior:
+The user should be able to select multiple liked genres during the “What are you drawn to?” step. Those selected genres should:
+- visually remain selected
+- persist when moving forward/back through intake
+- save into reader_preferences.favorite_genres
+- continue into the avoid-genres step, where liked genres should be excluded from avoid options
+
+Allowed files to inspect:
+- components/RecEntryScreen.tsx
+- lib/intakeDraft.ts
+- any genre chip component used by RecEntryScreen
+
+Allowed files to edit after diagnosis:
+- components/RecEntryScreen.tsx
+- lib/intakeDraft.ts only if the bug is draft/state related
+- replit.md
+
+File budget:
+Maximum 3 files. If this requires more than 3 files, stop and explain.
+
+Forbidden files/systems:
+- TasteReadout
+- recommender scoring
+- recommender ranking
+- recommender retrieval
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+- HomeShortlist
+- RecCard
+- RecommendationsFeed
+
+Hard constraints:
+- Do not redesign onboarding in this batch.
+- Do not change recommendation logic.
+- Do not change DB schema.
+- Do not change the avoid-genres feature except as required to preserve correct liked-genre filtering.
+- Fix only the multi-select persistence/selection behavior.
+
+Investigation requirements:
+1. Trace liked genre state in RecEntryScreen.
+2. Confirm whether the bug is:
+   - chip toggle logic
+   - stale state closure
+   - single-select overwrite
+   - draft hydration overwrite
+   - phase transition state loss
+   - label/key mismatch
+3. Confirm whether avoid-genres filtering depends on the same selected genre state.
+4. Identify exact file/line root cause before implementing.
+
+Acceptance criteria:
+1. User can select multiple liked genres.
+2. Multiple selected genres visually remain selected.
+3. Moving forward/back does not drop selected genres.
+4. saveQuickIntake writes all selected liked genres.
+5. Avoid-genres step excludes all liked genres.
+6. Typecheck remains at baseline with zero new errors.
+7. No forbidden systems touched.
+
+Validation required:
+- Static review of toggle logic before/after.
+- Example state trace: select Genre A, Genre B, Genre C → selected array contains all three.
+- Draft compatibility check if touched.
+- Typecheck delta.
+- Diff scope report.
+- Workflow status, noting if the known Metro FallbackWatcher race appears.
+
+Stop conditions:
+- If the bug cannot be reproduced from code inspection, return diagnosis and suggested manual test rather than guessing.
+- If fixing it requires broader intake refactor, stop and explain.
+
+Return format:
+- Root cause
+- Changed files
+- Implementation summary
+- State trace example
+- Behavior preservation check
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Any deviations from prompt
