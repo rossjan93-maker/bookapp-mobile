@@ -1,0 +1,105 @@
+Task type:
+Small implementation.
+
+Goal:
+Clarify the “More Like This” action so users understand it teaches Readstack’s recommendations but does not save the book or add it to their library.
+
+User problem:
+In live testing, “More Like This” was unclear. It was not obvious whether tapping it:
+- saves the book
+- adds it to the library
+- changes the book’s status
+- or simply teaches the recommendation system
+
+Product rule:
+The app must make the result of the action obvious at the moment of interaction.
+
+Allowed files:
+- components/RecCard.tsx
+- components/RecommendationsFeed.tsx
+- lib/mltAutoaddPref.ts only if needed to verify/update existing prompt copy
+- replit.md
+
+File budget:
+Maximum 4 files. If this requires more than 4 files, stop and explain.
+
+Forbidden files/systems:
+- recommender scoring
+- recommender ranking
+- recommender retrieval
+- recommendation persistence behavior
+- queue behavior
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+- HomeShortlist
+- intake/onboarding redesign
+
+Hard constraints:
+- Do not change what More Like This does under the hood.
+- Do not make More Like This save the book.
+- Do not remove or weaken Save / Want to Read.
+- Do not change genreBoosts math.
+- Do not change dismissedIds, savedIds, removeFromQueue, trackActedOn, or replenish behavior.
+- This is UX/copy/clarity only.
+
+Implementation requirements:
+1. Keep the label “More like this” unless you find a strong reason not to.
+2. Add or improve microcopy so the user understands:
+   - this action teaches the app
+   - this action removes the current card from the deck
+   - this action does not save the book to the library
+3. Improve the tap confirmation copy for More Like This.
+   Example direction:
+   “Got it — we’ll tune toward this. Not saved.”
+4. Improve the learning toast copy.
+   Example direction:
+   “Tuned toward more [genre] picks. Not saved to your library.”
+   Fallback:
+   “Tuned your picks using this signal. Not saved to your library.”
+5. Add or verify accessibility hint copy:
+   “Teaches the app, does not save this book.”
+6. Preserve existing Not For Me and Save behaviors.
+7. Check whether the existing MLT auto-add preference/prompt is reachable.
+   - If reachable, update its copy so it is not confusing.
+   - If not reachable, report that it appears parked/unreachable. Do not build new settings UI.
+
+Stop conditions:
+- If you discover More Like This sometimes saves the book through an existing auto-add path, stop and report before changing copy.
+- If the current behavior is materially different from “teaches but does not save,” stop and explain.
+- If this requires behavior changes, stop and explain.
+
+Acceptance criteria:
+1. More Like This clearly communicates “teaches the app, not saved.”
+2. The card removal behavior remains unchanged.
+3. The feedback/persistence behavior remains unchanged.
+4. Save and Not For Me behavior remain unchanged.
+5. genreBoosts math remains unchanged.
+6. Typecheck remains at baseline with zero new errors.
+7. Workflow status is reported.
+8. Diff scope confirms no forbidden systems were touched.
+
+Validation required:
+- Static review of More Like This handler before/after.
+- Copy examples for genre-aware and fallback toast.
+- Confirmation whether MLT auto-add prompt is reachable.
+- Typecheck delta.
+- Diff scope report.
+- Workflow status, noting if the known Metro FallbackWatcher race appears.
+
+Return format:
+- Changed files
+- Implementation summary
+- Before/after user-facing copy
+- Behavior-leak check
+- MLT auto-add reachability finding
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Any deviations from prompt
