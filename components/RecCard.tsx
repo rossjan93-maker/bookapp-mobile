@@ -184,49 +184,150 @@ function _pickVariant<T>(pool: readonly T[], bookId: string, tag: string): T {
   return pool[idx];
 }
 
-const ALIGNS_POOL = [
+// ─── Copy gating: thin-profile vs. history-rich ──────────────────────────────
+// (Batch UX-1A, 2026-05-12) — the older variant pools below historically
+// produced phrasing that implies repeated reading behavior or strong taste
+// patterns ("you keep reaching for", "your highest-rated reads",
+// "you've returned to before", "earned a slot in your rotation"). These read
+// as unearned for thin / intake-only / tier 0-1 / low-confidence users — the
+// platform doesn't actually have the evidence to claim that.
+//
+// Each pool is now split into a SAFE peer (no behavior claim — purely
+// describes the book or hedges via "what you mentioned" / "what you
+// selected") and a HISTORY peer (current copy, retained verbatim where it
+// was already honest, and surfaced only when isHistoryRich() returns true).
+//
+// Gate predicate (single source of truth):
+//   • TasteProfile must exist
+//   • tier >= 2  (signals enough reading data to compute a stable picture)
+//   • confidence !== 'low'  (signal density passed the medium threshold)
+// All three required. Anything else → SAFE pool.
+//
+// IMPORTANT: SAFE variants must avoid every phrase in BANNED_THIN_PHRASES
+// AND every phrase in V3's universal banlist (you loved / you will love /
+// perfect for you / consistently / always / most as user-claim). This is
+// enforced by the in-source banned-phrase audit (run via dev script /
+// CI probe) — the lists below are the canonical inputs.
+function isHistoryRich(tp: TasteProfile | null | undefined): boolean {
+  if (!tp) return false;
+  if (tp.tier < 2) return false;
+  if (tp.confidence === 'low') return false;
+  return true;
+}
+
+// Wrapper around _pickVariant that picks from the safe pool unless the
+// caller has already verified the user is history-rich. Same hash key
+// space as _pickVariant so per-book stability is preserved within a pool.
+function _pickGated<T>(
+  safePool:    readonly T[],
+  historyPool: readonly T[],
+  isHistory:   boolean,
+  bookId:      string,
+  tag:         string,
+): T {
+  return _pickVariant(isHistory ? historyPool : safePool, bookId, tag);
+}
+
+// ── ALIGNS — "Aligns with your preference for X" rewrites ────────────────────
+const ALIGNS_POOL_SAFE = [
+  (x: string) => `Strong match for ${x}.`,
+  (x: string) => `Built around ${x}.`,
+  (x: string) => `${capitalize(x)} comes through clearly.`,
+  (x: string) => `Anchored in ${x}.`,
+] as const;
+const ALIGNS_POOL_HISTORY = [
   (x: string) => `Strong match for ${x}.`,
   (x: string) => `Lines up with your taste for ${x}.`,
   (x: string) => `${capitalize(x)} — squarely in your wheelhouse.`,
-  (x: string) => `Hits the ${x} you keep reaching for.`,
+  (x: string) => `${capitalize(x)} runs through what you tend to pick up.`,
 ] as const;
 
-const APPRECIATION_POOL = [
+// ── APPRECIATION — "Matches your appreciation for X" rewrites ────────────────
+const APPRECIATION_POOL_SAFE = [
+  (x: string) => `Strong on ${x}.`,
+  (x: string) => `Notable ${x}.`,
+  (x: string) => `${capitalize(x)} stands out here.`,
+  (x: string) => `Built on its ${x}.`,
+] as const;
+const APPRECIATION_POOL_HISTORY = [
   (x: string) => `Strong ${x} — exactly the kind you tend to rate highly.`,
   (x: string) => `Notable ${x}, the kind your highest-rated reads share.`,
   (x: string) => `Heavy on ${x} — a hallmark of the books you finish strongest.`,
   (x: string) => `Built on ${x}, the quality your ratings reliably reward.`,
 ] as const;
 
-const READERS_TRAIT_POOL = [
+// ── READERS_TRAIT — "Readers note strong X" rewrites ─────────────────────────
+const READERS_TRAIT_POOL_SAFE = [
+  (q: string) => `Readers especially praise ${q}.`,
+  (q: string) => `Reviewers single out ${q}.`,
+  (q: string) => `Reader consensus highlights ${q}.`,
+  (q: string) => `Standout ${q} by reader consensus.`,
+] as const;
+const READERS_TRAIT_POOL_HISTORY = [
   (q: string) => `Readers especially praise ${q} — a quality your ratings reward.`,
   (q: string) => `Reviewers single out ${q}, which lands with your taste.`,
   (q: string) => `Reader consensus highlights ${q} — a strength your library leans on.`,
   (q: string) => `Standout ${q} by reader consensus, and that aligns with you.`,
 ] as const;
 
-const SUBJECT_POOL = [
+// ── SUBJECT — "Covers themes of X that appear in books you've loved" ─────────
+const SUBJECT_POOL_SAFE = [
+  (x: string) => `Covers themes of ${x}.`,
+  (x: string) => `Built around ${x}.`,
+  (x: string) => `Centers on themes of ${x}.`,
+  (x: string) => `Threads of ${x} run through it.`,
+] as const;
+const SUBJECT_POOL_HISTORY = [
   (x: string) => `Covers themes of ${x} that show up in books you've loved.`,
   (x: string) => `Threads of ${x} run through it — recurring across your library.`,
   (x: string) => `Built around ${x}, themes that surface in your highest reads.`,
   (x: string) => `Centers themes of ${x} you've returned to before.`,
 ] as const;
 
-const THEMES_SHORT_POOL = [
+// ── THEMES_SHORT — "Themes (X, Y) align with your reading history" rewrites ──
+const THEMES_SHORT_POOL_SAFE = [
+  (x: string) => `Themes of ${x} run through it.`,
+  (x: string) => `${capitalize(x)} threads through the book.`,
+  (x: string) => `Carries ${x} as a recurring theme.`,
+  (x: string) => `Anchored in ${x}.`,
+] as const;
+const THEMES_SHORT_POOL_HISTORY = [
   (x: string) => `Themes of ${x} run through it.`,
   (x: string) => `${capitalize(x)} threads through the book.`,
   (x: string) => `Carries ${x} themes you've sat with before.`,
   (x: string) => `Anchored in ${x}, a recurring thread for you.`,
 ] as const;
 
-const LANE_FALLBACK_POOL = [
+// ── LANE_FALLBACK — generic "Fits a genre you consistently enjoy" ────────────
+// SAFE variants frame the lane as a direction the user mentioned (intake) or
+// as a neutral genre fit, never as established preference behavior.
+const LANE_FALLBACK_POOL_SAFE = [
+  (l: string) => `A reasonable fit for ${l}.`,
+  (l: string) => `Sits in the ${l} space.`,
+  (l: string) => `Lands in ${l} territory.`,
+  (l: string) => `Based on what you told us, this leans into ${l}.`,
+] as const;
+const LANE_FALLBACK_POOL_HISTORY = [
   (l: string) => `A natural fit for your taste in ${l}.`,
   (l: string) => `Sits squarely in the ${l} you favor.`,
   (l: string) => `Lands in the ${l} space you read most.`,
   (l: string) => `Squarely in your ${l} lane.`,
 ] as const;
 
-const AUTHOR_LOYALTY_POOL = [
+// ── AUTHOR_LOYALTY — fires only when book.author has author_books_read >= 2.
+// That count IS hard data, so even thin-profile users have valid evidence at
+// the author level. But the wording must not extrapolate from "2 books read"
+// to "rotation" / "regularly" / "keeps returning" — those overclaim. SAFE
+// variants stay count-grounded; HISTORY variants retain the existing copy.
+const AUTHOR_LOYALTY_POOL_SAFE = [
+  (lane: string, author: string) =>
+    `Another ${lane} from ${author}, whose work you've read before.`,
+  (lane: string, author: string) =>
+    `${author} returning with another ${lane} pick.`,
+  (lane: string, author: string) =>
+    `More ${lane} from ${author} — an author already on your shelf.`,
+] as const;
+const AUTHOR_LOYALTY_POOL_HISTORY = [
   (lane: string, author: string) =>
     `Consistent ${lane} from an author you keep returning to.`,
   (lane: string, author: string) =>
@@ -255,47 +356,58 @@ const TRAIT_QUALITY: Record<string, string> = {
 //
 // The optional `bookId` enables the variety pools above. When omitted (e.g. in
 // unit tests of the matcher), a deterministic 'default' seed is used.
-function rewriteReasonText(raw: string, laneLabel: string | null, bookId: string = 'default'): string | null {
+function rewriteReasonText(
+  raw:          string,
+  laneLabel:    string | null,
+  bookId:       string = 'default',
+  tasteProfile: TasteProfile | null | undefined = null,
+): string | null {
+  const isHistory = isHistoryRich(tasteProfile);
+
   // ── Generic lane fallback ─────────────────────────────────────────────────
   if (raw === 'Fits a genre you consistently enjoy') {
-    return laneLabel ? _pickVariant(LANE_FALLBACK_POOL, bookId, 'lane')(laneLabel) : null;
+    return laneLabel
+      ? _pickGated(LANE_FALLBACK_POOL_SAFE, LANE_FALLBACK_POOL_HISTORY, isHistory, bookId, 'lane')(laneLabel)
+      : null;
   }
 
   // ── "Aligns with your preference for X and Y" ──────────────────────────
   const alignsM = raw.match(/^Aligns with your preference for (.+)$/i);
-  if (alignsM) return _pickVariant(ALIGNS_POOL, bookId, 'aligns')(alignsM[1].toLowerCase());
+  if (alignsM) return _pickGated(ALIGNS_POOL_SAFE, ALIGNS_POOL_HISTORY, isHistory, bookId, 'aligns')(alignsM[1].toLowerCase());
 
   // ── "Matches your appreciation for X" ─────────────────────────────────
   const appreciationM = raw.match(/^Matches your appreciation for (.+)$/i);
-  if (appreciationM) return _pickVariant(APPRECIATION_POOL, bookId, 'appreciation')(appreciationM[1].toLowerCase());
+  if (appreciationM) return _pickGated(APPRECIATION_POOL_SAFE, APPRECIATION_POOL_HISTORY, isHistory, bookId, 'appreciation')(appreciationM[1].toLowerCase());
 
   // ── "Readers note strong X — which fits your profile" ─────────────────
   const readersM = raw.match(/^Readers note strong (.+?) — which fits your profile$/i);
   if (readersM) {
     const traitKey = readersM[1].toLowerCase();
     const quality  = TRAIT_QUALITY[traitKey] ?? `its ${traitKey}`;
-    return _pickVariant(READERS_TRAIT_POOL, bookId, 'readers')(quality);
+    return _pickGated(READERS_TRAIT_POOL_SAFE, READERS_TRAIT_POOL_HISTORY, isHistory, bookId, 'readers')(quality);
   }
 
   // ── "Covers themes of X and Y that appear in books you've loved" ───────
   const subjectM = raw.match(/^Covers themes of (.+) that appear in books you've loved$/i);
-  if (subjectM) return _pickVariant(SUBJECT_POOL, bookId, 'subject')(subjectM[1]);
+  if (subjectM) return _pickGated(SUBJECT_POOL_SAFE, SUBJECT_POOL_HISTORY, isHistory, bookId, 'subject')(subjectM[1]);
 
   // ── "Falls within X — a genre you consistently enjoy" (expertRec path) ─
+  // Thin-profile fallback dropped from "A genre you love." (overclaim) to
+  // a neutral framing — fires only when no laneLabel is available.
   const fallsM = raw.match(/^Falls within (.+?) — a genre you consistently enjoy$/i);
   if (fallsM) return laneLabel
-    ? _pickVariant(LANE_FALLBACK_POOL, bookId, 'falls')(laneLabel)
-    : 'A genre you love.';
+    ? _pickGated(LANE_FALLBACK_POOL_SAFE, LANE_FALLBACK_POOL_HISTORY, isHistory, bookId, 'falls')(laneLabel)
+    : (isHistory ? 'A genre you love.' : 'A genre you mentioned liking.');
 
   // ── "Themes (X, Y) align with your reading history" ───────────────────
   const themesM = raw.match(/^Themes? \((.+?)\) align with your reading history$/i);
-  if (themesM) return _pickVariant(THEMES_SHORT_POOL, bookId, 'themes')(themesM[1]);
+  if (themesM) return _pickGated(THEMES_SHORT_POOL_SAFE, THEMES_SHORT_POOL_HISTORY, isHistory, bookId, 'themes')(themesM[1]);
 
   // ── "Touches on X, which occasionally appears in your reading" ─────────
   // Weak signal — only surface as a soft lane fallback, never the primary line.
   const touchesM = raw.match(/^Touches on (.+?), which occasionally appears in your reading$/i);
   if (touchesM) return laneLabel
-    ? _pickVariant(LANE_FALLBACK_POOL, bookId, 'touches')(laneLabel)
+    ? _pickGated(LANE_FALLBACK_POOL_SAFE, LANE_FALLBACK_POOL_HISTORY, isHistory, bookId, 'touches')(laneLabel)
     : null;
 
   // ── Pass all other strings through unchanged ───────────────────────────
@@ -329,7 +441,12 @@ function classifySignal(raw: string): SignalCategory {
 // preceding noun in the templates) rather than the embedded subject string,
 // so multi-item themes like "murder and suspense" never produce ungrammatical
 // "X runs through it" copy.
-const THEME_TAIL_POOL = [
+const THEME_TAIL_POOL_SAFE = [
+  (x: string) => ` Themes of ${x} also surface.`,
+  (x: string) => ` ${capitalize(x)} threads through it too.`,
+  (x: string) => ` Plus ${x} as recurring elements.`,
+] as const;
+const THEME_TAIL_POOL_HISTORY = [
   (x: string) => ` Themes of ${x} also surface — recurring in your library.`,
   (x: string) => ` Themes of ${x} thread through it too, echoing your favorites.`,
   (x: string) => ` Plus ${x} as recurring threads — the kind you return to.`,
@@ -337,11 +454,16 @@ const THEME_TAIL_POOL = [
 
 // Build the appended-theme tail for a "Covers themes of X..." or similar r1.
 // Returns null when the raw doesn't carry an extractable subject string.
-function _themeTailFor(raw: string, bookId: string): string | null {
+function _themeTailFor(
+  raw:          string,
+  bookId:       string,
+  tasteProfile: TasteProfile | null | undefined = null,
+): string | null {
+  const isHistory = isHistoryRich(tasteProfile);
   const m1 = raw.match(/^Covers themes of (.+) that appear in books you've loved$/i);
-  if (m1) return _pickVariant(THEME_TAIL_POOL, bookId, 'theme_tail')(m1[1]);
+  if (m1) return _pickGated(THEME_TAIL_POOL_SAFE, THEME_TAIL_POOL_HISTORY, isHistory, bookId, 'theme_tail')(m1[1]);
   const m2 = raw.match(/^Themes? \((.+?)\) align with your reading history$/i);
-  if (m2) return _pickVariant(THEME_TAIL_POOL, bookId, 'theme_tail')(m2[1]);
+  if (m2) return _pickGated(THEME_TAIL_POOL_SAFE, THEME_TAIL_POOL_HISTORY, isHistory, bookId, 'theme_tail')(m2[1]);
   return null;
 }
 
@@ -625,7 +747,7 @@ function buildExplanation(
   // that is far more distinctive than a lane-wide summary.
   if (r0IsGeneric && r1 !== null) {
     const specific = capitalize(stripAuthorPrefix(r1, book.author));
-    const rewritten = rewriteReasonText(specific, laneLabel, book.id);
+    const rewritten = rewriteReasonText(specific, laneLabel, book.id, tasteProfile);
     if (rewritten != null) return rewritten;
   }
 
@@ -640,8 +762,8 @@ function buildExplanation(
     const r1Cat = classifySignal(r1);
     if (r0Cat === 'trait' && r1Cat === 'theme') {
       const cleaned   = capitalize(stripAuthorPrefix(r0, book.author));
-      const primary   = rewriteReasonText(cleaned, laneLabel, book.id);
-      const themeTail = _themeTailFor(r1, book.id);
+      const primary   = rewriteReasonText(cleaned, laneLabel, book.id, tasteProfile);
+      const themeTail = _themeTailFor(r1, book.id, tasteProfile);
       if (primary != null && themeTail != null) return primary + themeTail;
     }
   }
@@ -653,7 +775,7 @@ function buildExplanation(
   // on the card) and pass through the rest.
   if (r0 !== null && !r0IsGeneric) {
     const cleaned  = capitalize(stripAuthorPrefix(r0, book.author));
-    const rewritten = rewriteReasonText(cleaned, laneLabel, book.id);
+    const rewritten = rewriteReasonText(cleaned, laneLabel, book.id, tasteProfile);
     if (rewritten != null) return rewritten;
   }
 
@@ -668,14 +790,20 @@ function buildExplanation(
   // ── Author loyalty — only when no specific reason is available ───────────────
   // Variants are seeded by book.id so the same author yields varied phrasing
   // across their backlist instead of repeating the same sentence on every card.
+  // (UX-1A) authorCount >= 2 is hard data — user has read 2+ by this author —
+  // but the HISTORY pool's "rotation"/"regularly" wording extrapolates beyond
+  // that signal. Gate on isHistoryRich so thin-profile users get count-grounded
+  // SAFE copy that doesn't claim broader patterns. authorCount >= 5 keeps the
+  // single "Deep into … catalog" line for everyone (count itself is sufficient).
+  const isHistory  = isHistoryRich(tasteProfile);
   const authorCount = bd.author_books_read ?? 0;
   if (authorCount >= 5) {
     return `Deep into ${book.author}'s catalog — this one fits the pattern.`;
   }
   if (authorCount >= 2) {
     return laneLabel
-      ? _pickVariant(AUTHOR_LOYALTY_POOL, book.id, 'author')(laneLabel, book.author)
-      : `Another strong read from ${book.author}.`;
+      ? _pickGated(AUTHOR_LOYALTY_POOL_SAFE, AUTHOR_LOYALTY_POOL_HISTORY, isHistory, book.id, 'author')(laneLabel, book.author)
+      : `Another book by ${book.author}.`;
   }
 
   // ── Generic reasons[0] as last resort ───────────────────────────────────────
@@ -683,11 +811,11 @@ function buildExplanation(
   if (r0 !== null) {
     if (r0IsGeneric) {
       return laneLabel
-        ? _pickVariant(LANE_FALLBACK_POOL, book.id, 'lane_fallback')(laneLabel)
+        ? _pickGated(LANE_FALLBACK_POOL_SAFE, LANE_FALLBACK_POOL_HISTORY, isHistory, book.id, 'lane_fallback')(laneLabel)
         : null;
     }
     const cleaned = capitalize(stripAuthorPrefix(r0, book.author));
-    return rewriteReasonText(cleaned, laneLabel, book.id);
+    return rewriteReasonText(cleaned, laneLabel, book.id, tasteProfile);
   }
 
   return null;

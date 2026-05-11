@@ -1,0 +1,90 @@
+The UX Correction Sprint audit is accepted.
+
+Do not execute the combined UX-1 batch yet. We are splitting it for safety.
+
+Proceed with UX-1A only: Trust restoration / thin-profile copy gating.
+
+Goal:
+Recommendation copy must never imply repeated behavior, deep reading history, strong preference, or high confidence unless the user has enough actual reading history to support it.
+
+Problem confirmed by audit:
+The V3 anchored explanation path is mostly hedged correctly, but older explanation pools and rewrite paths can still produce overclaiming language for thin-profile users, including phrases like:
+- “you keep reaching for”
+- “you tend to rate highly”
+- “your highest-rated reads”
+- “your ratings reliably reward”
+- “recurring across your library”
+- “you’ve returned to before”
+- “you read regularly”
+- “earned a slot in your rotation”
+
+Implementation scope:
+Fix explanation copy gating only.
+
+Allowed files:
+- components/RecCard.tsx
+- lib/expertRec.ts only if needed for copy strings, not scoring
+- lib/recommender.ts only if needed for copy strings, not scoring
+- replit.md
+
+Hard constraints:
+- Do not touch MLT button styling or behavior in this batch.
+- Do not touch HomeShortlist in this batch.
+- Do not touch intake redesign in this batch.
+- Do not change recommender scoring, ranking, retrieval, persistence, or queue behavior.
+- Do not add LLM/API calls.
+- Do not touch schema, migrations, auth, Sentry, native config, Open Library, Google Books, or metadata repair.
+- Do not invent new user evidence.
+- Do not remove existing explanation variety for history-rich users.
+
+Copy gating rule:
+Create a clear helper or equivalent rule for whether history-based language is allowed.
+
+History-based phrasing should require something like:
+- tasteProfile exists
+- tier >= 2
+- confidence is not "low"
+- and the copy path is based on actual derived reading history, not just intake-only stated preferences
+
+If profile is thin, intake-only, null, tier 0/1, or confidence low, use only hedged language.
+
+Thin / intake-safe copy examples:
+- “Based on what you told us…”
+- “Starting from your preferences…”
+- “This is an early read…”
+- “A reasonable first direction…”
+- “This leans toward the genres you selected…”
+- “This may be a useful starting pick…”
+
+Unsafe copy for thin profiles:
+- “you keep reaching for”
+- “you tend to rate highly”
+- “your ratings reward”
+- “your highest-rated reads”
+- “recurring across your library”
+- “books you’ve loved”
+- “you’ve returned to”
+- “you read regularly”
+- “your strongest lane”
+- “earned a slot in your rotation”
+
+Specific tasks:
+1. Audit every existing explanation pool in components/RecCard.tsx.
+2. Remove or gate all repeated-behavior/history language.
+3. Ensure rewriteReasonText and any _pickVariant-style helper receives enough profile context to choose safe copy.
+4. If lib/expertRec.ts or lib/recommender.ts contain pre-rewrite user-history strings that can leak into cards, change those strings to be either neutral or gated by profile strength.
+5. Add a local banned-phrase audit/probe similar to the V3 rendered-sample audit.
+6. Confirm that history-rich users can still get specific, confident copy where supported.
+7. Confirm thin users get only hedged copy.
+
+Acceptance criteria:
+1. Thin-profile and intake-only users never see repeated-history language.
+2. History-rich users can still see grounded history-aware copy.
+3. Existing explanation fallback still works.
+4. No scoring/ranking/retrieval/persistence/queue changes.
+5. No MLT/Home/intake changes.
+6. Typecheck remains at baseline with zero new errors.
+7. Workflow runs cleanly.
+8. Return changed files, before/after copy examples for thin and history-rich users, banned-phrase audit results, and known limitations.
+
+If this requires more than 4 files, stop and explain before proceeding.
