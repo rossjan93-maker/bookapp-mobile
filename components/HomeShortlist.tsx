@@ -16,7 +16,13 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Text, TouchableOpacity, View } from 'react-native';
+import { LayoutAnimation, Platform, Text, TouchableOpacity, UIManager, View } from 'react-native';
+
+// Enable LayoutAnimation on Android for the inline expand/collapse motion.
+// Cheap one-time call; iOS supports it natively. No-op if already enabled.
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { useFocusEffect, useRouter } from 'expo-router';
 import { CoverThumb } from './CoverThumb';
 import { getRecSession } from '../lib/recSession';
@@ -133,54 +139,134 @@ export function HomeShortlist({ userId, librarySize }: Props) {
     setState(deriveState(userId, actedOn, actedOnReadyUid, librarySize));
   }, [userId, actedOn, actedOnReadyUid, librarySize, version]);
 
+  // Session-only inline expand state for the hot peek. Per spec, persistent
+  // collapse preference is intentionally avoided — keeps the change scoped
+  // to a visual restraint pass with no AsyncStorage / settings surface.
+  // Resets on remount (sign-out, tab unmount, etc), which is desirable.
+  const [expanded, setExpanded] = useState(false);
+
   if (state.kind === 'hidden') return null;
 
-  // ── Empty / honest CTA states ───────────────────────────────────────────
+  // Shared section-eyebrow style — matches the rest of Home's microcopy.
+  const eyebrow = (
+    <Text style={{
+      fontSize: 11, fontWeight: '700', letterSpacing: 1.2,
+      color: SAGE_DEEP, textTransform: 'uppercase', marginBottom: 8,
+    }}>
+      Your next-read shortlist
+    </Text>
+  );
+
+  // ── Empty / honest CTA states (compact pill row) ────────────────────────
+  // Was a full sage card with title + body + button (~120pt tall). Now a
+  // single-line pill row (~44pt) so cold/thin Home doesn't dominate the
+  // viewport above Reading Now.
   if (state.kind === 'thin' || state.kind === 'cold') {
     const isThin    = state.kind === 'thin';
-    const headline  = isThin ? 'Build your shortlist' : 'Your shortlist is waiting';
-    const subline   = isThin
-      ? 'Add or rate a few books to unlock sharper picks.'
-      : 'Head to For You to generate your next picks.';
-    const ctaLabel  = isThin ? 'Add a book' : 'See my picks';
+    const message   = isThin
+      ? 'Add a few books to unlock picks'
+      : 'Your shortlist is waiting';
+    const ctaLabel  = isThin ? 'Add a book' : 'See picks';
     const ctaTarget = isThin ? '/add-book' : '/(tabs)/search';
 
     return (
-      <View style={{ marginBottom: 32 }}>
-        <Text style={{
-          fontSize: 11, fontWeight: '700', letterSpacing: 1.2,
-          color: SAGE_DEEP, textTransform: 'uppercase', marginBottom: 12,
-        }}>
-          Your next-read shortlist
-        </Text>
-        <View style={{ backgroundColor: SAGE_BG, borderRadius: 14, padding: 16 }}>
-          <Text style={{ fontSize: 16, fontWeight: '700', color: INK, marginBottom: 4 }}>
-            {headline}
+      <View style={{ marginBottom: 24 }}>
+        {eyebrow}
+        <TouchableOpacity
+          onPress={() => router.push(ctaTarget as never)}
+          accessibilityRole="button"
+          accessibilityLabel={ctaLabel}
+          style={{
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+            backgroundColor: SAGE_BG, borderRadius: 10,
+            paddingHorizontal: 14, paddingVertical: 10,
+          }}
+        >
+          <Text style={{ flex: 1, fontSize: 13, color: SAGE_INK, fontWeight: '500' }} numberOfLines={1}>
+            {message}
           </Text>
-          <Text style={{ fontSize: 13, color: SAGE_INK, marginBottom: 12 }}>
-            {subline}
+          <Text style={{ fontSize: 12, fontWeight: '700', color: SAGE_DEEP, marginLeft: 12 }}>
+            {ctaLabel} ›
           </Text>
-          <TouchableOpacity
-            onPress={() => router.push(ctaTarget as never)}
-            style={{
-              alignSelf: 'flex-start', backgroundColor: SAGE_DEEP,
-              paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={ctaLabel}
-          >
-            <Text style={{ color: '#fefcf9', fontSize: 13, fontWeight: '600' }}>
-              {ctaLabel}
-            </Text>
-          </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
       </View>
     );
   }
 
-  // ── Hot cache: up to 3 compact picks ────────────────────────────────────
+  // ── Hot cache: collapsed peek (default) → tap to expand inline ──────────
+  // Collapsed peek replaces ~280pt of stacked cards with a ~64pt pill that
+  // shows overlapping mini-covers + "{N} picks ready". Tap expands inline
+  // to the existing 3-card layout. Animation is a single configureNext
+  // call before setExpanded — no per-card stagger, intentionally subtle.
+  const picks   = state.picks;
+  const nPicks  = picks.length;
+
+  const toggleExpanded = () => {
+    LayoutAnimation.configureNext({
+      duration: 220,
+      create:  { type: 'easeInEaseOut', property: 'opacity' },
+      update:  { type: 'easeInEaseOut' },
+      delete:  { type: 'easeInEaseOut', property: 'opacity' },
+    });
+    setExpanded(e => !e);
+  };
+
+  if (!expanded) {
+    return (
+      <View style={{ marginBottom: 24 }}>
+        {eyebrow}
+        <TouchableOpacity
+          onPress={toggleExpanded}
+          accessibilityRole="button"
+          accessibilityLabel={`${nPicks} picks ready. Open your next-read shortlist.`}
+          accessibilityHint="Double-tap to expand the shortlist."
+          style={{
+            flexDirection: 'row', alignItems: 'center',
+            backgroundColor: SAGE_BG, borderRadius: 10,
+            paddingHorizontal: 12, paddingVertical: 10,
+          }}
+        >
+          {/* Overlapping mini-cover stack — visual hook without taking the
+              full card real estate. Renders left-to-right with negative
+              margin overlap; CoverThumb supplies its own elevation. */}
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', marginRight: 12, height: 44,
+          }}>
+            {picks.map((book, i) => (
+              <View
+                key={book.id}
+                style={{ marginLeft: i === 0 ? 0 : -10 }}
+              >
+                <CoverThumb
+                  url={book.cover_url}
+                  externalId={book.external_id}
+                  editionKey={null}
+                  title={book.title}
+                  width={30}
+                  height={44}
+                />
+              </View>
+            ))}
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: INK }} numberOfLines={1}>
+              {nPicks} pick{nPicks === 1 ? '' : 's'} ready
+            </Text>
+            <Text style={{ fontSize: 12, color: SAGE_INK, marginTop: 1 }} numberOfLines={1}>
+              Open your next-read shortlist
+            </Text>
+          </View>
+          <Text style={{ fontSize: 16, color: SAGE_DEEP, fontWeight: '600', marginLeft: 8 }}>
+            ›
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // ── Hot cache: expanded — original 3-card layout, with Hide affordance ──
   return (
-    <View style={{ marginBottom: 32 }}>
+    <View style={{ marginBottom: 24 }}>
       <View style={{
         flexDirection: 'row', justifyContent: 'space-between',
         alignItems: 'center', marginBottom: 12,
@@ -191,19 +277,30 @@ export function HomeShortlist({ userId, librarySize }: Props) {
         }}>
           Your next-read shortlist
         </Text>
-        <TouchableOpacity
-          onPress={() => router.push('/(tabs)/search' as never)}
-          accessibilityRole="button"
-          accessibilityLabel="See all picks"
-        >
-          <Text style={{ fontSize: 12, fontWeight: '600', color: SAGE_DEEP }}>
-            See all picks ›
-          </Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+          <TouchableOpacity
+            onPress={() => router.push('/(tabs)/search' as never)}
+            accessibilityRole="button"
+            accessibilityLabel="See all picks"
+          >
+            <Text style={{ fontSize: 12, fontWeight: '600', color: SAGE_DEEP }}>
+              See all ›
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={toggleExpanded}
+            accessibilityRole="button"
+            accessibilityLabel="Collapse shortlist"
+          >
+            <Text style={{ fontSize: 12, fontWeight: '600', color: '#7a6f60' }}>
+              Hide
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={{ gap: 10 }}>
-        {state.picks.map(book => {
+        {picks.map(book => {
           const reason = buildShortReason(book);
           const onPress = () => {
             // Mirror RecCard's tap-through: write rec context so book detail

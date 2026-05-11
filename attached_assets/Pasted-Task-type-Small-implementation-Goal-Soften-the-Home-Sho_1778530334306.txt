@@ -1,0 +1,91 @@
+Task type:
+Small implementation.
+
+Goal:
+Soften the Home Shortlist visual treatment so Home still gives users a reason to return, but does not feel cluttered or overly dominated by recommendation cards.
+
+User problem:
+In live testing, the Home Shortlist is useful, but it may be too attention-grabbing above Reading Now. It risks making Home feel visually crowded.
+
+Product rule:
+Home should signal “your next-read picks are ready” without overwhelming the existing Reading Now / progress experience.
+
+Allowed files:
+- components/HomeShortlist.tsx
+- app/(tabs)/index.tsx only if needed for spacing/placement
+- replit.md
+
+File budget:
+Maximum 3 files. If this requires more than 3 files, stop and explain.
+
+Forbidden files/systems:
+- recommender scoring
+- recommender ranking
+- recommender retrieval
+- recommendation persistence
+- recSession behavior
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+- RecCard
+- RecommendationsFeed
+- intake/onboarding
+
+Hard constraints:
+- Do not change what HomeShortlist reads.
+- Do not call the recommender from Home.
+- Do not change recSession read/write behavior.
+- Do not add new fetches.
+- Do not change tap-through behavior.
+- Do not remove the shortlist entirely.
+- This is a visual/UX restraint pass only.
+
+Implementation direction:
+Make the hot Home Shortlist less visually dominant.
+
+Preferred approach:
+Use a compact collapsed/peek state by default:
+- Show a smaller module with overlapping cover thumbnails or a compact row.
+- Text direction:
+  “3 picks ready”
+  “Open your next-read shortlist”
+- Tap expands inline to the existing 3-pick layout.
+- Expanded state can still show the current richer list.
+- First-ever appearance may default expanded if easy and low-risk; otherwise default collapsed is acceptable.
+- If adding persistent collapse preference creates extra complexity, keep it session-only.
+
+Cold/thin states:
+- Also reduce visual weight.
+- Prefer compact CTA modules over large cards.
+
+Acceptance criteria:
+1. Hot Home Shortlist takes materially less vertical space by default.
+2. User can still access the full shortlist.
+3. Cold/thin states remain honest.
+4. No change to recommendation fetching, recSession behavior, or tap-through logic.
+5. Existing Home modules still work.
+6. Typecheck remains at baseline with zero new errors.
+7. Diff scope confirms no forbidden systems were touched.
+
+Validation required:
+- Visual/structure summary of collapsed and expanded states.
+- Confirmation hot/cold/thin/all-acted-on logic is unchanged.
+- Typecheck delta.
+- Diff scope report.
+- Workflow status, noting if the known Metro FallbackWatcher race appears.
+
+Return format:
+- Changed files
+- Implementation summary
+- Before/after visual structure
+- Logic preservation check
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Any deviations from prompt
