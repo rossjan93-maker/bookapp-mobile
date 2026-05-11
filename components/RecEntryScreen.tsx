@@ -272,6 +272,13 @@ async function saveQuickIntake(intake: IntakeState): Promise<void> {
 // ─── Shared atoms ─────────────────────────────────────────────────────────────
 
 function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  // Active-state styling intentionally high-contrast: the previous treatment
+  // (faint INK+'18' tint, 1.5pt border, 11pt grey-toned check) read as
+  // ambiguous in live testing — users couldn't tell at a glance that
+  // multiple chips remained selected. Active chips now use INK as the fill
+  // with white text/icon (full-inverse) so any number of selected chips
+  // stand out clearly against the cream background, and inactive chips
+  // share a calm beige border so the row reads as a coherent set.
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -282,14 +289,14 @@ function Chip({ label, active, onPress }: { label: string; active: boolean; onPr
         borderRadius:      20,
         borderWidth:       1.5,
         borderColor:       active ? INK : BORD,
-        backgroundColor:   active ? INK + '18' : '#fff',
+        backgroundColor:   active ? INK : '#fff',
         flexDirection:     'row',
         alignItems:        'center',
         gap:               5,
       }}
     >
-      {active && <Ionicons name="checkmark" size={11} color={INK} />}
-      <Text style={{ fontSize: 13, fontWeight: active ? '600' : '400', color: active ? INK : SUB }}>
+      {active && <Ionicons name="checkmark" size={13} color="#fff" />}
+      <Text style={{ fontSize: 13, fontWeight: active ? '700' : '400', color: active ? '#fff' : SUB }}>
         {label}
       </Text>
     </TouchableOpacity>
@@ -489,6 +496,21 @@ function IntakeGenres({
         />
       }
     >
+      {/* Selected-count confirmation line — reassures the user that multiple
+          chips are sticking even when the visual treatment is subtle. Reads
+          off the same `liked` state the chips render from, so it updates
+          immediately on every tap. Renders a placeholder line when nothing
+          is selected so the layout doesn't shift on first selection. */}
+      <View style={{ paddingHorizontal: OB.padH, marginBottom: 10, minHeight: 18 }}>
+        <Text style={{ fontSize: 12, fontWeight: '500', color: liked.length > 0 ? INK : MUTED }}>
+          {liked.length === 0
+            ? 'Pick as many as you like'
+            : liked.length === 1
+              ? `1 selected · ${liked[0]}`
+              : `${liked.length} selected · ${liked.slice(0, 3).join(', ')}${liked.length > 3 ? `, +${liked.length - 3}` : ''}`}
+        </Text>
+      </View>
+
       {/* Fiction / Nonfiction / Both tab strip */}
       <View style={{ paddingHorizontal: OB.padH, marginBottom: 12 }}>
         <View style={{ flexDirection: 'row', backgroundColor: '#ede9e4', borderRadius: 10, padding: 3 }}>

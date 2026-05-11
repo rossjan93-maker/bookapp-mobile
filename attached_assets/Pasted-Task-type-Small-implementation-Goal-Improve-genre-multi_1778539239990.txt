@@ -1,0 +1,87 @@
+Task type:
+Small implementation.
+
+Goal:
+Improve genre multi-select clarity during onboarding intake so users can clearly see multiple selected genres.
+
+Context:
+Static review found the multi-select logic appears correct. However, live testing made the UI feel like only one genre was sticking. This may be a visual clarity issue rather than a state bug.
+
+User problem:
+When selecting multiple genres, it is not obvious that multiple selections remain active.
+
+Allowed files:
+- components/RecEntryScreen.tsx
+- replit.md
+
+File budget:
+Maximum 2 files. If this requires more than 2 files, stop and explain.
+
+Forbidden files/systems:
+- intakeDraft
+- TasteReadout
+- recommender
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+
+Hard constraints:
+- Do not change the genre toggle logic.
+- Do not change how favorite_genres are saved.
+- Do not change phase flow.
+- Do not change avoid-genre filtering behavior.
+- This is a visual/state-confirmation pass only.
+
+Implementation requirements:
+1. Make active selected genre chips more visually obvious.
+   Suggested:
+   - stronger selected background
+   - stronger selected border
+   - clearer checkmark
+   - selected text color distinct from unselected
+2. Add a small selected-count or selected-summary line on the liked-genres screen.
+   Example:
+   - “3 selected”
+   - or “Selected: Sci-fi & fantasy, Literary fiction, History”
+3. The selected-count/summary should update immediately as chips are tapped.
+4. Keep the design calm and consistent with Readstack.
+5. Do not add console logs unless used temporarily during validation and removed before completion.
+
+Acceptance criteria:
+1. Multiple selected genres are clearly visible.
+2. The selected count/summary confirms multiple selections.
+3. The underlying selected array behavior is unchanged.
+4. Moving to the avoid-genres step still excludes all selected liked genres.
+5. Typecheck remains at baseline with zero new errors.
+6. Diff scope confirms no forbidden systems were touched.
+
+Validation required:
+- Static review confirming toggle logic is unchanged.
+- Example state trace:
+  select A → “1 selected”
+  select B → “2 selected”
+  select C → “3 selected”
+- Confirmation avoid-genres filtering still reads the full likedGenres array.
+- Typecheck delta.
+- Workflow status.
+- Known limitations.
+
+Stop conditions:
+- If validation reveals the selected array actually replaces instead of appends, stop and report the logic bug before styling.
+- If this requires changing state architecture, stop and explain.
+
+Return format:
+- Changed files
+- Implementation summary
+- Before/after visual behavior
+- Toggle-logic preservation check
+- State trace example
+- Typecheck delta
+- Workflow status
+- Known limitations
