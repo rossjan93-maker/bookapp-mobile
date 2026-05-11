@@ -1,0 +1,94 @@
+We are shifting focus to Readstack’s first-session value loop.
+
+Do not implement anything yet. This first pass is an audit and product/technical planning pass only.
+
+Product goal:
+A new user should quickly feel that Readstack understands their reading taste, gives them a useful next-read shortlist, explains why those books fit, and visibly learns from their actions.
+
+Core loop we are improving:
+Import/add books → understand taste → recommend better next reads → explain why → user acts → system learns.
+
+Strategic framing:
+Readstack should not feel like a generic book tracker or a generic recommendation feed. It should feel like a personal reading decision system: something that helps a reader choose their next book with more confidence based on their taste, history, mood, and feedback.
+
+Please audit the current app and return a structured report covering:
+
+1. Current new-user flow
+- Signup/login
+- Email confirmation/deep link behavior if relevant
+- Onboarding/walkthrough
+- Final setup
+- Import/add books
+- Taste intake / preference capture
+- Recommendation generation
+- Recommendation card rendering
+- User actions on recommendations
+- Home/return state after first session
+
+2. Current files and components involved
+List the main files involved in:
+- onboarding
+- import/add book
+- reader preference/taste intake
+- recommendation retrieval/ranking
+- recommendation explanation generation
+- recommendation card rendering
+- save/dismiss/more-like-this/not-for-me actions
+- home screen state
+
+3. Weakest moments in the value loop
+Identify where the experience currently feels like setup, infrastructure, or utility instead of an immediate “this app gets me” moment.
+
+Specifically look for:
+- places where the user gives data but gets no emotional reward
+- places where recommendations feel generic
+- places where explanations are too vague
+- places where user actions do not visibly teach the system
+- places where the first session lacks a reason to come back
+
+4. Current data/model reality
+Explain what data we currently have available to generate a taste readout:
+- imported books
+- finished books
+- ratings
+- taste_tags
+- subjects/genres
+- descriptions
+- authors
+- recommendation scores
+- explanation strings
+- reader_preferences/onboarding answers
+
+5. Proposed product improvements
+Recommend UX/content improvements for:
+- a first taste profile/readout after onboarding or import
+- recommendation framing as a “next-read shortlist” rather than a generic feed
+- recommendation explanation quality: why it fits, why it might not, and what signal supports it
+- visible learning after user actions
+- a Home screen reason-to-return
+
+6. Implementation plan
+Break the work into small implementation batches. Each batch should:
+- touch as few files as possible
+- be testable independently
+- avoid broad rewrites
+- preserve existing working recommendation logic unless clearly necessary
+- avoid adding new feature sprawl
+
+7. Risks and tradeoffs
+Flag anything that could create:
+- inaccurate AI/taste claims
+- slow loading
+- brittle recommendation behavior
+- confusing onboarding state
+- bad empty states
+- privacy concerns
+- expensive AI calls
+- overbuilt architecture
+
+Important constraints:
+- Do not implement yet.
+- Do not invent a huge new architecture unless absolutely necessary.
+- Prefer using existing data and components first.
+- If AI/LLM calls are needed, explain exactly where, why, cost/risk, and what fallback exists without them.
+- Return only the audit, recommended direction, and batch plan.
