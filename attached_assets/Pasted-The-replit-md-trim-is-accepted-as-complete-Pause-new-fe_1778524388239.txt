@@ -1,0 +1,135 @@
+The replit.md trim is accepted as complete.
+
+Pause new feature work. We need a UX Correction Sprint based on live new-account testing.
+
+Do not implement immediately. First audit the specific issues below and return a proposed correction plan.
+
+Context:
+I tested a brand-new account. The first-session flow is technically working, but the experience is not yet impactful enough. Some personalization language feels unearned for a thin-profile user, and some feedback actions are unclear.
+
+Issues to audit:
+
+1. Thin-profile explanation overclaiming
+Problem:
+With very little intake/history, anchored explanations can still say things like:
+“hits the characters and emotion you keep reaching for.”
+
+That wording assumes the platform knows more about the reader than it does.
+
+Audit:
+- Find every explanation/copy path that can produce language implying repeated behavior, deep history, or strong preference.
+- Specifically look for phrases like:
+  - “you keep reaching for”
+  - “you tend to”
+  - “your reading history”
+  - “recurs across your books”
+  - “books you’ve rated highly”
+  - “what you usually reward”
+  - “your strongest lane”
+- Determine which phrases are safe only for imported/rated/history-rich users versus unsafe for thin/intake-only users.
+
+Propose:
+- A clear copy gating rule based on profile strength/source.
+- For thin or intake-only users, use language like:
+  - “Based on what you told us…”
+  - “Starting from your preferences…”
+  - “This is an early read…”
+  - “A reasonable first direction…”
+- Only use repeated-behavior language when the user has enough actual reading history to support it.
+
+2. Onboarding/intake is not impactful enough without Goodreads/import
+Problem:
+If a user chooses not to import Goodreads/upload data, the intake/questions path needs to feel more impressive, more enjoyable, and more useful. It should pull out more taste signal in a user-pleasing way.
+
+Audit:
+- Current quick-intake questions and screens.
+- What data they collect.
+- What they fail to collect.
+- Whether the experience feels like setup versus discovery.
+- Whether the user gets an immediate payoff.
+
+Propose:
+- A stronger intake flow that feels like taste calibration, not a form.
+- Questions that collect better signal without feeling long.
+- Ways to make the user feel understood even before they import.
+- How to route the improved intake into Taste Readout and recommendations.
+
+Do not implement the full intake redesign yet. Return a proposed UX and technical plan.
+
+3. “More Like This” meaning is unclear
+Problem:
+When I click “More Like This,” it is unclear whether:
+- the book is added to my library
+- the book receives a status
+- the app simply uses it as a recommendation signal
+
+Audit:
+- Current More Like This behavior.
+- Whether it changes library state.
+- Whether it changes feedback state.
+- What the user sees before/after tapping it.
+
+Propose:
+- Clearer button copy, helper text, toast copy, or microinteraction.
+- Make it obvious that More Like This teaches the app but does not save the book, unless that is actually not true.
+- If needed, propose alternate labels like:
+  - “Tune toward this”
+  - “More like this”
+  - “Use as signal”
+  - “Show me more like this”
+- Recommend the clearest UX.
+
+4. Learning feedback is not overt enough
+Problem:
+The V2 toast helps, but it still may not feel like the app is visibly learning.
+
+Audit:
+- Current toast behavior.
+- Whether it appears long enough.
+- Whether it is visually noticeable enough.
+- Whether it communicates what changed.
+- Whether the card exit/next card makes the learning feel connected.
+
+Propose:
+- A more overt but still tasteful learning interaction.
+- Options could include:
+  - inline card confirmation before removal
+  - a small “Taste updated” panel
+  - temporary “Your picks are adjusting” state
+  - stronger copy that says what signal was captured
+- Avoid gimmicky gamification.
+
+5. Home shortlist visual weight
+Problem:
+I like the Home shortlist, but it may be too attention-grabbing and could clutter Home.
+
+Audit:
+- Current HomeShortlist visual weight and placement.
+- Whether it dominates the Home screen.
+- Whether it competes with Reading Now.
+
+Propose:
+- A softer design option:
+  - collapsible/dropdown
+  - compact “3 picks ready” module
+  - horizontal peek row
+  - lower-contrast card
+  - expandable section
+- Preserve the strategic purpose: Home should still give a reason to return.
+
+Constraints:
+- Do not implement yet.
+- Do not add LLM calls.
+- Do not touch recommender scoring/ranking/retrieval.
+- Do not touch schema/migrations/auth/Sentry/native/Open Library/Google Books/metadata repair.
+- Keep recommendations grounded in existing data.
+- Focus on user trust, clarity, and first-session impact.
+
+Return:
+1. Diagnosis of each issue
+2. Recommended priority order
+3. Proposed UX fixes
+4. Proposed technical fixes
+5. Files likely touched
+6. Risks/tradeoffs
+7. Suggested implementation batches
