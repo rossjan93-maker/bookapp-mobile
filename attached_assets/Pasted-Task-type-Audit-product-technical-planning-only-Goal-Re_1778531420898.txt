@@ -1,0 +1,95 @@
+Task type:
+Audit / product-technical planning only.
+
+Goal:
+Redesign the non-import onboarding intake so a user who skips Goodreads/import still has an impressive, useful, and enjoyable first-session experience.
+
+User problem:
+Live testing showed that if a user does not import Goodreads/upload reading history, the current intake/questions path does not feel impactful enough. It does not pull out enough signal, does not feel especially enjoyable, and does not create enough of a “Readstack understands me” moment.
+
+Do not implement anything yet.
+
+Allowed files to inspect:
+- components/RecEntryScreen.tsx
+- app/onboarding-questions.tsx
+- lib/intakeDraft.ts
+- lib/tasteReadoutCopy.ts
+- app/taste-readout.tsx
+- lib/tasteProfile.ts
+- any existing reader_preferences-related file needed for understanding current fields
+
+Forbidden:
+- Do not edit product code.
+- Do not edit schema.
+- Do not create migrations.
+- Do not touch recommender scoring, ranking, retrieval, persistence, auth, Sentry, native config, Open Library, Google Books, metadata repair, or LLM/API calls.
+
+Planning constraints:
+- Prefer using existing reader_preferences fields if available.
+- Avoid schema changes if possible.
+- Keep the intake short enough that users do not abandon.
+- Every added question must earn its place by improving recommendation quality, Taste Readout quality, or user trust.
+- The experience should feel like calibration/discovery, not a form.
+- The end result should feed into Taste Readout and For You without overclaiming.
+
+Audit questions:
+1. Current intake flow
+- What questions/screens exist now?
+- What fields are captured?
+- What reader_preferences fields are written?
+- What fields exist but are not currently captured?
+- How does this data feed TasteProfile and recommendations?
+
+2. Signal gaps
+Identify what the current intake fails to learn, especially:
+- avoid genres
+- reading pace / length preference
+- what frustrates the reader
+- tone/mood preference
+- author affinity
+- negative examples
+- preferred reading outcome, e.g. fun, depth, comfort, challenge
+
+3. UX opportunity
+Propose an improved intake that feels more like taste calibration than setup.
+Include:
+- proposed screens
+- exact question copy
+- answer options
+- skip behavior
+- what each question teaches the system
+- how each answer should appear in Taste Readout
+
+4. Scope control
+Recommend the smallest valuable version.
+Separate:
+- must-have intake changes
+- nice-to-have later
+- risky or overbuilt ideas to avoid
+
+5. Technical plan
+For the recommended smallest version, identify:
+- files likely touched
+- fields written
+- whether intakeDraft needs schema/version changes
+- whether TasteReadout copy needs updates
+- whether TasteProfile already consumes the fields
+- any risk to onboarding routing
+
+6. Implementation batches
+Break into small batches with file budgets.
+Each batch must be independently testable.
+
+Stop conditions:
+- If a schema change seems necessary, do not recommend implementation yet. Explain why.
+- If the improved intake would exceed 5 screens, propose a smaller version.
+- If a question cannot be tied to a specific product use, reject it.
+
+Return format:
+- Diagnosis
+- Recommended intake flow
+- Question-by-question rationale
+- Data mapping
+- Technical implementation plan
+- Risks/tradeoffs
+- Suggested batches
