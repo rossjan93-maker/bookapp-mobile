@@ -43,9 +43,10 @@ const GENRE_LABELS: Record<string, string> = {
   scifi:                'Sci-fi',
   scifi_fantasy:        'Sci-fi & fantasy',
   // Aliases for keys returned by lib/bookTraits.ts `detectGenre` so V2 learning
-  // toasts ("Got it — leaning toward more X picks.") humanise cleanly.
+  // toasts ("Got it — leaning toward more X picks.") humanise cleanly. Note:
+  // `literary` is defined further down in this table and is upgraded there from
+  // 'Literary' → 'Literary fiction' to keep that wording consistent here too.
   fantasy_scifi:        'Sci-fi & fantasy',
-  literary:             'Literary fiction',
   memoir_bio:           'Memoir & biography',
   horror:               'Horror',
   historical_fiction:   'Historical fiction',
@@ -59,7 +60,7 @@ const GENRE_LABELS: Record<string, string> = {
   self_help:            'Self-help',
   poetry:               'Poetry',
   classics:             'Classics',
-  literary:             'Literary',
+  literary:             'Literary fiction',
 };
 
 export function humanizeGenreKey(key: string): string {
