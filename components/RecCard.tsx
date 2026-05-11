@@ -1220,9 +1220,13 @@ export function RecCard({
         <TouchableOpacity
           onPress={handleMoreLikeThisPress}
           disabled={pendingAction}
+          accessibilityRole="button"
+          accessibilityLabel="More like this"
+          accessibilityHint="Teaches the app, does not save this book."
           style={{ paddingVertical: 14, paddingHorizontal: 13, justifyContent: 'center', alignItems: 'center' }}
         >
           <Text style={{ fontSize: 12, fontWeight: '500', color: '#78716c' }}>More like this</Text>
+          <Text style={{ fontSize: 10, fontWeight: '400', color: '#a8a29e', marginTop: 2 }}>Tune · not saved</Text>
         </TouchableOpacity>
       </View>
 
@@ -1250,8 +1254,8 @@ export function RecCard({
             </>
           ) : (
             <>
-              <Text style={{ fontSize: 15, fontWeight: '700', color: '#6d28d9' }}>Got it — tuning your picks</Text>
-              <Text style={{ fontSize: 12, color: '#7c3aed' }}>Future recs will reflect this taste</Text>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: '#6d28d9' }}>Got it — we'll tune toward this</Text>
+              <Text style={{ fontSize: 12, color: '#7c3aed' }}>Not saved to your library</Text>
             </>
           )}
         </Animated.View>

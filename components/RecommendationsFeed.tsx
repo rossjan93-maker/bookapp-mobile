@@ -643,10 +643,14 @@ export function RecommendationsFeed({
     // V2 visible-learning ack — genre-aware when detectGenre returned a key,
     // generic otherwise. Reuses the same humanizer as the Taste Readout so
     // genre wording stays consistent across surfaces.
+    // UX-1B: explicit "Not saved to your library" tail makes the teach-only
+    // semantic unmistakable. Surface A (this feed) never writes user_books;
+    // saying so on the toast prevents the live-test confusion observed in
+    // beta (users believing MLT silently added the book to their library).
     showLearningToast(
       genre
-        ? `Got it — leaning toward more ${humanizeGenreKey(genre).toLowerCase()} picks.`
-        : "Got it — we'll use that to tune your picks.",
+        ? `Tuned toward more ${humanizeGenreKey(genre).toLowerCase()} picks. Not saved to your library.`
+        : 'Tuned your picks using this signal. Not saved to your library.',
     );
     if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=more_like_this', `| book_id=${book.id}`);
   }

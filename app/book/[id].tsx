@@ -3985,40 +3985,26 @@ export default function BookDetailScreen() {
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 24 }}>
         <View style={{ backgroundColor: '#fefcf9', borderRadius: 16, padding: 22 }}>
           <Text style={{ fontSize: 17, fontWeight: '800', color: '#231f1b', marginBottom: 8 }}>
-            {mltModal === 'first-time'
-              ? 'Add to Want to Read?'
-              : 'Save this one to Want to Read?'}
+            Save this book too?
           </Text>
           <Text style={{ fontSize: 14, color: '#57534e', lineHeight: 20, marginBottom: 18 }}>
             {mltModal === 'first-time'
-              ? 'When you tap "More like this", do you want us to also save the book to your Want to Read shelf? You can change this later in settings.'
-              : 'You picked "Ask each time" earlier. Save this one to Want to Read?'}
+              ? 'More Like This can simply tune your recommendations, or it can also add this book to Want to Read. You can change this later.'
+              : 'More Like This can simply tune your recommendations, or it can also add this book to Want to Read.'}
           </Text>
 
           {mltModal === 'first-time' ? (
             <View style={{ gap: 8 }}>
               <TouchableOpacity
                 onPress={async () => {
-                  await setMltAutoaddPref('always');
+                  await setMltAutoaddPref('ask');
                   setMltModal(null);
                   await _commitMoreLikeThis({ alsoSaveWantToRead: true });
                 }}
                 style={{ backgroundColor: SAGE, paddingVertical: 12, borderRadius: 10, alignItems: 'center' }}
               >
                 <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '700' }}>
-                  Yes, always
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={async () => {
-                  await setMltAutoaddPref('ask');
-                  setMltModal(null);
-                  await _commitMoreLikeThis({ alsoSaveWantToRead: true });
-                }}
-                style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: SAGE, paddingVertical: 12, borderRadius: 10, alignItems: 'center' }}
-              >
-                <Text style={{ color: SAGE_DEEP, fontSize: 14, fontWeight: '700' }}>
-                  Yes, just this time (ask me each time)
+                  Save to Want to Read + tune future picks
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -4027,10 +4013,22 @@ export default function BookDetailScreen() {
                   setMltModal(null);
                   await _commitMoreLikeThis({ alsoSaveWantToRead: false });
                 }}
+                style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: SAGE, paddingVertical: 12, borderRadius: 10, alignItems: 'center' }}
+              >
+                <Text style={{ color: SAGE_DEEP, fontSize: 14, fontWeight: '700' }}>
+                  Just tune future picks
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={async () => {
+                  await setMltAutoaddPref('always');
+                  setMltModal(null);
+                  await _commitMoreLikeThis({ alsoSaveWantToRead: true });
+                }}
                 style={{ paddingVertical: 12, borderRadius: 10, alignItems: 'center' }}
               >
                 <Text style={{ color: '#78716c', fontSize: 14, fontWeight: '500' }}>
-                  No, just record "more like this"
+                  Always save + tune (don't ask again)
                 </Text>
               </TouchableOpacity>
             </View>
@@ -4044,7 +4042,7 @@ export default function BookDetailScreen() {
                 style={{ backgroundColor: SAGE, paddingVertical: 12, borderRadius: 10, alignItems: 'center' }}
               >
                 <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '700' }}>
-                  Yes, save it
+                  Save to Want to Read + tune
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -4055,7 +4053,7 @@ export default function BookDetailScreen() {
                 style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#d8d3cc', paddingVertical: 12, borderRadius: 10, alignItems: 'center' }}
               >
                 <Text style={{ color: '#57534e', fontSize: 14, fontWeight: '600' }}>
-                  No, just "more like this"
+                  Just tune future picks
                 </Text>
               </TouchableOpacity>
             </View>
