@@ -1,4 +1,4 @@
-import { SAGE_DEEP } from '../lib/tokens';
+import { SAGE, SAGE_DEEP } from '../lib/tokens';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -1264,8 +1264,21 @@ export function RecCard({
   );
 }
 
+// ─── Toast accent palette ─────────────────────────────────────────────────────
+// UX-2: feedback toasts now carry a small left accent stripe so the user can
+// register the signal at a glance — sage for positive (save / more-like-this),
+// muted warm-grey for negative (dismiss). Stripe is 3pt wide, full toast
+// height; visual cue only — no semantic dependency in callers beyond the
+// `tone` prop. Calm/premium per spec — never chromatic alarm colors.
+const TOAST_ACCENT_POSITIVE = SAGE;       // sage
+const TOAST_ACCENT_NEGATIVE = '#9e958d';  // muted warm grey
+
 // ─── UndoToast ────────────────────────────────────────────────────────────────
-// Floating snackbar shown after a dismiss. Spring-based entrance for natural feel.
+// Floating snackbar shown after a dismiss. Spring-based entrance for natural
+// feel. UX-2: two-line layout — headline acknowledges the specific book,
+// subline makes the learning signal explicit ("We'll show fewer books like
+// this."). Behavior unchanged — Undo still calls back to the parent's
+// `onUndo`, which is the only thing that reverses the dismiss.
 export function UndoToast({ book, onUndo }: { book: ScoredBook; onUndo: () => void }) {
   const translateY = useRef(new Animated.Value(14)).current;
   const fadeIn     = useRef(new Animated.Value(0)).current;
@@ -1291,45 +1304,64 @@ export function UndoToast({ book, onUndo }: { book: ScoredBook; onUndo: () => vo
       opacity: fadeIn,
       transform: [{ translateY }],
       flexDirection: 'row',
-      alignItems: 'center',
+      alignItems: 'stretch',
       backgroundColor: '#231f1b',
       borderRadius: 10,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
       marginBottom: 8,
-      gap: 8,
+      overflow: 'hidden',
     }}>
-      <Text style={{ flex: 1, fontSize: 12, color: '#9e958d' }} numberOfLines={1}>
-        Noted — fewer like{' '}
-        <Text style={{ color: '#ede9e4', fontWeight: '600' }}>"{book.title}"</Text>
-      </Text>
-      <TouchableOpacity
-        onPress={onUndo}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        style={{ backgroundColor: '#292524', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 5 }}
-      >
-        <Text style={{ fontSize: 12, fontWeight: '700', color: '#f5f1ec' }}>Undo</Text>
-      </TouchableOpacity>
+      <View style={{ width: 3, backgroundColor: TOAST_ACCENT_NEGATIVE }} />
+      <View style={{
+        flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
+        paddingHorizontal: 12, paddingVertical: 10,
+      }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 13, color: '#ede9e4', fontWeight: '600' }} numberOfLines={1}>
+            Noted — fewer like "{book.title}"
+          </Text>
+          <Text style={{ fontSize: 12, color: '#9e958d', marginTop: 2 }} numberOfLines={1}>
+            We'll show fewer books like this.
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={onUndo}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Undo dismissing this book"
+          style={{ backgroundColor: '#292524', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 6 }}
+        >
+          <Text style={{ fontSize: 12, fontWeight: '700', color: '#f5f1ec' }}>Undo</Text>
+        </TouchableOpacity>
+      </View>
     </Animated.View>
   );
 }
 
 // ─── LearningToast ────────────────────────────────────────────────────────────
-// Brief acknowledgement shown after Save / More-Like-This so the user sees
-// the system register their signal. Mirrors UndoToast styling for visual
-// consistency (same toast surface, same animation curve) but carries no
-// undo affordance — Save/MLT have no per-action undo today, and adding one
-// is out of scope for V2 (UI/copy only, no behavior change).
+// UX-2: brief acknowledgement shown after Save / More-Like-This. Now two
+// lines (headline + subline) with a small sage left-accent stripe so the
+// user clearly registers that the system received their signal — earlier
+// single-line variant tested as too easy to miss in beta.
 //
-// The component is render-only; the parent (RecommendationsFeed) owns the
-// timer and the single-slot dedup, so a new event cleanly replaces the
-// previous toast instead of stacking.
-export function LearningToast({ message }: { message: string }) {
+// Still calm and premium: same dark toast surface as UndoToast, same
+// animation curve, no undo affordance (Save/MLT have no per-action undo
+// today, and adding one is out of scope for UX-2 / UI-only). Render-only;
+// the parent (RecommendationsFeed) owns the timer and the single-slot
+// dedup, so a new event cleanly replaces the previous toast.
+export function LearningToast({
+  headline,
+  subline,
+  tone = 'positive',
+}: {
+  headline: string;
+  subline?: string;
+  tone?: 'positive' | 'negative';
+}) {
   const translateY = useRef(new Animated.Value(14)).current;
   const fadeIn     = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    // Reset on message change so the in-animation plays again when the
-    // parent swaps the message in-place (replace-not-stack semantics).
+    // Reset on content change so the in-animation plays again when the
+    // parent swaps copy in-place (replace-not-stack semantics).
     translateY.setValue(14);
     fadeIn.setValue(0);
     Animated.parallel([
@@ -1347,23 +1379,39 @@ export function LearningToast({ message }: { message: string }) {
       }),
     ]).start();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [message]);
+  }, [headline, subline]);
+  const accent = tone === 'negative' ? TOAST_ACCENT_NEGATIVE : TOAST_ACCENT_POSITIVE;
   return (
-    <Animated.View style={{
-      opacity: fadeIn,
-      transform: [{ translateY }],
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: '#231f1b',
-      borderRadius: 10,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      marginBottom: 8,
-      gap: 8,
-    }}>
-      <Text style={{ flex: 1, fontSize: 12, color: '#ede9e4' }} numberOfLines={1}>
-        {message}
-      </Text>
+    <Animated.View
+      accessible
+      accessibilityLiveRegion="polite"
+      accessibilityLabel={subline ? `${headline}. ${subline}` : headline}
+      style={{
+        opacity: fadeIn,
+        transform: [{ translateY }],
+        flexDirection: 'row',
+        alignItems: 'stretch',
+        backgroundColor: '#231f1b',
+        borderRadius: 10,
+        marginBottom: 8,
+        overflow: 'hidden',
+      }}
+    >
+      <View style={{ width: 3, backgroundColor: accent }} />
+      <View style={{
+        flex: 1,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+      }}>
+        <Text style={{ fontSize: 13, color: '#ede9e4', fontWeight: '600' }} numberOfLines={2}>
+          {headline}
+        </Text>
+        {subline ? (
+          <Text style={{ fontSize: 12, color: '#9e958d', marginTop: 2 }} numberOfLines={2}>
+            {subline}
+          </Text>
+        ) : null}
+      </View>
     </Animated.View>
   );
 }

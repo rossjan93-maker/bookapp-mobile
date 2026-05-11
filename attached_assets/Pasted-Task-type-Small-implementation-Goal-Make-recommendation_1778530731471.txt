@@ -1,0 +1,109 @@
+Task type:
+Small implementation.
+
+Goal:
+Make recommendation feedback feel more visibly connected to Readstack learning, without changing scoring, ranking, persistence, or recommendation behavior.
+
+User problem:
+In live testing, the V2 learning toast was not overt enough. Even after tapping More Like This / Not For Me / Save, it was not obvious that the app was learning from the action.
+
+Product rule:
+When a user gives feedback, the app should visibly acknowledge the signal in a way that feels meaningful but not gimmicky.
+
+Allowed files:
+- components/RecCard.tsx
+- components/RecommendationsFeed.tsx
+- replit.md
+
+File budget:
+Maximum 3 files. If this requires more than 3 files, stop and explain.
+
+Forbidden files/systems:
+- recommender scoring
+- recommender ranking
+- recommender retrieval
+- recommendation persistence
+- queue behavior
+- recSession behavior
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+- HomeShortlist
+- onboarding/intake
+
+Hard constraints:
+- Do not change what Save, Not For Me, Dismiss, or More Like This do under the hood.
+- Do not change genreBoosts math.
+- Do not change dismissedIds, savedIds, removeFromQueue, trackActedOn, replenish behavior, or user_books write behavior.
+- Do not add new persistence.
+- Do not add new analytics.
+- This is UI/copy only.
+
+Implementation direction:
+Improve the existing learning feedback moment.
+
+Preferred approach:
+1. Make the LearningToast more visible and informative:
+   - allow 2 lines instead of 1
+   - slightly stronger visual treatment
+   - still calm and premium
+   - avoid taking over the screen
+   - slightly longer duration if needed, around 3000ms
+
+2. Improve copy so the learning signal is explicit:
+   - More Like This:
+     “Tuned toward more [genre] picks.”
+     “This teaches Readstack without saving the book.”
+   - Fallback:
+     “Tuned your picks using this signal.”
+     “Not saved to your library.”
+   - Save:
+     “Saved to Want to Read.”
+     “We’ll use this as a positive signal.”
+   - Not For Me / Dismiss:
+     “Noted.”
+     “We’ll show fewer books like this.”
+
+3. If low-risk, add a subtle one-time “Taste signal captured” or “Picks tuning” visual state near the deck after feedback.
+   - Must not require new persistence.
+   - Must not require scoring changes.
+   - Must not appear on every card forever.
+   - If this requires more complexity than expected, skip it and just improve the toast.
+
+Acceptance criteria:
+1. Feedback actions feel more visibly acknowledged.
+2. More Like This still clearly communicates “teaches, not saved.”
+3. Existing undo behavior still works.
+4. No behavior changes to save, dismiss, MLT, queue, persistence, or genreBoosts.
+5. No recommender/scoring/ranking/retrieval changes.
+6. Typecheck remains at baseline with zero new errors.
+7. Diff scope confirms no forbidden systems were touched.
+
+Validation required:
+- Static review of Save / MLT / Dismiss handlers before/after.
+- Copy examples for each feedback action.
+- Confirmation UndoToast still wins over LearningToast when both could appear.
+- Typecheck delta.
+- Diff scope report.
+- Workflow status, noting if the known Metro FallbackWatcher race appears.
+
+Stop conditions:
+- If making the feedback feel more overt requires behavior changes, stop and explain.
+- If it requires new persistence or recommendation logic, stop and explain.
+- If the toast starts conflicting with UndoToast, stop and explain before proceeding.
+
+Return format:
+- Changed files
+- Implementation summary
+- Before/after feedback copy
+- Behavior preservation check
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Any deviations from prompt

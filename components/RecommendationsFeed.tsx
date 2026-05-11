@@ -212,20 +212,35 @@ export function RecommendationsFeed({
   // Mutually exclusive with the dismiss UndoToast at render time — when a
   // dismiss is pending, the UndoToast supplies the learning copy ("Noted —
   // fewer like X") and Undo affordance, and the LearningToast is hidden.
-  const [learningToast, setLearningToast] = useState<{ id: number; message: string } | null>(null);
+  // UX-2: toast payload now carries an explicit two-line shape (headline +
+  // optional subline) and a tone for the left accent stripe. Duration
+  // bumped 2400→3000ms so two-line copy has comfortable read time without
+  // taking over the screen.
+  type LearningToastPayload = {
+    id:        number;
+    headline:  string;
+    subline?:  string;
+    tone:      'positive' | 'negative';
+  };
+  const [learningToast, setLearningToast] = useState<LearningToastPayload | null>(null);
   const learningToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const learningToastSeqRef   = useRef(0);
-  function showLearningToast(message: string) {
+  function showLearningToast(payload: { headline: string; subline?: string; tone?: 'positive' | 'negative' }) {
     if (learningToastTimerRef.current) {
       clearTimeout(learningToastTimerRef.current);
       learningToastTimerRef.current = null;
     }
     const id = ++learningToastSeqRef.current;
-    setLearningToast({ id, message });
+    setLearningToast({
+      id,
+      headline: payload.headline,
+      subline:  payload.subline,
+      tone:     payload.tone ?? 'positive',
+    });
     learningToastTimerRef.current = setTimeout(() => {
       setLearningToast(curr => (curr && curr.id === id ? null : curr));
       learningToastTimerRef.current = null;
-    }, 2400);
+    }, 3000);
   }
   useEffect(() => () => {
     if (learningToastTimerRef.current) clearTimeout(learningToastTimerRef.current);
@@ -512,7 +527,11 @@ export function RecommendationsFeed({
     syncVisible();
     // V2 visible-learning ack — fires alongside (not in place of) the existing
     // savedIds / persistFeedback writes below. Pure UI; behavior unchanged.
-    showLearningToast("Saved — we'll use this to sharpen your picks.");
+    showLearningToast({
+      headline: 'Saved to Want to Read.',
+      subline:  "We'll use this as a positive signal.",
+      tone:     'positive',
+    });
 
     setFeedbackCtx(prev => {
       const next = new Set(prev.savedIds);
@@ -649,8 +668,16 @@ export function RecommendationsFeed({
     // beta (users believing MLT silently added the book to their library).
     showLearningToast(
       genre
-        ? `Tuned toward more ${humanizeGenreKey(genre).toLowerCase()} picks. Not saved to your library.`
-        : 'Tuned your picks using this signal. Not saved to your library.',
+        ? {
+            headline: `Tuned toward more ${humanizeGenreKey(genre).toLowerCase()} picks.`,
+            subline:  'This teaches Readstack without saving the book.',
+            tone:     'positive',
+          }
+        : {
+            headline: 'Tuned your picks using this signal.',
+            subline:  'Not saved to your library.',
+            tone:     'positive',
+          },
     );
     if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=more_like_this', `| book_id=${book.id}`);
   }
@@ -1586,7 +1613,12 @@ export function RecommendationsFeed({
           {/* Learning toast (Save / More-Like-This) — hidden while a dismiss undo
               is pending so we never stack two toasts. Single-slot, replace-not-stack. */}
           {!dismissPending && learningToast && (
-            <LearningToast key={learningToast.id} message={learningToast.message} />
+            <LearningToast
+              key={learningToast.id}
+              headline={learningToast.headline}
+              subline={learningToast.subline}
+              tone={learningToast.tone}
+            />
           )}
 
           {/* Save failure toast */}
