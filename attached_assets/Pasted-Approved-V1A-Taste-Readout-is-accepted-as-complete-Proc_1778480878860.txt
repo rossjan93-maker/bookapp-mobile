@@ -1,0 +1,77 @@
+Approved: V1A Taste Readout is accepted as complete.
+
+Proceed with Batch V2 only: Visible learning toasts.
+
+Do not implement V3 anchored explanations or V4 Home shortlist yet. Do not touch Sentry. Do not touch recommender scoring, retrieval, catalog, auth, Supabase schema, migrations, native config, Open Library, Google Books, or metadata repair.
+
+Product goal:
+When a user acts on a recommendation, the app should visibly acknowledge that Readstack is learning. The interaction should feel like:
+User acts → app understands the signal → recommendations will sharpen.
+
+Current issue:
+More Like This, Not For Me, Save, and related feedback actions currently affect internal state, but the user does not clearly see what the app learned.
+
+Implementation scope:
+Add a lightweight visible learning toast or inline feedback moment after recommendation actions.
+
+Target areas:
+- components/RecCard.tsx
+- components/RecommendationsFeed.tsx
+- lib/recFeedback.ts only if a pure copy/helper function is useful
+- Reuse existing UndoToast or similar existing UI pattern where possible
+
+Hard constraints:
+- Do not change feedback persistence behavior.
+- Do not change genreBoosts math.
+- Do not change dismissedIds logic.
+- Do not change recommendation scoring or reranking.
+- Do not add new DB fields or tables.
+- Do not add new analytics infrastructure.
+- Do not add LLM calls.
+- Keep this as UI/copy only on top of existing actions.
+
+Required behavior:
+1. More Like This
+After the user taps More Like This, show a brief toast such as:
+“Got it — leaning toward more [genre/theme] picks.”
+or if genre/theme is unavailable:
+“Got it — we’ll use that to tune your picks.”
+
+2. Not For Me / Dismiss
+After the user dismisses or taps Not For Me, show a brief toast such as:
+“Noted — fewer books like this.”
+or, if a genre/theme is available:
+“Noted — fewer [genre/theme] picks.”
+
+3. Save / Want to Read
+After the user saves a recommendation, show a brief toast such as:
+“Saved — we’ll treat this as a positive signal.”
+or:
+“Saved — this helps sharpen your future picks.”
+
+4. Undo behavior
+If there is already an undo pattern, preserve it.
+Do not remove or weaken undo.
+If the new learning toast conflicts with UndoToast, either integrate the learning copy into the existing undo surface or clearly explain the tradeoff before implementing.
+
+5. Toast spam control
+Only one learning toast should be visible at a time.
+If the user acts quickly on multiple cards, replace the prior toast rather than stacking multiple toasts.
+
+6. Copy rules
+Keep copy calm, short, and specific.
+Do not overclaim.
+Avoid saying the model has already changed if the actual reranking happens on the next refresh/session.
+Use language like “we’ll use that to tune your picks” rather than “your model has been updated” unless that is technically accurate.
+
+Acceptance criteria:
+1. More Like This shows a learning acknowledgment.
+2. Not For Me / dismiss shows a learning acknowledgment.
+3. Save / Want to Read shows a learning acknowledgment.
+4. Existing undo behavior still works.
+5. No recommender/scoring/persistence/schema/auth/Sentry/native changes.
+6. Typecheck shows zero new errors versus baseline.
+7. Workflow runs cleanly.
+8. Return changed files, implementation summary, testing performed, and any known limitations.
+
+If this requires more than 4 product files, stop and explain before proceeding.

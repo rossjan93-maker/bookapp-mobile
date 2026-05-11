@@ -32,7 +32,8 @@ import { type RecSessionCache, getRecSession, setRecSession, clearRecSession } f
 import { addActedOnIds, loadActedOnIds } from '../lib/recPayloadCache';
 import { GuidedActionBanner } from './OnboardingWalkthrough';
 
-import { RecCard, UndoToast, DeckAssemblingLoader, RefreshingDot } from './RecCard';
+import { RecCard, UndoToast, LearningToast, DeckAssemblingLoader, RefreshingDot } from './RecCard';
+import { humanizeGenreKey } from '../lib/tasteReadoutCopy';
 import { CoverThumb } from './CoverThumb';
 import { SEEDED_PICKS } from '../lib/seededPicks';
 import {
@@ -204,6 +205,31 @@ export function RecommendationsFeed({
   // ── Dismiss/undo ──────────────────────────────────────────────────────────
   const [dismissPending, setDismissPendingUI] = useState<{ book: ScoredBook } | null>(null);
   const [saveFailure, setSaveFailure]          = useState<{ book: ScoredBook } | null>(null);
+
+  // ── Learning toast (V2) ───────────────────────────────────────────────────
+  // Single-slot acknowledgement shown after Save / More-Like-This. Parent owns
+  // the timer so a fresh action cleanly REPLACES the previous toast (no stack).
+  // Mutually exclusive with the dismiss UndoToast at render time — when a
+  // dismiss is pending, the UndoToast supplies the learning copy ("Noted —
+  // fewer like X") and Undo affordance, and the LearningToast is hidden.
+  const [learningToast, setLearningToast] = useState<{ id: number; message: string } | null>(null);
+  const learningToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const learningToastSeqRef   = useRef(0);
+  function showLearningToast(message: string) {
+    if (learningToastTimerRef.current) {
+      clearTimeout(learningToastTimerRef.current);
+      learningToastTimerRef.current = null;
+    }
+    const id = ++learningToastSeqRef.current;
+    setLearningToast({ id, message });
+    learningToastTimerRef.current = setTimeout(() => {
+      setLearningToast(curr => (curr && curr.id === id ? null : curr));
+      learningToastTimerRef.current = null;
+    }, 2400);
+  }
+  useEffect(() => () => {
+    if (learningToastTimerRef.current) clearTimeout(learningToastTimerRef.current);
+  }, []);
 
   // ── Pipeline guards ───────────────────────────────────────────────────────
   const latestPipelineRef    = useRef(0);
@@ -484,6 +510,9 @@ export function RecommendationsFeed({
     replenishIfNeeded();
     LayoutAnimation.configureNext(REFLOW_LAYOUT_ANIM);
     syncVisible();
+    // V2 visible-learning ack — fires alongside (not in place of) the existing
+    // savedIds / persistFeedback writes below. Pure UI; behavior unchanged.
+    showLearningToast("Saved — we'll use this to sharpen your picks.");
 
     setFeedbackCtx(prev => {
       const next = new Set(prev.savedIds);
@@ -611,6 +640,14 @@ export function RecommendationsFeed({
         return { ...prev, genreBoosts: { ...prev.genreBoosts, [genre]: +next.toFixed(2) } };
       });
     }
+    // V2 visible-learning ack — genre-aware when detectGenre returned a key,
+    // generic otherwise. Reuses the same humanizer as the Taste Readout so
+    // genre wording stays consistent across surfaces.
+    showLearningToast(
+      genre
+        ? `Got it — leaning toward more ${humanizeGenreKey(genre).toLowerCase()} picks.`
+        : "Got it — we'll use that to tune your picks.",
+    );
     if (__DEV__) console.log('[REC_ACTION_STATE]', 'action=more_like_this', `| book_id=${book.id}`);
   }
 
@@ -1535,9 +1572,15 @@ export function RecommendationsFeed({
 
           </Animated.View>
 
-          {/* Undo toast */}
+          {/* Undo toast — also serves as the dismiss learning ack ("Noted — fewer like X"). */}
           {dismissPending && (
             <UndoToast book={dismissPending.book} onUndo={handleDismissUndo} />
+          )}
+
+          {/* Learning toast (Save / More-Like-This) — hidden while a dismiss undo
+              is pending so we never stack two toasts. Single-slot, replace-not-stack. */}
+          {!dismissPending && learningToast && (
+            <LearningToast key={learningToast.id} message={learningToast.message} />
           )}
 
           {/* Save failure toast */}

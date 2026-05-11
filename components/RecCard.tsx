@@ -990,7 +990,7 @@ export function UndoToast({ book, onUndo }: { book: ScoredBook; onUndo: () => vo
       gap: 8,
     }}>
       <Text style={{ flex: 1, fontSize: 12, color: '#9e958d' }} numberOfLines={1}>
-        Skipped{' '}
+        Noted — fewer like{' '}
         <Text style={{ color: '#ede9e4', fontWeight: '600' }}>"{book.title}"</Text>
       </Text>
       <TouchableOpacity
@@ -1000,6 +1000,60 @@ export function UndoToast({ book, onUndo }: { book: ScoredBook; onUndo: () => vo
       >
         <Text style={{ fontSize: 12, fontWeight: '700', color: '#f5f1ec' }}>Undo</Text>
       </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+// ─── LearningToast ────────────────────────────────────────────────────────────
+// Brief acknowledgement shown after Save / More-Like-This so the user sees
+// the system register their signal. Mirrors UndoToast styling for visual
+// consistency (same toast surface, same animation curve) but carries no
+// undo affordance — Save/MLT have no per-action undo today, and adding one
+// is out of scope for V2 (UI/copy only, no behavior change).
+//
+// The component is render-only; the parent (RecommendationsFeed) owns the
+// timer and the single-slot dedup, so a new event cleanly replaces the
+// previous toast instead of stacking.
+export function LearningToast({ message }: { message: string }) {
+  const translateY = useRef(new Animated.Value(14)).current;
+  const fadeIn     = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    // Reset on message change so the in-animation plays again when the
+    // parent swaps the message in-place (replace-not-stack semantics).
+    translateY.setValue(14);
+    fadeIn.setValue(0);
+    Animated.parallel([
+      Animated.spring(translateY, {
+        toValue:  0,
+        tension:  68,
+        friction: 11,
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeIn, {
+        toValue:  1,
+        duration: REC_MOTION.TOAST_IN_MS,
+        easing:   Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message]);
+  return (
+    <Animated.View style={{
+      opacity: fadeIn,
+      transform: [{ translateY }],
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: '#231f1b',
+      borderRadius: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      marginBottom: 8,
+      gap: 8,
+    }}>
+      <Text style={{ flex: 1, fontSize: 12, color: '#ede9e4' }} numberOfLines={1}>
+        {message}
+      </Text>
     </Animated.View>
   );
 }

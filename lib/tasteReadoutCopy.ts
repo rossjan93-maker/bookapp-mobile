@@ -42,6 +42,11 @@ const GENRE_LABELS: Record<string, string> = {
   sci_fi:               'Sci-fi',
   scifi:                'Sci-fi',
   scifi_fantasy:        'Sci-fi & fantasy',
+  // Aliases for keys returned by lib/bookTraits.ts `detectGenre` so V2 learning
+  // toasts ("Got it — leaning toward more X picks.") humanise cleanly.
+  fantasy_scifi:        'Sci-fi & fantasy',
+  literary:             'Literary fiction',
+  memoir_bio:           'Memoir & biography',
   horror:               'Horror',
   historical_fiction:   'Historical fiction',
   young_adult:          'Young adult',
