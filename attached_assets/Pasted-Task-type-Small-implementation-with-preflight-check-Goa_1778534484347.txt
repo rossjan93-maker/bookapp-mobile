@@ -1,0 +1,170 @@
+Task type:
+Small implementation with preflight check.
+
+Goal:
+Improve the non-import intake by allowing users to optionally name 1–3 authors they come back to, then reflect those authors in TasteReadout as stated preference.
+
+User problem:
+Users who skip Goodreads/import still need a high-signal, familiar way to express taste. Authors are easier for many readers to recall than abstract traits, and seeing those authors reflected back can make Readstack feel more attentive.
+
+Product rule:
+Self-reported authors are stated preferences, not proven reading-history evidence. Do not treat them as derived liked_authors or recommender authority in this batch.
+
+Preflight check:
+Before editing, confirm:
+1. reader_preferences.favorite_authors exists and is writable.
+2. Its type is text / string, not text[].
+3. Existing intake save path can write it without schema changes.
+4. TasteReadout can select it without broad data-path changes.
+
+If any of these are false, stop and report before implementing.
+
+Allowed files:
+- components/RecEntryScreen.tsx
+- lib/intakeDraft.ts
+- app/taste-readout.tsx
+- components/TasteReadout.tsx
+- lib/tasteReadoutCopy.ts
+- replit.md
+
+File budget:
+Maximum 6 files. If this requires more than 6 files, stop and explain.
+
+Forbidden files/systems:
+- recommender scoring
+- recommender ranking
+- recommender retrieval
+- recommendation persistence
+- tasteProfile author weighting
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+- HomeShortlist
+- RecCard
+- RecommendationsFeed
+
+Hard constraints:
+- Do not wire self-reported authors into the recommender.
+- Do not modify tasteProfile.liked_authors behavior.
+- Do not create author-loyalty explanations from self-reported authors in this batch.
+- Do not change anchor-book behavior.
+- Do not add API calls or author search.
+- Do not add schema changes.
+- Keep author entry optional and skippable.
+- Preserve UX-3A avoid genres, UX-3C q_outcome, and UX-3D q_tone behavior.
+- Preserve existing TasteReadout thin-state guard.
+
+Implementation requirements:
+
+1. Intake UI
+On the existing anchor screen, add an optional author-chip input above the anchor-book search.
+
+Suggested copy:
+Title/subsection:
+“Any authors you’d come back to?”
+
+Helper:
+“Add up to 3. This helps us start with a better read on your taste.”
+
+Behavior:
+- Free-text input.
+- User can add 1–3 author names.
+- Display added names as removable chips.
+- No API lookup.
+- No validation beyond trimming whitespace, avoiding duplicates, and limiting to 3.
+- User can skip with no authors.
+
+2. Intake state + draft
+- Extend IntakeState with authorChips or similar.
+- Extend intakeDraft to preserve these chips across cold restart.
+- Backward-compatible default: [] for older drafts.
+- Do not break existing draft restore for genres, avoid genres, outcome, tone/taste answers, or anchor book.
+
+3. Persistence
+- Save the author chips into reader_preferences.favorite_authors.
+- Since favorite_authors is a text field, store as a simple comma-separated string or newline-separated string.
+- Prefer comma-separated unless existing code expects another format.
+- If no authors are entered, write null or empty string only if that matches existing app conventions. Otherwise preserve safe behavior.
+- Do not change any other reader_preferences fields.
+
+4. TasteReadout data path
+- app/taste-readout.tsx should select favorite_authors.
+- Parse/coerce defensively into an array of author strings.
+- Pass stated authors into TasteReadout/buildChips.
+- Render as stated preference, not derived history.
+
+Suggested TasteReadout chip copy:
+- One author: “Author mentioned: Sally Rooney”
+- Multiple: “Authors mentioned: Rooney, Ishiguro”
+or, if chip length is a concern:
+- “Authors: Rooney, Ishiguro”
+
+Keep this calm and compact.
+
+5. Thin-state behavior
+- Preserve the existing thin-state guard.
+- Self-reported authors alone should not graduate a user out of thin state.
+- If the user has enough genre/intake signal to render chips, stated authors may appear.
+- Do not use author chips to imply “authors you love,” “authors you rate highly,” or “authors you return to” unless the wording is clearly “mentioned.”
+
+6. Chip crowding
+- Avoid crowding the chip row.
+- Prefer one combined author chip rather than one chip per author.
+- Preserve existing chip cap behavior unless a tiny cap adjustment is needed.
+- Do not create a broader chip redesign.
+
+Acceptance criteria:
+1. User can optionally add up to 3 author names during the anchor step.
+2. Author names persist through intake draft restore.
+3. Author names save to reader_preferences.favorite_authors.
+4. TasteReadout reflects saved authors as stated preference.
+5. Copy does not imply derived reading history.
+6. Existing anchor-book behavior still works.
+7. Existing favorite_genres, avoid_genres, q_outcome, q_tone, and taste questions still persist.
+8. No recommender/scoring/ranking/retrieval/tasteProfile author-weighting changes.
+9. No schema/migration/API changes.
+10. Typecheck remains at baseline with zero new errors.
+11. Diff scope confirms no forbidden systems were touched.
+
+Validation required:
+- Preflight confirmation of favorite_authors field/type/path.
+- Static review of new author input behavior.
+- Static review of saveQuickIntake payload.
+- Draft compatibility check.
+- TasteReadout data path confirmation.
+- Before/after TasteReadout examples:
+  - no authors
+  - one author
+  - three authors
+  - thin profile with only authors
+- Behavior preservation check for anchor book and existing intake fields.
+- Typecheck delta.
+- Diff scope report.
+- Workflow status, noting if the known Metro FallbackWatcher race appears.
+
+Stop conditions:
+- If favorite_authors is not safely writable without schema change, stop.
+- If adding author chips requires API search, stop.
+- If persisting authors would require modifying tasteProfile/recommender behavior, stop.
+- If this requires more than 6 files, stop.
+- If chip crowding requires a broader TasteReadout redesign, stop and propose the smallest alternative.
+
+Return format:
+- Preflight result
+- Changed files
+- Implementation summary
+- New intake behavior
+- Data write confirmation
+- TasteReadout examples
+- Draft compatibility notes
+- Behavior preservation check
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Any deviations from prompt
