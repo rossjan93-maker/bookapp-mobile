@@ -1,0 +1,75 @@
+Approved: V3 Anchored Explanations is accepted as complete.
+
+Proceed with Batch V4 only: Home Shortlist.
+
+Product goal:
+Turn Home into a decision-starting surface. When a user opens the app, they should quickly see a small, useful shortlist of next-read options instead of only tracker/status content.
+
+Current issue:
+The For You tab has the recommendation value, but Home can feel like a passive dashboard, especially for newer users. We want Home to create a reason to return: “Here are a few good options for what to read next.”
+
+Do not touch:
+- Sentry
+- auth
+- Supabase schema
+- migrations
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- recommender scoring
+- recommender ranking
+- recommender retrieval
+- recommendation persistence
+- LLM/API calls
+
+Important constraint:
+Do not create a new recommendation pipeline from Home.
+Use existing recommendation/session/cache state if available.
+If the cache is cold or unavailable, show an honest CTA to For You instead of triggering expensive or duplicate retrieval.
+
+Desired UX:
+Add a top-of-Home section, above Reading Now if possible:
+
+Title:
+“Tonight’s shortlist” or “Your next-read shortlist”
+
+Content:
+- Show up to 3 recommendation cards/items if cached recommendations are already available.
+- Keep the cards compact: cover, title, author, and maybe one short reason if cheaply available.
+- Tapping a shortlist item should open the book detail or existing recommendation detail flow with rec context preserved if available.
+- Include a small CTA to For You, such as “See all picks.”
+
+Empty/cold-cache behavior:
+If no recommendation cache is available:
+- Do not fake recommendations.
+- Do not trigger a new heavy recommendation fetch from Home.
+- Show a lightweight module like:
+  “Your shortlist is waiting”
+  “Head to For You to generate your next picks.”
+  CTA: “See my picks”
+
+Thin-profile behavior:
+If user does not have enough signal:
+- Show a module that explains what is needed:
+  “Add or rate a few books to unlock a sharper shortlist.”
+  CTA to add/import books or For You, depending on existing app patterns.
+
+Implementation approach:
+- Prefer reading from existing recSession/cache/module state.
+- If the existing cache cannot be safely shared with Home, stop and explain options before implementing.
+- Keep this additive and reversible.
+- Do not restructure the Home screen broadly.
+
+Acceptance criteria:
+1. Home can display up to 3 cached next-read picks when recommendation cache/state exists.
+2. Home does not trigger duplicate expensive recommendation retrieval.
+3. Cold-cache state is honest and routes the user to For You.
+4. Thin-profile state is honest and does not fabricate personalization.
+5. Existing Home modules still work.
+6. No recommender/scoring/ranking/retrieval/persistence/schema/auth/Sentry/native/LLM changes.
+7. Typecheck remains at baseline with zero new errors.
+8. Workflow runs cleanly.
+9. Return changed files, implementation summary, validation steps, and known limitations.
+
+If this requires more than 4 product files, stop and explain before proceeding.
