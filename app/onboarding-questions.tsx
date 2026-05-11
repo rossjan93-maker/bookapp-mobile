@@ -60,9 +60,10 @@ export default function OnboardingQuestionsPage() {
     // clean.
     await writeOnboardingStage('done');
     if (userId) await clearIntakeDraft(userId);
-    // Land on the Recommendations tab so the user immediately sees their picks
-    // (or the first-load deck-assembling state) — not a blank home screen.
-    router.replace('/(tabs)/search' as any);
+    // Route through the Taste Readout ("Here's what we heard") so the user
+    // sees the system reflect their intake answers back before the For You
+    // feed renders. The readout's CTA replaces into /(tabs)/search.
+    router.replace('/taste-readout' as any);
   }
 
   return (

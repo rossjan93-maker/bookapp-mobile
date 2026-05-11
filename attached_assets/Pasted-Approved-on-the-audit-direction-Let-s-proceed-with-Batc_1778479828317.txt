@@ -1,0 +1,57 @@
+Approved on the audit direction. Let’s proceed with Batch V1A only: Taste Readout.
+
+Important: Do not implement V2, V3, or V4 yet. Do not touch Sentry. Do not touch recommender scoring, retrieval, catalog, auth, Supabase schema, migrations, or native config.
+
+Product goal:
+After a user completes quick intake or imports books, they should see a short “Here’s what we heard” Taste Readout before landing in the For You tab. This should create the first “Readstack gets me” moment.
+
+Implementation scope:
+Create a lightweight Taste Readout experience using existing data only.
+
+Target files:
+1. New: components/TasteReadout.tsx
+2. New: lib/tasteReadoutCopy.ts
+3. New: app/taste-readout.tsx
+4. Edit: app/onboarding-questions.tsx to route to /taste-readout after quick intake completion
+5. Edit: Goodreads import success handoff file if the exact completion point is clear and low-risk. If this would require touching more than one import file or creates uncertainty, do not wire import yet. Instead, finish quick-intake wiring and report the exact import handoff file/line for the next batch.
+
+Hard constraints:
+- No LLM calls.
+- No new DB tables.
+- No migrations.
+- No recommender changes.
+- No changes to scoring, ranking, queueing, Open Library, Google Books, or metadata repair.
+- Do not make hard claims like “you love X” from weak data.
+- Use hedged language for thin profiles, e.g. “Your starting picture” / “Early signal” / “This will sharpen as you save, dismiss, and rate.”
+- If ReaderThesis is not cheaply available without running the recommender, do not use it in V1A. Prefer existing TasteProfile and reader_preferences data.
+- Keep this additive and reversible.
+
+Taste Readout content requirements:
+The screen should show:
+1. A headline like “Here’s what we heard”
+2. A short taste summary based on available signals
+3. 2–4 signal chips or bullets, such as:
+   - strongest genres/themes
+   - preferred traits
+   - avoided traits if confidence is strong
+   - anchor book acknowledgement if available
+4. A confidence/learning line:
+   “This is a starting picture. It sharpens as you save, dismiss, and rate books.”
+5. One primary CTA:
+   “See my picks” → routes to /tabs/search or the current For You route
+
+Empty/thin-state behavior:
+If there is not enough data to generate a strong readout, show a useful lightweight version:
+“Your profile is just getting started. We’ll use your first saves, skips, and ratings to sharpen your recommendations.”
+Do not block the user.
+
+Acceptance criteria:
+1. A quick-intake user sees the Taste Readout before the For You tab.
+2. The Taste Readout renders without crashing for thin profiles.
+3. Copy is specific when data exists and appropriately hedged when data is thin.
+4. “See my picks” routes cleanly to For You.
+5. No recommender, schema, auth, Sentry, or native config changes.
+6. App compiles and runs.
+7. Provide changed files, testing performed, screenshots or console/runtime evidence if available, and any known limitations.
+
+If implementation requires more than 5 files, stop and explain before proceeding.

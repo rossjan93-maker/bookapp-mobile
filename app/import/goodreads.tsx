@@ -1605,7 +1605,7 @@ export default function GoodreadsImportScreen() {
           result={executionResult}
           coversEnriched={coversEnriched}
           onReset={handleReset}
-          onGoToDiscover={() => router.replace('/(tabs)/search' as any)}
+          onGoToDiscover={() => router.replace('/taste-readout' as any)}
           onGoToLibrary={() => router.push('/(tabs)/library' as any)}
         />
       )}

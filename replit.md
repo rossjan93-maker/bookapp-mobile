@@ -44,6 +44,7 @@ React Native + Expo Router, Supabase (Postgres + Auth + RLS), TypeScript, Expo b
 - `lib/userBookActions.ts` — `setYearGoal()` and other user_books mutations.
 - `lib/saveBookFromRec.ts` — save-from-rec path (creates books row by external_id, upserts user_books).
 - `lib/seededPicks.ts` — hardcoded 6-book starter strip (verified catalog rows only) shown to zero-library / zero-signal users on the For-You tab.
+- `lib/tasteReadoutCopy.ts` — pure copy assembly for the post-intake "Here's what we heard" surface (humanizers, top-N selectors, hedged summary/chip builders, thin-state detection). No IO.
 - `lib/mltAutoaddPref.ts` — AsyncStorage pref for "more like this" auto-add.
 - `lib/subjectVocabulary.ts` — curated subject vocab for LLM inference.
 - `app/_layout.tsx` — root Stack (`headerShown:false`), bootstrap context, onboarding bridge.
@@ -53,12 +54,14 @@ React Native + Expo Router, Supabase (Postgres + Auth + RLS), TypeScript, Expo b
 - `app/(tabs)/search.tsx` — Discover/For-You tab.
 - `app/stats/index.tsx` — Reading Insights.
 - `app/onboarding.tsx`, `app/onboarding-import.tsx`, `app/onboarding-questions.tsx` — onboarding flow.
+- `app/taste-readout.tsx` — post-intake "Here's what we heard" route. Loads `computeTasteProfile` + `reader_preferences.favorite_genres` in parallel (both `.catch(()=>null)`-tolerant), renders `<TasteReadout/>`, and `router.replace`s into `/(tabs)/search` on CTA. Reached from (a) `app/onboarding-questions.tsx` `handleDone` and (b) Goodreads import success `CompleteView.onGoToDiscover` (`app/import/goodreads.tsx`); the import-success `onGoToLibrary` path is unchanged.
 - `app/legal.tsx` — Help & Legal screen (Contact support, Report a bug, Privacy policy, Terms of service, version/build footer). Placeholder URLs marked `TODO(beta-launch)`.
 - `components/CoverThumb.tsx` — every cover surface (3D treatment, `flat` opt-out).
 - `components/HalfStarRating.tsx` — `HalfStarRating`, `StarDisplay`, `ratingToSentiment`, `formatRating`.
 - `components/RecCard.tsx` — for-you card + rationale variant pools.
 - `components/RecommendationsFeed.tsx` — for-you feed + intent chips (`handleApplyIntent`).
 - `components/RecommendBookSheet.tsx` — recommend-finished-to-friend sheet.
+- `components/TasteReadout.tsx` — pure presentational "Here's what we heard" view; takes a TasteProfile + favorite_genres and renders headline + summary + chips + sage learning line + sticky "See my picks" CTA.
 - `components/ShelfRow.tsx` / `ShelfPickerSheet.tsx` — shelf chips + add-to-shelf bottom sheet.
 - `components/LibraryGalleryView.tsx` — library gallery view.
 - `scripts/repairSubjectCoverage.ts`, `scripts/inferSubjectsLLM.ts`, `scripts/backfillSessionCorrections.ts`, `scripts/deduplicateBooks.ts` — maintenance scripts.
@@ -78,6 +81,8 @@ React Native + Expo Router, Supabase (Postgres + Auth + RLS), TypeScript, Expo b
 - **Custom shelves alongside smart shelves:** `user_shelves` (unique by `lower(name)`) + `user_shelf_books` (CASCADE on shelf delete only — books survive). `ShelfRow` renders both kinds identically; mutations route through `lib/customShelves.ts` (handles 23505 → friendly / idempotent add).
 - **For-You intent chips → hard rules + soft boosts:** `handleApplyIntent` in `RecommendationsFeed.tsx` derives `hard` filters and `exclude` rules in addition to `soft` prefs. Soft / mood boosts use `0.12` per signal capped at `±0.30` (raised from the original `0.04 / ±0.05` which was too small to actually reorder books). Mapping notes: `tone='light' | intensity='low' | mood∈{light_fun,palate_cleanser}` → `exclude.avoid_dark`; `mood='light_fun'` → `exclude.avoid_literary`; `mood='palate_cleanser'` → `hard.max_page_count=400` (intentionally NOT `standalone_only` — would empty series-heavy libraries). `tone='dark'` always wins over avoid_dark.
 - **Want-to-Read intent matching:** `lib/intentMatcher.ts` parses queries like "short fantasy" into AND-combined `IntentSignal`s (subjects via `matchesSubjects`, page bounds, free-text fallback). Runs locally on every keystroke; `signalsRequireMetadata` powers an honest empty state.
+- **Taste Readout (Batch V1A, shipped 2026-05-11):** post-intake "Here's what we heard" surface at `/taste-readout`. Reached from quick-intake completion (`app/onboarding-questions.tsx`) and Goodreads import success → "Go to Discover" (`app/import/goodreads.tsx` line 1611). Reads `TasteProfile` (no recommender call) + `reader_preferences.favorite_genres` only — **no LLM, no `ReaderThesis`, no new tables, no migrations**. Hedging contract: tier 0/1 use "Your starting picture" / "Early signal" framing; tier 2+ use confident "You read X with a clear pattern" framing **only when the anchor is derived** (lane or `genre_affinities`). When the anchor falls back to intake `favorite_genres[0]`, the copy is hedged regardless of tier ("You told us you lean toward X"). Avoided-trait chips render only when `profile.confidence === 'high'`; author chip renders only when `liked_authors.length >= 2`. `isThinReadout` (no derived data and no intake genres) → renders `THIN_READOUT_COPY` instead. Failure-tolerant — any load error collapses to thin-state, never blocks. CTA does `router.replace('/(tabs)/search')`. Reversible: revert the route swaps to restore the prior direct-to-search flow.
+
 - **Cold-start seeded strip is non-personalized by contract:** `lib/seededPicks.ts` is a hardcoded array (no network fetch on render) shown only when the For-You tab's tier-`<1` branch sees `librarySize === 0`. The strip header always reads "POPULAR STARTING POINTS · Not personalized yet". Three invariants must hold for any future seed entry: (a) `provenance_state='verified'` in the production catalog, (b) canonical `/works/OL…W` `external_id` (no `goodreads:`, no `gb:`/`gb_`, no `onboarding_isbn_*`), (c) baked-in `id`/`title`/`author`/`cover_url`/`page_count`. Tap routes through standard book-detail (`/book/[id]`) and never calls `persistFeedback` so seeded picks can't pollute the taste profile. The strip never appears for users with even one `user_books` row.
 
 - **Recommend-from-finished:** sage button in book detail Your-History card when `localStatus === 'finished'`. Reuses the existing `recommendations` table (no migration); inserts `status='sent'` + `activity_events` row. Native `Share.share` fallback always available.
