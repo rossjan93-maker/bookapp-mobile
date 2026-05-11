@@ -1,0 +1,106 @@
+Task type:
+Small implementation.
+
+Goal:
+Improve the non-import onboarding intake by adding a “reading outcome” calibration step.
+
+User problem:
+The intake currently collects liked genres, avoid genres, and a few taste questions, but it still does not deeply capture why the user reads or what kind of reading experience they want. We want the intake to feel more like taste calibration and less like setup.
+
+Product rule:
+Every new question must create useful signal and feel enjoyable to answer.
+
+Allowed files:
+- components/RecEntryScreen.tsx
+- lib/intakeDraft.ts
+- replit.md
+
+File budget:
+Maximum 3 files. If this requires more than 3 files, stop and explain.
+
+Forbidden files/systems:
+- TasteReadout
+- recommender scoring
+- recommender ranking
+- recommender retrieval
+- recommendation persistence
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+- HomeShortlist
+- RecCard
+- RecommendationsFeed
+
+Hard constraints:
+- Do not change recommender behavior.
+- Do not change TasteReadout yet. Surfacing this can be a later batch.
+- Do not add new DB fields.
+- Do not add migrations.
+- Do not add API calls.
+- Keep every step skippable.
+- Preserve UX-3A avoid-genre behavior.
+- Preserve existing favorite_genres, avoid_genres, anchor-book, and b_fiction_split behavior.
+
+Implementation requirements:
+1. Add a new intake phase after avoid genres and before the existing taste questions.
+2. The screen should ask something like:
+   “What do you want from your next good book?”
+3. Use answer options that map to existing diagnosis/tasteProfile keys already supported by applyDiagnosisBoosts.
+4. Suggested options:
+   - “Lose myself in a story”
+     Maps to: effortless and/or emotion_driven
+   - “Sit with something thoughtful”
+     Maps to: craft_first and/or idea_driven
+   - “Be challenged or surprised”
+     Maps to: challenging and/or originality_first
+   - “Honestly, it depends”
+     Maps to: grip_both or neutral/balanced signal
+5. Persist the answer in diagnosis_answers as q_outcome or equivalent.
+6. Extend IntakeState and intakeDraft to support the new phase and answer.
+7. Keep the copy warm and concise.
+8. Auto-advance after selection if that matches existing intake taste-question behavior.
+9. “Skip this” should continue without q_outcome.
+10. Existing “Skip all” behavior should continue to work.
+
+Acceptance criteria:
+1. Non-import intake includes a reading-outcome step.
+2. User can select one outcome or skip it.
+3. The selected answer persists into reader_preferences.diagnosis_answers.
+4. Existing liked genres, avoid genres, taste questions, and anchor-book flows still work.
+5. No TasteReadout changes in this batch.
+6. No recommender/scoring/ranking/retrieval changes.
+7. Typecheck remains at baseline with zero new errors.
+8. Diff scope confirms no forbidden systems were touched.
+
+Validation required:
+- Static review of new phase order.
+- Static review of diagnosis_answers payload.
+- Draft read/write compatibility check.
+- Confirmation applyDiagnosisBoosts already recognizes the answer keys used.
+- Typecheck delta.
+- Diff scope report.
+- Workflow status, noting if the known Metro FallbackWatcher race appears.
+
+Stop conditions:
+- If the proposed answer keys are not already supported by tasteProfile/applyDiagnosisBoosts, stop and report before implementing.
+- If adding the phase breaks draft compatibility in a way that cannot be handled simply, stop.
+- If this requires more than the 3 allowed files, stop.
+
+Return format:
+- Changed files
+- Implementation summary
+- New phase flow
+- Data write confirmation
+- Draft compatibility notes
+- applyDiagnosisBoosts compatibility confirmation
+- Behavior preservation check
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Any deviations from prompt
