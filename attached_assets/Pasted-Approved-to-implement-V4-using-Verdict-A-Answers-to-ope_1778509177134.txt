@@ -1,0 +1,60 @@
+Approved to implement V4 using Verdict A.
+
+Answers to open questions:
+1. Thin-profile CTA target: default to “Add a book” → /add-book. Do not add multiple CTAs yet.
+2. If all cached picks have been acted on, hide the section silently. Do not nag the user with another CTA.
+3. Place the shortlist section above Reading Now.
+
+Proceed with Batch V4 only: Home Shortlist.
+
+Implementation constraints:
+- Home may read getRecSession() only.
+- Home must not call runPipeline, getPersonalizedRecsWithExpert, triggerRecPrewarm, or any recommender/retrieval function.
+- Home must not call setRecSession or clearRecSession.
+- Home must not trigger duplicate recommendation fetching.
+- Home may use loadActedOnIds(userId) as a read-only AsyncStorage filter to avoid showing recently acted-on picks.
+- Enforce a 2-hour freshness window using loadedAt.
+- Treat userId mismatch as cold cache.
+- Treat stale cache as cold cache.
+- If no safe cached picks exist, show honest static state or hide section, depending on the state.
+- Do not touch recommender scoring, ranking, retrieval, persistence, schema, auth, Sentry, native config, Open Library, Google Books, metadata repair, or LLM/API calls.
+
+Preferred file plan:
+1. New: components/HomeShortlist.tsx
+2. Edit: app/(tabs)/index.tsx
+3. Edit: replit.md
+
+Product behavior:
+Hot cache:
+- If getRecSession() has fresh discoveries for the current user and at least 1 unacted pick, show up to 3 compact shortlist items.
+- Each item should show cover, title, author, and optionally one short reason if cheaply available.
+- Tapping an item should navigate to the existing book detail route.
+- Preserve rec context if safely available using existing setRecContext pattern.
+
+Cold cache with usable profile:
+- Show:
+  “Your shortlist is waiting”
+  “Head to For You to generate your next picks.”
+  CTA: “See my picks” → /(tabs)/search
+
+Thin profile:
+- Show:
+  “Build your shortlist”
+  “Add or rate a few books to unlock sharper picks.”
+  CTA: “Add a book” → /add-book
+
+All cached picks acted on:
+- Hide the section silently.
+
+Acceptance criteria:
+1. Home displays up to 3 cached next-read picks when fresh recSession data exists.
+2. Home never triggers a new recommendation fetch.
+3. Home filters out acted-on picks using read-only acted-on state.
+4. Home handles cold cache, stale cache, user mismatch, and thin profile honestly.
+5. Existing Home modules still work.
+6. No recommender/scoring/ranking/retrieval/persistence/schema/auth/Sentry/native/LLM/Open Library/Google Books/metadata changes.
+7. Typecheck remains at baseline with zero new errors.
+8. Workflow runs cleanly.
+9. Return changed files, implementation summary, validation steps, and known limitations.
+
+If implementation requires more than 4 product files, stop and explain before proceeding.

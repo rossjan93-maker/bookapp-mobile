@@ -30,6 +30,7 @@ import { computeStreaks } from '../../lib/streaks';
 import { BadgeContext } from './_layout';
 import { RecsInboxSheet } from '../../components/RecsInboxSheet';
 import { FriendsSheet } from '../../components/FriendsSheet';
+import { HomeShortlist } from '../../components/HomeShortlist';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1143,6 +1144,12 @@ export default function HomeScreen() {
           </Text>
         )}
       </View>
+
+      {/* ── V4 Home Shortlist (top-of-Home next-read surface) ── */}
+      <HomeShortlist
+        userId={userId}
+        librarySize={currentReads.length + yearStack.length}
+      />
 
       {/* ── 1. Continue Reading ── */}
       {currentReads.length > 0 && (
