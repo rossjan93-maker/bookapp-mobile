@@ -6,6 +6,10 @@
 // of what the recommender currently believes about the user, plus a single
 // CTA into the For You feed.
 //
+// avoid_genres is intake-only signal (UX-3B); we display it as "Less of: X"
+// chips but make NO claim that the recommender currently down-weights it
+// (that's UX-3F, deferred). Copy stays informational, not behavioural.
+//
 // No data fetching here — the route wrapper (app/taste-readout.tsx) loads the
 // profile and passes it in. This keeps the component cheap to render and
 // trivial to snapshot/test.
@@ -29,14 +33,17 @@ import {
 type Props = {
   profile: TasteProfile | null;
   favoriteGenres: string[];
+  /** UX-3B: intake-only avoid genres surfaced as "Less of: X" chips.
+   *  Optional with [] default so older callers keep working unchanged. */
+  avoidGenres?: string[];
   onSeeMyPicks: () => void;
 };
 
-export function TasteReadout({ profile, favoriteGenres, onSeeMyPicks }: Props) {
+export function TasteReadout({ profile, favoriteGenres, avoidGenres = [], onSeeMyPicks }: Props) {
   const headline = buildHeadline();
   const thin = isThinReadout(profile, favoriteGenres);
   const summary = thin ? THIN_READOUT_COPY : buildSummary(profile, favoriteGenres);
-  const chips: ReadoutChip[] = thin ? [] : buildChips(profile, favoriteGenres);
+  const chips: ReadoutChip[] = thin ? [] : buildChips(profile, favoriteGenres, avoidGenres);
   const learningLine = buildLearningLine(profile);
 
   return (

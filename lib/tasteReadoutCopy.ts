@@ -140,6 +140,45 @@ export function topAuthors(profile: TasteProfile, n: number = 3): string[] {
   return (profile.liked_authors ?? []).slice(0, n);
 }
 
+/**
+ * UX-3B: surface avoid-genre intake selections as "Less of: X" chips.
+ *
+ * These come straight from reader_preferences.avoid_genres (raw display
+ * labels like "Horror" or "Literary Fiction" written by IntakeAvoid). We
+ * humanise defensively in case future writers store snake_case keys, and
+ * we de-dupe against the user's liked-genre intake list so a contradictory
+ * row in the DB cannot produce a "Loves X / Less of: X" pair.
+ *
+ * Cap defaults to 2 — keeps the chip row calm even if the user picked
+ * many avoid genres during intake.
+ */
+export function topAvoidGenres(
+  avoidGenres: string[] | null | undefined,
+  favoriteGenres: string[] | null | undefined,
+  n: number = 2,
+): string[] {
+  const avoid = Array.isArray(avoidGenres) ? avoidGenres : [];
+  if (avoid.length === 0) return [];
+  const liked = new Set(
+    (Array.isArray(favoriteGenres) ? favoriteGenres : []).map(g => g.trim().toLowerCase()),
+  );
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of avoid) {
+    if (typeof raw !== 'string') continue;
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    if (liked.has(trimmed.toLowerCase())) continue;
+    const label = humanizeGenreKey(trimmed);
+    const dedupKey = label.toLowerCase();
+    if (seen.has(dedupKey)) continue;
+    seen.add(dedupKey);
+    out.push(label);
+    if (out.length >= n) break;
+  }
+  return out;
+}
+
 export function topDominantLanes(profile: TasteProfile, n: number = 2): string[] {
   const lanes = profile.det_lanes?.dominant_lanes ?? [];
   return lanes.slice(0, n).map(humanizeLaneKey);
@@ -232,6 +271,7 @@ export type ReadoutChip = {
 export function buildChips(
   profile: TasteProfile | null,
   favoriteGenres: string[],
+  avoidGenres: string[] = [],
 ): ReadoutChip[] {
   const chips: ReadoutChip[] = [];
 
@@ -255,7 +295,17 @@ export function buildChips(
     }
   }
 
-  // 3. Avoided traits — high confidence only (handled inside topAvoidedTraits).
+  // 3. Avoid genres (UX-3B) — straight from intake, no recommender claim.
+  // Surfaced before avoided traits because they're a stronger explicit signal
+  // (the user just told us during intake) and shouldn't be crowded out.
+  for (const g of topAvoidGenres(avoidGenres, favoriteGenres, 2)) {
+    const label = `Less of: ${g}`;
+    if (!chips.some(c => c.label === label)) {
+      chips.push({ kind: 'avoided', label });
+    }
+  }
+
+  // 4. Avoided traits — high confidence only (handled inside topAvoidedTraits).
   if (profile) {
     for (const t of topAvoidedTraits(profile, 1)) {
       if (t && !chips.some(c => c.label === t)) {
@@ -264,7 +314,7 @@ export function buildChips(
     }
   }
 
-  // 4. Authors — only when we have at least 2 (so a single book's author
+  // 5. Authors — only when we have at least 2 (so a single book's author
   // doesn't get elevated to "your authors").
   if (profile && (profile.liked_authors?.length ?? 0) >= 2) {
     const author = profile.liked_authors[0];
@@ -273,8 +323,9 @@ export function buildChips(
     }
   }
 
-  // Cap at 4 chips so the surface stays calm.
-  return chips.slice(0, 4);
+  // Cap at 5 chips so the surface stays calm. Bumped from 4 in UX-3B to
+  // give the new avoid-genre signal room without crowding out authors.
+  return chips.slice(0, 5);
 }
 
 // ── Thin-state detection ─────────────────────────────────────────────────────

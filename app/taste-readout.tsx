@@ -25,6 +25,9 @@ export default function TasteReadoutScreen() {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<TasteProfile | null>(null);
   const [favoriteGenres, setFavoriteGenres] = useState<string[]>([]);
+  // UX-3B: avoid_genres from intake, surfaced as "Less of: X" chips. No
+  // recommender wiring yet — purely reflection.
+  const [avoidGenres, setAvoidGenres] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,7 +51,7 @@ export default function TasteReadoutScreen() {
           computeTasteProfile(supabase, user.id).catch(() => null),
           supabase
             .from('reader_preferences')
-            .select('favorite_genres')
+            .select('favorite_genres, avoid_genres')
             .eq('user_id', user.id)
             .maybeSingle(),
         ]);
@@ -58,9 +61,10 @@ export default function TasteReadoutScreen() {
         setProfile(tpResult);
 
         const prefs = (prefsResult.data ?? null) as
-          | { favorite_genres?: string[] | null }
+          | { favorite_genres?: string[] | null; avoid_genres?: string[] | null }
           | null;
         setFavoriteGenres(Array.isArray(prefs?.favorite_genres) ? prefs!.favorite_genres! : []);
+        setAvoidGenres(Array.isArray(prefs?.avoid_genres) ? prefs!.avoid_genres! : []);
       } catch (err) {
         // Swallow — thin-state path will render.
         if (__DEV__) console.warn('[taste-readout] load failed', err);
@@ -99,6 +103,7 @@ export default function TasteReadoutScreen() {
       <TasteReadout
         profile={profile}
         favoriteGenres={favoriteGenres}
+        avoidGenres={avoidGenres}
         onSeeMyPicks={handleSeeMyPicks}
       />
     </View>

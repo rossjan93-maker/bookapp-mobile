@@ -1,0 +1,93 @@
+Task type:
+Small implementation.
+
+Goal:
+Surface avoid genres from the new intake step in TasteReadout so users feel Readstack heard what they do not want.
+
+User problem:
+UX-3A now captures reader_preferences.avoid_genres, but the user does not yet see that signal reflected in the “Here’s what we heard” Taste Readout.
+
+Product rule:
+If the user gives Readstack negative preference signal, the app should acknowledge it clearly and calmly without making the experience feel negative.
+
+Allowed files:
+- lib/tasteReadoutCopy.ts
+- components/TasteReadout.tsx
+- app/taste-readout.tsx
+- replit.md
+
+File budget:
+Maximum 4 files. If this requires more than 4 files, stop and explain.
+
+Forbidden files/systems:
+- components/RecEntryScreen.tsx
+- lib/intakeDraft.ts
+- recommender scoring
+- recommender ranking
+- recommender retrieval
+- recommendation persistence
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+- HomeShortlist
+- RecCard
+- RecommendationsFeed
+
+Hard constraints:
+- Do not change intake behavior.
+- Do not change how avoid_genres are saved.
+- Do not wire avoid genres into recommender scoring yet.
+- Do not create new fields or migrations.
+- Do not overstate the meaning of avoid genres.
+- This is TasteReadout reflection only.
+
+Implementation requirements:
+1. Ensure app/taste-readout.tsx selects or passes reader_preferences.avoid_genres if it does not already.
+2. Add avoid-genre copy/chip support in lib/tasteReadoutCopy.ts.
+3. Use calm wording such as:
+   - “Less of: Horror”
+   - “Usually skip: Horror”
+   - “We’ll be careful with: Horror”
+4. Prefer existing “Less of” visual treatment if available.
+5. Cap the number of avoid genre chips shown, likely 2–3.
+6. If avoid_genres is empty, render nothing new.
+7. Preserve all existing TasteReadout behavior for liked genres, traits, thin-state copy, and confidence hedging.
+
+Acceptance criteria:
+1. A user who selects avoid genres during intake sees them reflected in TasteReadout.
+2. A user who skips avoid genres sees no avoid-genre chip.
+3. Copy is calm and does not imply recommender scoring has changed yet.
+4. Existing TasteReadout behavior remains unchanged.
+5. No recommender/scoring/ranking/retrieval changes.
+6. Typecheck remains at baseline with zero new errors.
+7. Diff scope confirms no forbidden systems were touched.
+
+Validation required:
+- Static review of taste-readout data select/pass-through.
+- Copy examples for one avoid genre, multiple avoid genres, and none.
+- Confirmation no recommender/scoring behavior changed.
+- Typecheck delta.
+- Diff scope report.
+- Workflow status, noting if the known Metro FallbackWatcher race appears.
+
+Stop conditions:
+- If avoid_genres is not accessible from the existing TasteReadout data path without touching schema or intake, stop and explain.
+- If this requires recommender changes, stop and explain.
+- If this requires more than 4 files, stop and explain.
+
+Return format:
+- Changed files
+- Implementation summary
+- Before/after TasteReadout examples
+- Data path confirmation
+- Behavior preservation check
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Any deviations from prompt
