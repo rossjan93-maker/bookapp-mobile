@@ -1,0 +1,78 @@
+Approved: replit.md trim is accepted as complete.
+
+Proceed with Batch V3 only: Anchored Explanations.
+
+Do not implement V4 Home shortlist yet. Do not touch Sentry. Do not touch recommender scoring, retrieval, catalog, auth, Supabase schema, migrations, native config, Open Library, Google Books, metadata repair, or LLM/API calls.
+
+Product goal:
+Recommendation explanations should feel more personally grounded. A user should understand not just “this book has strong pacing” but “this fits because of signals from your actual reading history, taste profile, or stated preferences.”
+
+Current issue:
+Recommendation cards already explain traits, but the explanation often feels abstract. We want the explanation to connect the recommendation to the user’s own evidence where safely available.
+
+Implementation scope:
+Improve explanation copy only. This should be a UI/content layer over existing recommendation data.
+
+Target areas:
+- components/RecCard.tsx
+- lib/expertRec.ts only if the needed evidence is already computed internally and can be safely exposed without changing scoring or ranking
+- Any helper file only if absolutely necessary
+
+Hard constraints:
+- No scoring changes.
+- No ranking changes.
+- No retrieval changes.
+- No new recommendation candidates.
+- No new DB reads if avoidable.
+- No LLM calls.
+- No schema changes.
+- No migrations.
+- No new auth, Sentry, native, Open Library, Google Books, or metadata changes.
+- Do not invent fake anchors.
+- Do not overclaim causality.
+- If user-specific evidence is unavailable, fall back to existing explanation logic.
+
+Desired behavior:
+Add one higher-specificity explanation path above the current generic explanation fallback.
+
+Examples of acceptable explanation directions:
+- “This fits your pattern of enjoying character-driven literary fiction.”
+- “This lines up with the pacing and emotional tension you tend to reward.”
+- “This is close to your sci-fi/fantasy lane, but with a slightly more literary tilt.”
+- “Based on your stated genres, this is a safe starting pick.”
+- “This matches one of your stronger reading lanes: modern suspense.”
+- If strong book-level evidence exists: “This may fit the same lane as [Book Title] and [Book Title].”
+
+Examples to avoid:
+- “Because you loved X” unless we know the user rated/saved/anchored X positively.
+- “You will love this.”
+- “This is perfect for you.”
+- “The model knows…”
+- Any language that implies certainty beyond the data.
+
+Evidence hierarchy:
+Use the strongest available evidence first:
+1. Clear book-level anchors from positively rated/read/saved/anchored books, if already available
+2. Strong lane/genre affinity
+3. Preferred traits
+4. Stated onboarding preferences
+5. Existing generic explanation fallback
+
+Copy rules:
+- Specific but cautious.
+- One sentence max where possible.
+- Avoid generic AI-sounding phrasing.
+- Do not make every card feel repetitive.
+- Preserve existing explanation variety where possible.
+- If evidence is thin, hedge clearly: “Starting from your stated preferences…” / “Early signal…”
+
+Acceptance criteria:
+1. At least some recommendation cards for users with enough history show more user-anchored explanation copy.
+2. Thin-profile users still get safe, hedged copy.
+3. Existing explanation fallback still works.
+4. No scoring/ranking/retrieval/persistence/schema/auth/Sentry/native/LLM changes.
+5. Typecheck remains at baseline with zero new errors.
+6. Workflow runs cleanly.
+7. Return changed files, implementation summary, test cases, and known limitations.
+
+If this requires more than 3 product files, stop and explain before proceeding.

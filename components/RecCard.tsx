@@ -13,6 +13,7 @@ import { CoverThumb } from './CoverThumb';
 import { fitLabel, fitColor } from '../lib/recommender';
 import type { ScoredBook } from '../lib/recommender';
 import type { DeterministicLane } from '../lib/bookTraits';
+import type { TasteProfile } from '../lib/tasteProfile';
 import { getSeriesCatalog } from '../lib/seriesCatalog';
 import { setRecContext } from '../lib/recContext';
 import { persistRecSnapshot } from '../lib/recSnapshot';
@@ -396,6 +397,166 @@ const EXPLANATION_LANE_LABELS: Record<DeterministicLane, string> = {
   horror:               'dark atmospheric fiction',
 };
 
+// ─── Anchored explanations (Batch V3, shipped 2026-05-11) ────────────────────
+//
+// Higher-specificity explanation copy that grounds the recommendation in the
+// reader's *own* documented signals — not just book-level traits. Runs INSIDE
+// `buildExplanation` between the specific-reasons[0] pass and the existing
+// author-loyalty / generic-fallback paths. When it returns null the existing
+// fallback logic is unchanged.
+//
+// Strict invariants:
+//   • Reads from `tasteProfile` (already in scope at the feed) and existing
+//     `book._score_breakdown.book_lane` / `book.subjects`. NO new DB reads,
+//     NO new candidates, NO scoring/ranking changes, NO LLM calls.
+//   • Never names specific book titles (TasteProfile carries authors and
+//     subjects, not finished-book titles — naming would be invented evidence).
+//   • Hedges to "Early signal —" framing when `confidence === 'low'` or
+//     `tier < 2`, so thin-profile users don't get overclaimed copy.
+//   • Falls through to existing logic when no safe evidence exists.
+//
+// Internal evidence hierarchy (strongest first):
+//   A. Author appears in `liked_authors` (4+★ author) or `det_lanes
+//      .repeated_liked_authors` — the rarest, strongest user-specific signal.
+//   B. Book's lane appears in `det_lanes.dominant_lanes` — confirmed pattern
+//      across multiple loved reads.
+//   C. `genre_affinities[lane] >= 0.4` — solid genre lean even without
+//      dense-import lane structure.
+//   D. ≥1 subject overlap between `book.subjects` and `liked_subjects` —
+//      thematic recurrence, weakest of the four but still user-grounded.
+// Author-tier copy is intentionally evidence-conservative: `liked_authors`
+// includes any author with a single 4★+ finished book (see
+// `buildLikedAnchors` in `lib/tasteProfile.ts`), so wording must read true
+// for both single-book and repeated-author matches. Phrasings like
+// "returned to" or "consistently reward" would overclaim on single matches.
+const ANCHOR_AUTHOR_POOL = [
+  (a: string) => `From ${a} — an author you've rated highly before.`,
+  (a: string) => `Another from ${a}, whose work has landed well with you.`,
+  (a: string) => `${a} — already in the small set of authors you've rated highly.`,
+] as const;
+
+const ANCHOR_DOMINANT_LANE_POOL = [
+  (lane: string) => `Lands in ${lane} — one of your stronger reading lanes.`,
+  (lane: string) => `Sits squarely in ${lane}, a lane that recurs across your finished books.`,
+  (lane: string) => `Built around ${lane}, which shows up repeatedly in your highest reads.`,
+] as const;
+
+const ANCHOR_LANE_AFFINITY_POOL = [
+  (lane: string) => `In your ${lane} lane — a pattern your ratings have leaned toward.`,
+  (lane: string) => `Sits within ${lane}, a direction that comes through in your taste signals.`,
+  (lane: string) => `Aligned with ${lane}, a recurring lean across what you finish and rate.`,
+] as const;
+
+const ANCHOR_SUBJECT_POOL_TWO = [
+  (a: string, b: string) => `Touches on ${a} and ${b} — themes that recur across your reading history.`,
+  (a: string, b: string) => `Carries ${a} and ${b}, threads that appear in books you've rated highly.`,
+  (a: string, b: string) => `Built on ${a} and ${b}, both recurring across your library.`,
+] as const;
+
+const ANCHOR_SUBJECT_POOL_ONE = [
+  (a: string) => `Touches on ${a}, a theme that recurs in your reading history.`,
+  (a: string) => `Carries threads of ${a}, which surfaces in books you've rated highly.`,
+  (a: string) => `Centered on ${a}, a thread you've returned to before.`,
+] as const;
+
+// Hedged copy for thin profiles (tier < 2 or confidence === 'low').
+const HEDGED_ANCHOR_LANE_POOL = [
+  (lane: string) => `Early signal — points toward your ${lane} lean.`,
+  (lane: string) => `Starting from your taste so far, this fits the ${lane} direction.`,
+] as const;
+
+const HEDGED_ANCHOR_SUBJECT_POOL = [
+  (a: string) => `Early signal — touches on ${a}, which has come up in your reading.`,
+  (a: string) => `Starting from your reads so far, this carries threads of ${a}.`,
+] as const;
+
+// Subjects that are too generic to claim as a meaningful thematic anchor.
+// Kept tiny on purpose — `tasteProfile.liked_subjects` is already filtered
+// upstream; this just guards the rare leak.
+const ANCHOR_NOISE_SUBJECTS = new Set([
+  'fiction', 'nonfiction', 'literature', 'general', 'novel', 'novels', 'book',
+]);
+
+function _normAnchor(s: string): string {
+  return s.trim().toLowerCase();
+}
+
+function buildAnchoredExplanation(
+  book: ScoredBook,
+  tasteProfile: TasteProfile | null | undefined,
+): string | null {
+  if (!tasteProfile) return null;
+
+  const isHedged = tasteProfile.confidence === 'low' || tasteProfile.tier < 2;
+  const bd       = book._score_breakdown;
+  const bookId   = book.id;
+
+  // ── Tier A: author anchor ──────────────────────────────────────────────────
+  const author = (book.author ?? '').trim();
+  if (author) {
+    const normAuthor      = _normAnchor(author);
+    const isLikedAuthor   = (tasteProfile.liked_authors ?? []).some(
+      a => _normAnchor(a) === normAuthor,
+    );
+    const isRepeatedLiked = (tasteProfile.det_lanes?.repeated_liked_authors ?? []).some(
+      a => _normAnchor(a) === normAuthor,
+    );
+    if (isLikedAuthor || isRepeatedLiked) {
+      return _pickVariant(ANCHOR_AUTHOR_POOL, bookId, 'anchor_author')(author);
+    }
+  }
+
+  // ── Tier B / C: lane anchor (dominant or strong-affinity) ──────────────────
+  const bookLane  = bd.book_lane as DeterministicLane | null | undefined;
+  const laneLabel = bookLane ? (EXPLANATION_LANE_LABELS[bookLane] ?? null) : null;
+
+  if (bookLane && laneLabel) {
+    const isDominant = (tasteProfile.det_lanes?.dominant_lanes ?? []).includes(bookLane);
+    if (isDominant) {
+      return isHedged
+        ? _pickVariant(HEDGED_ANCHOR_LANE_POOL, bookId, 'anchor_dom_hedged')(laneLabel)
+        : _pickVariant(ANCHOR_DOMINANT_LANE_POOL, bookId, 'anchor_dom')(laneLabel);
+    }
+    const affinity = tasteProfile.genre_affinities?.[bookLane] ?? 0;
+    if (affinity >= 0.4) {
+      return isHedged
+        ? _pickVariant(HEDGED_ANCHOR_LANE_POOL, bookId, 'anchor_aff_hedged')(laneLabel)
+        : _pickVariant(ANCHOR_LANE_AFFINITY_POOL, bookId, 'anchor_aff')(laneLabel);
+    }
+  }
+
+  // ── Tier D: subject overlap ────────────────────────────────────────────────
+  const likedSubjectSet = new Set(
+    (tasteProfile.liked_subjects ?? [])
+      .map(_normAnchor)
+      .filter(s => s && !ANCHOR_NOISE_SUBJECTS.has(s)),
+  );
+  if (likedSubjectSet.size > 0) {
+    const overlaps: string[] = [];
+    const seen = new Set<string>();
+    for (const raw of (book.subjects ?? [])) {
+      const s = _normAnchor(raw ?? '');
+      if (!s || seen.has(s) || ANCHOR_NOISE_SUBJECTS.has(s)) continue;
+      if (likedSubjectSet.has(s)) {
+        overlaps.push(s);
+        seen.add(s);
+        if (overlaps.length >= 2) break;
+      }
+    }
+    if (overlaps.length >= 2 && !isHedged) {
+      return _pickVariant(ANCHOR_SUBJECT_POOL_TWO, bookId, 'anchor_subj2')(overlaps[0], overlaps[1]);
+    }
+    if (overlaps.length >= 1) {
+      const first = overlaps[0];
+      return isHedged
+        ? _pickVariant(HEDGED_ANCHOR_SUBJECT_POOL, bookId, 'anchor_subj1_h')(first)
+        : _pickVariant(ANCHOR_SUBJECT_POOL_ONE, bookId, 'anchor_subj1')(first);
+    }
+  }
+
+  return null;
+}
+
 // Build a single behavior-driven explanation anchored to ONE concrete user signal.
 //
 // Priority order:
@@ -409,7 +570,11 @@ const EXPLANATION_LANE_LABELS: Record<DeterministicLane, string> = {
 // from the CoG classifier (e.g. "a consistent favorite — lands exactly in your
 // romantic fantasy reading") are now surfaced directly rather than being silenced
 // by a generic "A strong fit for your taste in X" override.
-function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | null {
+function buildExplanation(
+  book: ScoredBook,
+  _hasSeriesMeta: boolean,
+  tasteProfile?: TasteProfile | null,
+): string | null {
   const bd = book._score_breakdown;
 
   // ── Saga / series (highest priority — positional cue) ───────────────────────
@@ -492,6 +657,14 @@ function buildExplanation(book: ScoredBook, _hasSeriesMeta: boolean): string | n
     if (rewritten != null) return rewritten;
   }
 
+  // ── Anchored explanation (Batch V3) — user-history-grounded copy ────────────
+  // Sits ABOVE the existing generic fallbacks (author loyalty / lane fallback)
+  // and only fires when `tasteProfile` carries safe, specific evidence
+  // (liked author, dominant lane, strong genre affinity, or subject overlap).
+  // Returns null otherwise so the existing fallback paths take over unchanged.
+  const anchored = buildAnchoredExplanation(book, tasteProfile);
+  if (anchored != null) return anchored;
+
   // ── Author loyalty — only when no specific reason is available ───────────────
   // Variants are seeded by book.id so the same author yields varied phrasing
   // across their backlist instead of repeating the same sentence on every card.
@@ -539,6 +712,7 @@ export function RecCard({
   book,
   isExpert          = false,
   featured          = false,
+  tasteProfile      = null,
   onSave            = () => {},
   onDismiss         = () => {},
   onMoreLikeThis    = () => {},
@@ -548,6 +722,10 @@ export function RecCard({
   book:               ScoredBook;
   isExpert?:          boolean;
   featured?:          boolean;
+  // V3 anchored explanations — when supplied, `buildExplanation` may surface a
+  // user-history-grounded sentence above the generic lane fallback. Optional
+  // and null-safe; existing copy paths are unchanged when this is null.
+  tasteProfile?:      TasteProfile | null;
   onSave?:            () => void;
   onDismiss?:         () => void;
   onMoreLikeThis?:    () => void;
@@ -700,7 +878,7 @@ export function RecCard({
     seriesPos   != null &&
     seriesTotal != null;
 
-  const collapsedReason = buildExplanation(book, hasSeriesMeta);
+  const collapsedReason = buildExplanation(book, hasSeriesMeta, tasteProfile);
 
   return (
     <Animated.View style={{

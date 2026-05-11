@@ -1526,6 +1526,7 @@ export function RecommendationsFeed({
                     book={rec}
                     featured={isFirstVisible}
                     isExpert={recMode === 'expert'}
+                    tasteProfile={tasteProfile}
                     onSave={() => handleSave(rec)}
                     onDismiss={() => handleDismiss(rec)}
                     onMoreLikeThis={() => handleMoreLikeThis(rec)}
@@ -1560,6 +1561,7 @@ export function RecommendationsFeed({
                   book={rec}
                   featured={false}
                   isExpert={recMode === 'expert'}
+                  tasteProfile={tasteProfile}
                   onSave={() => handleSave(rec)}
                   onDismiss={() => handleDismiss(rec)}
                   onMoreLikeThis={() => handleMoreLikeThis(rec)}
