@@ -485,17 +485,42 @@ export default function LoginScreen() {
   const [socialSignedIn, setSocialSignedIn] = useState(false);
   const appleAvailable = isAppleAvailable();
 
+  // socialAuth helpers return one of three shapes:
+  //   { }              — genuine success; a session was established and
+  //                      onAuthStateChange(SIGNED_IN) will fire in _layout.tsx
+  //                      to drive routing. Show the overlay.
+  //   { error: '' }    — silent cancel sentinel (user closed the OAuth sheet,
+  //                      WebBrowser resolved with type='dismiss' and no deep
+  //                      link followed, mapOAuthError matched a "cancel"
+  //                      message, etc.). NO session was established — there
+  //                      will be no SIGNED_IN event, the bootstrap will not
+  //                      run, and the routing guard will not navigate. We
+  //                      must NOT show the "Signed in — loading your account…"
+  //                      overlay in this case; the previous `if (error)`
+  //                      check treated '' as falsy and wrongly fell through
+  //                      to setSocialSignedIn(true), locking the user on a
+  //                      permanent loading screen with no way to retry.
+  //   { error: msg }   — a non-empty error string ready for display.
+  //
+  // Triggers most often in the Replit web preview iframe (sandboxed popups
+  // get partitioned storage, so even a "successful" OAuth in the popup never
+  // delivers a session to the iframe-hosted app and openAuthSessionAsync
+  // resolves with type='dismiss'), but also fires whenever a real user taps
+  // Cancel on the Google/Apple sheet on iOS/Android.
   async function handleGoogleSignIn() {
     setSocialLoading('google');
     setSocialError('');
     const { error } = await signInWithGoogle();
     setSocialLoading(null);
-    if (error) {
-      setSocialError(error);
-    } else {
-      // Success — show loading state while _layout bootstrap resolves and navigates.
+    if (error === undefined) {
+      // Genuine success — show loading overlay while _layout bootstrap
+      // resolves and the routing guard navigates the user away from /login.
       setSocialSignedIn(true);
+    } else if (error !== '') {
+      // Real error to display.
+      setSocialError(error);
     }
+    // error === '' → silent cancel; stay on login so the user can retry.
   }
 
   async function handleAppleSignIn() {
@@ -503,11 +528,12 @@ export default function LoginScreen() {
     setSocialError('');
     const { error } = await signInWithApple();
     setSocialLoading(null);
-    if (error) {
-      setSocialError(error);
-    } else {
+    if (error === undefined) {
       setSocialSignedIn(true);
+    } else if (error !== '') {
+      setSocialError(error);
     }
+    // error === '' → silent cancel; stay on login so the user can retry.
   }
 
   // ── Derived flags ────────────────────────────────────────────────────────────

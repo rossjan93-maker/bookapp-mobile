@@ -1,0 +1,118 @@
+Task type:
+Bug investigation first, then minimal implementation only if root cause is clear.
+
+Goal:
+Fix Google sign-up/sign-in getting stuck on the “Signed in — loading your account…” screen in Replit desktop preview.
+
+User-reported bug:
+When signing up/signing in with Google in the Replit desktop preview:
+1. Google auth appears to succeed.
+2. A loading screen appears with the exact copy:
+   “Signed in — loading your account…”
+3. This loading screen never resolves.
+4. If the user exits/closes that window, the Replit preview app shows a signed-in state/page, but still does not route forward into onboarding or the app.
+5. User cannot continue without manually escaping the flow.
+
+Expected behavior:
+After Google auth succeeds, the app should automatically route to the correct next screen:
+- onboarding/welcome/final setup for a new user
+- app tabs for a returning/onboarding-complete user
+
+No manual closing or exiting should be required.
+
+Important context:
+This appears to be an auth callback / bootstrap / routing handoff bug, not a recommendation or onboarding-content issue.
+
+We have previously had onboarding/root-guard issues involving:
+- local onboarding guard state
+- durable DB onboarding completion state
+- completeOnboarding()
+- onboardingStage
+- needsOnboarding
+- root guard re-evaluation after auth state changes
+
+Allowed files to inspect:
+- app/auth/callback.tsx
+- lib/socialAuth.ts
+- app/_layout.tsx
+- lib/onboardingStage.ts
+- any bootstrap/profile/session loading files
+- app/onboarding.tsx
+- app/onboarding-import.tsx
+- app/onboarding-questions.tsx
+- any file containing the copy “Signed in — loading your account…”
+
+Allowed files to edit after diagnosis:
+Only the smallest set needed to fix this auth/onboarding routing handoff.
+
+Forbidden files/systems:
+- recommender
+- TasteReadout
+- RecCard
+- RecommendationsFeed
+- HomeShortlist
+- intake redesign
+- schema
+- migrations
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+
+Hard constraints:
+- Do not broaden into a general auth refactor.
+- Do not change recommendation behavior.
+- Do not change onboarding content unless required for routing.
+- Do not change native deep linking unless proven necessary.
+- Focus on Replit desktop preview / web Google OAuth first.
+- Do not mask the bug with a blind timeout unless you can explain why it is safe.
+
+Investigation requirements:
+1. Find the exact screen/component that renders:
+   “Signed in — loading your account…”
+2. Identify what condition it is waiting on.
+3. Trace the Google auth flow:
+   - button click
+   - socialAuth helper
+   - OAuth redirect/popup/window behavior
+   - auth callback
+   - session establishment
+   - profile/bootstrap load
+   - onboarding guard decision
+   - final router.replace/push
+4. Determine why the callback/loading screen never transitions.
+5. Determine why closing the window causes the app to recognize sign-in but still not route forward.
+6. Check whether this is:
+   - callback route not completing
+   - callback waiting on profile/bootstrap that never resolves
+   - auth session exists but root guard does not re-evaluate
+   - onboardingStage missing/stale
+   - OAuth popup/window cannot close in Replit preview
+   - router.replace not firing or targeting wrong route
+   - profile row/upsert/onboarding claim refresh timing problem
+7. Compare Google auth with email auth only if useful.
+
+Stop conditions:
+- If this is purely a Replit preview environment limitation and app code should not change, explain clearly and propose the safest testing workaround.
+- If the fix requires native config/deep links, stop and report.
+- If the fix requires schema/migrations, stop and report.
+- If the fix would touch more than 4 product files, stop and explain.
+
+Return first:
+- root cause diagnosis
+- exact file/line references
+- proposed minimal fix
+- risk assessment
+- whether implementation should proceed
+
+If the root cause is clear and the fix is small, implement only that minimal fix and then return:
+- changed files
+- implementation summary
+- before/after flow
+- routing/guard behavior confirmation
+- typecheck delta
+- workflow status
+- known limitations
+- any deviations from prompt
