@@ -467,7 +467,7 @@ function IntakeGenres({
 
   return (
     <OnboardingShell
-      progressSlot={<StepDots total={4} current={0} />}
+      progressSlot={<StepDots total={5} current={0} />}
       headerRight={
         <TouchableOpacity onPress={onSkip} hitSlop={{ top: 10, bottom: 10, left: 16, right: 16 }}>
           <Text style={{ fontSize: 13, fontWeight: '500', color: MUTED }}>Skip all →</Text>
@@ -561,7 +561,7 @@ function IntakeAvoid({
 
   return (
     <OnboardingShell
-      progressSlot={<StepDots total={4} current={1} />}
+      progressSlot={<StepDots total={5} current={1} />}
       title="Anything you usually skip?"
       subtitle="Pick anything you'd rather not see. You can skip this."
       onSkipThis={() => onContinue([])}
@@ -594,6 +594,86 @@ function IntakeAvoid({
           ))}
         </View>
       </ScrollView>
+    </OnboardingShell>
+  );
+}
+
+// ─── Quick intake: reading-outcome screen (UX-3C) ────────────────────────────
+//
+// One-question calibration step that captures *why* the user is here this
+// session — what kind of reading experience they want. Auto-advances on tap
+// (mirrors IntakeTaste behaviour). Persists into diagnosis_answers as
+// q_outcome alongside the other taste answers; recommender wiring is via
+// the existing applyDiagnosisBoosts (every key below is already in
+// ANSWER_BOOSTS — no recommender changes in this batch).
+//
+// Answer keys are intentionally chosen to NOT collide with the keys used by
+// q_what_grips / q_pacing / q_style so the same key is never double-applied.
+// Exception: 'grip_both' (the "depends" answer) IS shared with q_what_grips
+// — accepted because the double-boost only fires on a coherent answer
+// (Emotional+0.10 / Insight+0.10) and reinforces a consistent signal.
+
+const OUTCOME_OPTIONS: { key: string; headline: string; sub: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
+  { key: 'effortless',        headline: 'Lose myself in a story', sub: 'Pull me in — I want momentum and immersion',  icon: 'rocket-outline' },
+  { key: 'craft_first',       headline: 'Sit with something thoughtful', sub: 'Beautiful writing, depth, time to chew', icon: 'leaf-outline' },
+  { key: 'originality_first', headline: 'Be challenged or surprised', sub: 'Show me something I haven\u2019t seen before', icon: 'sparkles-outline' },
+  { key: 'grip_both',         headline: 'Honestly, it depends', sub: 'I read for different reasons on different days', icon: 'shuffle-outline' },
+];
+
+function IntakeOutcome({
+  onContinue,
+  onSkip,
+}: {
+  onContinue: (answer: string | null) => void;
+  onSkip:     () => void;
+}) {
+  return (
+    <OnboardingShell
+      progressSlot={<StepDots total={5} current={2} />}
+      title="What do you want from your next good book?"
+      subtitle="Pick whatever fits today. You can skip this."
+      onSkipThis={() => onContinue(null)}
+      onSkipAll={onSkip}
+    >
+      <View style={{ paddingHorizontal: OB.padH }}>
+        {OUTCOME_OPTIONS.map((opt, i) => {
+          const isDepends = i === OUTCOME_OPTIONS.length - 1;
+          return (
+            <TouchableOpacity
+              key={opt.key}
+              onPress={() => onContinue(opt.key)}
+              activeOpacity={0.75}
+              style={{
+                backgroundColor: isDepends ? BG : '#fff',
+                borderRadius:    14,
+                borderWidth:     1.5,
+                borderColor:     BORD,
+                padding:         16,
+                marginBottom:    OB.cardMB,
+                flexDirection:   'row',
+                alignItems:      'center',
+                gap:             12,
+              }}
+            >
+              <View style={{
+                width: 38, height: 38, borderRadius: 19,
+                backgroundColor: '#ede9e4',
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Ionicons name={opt.icon} size={18} color={isDepends ? MUTED : INK} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: isDepends ? SUB : INK }}>
+                  {opt.headline}
+                </Text>
+                <Text style={{ fontSize: 12, color: MUTED, marginTop: 3, lineHeight: 17 }}>
+                  {opt.sub}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
     </OnboardingShell>
   );
 }
@@ -646,7 +726,7 @@ function IntakeTaste({
       progressSlot={
         // Two stacked rows: major step dots + per-question sub-progress bars
         <View>
-          <StepDots total={4} current={2} />
+          <StepDots total={5} current={3} />
           <SubProgressBar total={TASTE_QS.length} current={qIdx} />
         </View>
       }
@@ -747,7 +827,7 @@ function IntakeAnchor({
 
   return (
     <OnboardingShell
-      progressSlot={<StepDots total={4} current={3} />}
+      progressSlot={<StepDots total={5} current={4} />}
       title="One book that nailed it?"
       subtitle="Optional — a book you've loved is our strongest cold-start signal."
       primaryButton={
@@ -848,7 +928,7 @@ function SavingOverlay() {
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
-type Phase = 'options' | 'intake_genres' | 'intake_avoid' | 'intake_taste' | 'intake_anchor' | 'saving';
+type Phase = 'options' | 'intake_genres' | 'intake_avoid' | 'intake_outcome' | 'intake_taste' | 'intake_anchor' | 'saving';
 
 export function RecEntryScreen({
   onDone,
@@ -915,7 +995,7 @@ export function RecEntryScreen({
   // Persist a draft so a mid-quit user can resume from the same step on
   // cold-restart. Phase+state captured here is what RecEntryScreen will boot
   // back into when readIntakeDraft fires next.
-  function persistDraft(nextPhase: 'intake_genres' | 'intake_avoid' | 'intake_taste' | 'intake_anchor', state: IntakeState) {
+  function persistDraft(nextPhase: 'intake_genres' | 'intake_avoid' | 'intake_outcome' | 'intake_taste' | 'intake_anchor', state: IntakeState) {
     const uid = userIdRef.current;
     if (!uid) return;
     writeIntakeDraft(uid, {
@@ -963,12 +1043,28 @@ export function RecEntryScreen({
   function handleAvoidContinue(avoid: string[]) {
     const next = { ...intake, avoidGenres: avoid };
     setIntake(next);
+    persistDraft('intake_outcome', next);
+    goTo('intake_outcome');
+  }
+
+  // UX-3C: persists q_outcome into the same tasteAnswers map the existing
+  // taste questions write into, so saveQuickIntake's diagnosis_answers
+  // payload picks it up unchanged. `null` means user tapped "Skip this".
+  function handleOutcomeContinue(answer: string | null) {
+    const nextAnswers = answer != null
+      ? { ...intake.tasteAnswers, q_outcome: answer }
+      : intake.tasteAnswers;
+    const next = { ...intake, tasteAnswers: nextAnswers };
+    setIntake(next);
     persistDraft('intake_taste', next);
     goTo('intake_taste');
   }
 
   function handleTasteComplete(tasteAnswers: Record<string, string>) {
-    const next = { ...intake, tasteAnswers };
+    // Merge — IntakeTaste only holds the 3 taste-question keys in its local
+    // state; replacing would clobber q_outcome (UX-3C) written by the
+    // preceding intake_outcome step.
+    const next = { ...intake, tasteAnswers: { ...intake.tasteAnswers, ...tasteAnswers } };
     setIntake(next);
     persistDraft('intake_anchor', next);
     goTo('intake_anchor');
@@ -1033,6 +1129,12 @@ export function RecEntryScreen({
             intake={intake}
             onContinue={handleAvoidContinue}
             onSkip={() => handleSkipIntake('avoid')}
+          />
+        )}
+        {phase === 'intake_outcome' && (
+          <IntakeOutcome
+            onContinue={handleOutcomeContinue}
+            onSkip={() => handleSkipIntake('outcome')}
           />
         )}
         {phase === 'intake_taste' && (

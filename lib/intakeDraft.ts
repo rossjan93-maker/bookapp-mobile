@@ -20,7 +20,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const KEY_PREFIX = 'readstack_intake_draft_v1_';
 
-export type IntakePhase = 'intake_genres' | 'intake_avoid' | 'intake_taste' | 'intake_anchor';
+export type IntakePhase = 'intake_genres' | 'intake_avoid' | 'intake_outcome' | 'intake_taste' | 'intake_anchor';
 
 export type IntakeDraft = {
   phase:        IntakePhase;
@@ -44,7 +44,7 @@ export async function readIntakeDraft(userId: string): Promise<IntakeDraft | nul
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<IntakeDraft>;
     if (
-      (parsed.phase === 'intake_genres' || parsed.phase === 'intake_avoid' || parsed.phase === 'intake_taste' || parsed.phase === 'intake_anchor') &&
+      (parsed.phase === 'intake_genres' || parsed.phase === 'intake_avoid' || parsed.phase === 'intake_outcome' || parsed.phase === 'intake_taste' || parsed.phase === 'intake_anchor') &&
       Array.isArray(parsed.likedGenres) &&
       typeof parsed.tasteAnswers === 'object'
     ) {
