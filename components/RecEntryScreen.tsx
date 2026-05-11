@@ -171,12 +171,20 @@ const TASTE_QS: TasteQ[] = [
     optionB: { key: 'ideas_over_pacing',     headline: "I'll go slow",          sub: "If the substance is there, I'm patient", icon: 'telescope-outline' },
     optionC: { key: 'pacing_flexible',       headline: 'Depends what I need',   sub: 'Mood-driven — I read both',             icon: 'options-outline' },
   },
+  // UX-3D: replaced q_style with q_tone — tone is a more common source of
+  // mismatch for new users than literary/commercial register. Answer keys
+  // dark_tone / light_tone are pre-existing in lib/tasteProfile.ts
+  // ANSWER_BOOSTS. tone_flexible is intentionally NOT in ANSWER_BOOSTS —
+  // applyDiagnosisBoosts treats unregistered keys as no-ops via optional
+  // chaining (`ANSWER_BOOSTS[answer]?.()`), so storing it gives us a
+  // truthful "user answered, no directional prior" record without
+  // requiring a recommender change.
   {
-    id:     'q_style',
-    prompt: 'Where do you lean?',
-    optionA: { key: 'literary_leaning',   headline: 'Toward prose & craft',       sub: 'Writing quality matters a lot to me', icon: 'library-outline' },
-    optionB: { key: 'commercial_leaning', headline: 'Toward pure readability',    sub: 'I want momentum, not difficulty',     icon: 'people-outline' },
-    optionC: { key: 'style_flexible',     headline: 'Comfortable with both',      sub: 'Great writing in any register works', icon: 'layers-outline' },
+    id:     'q_tone',
+    prompt: 'Heavier or lighter, by default?',
+    optionA: { key: 'dark_tone',     headline: 'I\u2019m open to darker themes', sub: 'Heavy, intense, morally complex is fine', icon: 'moon-outline' },
+    optionB: { key: 'light_tone',    headline: 'Keep it lighter',                  sub: 'Cosier, warmer, comforting reads',          icon: 'sunny-outline' },
+    optionC: { key: 'tone_flexible', headline: 'Depends on the book',              sub: 'I move between heavy and light',            icon: 'layers-outline' },
   },
 ];
 

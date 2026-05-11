@@ -1,0 +1,102 @@
+Task type:
+Small implementation.
+
+Goal:
+Improve the non-import intake by replacing the existing q_style question with a more useful tone preference question.
+
+User problem:
+The current literary/commercial style question is less directly useful than asking whether the reader wants heavier or lighter tone. Tone is a common source of mismatch, especially for new users with little reading history.
+
+Product rule:
+The intake should ask questions users can answer naturally and that map cleanly into existing tasteProfile signals.
+
+Allowed files:
+- components/RecEntryScreen.tsx
+- replit.md
+
+File budget:
+Maximum 2 files. If this requires more than 2 files, stop and explain.
+
+Forbidden files/systems:
+- lib/intakeDraft.ts unless a hard compatibility issue is found
+- TasteReadout
+- recommender scoring
+- recommender ranking
+- recommender retrieval
+- recommendation persistence
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+- HomeShortlist
+- RecCard
+- RecommendationsFeed
+
+Hard constraints:
+- Do not add a new phase.
+- Do not change the number of screens.
+- Do not change TasteReadout in this batch.
+- Do not change recommender behavior.
+- Do not add new DB fields.
+- Do not add migrations.
+- Preserve UX-3A avoid genres.
+- Preserve UX-3C q_outcome behavior.
+- Preserve q_what_grips and q_pacing behavior.
+- Replace only q_style if safe.
+
+Implementation requirements:
+1. Confirm dark_tone and light_tone are already supported by applyDiagnosisBoosts / ANSWER_BOOSTS before editing.
+2. Replace q_style with a q_tone question.
+3. Suggested copy:
+   Question: “Heavier or lighter, by default?”
+   Options:
+   - “I’m open to darker themes” → dark_tone
+   - “Keep it lighter” → light_tone
+   - “Depends on the book” → tone_flexible or no-op equivalent if supported
+4. If tone_flexible is not supported, either:
+   - use an already-supported neutral/flexible answer key, or
+   - store tone_flexible as a harmless diagnosis answer that applyDiagnosisBoosts ignores.
+   Explain which you choose.
+5. Keep auto-advance behavior consistent with existing taste questions.
+6. Preserve diagnosis_answers shape and save behavior.
+7. Make sure q_outcome is still preserved after completing taste questions.
+
+Acceptance criteria:
+1. Existing q_style question is replaced with q_tone.
+2. q_tone persists into diagnosis_answers.
+3. q_outcome still persists through the full flow.
+4. q_what_grips and q_pacing still persist.
+5. No new phase or screen added.
+6. No TasteReadout or recommender changes.
+7. Typecheck remains at baseline with zero new errors.
+8. Diff scope confirms no forbidden systems were touched.
+
+Validation required:
+- applyDiagnosisBoosts compatibility confirmation for selected answer keys.
+- Static review of TASTE_QS before/after.
+- Static review of diagnosis_answers payload after full flow.
+- Confirmation handleTasteComplete still merges and does not clobber q_outcome.
+- Typecheck delta.
+- Diff scope report.
+- Workflow status, noting if the known Metro FallbackWatcher race appears.
+
+Stop conditions:
+- If dark_tone/light_tone are not supported, stop and report.
+- If replacing q_style would break draft compatibility, stop and report.
+- If this requires more than the 2 allowed files, stop and explain.
+
+Return format:
+- Changed files
+- Implementation summary
+- Before/after taste question list
+- Data write confirmation
+- q_outcome preservation confirmation
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Any deviations from prompt
