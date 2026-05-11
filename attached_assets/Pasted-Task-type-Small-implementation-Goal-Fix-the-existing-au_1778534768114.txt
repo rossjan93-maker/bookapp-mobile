@@ -1,0 +1,103 @@
+Task type:
+Small implementation.
+
+Goal:
+Fix the existing author-anchor overclaim risk before adding intake author chips.
+
+User problem:
+Audit found that reader_preferences.favorite_authors already merges into tasteProfile.liked_authors. RecCard author-anchor copy can then say “an author you’ve rated highly before” even when the author was only self-reported in Edit Preferences.
+
+Product rule:
+Author copy must not imply rated/read history unless that history is directly supported.
+
+Allowed files:
+- components/RecCard.tsx
+- lib/tasteProfile.ts only if strictly needed for provenance
+- replit.md
+
+File budget:
+Maximum 3 files. If this requires more than 3 files, stop and explain.
+
+Forbidden files/systems:
+- recommender scoring
+- recommender ranking
+- recommender retrieval
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+- intake/onboarding
+- TasteReadout
+- HomeShortlist
+- RecommendationsFeed
+
+Hard constraints:
+- Do not add author chips.
+- Do not change favorite_authors write behavior.
+- Do not change recommendation retrieval or ranking.
+- Do not change tasteProfile.liked_authors behavior unless unavoidable and explained first.
+- Do not add schema/migrations.
+- This is trust/copy hardening only.
+
+Implementation requirement:
+First inspect RecCard author-anchor logic and determine the smallest safe fix.
+
+Preferred safe fix:
+- If the code cannot reliably distinguish rated authors from stated authors at the RecCard copy point, remove/replace phrases like:
+  - “rated highly before”
+  - “already in the small set of authors you’ve rated highly”
+  - any claim that implies rating/read history
+- Replace with neutral wording that is true for both rated and stated author signals.
+
+Safe copy examples:
+- “From {author}, already part of your author signal.”
+- “A pick from {author}, one of the authors in your taste profile.”
+- “From {author}, which gives us a useful author signal to work from.”
+
+Only use stronger rated-history copy if there is a reliable local evidence check, such as an actual shelf/rating count available in the card data.
+
+Acceptance criteria:
+1. RecCard no longer says or implies “rated highly before” for authors that could be self-reported only.
+2. Existing author-anchor explanations still render naturally.
+3. No recommender/scoring/ranking/retrieval behavior changes.
+4. No schema/migration changes.
+5. No intake/TasteReadout changes.
+6. Typecheck remains at baseline with zero new errors.
+7. Diff scope confirms no forbidden systems were touched.
+
+Validation required:
+- Static review of current author-anchor copy path.
+- Before/after examples for:
+  - rated author
+  - self-reported favorite_author
+  - no author evidence
+- Banned phrase scan for:
+  - “rated highly before”
+  - “rated highly”
+  - “you’ve rated”
+  - “small set of authors”
+  unless a local rated-history evidence gate is implemented.
+- Typecheck delta.
+- Diff scope report.
+- Workflow status, noting if the known Metro FallbackWatcher race appears.
+
+Stop conditions:
+- If safe copy requires provenance not currently available, do the neutral-copy fix instead of adding architecture.
+- If provenance requires schema/migration or recommender changes, stop and report.
+- If this requires touching more than 3 files, stop and explain.
+
+Return format:
+- Changed files
+- Implementation summary
+- Before/after author-copy examples
+- Trust-risk resolution
+- Behavior preservation check
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Any deviations from prompt

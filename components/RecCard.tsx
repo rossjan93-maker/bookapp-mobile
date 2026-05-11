@@ -546,15 +546,35 @@ const EXPLANATION_LANE_LABELS: Record<DeterministicLane, string> = {
 //      dense-import lane structure.
 //   D. ≥1 subject overlap between `book.subjects` and `liked_subjects` —
 //      thematic recurrence, weakest of the four but still user-grounded.
-// Author-tier copy is intentionally evidence-conservative: `liked_authors`
-// includes any author with a single 4★+ finished book (see
-// `buildLikedAnchors` in `lib/tasteProfile.ts`), so wording must read true
-// for both single-book and repeated-author matches. Phrasings like
-// "returned to" or "consistently reward" would overclaim on single matches.
-const ANCHOR_AUTHOR_POOL = [
-  (a: string) => `From ${a} — an author you've rated highly before.`,
-  (a: string) => `Another from ${a}, whose work has landed well with you.`,
-  (a: string) => `${a} — already in the small set of authors you've rated highly.`,
+// UX-3F.1 trust hardening: `tasteProfile.liked_authors` is **mixed
+// provenance** — it merges (a) authors with at least one 4★+ finished
+// book (rated provenance, from `buildLikedAnchors`) AND (b) authors the
+// user typed into Edit Preferences `favorite_authors` (stated provenance,
+// merged at `lib/tasteProfile.ts:711-726`). The two are indistinguishable
+// downstream — once merged, no flag survives.
+//
+// Therefore: copy that fires off `liked_authors` membership ALONE must be
+// true for both. Anything that implies rating/reading history ("rated
+// highly before", "small set of authors you've rated highly", "landed
+// well with you") would silently overclaim for any user who filled in
+// Edit Preferences but never rated a book by that author.
+//
+// `det_lanes.repeated_liked_authors` is built strictly from `authorFreq`
+// over `finishedRatedRows` (see `lib/tasteProfile.ts:467` — authors with
+// ≥2 loved 4★+ books). The `favorite_authors` merge does NOT flow into
+// it. That gives us a reliable rated-history evidence gate at the card
+// level: when `isRepeatedLiked` is true, stronger rating-claim copy is
+// honest. When only the looser `isLikedAuthor` is true, copy must stay
+// neutral about provenance.
+const ANCHOR_AUTHOR_POOL_RATED = [
+  (a: string) => `Another from ${a}, whose books you've returned to before.`,
+  (a: string) => `${a} again — already a recurring author across your finished reads.`,
+  (a: string) => `From ${a}, an author you've come back to in your library.`,
+] as const;
+const ANCHOR_AUTHOR_POOL_NEUTRAL = [
+  (a: string) => `From ${a}, already part of your author signal.`,
+  (a: string) => `A pick from ${a}, one of the authors in your taste profile.`,
+  (a: string) => `From ${a}, which gives us a useful author signal to work from.`,
 ] as const;
 
 const ANCHOR_DOMINANT_LANE_POOL = [
@@ -623,8 +643,16 @@ function buildAnchoredExplanation(
     const isRepeatedLiked = (tasteProfile.det_lanes?.repeated_liked_authors ?? []).some(
       a => _normAnchor(a) === normAuthor,
     );
-    if (isLikedAuthor || isRepeatedLiked) {
-      return _pickVariant(ANCHOR_AUTHOR_POOL, bookId, 'anchor_author')(author);
+    if (isRepeatedLiked) {
+      // Reliable rated provenance: ≥2 4★+ finished books by this author.
+      // `repeated_liked_authors` is provably free of stated-author leakage.
+      return _pickVariant(ANCHOR_AUTHOR_POOL_RATED, bookId, 'anchor_author_rated')(author);
+    }
+    if (isLikedAuthor) {
+      // Mixed provenance — could be a single 4★+ rated author OR a
+      // self-reported Edit Preferences favorite. Use neutral copy that's
+      // true for both. (UX-3F.1)
+      return _pickVariant(ANCHOR_AUTHOR_POOL_NEUTRAL, bookId, 'anchor_author_neutral')(author);
     }
   }
 
