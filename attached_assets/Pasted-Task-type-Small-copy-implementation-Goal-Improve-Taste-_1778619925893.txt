@@ -1,0 +1,112 @@
+Task type:
+Small copy implementation.
+
+Goal:
+Improve Taste Readout synthesis copy so the screen feels like Readstack has formed a thoughtful starting model from the user's answers, rather than simply echoing chips.
+
+User problem:
+The current Taste Readout summary is too flat, e.g.:
+“Early signal: you lean toward sci-fi & fantasy.”
+After a richer intake flow, that feels underwhelming. We need a more satisfying, still-honest synthesis sentence.
+
+Product rule:
+For intake-only/thin users, this is a stated-preference synthesis, not a claim of proven reading-history insight.
+
+Allowed files:
+- lib/tasteReadoutCopy.ts
+- replit.md
+
+File budget:
+Maximum 2 files. If this requires more than 2 files, stop and explain.
+
+Forbidden files/systems:
+- components/TasteReadout.tsx
+- app/taste-readout.tsx
+- RecEntryScreen
+- recommender scoring/ranking/retrieval
+- recSession
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+
+Hard constraints:
+- Do not implement animation yet.
+- Do not add Band 2 teaser/book preview yet.
+- Do not change chip rendering or chip order yet.
+- Do not change intake behavior.
+- Do not change TasteReadout component layout.
+- Copy logic only.
+
+Implementation direction:
+Extend buildSummary() or the smallest equivalent copy layer so intake-only users with richer stated preferences get a more synthesized summary.
+
+The synthesis should combine, where available:
+- liked genres
+- q_outcome / reading purpose
+- q_tone
+- relevant trait signal if already represented
+- avoid genres
+
+Use this target tone and scenario as the anchor:
+
+Scenario:
+- liked: sci-fi & fantasy, thriller & mystery
+- reading for: depth
+- tone: darker
+- preferred: fast pacing
+- avoid: business
+
+Target-style output:
+“You’re pointing Readstack toward darker speculative stories and tight thrillers that move quickly but still reward attention. We’ll steer away from business-heavy picks.”
+
+Do not hardcode that exact sentence only for this scenario. Build a small, composable synthesis system that can generate similarly useful summaries across common intake combinations.
+
+Copy principles:
+- Use “You’re pointing Readstack toward…” / “Based on what you told us…” / “Your starting read leans…” for intake-only users.
+- Do not imply reading history.
+- Do not say “you keep reaching for,” “your ratings reward,” “your library shows,” etc.
+- Prefer one strong sentence plus an optional second sentence for avoid-genres when useful.
+- Keep it readable, not robotic.
+- Avoid overstuffing every available chip into the summary.
+
+Acceptance criteria:
+1. Intake-only users with richer stated preferences get a more synthesized summary than simple genre echo.
+2. The example scenario produces output close in spirit to:
+   “You’re pointing Readstack toward darker speculative stories and tight thrillers that move quickly but still reward attention. We’ll steer away from business-heavy picks.”
+3. Thin/no-signal users still get the existing thin fallback.
+4. History-rich users’ existing derived-history summaries remain safe and are not weakened.
+5. No UI/layout/data-path changes.
+6. Typecheck remains at baseline with zero new errors.
+7. Diff scope confirms no forbidden systems touched.
+
+Validation required:
+- Before/after examples for:
+  - the target scenario above
+  - a lighter comfort-fiction scenario
+  - a nonfiction-depth scenario
+  - a minimal one-genre scenario
+  - thin/no-signal fallback
+- Banned-language check for history claims in intake-only summaries.
+- Typecheck delta.
+- Workflow status.
+
+Stop conditions:
+- If the current buildSummary architecture cannot support this cleanly without touching UI/data-path files, stop and propose the smallest alternative.
+- If summary quality becomes brittle across common combinations, stop and report examples rather than shipping weak logic.
+
+Return format:
+- Changed files
+- Implementation summary
+- Before/after summary examples
+- Copy-generation approach
+- Safety / no-overclaim check
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Any deviations from prompt
