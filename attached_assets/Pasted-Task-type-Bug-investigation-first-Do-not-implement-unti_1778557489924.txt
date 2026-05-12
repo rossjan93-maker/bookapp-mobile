@@ -1,0 +1,103 @@
+Task type:
+Bug investigation first. Do not implement until the second root cause is clear.
+
+Goal:
+Fix the remaining genre tab persistence bug in onboarding intake.
+
+User retest result:
+After the previous fix, the bug still reproduces:
+1. Select genres in Fiction.
+2. Switch to Nonfiction and select genres.
+3. Switch to Both.
+4. Fiction selections drop off / no longer appear selected.
+
+This means the prior fix was incomplete.
+
+Important:
+Do not assume handleSplitChange was the only issue. Investigate why Fiction selections are still lost or not rendered when switching to Both.
+
+Allowed files:
+- components/RecEntryScreen.tsx
+- replit.md only if a fix ships
+
+File budget:
+Maximum 2 files. If more are needed, stop and explain.
+
+Forbidden:
+- intakeDraft unless proven necessary
+- TasteReadout
+- recommender
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+
+Investigation requirements:
+1. Inspect getGenres('fiction'), getGenres('nonfiction'), and getGenres('both').
+2. Confirm whether the Both list uses the exact same labels as Fiction/Nonfiction.
+   - Example: “Sci-fi & fantasy” vs “Sci-Fi” or any alias mismatch.
+3. Confirm whether IntakeGenres remounts when switching split.
+4. Confirm whether local liked state is preserved across split changes.
+5. Confirm whether selected-count summary and chip active state are reading from the same liked array.
+6. Add temporary logging if needed, then remove it before completion:
+   - before split
+   - after split
+   - liked array
+   - visible genre labels
+   - active chip labels
+
+Likely places to inspect:
+- handleSplitChange
+- getGenres(split)
+- selected-count summary
+- chip active={liked.includes(g.label)}
+- any key prop or conditional render that may remount IntakeGenres
+- any logic that maps or normalizes genre labels
+
+Expected behavior:
+- Fiction selection should remain in liked array after switching to Nonfiction.
+- Nonfiction selection should remain in liked array after switching to Both.
+- Both tab should render both selections active.
+- Returning to Fiction should show Fiction selections active.
+- Returning to Nonfiction should show Nonfiction selections active.
+- Continue should save the full liked array.
+
+Stop conditions:
+- If the Both list uses different labels from Fiction/Nonfiction, report the mismatch before fixing.
+- If local state is preserved but UI active state fails due to label mismatch, fix label normalization/rendering only.
+- If local state is actually being reset, identify the reset/remount source before fixing.
+- Do not patch speculatively.
+
+Acceptance criteria:
+1. User can select Fiction + Nonfiction genres and see all selected in Both.
+2. Switching tabs does not drop selected genres.
+3. Selected-count summary remains accurate.
+4. Continue saves the full selected array.
+5. Avoid-genres step excludes the full selected array.
+6. Typecheck remains at baseline.
+7. No forbidden systems touched.
+
+Validation required:
+Return an explicit state trace:
+- Select Fiction A → liked = [A]
+- Switch Nonfiction → liked still [A]
+- Select Nonfiction B → liked = [A, B]
+- Switch Both → liked = [A, B], visible active chips = [A, B]
+- Switch Fiction → liked = [A, B], visible active chips = [A]
+- Switch Nonfiction → liked = [A, B], visible active chips = [B]
+
+Return format:
+- Root cause
+- Changed files
+- Implementation summary
+- State trace
+- Save/avoid behavior confirmation
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Any deviations
