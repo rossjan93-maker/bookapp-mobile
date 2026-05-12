@@ -1,0 +1,94 @@
+Task type:
+Audit extension / product-experience planning only.
+
+Goal:
+Extend the Taste Readout audit to design the “wow” moment more fully before implementation.
+
+User direction:
+The current “Here’s what we heard” screen still feels too static and lackluster. We want it to feel more like Readstack is actively translating the user's answers into a reading model — a sleek, premium reasoning/computation experience — without faking intelligence or overclaiming.
+
+Do not implement code yet.
+
+Context from the prior audit:
+The audit proposed:
+- Band 1: headline + summary
+- Band 2: one book + rationale as “Here’s the kind of book this points at”
+- Band 3: demoted chips under “What we’re working from”
+
+Before implementation, we need to evaluate whether that is the right emotional payoff, or whether the screen should instead center on an animated taste-model reveal.
+
+Please extend the audit with a dedicated Taste Readout experience section.
+
+Evaluate and compare these three approaches:
+
+Option A — Taste model reveal
+- Animated/staged sequence that visibly turns the user's intake into a starting taste model.
+- Example stages could include:
+  - “Reading your signals…”
+  - “Balancing pace, tone, and depth…”
+  - “Building your starting reading lane…”
+- Then reveal a more satisfying synthesis summary.
+- No specific book shown on this screen.
+
+Option B — First book reveal
+- The prior audit proposal:
+  - one large cover
+  - one rationale sentence
+  - “Here’s the kind of book this points at”
+- Then CTA to full picks.
+
+Option C — Hybrid
+- Animated/staged taste-model reveal first.
+- Then either:
+  - a soft teaser of the kinds of books this points toward, without committing to one exact book, or
+  - a smaller preview of one example pick only when truly personalized recSession data is available.
+- Then CTA to full picks.
+
+For each option, evaluate:
+1. Emotional payoff
+2. Trust risk
+3. Implementation complexity
+4. Dependence on recSession / recommendation availability
+5. Risk of feeling gimmicky or fake
+6. Whether it best supports Readstack’s product thesis:
+   “understand your taste → help you choose with more confidence”
+
+Also propose:
+
+1. A concrete animated/staged sequence for the chosen recommendation
+- exact stage copy
+- timing guidance
+- visual treatment ideas
+- what real intake signals are visualized
+- how to avoid fake “AI theater”
+
+2. A stronger final synthesis example for this scenario:
+- liked: sci-fi & fantasy, thriller & mystery
+- reading for: depth
+- tone: darker
+- preferred: fast pacing
+- avoid: business
+
+We want something substantially more satisfying than:
+“Early signal: you lean toward sci-fi & fantasy.”
+
+3. Recommended implementation sequencing
+Break the chosen approach into small batches, likely:
+- synthesis copy improvement
+- animated/staged reveal shell
+- any optional Band 2 teaser/book preview, if recommended
+
+For each batch:
+- files likely touched
+- file budget
+- risk
+- stop conditions
+- whether copy-only, UI-only, or behavior-changing
+
+Constraints:
+- Do not use LLM.
+- Do not add fake certainty.
+- Do not imply reading history from intake-only answers.
+- Any animation must visualize real captured signals, not invented backend work.
+- If a book preview relies on generic seeded picks, call out the trust risk clearly.
+- Return audit only; no code changes.
