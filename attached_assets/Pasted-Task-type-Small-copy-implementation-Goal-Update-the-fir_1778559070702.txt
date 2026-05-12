@@ -1,0 +1,116 @@
+Task type:
+Small copy implementation.
+
+Goal:
+Update the first-session onboarding copy so Readstack introduces itself more clearly as a next-read decision system, not primarily as a tracker.
+
+User problem:
+Live testing showed the opening slides and final setup screen are too generic/tracker-oriented. The value proposition should better communicate:
+- choosing your next read with confidence
+- starting with taste calibration
+- getting sharper through saves, skips, and ratings
+- transparent reasoning behind recommendations
+
+Allowed files:
+- app/onboarding.tsx
+- app/onboarding-import.tsx
+
+File budget:
+Maximum 2 files. If this requires more than 2 files, stop and explain.
+
+Forbidden files/systems:
+- onboarding routing/handlers
+- RecEntryScreen
+- TasteReadout
+- recommender scoring/ranking/retrieval
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+
+Hard constraints:
+- Copy-only plus minor existing-style-safe line-break/layout adjustments if needed.
+- Do not change onboarding flow logic.
+- Do not change CTA destinations.
+- Do not add new screens or components.
+- Do not broaden into TasteReadout copy yet.
+- If small-screen wrapping becomes awkward, ship the copy and report the layout risk rather than redesigning the screen.
+
+Implement this exact copy:
+
+Onboarding slide 1:
+Title:
+“Choose your next read with confidence.”
+
+Body:
+“Readstack turns your taste into better first picks, so you spend less time scrolling and more time reading.”
+
+Onboarding slide 2:
+Title:
+“It starts with your taste. It sharpens with proof.”
+
+Body:
+“A quick calibration builds your starting profile. Every save, skip, and rating makes it smarter.”
+
+Onboarding slide 3:
+Title:
+“See the why. Shape what comes next.”
+
+Body:
+“Every recommendation comes with a reason. Every choice helps Readstack learn what fits.”
+
+Final setup screen:
+Headline:
+“Choose your starting point.”
+
+Subcopy:
+“Import your reading history for the strongest start, or take a quick taste check to build your first picks.”
+
+Primary CTA label:
+“Import my Goodreads library”
+
+Primary CTA subline:
+“Best signal. We’ll learn from your reading history.”
+
+Secondary CTA label:
+“Take the quick taste check”
+
+Secondary CTA subline:
+“Five short steps to build your starting profile.”
+
+Tertiary CTA label:
+“Skip — let me browse”
+
+Acceptance criteria:
+1. Copy matches the text above.
+2. Existing onboarding slide CTA pattern remains unchanged.
+3. Existing final setup CTA routing remains unchanged.
+4. No logic or handler changes.
+5. Typecheck remains at baseline with zero new errors.
+6. Diff scope confirms only the two allowed files were touched.
+
+Validation required:
+- Before/after copy table.
+- Confirmation no routing/handler changes.
+- Typecheck delta.
+- Workflow status.
+- Any small-screen wrapping risk noted.
+
+Stop conditions:
+- If the copy cannot fit reasonably without layout redesign, stop and report.
+- If implementing this requires touching more than 2 files, stop.
+
+Return format:
+- Changed files
+- Implementation summary
+- Before/after copy
+- Handler/routing preservation check
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Any deviations from prompt

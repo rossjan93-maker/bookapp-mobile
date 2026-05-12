@@ -63,20 +63,20 @@ const SLIDES: SlideData[] = [
   {
     id:     'what',
     visual: 'stack',
-    title:  'Your reading life,\norganised',
-    body:   "Track what you're reading, what you've finished, and what you want to read next \u2014 all in one place.",
+    title:  'Choose your next read\nwith confidence.',
+    body:   'Readstack turns your taste into better first picks, so you spend less time scrolling and more time reading.',
   },
   {
     id:     'how',
     visual: 'bulb',
-    title:  'Recommendations\nthat actually fit you',
-    body:   'readstack learns from the books you log, not what you say you like. The more you track, the sharper your picks.',
+    title:  'It starts with your taste.\nIt sharpens with proof.',
+    body:   'A quick calibration builds your starting profile. Every save, skip, and rating makes it smarter.',
   },
   {
     id:     'start',
     visual: 'download',
-    title:  "Start with what\nyou\u2019ve already read",
-    body:   'Import your Goodreads library in one tap, or add a few books by hand. The more history you bring, the better your picks from day one.',
+    title:  'See the why.\nShape what comes next.',
+    body:   'Every recommendation comes with a reason. Every choice helps Readstack learn what fits.',
   },
 ];
 

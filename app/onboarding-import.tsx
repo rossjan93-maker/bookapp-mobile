@@ -168,7 +168,7 @@ export default function OnboardingImportPage() {
           letterSpacing: -0.5,
           marginBottom:  10,
         }}>
-          One import.{'\n'}Instant recommendations.
+          Choose your starting point.
         </Text>
 
         {/* Sub-copy — concrete benefit, addresses cold-start fear */}
@@ -178,7 +178,7 @@ export default function OnboardingImportPage() {
           lineHeight:   22,
           marginBottom: 24,
         }}>
-          Your ratings and shelves tell us what you love and where your taste sits. Import them and recommendations are personal from the first session.
+          Import your reading history for the strongest start, or take a quick taste check to build your first picks.
         </Text>
 
         {/* ── Primary CTA: Import ─────────────────────────────────────────── */}
@@ -215,10 +215,10 @@ export default function OnboardingImportPage() {
               lineHeight:   20,
               marginBottom: 2,
             }}>
-              Import my library
+              Import my Goodreads library
             </Text>
             <Text style={{ fontSize: 11.5, color: '#b8afa6' }}>
-              Goodreads · StoryGraph · others
+              Best signal. We'll learn from your reading history.
             </Text>
           </View>
 
@@ -261,10 +261,10 @@ export default function OnboardingImportPage() {
               lineHeight:   19,
               marginBottom: 1,
             }}>
-              Pick genres instead
+              Take the quick taste check
             </Text>
             <Text style={{ fontSize: 11.5, color: MUT }}>
-              No file needed — takes about 30 seconds
+              Five short steps to build your starting profile.
             </Text>
           </View>
 
@@ -279,10 +279,7 @@ export default function OnboardingImportPage() {
           style={{ alignItems: 'center' }}
         >
           <Text style={{ fontSize: 13, color: MUT, fontWeight: '500' }}>
-            Skip for now
-          </Text>
-          <Text style={{ fontSize: 11, color: MUT, opacity: 0.6, marginTop: 3 }}>
-            You can import any time from your profile
+            Skip — let me browse
           </Text>
         </TouchableOpacity>
 
