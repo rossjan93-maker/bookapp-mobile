@@ -1,0 +1,112 @@
+Task type:
+Bug investigation first, then minimal implementation if root cause is clear.
+
+Goal:
+Fix genre selection persistence across the Fiction / Nonfiction / Both segmented control during onboarding intake.
+
+User-reported bug:
+Genre multi-select now looks clearer, but selections still fail to persist when toggling between Fiction, Nonfiction, and Both. The app behaves as if switching tabs causes selected genres to disappear or get filtered out permanently.
+
+Expected behavior:
+The segmented control should change which genre chips are visible, not erase selected genres.
+
+Correct behavior:
+- User selects Sci-fi & fantasy under Fiction.
+- User switches to Nonfiction and selects History.
+- User switches to Both.
+- Both Sci-fi & fantasy and History should remain selected.
+- User switches back to Fiction.
+- Sci-fi & fantasy should still be selected.
+- User switches back to Nonfiction.
+- History should still be selected.
+- The selected-count summary should reflect the full selected set, not just the currently visible tab, unless intentionally labelled otherwise.
+- Continuing should save the full selected set into reader_preferences.favorite_genres.
+- Avoid-genres step should exclude the full likedGenres selection across all tabs.
+
+Allowed files:
+- components/RecEntryScreen.tsx
+- replit.md
+
+File budget:
+Maximum 2 files. If this requires more than 2 files, stop and explain.
+
+Forbidden files/systems:
+- lib/intakeDraft.ts unless root cause proves draft involvement
+- TasteReadout
+- recommender scoring
+- recommender ranking
+- recommender retrieval
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+- HomeShortlist
+- RecCard
+- RecommendationsFeed
+
+Hard constraints:
+- Do not redesign intake.
+- Do not change saveQuickIntake behavior except if needed to preserve full likedGenres.
+- Do not change avoid-genres behavior except to ensure it reads the full likedGenres set.
+- Do not change database schema.
+- Do not change recommender behavior.
+
+Investigation focus:
+Inspect the fictionSplit / handleSplitChange behavior.
+Specifically check whether changing Fiction / Nonfiction / Both filters liked genres with code like:
+- setLiked(prev => prev.filter(...))
+- dropping selections not currently visible
+- resetting liked to []
+- replacing liked with only genres in the new tab
+
+Likely root cause:
+The split-change handler may be filtering selected genres to only those available in the new visible tab. That behavior is wrong for the new product intent. It should preserve the full liked array and only filter the rendered chip list.
+
+Implementation requirement:
+If root cause is confirmed:
+1. Preserve the full selected liked genre array across tab switches.
+2. Render active state based on whether each visible chip exists in the full selected array.
+3. Keep selected-count summary based on the full selected array.
+4. Continue should write the full selected array.
+5. Avoid-genres filtering should exclude the full selected array.
+6. If there is a legitimate reason to remove selections when switching from Both to Fiction/Nonfiction, stop and explain instead of implementing.
+
+Acceptance criteria:
+1. Selections persist across Fiction / Nonfiction / Both.
+2. Both-mode displays selected genres from both categories.
+3. Returning to a category shows previous selections still active.
+4. Selected-count summary reflects the full selection set.
+5. Continue saves the full selected array.
+6. Avoid-genres step excludes all selected liked genres.
+7. Typecheck remains at baseline with zero new errors.
+8. Diff scope confirms no forbidden systems touched.
+
+Validation required:
+- Static review of before/after split-change behavior.
+- State trace:
+  select Fiction A → switch Nonfiction → select Nonfiction B → switch Both → selected array contains A and B.
+- Confirm save payload uses full likedGenres.
+- Confirm avoid screen excludes both A and B.
+- Typecheck delta.
+- Workflow status.
+
+Stop conditions:
+- If the root cause is not in fictionSplit/handleSplitChange, return diagnosis before changing code.
+- If this requires state architecture changes beyond RecEntryScreen, stop and explain.
+- If this requires touching more than 2 files, stop.
+
+Return format:
+- Root cause
+- Changed files
+- Implementation summary
+- Before/after state trace
+- Save/avoid behavior confirmation
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Any deviations from prompt

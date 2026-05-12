@@ -469,9 +469,16 @@ function IntakeGenres({
   const genres = getGenres(split);
 
   function handleSplitChange(s: IntakeState['fictionSplit']) {
+    // Tab switching changes which chips are *visible* (the rendered pool
+    // comes from getGenres(split) below) but must NOT erase selections
+    // the user already made in the other tab. Previously this handler
+    // filtered `liked` down to labels present in the new tab, which made
+    // the segmented control silently drop cross-tab picks (e.g. select a
+    // Fiction genre, switch to Nonfiction → Fiction pick gone). The full
+    // `liked` array is the source of truth; chips read active state via
+    // `liked.includes(g.label)`, so hidden selections survive untouched
+    // and reappear when the user switches back or to "Both".
     setSplit(s);
-    const labels = new Set(getGenres(s).map(g => g.label));
-    setLiked(prev => prev.filter(l => labels.has(l)));
   }
 
   const splitOpts: { key: IntakeState['fictionSplit']; label: string }[] = [
