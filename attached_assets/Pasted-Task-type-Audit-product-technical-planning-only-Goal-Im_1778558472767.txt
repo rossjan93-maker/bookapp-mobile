@@ -1,0 +1,163 @@
+Task type:
+Audit / product-technical planning only.
+
+Goal:
+Improve first-session impact across onboarding, Taste Readout, and Your Next Read filtering.
+
+User problem:
+Live testing shows the onboarding path is more functional now, but still lacks “wow.” The app asks useful questions, but the experience does not yet feel like a premium taste-calibration or decision-support system.
+
+Do not implement yet.
+
+Allowed files to inspect:
+- app/onboarding.tsx
+- app/onboarding-import.tsx
+- app/onboarding-questions.tsx
+- components/RecEntryScreen.tsx
+- app/taste-readout.tsx
+- components/TasteReadout.tsx
+- lib/tasteReadoutCopy.ts
+- components/RecommendationsFeed.tsx
+- any file that renders the “Your Next Read” filter panel
+- lib/nextReadIntent.ts
+- lib/intentMatcher.ts if relevant
+
+Forbidden:
+- Do not edit code.
+- Do not touch schema/migrations.
+- Do not touch recommender scoring/ranking/retrieval.
+- Do not add LLM/API calls.
+- Do not change auth/Sentry/native/Open Library/Google Books/metadata.
+
+Audit areas:
+
+1. Opening onboarding slides
+Evaluate whether the opening slides sell the right product promise.
+
+Current concern:
+They still feel tracker-oriented.
+
+We need more emphasis on:
+- choosing your next book with confidence
+- understanding your taste
+- Readstack as a decision system
+- starting with stated preferences, then sharpening through behavior
+- less “book tracker,” more “personal reading intelligence”
+
+Return recommended replacement copy for all slides.
+
+2. Final setup screen
+Evaluate current CTA language:
+- Import my library
+- Pick genres instead
+- Skip for now
+
+Concern:
+“Pick genres instead” undersells the improved calibration flow.
+
+Return better CTA options and recommendation.
+
+Possible directions:
+- “Calibrate my taste”
+- “Answer a few taste questions”
+- “Build my starting profile”
+- “Start with a quick taste read”
+
+3. Intake question quality
+Assess whether the current intake asks the highest-leverage questions.
+
+Current flow includes:
+- liked genres
+- avoid genres
+- reading outcome
+- tone
+- pacing / what grips you
+- anchor book
+
+Recommend:
+- which questions to keep
+- which questions to rewrite
+- whether any question is redundant
+- whether “what makes you abandon a book?” is higher leverage than one of the current questions
+- whether “safe pick vs stretch pick” belongs in onboarding or Your Next Read filters
+- whether onboarding is too long or still acceptable
+
+Do not propose more questions unless they clearly replace or improve existing ones.
+
+4. Taste Readout experience
+Evaluate how to turn “Here’s what we heard” from a static chip summary into a more impactful experience.
+
+Explore:
+- animated reasoning/loading sequence
+- staged reveal
+- “mapping your taste” visual
+- stronger synthesis sentence
+- clearer “starting model” framing
+- before/after examples using this scenario:
+  - liked: sci-fi & fantasy, thriller & mystery
+  - reading for: depth
+  - tone: darker
+  - traits: fast pacing
+  - avoid: business
+
+Constraints:
+- No fake certainty.
+- Do not imply reading history from intake-only data.
+- Do not use LLM yet.
+- Animation should visualize real captured signals.
+- Keep the experience premium, not gimmicky.
+
+5. Your Next Read filters
+Audit current filter panel.
+
+Recommend higher-leverage filters that improve decision precision without overwhelming the user.
+
+Consider:
+- safe vs surprising
+- close to my taste vs stretch me
+- lighter vs heavier
+- short vs long
+- easy to finish vs demanding
+- low emotional intensity vs high intensity
+- series vs standalone
+- fiction/nonfiction
+- avoid right now
+- mood / energy
+- reading occasion
+
+Return:
+- which filters to keep
+- which to add
+- which to remove or consolidate
+- how many should be visible by default
+- whether this should be basic chips or an advanced drawer
+- which filters can use existing data/intent logic versus requiring recommender changes
+
+6. Implementation sequencing
+Break recommendations into small batches:
+- copy-only onboarding improvements
+- final setup CTA/framing improvements
+- Taste Readout synthesis copy
+- Taste Readout animated/reveal experience
+- Your Next Read filter improvements
+
+For each batch include:
+- task type
+- files likely touched
+- file budget
+- whether implementation is copy-only, UI-only, or behavior-changing
+- risk level
+- stop conditions
+- validation required
+
+Return format:
+- diagnosis
+- recommended product direction
+- proposed new onboarding copy
+- proposed final setup copy
+- proposed improved intake question set
+- proposed Taste Readout experience
+- proposed filter improvements
+- implementation batches
+- risks/tradeoffs
+- what not to build yet
