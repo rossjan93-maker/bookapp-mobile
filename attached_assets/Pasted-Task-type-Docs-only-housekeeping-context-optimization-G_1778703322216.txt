@@ -1,0 +1,141 @@
+Task type:
+Docs-only housekeeping / context optimization.
+
+Goal:
+Trim and reorganize replit.md before P0A implementation begins, so the file remains a high-signal current operating brief rather than a growing historical log.
+
+Why now:
+We are at a natural pause after locking the revised Recommendation Architecture Blueprint. replit.md is ~16k tokens and is loaded into every turn, which creates unnecessary context cost and increases the chance that old shipped batch detail competes with current architectural priorities.
+
+Do not edit product code.
+Do not change docs outside replit.md.
+Do not alter implementation state.
+This is a one-file docs-only task.
+
+Allowed files:
+- replit.md only
+
+File budget:
+1 file.
+
+Primary objective:
+Preserve live constraints, current architecture, active roadmap, and important gotchas.
+Compress older shipped batch-by-batch history into short reference summaries.
+
+Required reorganization:
+
+1. Top-level current focus
+At the top, make the active workstream clear:
+
+“Current focus — Recommendation Architecture Refinement”
+
+Summarize:
+- revised Recommendation Architecture Spec is locked
+- Readstack now has a dual-plane strategy:
+  1. Free/core Recommendation Control Plane
+  2. Paid/premium Semantic Intelligence Plane
+- immediate implementation sequence:
+  - P0A Canonical Genre Taxonomy Integrity
+  - P0A.1 Retrieval-side taxonomy map fold-in
+  - P0B Full deck-validity/config invalidation
+  - P1 Signal/control contract + nonzero stated-pref influence
+  - P2 Retrieval responsiveness / branch planner
+  - P3 Score contributions + explanation faithfulness
+
+Include one concise sentence that:
+P0A does not yet solve tier-2+ preference responsiveness; that comes in P1/P2.
+
+2. Preserve the strategic product thesis
+Keep or add a concise architecture strategy subsection stating:
+- free Readstack must be correct, responsive, trustworthy, and not paywall basic personalization integrity
+- paid Readstack monetizes the Semantic Intelligence Plane:
+  - reader thesis
+  - book intelligence
+  - semantic retrieval
+  - bounded AI reranking
+  - “surprising but right” discovery
+  - advanced next-read decision sessions
+  - taste evolution insights
+
+Do not overexpand. This should be a short operating reminder, not a full spec.
+
+3. Compress shipped historical batches
+Reduce older shipped implementation details into concise index entries with commit/Git references if already present. Do not invent SHAs if not present.
+
+Compress at minimum:
+- V1A / V2 / V3 / V4 first-session value loop
+- UX-1A through UX-3F.1
+- FS-1 onboarding copy
+- FS-5a Taste Readout synthesis copy
+- Profile save-trust fixes:
+  - Reading Taste cache invalidation
+  - recQueue stale-deck fix
+  - Home name/reading-goal cache fixes
+- FX-1 recommendation explanation trait-copy cleanup
+
+Desired format:
+A compact “Recently shipped — summarized” section, with one-line or two-line bullets per major cluster, not per tiny sub-batch unless the sub-batch still carries an active caveat.
+
+Example shape:
+- First-session value loop V1–V4 — shipped; Taste Readout, visible learning feedback, anchored explanations, Home shortlist. Key known caveats preserved below.
+- UX Correction Sprint — shipped; thin-profile copy trust gating, MLT clarity, avoid genres intake/readout, outcome/tone intake, author-copy hardening. Author chips remain parked due to stated-vs-derived provenance concerns.
+- Recommendation explanation FX-1 — shipped; trait copy humanized, legacy cached reasons defensively rewritten.
+
+4. Preserve active known caveats only
+Keep known limitations that still matter operationally or roadmap-wise, including:
+- author chips/stated-author model remains parked until signal semantics are clean
+- Sentry telemetry remains parked
+- any accepted but unresolved device QA items that remain relevant
+- Expo/Metro FallbackWatcher known dev-environment race, if still in gotchas
+- any known first-session caveats still relevant after recent batches
+
+Remove or compress caveats that are only historical and no longer guide current work.
+
+5. Preserve important architecture/gotcha sections
+Do not accidentally drop:
+- catalog/provenance/security subsystem gotchas
+- auth/onboarding unresolved QA notes if still active
+- recommendation cache/session invariants that remain true
+- profile/cache refresh behavior if it is an ongoing invariant
+- parked Sentry status
+- any run/operate instructions
+
+6. Recommendation Architecture section
+Add or update a concise architecture-decision entry summarizing the locked blueprint, without pasting the full spec.
+
+It should include:
+- canonical taxonomy
+- typed signal provenance
+- RecRequest + BuildCause + configHash validity
+- branch-based retrieval
+- contribution-grounded ranking/explanations
+- deterministic quality gates
+- future Semantic Intelligence Plane hooks
+
+This is the new most important architectural frame in the file.
+
+7. Final size goal
+Aim for a meaningful reduction in bytes/tokens.
+Do not chase an arbitrary aggressive reduction at the cost of losing useful live constraints.
+Target: materially shorter and more scannable than the current ~16k-token state.
+
+Validation required:
+- git diff --name-only confirms replit.md only
+- summarize what was compressed
+- summarize what was preserved
+- summarize what was newly added or elevated
+- report before/after approximate line count and byte count if convenient
+- confirm no implementation/code/schema/config files changed
+
+Stop conditions:
+- If the current file structure is too tangled to safely compress without risking loss of live constraints, stop and propose a section-by-section trim plan instead of editing.
+- If you cannot determine whether a historical note is still operationally important, preserve it rather than deleting it and flag it in the report.
+
+Return format:
+- Changed files
+- What was condensed
+- What was preserved
+- What was added/elevated
+- Before/after size summary
+- Scope confirmation
+- Any notes for future cleanup
