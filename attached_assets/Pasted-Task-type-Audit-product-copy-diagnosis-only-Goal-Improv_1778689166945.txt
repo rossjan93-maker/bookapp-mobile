@@ -1,0 +1,139 @@
+Task type:
+Audit / product-copy diagnosis only.
+
+Goal:
+Improve the quality of recommendation explanation language shown on For You cards and related recommendation surfaces.
+
+User-reported issue:
+Recommendation descriptions/reasons still read awkwardly and do not feel like strong decision support. Examples seen in the app:
+- “Strong match for prose and emotional.”
+- “Anchored in prose and emotional.”
+- “Prose and emotional comes through clearly.”
+
+These phrases are technically tied to internal trait logic, but they do not sound natural, useful, or premium to a reader.
+
+We need to audit the full explanation-copy pipeline before changing anything.
+
+Do not implement yet.
+
+Allowed files to inspect:
+- components/RecCard.tsx
+- components/RecommendationsFeed.tsx
+- lib/expertRec.ts
+- lib/recommender.ts
+- lib/tasteProfile.ts
+- lib/evidencePack.ts if it contributes to recommendation reasons
+- any helper used by buildExplanation / rewriteReasonText / anchored explanations
+- any source that generates reasons[] or explanation text for rec cards
+
+Forbidden:
+- Do not edit code.
+- Do not touch schema/migrations.
+- Do not change scoring/ranking/retrieval.
+- Do not change recommendation persistence or queues.
+- Do not touch auth/Sentry/native/Open Library/Google Books/metadata/LLM.
+- Do not broaden into Taste Readout, onboarding, Home, or filters.
+
+Audit questions:
+
+1. Current explanation pipeline
+Trace the full path for recommendation reasons:
+- where raw reasons originate
+- how reasons[] are generated
+- how RecCard chooses which explanation to display
+- where rewriteReasonText, buildAnchoredExplanation, trait pools, and fallback pools sit in the hierarchy
+- when raw source text survives versus gets rewritten
+
+2. Root cause of awkward phrases
+Identify exactly which function(s) produce phrases like:
+- “Strong match for prose and emotional.”
+- “Anchored in prose and emotional.”
+- “Prose and emotional comes through clearly.”
+
+Determine whether the issue is:
+- internal trait labels being concatenated too literally
+- poor phrase pools
+- fallback copy firing too often
+- strong evidence being expressed weakly
+- mismatched singular/plural grammar
+- traits that need humanization before sentence assembly
+
+3. Explanation quality taxonomy
+Classify current explanation paths into:
+- strong / worth keeping
+- safe but bland
+- awkward or product-damaging
+- overclaiming risk
+- redundant/repetitive
+
+4. What a good explanation should do
+Recommend a clear copy standard for rec card explanations.
+
+Examples of the desired direction:
+- “A strong fit if you want literary writing with real emotional weight.”
+- “This leans into the reflective, character-heavy side of your profile.”
+- “Starting from your interest in darker, faster-moving stories, this is a reasonable early fit.”
+- “A more literary pick from the same suspense lane you’ve been steering toward.”
+
+We want:
+- natural English
+- useful decision context
+- clear confidence level
+- groundedness to available evidence
+- no internal-label feel
+
+5. Safe copy by evidence level
+Propose explanation treatment for:
+- intake-only / thin profile users
+- users with stated preferences + a little activity
+- history-rich users
+- repeated author/lane evidence
+- generic fallback when no meaningful personalization exists
+
+6. Specific trait language improvements
+Audit how these kinds of trait combinations are rendered today:
+- prose + emotional
+- characters + emotional
+- pacing + insight
+- depth + originality
+- genre + tone
+- genre + reading outcome
+
+Recommend how they should be humanized.
+
+7. Proposed implementation path
+Recommend the smallest high-value improvement batch.
+
+Likely possibilities:
+- repair trait-humanization pools inside RecCard copy helpers
+- stop emitting clunky raw trait-pair strings
+- introduce a small set of curated phrase builders for common trait combinations
+- improve fallback reason rewrite logic
+- preserve V3 anchored explanation trust gating
+
+Do not propose scoring changes unless absolutely necessary; this should ideally be copy-layer work only.
+
+8. Implementation sequencing
+Break into small batches if needed:
+- FX-1: explanation-copy root fix
+- FX-2: more nuanced confidence/evidence handling, if needed
+- FX-3: regression audit/probe for awkward phrases
+
+For each:
+- task type
+- files likely touched
+- file budget
+- risk
+- validation required
+- stop conditions
+
+Return format:
+- Executive diagnosis
+- Explanation pipeline map
+- Root cause of the awkward examples
+- Explanation-path quality taxonomy
+- Recommended copy standard
+- Before/after examples
+- Proposed implementation batches
+- Risks/tradeoffs
+- What not to change
