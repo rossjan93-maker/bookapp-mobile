@@ -1,0 +1,140 @@
+Task type:
+Audit / product-technical mapping only.
+
+Goal:
+Audit whether Profile inputs are actually used elsewhere in the app, and identify where the app claims a change is saved but does not create a visible downstream effect.
+
+User-reported issue:
+After testing Profile, several changes appear to save successfully but do not visibly impact the app:
+
+1. Updating actual/display name to “Ross” does not personalize Home or any other obvious surface.
+2. Setting a yearly reading goal does not appear to trigger a reading-goal progress module on Home.
+3. Reading Taste edits were found to save correctly but previously left stale recommendations in For You. That cache invalidation issue has now been fixed in app/edit-preferences.tsx. Please treat Reading Taste as partially addressed and verify the broader downstream-consumption picture rather than re-solving the same bug.
+
+This suggests a broader issue:
+Profile may contain write-only or weakly-connected inputs whose downstream product effect is missing, stale, or invisible.
+
+Do not implement yet.
+
+Allowed files to inspect:
+- app/(tabs)/profile.tsx
+- app/edit-profile.tsx or equivalent profile-edit route
+- app/edit-preferences.tsx
+- any reading-goal edit route/component
+- app/(tabs)/index.tsx
+- components/Home* files relevant to greetings, reading goal, progress, or home stats
+- components/RecommendationsFeed.tsx
+- app/(tabs)/search.tsx
+- lib/tasteProfile.ts
+- lib/recSession.ts
+- lib/recPayloadCache.ts
+- lib/recSnapshot.ts
+- any preference/profile helpers or caches
+- database read/write helpers for profile/preferences/reading goal if relevant
+
+Forbidden:
+- Do not edit code.
+- Do not touch schema/migrations.
+- Do not touch auth/Sentry/native/Open Library/Google Books/metadata/LLM.
+- Do not alter recommender scoring/ranking/retrieval.
+- Do not broaden into UI redesign.
+
+Audit questions:
+
+1. Inventory all Profile-editable fields
+List each user-editable Profile field, including but not limited to:
+- username
+- actual/display name
+- reading goal
+- Reading Taste genres/preferences
+- favorite authors if present
+- any other profile/preferences fields surfaced to users
+
+For each field, report:
+- where it is edited
+- where it is saved
+- database column / storage field
+- whether save confirmation is shown
+
+2. Downstream consumption map
+For each editable field, identify:
+- where else in the app it is read
+- what visible product behavior it affects
+- whether that visible behavior exists today
+
+Format as:
+Field → saved? → consumed elsewhere? → visible user impact? → current status
+
+3. Specific issue: actual/display name
+Determine:
+- where actual/display name is stored
+- whether any component reads it outside Profile
+- whether Home has any greeting/personalization capability today
+- whether the name is currently write-only from a user-value perspective
+- whether adding a light Home personalization surface would be the most natural downstream use
+
+4. Specific issue: yearly reading goal
+Determine:
+- where goal is stored
+- whether Home already has a reading-goal/progress module
+- what conditions cause it to render
+- whether setting a goal should show a Home module immediately
+- why the user did not see a progress bar/module after setting it
+- whether this is:
+  - missing implementation
+  - render gating bug
+  - stale cache/data refresh issue
+  - saved field not consumed
+
+5. Specific issue: Reading Taste
+Reading Taste cache invalidation on save has just been fixed.
+
+Please now audit the broader state:
+- where Reading Taste edits are saved
+- which downstream product surfaces consume them
+- whether For You is the only visible downstream consequence today
+- whether Home, Profile summaries, or Taste Readout surfaces should reflect changed taste but do not
+- whether any additional save-trust issue remains after the rec-cache invalidation fix
+
+Do not re-propose the already-shipped clearRecSession / clearRecPayload fix unless you find a gap.
+
+6. Save-trust audit
+Identify any fields where the UI says “saved” but the app provides no downstream visible consequence.
+
+For each, recommend one of:
+- wire it into an existing surface
+- add a downstream surface
+- change copy/expectation
+- hide/defer the input until it matters
+
+7. Prioritized fix plan
+Recommend the highest-priority implementation sequence after the audit.
+
+Expected likely order, subject to code verification:
+- P1: Yearly Reading Goal → Home progress surfacing
+- P2: Name/display name → deliberate light personalization surface, if currently write-only
+- P3: Any remaining Profile save-trust gaps
+- P4: Reading Taste downstream visibility beyond the now-fixed recommendation refresh, if warranted
+
+But verify against code rather than assuming.
+
+8. Risks/tradeoffs
+Flag:
+- fields that are genuinely write-only today
+- fields that may be saved correctly but blocked by stale cache
+- features whose visible surface was partially built but not wired
+- any save confirmations that currently overpromise
+- any profile fields that should remain “account metadata” rather than demanding visible app consequences
+
+Return format:
+- Executive diagnosis
+- Profile field inventory table
+- Downstream consumption map
+- Root-cause analysis for:
+  - name/display name
+  - yearly reading goal
+  - Reading Taste after the recent cache invalidation fix
+- Save-trust issues
+- Prioritized implementation plan
+- Files likely touched for each future fix
+- Risks/tradeoffs
