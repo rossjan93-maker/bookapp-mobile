@@ -58,7 +58,7 @@ export function TasteReadout({
   // a user reaching outcome will almost always have at least one liked or
   // avoid genre and won't be thin. Showing "Reading for: X" with no other
   // signal would over-isolate a single answer and feel unbalanced.
-  const summary = thin ? THIN_READOUT_COPY : buildSummary(profile, favoriteGenres);
+  const summary = thin ? THIN_READOUT_COPY : buildSummary(profile, favoriteGenres, avoidGenres, diagnosisAnswers);
   const chips: ReadoutChip[] = thin
     ? []
     : buildChips(profile, favoriteGenres, avoidGenres, diagnosisAnswers);

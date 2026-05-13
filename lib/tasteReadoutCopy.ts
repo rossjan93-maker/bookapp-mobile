@@ -233,63 +233,283 @@ export function buildHeadline(): string {
   return "Here's what we heard";
 }
 
+// ── FS-5a: intake-only synthesis helpers ─────────────────────────────────────
+// Composable pieces used by buildSummary's intake-only path. Each helper is
+// tolerant of missing data and returns a small string fragment (or null) so
+// the top-level sentence can be assembled from whichever signals we actually
+// have. NONE of these imply reading history — they describe stated preferences
+// only and use forward-looking ("we'll steer toward…") language.
+
 /**
- * Short one- or two-sentence summary anchored to the strongest available
- * signal. Hedged for tier 0/1, confident for tier 2+ ONLY when the anchor
- * comes from derived signal (lane or genre_affinities). When the anchor
- * is an intake-only fallback (the user just told us "I like fantasy"), we
- * downgrade to hedged copy regardless of tier so we never overstate
- * confidence on a self-reported preference.
+ * Maps the many possible genre-key shapes (snake_case from intake, display
+ * labels from the avoid path, humanized labels from earlier writers) to a
+ * small set of canonical "buckets" used for cluster phrasing. Anything not
+ * in this table falls through to a generic two-genre / one-genre cluster.
+ */
+const GENRE_BUCKETS: Record<string, string> = {
+  'sci-fi':                          'speculative',
+  'sci_fi':                          'speculative',
+  'scifi':                           'speculative',
+  'fantasy':                         'speculative',
+  'sci-fi & fantasy':                'speculative',
+  'scifi_fantasy':                   'speculative',
+  'fantasy_scifi':                   'speculative',
+  'thriller & mystery':              'thriller',
+  'thriller_mystery':                'thriller',
+  'mystery':                         'thriller',
+  'thriller':                        'thriller',
+  'literary fiction':                'literary',
+  'literary_fiction':                'literary',
+  'literary':                        'literary',
+  'romance':                         'romance',
+  'romantic fantasy':                'romance',
+  'romantasy':                       'romance',
+  'contemporary fiction':            'contemporary',
+  'contemporary_fiction':            'contemporary',
+  'memoir':                          'memoir',
+  'memoir & biography':              'memoir',
+  'memoir_bio':                      'memoir',
+  'biography':                       'memoir',
+  'memoir_nonfiction':               'memoir',
+  'memoir & narrative nonfiction':   'memoir',
+  'nonfiction':                      'nonfiction',
+  'business':                        'nonfiction',
+  'self-help':                       'nonfiction',
+  'self_help':                       'nonfiction',
+  'horror':                          'horror',
+  'historical fiction':              'historical',
+  'historical_fiction':              'historical',
+  'young adult':                     'ya',
+  'young_adult':                     'ya',
+  'ya':                              'ya',
+  'classics':                        'classics',
+  'poetry':                          'poetry',
+};
+
+function bucketOfGenre(g: string): string | null {
+  if (typeof g !== 'string') return null;
+  return GENRE_BUCKETS[g.trim().toLowerCase()] ?? null;
+}
+
+/**
+ * Build a short noun phrase describing the user's liked-genre cluster, with
+ * tone prefix folded in when stated. Hand-tuned for the most common pairs;
+ * everything else falls through to a generic "{a} and {b}" or "{a}" form.
+ */
+function describeGenreCluster(
+  favoriteGenres: string[],
+  tone: string | null | undefined,
+): string {
+  const keys = (favoriteGenres ?? [])
+    .filter((g): g is string => typeof g === 'string' && g.trim().length > 0)
+    .slice(0, 3);
+  if (keys.length === 0) return '';
+
+  const buckets = new Set(
+    keys.map(bucketOfGenre).filter((x): x is string => x != null),
+  );
+  const has = (b: string) => buckets.has(b);
+
+  const tonePrefix =
+    tone === 'dark_tone'  ? 'darker '  :
+    tone === 'light_tone' ? 'lighter ' :
+    '';
+
+  // Hand-tuned pairs first — most common intake combinations.
+  if (has('speculative') && has('thriller'))    return `${tonePrefix}speculative stories and tight thrillers`;
+  if (has('speculative') && has('romance'))     return `${tonePrefix}speculative fiction with a romantic pull`;
+  if (has('speculative') && has('horror'))      return `${tonePrefix}speculative fiction with a horror edge`;
+  if (has('speculative') && has('literary'))    return `${tonePrefix}speculative fiction with a literary bent`;
+  if (has('thriller')    && has('literary'))    return `${tonePrefix}literary thrillers and suspense`;
+  if (has('thriller')    && has('horror'))      return `${tonePrefix}thrillers with a horror edge`;
+  if (has('romance')     && has('contemporary')) return `${tonePrefix}contemporary romance and relationship-driven fiction`;
+  if (has('memoir')      && has('nonfiction'))  return 'memoir and big-picture nonfiction';
+
+  // Single-bucket forms.
+  if (has('speculative')) return `${tonePrefix}speculative fiction`;
+  if (has('thriller'))    return `${tonePrefix}thrillers and suspense`;
+  if (has('romance'))     return `${tonePrefix}romance`;
+  if (has('literary'))    return `${tonePrefix}literary fiction`;
+  if (has('contemporary')) return `${tonePrefix}contemporary fiction`;
+  if (has('historical'))  return `${tonePrefix}historical fiction`;
+  if (has('horror'))      return `${tonePrefix}horror and dark fiction`;
+  if (has('memoir'))      return 'memoir and narrative nonfiction';
+  if (has('nonfiction'))  return 'nonfiction reads';
+  if (has('ya'))          return `${tonePrefix}young adult fiction`;
+  if (has('classics'))    return `${tonePrefix}classics`;
+  if (has('poetry'))      return 'poetry';
+
+  // Generic fallback when no buckets matched — humanize and join.
+  if (keys.length >= 2) {
+    const a = humanizeGenreKey(keys[0]).toLowerCase();
+    const b = humanizeGenreKey(keys[1]).toLowerCase();
+    return `${tonePrefix}${a} and ${b}`;
+  }
+  return `${tonePrefix}${humanizeGenreKey(keys[0]).toLowerCase()}`;
+}
+
+/** Verb phrases for the q_outcome answer keys. Forward-looking, never claims
+ *  the user *has* read this way. Unknown keys → null (omit the clause). */
+const OUTCOME_VERBS: Record<string, string> = {
+  craft_first:       'reward attention',
+  effortless:        'go down easy',
+  originality_first: 'surprise you',
+  grip_both:         'do a few things at once',
+};
+
+/**
+ * Build the optional middle clause ("that move quickly but still reward
+ * attention", etc.) from pacing and outcome signals. Returns '' when neither
+ * signal is present, so the caller can omit it cleanly. Uses "but still" only
+ * for the genuine tension case (fast + craft_first); other combinations use
+ * "and", which is more honest.
+ */
+function describeMiddleClause(
+  wantsFast: boolean,
+  outcome: string | null | undefined,
+): string {
+  const verb = outcome ? OUTCOME_VERBS[outcome] ?? null : null;
+  if (wantsFast && verb) {
+    const conjunction = outcome === 'craft_first' ? 'but still' : 'and';
+    return `that move quickly ${conjunction} ${verb}`;
+  }
+  if (wantsFast) return 'that move quickly';
+  if (verb)      return `that ${verb}`;
+  return '';
+}
+
+/**
+ * Build the optional second sentence describing avoid-genres as a forward-
+ * looking commitment ("We'll steer away from business-heavy picks."). Reuses
+ * topAvoidGenres so the favorite-vs-avoid contradiction guard from UX-3B
+ * applies here too. Returns null when there are no usable avoid genres.
+ */
+function describeAvoidSentence(
+  avoidGenres: string[],
+  favoriteGenres: string[],
+): string | null {
+  const avoid = topAvoidGenres(avoidGenres, favoriteGenres, 2);
+  if (avoid.length === 0) return null;
+  if (avoid.length === 1) {
+    const a = avoid[0].toLowerCase();
+    // "business-heavy" reads cleanly for single-token labels;
+    // multi-word labels ("young adult", "literary fiction", "self-help"
+    // is hyphenated and reads OK either way) get the gentler "out of the mix"
+    // form to avoid clunky concatenations like "literary fiction-heavy".
+    if (!/\s/.test(a)) return `We'll steer away from ${a}-heavy picks.`;
+    return `We'll keep ${a} out of the mix.`;
+  }
+  return `We'll keep ${avoid[0].toLowerCase()} and ${avoid[1].toLowerCase()} out of the mix.`;
+}
+
+/**
+ * Compose an intake-only synthesis sentence (plus optional avoid sentence)
+ * from the user's stated preferences. Returns null when we don't have enough
+ * "rich" signal beyond a single liked genre — in that case the caller falls
+ * back to the existing single-line hedge so we don't ship a flat or robotic
+ * synthesized sentence for thin intake users.
+ *
+ * "Rich" = at least one of: q_outcome, q_tone (non-flexible), an avoid
+ * genre, or a fast-pacing signal (from q_pacing or preferred_traits). A user
+ * with two liked genres but no other signals also qualifies as rich enough,
+ * since the cluster phrasing alone is meaningfully better than echo.
+ */
+function buildIntakeSynthesis(
+  profile: TasteProfile | null,
+  favoriteGenres: string[],
+  avoidGenres: string[],
+  diagnosisAnswers: Record<string, string> | null,
+): string | null {
+  const genres = (favoriteGenres ?? []).filter(
+    (g): g is string => typeof g === 'string' && g.trim().length > 0,
+  );
+  if (genres.length === 0) return null;
+
+  const outcome = diagnosisAnswers?.q_outcome ?? null;
+  const tone    = diagnosisAnswers?.q_tone ?? null;
+  const pacingAns = diagnosisAnswers?.q_pacing ?? null;
+
+  const validOutcome = outcome != null && outcome in OUTCOME_VERBS;
+  const validTone    = tone === 'dark_tone' || tone === 'light_tone';
+  const hasAvoid     = topAvoidGenres(avoidGenres, favoriteGenres, 2).length > 0;
+
+  // Fast pacing can come from intake (q_pacing === 'fast_paced') OR from a
+  // history-derived preferred-traits signal. Either source is enough.
+  const fastFromIntake = pacingAns === 'fast_paced';
+  const fastFromTraits = profile
+    ? topPreferredTraits(profile, 3).includes('fast pacing')
+    : false;
+  const wantsFast = fastFromIntake || fastFromTraits;
+
+  const richSignals =
+    (validOutcome ? 1 : 0) +
+    (validTone    ? 1 : 0) +
+    (hasAvoid     ? 1 : 0) +
+    (wantsFast    ? 1 : 0) +
+    (genres.length >= 2 ? 1 : 0);
+
+  if (richSignals === 0) return null;
+
+  const cluster = describeGenreCluster(genres, validTone ? tone : null);
+  if (!cluster) return null;
+  const middle  = describeMiddleClause(wantsFast, validOutcome ? outcome : null);
+  const sentence1 = `You're pointing Readstack toward ${cluster}${middle ? ` ${middle}` : ''}.`;
+  const avoidSentence = describeAvoidSentence(avoidGenres, favoriteGenres);
+  return avoidSentence ? `${sentence1} ${avoidSentence}` : sentence1;
+}
+
+/**
+ * Short summary anchored to the strongest available signal. Hedged for tier
+ * 0/1, confident for tier 2+ ONLY when the anchor comes from derived signal
+ * (lane or genre_affinities). When the anchor is intake-only, we either
+ * synthesize a richer sentence from stated preferences (FS-5a) or fall back
+ * to the existing single-line hedge — never overstating confidence on a
+ * self-reported preference.
  *
  * Priority of the anchoring signal:
  *   1. Dominant deterministic lane (dense importers only) — derived.
  *   2. Top genre from genre_affinities — derived.
- *   3. First favorite_genres entry from reader_preferences — intake-only.
- *   4. Generic fallback ("a starting picture").
+ *   3. Intake synthesis (FS-5a) when stated signal is rich enough — stated.
+ *   4. First favorite_genres entry from reader_preferences — intake-only hedge.
+ *   5. Generic fallback ("a starting picture").
+ *
+ * The new optional `avoidGenres` and `diagnosisAnswers` arguments default to
+ * safe values so older callers keep working unchanged.
  */
 export function buildSummary(
   profile: TasteProfile | null,
   favoriteGenres: string[],
+  avoidGenres: string[] = [],
+  diagnosisAnswers: Record<string, string> | null = null,
 ): string {
   const tier = profile?.tier ?? 0;
   const lane = profile ? topDominantLanes(profile, 1)[0] : undefined;
   const genre = profile ? topGenresFromProfile(profile, 1)[0] : undefined;
-  const intakeGenre = (favoriteGenres ?? [])[0];
-  const intakeGenreLabel = intakeGenre ? humanizeGenreKey(intakeGenre) : undefined;
 
-  // Provenance matters: a derived anchor (lane/genre) earned from finished
-  // books supports confident phrasing; an intake-only anchor reflects what
-  // the user *said*, not what we *measured*, so it stays hedged.
-  let anchor: string | null = null;
-  let anchorIsDerived = false;
+  // Derived anchor wins — history-rich users get the same tier-aware copy as
+  // before. The new synthesis path is intake-only and never weakens this.
   if (lane) {
-    anchor = lane;
-    anchorIsDerived = true;
-  } else if (genre) {
-    anchor = genre;
-    anchorIsDerived = true;
-  } else if (intakeGenreLabel) {
-    anchor = intakeGenreLabel;
-    anchorIsDerived = false;
+    if (tier === 0) return `Your starting picture leans toward ${lane.toLowerCase()}.`;
+    if (tier === 1) return `Early signal: you lean toward ${lane.toLowerCase()}.`;
+    return `You read ${lane.toLowerCase()} with a clear pattern we can work with.`;
+  }
+  if (genre) {
+    if (tier === 0) return `Your starting picture leans toward ${genre.toLowerCase()}.`;
+    if (tier === 1) return `Early signal: you lean toward ${genre.toLowerCase()}.`;
+    return `You read ${genre.toLowerCase()} with a clear pattern we can work with.`;
   }
 
-  if (!anchor) {
-    return 'Your starting picture is just forming. The more you save, dismiss, and rate, the sharper this gets.';
+  // Intake-only path — try the richer FS-5a synthesis first.
+  const synth = buildIntakeSynthesis(profile, favoriteGenres, avoidGenres, diagnosisAnswers);
+  if (synth) return synth;
+
+  // Fallback hedge for thin intake (single genre, no rich stated signal).
+  const intakeGenre = (favoriteGenres ?? [])[0];
+  if (intakeGenre) {
+    return `You told us you lean toward ${humanizeGenreKey(intakeGenre).toLowerCase()} — that's where we'll start.`;
   }
 
-  // Intake-only anchor → always hedged, even at high tier.
-  if (!anchorIsDerived) {
-    return `You told us you lean toward ${anchor.toLowerCase()} — that's where we'll start.`;
-  }
-
-  // Derived anchor — tier-aware framing.
-  if (tier === 0) {
-    return `Your starting picture leans toward ${anchor.toLowerCase()}.`;
-  }
-  if (tier === 1) {
-    return `Early signal: you lean toward ${anchor.toLowerCase()}.`;
-  }
-  return `You read ${anchor.toLowerCase()} with a clear pattern we can work with.`;
+  return 'Your starting picture is just forming. The more you save, dismiss, and rate, the sharper this gets.';
 }
 
 export function buildLearningLine(profile: TasteProfile | null): string {
