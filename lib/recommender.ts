@@ -79,6 +79,8 @@ import { loadCachedRecs, persistRecCache, shouldRebuild, buildSignalSnapshot } f
 import { computeStatedTasteContribution } from './recPolicy';
 import type { RecRequest } from './recRequest';
 import { planBranches } from './retrieval/branchPlanner';
+import { pickStatedReservation } from './composition/statedReservation';
+import type { StatedReservationTrace } from './composition/statedReservation';
 import { applyIntegrityLayer, buildSeriesReadSet, buildSeriesProgress, buildSeriesPositionsRead, stripTitleSubtitle, getEligibleSeriesSeeds } from './recommendationIntegrity';
 
 // ── Quality gate constants ─────────────────────────────────────────────────────
@@ -263,6 +265,11 @@ export type RankedRecsResult = {
     // Set-level intent summary — pool stats before/after intent filtering.
     // Populated whenever intent is active; used by the debug panel.
     intent_summary?:        IntentSetSummary;
+    // P2B: BuildCause-aware top-slate reservation trace. Always present when
+    // composition runs (passed quality gates). Distinguishes 'reserved' from
+    // 'no_eligible_candidate' so debug surfaces can tell whether the policy
+    // fired but found no match versus never engaged at all.
+    stated_reservation_used?: StatedReservationTrace;
   };
 };
 
@@ -2430,6 +2437,22 @@ export function getRankedRecs(
     if (bLane) laneUsed[bLane] = (laneUsed[bLane] ?? 0) + 1;
   }
 
+  // ── P2B: BuildCause-aware top-slate reservation ───────────────────────────
+  // When req.build.cause === 'explicit_preference_edit' and the user has
+  // ≥1 stated favorite genre AND a quality-clearing candidate carrying a
+  // stated_favorite:* audit_flag exists in compPool, pre-seed it before
+  // Phase 1 lane seeding so the user's edit visibly surfaces in the slate.
+  // This is geometrically identical to the Phase 1 lane pre-seed mechanic
+  // (composedSet/addComposed pattern) — no new pipeline phase, just an
+  // additive seed inside the existing composition engine block.
+  // See lib/composition/statedReservation.ts for full eligibility contract.
+  const reservation = pickStatedReservation(
+    compPool, req, composedSet, compositionAllows, compId,
+  );
+  if (reservation.pick) {
+    addComposed(reservation.pick);
+  }
+
   // Phase 1: Lane seeding — guarantee one CORE book per dominant lane.
   // Applied only for dense users who have ≥2 distinct dominant lanes.
   // Seed up to floor(limit/2) lanes so Phase 1 fills at most half the set,
@@ -2546,6 +2569,7 @@ export function getRankedRecs(
       ),
       intent_filtered_count: intentRejectedCount > 0 ? intentRejectedCount : undefined,
       intent_summary: intentSummary,
+      stated_reservation_used: reservation.trace,
     },
   };
 }

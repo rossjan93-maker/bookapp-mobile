@@ -185,3 +185,34 @@ export const EDIT_CAUSE_BRANCH_BOOST: { statedGenres: number; revealedLanes: num
  *  user said they want less of. Floored at 1 so the branch never zeroes out
  *  (revealed lanes still inform some retrieval — soft avoid is not exclude). */
 export const SOFT_AVOID_RETRIEVAL_MULTIPLIER = 0.5;
+
+// ── P2B: BuildCause-aware top-slate reservation policy ───────────────────────
+//
+// After an explicit_preference_edit, guarantee that at least one quality-
+// clearing stated-branch candidate can surface in the top slate. Lives in the
+// composition layer (NOT retrieval — P2A handles retrieval-side stated influx).
+// Surgical slate-assembly knob; consumed by lib/composition/statedReservation.ts.
+//
+// Calibration hypotheses; tunable without architectural change.
+
+import type { BuildCause } from './recRequest';
+
+export type StatedReservationPolicy = {
+  /** Causes that trigger a top-slate reservation attempt. */
+  eligibleCauses:            readonly BuildCause[];
+  /** Maximum slots reserved per pipeline call. P2B ships with 1; multi-slot
+   *  reservation is P3 slate-diversity territory. NOTE: today this value is
+   *  informational — it is enforced by `pickStatedReservation`'s API shape
+   *  (single `pick` return). Raising this constant alone will NOT cause more
+   *  slots to be reserved; the helper signature must change first. */
+  maxReservedSlots:          number;
+  /** When false, only CORE candidates may be reserved. Conservative default —
+   *  setting true would silently widen ADJACENT exposure on every pref edit. */
+  allowAdjacentReservation:  boolean;
+};
+
+export const STATED_RESERVATION_POLICY: StatedReservationPolicy = {
+  eligibleCauses:           ['explicit_preference_edit'],
+  maxReservedSlots:         1,
+  allowAdjacentReservation: false,
+};
