@@ -12,6 +12,7 @@ import { BackButton } from '../components/BackButton';
 import { supabase } from '../lib/supabase';
 import { clearRecSession } from '../lib/recSession';
 import { clearRecPayload } from '../lib/recPayloadCache';
+import { clearAll as clearRecQueue } from '../lib/recQueue';
 
 const GENRES = [
   'Literary Fiction', 'Fantasy', 'Sci-Fi', 'Mystery', 'Thriller',
@@ -147,13 +148,28 @@ export default function EditPreferencesScreen() {
       // reading styles, favorite authors) which feeds into TasteProfile and
       // the recommender pipeline. The For You gate is keyed on
       // strongSignalCount (rated-finished count) and won't re-fire on a
-      // pref-only change, so we must explicitly invalidate both the in-memory
-      // rec session and the persisted payload cache. RecommendationsFeed's
-      // useFocusEffect detects the missing session on next tab visit and
-      // triggers runPipeline() — same pattern used by add-book and book/[id]
-      // status changes. Fire-and-forget the AsyncStorage clear so we don't
-      // delay the back-nav on slow storage.
+      // pref-only change, so we must explicitly invalidate three separate
+      // pieces of stale state:
+      //   1. clearRecSession()  — in-memory session cache (recSession.ts)
+      //   2. clearRecQueue()    — module-level visible-card queue (recQueue.ts).
+      //                           CRITICAL: recQueue is independent of recSession.
+      //                           Without this, RecommendationsFeed's runPipeline
+      //                           sees getQueueDepth() > 0 and APPENDS the fresh
+      //                           pref-aware books to the tail of the queue, so
+      //                           getVisibleStack().slice(0, 4) still returns the
+      //                           pre-save head and the user sees identical stale
+      //                           cards even though the pipeline ran correctly.
+      //   3. clearRecPayload()  — persisted AsyncStorage payload (so a future
+      //                           cold start cannot restore the pre-save deck).
+      // RecommendationsFeed's useFocusEffect detects the missing session on
+      // next tab visit and triggers runPipeline() — with an empty queue,
+      // runPipeline now hits the `initQueue(newEntries)` branch and fully
+      // replaces the visible stack with fresh-pref recs.
+      // Fire-and-forget the AsyncStorage clear so we don't delay the back-nav
+      // on slow storage; both in-memory clears are synchronous so they take
+      // effect before router.back() fires.
       clearRecSession();
+      clearRecQueue();
       void clearRecPayload(userId);
       setSaveSuccess(true);
       setTimeout(() => router.back(), 700);

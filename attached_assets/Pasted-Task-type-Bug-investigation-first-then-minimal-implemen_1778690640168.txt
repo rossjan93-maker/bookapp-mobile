@@ -1,0 +1,151 @@
+Task type:
+Bug investigation first, then minimal implementation only if root cause is clear.
+
+Goal:
+Reopen and fully fix Reading Taste → For You recommendation refresh. The prior cache invalidation fix did not hold up in real testing.
+
+User retest result:
+After the previous fix in app/edit-preferences.tsx, the user changed Reading Taste from a sci-fi-focused preference state to a history-focused preference state. On returning to For You, the app still surfaced the same prior recommendation slate and rationale language that had been shown under the old taste profile.
+
+Observed stale deck example:
+- A Little Life
+- The Great Believers
+- All the Ugly and Wonderful Things
+- This Is How It Always Is
+
+This is incoherent with a history-only preference change and strongly suggests stale recommendations are still being reused.
+
+Important:
+Do not assume the prior fix is sufficient. Treat this as a failed acceptance test and reopen the bug.
+
+Previous shipped fix:
+app/edit-preferences.tsx now:
+- clearRecSession() synchronously
+- clearRecPayload(userId) asynchronously / fire-and-forget
+- router.back()
+
+Previous theory:
+Next For You focus should detect missing recSession and rebuild via existing useFocusEffect.
+
+Live testing says that is not reliably happening.
+
+Allowed files to inspect:
+- app/edit-preferences.tsx
+- lib/recSession.ts
+- lib/recPayloadCache.ts
+- components/RecommendationsFeed.tsx
+- app/(tabs)/search.tsx
+- lib/tasteProfile.ts
+- any focus-effect / payload hydration logic that can restore recs after a preference save
+
+Allowed files to edit after diagnosis:
+Only the smallest set needed to guarantee stale recommendation decks are not reused after Reading Taste changes.
+
+Forbidden files/systems:
+- recommender scoring math
+- recommender ranking
+- recommender retrieval logic unless root cause proves the deck actually rebuilt from fresh prefs and still stayed identical
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+- onboarding
+- TasteReadout
+- HomeShortlist
+- RecCard copy, unless needed only for diagnostic logging and then removed
+
+Hard constraints:
+- Do not broaden into general rec architecture refactor unless the current architecture cannot guarantee correctness.
+- Do not paper over this with UI copy.
+- Do not claim success unless the actual stale-deck path is closed.
+
+Investigation requirements:
+
+1. Trace the exact post-save sequence
+- Reading Taste save succeeds
+- clearRecSession() fires
+- clearRecPayload(userId) fires
+- router.back()
+- user navigates to For You
+- RecommendationsFeed focus effect runs
+- payload hydration / session restore / pipeline rebuild ordering
+
+2. Test the race-condition hypothesis
+Determine whether:
+- clearRecPayload(userId) being fire-and-forget can lose a race against payload hydration on For You
+- the stale AsyncStorage payload can be restored into recSession after clearRecSession() but before the persisted payload is actually removed
+- useFocusEffect then sees a non-null session and skips runPipeline
+
+3. Confirm whether runPipeline actually re-fires
+For the user flow:
+- did For You trigger a fresh pipeline rebuild after the preference change?
+- did tasteProfile read the newly saved preferences?
+- did the resulting candidate/recommendation output differ?
+If the pipeline never ran, identify why.
+If it did run but the UI still shows old books, identify where visible card state remains stale.
+
+4. Check visible-feed replacement
+Determine whether:
+- visibleConts / visibleDiscs are repopulated from fresh output
+- or whether old card arrays persist even after a new payload/session is produced
+
+5. Compare the before/after deck
+If possible from logs or direct local probes:
+- generate or inspect the recommendation input before preference save
+- generate or inspect the recommendation input after preference save
+- confirm that the app is genuinely using changed reader_preferences
+
+Likely root-cause hypotheses to confirm or reject:
+A. Async clear race: persisted rec payload restores stale deck before clear completes.
+B. Focus effect does not run / does not rebuild because a session is repopulated too soon.
+C. Pipeline runs but visible card arrays are not replaced.
+D. Preferences save but tasteProfile/pipeline still reads old preference data.
+E. Pipeline genuinely rebuilds from new preferences but recommender output is surprisingly identical — only consider this after A-D are ruled out.
+
+Acceptance criteria:
+1. After saving Reading Taste, stale pre-save recommendation payloads cannot be restored.
+2. On next For You visit, recommendations are rebuilt from the updated preferences.
+3. The visible feed reflects that rebuild, not old card arrays.
+4. No app restart required.
+5. No schema/migration changes.
+6. No scoring/ranking/retrieval changes unless E is proven and you stop to report first.
+7. Typecheck remains at baseline with zero new errors.
+
+Validation required:
+Return a precise before/after sequence proving:
+- save prefs
+- invalidate stale state
+- prevent stale payload restore
+- trigger pipeline
+- read fresh reader_preferences
+- replace visible deck
+
+Also report:
+- exact root cause
+- whether the prior fire-and-forget clear was insufficient
+- whether a fix required awaiting clearRecPayload, adding a refresh token/flag, or changing focus/hydration logic
+- typecheck delta
+- workflow status
+
+Stop conditions:
+- If the pipeline is confirmed to rebuild from fresh preferences but outputs the same stale-feeling deck, stop and report before changing recommender logic.
+- If fixing this safely requires a broader rec-session architecture change, stop and explain.
+- If this requires touching more than 5 product files, stop and explain.
+
+Return format:
+- Root cause
+- Changed files
+- Implementation summary
+- Before/after event trace
+- Cache/session race analysis
+- Pipeline refresh confirmation
+- Visible-feed replacement confirmation
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Deviations
