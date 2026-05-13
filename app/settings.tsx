@@ -20,6 +20,7 @@ import { getDisplayName } from '../lib/displayName';
 import { ONBOARDING_STAGE_KEY, readOnboardingStage } from '../lib/onboardingStage';
 import { clearLocalOnboardingState } from '../lib/localStateClear';
 import { repairSubjectCoverage, type RepairSummary } from '../lib/subjectRepair';
+import { invalidateBookDataCaches } from '../lib/tabCache';
 import {
   getConnectedIdentities,
   linkIdentityProvider,
@@ -368,6 +369,22 @@ export default function SettingsScreen() {
       .eq('id', userId);
     setSavingProfile(false);
     if (!error) {
+      // Mirror first/last name into auth.user_metadata so Home's greeting
+      // (which reads `user.user_metadata.first_name` at app/(tabs)/index.tsx:596)
+      // reflects the new value. Without this, the auth metadata stays at the
+      // signup-time value forever and the greeting never personalizes.
+      // Fire-and-forget: a failure here doesn't invalidate the profiles write
+      // we just persisted; worst case the greeting lags one session.
+      void supabase.auth.updateUser({
+        data: {
+          first_name: firstName.trim() || null,
+          last_name:  lastName.trim()  || null,
+        },
+      });
+      // Invalidate Home (and Library) so the next focus re-fetches the
+      // updated greeting + profile data instead of serving the 60s-stale
+      // _homeCache. Same pattern used after book status changes.
+      invalidateBookDataCaches();
       setProfileDirty(false);
       setProfileSaved(true);
       setTimeout(() => setProfileSaved(false), 2500);
@@ -387,6 +404,10 @@ export default function SettingsScreen() {
         .eq('id', userId);
       setSavingGoal(false);
       if (!error) {
+        // Invalidate Home cache so the yearly-goal progress module
+        // re-renders (or hides) on next Home focus instead of serving
+        // the stale _homeCache.yearlyGoal value for up to 60s.
+        invalidateBookDataCaches();
         setGoalDirty(false);
         setGoalSaved(true);
         setTimeout(() => setGoalSaved(false), 2500);
@@ -406,6 +427,10 @@ export default function SettingsScreen() {
       .eq('id', userId);
     setSavingGoal(false);
     if (!error) {
+      // Invalidate Home cache so the yearly-goal progress module
+      // appears on next Home focus instead of waiting for the 60s
+      // _homeCache TTL to expire. Same pattern as the clear-goal branch.
+      invalidateBookDataCaches();
       setGoalDirty(false);
       setGoalSaved(true);
       setTimeout(() => setGoalSaved(false), 2500);

@@ -1,0 +1,115 @@
+Task type:
+Small implementation.
+
+Goal:
+Fix two Profile save-trust issues so saved settings visibly affect Home immediately on the next Home visit:
+
+1. Setting a yearly reading goal should cause the existing Home reading-goal progress module to appear without waiting for the stale Home cache to expire.
+2. Updating first/last name in Settings should update the existing Home greeting personalization, e.g. “Good morning, Ross.”
+
+User problem:
+Profile edits currently save successfully, but some visible downstream effects do not appear:
+- yearly reading goal is saved, but Home may not show the progress module because _homeCache remains stale
+- first/last name is saved to profiles, but Home greeting reads auth.user_metadata.first_name instead, so name edits do not propagate
+
+Context from audit:
+- Reading Taste stale-rec issue was already fixed separately via clearRecSession + clearRecPayload in app/edit-preferences.tsx.
+- This batch should address only the remaining Settings/Home issues identified in the Profile Inputs Audit.
+
+Allowed files:
+- app/settings.tsx
+- lib/tabCache.ts only if needed to use existing cache invalidation infrastructure cleanly
+
+File budget:
+Maximum 2 files. If this requires more than 2 files, stop and explain.
+
+Forbidden files/systems:
+- app/(tabs)/index.tsx unless a bug proves the audit was wrong
+- recommender scoring/ranking/retrieval
+- recSession / recPayloadCache
+- edit-preferences
+- onboarding
+- TasteReadout
+- RecCard
+- RecommendationsFeed
+- HomeShortlist
+- schema
+- migrations
+- auth flow refactors
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+
+Hard constraints:
+- Do not redesign Home.
+- Do not change the yearly-goal rendering logic on Home unless the audit’s diagnosis is proven wrong.
+- Do not change Home greeting rendering logic unless the audit’s diagnosis is proven wrong.
+- Prefer fixing the write-side + cache invalidation, as recommended by the audit.
+- Do not broaden into a general Settings refactor.
+
+Implementation requirements:
+
+A. Yearly reading goal
+1. In the successful save path for yearly reading goal, invalidate the Home cache so the next Home focus reloads fresh profile data.
+2. Use the existing tab/home cache invalidation infrastructure if available.
+3. Do not change how yearly goal is saved.
+4. Do not change Home’s yearlyGoal render gate.
+
+B. First/last name
+1. In the successful save path for first/last name:
+   - keep the existing profiles table upsert/update
+   - also call:
+     supabase.auth.updateUser({
+       data: {
+         first_name,
+         last_name
+       }
+     })
+   or the exact existing app-consistent equivalent
+2. Invalidate the Home cache after successful save so the Home greeting picks up updated auth metadata on next visit.
+3. Do not change the Home greeting component itself unless required by a proven bug.
+
+C. Shared behavior
+1. Preserve existing save confirmations.
+2. Preserve navigation behavior.
+3. Do not add new UI banners/toasts in this batch.
+
+Acceptance criteria:
+1. Saving a yearly reading goal invalidates stale Home cache.
+2. After saving a goal and visiting Home, the existing reading-goal progress module can render immediately from fresh data rather than waiting for cache expiry.
+3. Saving first/last name updates auth.user_metadata consistently with the profiles table.
+4. After saving a name and visiting Home, the existing greeting can reflect the new first name.
+5. No Home component logic changes unless the audit diagnosis is disproven.
+6. No schema/migration/recommender changes.
+7. Typecheck remains at baseline with zero new errors.
+8. Diff scope confirms only allowed files touched.
+
+Validation required:
+- Trace yearly goal flow:
+  save goal → Home cache invalidated → next Home focus reloads → yearlyGoal available to existing render gate
+- Trace name flow:
+  save profile → profiles table write → auth.user_metadata update → Home cache invalidated → next Home focus reads updated first_name
+- Confirm existing save confirmations and navigation behavior unchanged.
+- Typecheck delta.
+- Workflow status.
+- Any known latency/tradeoff from auth.updateUser.
+
+Stop conditions:
+- If Home cache invalidation cannot be triggered cleanly from Settings without touching broader Home architecture, stop and report.
+- If auth.updateUser changes require broader auth/session refactor, stop and report.
+- If this requires more than 2 files, stop and explain.
+
+Return format:
+- Changed files
+- Implementation summary
+- Before/after behavior for yearly goal
+- Before/after behavior for name greeting
+- Cache invalidation details
+- Auth metadata sync details
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Any deviations from prompt
