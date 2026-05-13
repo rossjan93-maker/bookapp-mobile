@@ -13,13 +13,11 @@ import { supabase } from '../lib/supabase';
 import { clearRecSession } from '../lib/recSession';
 import { clearRecPayload } from '../lib/recPayloadCache';
 import { clearAll as clearRecQueue } from '../lib/recQueue';
+import { EDIT_GENRE_IDS, editLabel } from '../lib/taxonomy/genres';
 
-const GENRES = [
-  'Literary Fiction', 'Fantasy', 'Sci-Fi', 'Mystery', 'Thriller',
-  'Romance', 'Horror', 'Historical Fiction', 'Non-Fiction', 'History',
-  'Biography', 'Self-Help', 'Business', 'Science', 'Poetry',
-  'Graphic Novel', 'Young Adult', 'Classic',
-];
+// P0A: chip labels are derived from the canonical taxonomy. Order is
+// preserved by EDIT_GENRE_IDS in lib/taxonomy/genres.ts.
+const GENRES: string[] = EDIT_GENRE_IDS.map(editLabel);
 
 const STYLES = [
   'Fast-paced', 'Slow-burn', 'Character-driven', 'Plot-driven',

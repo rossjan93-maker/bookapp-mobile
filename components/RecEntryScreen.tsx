@@ -112,31 +112,21 @@ type IntakeState = {
 };
 
 // ─── Genre data ───────────────────────────────────────────────────────────────
+// P0A: chip pools derive from the canonical taxonomy. Order is preserved by
+// INTAKE_FICTION_IDS / INTAKE_NONFICTION_IDS in lib/taxonomy/genres.ts.
+// affinityKey / olSubjects live on each GenreDef and are consumed by
+// tasteProfile via normalizeGenreInput; this surface only needs the label.
 
-type Genre = { label: string; affinityKey: string; subjects: string[] };
+import {
+  INTAKE_FICTION_IDS,
+  INTAKE_NONFICTION_IDS,
+  intakeLabel,
+} from '../lib/taxonomy/genres';
 
-const FICTION_GENRES: Genre[] = [
-  { label: 'Literary Fiction',   affinityKey: 'literary',         subjects: ['literary fiction', 'contemporary fiction'] },
-  { label: 'Fantasy',            affinityKey: 'fantasy_scifi',    subjects: ['fantasy', 'epic fantasy'] },
-  { label: 'Sci-Fi',             affinityKey: 'fantasy_scifi',    subjects: ['science fiction', 'space opera'] },
-  { label: 'Thriller',           affinityKey: 'thriller_mystery', subjects: ['thriller', 'suspense fiction'] },
-  { label: 'Mystery',            affinityKey: 'thriller_mystery', subjects: ['mystery', 'detective fiction'] },
-  { label: 'Romance',            affinityKey: 'romance',          subjects: ['romance', 'contemporary romance'] },
-  { label: 'Horror',             affinityKey: 'horror',           subjects: ['horror', 'gothic fiction'] },
-  { label: 'Historical Fiction', affinityKey: 'literary',         subjects: ['historical fiction'] },
-  { label: 'Young Adult',        affinityKey: 'literary',         subjects: ['young adult fiction'] },
-];
+type Genre = { label: string };
 
-const NONFICTION_GENRES: Genre[] = [
-  { label: 'Biography & Memoir', affinityKey: 'memoir_bio',  subjects: ['biography', 'memoir'] },
-  { label: 'History',            affinityKey: 'nonfiction',  subjects: ['history', 'world history'] },
-  { label: 'Science & Nature',   affinityKey: 'nonfiction',  subjects: ['science', 'popular science'] },
-  { label: 'Essays & Ideas',     affinityKey: 'nonfiction',  subjects: ['essays', 'philosophy'] },
-  { label: 'Self-Help',          affinityKey: 'nonfiction',  subjects: ['self-help', 'personal development'] },
-  { label: 'Business',           affinityKey: 'nonfiction',  subjects: ['business', 'economics'] },
-  { label: 'True Crime',         affinityKey: 'thriller_mystery', subjects: ['true crime'] },
-  { label: 'Politics & Society', affinityKey: 'nonfiction',  subjects: ['politics', 'social science'] },
-];
+const FICTION_GENRES: Genre[]    = INTAKE_FICTION_IDS.map((id) => ({ label: intakeLabel(id) }));
+const NONFICTION_GENRES: Genre[] = INTAKE_NONFICTION_IDS.map((id) => ({ label: intakeLabel(id) }));
 
 function getGenres(split: IntakeState['fictionSplit']): Genre[] {
   if (split === 'fiction')    return FICTION_GENRES;

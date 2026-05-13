@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { detectGenre, detectBookLane, detectBookMysterySubtype } from './bookTraits';
 import type { DeterministicLane, MysterySubtype } from './bookTraits';
+import { normalizeGenreInput } from './taxonomy/normalize';
 
 // =============================================================================
 // Taste Profile — recommendation confidence model
@@ -731,42 +732,16 @@ export async function computeTasteProfile(
   const open_questions = deriveOpenQuestions(evidence, preferred_traits);
 
   // ── Onboarding genre prior — blend for tier 0-1 users ────────────────────
-  // Maps genre labels (from onboarding chips) to the same affinity keys used
-  // by buildGenreAffinities so they flow through scoring identically.
-  // Weight fades as real book history accumulates: 0.50 at tier 0 → 0.25 at tier 1
-  // → not applied at tier 2+ (history is reliable enough to override).
-  const GENRE_AFFINITY_MAP: Record<string, string> = {
-    'Literary Fiction':   'literary',
-    'Fantasy':            'fantasy_scifi',
-    'Sci-Fi':             'fantasy_scifi',
-    'Thriller':           'thriller_mystery',
-    'Mystery':            'thriller_mystery',
-    'Romance':            'romance',
-    'Horror':             'horror',
-    'Historical Fiction': 'literary',
-    'Non-Fiction':        'nonfiction',
-    'Biography & Memoir': 'memoir_bio',
-    'Self-Help':          'nonfiction',
-    'Young Adult':        'literary',
-    'Graphic Novel':      'literary',
-  };
-
-  const GENRE_SUBJECTS_MAP: Record<string, string[]> = {
-    'Literary Fiction':   ['literary fiction', 'contemporary fiction'],
-    'Fantasy':            ['fantasy', 'epic fantasy', 'fantasy fiction'],
-    'Sci-Fi':             ['science fiction', 'space opera', 'speculative fiction'],
-    'Thriller':           ['thriller', 'psychological thriller', 'suspense fiction'],
-    'Mystery':            ['mystery', 'detective fiction', 'crime fiction'],
-    'Romance':            ['romance', 'contemporary romance', 'romantic fiction'],
-    'Horror':             ['horror', 'supernatural fiction', 'gothic fiction'],
-    'Historical Fiction': ['historical fiction'],
-    'Non-Fiction':        ['popular nonfiction', 'popular science'],
-    'Biography & Memoir': ['biography', 'autobiography', 'memoir'],
-    'Self-Help':          ['self-help', 'personal development'],
-    'Young Adult':        ['young adult fiction'],
-    'Graphic Novel':      ['graphic novels', 'comics'],
-  };
-
+  // P0A: genre labels resolve through the canonical taxonomy
+  // (lib/taxonomy/normalize.ts). Pre-P0A this site indexed two local maps
+  // (GENRE_AFFINITY_MAP / GENRE_SUBJECTS_MAP) which only covered intake-style
+  // labels — six edit-preferences labels (History, Biography, Business,
+  // Science, Poetry, Classic) silently no-op'd. They now resolve.
+  //
+  // Weight fades as real book history accumulates: 0.50 at tier 0 → 0.25 at
+  // tier 1 → not applied at tier 2+. The tier gate is intentionally
+  // unchanged in P0A; tier-2+ explicit-preference responsiveness lands in
+  // P1 (signal contract) + P2 (branch planner).
   let blendedGenreAffinities = genre_affinities;
   let blendedLikedSubjects   = liked_subjects;
 
@@ -779,19 +754,28 @@ export async function computeTasteProfile(
     blendedGenreAffinities = { ...genre_affinities };
 
     for (const label of prefGenres) {
-      const key = GENRE_AFFINITY_MAP[label];
-      if (key) blendedGenreAffinities[key] = Math.min(1, (blendedGenreAffinities[key] ?? 0) + prefWeight);
+      const def = normalizeGenreInput(label);
+      if (def) {
+        const key = def.affinityKey;
+        blendedGenreAffinities[key] = Math.min(1, (blendedGenreAffinities[key] ?? 0) + prefWeight);
+      }
     }
     for (const label of avoidGenres) {
-      const key = GENRE_AFFINITY_MAP[label];
-      if (key) blendedGenreAffinities[key] = Math.max(-1, (blendedGenreAffinities[key] ?? 0) + avoidWeight);
+      const def = normalizeGenreInput(label);
+      if (def) {
+        const key = def.affinityKey;
+        blendedGenreAffinities[key] = Math.max(-1, (blendedGenreAffinities[key] ?? 0) + avoidWeight);
+      }
     }
 
     // For tier 0 with no book anchors yet, derive liked_subjects from preferred genres
     if (tier === 0 && liked_subjects.length === 0 && prefGenres.length > 0) {
       const subjectSet = new Set<string>();
       for (const label of prefGenres) {
-        for (const s of (GENRE_SUBJECTS_MAP[label] ?? [])) subjectSet.add(s);
+        const def = normalizeGenreInput(label);
+        if (def) {
+          for (const s of def.olSubjects) subjectSet.add(s);
+        }
       }
       blendedLikedSubjects = [...subjectSet].slice(0, 8);
     }

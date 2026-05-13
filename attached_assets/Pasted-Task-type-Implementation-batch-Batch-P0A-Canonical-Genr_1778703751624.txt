@@ -1,0 +1,199 @@
+Task type:
+Implementation batch.
+
+Batch:
+P0A — Canonical Genre Taxonomy Integrity.
+
+Goal:
+Implement the first code slice of the locked Recommendation Architecture Blueprint by creating a canonical genre taxonomy and eliminating the silent-drop class for user-selected genre labels.
+
+This batch is foundational architecture, not a one-off map patch.
+
+Strategic context:
+The revised recommender architecture is now locked:
+- Free/core Recommendation Control Plane first.
+- Paid Semantic Intelligence Plane later.
+- P0A begins the Control Plane by making genre meaning canonical across UI and taste-profile computation.
+
+Important expectation:
+P0A does NOT solve tier-2+ explicit preference responsiveness yet. That is P1/P2.
+P0A solves:
+- silent unmapped labels
+- duplicated genre definitions between UI and tasteProfile bucket mapping
+- lack of a canonical source for future taxonomy work
+
+User-visible consequence:
+Previously problematic labels such as:
+- History
+- Biography
+- Business
+- Science
+- Poetry
+- Classic
+
+must no longer silently drop when read into the recommender. For tier 0/1 users, they should produce measurable genre-affinity signals. Do not overclaim deck-shift guarantees for tier 2+ users in this batch.
+
+Allowed files:
+- NEW lib/taxonomy/genres.ts
+- NEW lib/taxonomy/normalize.ts
+- lib/tasteProfile.ts
+- app/edit-preferences.tsx
+- components/RecEntryScreen.tsx
+- tests/taxonomy.test.ts, only if the repo has a viable existing test pattern for this kind of deterministic module test
+- replit.md
+
+File budget:
+Maximum 7 files including replit.md.
+If test infrastructure is not viable in the current repo shape, stop and report the smallest sound alternative rather than shipping without an integrity check.
+
+Forbidden files/systems:
+- lib/recommender.ts retrieval-side subject maps — explicitly deferred to P0A.1
+- recPayloadCache
+- recSession
+- recQueue
+- RecommendationsFeed
+- scoring/ranking/retrieval behavior
+- signal model / RecRequest
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library live-fetch behavior
+- Google Books
+- metadata repair
+- LLM/API calls
+- Semantic Intelligence Plane files
+
+Hard constraints:
+- Do not change recommender scoring, ranking, retrieval, caching, or queue behavior.
+- Do not attempt to solve tier-2+ preference responsiveness here.
+- Do not add new Reading Taste UI options.
+- Do not alter the current saved shape of reader_preferences.favorite_genres or avoid_genres.
+- Preserve current onboarding and Edit Preferences UX behavior unless the taxonomy forces a clearly justified normalization.
+
+Implementation requirements:
+
+1. Create canonical genre taxonomy
+Add lib/taxonomy/genres.ts as the single source of truth for genre definitions used by:
+- edit-preferences chips
+- onboarding intake genre chips
+- tasteProfile genre-affinity mapping
+- future retrieval subject mapping in P0A.1
+
+Each genre definition should include the spec-backed fields needed now or soon, such as:
+- stable canonical id
+- edit-preferences label
+- intake label
+- card/display label if applicable
+- alias inputs for legacy/current strings
+- affinityKey
+- olSubjects field may exist now for future P0A.1, but do not wire recommender retrieval to it in this batch unless absolutely necessary and within scope
+- fictionality if useful to preserve current intake split behavior
+
+2. Add read-path normalization
+Create lib/taxonomy/normalize.ts with a synchronous helper:
+- normalizeGenreInput(label) → GenreDef | null
+
+Requirements:
+- handles current/legacy saved labels such as:
+  - History
+  - Biography
+  - Business
+  - Science
+  - Poetry
+  - Classic
+  - Sci-Fi
+  - Sci-fi & fantasy
+  - Biography & Memoir
+- no async or DB lookups
+- misses must not silently no-op
+
+3. Miss handling / telemetry
+Add the smallest existing-style miss reporting mechanism available in this repo.
+- If there is an established logger/dev warning convention, use it.
+- If not, use a contained, non-spammy development-safe warning path and report exactly what was chosen.
+- Do not introduce a new telemetry subsystem in P0A.
+
+4. Source chip lists from taxonomy
+Update:
+- app/edit-preferences.tsx
+- components/RecEntryScreen.tsx
+
+so their rendered genre options are derived from the canonical taxonomy rather than independently maintained hard-coded lists.
+
+Preserve:
+- current user-facing labels unless the taxonomy requires a clearly justified normalization
+- fiction/nonfiction/both segmented behavior
+- multi-select behavior and selected-count behavior
+- avoid-genre capture behavior
+
+5. Replace tasteProfile inline genre maps
+In lib/tasteProfile.ts:
+- replace the current genre-affinity / subject mapping inputs that read raw UI labels with taxonomy-backed normalization and lookup
+- ensure previously unmapped labels now produce the intended internal genre-affinity contribution at tier 0/1
+- do not alter tier gates in this batch
+- do not alter weighting behavior in this batch
+
+6. Integrity guard
+Add deterministic validation for:
+- every chip label rendered in edit-preferences resolves to a GenreDef
+- every chip label rendered in RecEntryScreen resolves to a GenreDef
+- previously problematic labels resolve correctly
+- there are no duplicate/conflicting aliases
+
+Use tests/taxonomy.test.ts if viable.
+If the project does not currently support this cleanly, stop and report before shipping rather than implementing a weak substitute.
+
+Acceptance criteria:
+1. Canonical taxonomy module exists and is the genre source of truth for the in-scope UI surfaces and tasteProfile mapping path.
+2. History, Biography, Business, Science, Poetry, and Classic no longer silently miss normalization.
+3. Every current edit-preferences genre chip resolves through the taxonomy.
+4. Every current onboarding intake genre chip resolves through the taxonomy.
+5. tasteProfile reads saved genre labels through normalizeGenreInput rather than direct fragile map indexing.
+6. Tier 0/1 fixture or direct probe confirms previously unmapped labels now produce nonzero genre-affinity effect.
+7. Tier 2+ recommender responsiveness is explicitly unchanged and not claimed as solved.
+8. No retrieval/scoring/ranking behavior changes.
+9. Typecheck remains at baseline with zero new errors.
+10. Diff scope confirms no forbidden systems touched.
+
+Validation required:
+- Exact genre taxonomy coverage table or summary.
+- Explicit resolution proof for:
+  - History
+  - Biography
+  - Business
+  - Science
+  - Poetry
+  - Classic
+  - Sci-Fi
+  - Sci-fi & fantasy
+  - Biography & Memoir
+- Before/after explanation of the silent-drop bug class.
+- Probe or fixture showing tier 0/1 affinity effect now exists for a previously unmapped genre.
+- Confirmation fiction/nonfiction/both onboarding genre UI remains behaviorally intact.
+- Confirmation Reading Taste editing still saves same storage shape.
+- Integrity test result, or stop-report if test infrastructure is not viable.
+- Typecheck delta.
+- Workflow status.
+
+Stop conditions:
+- If aliasing legacy/current genre strings requires touching more than the allowed scope, stop and report.
+- If the taxonomy cannot preserve current intake/edit-preferences behavior without broader UI changes, stop.
+- If the integrity test cannot be made sound in the existing test setup, stop and propose the smallest acceptable alternative.
+- If normalization would need async/DB lookups, stop.
+- If this batch starts requiring recommender retrieval-map changes, stop and defer to P0A.1 as planned.
+
+Return format:
+- Changed files
+- Implementation summary
+- Canonical taxonomy structure
+- Legacy/current label normalization coverage
+- Silent-drop bug resolution
+- Tier 0/1 affinity validation
+- UI behavior preservation check
+- Integrity-test result
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Deviations
