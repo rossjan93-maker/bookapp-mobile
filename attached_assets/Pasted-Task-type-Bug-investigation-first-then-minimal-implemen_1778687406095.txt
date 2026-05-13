@@ -1,0 +1,100 @@
+Task type:
+Bug investigation first, then minimal implementation if root cause is clear.
+
+Goal:
+When a user updates their Reading Taste in Profile, For You recommendations should refresh to reflect the new preferences without requiring app restart or manual workaround.
+
+User-reported bug:
+Changing Reading Taste in Profile does not appear to impact the recommendations currently surfacing in the For You feed. The recommendation deck stays stale after preferences are updated.
+
+Expected behavior:
+After a successful Reading Taste save:
+1. The app should invalidate any recommendation cache/session that depends on the prior taste profile.
+2. The For You feed should refresh or be marked for refresh.
+3. When the user visits For You, they should see recommendations rebuilt from the updated preferences.
+4. Ideally, if feasible without overreach, the feed should refresh immediately or show an explicit “Updating your picks…” state.
+5. The user should not need to restart the app.
+
+Allowed files to inspect:
+- app/(tabs)/profile.tsx
+- app/edit-preferences.tsx
+- lib/tasteProfile.ts
+- lib/recSession.ts
+- lib/recPayloadCache.ts
+- lib/recSnapshot.ts
+- components/RecommendationsFeed.tsx
+- app/(tabs)/search.tsx
+- any helper currently used to invalidate or refresh recommendation sessions after taste-affecting actions
+
+Allowed files to edit after diagnosis:
+Only the smallest set needed to make preference updates invalidate stale recommendation state and trigger the correct refresh behavior.
+
+Forbidden files/systems unless proven necessary:
+- onboarding
+- TasteReadout
+- HomeShortlist
+- RecCard copy
+- recommender scoring/ranking formulas
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+
+Hard constraints:
+- Do not alter the recommendation algorithm itself.
+- Do not change how Reading Taste fields are saved unless the bug requires it.
+- Do not broadly rewrite For You loading logic.
+- Prefer invalidating/rebuilding existing rec cache/session mechanisms over inventing a new parallel path.
+- If immediate in-place feed refresh is risky, prefer a robust “invalidate now, refresh on next For You focus” approach and explain the tradeoff.
+
+Investigation requirements:
+1. Trace the Reading Taste save path:
+   - where edits are saved
+   - what data changes
+   - whether any rec cache/session invalidation occurs
+2. Trace For You rec loading:
+   - getRecSession
+   - recPayloadCache
+   - any stale-while-revalidate behavior
+   - what makes it decide to rebuild
+3. Identify why updated preferences are not affecting surfaced recs immediately.
+4. Determine the smallest safe invalidation/refresh hook.
+
+Acceptance criteria:
+1. Saving Reading Taste invalidates stale rec recommendation state tied to the old preferences.
+2. For You rebuilds or refreshes from the updated preferences without app restart.
+3. No recommendation scoring/ranking formula changes.
+4. No schema/migration changes.
+5. Typecheck remains at baseline with zero new errors.
+6. Diff scope confirms no forbidden systems touched.
+
+Validation required:
+- Before/after flow trace:
+  update Reading Taste → save → invalidation → For You refresh path
+- Confirmation of which caches/sessions are cleared or marked stale
+- Whether refresh is immediate or next-focus, and why
+- Typecheck delta
+- Workflow status
+- Known limitations
+
+Stop conditions:
+- If the current architecture does not support a safe refresh without broader recommender refactor, stop and report.
+- If the fix requires changes to scoring/retrieval logic, stop and report.
+- If this requires touching more than 5 product files, stop and explain.
+
+Return format:
+- Root cause
+- Proposed fix or implemented fix
+- Changed files
+- Before/after behavior
+- Cache/session invalidation details
+- Validation performed
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Deviations

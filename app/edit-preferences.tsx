@@ -10,6 +10,8 @@ import {
 import { useRouter } from 'expo-router';
 import { BackButton } from '../components/BackButton';
 import { supabase } from '../lib/supabase';
+import { clearRecSession } from '../lib/recSession';
+import { clearRecPayload } from '../lib/recPayloadCache';
 
 const GENRES = [
   'Literary Fiction', 'Fantasy', 'Sci-Fi', 'Mystery', 'Thriller',
@@ -141,6 +143,18 @@ export default function EditPreferencesScreen() {
 
     setSaving(false);
     if (!error) {
+      // Reading Taste edits change reader_preferences (favorite/avoid genres,
+      // reading styles, favorite authors) which feeds into TasteProfile and
+      // the recommender pipeline. The For You gate is keyed on
+      // strongSignalCount (rated-finished count) and won't re-fire on a
+      // pref-only change, so we must explicitly invalidate both the in-memory
+      // rec session and the persisted payload cache. RecommendationsFeed's
+      // useFocusEffect detects the missing session on next tab visit and
+      // triggers runPipeline() — same pattern used by add-book and book/[id]
+      // status changes. Fire-and-forget the AsyncStorage clear so we don't
+      // delay the back-nav on slow storage.
+      clearRecSession();
+      void clearRecPayload(userId);
       setSaveSuccess(true);
       setTimeout(() => router.back(), 700);
     }
