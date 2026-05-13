@@ -1,0 +1,543 @@
+Task type:
+Architecture revision only. Do not implement code.
+
+Goal:
+Refine the Recommendation Architecture Spec into a locked, internally consistent blueprint for Readstack’s long-term recommendation system — one that supports:
+
+1. A free/core Recommendation Control Plane:
+   - trustworthy
+   - responsive to explicit user inputs
+   - structurally coherent
+   - explanation-faithful
+   - testable and cache-safe
+
+2. A paid/premium Semantic Intelligence Plane:
+   - AI-powered reader understanding
+   - richer book understanding
+   - semantic cross-genre discovery
+   - “surprising but right” recommendations
+   - advanced next-read decision sessions
+   - richer grounded reasoning
+   - taste-evolution insights over time
+
+This is not a patch-planning exercise.
+Do not merely restate REC-RESP-1/2/3.
+We are designing the recommender architecture that could make Readstack category-defining.
+
+Do not implement code yet.
+
+Strategic thesis to treat as locked:
+- Free Readstack must be genuinely good, trustworthy, and responsive.
+- We do NOT paywall basic correctness, preference responsiveness, avoid behavior, or coherent explanations.
+- Paid Readstack monetizes the deeper intelligence layer:
+  “Find me a book I never would have thought to choose, then make me believe you’re right.”
+- The architecture should be designed now so the premium AI layer does not require a future rebuild.
+
+Current audit findings to treat as established:
+1. The stale-state/cache issue is now resolved.
+2. The recommendation deck stayed the same because explicit preferences were silently neutralized:
+   - UI taxonomy mismatch: History/Biography not mapped correctly.
+   - tier gate: explicit genre preferences have zero recommender impact for tier 2+ users.
+3. Dense-user retrieval can bypass explicit preferences entirely.
+4. avoid_genres are soft-only and not retrieval-aware.
+5. The product does not cleanly separate durable taste from current reading intent.
+6. The current product surface overpromises control relative to actual backend responsiveness.
+7. The existing architecture direction from the prior spec is promising:
+   - canonical taxonomy
+   - signal provenance
+   - RecRequest/compiler layer
+   - multi-branch retrieval
+   - score contributions
+   - explanation faithfulness
+   - evaluation harness
+
+We endorse that direction, but the spec must now be tightened and expanded.
+
+Deliver a revised architecture spec with the following sections:
+
+────────────────────────────────
+1. Revised executive verdict
+────────────────────────────────
+
+Answer directly:
+- Is the current recommendation backend structurally adequate for the product thesis?
+- What is merely buggy?
+- What is architecturally underpowered?
+- What must change to reach an industry-leading standard?
+- What is the difference between:
+  a) a correct recommender,
+  b) a responsive decision system,
+  c) a premium semantic discovery engine?
+
+────────────────────────────────
+2. Correct the prior spec’s internal contradictions
+────────────────────────────────
+
+Resolve these points explicitly:
+
+A. P0 acceptance criteria contradiction
+The prior P0 batch proposed:
+- canonical taxonomy
+- configHash invalidation
+
+but its acceptance criteria claimed a user swapping to History/Biography should see a visibly different recommendation deck.
+
+That is not guaranteed while:
+- explicit preference effects can still be zeroed at higher tiers
+- dense-user retrieval can still bypass stated prefs
+
+Revise P0 so it is internally honest.
+
+Either:
+A. Narrow P0 acceptance to taxonomy correctness + full stale-state invalidation only,
+or
+B. Expand P0 to include enough preference-control behavior to actually guarantee visible post-edit deck shift.
+
+Recommend one path and justify it.
+
+B. configHash / deck validity scope
+The current app has three independent deck-state stores:
+- recPayloadCache
+- recSession
+- recQueue
+
+The prior spec only clearly addressed persisted payload restore.
+
+Revise the architecture so deck validity is correct across all three. Explicitly define:
+- where configHash lives
+- when it is compared
+- what gets discarded on mismatch
+- whether recSession and recQueue carry the hash directly or are invalidated through a central deck-validity check
+
+The spec must not claim manual clears become unnecessary unless this is actually true across all deck state.
+
+C. Taxonomy rollout scope
+The prior spec correctly says genre meaning is duplicated across:
+- edit-preferences
+- onboarding intake
+- tasteProfile maps
+- recommender retrieval maps
+
+But the proposed P0 file list did not clearly include the recommender-side map cleanup.
+
+Revise the taxonomy plan to state precisely:
+- what P0 canonicalizes
+- what remains duplicated temporarily, if anything
+- whether recommender retrieval subject maps are part of P0 or a follow-on
+- how we ensure “single source of truth” is not just aspirational language
+
+D. Decay policy storage
+The prior spec proposes time-since-edit decay for stated preferences.
+
+Clarify:
+- what timestamp source exists today
+- whether row-level updated_at is enough for v1
+- whether per-signal timestamps are needed later
+- whether decay belongs in P1 or should be deferred until after the control plane lands
+
+E. Hard-avoid storage precision
+The prior spec implied hard avoid might avoid a schema migration, while also suggesting a new never_show field.
+
+Clarify:
+- whether hard avoid would use an existing JSONB carrier or require schema work
+- whether that decision is deferred to a later phase
+- what we should say confidently now versus later
+
+F. Replace “configHash changed in last 24h” with a better trigger model
+The prior spec proposed top-slate reservation after configHash changed in the last 24h.
+
+Replace or defend this.
+
+Preferred direction:
+Introduce a request trigger / build cause such as:
+- explicit_preference_edit
+- manual_refresh
+- session_open
+- feedback_action
+- onboarding_completion
+
+Then define the deck-shift policy for explicit_preference_edit more precisely.
+
+G. Treat quota percentages and score caps as calibration hypotheses
+The retrieval branch shares and score caps in the prior spec are useful starting hypotheses, but they should not be frozen as architecture truths yet.
+
+Revise the spec so these are:
+- initial policy values
+- calibrated by fixture tests and replay evaluation
+- subject to change without destabilizing the architecture
+
+Define what measurable outcomes will prove the policy is working.
+
+H. Tighten pre-beta quality gates
+Revise the roadmap so it clearly states:
+- which phases are mandatory before any serious recommendation beta
+- which evaluation tests are CI blockers at each phase
+- whether P2 retrieval responsiveness is mandatory before beta rather than merely “strongly preferred”
+- what minimum explanation-faithfulness work is needed before external testing
+
+────────────────────────────────
+3. Control Plane target architecture
+────────────────────────────────
+
+Define the free/core Recommendation Control Plane.
+
+It should include:
+
+A. Canonical taxonomy
+- genres
+- eventually traits
+- aliases
+- UI labels
+- recommender keys
+- retrieval anchors
+- zero silent unmapped labels
+
+B. Signal provenance
+Distinct signal classes:
+- stated durable taste
+- revealed behavioral taste
+- soft avoids
+- hard avoids later
+- current next-read intent
+- short-term feedback signals
+
+For each:
+- source
+- confidence
+- persistence horizon
+- influence on retrieval
+- influence on ranking
+- explanation eligibility
+
+C. Recommendation request compiler
+Propose a structured request/config object compiling:
+- durable taste
+- inferred taste
+- current intent
+- avoid constraints
+- exploration policy
+- confidence profile
+- build trigger / invalidation cause
+
+Also define:
+- configHash / versioning
+- deck/session validity semantics
+- why this replaces hidden tier gates and brittle manual clear logic
+
+D. Retrieval architecture
+Design a multi-branch retrieval system that ensures:
+- revealed-history candidates matter
+- stated-preference candidates matter
+- current-intent candidates matter
+- exploration candidates matter
+- soft avoids affect retrieval
+- hard avoids can be supported later
+- dense users never silently ignore explicit edits
+
+E. Ranking / reranking architecture
+Define component scores for:
+- behavioral fit
+- stated taste fit
+- current intent fit
+- avoid penalty
+- quality/reliability
+- novelty/diversity
+- repetition suppression
+
+Answer:
+- Should explicit preferences always have nonzero influence?
+- Should influence decay by time-since-edit, not by tier?
+- What creates a visible deck shift after a radical taste edit?
+- Should top-slate assembly guarantee some representation from explicit edit-triggered branches when quality-clearing candidates exist?
+
+F. Explanation architecture
+Define how explanations become faithful to actual mechanics:
+- only cite score contributions that actually mattered
+- distinguish stated vs behavioral vs intent-based reasons
+- avoid repeated rationales across the slate
+- prevent generic copy from misrepresenting why a book surfaced
+
+────────────────────────────────
+4. Semantic Intelligence Plane
+────────────────────────────────
+
+Design the paid/premium layer that enables Readstack to create:
+“I never would have thought of that book, but now that you explain it, it feels exactly right.”
+
+This section is essential.
+
+A. Book Intelligence Layer
+How should Readstack represent a book beyond basic metadata?
+
+Consider:
+- canonical genres/subjects
+- richer semantic descriptors
+- narrative structure
+- emotional tone
+- intellectual density
+- pacing
+- theme clusters
+- reader appeal patterns
+- “why people who love this book love it”
+- embeddings / semantic vectors
+- AI-generated structured book profiles, grounded in available metadata and later richer data sources
+
+Answer:
+- What book information do we already have today?
+- What is missing?
+- What should be precomputed/offline vs generated on demand?
+- How do we avoid hallucinated or low-trust book intelligence?
+- What data objects/tables/modules would eventually store this?
+
+B. Reader Intelligence Layer
+How should Readstack understand a reader beyond tags and categories?
+
+Consider:
+- reader thesis
+- taste motifs across loved books
+- contrastive analysis of loved vs dismissed books
+- latent preferences that span genres
+- cross-category patterns such as:
+  “competent people under pressure”
+  “institutional stakes with emotional sincerity”
+  “big systems colliding with intimate human stories”
+
+Answer:
+- What should be deterministic/structured?
+- What should be AI-generated?
+- How often should a reader thesis update?
+- What evidence should it cite?
+- How does it avoid overfitting to thin history?
+
+C. Semantic retrieval branch
+Design a retrieval path that can surface books sharing the underlying appeal of a reader’s taste, even when categories differ.
+
+Examples:
+- A reader loves Project Hail Mary, The Martian, Endurance, and Into Thin Air.
+- The system identifies:
+  competence under pressure, high stakes, operational problem-solving, forward momentum.
+- It retrieves books outside obvious genres that share that deeper appeal.
+
+Explain:
+- how embeddings/semantic vectors participate
+- how semantic retrieval coexists with structured branch retrieval
+- how to guard against “interesting but wrong” drift
+- how this becomes the source of “surprising but right” recommendations
+
+D. AI-assisted reranking
+Should an AI/LLM reranker operate over a bounded candidate pool?
+
+Define:
+- what inputs it receives
+- what it is allowed to do
+- what it is not allowed to do
+- how it remains grounded in retrieved candidate evidence
+- how it interacts with the structured score
+- whether it is premium-only
+
+E. Premium explanation layer
+What becomes possible in paid recommendations that is not available in free?
+
+Examples:
+- “This is outside your obvious lane, but it shares the exact thing you reward in your favorites…”
+- “You seem to respond to stories where large systems create personal moral pressure…”
+- “This bridges your interest in speculative fiction and recent pull toward narrative history…”
+
+Design:
+- how the explanation cites actual reader/book evidence
+- how it differs from free templated explanations
+- how it avoids becoming LLM-generated plausibility theater
+
+F. Advanced decision sessions
+Design the premium “Help me choose my next book” experience:
+- dynamic questioning
+- intent clarification
+- safe vs stretch pick
+- surprise me, but explain yourself
+- three-pick session output
+- richer reasoned recommendation set
+
+How does this sit on top of the Control Plane + Semantic Plane?
+
+G. Taste evolution insights
+Design paid reflective intelligence:
+- how a user’s taste changes over time
+- what latent motifs are strengthening or fading
+- what they say they want vs what they actually finish
+- gaps or adjacent lanes they might enjoy
+
+How does this create long-term subscription value?
+
+────────────────────────────────
+5. Free vs paid architecture split
+────────────────────────────────
+
+Define clearly what belongs in free/core versus paid/premium.
+
+Free/core must include:
+- correct taxonomy
+- explicit preference responsiveness
+- avoid/preference integrity
+- robust deck invalidation
+- personalized recommendations
+- coherent, truthful explanations
+- learning from saves/skips/MLT
+- basic Next Read controls
+
+Paid/premium may include:
+- reader thesis
+- semantic retrieval
+- AI-assisted reranking
+- surprising-but-right discovery
+- richer evidence-backed explanations
+- advanced decision sessions
+- taste evolution insights
+
+For each layer, state:
+- why it belongs free or paid
+- compute cost implications
+- user value implications
+- whether architectural hooks are needed now even if the feature ships later
+
+Critical question:
+What must we build into the Control Plane now so that the Semantic Intelligence Plane can later plug in cleanly without a recommender rewrite?
+
+────────────────────────────────
+6. Evaluation harness / quality gates
+────────────────────────────────
+
+Propose an automated evaluation suite that covers BOTH:
+
+A. Control Plane correctness
+- zero unmapped preference labels
+- preference edit changes RecRequest
+- preference edit changes retrieval inputs
+- dense users respond to explicit edits
+- soft avoids affect retrieval/ranking
+- config mismatch invalidates all deck state
+- explanations match actual positive score contributions
+- no near-identical rationale repetition across top slate unless justified
+
+B. Semantic Intelligence quality, later
+- semantic retrieval surfaces cross-genre but plausibly connected books
+- premium “surprising but right” picks have defensible evidence chains
+- AI reranker cannot select candidates outside the retrieved/grounded pool
+- reader thesis updates are stable, not erratic
+- premium explanations cite real book/reader evidence, not invented rationale
+
+For each test class:
+- fixture type
+- measurable expected outcome
+- when it becomes CI-blocking
+- whether it belongs pre-beta, premium beta, or later
+
+────────────────────────────────
+7. Revised implementation roadmap
+────────────────────────────────
+
+Return a phased plan.
+
+Preferred shape, unless you recommend a better one:
+
+Architecture Lock
+- finalize blueprint and module boundaries
+
+P0A — Canonical taxonomy integrity
+- no silent unmapped labels
+- UI and recommender share one genre truth
+
+P0B — Full deck-validity/config invalidation
+- configHash or equivalent invalidates payload/session/queue state
+- preference edits cannot leave stale decks alive
+
+P1 — Control-plane signal contract
+- RecRequest v1
+- signal provenance starts
+- explicit prefs cannot be zeroed by tier
+- avoids become semantically honest
+- request delta tests
+
+P2 — Retrieval responsiveness / branch planner
+- stated/behavioral/intent/exploration branches
+- dense users remain controllable
+- radical edit produces visible deck shift
+- policy values calibrated through fixtures
+
+P3 — Score contributions + explanation faithfulness
+- reasons tied to actual contributors
+- slate-level reason diversity
+- explanation audit becomes mandatory
+
+P4 — Semantic Intelligence foundation
+- book intelligence schema/design
+- reader thesis design
+- embedding/vector strategy
+- offline enrichment architecture
+- no premium UI required yet
+
+P5 — Premium discovery engine
+- semantic retrieval branch
+- AI-assisted reranking
+- richer grounded explanations
+- surprising-but-right recommendation sessions
+
+P6 — Premium insight layer
+- taste evolution
+- reader reflections
+- advanced decision sessions
+- long-term monetization refinements
+
+For each phase:
+- exact outcome
+- user-visible improvement
+- files/modules likely involved
+- whether schema/migration likely
+- acceptance criteria
+- tests that must ship alongside it
+- whether mandatory before beta / before paid beta / long-horizon
+
+────────────────────────────────
+8. Exact first implementation batch recommendation
+────────────────────────────────
+
+After the revised architecture, recommend the exact first code batch we should ship.
+
+It must be justified as:
+- the cleanest first slice of the locked architecture
+- not a one-off patch
+- something that immediately reduces recommender incoherence
+- something that will not need to be thrown away when the Semantic Intelligence Plane arrives
+
+Return:
+- batch name
+- exact goal
+- files likely touched
+- file budget
+- acceptance criteria
+- tests/validation
+- stop conditions
+- what this unlocks next
+
+────────────────────────────────
+9. What not to do
+────────────────────────────────
+
+Explicitly reject tempting but inferior approaches, including:
+- simply adding missing genre map entries and calling it solved
+- simply removing the tier gate with arbitrary weights and calling it architecture
+- expanding Reading Taste UI before backend semantics are correct
+- using LLM copy to paper over recommender incoherence
+- building premium AI discovery before the Control Plane is trustworthy
+- overfitting the control system to today’s labels in a way that blocks semantic intelligence later
+
+Return format:
+- Revised executive verdict
+- Locked architecture principles
+- Control Plane target architecture
+- Semantic Intelligence Plane target architecture
+- Free vs paid split
+- Revised phase plan
+- Quality-gate matrix
+- Exact first implementation batch
+- Risks/tradeoffs
+- What remains intentionally deferred
