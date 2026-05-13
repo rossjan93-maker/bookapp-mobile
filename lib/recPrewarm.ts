@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeTasteProfile } from './tasteProfile';
 import { getPersonalizedRecsWithExpert } from './recommender';
 import { saveRecPayload, computeRecFingerprint } from './recPayloadCache';
+import { loadCurrentConfigHash } from './recValidity';
 import type { RecEntitlement } from './recEntitlement';
 
 // ── Background recommendation prewarm ─────────────────────────────────────────
@@ -60,6 +61,14 @@ export function triggerRecPrewarm(supabase: SupabaseClient, userId: string): voi
     try {
       const _t0 = Date.now();
 
+      // ── P0B.1: capture recommendation-config identity at START ─────────────
+      // This must precede profile/recs generation so the stamp matches the
+      // prefs the recs were actually computed under. Without this, a pref
+      // edit racing the prewarm could stamp a payload with the new hash
+      // while its recs reflect the old prefs — restore-gate would accept
+      // them, defeating P0B.1's contract.
+      const configHashAtStart = await loadCurrentConfigHash(supabase, userId);
+
       // ── Load taste profile ──────────────────────────────────────────────────
       const profile = await computeTasteProfile(supabase, userId);
       if (!profile || profile.strongSignalCount < MIN_SIGNAL_COUNT) {
@@ -99,6 +108,22 @@ export function triggerRecPrewarm(supabase: SupabaseClient, userId: string): voi
       }
 
       // ── Persist payload ─────────────────────────────────────────────────────
+      // P0B.1: re-read the current configHash and skip the save entirely if
+      // prefs changed mid-prewarm. The stamp must match the prefs the recs
+      // were computed under (configHashAtStart). If the user has edited
+      // prefs while we were generating recs, those recs are stale — saving
+      // them under the start hash would restore stale recs on next cold
+      // start, and saving them under the now-current hash would lie about
+      // their provenance. Either way, drop them and let runPipeline produce
+      // a fresh deck on next mount.
+      const configHashAtSave = await loadCurrentConfigHash(supabase, userId);
+      if (configHashAtSave !== configHashAtStart) {
+        if (__DEV__) console.log('[PREWARM] skipped save — config changed mid-run',
+          `| start=${configHashAtStart}`,
+          `| save=${configHashAtSave}`,
+        );
+        return;
+      }
       await saveRecPayload(userId, {
         recs,
         continuations: result.continuations ?? [],
@@ -111,6 +136,7 @@ export function triggerRecPrewarm(supabase: SupabaseClient, userId: string): voi
         signalCount:   profile.strongSignalCount,
         intentTag:     null,
         fingerprint,
+        configHash:    configHashAtStart,
         loadedAt:      Date.now(),
       });
 

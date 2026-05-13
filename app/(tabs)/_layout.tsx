@@ -4,6 +4,7 @@ import { Tabs, useRouter, useSegments } from 'expo-router';
 import { CustomTabBar } from '../../components/CustomTabBar';
 import { supabase } from '../../lib/supabase';
 import { loadRecPayload } from '../../lib/recPayloadCache';
+import { loadCurrentConfigHash } from '../../lib/recValidity';
 import { getRecSession, setRecSession } from '../../lib/recSession';
 import {
   type GuidedStep,
@@ -232,13 +233,25 @@ export default function TabsLayout() {
   // Pre-warm the rec session from AsyncStorage so the Recommend tab renders
   // instantly on cold start (app restart) without a loading flash.
   // Runs silently in the background while the user is on the Home screen.
+  //
+  // P0B.1: this restore path now participates in configHash validation —
+  // closes the last remaining gap from P0B. Before hydrating the session
+  // from persisted state, we fetch the current recommendation-config hash
+  // and pass it to `loadRecPayload`. If the stored payload's hash is
+  // missing or differs from the current hash, `loadRecPayload` clears the
+  // payload from AsyncStorage and returns null, so the cold-start session
+  // is never seeded with stale prefs. When the hash matches, it propagates
+  // into the session so downstream `getRecSessionFor()` reads accept it
+  // (otherwise the session-level gate would clear our just-restored data
+  // as a hashless legacy payload).
   useEffect(() => {
     async function prewarmRecs() {
       if (!supabase) return;
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       if (getRecSession()?.userId === user.id) return; // already warm
-      const persisted = await loadRecPayload(user.id);
+      const currentConfigHash = await loadCurrentConfigHash(supabase, user.id);
+      const persisted = await loadRecPayload(user.id, { currentConfigHash });
       if (!persisted) return;
       if (persisted.recs.length === 0 && persisted.continuations.length === 0) return;
       if (getRecSession()?.userId === user.id) return; // filled by another path
@@ -253,6 +266,11 @@ export default function TabsLayout() {
         qualityGate:   persisted.qualityGate,
         isFreePreview: persisted.isFreePreview,
         signalCount:   persisted.signalCount,
+        // P0B.1: stamp the restored session with the just-validated hash
+        // so the bootstrap useEffect's getRecSessionFor() accepts it as
+        // current. Without this, every restored session would be cleared
+        // as hashless even though loadRecPayload already validated it.
+        configHash:    currentConfigHash,
         loadedAt:      persisted.loadedAt,
       });
     }

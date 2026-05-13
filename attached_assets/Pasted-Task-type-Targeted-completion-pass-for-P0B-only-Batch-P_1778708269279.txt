@@ -1,0 +1,128 @@
+Task type:
+Targeted completion pass for P0B only.
+
+Batch:
+P0B.1 — Persisted Payload Restore Config-Gate Closure.
+
+Goal:
+Close the one remaining gap from P0B: ensure stale persisted recommendation payloads are rejected at their actual cold-start restore entry point(s), not merely restored and then invalidated later by session-level guards.
+
+Context:
+P0B core implementation shipped:
+- new configHash concept distinct from the old runtime fingerprint
+- centralized validity helper in recValidity
+- config-aware validity gates for recSession
+- config-aware validity gates for recQueue
+- queue reuse stale-head bug structurally blocked
+- multiple async/cross-user race conditions found and fixed through architect review
+
+However, the P0B report explicitly states:
+- the persisted payload gate API exists in loadRecPayload
+- but the cold-start restore caller was not wired because recPrewarm.ts and app/(tabs)/_layout.tsx were outside the allowed file list
+- downstream session-level gating catches stale restored state before user-visible render
+
+That is safer, but it does not fully satisfy the P0B architecture contract:
+“Persisted payload state is rejected when current recommendation config hash changes.”
+
+We now want to close that specific gap.
+
+Allowed files:
+- lib/recPayloadCache.ts
+- lib/recPrewarm.ts
+- app/(tabs)/_layout.tsx
+- lib/recValidity.ts only if a tiny helper reuse is needed
+- scripts/validate_rec_validity.ts
+- replit.md
+
+File budget:
+Maximum 6 files.
+If more are required, stop and explain.
+
+Forbidden:
+- recSession
+- recQueue
+- RecommendationsFeed
+- edit-preferences
+- recommender scoring/ranking/retrieval
+- tasteProfile
+- taxonomy
+- signal model / RecRequest
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library / Google Books / metadata
+- LLM/API calls
+
+Hard constraints:
+- Do not change the configHash design chosen in P0B unless a bug proves it impossible.
+- Do not change queue/session logic from P0B.
+- Do not broaden into P1 RecRequest work.
+- This batch exists only to wire the persisted restore gate into the real restore callers.
+
+Implementation requirements:
+
+1. Identify all persisted recommendation payload restore entry points
+Inspect:
+- lib/recPrewarm.ts
+- app/(tabs)/_layout.tsx
+- any direct caller of loadRecPayload if present in allowed scope
+
+Return in the report:
+- which files restore persisted rec payloads
+- which ones need current configHash passed in
+- whether any caller intentionally should remain ungated
+
+2. Wire current configHash into restore path
+At each real persisted payload restore point:
+- compute/load the current recommendation configHash using the P0B mechanism
+- pass it into loadRecPayload or the equivalent restore API
+- if stored hash mismatches current hash:
+  - reject the payload
+  - clear or ignore it according to the P0B validity design
+  - force downstream rebuild behavior
+
+3. Preserve current bootstrap behavior
+Do not alter prewarm intent, app startup ordering, or routing behavior except as necessary to avoid restoring stale payloads.
+
+4. Extend deterministic validation
+Update scripts/validate_rec_validity.ts if needed to prove:
+- persisted payload with hash A is accepted under hash A
+- persisted payload with hash A is rejected under hash B
+- cold-start restore path does not knowingly hydrate stale payload when the config differs
+
+If a deterministic script cannot exercise the app-layout/prewarm caller path directly, explain the limitation and add the strongest available validation without faking coverage.
+
+Acceptance criteria:
+1. The actual persisted payload restore path(s) now participate in configHash validation.
+2. A stale persisted payload is rejected at restore when current config differs.
+3. Session-level validity remains as defense-in-depth but is no longer the first line of protection for persisted stale state.
+4. No session/queue/recommender/scoring/ranking behavior changes.
+5. Typecheck remains at baseline with zero new errors.
+6. Diff scope confirms only allowed files touched.
+
+Validation required:
+- Before/after restore-path explanation.
+- List of persisted payload restore callers and what changed.
+- Proof or best available validation that hash mismatch rejects stale persisted payload before hydration.
+- Confirmation P0B’s existing session/queue gates were not altered.
+- Typecheck delta.
+- Workflow status.
+- Any residual known limitations.
+
+Stop conditions:
+- If cold-start restore cannot cleanly obtain current configHash without implementing meaningful P1 RecRequest work, stop and explain.
+- If wiring restore callers requires touching forbidden files, stop and explain.
+- If the current P0B configHash contract is insufficient for persisted restore gating, stop and propose the smallest correction before coding.
+
+Return format:
+- Changed files
+- Restore entry points identified
+- Implementation summary
+- Persisted-payload mismatch behavior
+- Validation result
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Deviations

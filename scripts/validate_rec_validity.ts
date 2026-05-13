@@ -177,6 +177,48 @@ expect(
   `got ${JSON.stringify(checkAfterSave)}`,
 );
 
+// ── 7: P0B.1 persisted-payload restore gate ────────────────────────────────
+// Models the loadRecPayload() opt-in gate at the helper level. The cache
+// delegates to assertCurrent(stored, current); we exercise the same three
+// outcomes the restore caller in app/(tabs)/_layout.tsx now relies on:
+//   (a) stored hash matches current → payload accepted
+//   (b) stored hash differs from current → payload rejected
+//   (c) no stored hash (legacy/pre-P0B.1 prewarm write) → payload rejected
+const restoreA: RecConfigInputs = {
+  favorite_genres:  ['Fantasy'],
+  avoid_genres:     [],
+  reading_styles:   [],
+  favorite_authors: null,
+};
+const restoreB: RecConfigInputs = {
+  ...restoreA,
+  avoid_genres: ['Romance'],
+};
+const restoreHashA = computeRecConfigHash(restoreA);
+const restoreHashB = computeRecConfigHash(restoreB);
+
+expect(
+  'persisted restore: hash A stored, hash A current → accept',
+  assertCurrent(restoreHashA, restoreHashA).valid === true,
+  `got ${JSON.stringify(assertCurrent(restoreHashA, restoreHashA))}`,
+);
+expect(
+  'persisted restore: hash A stored, hash B current → reject (config_mismatch)',
+  (() => {
+    const r = assertCurrent(restoreHashA, restoreHashB);
+    return r.valid === false && r.reason === 'config_mismatch';
+  })(),
+  `got ${JSON.stringify(assertCurrent(restoreHashA, restoreHashB))}`,
+);
+expect(
+  'persisted restore: legacy hashless payload, any current → reject (no_stored_hash)',
+  (() => {
+    const r = assertCurrent(undefined, restoreHashA);
+    return r.valid === false && r.reason === 'no_stored_hash';
+  })(),
+  `got ${JSON.stringify(assertCurrent(undefined, restoreHashA))}`,
+);
+
 // ── Report ─────────────────────────────────────────────────────────────────
 if (failures.length > 0) {
   console.error(`[recValidity] FAIL — ${failures.length} check(s) failed:`);
@@ -186,5 +228,6 @@ if (failures.length > 0) {
 
 console.log(
   `[recValidity] OK — hash determinism, case/whitespace/order tolerance, ` +
-  `field-uniqueness, assertCurrent semantics, and prior-bug-class invalidation all green.`,
+  `field-uniqueness, assertCurrent semantics, prior-bug-class invalidation, ` +
+  `and P0B.1 persisted-payload restore gate all green.`,
 );
