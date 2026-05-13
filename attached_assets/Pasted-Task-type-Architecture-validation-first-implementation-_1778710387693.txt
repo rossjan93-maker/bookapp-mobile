@@ -1,0 +1,377 @@
+Task type:
+Architecture-validation-first implementation batch.
+
+Batch:
+P2 — Retrieval Responsiveness / Branch Planner.
+
+Goal:
+Implement the next major phase of the locked Recommendation Architecture Blueprint:
+
+1. Introduce the first real retrieval branch planner.
+2. Ensure explicit stated preferences affect candidate retrieval, not just scoring.
+3. Eliminate the dense-user failure mode where explicit Reading Taste edits can be mathematically respected but retrieval still bypasses those lanes.
+4. Make an explicit preference edit capable of producing a visibly different top slate when quality-clearing candidates exist.
+5. Preserve the new Control Plane contracts from P0/P1:
+   - canonical taxonomy
+   - deck validity/config invalidation
+   - RecRequest v1
+   - BuildCause v1
+   - stated-preference nonzero scoring floor
+
+Strategic context:
+Already shipped:
+- P0A — Canonical Genre Taxonomy Integrity ✅
+- P0A.1 — Retrieval-Side Taxonomy Fold-In ✅
+- P0B/P0B.1 — Full Deck Validity / Config Invalidation ✅
+- P1 — Control-Plane Signal Contract + Nonzero Stated-Preference Influence ✅
+
+P2 is where Readstack moves from:
+“Your explicit preferences technically affect scores”
+to:
+“Your explicit preferences visibly affect what books enter the candidate pool and can surface in the deck.”
+
+User trust failure this addresses:
+A user changed Reading Taste from Sci-Fi to History/Biography. After P1, those preferences now influence scoring at all tiers, but if retrieval still mostly pulls old behavioral/lane candidates, the visible deck may not shift enough. P2 must address retrieval responsiveness.
+
+────────────────────────────────
+PHASE 0 — ARCHITECTURE VALIDATION BEFORE CODING
+────────────────────────────────
+
+Before implementation, inspect the current retrieval architecture thoroughly and answer:
+
+1. What are the current retrieval entry points inside lib/recommender.ts?
+2. What does the current “dense mode” bypass do exactly?
+3. What candidate sources currently exist:
+   - genre affinity OL retrieval
+   - dense-lane OL retrieval
+   - author retrieval
+   - intent-related candidate constraints if any
+   - exploration/fallback paths if any
+4. What retrieval behavior should be preserved exactly?
+5. What minimum branch-planner shape can be introduced now without rewriting the entire recommender?
+6. Can P2 be implemented as one coherent batch under the file budget while delivering:
+   - stated-preference retrieval presence
+   - dense-user responsiveness
+   - BuildCause-aware stated-branch slot reservation
+7. Or should P2 be split into:
+   - P2A branch-planner infrastructure + stated genre branch
+   - P2B explicit edit top-slate reservation + dense-user calibration
+   - P2C intent/exploration branch formalization
+
+If the cleanest implementation requires a split, STOP and return the proposed P2A/P2B/P2C plan before editing.
+Do not force an oversized batch.
+
+────────────────────────────────
+ALLOWED FILES
+────────────────────────────────
+
+Likely new files:
+- NEW lib/retrieval/branchPlanner.ts
+- NEW lib/retrieval/types.ts
+- NEW lib/retrieval/branches/statedGenres.ts
+- NEW lib/retrieval/branches/revealedLanes.ts
+- NEW lib/retrieval/branches/revealedAuthors.ts
+- NEW lib/retrieval/branches/intent.ts only if existing intent retrieval logic can be cleanly factored without overreach
+- NEW lib/retrieval/branches/exploration.ts only if existing fallback/exploration logic already exists and can be cleanly represented
+
+Allowed existing files:
+- lib/recommender.ts
+- lib/recRequest.ts
+- lib/recPolicy.ts
+- components/RecommendationsFeed.tsx only if needed for BuildCause or request-threading already in scope from P1
+- scripts/validate_retrieval_planner.ts or equivalent deterministic validator
+- replit.md
+
+File budget:
+Maximum 12 files including replit.md and validation script.
+If this requires more than 12 files, stop and propose a tighter split.
+
+────────────────────────────────
+FORBIDDEN FILES / SYSTEMS
+────────────────────────────────
+
+Do not touch:
+- taxonomy modules unless a pure import/type use is needed; no taxonomy behavior changes
+- tasteProfile genre weighting logic unless a preflight finding proves P2 cannot be sound without a narrow read-only adapter and you stop before editing
+- recPayloadCache
+- recSession
+- recQueue
+- recValidity
+- edit-preferences save behavior
+- scoring contribution architecture for P3
+- explanation logic / RecCard copy
+- TasteReadout
+- onboarding
+- Home
+- settings/profile UI
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library provider implementation semantics
+- Google Books
+- metadata repair
+- LLM/API calls
+- Semantic Intelligence Plane files
+
+────────────────────────────────
+HARD CONSTRAINTS
+────────────────────────────────
+
+- Do not change recommendation scoring weights except where final slate assembly needs to apply branch/slot reservation logic, and report that clearly.
+- Do not implement P3 ScoreContribution architecture.
+- Do not rewrite explanations.
+- Do not alter P0B deck-validity behavior.
+- Do not alter P1 RecRequest or signal semantics beyond the smallest extension needed to support retrieval planning.
+- Do not broaden into premium semantic retrieval.
+- Do not opportunistically refactor unrelated recommender internals.
+
+P2 is specifically:
+- retrieval branch planner
+- stated preference candidate retrieval that never silently disappears
+- dense-user bypass removal or replacement
+- BuildCause-aware deck shift behavior for explicit preference edits
+- deterministic validation
+
+────────────────────────────────
+P2 TARGET BEHAVIOR
+────────────────────────────────
+
+After P2, when a user with a dense/high-signal profile explicitly changes Reading Taste to a new lane such as:
+- Favorite genres: History, Biography
+- Avoid: Sci-Fi
+
+and the next recommendation deck is built with:
+BuildCause === 'explicit_preference_edit'
+
+the system should:
+
+1. Preserve quality and hygiene filters.
+2. Retrieve some candidates from the newly stated preference lane(s), not only from old behavioral dense lanes.
+3. Not allow dense-mode retrieval to bypass stated genres entirely.
+4. Carry branch metadata so we know which candidate came from:
+   - stated preference branch
+   - behavioral/revealed branch
+   - author branch
+   - intent branch if active
+   - fallback/exploration branch if represented
+5. Ensure at least one stated-preference branch candidate can surface in the top slate when:
+   - BuildCause is explicit_preference_edit
+   - at least one stated-branch candidate clears the existing quality/hygiene floor
+6. Do not force low-quality books into the top slate merely to satisfy a preference edit.
+7. Retain normal behavior for session_open builds without explicit edit cause.
+
+────────────────────────────────
+IMPLEMENTATION REQUIREMENTS
+────────────────────────────────
+
+1. Introduce retrieval branch planner
+Create lib/retrieval/branchPlanner.ts or the cleanest equivalent.
+
+It should:
+- take RecRequest + current taste/profile/retrieval inputs needed today
+- determine which retrieval branches should run
+- determine branch priority/order/quota policy through centralized policy values
+- return a retrieval plan or branch outputs in a typed shape
+- avoid hidden dense-mode if-statements scattered inside recommender.ts
+
+Initial branch concepts should reflect the locked architecture where feasible:
+- statedGenres
+- revealedLanes
+- revealedAuthors
+- intent, only if current intent retrieval semantics already exist and factoring them is clean
+- exploration/fallback, only if current logic exists and factoring it is clean
+
+If some future branch is not implementable in this batch, do not fake it. Explicitly defer it.
+
+2. Define branch metadata/types
+Create lib/retrieval/types.ts if needed.
+
+Each candidate or candidate set should be able to identify:
+- branch kind
+- signal provenance class
+- originating lane/genre/author/intent where applicable
+
+This metadata is for control-plane correctness now and explanation/scoring faithfulness later.
+Do not build P3 explanations yet.
+
+3. Stated-genre retrieval branch
+Implement a branch that uses RecRequest.signals.statedTaste.favoriteGenres and the taxonomy-backed retrieval subject anchors from P0A/P0A.1.
+
+Requirements:
+- stated genre retrieval must run whenever mapped stated genres exist, including for high-signal/dense users
+- the branch must not be silently bypassed by dense mode
+- branch output must be separately inspectable in validation
+- use current OL retrieval semantics and subject anchors; do not redesign provider queries
+
+4. Replace dense-mode bypass with planner policy
+The current dense path can bypass genre affinities/stated preferences entirely.
+
+P2 must:
+- preserve the useful revealed-lane/revealed-author behavior
+- stop letting that behavior erase stated preference retrieval entirely
+- express the balance through planner policy, not a hard bypass
+
+The exact numerical quotas/branch shares are calibration hypotheses.
+Place any initial branch policy values in lib/recPolicy.ts if appropriate, or a clearly central branch-policy section in branchPlanner if that is cleaner for P2.
+Do not scatter quota numbers through recommender.ts.
+
+5. BuildCause-aware retrieval / slate behavior
+Use the P1 BuildCause signal.
+
+For:
+BuildCause === 'explicit_preference_edit'
+
+P2 should ensure:
+- statedGenres branch receives meaningful retrieval priority
+- the final slate assembly has a controlled reservation rule:
+  - reserve at least 1 top-slate slot for a stated-preference branch candidate if one clears the quality floor
+
+Important:
+- If reservation must occur after scoring, implement the smallest sound slot-assembly hook needed.
+- Do not redesign scoring itself.
+- Do not force a poor candidate into the slate if none clears the existing quality threshold.
+- If top-slate reservation cannot be done cleanly without a broader P3/P4 scoring architecture change, stop and report the smallest alternative.
+
+6. Preserve normal non-edit behavior
+For:
+BuildCause === 'session_open'
+
+the system should still:
+- retrieve from stated preferences as a nonzero branch if the user has them
+- but not overcorrect or reserve top-slate slots as aggressively as an explicit edit build
+
+Explicit edit behavior should be visibly responsive.
+Normal session behavior should remain balanced.
+
+7. Recommender integration
+Refactor only the retrieval orchestration inside lib/recommender.ts as needed to delegate to the planner.
+
+Preserve:
+- current scoring path
+- current quality/hygiene filters
+- current recommendation count contracts
+- current queue/session behavior outside natural deck output changes
+
+8. Validation script
+Add scripts/validate_retrieval_planner.ts or equivalent.
+
+It must test, at minimum:
+
+A4-style retrieval delta:
+- dense/high-signal synthetic request with old behavioral lanes
+- explicit favorite History/Biography in RecRequest
+- planner includes a statedGenres branch
+- planner/retrieval inputs include History/Biography-derived anchors
+
+A5-style top-slate edit response:
+- when BuildCause === 'explicit_preference_edit'
+- and at least one valid stated-branch candidate exists
+- top slate selection reserves/surfaces at least one stated-branch item
+
+A6-style dense-user respect:
+- dense/high-signal request still runs revealed lanes/authors
+- but no longer excludes stated branch entirely
+
+Session-open contrast:
+- session_open runs stated branch without explicit-edit reservation behavior
+
+If full end-to-end candidate retrieval cannot be deterministic without live providers, mock or fixture the branch outputs at the tightest honest layer available. State the validation level clearly. Do not claim an end-to-end deck test if it is planner-level only.
+
+────────────────────────────────
+ACCEPTANCE CRITERIA
+────────────────────────────────
+
+1. Retrieval planning is centralized enough that stated preference retrieval is no longer silently bypassed by dense mode.
+2. A statedGenres retrieval branch exists and runs for high-signal users when mapped favorite genres exist.
+3. Dense/revealed retrieval still exists and remains active; P2 does not collapse the system into stated-preferences only.
+4. BuildCause === 'explicit_preference_edit' creates stronger stated-preference retrieval priority and, where quality allows, at least one top-slate stated-branch candidate.
+5. BuildCause === 'session_open' remains balanced and does not use the same slot-reservation behavior unless intentionally justified.
+6. Candidate or branch outputs carry enough metadata to identify branch provenance.
+7. No scoring architecture rewrite, no explanation rewrite, no P3 work.
+8. No deck-validity/cache/session behavior changes.
+9. Policy numbers are centralized and clearly marked as calibration hypotheses.
+10. Deterministic validation demonstrates:
+   - stated branch retrieval delta
+   - dense-user explicit-pref respect
+   - explicit edit top-slate reservation logic or a justified stop-report if not cleanly achievable
+11. Typecheck remains at baseline with zero new errors.
+12. Diff scope confirms no forbidden systems touched.
+
+────────────────────────────────
+VALIDATION REQUIRED
+────────────────────────────────
+
+Return:
+
+1. Preflight architecture findings
+- whether P2 shipped as one batch or should have split
+- how current dense retrieval worked before
+- how planner changes that
+
+2. Changed files
+
+3. Implementation summary
+
+4. Retrieval branch planner design
+- branch kinds implemented now
+- branch kinds deferred
+- how quotas/priorities are represented
+
+5. Dense-user behavior before/after
+
+6. Explicit preference edit behavior before/after
+
+7. BuildCause usage
+- explicit_preference_edit
+- session_open
+- whether any other causes were touched or deferred
+
+8. Stated preference retrieval proof
+- History/Biography example
+- high-signal/dense user example
+
+9. Top-slate reservation proof
+- what qualifies as a candidate that can occupy the reserved slot
+- what happens when no quality-clearing candidate exists
+
+10. Validation script result
+- what level it validates: planner, mocked slate assembly, or end-to-end
+
+11. Typecheck delta
+
+12. Workflow status
+
+13. Known limitations
+
+14. Deviations
+
+────────────────────────────────
+STOP CONDITIONS
+────────────────────────────────
+
+Stop and report before coding further if:
+
+- P2 cannot be delivered coherently within 12 files.
+- Proper retrieval planning requires rewriting the entire recommender rather than delegating current retrieval orchestration.
+- Slot reservation cannot be implemented soundly without first building P3 score-contribution architecture.
+- Existing intent retrieval is too entangled to factor cleanly; defer it rather than destabilizing P2.
+- Validation cannot honestly prove the retrieval responsiveness properties at some deterministic layer.
+- This batch starts requiring changes to forbidden systems.
+- Policy calibration becomes speculative beyond the first minimal values needed to prove the architecture.
+
+Return format:
+- Changed files
+- Preflight findings
+- Implementation summary
+- Retrieval planner architecture
+- Dense-user before/after
+- Explicit-edit before/after
+- BuildCause behavior
+- Top-slate reservation logic
+- Validation results
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Deviations
