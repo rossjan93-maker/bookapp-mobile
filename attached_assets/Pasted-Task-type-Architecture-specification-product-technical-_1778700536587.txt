@@ -1,0 +1,224 @@
+Task type:
+Architecture specification / product-technical refinement only.
+
+Goal:
+Design the recommendation architecture Readstack should have in order to become an industry-leading, trustable, highly responsive next-read decision system.
+
+This is not a patch-planning exercise. Do not merely restate REC-RESP-1/2/3. Use the latest Reading Taste → For You responsiveness audit as the trigger for a deeper architectural refinement.
+
+User direction:
+We do not want an incremental “make the current recommender a little better” plan if the architecture is fundamentally underpowered.
+We want the recommendation system to be category-defining in:
+- personalization
+- responsiveness to explicit user inputs
+- trust
+- explanation fidelity
+- ability to support future AI reasoning layers
+- ability to separate long-term taste from current reading intent
+
+Do not implement code yet.
+
+Current audit findings to treat as established:
+1. The stale-state/cache issue is now resolved. The pipeline rebuilds correctly after preference save.
+2. The deck stayed the same because explicit preferences were silently neutralized:
+   - UI label mismatch: History/Biography not mapped in GENRE_AFFINITY_MAP.
+   - tier gate: explicit genre preferences have zero recommender impact for tier 2+ users.
+3. Dense-user retrieval can bypass explicit preferences entirely.
+4. avoid_genres are soft-only and not retrieval-aware.
+5. The product does not cleanly separate durable taste from current intent.
+6. This means the current product surface overpromises control relative to actual backend responsiveness.
+
+Deliver an architecture spec with the following sections:
+
+1. Executive verdict
+Answer directly:
+- Is the current recommendation backend structurally adequate for the product thesis?
+- What is merely buggy?
+- What is architecturally underpowered?
+- What must change to reach an industry-leading standard?
+
+2. Current-state decomposition
+Map the existing recommender stack:
+- reader_preferences
+- tasteProfile
+- tier logic
+- genre_affinities
+- preferred_traits
+- det_lanes
+- liked_subjects
+- liked_authors
+- candidate retrieval branches
+- scoring
+- queue/session/cache
+- explanation generation
+
+Identify where user control is:
+- preserved
+- attenuated
+- silently dropped
+- disconnected from explanations
+
+3. Canonical taste taxonomy design
+Design a single source of truth for:
+- genre IDs
+- UI labels
+- onboarding labels
+- edit-preferences labels
+- aliases
+- affinity keys
+- retrieval subjects
+- display strings
+
+Answer:
+- Should Readstack use canonical IDs internally and only map to labels at the UI edge?
+- How should legacy saved labels be normalized without a migration, if possible?
+- How do we guarantee zero silent unmapped preference labels?
+- What files/modules should own this taxonomy?
+
+4. Signal model / provenance architecture
+Define distinct signal classes:
+- stated durable taste
+- revealed behavioral taste
+- soft avoids
+- hard avoids
+- current next-read intent
+- short-term feedback signals
+
+For each, specify:
+- persistence horizon
+- confidence
+- decay policy, if any
+- where it should influence retrieval
+- where it should influence ranking
+- how it should be exposed in explanations
+
+5. Recommendation request compiler
+Propose a structured internal request/config object that compiles:
+- durable taste
+- inferred taste
+- current intent
+- avoid constraints
+- exploration policy
+- confidence profile
+
+Include:
+- fields
+- source modules
+- how this would replace hidden tier gates
+- whether a recommendation-config hash/version should be attached to deck/session payloads to make cache validity robust
+
+6. Retrieval architecture
+Design a multi-branch candidate generation strategy that ensures:
+- revealed-history candidates matter
+- stated-preference candidates matter
+- current-intent candidates matter
+- exploration candidates matter
+- avoided categories are handled intentionally
+
+Propose:
+- retrieval branches
+- branch quotas or weighting logic
+- dense-user behavior
+- cold-start behavior
+- what should happen when the user radically changes Reading Taste
+
+7. Ranking/reranking architecture
+Define the score components that should exist:
+- behavioral fit
+- stated taste fit
+- current intent fit
+- avoid penalty
+- quality/reliability
+- novelty/diversity
+- repetition suppression
+
+Answer:
+- Should explicit preferences have a guaranteed nonzero influence at every tier?
+- Should their weight decay by time-since-edit rather than by user tier?
+- How large must the influence be to create a visible deck shift in a “Sci-Fi → History/Biography” change?
+- Should top-slate assembly enforce representation from newly edited preference branches?
+
+8. Avoid semantics
+Design the product/backend split between:
+- “less of this”
+- “never recommend this”
+
+Specify:
+- storage shape if existing schema is insufficient
+- retrieval semantics
+- ranking semantics
+- UI copy consequences
+
+9. Explanation architecture
+Define how explanations should become faithful to actual recommendation mechanics:
+- which scored contributions are explanation-eligible
+- how to tell stated-vs-behavioral-vs-intent stories
+- how to avoid repeated rationales across a slate
+- how to prevent generic copy from misrepresenting why a book ranked
+
+10. Evaluation harness / quality gates
+Propose an automated evaluation suite that must exist before or alongside architecture changes.
+
+At minimum include tests for:
+- zero unmapped preference labels
+- explicit preference change causes measurable tasteProfile delta
+- explicit preference change causes candidate retrieval delta
+- explicit preference change causes deck/top-4 delta
+- avoid preference changes retrieval/ranking appropriately
+- dense users still respond to explicit edits
+- explanation reasons match actual signal contributions
+- no near-identical rationale repetition across top slate unless justified
+
+For each, define:
+- test fixture
+- expected measurable outcome
+- where the test would live
+- whether it can be deterministic today
+
+11. Immediate P0 integrity patch
+After the architecture is defined, recommend the first code batch that should ship.
+
+This may include some version of:
+- canonical genre normalization / mapping repair
+- explicit preferences nonzero influence at all tiers
+- avoid retrieval treatment
+- mapping telemetry
+
+But it must be justified as the first slice of the target architecture, not a one-off patch.
+
+Return:
+- exact files likely touched
+- file budget
+- risk
+- stop conditions
+- acceptance tests
+- whether any schema/migration is warranted
+
+12. Phased implementation roadmap
+Propose a serious roadmap from:
+- P0 integrity
+- P1 recommendation control plane
+- P2 current-intent architecture
+- P3 explanation faithfulness
+- P4 evaluation harness maturity
+- P5 future LLM augmentation, if appropriate
+
+Be candid about which parts should happen before beta, which can wait, and which are long-horizon.
+
+13. What not to do
+Explicitly reject any tempting but inferior approaches, such as:
+- simply adding six missing map entries and calling it solved
+- simply removing the tier gate with arbitrary weights and calling it architecture
+- adding more Reading Taste UI controls before the backend semantics are correct
+- using LLM copy to paper over recommender incoherence
+
+Return format:
+- Executive verdict
+- Target architecture
+- Core design principles
+- Current-state failure map
+- Immediate P0 batch recommendation
+- Phased roadmap
+- Evaluation harness
+- Risks/tradeoffs
+- What not to do
