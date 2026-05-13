@@ -1,0 +1,232 @@
+Task type:
+Implementation batch with architecture validation first.
+
+Batch:
+P0B — Full Deck Validity / Recommendation Config Invalidation.
+
+Goal:
+Implement the second Control Plane foundation slice from the locked Recommendation Architecture Blueprint:
+
+Recommendation deck state should become self-invalidating when recommendation-relevant configuration changes, across all three deck-state stores:
+- persisted recPayloadCache
+- in-memory recSession
+- in-memory recQueue
+
+This must reduce reliance on fragile write-path manual clearing and close the stale-deck bug class we recently experienced.
+
+Strategic context:
+The revised recommender architecture is locked:
+- P0A Canonical Genre Taxonomy Integrity ✅
+- P0A.1 Retrieval-side Taxonomy Fold-In ✅
+- P0B Full Deck Validity / Config Invalidation ← current batch
+- P1 Signal Contract + RecRequest + nonzero stated-pref influence
+- P2 Retrieval Branch Planner
+- P3 Score Contributions + Explanation Faithfulness
+
+Important architecture nuance:
+The full RecRequest compiler lands in P1, but P0B must still establish the deck-validity pattern now.
+Before implementation, inspect the current existing fingerprint/hash machinery, especially any computeRecFingerprint or equivalent in recPayloadCache, and choose the smallest forward-compatible design that:
+1. provides a stable recommendation-config hash/fingerprint today, and
+2. can be replaced or upgraded cleanly by the future RecRequest.configHash in P1 without rewriting all deck-state validity logic.
+
+Do not invent a throwaway system that P1 will immediately discard.
+If P0B cannot be implemented cleanly before RecRequest exists, stop and explain the dependency clearly.
+
+Allowed files:
+- NEW lib/recValidity.ts
+- lib/recPayloadCache.ts
+- lib/recSession.ts
+- lib/recQueue.ts
+- components/RecommendationsFeed.tsx
+- app/edit-preferences.tsx
+- scripts/validate_rec_validity.ts or similar deterministic validation script, only if this repo’s current scripts pattern supports it cleanly
+- replit.md
+
+File budget:
+Maximum 8 files including replit.md.
+If this requires more than 8 files, stop and explain.
+
+Forbidden files/systems:
+- taxonomy modules unless a pure import/type dependency is needed and you stop before changing taxonomy behavior
+- lib/tasteProfile.ts unless the current fingerprint cannot be computed without it and you stop to explain
+- lib/recommender.ts scoring/ranking/retrieval behavior
+- signal model / RecRequest implementation beyond the minimal forward-compatible hash/fingerprint contract needed for P0B
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+- onboarding
+- TasteReadout
+- HomeShortlist
+- profile UI outside app/edit-preferences.tsx
+
+Hard constraints:
+- Do not change recommendation scoring, ranking, retrieval, or queue ordering.
+- Do not change preference save semantics.
+- Do not solve P1 stated-preference weighting or P2 retrieval responsiveness here.
+- Do not remove yesterday’s manual clear triple in app/edit-preferences.tsx yet; retain it as defense-in-depth for one release, as the architecture spec recommends.
+- The goal is read-side deck validity, not a broad cache refactor.
+
+Architecture requirement:
+Implement or validate a single recommendation-config identity concept that can be carried by all three deck-state stores and compared on read.
+
+Target behavior:
+- A recommendation deck built under config/hash A should not be reused when current config/hash is B.
+- On mismatch, the affected store should invalidate itself and force the existing rebuild path rather than returning stale books.
+- This must apply to:
+  1. persisted payload restore
+  2. in-memory recSession reuse
+  3. recQueue reuse / append-vs-replace behavior
+
+Implementation requirements:
+
+1. Preflight: inspect current fingerprint/hash state
+Before changing code, report internally in your implementation reasoning:
+- what fingerprint/hash already exists today, if any
+- which preference fields or recommendation-relevant inputs it includes
+- where it is currently used
+- where it is not used
+- how it can serve as the initial P0B recommendation-config identity until RecRequest.configHash arrives in P1
+
+If there is no viable current fingerprint, stop and propose the smallest architecture-compatible alternative.
+
+2. Create centralized validity helper
+Add lib/recValidity.ts or the smallest equivalent central helper.
+
+It should own:
+- comparison logic for “deck state is valid for current recommendation config”
+- consistent mismatch behavior
+- a reusable return shape or helper that each store can call
+
+The purpose is to avoid three stores each inventing their own mismatch rules.
+
+3. Persist/store config identity across all deck-state layers
+Extend:
+- recPayloadCache
+- recSession
+- recQueue
+
+so each deck state knows which recommendation-config fingerprint/hash it belongs to.
+
+Requirements:
+- persisted payload includes the hash/fingerprint
+- in-memory session includes the hash/fingerprint
+- queue state includes the hash/fingerprint or is otherwise centrally tied to a validity identity in a way that prevents stale queue reuse
+
+4. Validate on every relevant read/reuse path
+Introduce validity checks at the places where stale decks can currently survive:
+
+A. recPayloadCache restore path
+- if stored hash ≠ current hash, reject/clear payload and force rebuild
+
+B. recSession reuse path
+- if session hash ≠ current hash, treat as absent and invalidate it
+
+C. recQueue reuse path
+- if queue hash ≠ current hash, clear queue before any append/reuse logic can preserve stale head cards
+
+This must specifically prevent the prior stale-deck failure mode:
+- pipeline rebuilds fresh entries
+- old queue remains non-empty
+- new entries append to tail
+- stale head remains visible
+
+5. Current config hash/fingerprint inputs
+The batch must include, at minimum, the recommendation-relevant mutable preference fields that caused recent bugs:
+- favorite_genres
+- avoid_genres
+- reading_styles
+- favorite_authors
+
+If the current existing fingerprint already includes more inputs, preserve sensible behavior.
+If including diagnosis_answers or other fields is obviously required for recommendation validity today, explain and include only if cleanly justified.
+Do not expand opportunistically into a giant future RecRequest substitute.
+
+6. Build cause / future compatibility
+The revised architecture eventually uses BuildCause and RecRequest.configHash.
+P0B should be forward-compatible with that.
+
+If a one-line cause propagation in RecommendationsFeed is truly needed now to preserve future shape, implement it only if it has clear present value and does not create dead architecture scaffolding.
+If not needed until P1, state that and defer it honestly.
+
+Do not implement a half-formed BuildCause system in P0B.
+
+7. app/edit-preferences.tsx
+Retain the current manual clear triple:
+- clearRecSession()
+- clearRecQueue()
+- clearRecPayload()
+
+as one-release defense-in-depth.
+
+If P0B makes them logically redundant, document that in the report, but do not remove them in this batch.
+
+8. Deterministic validation
+Add the smallest sound validation available in this repo.
+
+Preferred:
+- a script such as scripts/validate_rec_validity.ts that demonstrates:
+  - state with hash A is valid under hash A
+  - state with hash A is rejected under hash B
+  - payload/session/queue mismatch behavior routes to invalidation rather than reuse
+
+If a deterministic script is not viable in the current repo shape, stop and report the smallest acceptable alternative before shipping.
+
+Acceptance criteria:
+1. A centralized recommendation deck-validity helper exists.
+2. Persisted payload state is rejected when current recommendation config fingerprint/hash changes.
+3. In-memory recSession state is rejected when current recommendation config fingerprint/hash changes.
+4. recQueue stale-state reuse is prevented when current recommendation config fingerprint/hash changes.
+5. The specific prior bug class — fresh pipeline entries appended behind stale queue head after preference save — cannot survive a config mismatch.
+6. Current preference fields relevant to recommendation validity are included in the hash/fingerprint at minimum:
+   - favorite_genres
+   - avoid_genres
+   - reading_styles
+   - favorite_authors
+7. Manual clears in app/edit-preferences.tsx remain in place as defense-in-depth.
+8. P0B is implemented in a way that can be cleanly upgraded to RecRequest.configHash in P1.
+9. No scoring/ranking/retrieval behavior changes.
+10. Typecheck remains at baseline with zero new errors.
+11. Diff scope confirms no forbidden systems touched.
+
+Validation required:
+- Preflight explanation of the existing/current fingerprint approach chosen.
+- Before/after stale-state model:
+  - before P0B: payload/session/queue can outlive changed prefs unless manually cleared
+  - after P0B: mismatch invalidates each layer on read
+- Exact store-by-store validity behavior:
+  - payload
+  - session
+  - queue
+- Explicit explanation of how the prior stale-queue bug is now structurally blocked.
+- Script/test result, or stop-report if test infrastructure is not viable.
+- Confirmation current manual clear triple remains.
+- Forward-compatibility note for P1 RecRequest.configHash.
+- Typecheck delta.
+- Workflow status.
+
+Stop conditions:
+- If there is no clean current fingerprint/hash that can serve as a forward-compatible P0B identity before RecRequest exists, stop and explain whether P0B should wait until P1.
+- If correct validity checks require implementing a meaningful portion of RecRequest early, stop and propose a sequencing adjustment.
+- If queue validity cannot be made robust without touching scoring/retrieval behavior, stop.
+- If this requires more than the allowed files, stop and explain.
+- If deterministic validation cannot be made sound, stop and propose the smallest reliable manual/fixture validation path.
+
+Return format:
+- Changed files
+- Preflight fingerprint/hash findings
+- Implementation summary
+- Deck-validity architecture
+- Store-by-store mismatch behavior
+- Prior stale-queue bug prevention explanation
+- Validation result
+- Forward compatibility with P1 RecRequest.configHash
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Deviations

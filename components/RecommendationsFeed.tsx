@@ -28,8 +28,9 @@ import { loadFeedbackContext, persistFeedback } from '../lib/recFeedback';
 import type { FeedbackContext } from '../lib/recFeedback';
 import { getBookTraits } from '../lib/bookTraits';
 import type { ReaderThesis } from '../lib/expertRec';
-import { type RecSessionCache, getRecSession, setRecSession, clearRecSession } from '../lib/recSession';
-import { addActedOnIds, loadActedOnIds } from '../lib/recPayloadCache';
+import { type RecSessionCache, getRecSession, getRecSessionFor, setRecSession, clearRecSession } from '../lib/recSession';
+import { addActedOnIds, loadActedOnIds, saveRecPayload, computeRecFingerprint } from '../lib/recPayloadCache';
+import { loadCurrentConfigHash } from '../lib/recValidity';
 import { GuidedActionBanner } from './OnboardingWalkthrough';
 
 import { RecCard, UndoToast, LearningToast, DeckAssemblingLoader, RefreshingDot } from './RecCard';
@@ -58,6 +59,8 @@ import {
   setPendingDismiss,
   getQueueDepth,
   getVisibleStack,
+  setQueueConfigHash,
+  assertQueueConfig,
 } from '../lib/recQueue';
 
 // Enable LayoutAnimation on Android
@@ -132,26 +135,67 @@ export function RecommendationsFeed({
   // ── Queue-synced React state ───────────────────────────────────────────────
   // The authoritative queue lives in lib/recQueue (module-level).
   // These two arrays are React state derived from the queue's visible head.
+  //
+  // P0B: initial render ONLY adopts a session when it carries a `configHash`.
+  // A hashless session can only come from the cold-start prewarm restore path
+  // in (tabs)/_layout.tsx (out of P0B scope) — the bootstrap useEffect below
+  // will validate-then-clear it, but the strict check is async so initial
+  // render must NOT show its contents in the meantime. With this guard, the
+  // user sees the loading skeleton for a tick instead of stale prewarm cards.
+  // Sessions written by runPipeline always carry configHash, so the steady
+  // state has no perf regression — only the hashless legacy path takes the hit.
   const [visibleConts, setVisibleConts] = useState<ScoredBook[]>(() => {
     if (!userId) return [];
     const s = getRecSession();
-    if (!s || s.userId !== userId) return [];
+    if (!s || s.userId !== userId || !s.configHash) return [];
     return s.continuations.filter(b => isEligible(b)).slice(0, VISIBLE_STACK_SIZE);
   });
   const [visibleDiscs, setVisibleDiscs] = useState<ScoredBook[]>(() => {
     if (!userId) return [];
     const s = getRecSession();
-    if (!s || s.userId !== userId) return [];
+    if (!s || s.userId !== userId || !s.configHash) return [];
     const conts = s.continuations.filter(b => isEligible(b));
     const remaining = VISIBLE_STACK_SIZE - Math.min(conts.length, VISIBLE_STACK_SIZE);
     return s.discoveries.filter(b => isEligible(b)).slice(0, remaining);
   });
 
   // ── Pipeline loading state ─────────────────────────────────────────────────
+  // P0B: a session without configHash counts as "loading" so we never reach
+  // the `ready` display state on stale prewarm contents.
   const [isInitialLoading, setIsInitialLoading] = useState(() => {
     const s = getRecSession();
-    return !s || s.userId !== userId;
+    return !s || s.userId !== userId || !s.configHash;
   });
+
+  // P0B: gate the pipeline-trigger early-return on the bootstrap validity
+  // check completing. Two-part gate to avoid React state-update lag in the
+  // same render cycle as a userId change:
+  //   - `validityCheckedRef` — synchronous source of truth read by the
+  //     pipeline-trigger useEffect. Reset to false at the top of bootstrap
+  //     (synchronously, before any async work) and set true at the end.
+  //     Because both effects run in declaration order in the same commit
+  //     phase and bootstrap is declared first, by the time pipeline-trigger
+  //     runs, it observes the freshly-reset ref — even though `useState`
+  //     would still hold the stale value for one cycle.
+  //   - `validityVersion` — bumped when the ref is set true so React
+  //     re-runs the pipeline-trigger useEffect (refs alone don't trigger
+  //     re-renders / dep-array changes).
+  const validityCheckedRef = useRef(false);
+  const [validityVersion, setValidityVersion] = useState(0);
+  // P0B: epoch guard so a slow async bootstrap from a previous userId can
+  // never apply its state mutations after the user changes. Bumped at the
+  // start of every bootstrap; every async continuation checks
+  // `bootstrapEpochRef.current === myEpoch` before applying.
+  const bootstrapEpochRef = useRef(0);
+  // P0B: render-synchronous current-user guard. The bootstrap useEffect's
+  // `latestPipelineRef.current++` invalidation only runs in the effect
+  // phase, leaving a tiny window between commit-of-userId-change and
+  // effect-fire where a stale prior-user runPipeline could resume past its
+  // requestId guard. Updating this ref in the render body (which React
+  // permits for refs) gives runPipeline a synchronous "is the captured
+  // userId still current?" check that closes that window.
+  const currentUserIdRef = useRef(userId);
+  currentUserIdRef.current = userId;
   const [isReplenishing, setIsReplenishing]     = useState(false);
   const [recsQualityGate, setRecsQualityGate]   = useState<QualityGate | null>(null);
   const [isExhausted, setIsExhausted]           = useState(false);
@@ -261,8 +305,57 @@ export function RecommendationsFeed({
   // ── Bootstrap: initialize queue from user's acted-on ids on mount ─────────
   useEffect(() => {
     if (!userId) return;
-    loadActedOnIds(userId).then(ids => {
+
+    // P0B: synchronously close the validity gate for this userId BEFORE any
+    // async work begins. Two concerns this addresses:
+    //   1. Cross-user race: prior-user's `validityChecked=true` would
+    //      otherwise let the pipeline-trigger useEffect observe a (now
+    //      cross-user) session and short-circuit the rebuild for the new
+    //      user. Resetting here forces the new user through the gate.
+    //   2. Same-user remount: a stale async bootstrap from a prior mount
+    //      could complete after this one starts; the epoch guard below
+    //      prevents its setState calls from applying.
+    validityCheckedRef.current = false;
+    const myEpoch = ++bootstrapEpochRef.current;
+    const isCurrent = () => bootstrapEpochRef.current === myEpoch;
+    // P0B: synchronously invalidate any in-flight runPipeline from a prior
+    // user / mount. `runPipeline` gates every commit on `requestId ===
+    // latestPipelineRef.current`; bumping the ref here guarantees a stale
+    // prior-user pipeline that was already past its earlier guards still
+    // fails its post-await checks before it can write to session/queue
+    // under the now-current user. Closes the prior cross-user commit hole.
+    latestPipelineRef.current++;
+
+    loadActedOnIds(userId).then(async ids => {
+      if (!isCurrent()) return;
       initForUser(userId, ids);
+
+      // P0B: validate any pre-warmed session/queue against the current rec
+      // recommendation-config identity BEFORE adopting their contents. The
+      // cold-start prewarm in (tabs)/_layout.tsx populates the session
+      // without a configHash (it's out of scope for this batch); a hashless
+      // session is treated as a mismatch by `getRecSessionFor`/`assertQueueConfig`
+      // and cleared in-place so the existing pipeline-trigger useEffect picks
+      // up "missing session" and rebuilds.
+      let invalidated = false;
+      if (supabase) {
+        try {
+          const currentHash = await loadCurrentConfigHash(supabase, userId);
+          if (!isCurrent()) return;
+          const sessionBefore    = getRecSession();
+          const queueDepthBefore = getQueueDepth();
+          getRecSessionFor(currentHash);     // self-clears on mismatch
+          assertQueueConfig(currentHash);    // self-clears on mismatch
+          invalidated =
+            (sessionBefore != null && getRecSession() == null) ||
+            (queueDepthBefore > 0   && getQueueDepth()   === 0);
+        } catch (e) {
+          if (__DEV__) console.warn('[REC_VALIDITY_BOOTSTRAP_ERROR]', e);
+        }
+      }
+
+      if (!isCurrent()) return;
+
       // Re-seed queue from session if queue is currently empty
       const s = getRecSession();
       if (s && s.userId === userId && getQueueDepth() === 0) {
@@ -270,8 +363,11 @@ export function RecommendationsFeed({
           ...s.continuations.map(b => ({ book: b, bucket: 'continuations' as QueueBucket })),
           ...s.discoveries.map(b => ({ book: b, bucket: 'discoveries' as QueueBucket })),
         ];
-        initQueue(entries);
-        syncVisible();
+        // P0B: propagate the session's configHash to the queue so a
+        // subsequent assertQueueConfig() call doesn't immediately drop a
+        // freshly-seeded queue. If the session lacks a hash (legacy/prewarm),
+        // the queue inherits null and will be invalidated on first strict read.
+        initQueue(entries, s.configHash ?? null);
       }
       if (s?.recMode)      setRecMode(s.recMode);
       if (s?.readerThesis) setReaderThesis(s.readerThesis);
@@ -280,8 +376,31 @@ export function RecommendationsFeed({
         if (__DEV__) console.log('[REC_GATE_RESTORE] gate restored from session:', s.qualityGate);
       }
       setIsFreePreview(s?.isFreePreview ?? false);
+
+      // P0B: always reconcile UI to the now-authoritative queue state, then
+      // open the validity gate so the pipeline-trigger useEffect can run.
+      // If invalidation cleared the session, syncVisible() empties the React
+      // arrays and the pipeline-trigger useEffect (now ungated) will detect
+      // missing session and rebuild. If a hashless session was present and
+      // we've been holding the loading skeleton, this also clears it.
+      syncVisible();
+      if (invalidated && __DEV__) {
+        console.log('[REC_VALIDITY_BOOTSTRAP] config_mismatch cleared stale state — pipeline rebuild will follow');
+      }
+      validityCheckedRef.current = true;
+      setValidityVersion(v => v + 1);
     }).catch(() => {
+      if (!isCurrent()) return;
       initForUser(userId, []);
+      // P0B: on bootstrap failure, conservatively clear ALL deck state so
+      // the pipeline-trigger useEffect cannot short-circuit on a (possibly
+      // stale) session that never got validated. Then open the gate so the
+      // pipeline runs and rebuilds from scratch.
+      clearRecSession();
+      clearAll();
+      syncVisible();
+      validityCheckedRef.current = true;
+      setValidityVersion(v => v + 1);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
@@ -289,6 +408,11 @@ export function RecommendationsFeed({
   // ── Pipeline trigger: fires when profile or entitlement changes ───────────
   useEffect(() => {
     if (!tasteProfile || tasteProfile.tier < 1 || !userId || !supabase) return;
+    // P0B: must wait for the bootstrap validity check to complete so we
+    // never early-return on a session that's about to be invalidated.
+    // Read the synchronous ref (not the lagging state) so a fresh userId
+    // commit observes the just-reset gate even within the same cycle.
+    if (!validityCheckedRef.current) return;
 
     const s             = getRecSession();
     const sessionAge    = s ? Date.now() - s.loadedAt : Infinity;
@@ -312,7 +436,7 @@ export function RecommendationsFeed({
 
     runPipeline({ isBgRefresh });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasteProfile?.strongSignalCount, userId, entitlement?.expert_recs_enabled]);
+  }, [tasteProfile?.strongSignalCount, userId, entitlement?.expert_recs_enabled, validityVersion]);
 
   // ── Tab revisit: rerun pipeline when session was wiped ───────────────────
   // Status changes on the book detail screen call clearRecSession() so
@@ -398,10 +522,34 @@ export function RecommendationsFeed({
   ) {
     if (!supabase || !userId || !tasteProfile || tasteProfile.tier < 1) return;
 
+    // P0B: capture the userId at run-start; every post-await commit gate
+    // checks this against `currentUserIdRef.current` (updated synchronously
+    // in render) so a stale prior-user pipeline cannot write to the new
+    // user's session/queue even in the pre-effect window.
+    const pipelineUserId = userId;
     const requestId  = ++latestPipelineRef.current;
     const loadMode   = opts?.exhaustionBypass ? 'watermark' : opts?.isBgRefresh ? 'background' : 'initial';
+
+    // P0B: capture the current recommendation-config identity up-front, then
+    // invalidate any queue belonging to a different identity BEFORE the
+    // append-vs-init branching below can preserve stale visible head cards.
+    // This structurally blocks the prior bug:
+    //   pref save → fresh recs produced → old queue still non-empty →
+    //   appendToQueue keeps stale head visible.
+    // Now `assertQueueConfig` clears the queue first, the queue depth check
+    // falls into the `initQueue` branch, and the visible stack fully resets.
+    const currentConfigHash = await loadCurrentConfigHash(supabase, userId);
+    // P0B: a newer runPipeline could have started during the await above
+    // and bumped requestId / mutated the queue with the new config. Drop
+    // this stale call BEFORE assertQueueConfig so we never clear a queue
+    // that already belongs to a fresher pipeline run. Also drop if user
+    // changed mid-await (pre-effect window guard).
+    if (requestId !== latestPipelineRef.current) return;
+    if (pipelineUserId !== currentUserIdRef.current) return;
+    assertQueueConfig(currentConfigHash);
+
     const hasVisible = getQueueDepth() > 0;
-    if (__DEV__) console.log('[REC_LOADING]', `mode=${loadMode}`, `visible=${hasVisible}`);
+    if (__DEV__) console.log('[REC_LOADING]', `mode=${loadMode}`, `visible=${hasVisible}`, `configHash=${currentConfigHash}`);
 
     const activeEnt = entitlement ?? {
       plan: 'free' as const,
@@ -425,6 +573,9 @@ export function RecommendationsFeed({
       ]);
 
       if (requestId !== latestPipelineRef.current) return;
+      // P0B: user-identity guard — refuses to commit prior-user pipeline
+      // results into the now-current user's session/queue.
+      if (pipelineUserId !== currentUserIdRef.current) return;
 
       const { recs, meta } = recResult;
       const continuationsRaw = (recResult as any).continuations ?? [];
@@ -452,9 +603,13 @@ export function RecommendationsFeed({
             `| queue_depth=${getQueueDepth()}`,
           );
         } else {
-          if (getQueueDepth() === 0) initQueue(newEntries);
+          if (getQueueDepth() === 0) initQueue(newEntries, currentConfigHash);
           else appendToQueue(newEntries);
         }
+        // P0B: stamp / refresh the queue's identity. Safe to call after either
+        // initQueue (which already stamped) or appendToQueue (which inherits
+        // existing stamp); the explicit setter unifies both paths.
+        setQueueConfigHash(currentConfigHash);
 
         const totalFiltered = getQueueDepth();
         if (totalFiltered === 0 && newEntries.length > 0) {
@@ -467,20 +622,55 @@ export function RecommendationsFeed({
         LayoutAnimation.configureNext(REFLOW_LAYOUT_ANIM);
         syncVisible();
 
+        const sessionIsFreePreview = (meta as any).expert_decision?.is_free_preview ?? false;
+        const sessionRecMode       = meta.mode ?? 'deterministic';
+        const sessionIntentTag     = activeIntentRef.current
+          ? intentSummaryLabel(activeIntentRef.current)
+          : null;
         const newSession: RecSessionCache = {
           userId,
           recs,
           continuations: continuationsRaw,
           discoveries:   discoveriesRaw,
           meta,
-          recMode:       meta.mode ?? 'deterministic',
+          recMode:       sessionRecMode,
           readerThesis:  meta.reader_thesis ?? null,
           qualityGate:   gate ?? null,
-          isFreePreview: (meta as any).expert_decision?.is_free_preview ?? false,
+          isFreePreview: sessionIsFreePreview,
           signalCount:   tasteProfile.strongSignalCount ?? 0,
+          // P0B: stamp the session with the recommendation-config identity
+          // these recs were produced under so getRecSessionFor() can detect
+          // post-save staleness on next mount/focus.
+          configHash:    currentConfigHash,
           loadedAt:      Date.now(),
         };
         setRecSession(newSession);
+
+        // P0B: persist the payload with the configHash so a future cold-start
+        // restore caller (P1+) can gate on it. RecommendationsFeed becomes the
+        // canonical writer of hash-stamped payloads; recPrewarm.ts continues
+        // to write hashless legacy payloads, which will be downgraded by the
+        // session-level gate on first strict read in the bootstrap useEffect.
+        void saveRecPayload(userId, {
+          recs,
+          continuations: continuationsRaw,
+          discoveries:   discoveriesRaw,
+          meta,
+          recMode:       sessionRecMode,
+          readerThesis:  meta.reader_thesis ?? null,
+          qualityGate:   gate ?? null,
+          isFreePreview: sessionIsFreePreview,
+          signalCount:   tasteProfile.strongSignalCount ?? 0,
+          intentTag:     sessionIntentTag,
+          fingerprint:   computeRecFingerprint(
+            tasteProfile.strongSignalCount ?? 0,
+            sessionRecMode,
+            sessionIsFreePreview,
+            sessionIntentTag,
+          ),
+          configHash:    currentConfigHash,
+          loadedAt:      Date.now(),
+        });
       } else {
         if (__DEV__) console.log('[REC_REFRESH]', `quality_gate=${gate}`, 'commit=skipped');
       }

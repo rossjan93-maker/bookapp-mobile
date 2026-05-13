@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ScoredBook, QualityGate, RankedRecsResult } from './recommender';
 import type { ReaderThesis } from './expertRec';
+import { assertCurrent } from './recValidity';
 
 // ── Persistent rec payload cache ──────────────────────────────────────────────
 //
@@ -61,6 +62,15 @@ export type PersistedRecPayload = {
   signalCount:   number;
   intentTag:     string | null;
   fingerprint:   string;
+  /**
+   * P0B recommendation-config identity (lib/recValidity.ts). Optional because
+   * legacy payloads written before P0B (and writes from the prewarm path,
+   * which is out-of-scope for this batch) lack the field. When a caller
+   * supplies `opts.currentConfigHash` to `loadRecPayload`, a missing or
+   * mismatched hash invalidates the payload and forces a fresh rebuild.
+   * Forward-compatible: P1's RecRequest.configHash will populate this slot.
+   */
+  configHash?:   string;
   loadedAt:      number;
 };
 
@@ -86,14 +96,29 @@ export async function saveRecPayload(
 //   - TTL expired (>2h)
 //   - recs field absent or not an array (corrupt / incompatible format)
 //   - no recs and no continuations (empty payload, nothing to show)
+//   - P0B: when `opts.currentConfigHash` is supplied AND the stored payload's
+//     `configHash` is missing or does not match — payload is cleared from
+//     AsyncStorage and null is returned (forces rebuild).
 //
 // Does NOT reject on:
 //   - signal count mismatch (Phase 2 background refresh corrects it)
 //   - recMode mismatch (Phase 2 background refresh corrects it)
 //   - isFreePreview mismatch (same)
 //   - missing fingerprint field (pre-v2 payload — accepted, logged as legacy)
+//   - missing configHash WHEN no currentConfigHash supplied by caller
+//     (preserves backward-compat for callers that haven't opted into the
+//     P0B gate yet, e.g., the cold-start prewarm restore in (tabs)/_layout.tsx)
 
-export async function loadRecPayload(userId: string): Promise<PersistedRecPayload | null> {
+export type LoadRecPayloadOpts = {
+  /** P0B: when supplied, payload is rejected (and cleared) on hash mismatch
+   *  or missing stored hash. Omit to retain legacy "always restore" behavior. */
+  currentConfigHash?: string | null;
+};
+
+export async function loadRecPayload(
+  userId: string,
+  opts?:  LoadRecPayloadOpts,
+): Promise<PersistedRecPayload | null> {
   try {
     const raw = await AsyncStorage.getItem(KEY_PREFIX + userId);
     if (!raw) return null;
@@ -128,11 +153,28 @@ export async function loadRecPayload(userId: string): Promise<PersistedRecPayloa
       return null;
     }
 
+    // P0B: opt-in deck-validity gate.
+    if (opts?.currentConfigHash != null) {
+      const check = assertCurrent(p.configHash, opts.currentConfigHash);
+      if (!check.valid) {
+        if (__DEV__) console.log('[PERSIST_CACHE] config_mismatch — discarding',
+          `| reason=${check.reason}`,
+          `| stored=${p.configHash ?? 'absent'}`,
+          `| current=${opts.currentConfigHash}`,
+        );
+        // Best-effort clear so the next cold start doesn't re-hit the same
+        // stale payload before runPipeline overwrites it.
+        try { await AsyncStorage.removeItem(KEY_PREFIX + userId); } catch {}
+        return null;
+      }
+    }
+
     if (__DEV__) console.log('[PERSIST_CACHE] hit',
       `| age_ms=${age}`,
       `| recs=${p.recs.length}`,
       `| signal=${p.signalCount}`,
       `| fingerprint=${p.fingerprint ?? 'legacy'}`,
+      `| configHash=${p.configHash ?? 'absent'}`,
       `| mode=${p.recMode ?? 'unknown'}`,
     );
     return p;

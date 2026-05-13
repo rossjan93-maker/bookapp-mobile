@@ -1,5 +1,6 @@
 import type { ScoredBook } from './recommender';
 import { addActedOnIds } from './recPayloadCache';
+import { assertCurrent } from './recValidity';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 export const VISIBLE_STACK_SIZE  = 4;    // cards shown to the user at once
@@ -31,6 +32,10 @@ let _actedOnIds:     Set<string>                 = new Set();
 let _pendingUndoIds: Set<string>                 = new Set();
 let _pendingDismiss: PendingDismissRecord | null = null;
 let _currentUserId:  string | null               = null;
+// P0B: recommendation-config identity the current queue contents were built
+// against. null means "no identity stamped" (pre-pipeline / post-clear) and
+// is treated as a mismatch by `assertQueueConfig`.
+let _configHash:     string | null               = null;
 
 // ── User lifecycle ────────────────────────────────────────────────────────────
 /**
@@ -44,14 +49,61 @@ export function initForUser(userId: string, persistedActedOnIds: string[]): void
     _pendingUndoIds = new Set();
     _pendingDismiss = null;
     _currentUserId  = userId;
+    _configHash     = null;
   }
   for (const id of persistedActedOnIds) _actedOnIds.add(id);
 }
 
-/** Clears queue and pending dismiss (called on sign-out). */
+/** Clears queue and pending dismiss (called on sign-out, or after pref save
+ *  as the defense-in-depth manual triple in app/edit-preferences.tsx). */
 export function clearAll(): void {
   _queue          = [];
   _pendingDismiss = null;
+  _configHash     = null;
+}
+
+// ── P0B deck-validity ─────────────────────────────────────────────────────────
+//
+// Stamp the queue with the recommendation-config identity its contents were
+// built against. Called by RecommendationsFeed after a successful pipeline run
+// (alongside initQueue/appendToQueue).
+export function setQueueConfigHash(hash: string | null): void {
+  _configHash = hash;
+}
+
+export function getQueueConfigHash(): string | null {
+  return _configHash;
+}
+
+/**
+ * Strict validity check. Returns true when the queue's stamped configHash
+ * matches `currentHash`. On mismatch (including no-stamp), the queue is
+ * cleared in-place and the pending-dismiss record is dropped — preventing
+ * stale visible-head reuse and stale-append behavior.
+ *
+ * This is the P0B guard against the prior bug class:
+ *   1. user changes prefs
+ *   2. pipeline rebuilds fresh entries
+ *   3. (without P0B) old queue is non-empty → fresh entries APPEND to the
+ *      tail → stale head remains visible
+ * Calling assertQueueConfig(currentHash) BEFORE the pipeline writes ensures
+ * step (3) cannot silently preserve stale cards.
+ */
+export function assertQueueConfig(currentHash: string): boolean {
+  const check = assertCurrent(_configHash, currentHash);
+  if (!check.valid) {
+    if (__DEV__) console.log('[REC_QUEUE] config_mismatch — clearing',
+      `| reason=${check.reason}`,
+      `| stored=${_configHash ?? 'absent'}`,
+      `| current=${currentHash}`,
+      `| dropped_entries=${_queue.length}`,
+    );
+    _queue          = [];
+    _pendingDismiss = null;
+    _configHash     = null;
+    return false;
+  }
+  return true;
 }
 
 // ── Eligibility ───────────────────────────────────────────────────────────────
@@ -76,9 +128,14 @@ export function getBackstageDepth(): number        { return Math.max(0, _queue.l
 /**
  * Initialises the queue from a seed pool (e.g. session cache on cold start).
  * Filters against actedOnIds so deleted/acted-on books are never shown.
+ *
+ * P0B: optionally stamps the queue with the configHash these entries were
+ * produced under, so subsequent assertQueueConfig() reads can detect when
+ * the queue has outlived its source recommendation-config.
  */
-export function initQueue(entries: QueueEntry[]): void {
+export function initQueue(entries: QueueEntry[], configHash?: string | null): void {
   _queue = entries.filter(e => isEligible(e.book));
+  if (configHash !== undefined) _configHash = configHash;
 }
 
 /**
