@@ -336,3 +336,57 @@ export function intakeLabel(id: GenreId): string {
   const d = getGenreById(id);
   return d.uiLabels.intake ?? d.uiLabels.edit ?? d.id;
 }
+
+// =============================================================================
+// Retrieval-side anchors (P0A.1)
+//
+// Open Library subject anchors used by lib/recommender.ts during candidate
+// retrieval (the "Standard multi-anchor retrieval" branch). These are
+// intentionally **specific** strings ("epic fantasy", not "fantasy") chosen
+// to avoid classic / public-domain drift in OL search — see the historical
+// comment that lived above GENRE_OL_SUBJECTS in recommender.ts pre-P0A.1.
+//
+// Keyed by AffinityKey rather than GenreId because retrieval operates on the
+// affinity bucket (multiple GenreDefs share an affinity, e.g. `fantasy` and
+// `sci_fi` both → `fantasy_scifi`). The 'general' bucket is a non-affinity
+// fallback used when a user has zero rated genres and no trait priors.
+//
+// **Strings preserved verbatim from the pre-P0A.1 GENRE_OL_SUBJECTS map.**
+// They are *not* derived from GenreDef.olSubjects because the two concepts
+// serve different purposes:
+//   - GenreDef.olSubjects feeds tier-0 cold-start `liked_subjects` seeding
+//     in tasteProfile (broad coverage, fed into local scoring).
+//   - AFFINITY_RETRIEVAL_SUBJECTS feeds the OL `subject:` query string
+//     (tight, drift-resistant, optimized for the OL corpus).
+// Conflating them would either over-broaden retrieval or under-seed
+// tasteProfile. Keep them deliberately distinct.
+//
+// Dense-import retrieval (DENSE_LANE_OL_SUBJECTS in recommender.ts) is
+// **not** folded here: half of those keys (romantasy, contemporary_fiction,
+// modern_suspense, memoir_nonfiction) are DeterministicLane concepts from
+// lib/bookTraits.ts that don't have a 1:1 GenreDef. Forcing them into the
+// genre taxonomy would be a leaky abstraction — see P0A.1 stop conditions.
+// =============================================================================
+
+export type RetrievalAffinityKey = AffinityKey | 'general';
+
+export const AFFINITY_RETRIEVAL_SUBJECTS: Record<RetrievalAffinityKey, readonly [string, string]> = {
+  fantasy_scifi:    ['epic fantasy',           'dystopian fiction'],
+  thriller_mystery: ['psychological thriller', 'crime fiction'],
+  romance:          ['contemporary romance',   'romance fiction'],
+  horror:           ['horror fiction',         'psychological horror'],
+  memoir_bio:       ['personal memoirs',       'biography'],
+  nonfiction:       ['popular science',        'popular nonfiction'],
+  literary:         ['literary fiction',       'contemporary literary fiction'],
+  general:          ['contemporary fiction',   'popular fiction'],
+};
+
+/** Lookup with a guaranteed `general` fallback for unknown keys. The pre-P0A.1
+ *  call site used `?? ['contemporary fiction', 'popular fiction']`; this
+ *  preserves identical behavior. */
+export function getRetrievalSubjects(key: string): readonly [string, string] {
+  if (Object.hasOwn(AFFINITY_RETRIEVAL_SUBJECTS, key)) {
+    return AFFINITY_RETRIEVAL_SUBJECTS[key as RetrievalAffinityKey];
+  }
+  return AFFINITY_RETRIEVAL_SUBJECTS.general;
+}

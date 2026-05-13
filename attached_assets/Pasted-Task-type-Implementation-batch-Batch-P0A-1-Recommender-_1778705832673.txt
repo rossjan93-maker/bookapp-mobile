@@ -1,0 +1,148 @@
+Task type:
+Implementation batch.
+
+Batch:
+P0A.1 — Recommender Retrieval-Side Taxonomy Fold-In.
+
+Goal:
+Complete the genre-taxonomy foundation by removing the remaining retrieval-side genre/subject duplication in lib/recommender.ts and wiring it to the canonical taxonomy introduced in P0A.
+
+This is an architecture-cleanup batch, not a recommendation-behavior redesign.
+
+Strategic context:
+P0A shipped:
+- canonical genre taxonomy in lib/taxonomy/genres.ts
+- normalization helper in lib/taxonomy/normalize.ts
+- Edit Preferences and onboarding genre chips now derive from taxonomy
+- tasteProfile genre-affinity blending now reads saved labels through taxonomy normalization
+- previously unmapped labels like History, Biography, Business, Science, Poetry, Classic now resolve correctly
+
+P0A.1 finishes the genre-taxonomy phase by folding recommender retrieval-side genre subject maps into the same source of truth.
+
+Important expectation:
+P0A.1 does NOT solve tier-2+ explicit preference responsiveness. That is still P1/P2.
+P0A.1 does NOT change retrieval strategy, branch planning, score weights, or dense-user behavior.
+It only ensures retrieval subject anchors live in the canonical taxonomy rather than in duplicated recommender-local maps.
+
+Allowed files:
+- lib/taxonomy/genres.ts
+- lib/recommender.ts
+- scripts/validate_taxonomy.ts
+- replit.md
+
+File budget:
+Maximum 4 files.
+If this requires more than 4 files, stop and explain.
+
+Forbidden files/systems:
+- lib/tasteProfile.ts unless a taxonomy contract mismatch proves P0A shipped with an incomplete interface and you stop before changing it
+- app/edit-preferences.tsx
+- components/RecEntryScreen.tsx
+- recPayloadCache
+- recSession
+- recQueue
+- RecommendationsFeed
+- scoring logic
+- ranking logic
+- retrieval strategy changes
+- candidate filtering changes
+- signal model / RecRequest
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library live-fetch semantics
+- Google Books
+- metadata repair
+- LLM/API calls
+- Semantic Intelligence Plane files
+
+Hard constraints:
+- Do not change which retrieval branches run.
+- Do not change dense-mode vs non-dense retrieval behavior.
+- Do not change query ordering, quotas, candidate limits, or ranking.
+- Do not alter recommendation output intentionally.
+- This batch is about replacing duplicated lookup tables with taxonomy-backed lookups.
+
+Implementation requirements:
+
+1. Inspect the existing retrieval-side genre maps
+Identify the current recommender-local structures in lib/recommender.ts that duplicate genre/subject knowledge, including any equivalent of:
+- GENRE_OL_SUBJECTS
+- DENSE_LANE_OL_SUBJECTS
+- any nearby genre/lane → OL subject mapping used during candidate retrieval
+
+Return a brief internal implementation note in the report explaining what existed and what changed.
+
+2. Move retrieval subject ownership into taxonomy
+Use lib/taxonomy/genres.ts as the canonical home for genre retrieval anchors.
+
+P0A already allowed GenreDef to include an olSubjects field for this purpose.
+Now:
+- populate or finalize olSubjects for all relevant canonical genre defs that current retrieval depends on
+- preserve the current retrieval subject strings unless there is an obvious taxonomy repair required
+- do not broaden subject coverage opportunistically
+
+3. Rewire lib/recommender.ts
+Replace local duplicated retrieval subject maps with taxonomy-backed helpers/lookups.
+
+Requirements:
+- retrieval code should derive genre-related OL subject anchors from canonical taxonomy
+- no hard-coded genre subject map should remain in recommender.ts if it is covered by GenreDef.olSubjects
+- if dense lane retrieval has a concept that is not cleanly represented by genre taxonomy, stop and explain rather than forcing a bad abstraction
+
+4. Preserve behavior exactly
+This is a source-of-truth refactor.
+Expected output should remain behaviorally equivalent for currently supported retrieval lanes.
+
+If a taxonomy-backed lookup would alter subject lists or query order, preserve the current behavior unless the change is required to fix an obvious inconsistency and you report it clearly.
+
+5. Extend taxonomy validation
+Update scripts/validate_taxonomy.ts so it also verifies:
+- retrieval-relevant taxonomy defs have non-empty olSubjects where expected
+- there are no duplicate exact OL subject arrays accidentally attached to conflicting canonical defs, if this can be checked cleanly
+- any taxonomy ids or affinity keys used by recommender retrieval resolve cleanly
+- no genre retrieval concept in recommender remains orphaned from the taxonomy where a taxonomy mapping exists
+
+Do not overbuild a test framework; extend the existing validator in the smallest sound way.
+
+Acceptance criteria:
+1. Retrieval-side genre/subject mappings in lib/recommender.ts are folded into the canonical taxonomy where appropriate.
+2. lib/taxonomy/genres.ts is now the source of truth for both:
+   - genre UI / tasteProfile normalization
+   - genre-related retrieval subject anchors
+3. Retrieval strategy and behavior are not intentionally changed.
+4. Existing dense/non-dense retrieval logic remains intact.
+5. No scoring/ranking/candidate-filtering changes.
+6. Taxonomy validator is extended to cover retrieval-side integrity and passes.
+7. Typecheck remains at baseline with zero new errors.
+8. Diff scope confirms no forbidden systems touched.
+
+Validation required:
+- Before/after summary of the duplicated recommender retrieval maps removed or replaced.
+- Exact taxonomy retrieval fields added/used.
+- Confirmation that existing retrieval subject strings were preserved.
+- Confirmation dense-mode behavior and standard-mode behavior remain logically unchanged.
+- Validator output.
+- Typecheck delta.
+- Workflow status.
+- Any edge cases where a retrieval concept could not be cleanly folded into taxonomy.
+
+Stop conditions:
+- If dense retrieval concepts do not cleanly map to genre taxonomy, stop and report the mismatch rather than creating a leaky abstraction.
+- If preserving current retrieval behavior requires touching more than the allowed files, stop.
+- If the taxonomy structure from P0A is insufficient and requires broader redesign, stop and propose the smallest architecture adjustment.
+- If this starts to change retrieval strategy rather than ownership of retrieval mappings, stop.
+
+Return format:
+- Changed files
+- Implementation summary
+- Retrieval-map duplication removed
+- Taxonomy olSubjects / retrieval structure used
+- Behavior-preservation check
+- Validator result
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Deviations

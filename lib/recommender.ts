@@ -74,6 +74,7 @@ import type { ReaderThesis, ExpertRecResult, CandidateJudgment } from './expertR
 import { buildReaderThesis, judgeCandidateFit, composeRecommendationSet } from './expertRec';
 import { buildEvidencePack }                                  from './evidencePack';
 import { composeTraitPhrase }                                 from './traitCopy';
+import { getRetrievalSubjects, AFFINITY_RETRIEVAL_SUBJECTS } from './taxonomy/genres';
 import { loadCachedRecs, persistRecCache, shouldRebuild, buildSignalSnapshot } from './recCache';
 import { applyIntegrityLayer, buildSeriesReadSet, buildSeriesProgress, buildSeriesPositionsRead, stripTitleSubtitle, getEligibleSeriesSeeds } from './recommendationIntegrity';
 
@@ -289,20 +290,11 @@ export function fitColor(score: number): string {
   return '#78716c';
 }
 
-// ── Genre → OL subject mapping (specific terms, not broad buckets) ─────────────
-// Two specific terms per genre; preferred over generic terms to avoid classic/PD
-// drift (e.g. "fantasy" alone returns Oz/Grimm; "epic fantasy" filters better).
-
-const GENRE_OL_SUBJECTS: Record<string, [string, string]> = {
-  fantasy_scifi:    ['epic fantasy',           'dystopian fiction'],
-  thriller_mystery: ['psychological thriller',  'crime fiction'],
-  romance:          ['contemporary romance',    'romance fiction'],
-  horror:           ['horror fiction',          'psychological horror'],
-  memoir_bio:       ['personal memoirs',        'biography'],
-  nonfiction:       ['popular science',         'popular nonfiction'],
-  literary:         ['literary fiction',        'contemporary literary fiction'],
-  general:          ['contemporary fiction',    'popular fiction'],
-};
+// ── Genre → OL subject mapping ────────────────────────────────────────────────
+// P0A.1: ownership moved to lib/taxonomy/genres.ts as
+// AFFINITY_RETRIEVAL_SUBJECTS (single source of truth, also covers the
+// 'general' fallback). Strings preserved verbatim — no behavior change.
+// Use `getRetrievalSubjects(key)` for the safe `?? general` lookup.
 
 // ── Dense-import lane → OL subject mapping ─────────────────────────────────────
 // Used exclusively in dense-import mode where dominant reading lanes are known.
@@ -1163,8 +1155,10 @@ async function getOLCandidates(
     const likedAuthorAnchor = (profile.liked_authors ?? []).slice(0, 1);
 
     // Genre anchors — 2 specific subjects per genre
+    // P0A.1: lookup delegated to taxonomy. getRetrievalSubjects() provides
+    // the same `?? general` fallback the inline map used pre-P0A.1.
     for (const genre of topGenres) {
-      const [s1, s2] = GENRE_OL_SUBJECTS[genre] ?? ['contemporary fiction', 'popular fiction'];
+      const [s1, s2] = getRetrievalSubjects(genre);
       plan.push({ kind: 'subject', value: s1, reason: `genre:${genre}` });
       if (plan.length < 8) plan.push({ kind: 'subject', value: s2, reason: `genre:${genre}` });
     }

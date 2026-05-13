@@ -28,6 +28,9 @@ import {
   editLabel,
   intakeLabel,
   GENRE_DEFS,
+  AFFINITY_RETRIEVAL_SUBJECTS,
+  getRetrievalSubjects,
+  type RetrievalAffinityKey,
 } from '../lib/taxonomy/genres';
 import { normalizeGenreInput, _aliasCount } from '../lib/taxonomy/normalize';
 
@@ -86,7 +89,54 @@ for (const { input, expectId } of LEGACY_PROBES) {
   }
 }
 
-// ── 4: alias index size sanity ──────────────────────────────────────────────
+// ── 4: retrieval-side anchor integrity (P0A.1) ──────────────────────────────
+// Every AffinityKey actually produced by GenreDefs must have a retrieval
+// anchor, plus the explicit 'general' fallback used by recommender.ts when a
+// user has zero rated genres.
+const REQUIRED_RETRIEVAL_KEYS: ReadonlyArray<RetrievalAffinityKey> = [
+  ...new Set(GENRE_DEFS.map((d) => d.affinityKey)),
+  'general',
+] as RetrievalAffinityKey[];
+
+for (const k of REQUIRED_RETRIEVAL_KEYS) {
+  const tup = AFFINITY_RETRIEVAL_SUBJECTS[k];
+  if (!tup || tup.length !== 2 || !tup[0] || !tup[1]) {
+    failures.push({
+      check: 'retrieval anchor present',
+      detail: `affinity=${k} tuple=${JSON.stringify(tup)}`,
+    });
+  }
+}
+
+// getRetrievalSubjects must return the general fallback for unknown keys
+// (preserves the pre-P0A.1 `?? ['contemporary fiction', 'popular fiction']`
+// behavior at the recommender call site).
+const fallback = getRetrievalSubjects('__nonexistent_key__');
+const general  = AFFINITY_RETRIEVAL_SUBJECTS.general;
+if (fallback[0] !== general[0] || fallback[1] !== general[1]) {
+  failures.push({
+    check: 'retrieval fallback = general',
+    detail: `got=${JSON.stringify(fallback)} expected=${JSON.stringify(general)}`,
+  });
+}
+
+// Detect accidental duplicate retrieval tuples across distinct affinity keys
+// (a duplicate would mean two affinities query the exact same OL subjects,
+// silently collapsing retrieval diversity).
+const seenTuples = new Map<string, RetrievalAffinityKey>();
+for (const [keyStr, tup] of Object.entries(AFFINITY_RETRIEVAL_SUBJECTS)) {
+  const sig = `${tup[0]}||${tup[1]}`;
+  const prev = seenTuples.get(sig);
+  if (prev) {
+    failures.push({
+      check: 'retrieval anchor uniqueness',
+      detail: `affinities "${prev}" and "${keyStr}" share tuple ${JSON.stringify(tup)}`,
+    });
+  }
+  seenTuples.set(sig, keyStr as RetrievalAffinityKey);
+}
+
+// ── 5: alias index size sanity ──────────────────────────────────────────────
 // At least one alias per def (they all have at least one uiLabels entry).
 if (_aliasCount() < GENRE_DEFS.length) {
   failures.push({
