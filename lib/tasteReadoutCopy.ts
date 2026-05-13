@@ -433,9 +433,10 @@ function buildIntakeSynthesis(
   const validTone    = tone === 'dark_tone' || tone === 'light_tone';
   const hasAvoid     = topAvoidGenres(avoidGenres, favoriteGenres, 2).length > 0;
 
-  // Fast pacing can come from intake (q_pacing === 'fast_paced') OR from a
-  // history-derived preferred-traits signal. Either source is enough.
-  const fastFromIntake = pacingAns === 'fast_paced';
+  // Fast pacing can come from intake (q_pacing === 'pacing_non_negotiable',
+  // the "It has to move" answer in RecEntryScreen) OR from a history-derived
+  // preferred-traits signal. Either source is enough.
+  const fastFromIntake = pacingAns === 'pacing_non_negotiable';
   const fastFromTraits = profile
     ? topPreferredTraits(profile, 3).includes('fast pacing')
     : false;
