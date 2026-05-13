@@ -1,0 +1,380 @@
+Task type:
+Implementation batch with architecture validation first.
+
+Batch:
+P1 — Control-Plane Signal Contract + Nonzero Stated-Preference Influence.
+
+Goal:
+Implement the next major phase of the locked Recommendation Architecture Blueprint:
+
+1. Introduce a first-class RecRequest / control-plane contract for recommendation generation.
+2. Represent recommendation-relevant user inputs as typed signal classes with provenance.
+3. Introduce BuildCause propagation at the recommendation request level.
+4. Remove the current trust failure where explicit Reading Taste preferences can drop to zero influence for tier-2+ users.
+5. Make soft avoid_genres remain meaningful in ranking across all user tiers.
+
+This is the first phase where the recommender begins to truly honor explicit user taste edits for high-signal users.
+
+Strategic context:
+Already shipped:
+- P0A — Canonical Genre Taxonomy Integrity ✅
+- P0A.1 — Retrieval-Side Taxonomy Fold-In ✅
+- P0B/P0B.1 — Full Deck Validity / Config Invalidation ✅
+
+Locked architecture direction:
+- Free/core Recommendation Control Plane first.
+- Paid Semantic Intelligence Plane later.
+- P1 establishes the signal/request layer the rest of the Control Plane depends on.
+- P2 will later build branch-based retrieval responsiveness.
+- P3 will later build contribution-grounded scoring/explanations.
+
+Important expectation:
+P1 should make explicit Reading Taste preferences materially influence scoring/ranking at all tiers, including tier 2+.
+P1 does NOT yet guarantee a visibly different top-4 deck after radical preference edits in every case — that top-slate guarantee depends on P2 retrieval branch planning.
+But P1 must make “explicit prefs have zero effect for high-signal users” impossible.
+
+User failure this addresses:
+A user changed Reading Taste from Sci-Fi to History/Biography and the recommendation engine rebuilt correctly but effectively ignored the new explicit preference because:
+- favorite_genres blending was tier-gated to tier <= 1
+- avoid_genres were also tier-gated
+- explicit prefs could therefore have zero effect for tier-2+ users
+
+P1 must close that trust failure in the ranking/control layer.
+
+────────────────────────────────
+PHASE 0 — ARCHITECTURE VALIDATION BEFORE CODING
+────────────────────────────────
+
+Before implementation, inspect the current code and confirm the smallest sound P1 shape.
+
+You must answer internally before editing:
+1. What current recommendation entry point should consume RecRequest first?
+2. Can RecRequest be introduced without rewriting the full recommender pipeline?
+3. Which current tasteProfile fields can be wrapped into typed signals without changing their existing derivation behavior?
+4. What is the smallest viable signal model that satisfies P1 without prematurely implementing P2/P3?
+5. Where should BuildCause be sourced today?
+6. How can stated genre/avoid influence be made nonzero at all tiers without breaking the current scorer?
+7. Whether any part of P1 should be split into a smaller P1A/P1B batch before coding.
+
+If the cleanest answer is that P1 must be split, stop and report the split plan before editing.
+Do not force an overlarge batch.
+
+────────────────────────────────
+ALLOWED FILES
+────────────────────────────────
+
+Likely allowed new files:
+- NEW lib/recRequest.ts
+- NEW lib/recPolicy.ts
+- NEW lib/signals/types.ts
+- NEW lib/signals/buildSignals.ts
+- NEW lib/signals/statedTaste.ts only if needed
+- NEW lib/signals/softAvoids.ts only if needed
+
+Allowed existing files:
+- lib/tasteProfile.ts
+- lib/recommender.ts
+- components/RecommendationsFeed.tsx
+- app/edit-preferences.tsx
+- scripts/validate_rec_request.ts or equivalent deterministic validator
+- replit.md
+
+File budget:
+Maximum 10 files including replit.md and any validation script.
+If this requires more than 10 files, stop and propose a tighter P1 split.
+
+────────────────────────────────
+FORBIDDEN FILES / SYSTEMS
+────────────────────────────────
+
+Do not touch:
+- taxonomy modules except for imports/types already established by P0A/P0A.1
+- recPayloadCache
+- recSession
+- recQueue
+- recValidity
+- retrieval branch planner / new branch modules
+- candidate retrieval behavior
+- score-contribution/explanation architecture for P3
+- RecCard copy
+- TasteReadout
+- onboarding UX
+- Home
+- profile/settings UI beyond edit-preferences save-trigger BuildCause if strictly needed
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library live-fetch behavior
+- Google Books
+- metadata repair
+- LLM/API calls
+- Semantic Intelligence Plane files
+
+────────────────────────────────
+HARD CONSTRAINTS
+────────────────────────────────
+
+- Do not implement P2 retrieval branch planning.
+- Do not implement P3 score-contribution architecture or explanation rewrites.
+- Do not redesign the recommender end-to-end.
+- Do not change candidate pool composition intentionally in this batch.
+- Do not change cache/deck-validity behavior from P0B.
+- Do not alter taxonomy behavior from P0A/P0A.1.
+- Do not broaden into Reading Taste UI expansion.
+- Do not remove existing manual preference-save clear logic or current P0B validity infrastructure.
+
+P1 is specifically:
+- RecRequest v1
+- signal provenance v1
+- BuildCause v1
+- nonzero stated genre/avoid influence at all tiers
+- policy constants centralized
+- deterministic validation
+
+────────────────────────────────
+IMPLEMENTATION REQUIREMENTS
+────────────────────────────────
+
+1. Introduce RecRequest v1
+Create lib/recRequest.ts.
+
+It should define a typed request object broadly aligned with the locked spec, but only implement fields needed now.
+
+Target shape, adapt if necessary after preflight:
+
+RecRequest {
+  userId: string
+  signals: {
+    statedTaste: {
+      favoriteGenres: ...
+      readingStyles?: ...
+      favoriteAuthors?: ...
+    }
+    revealedTaste: {
+      existing tasteProfile-derived behavioral signals as a read-through reference or typed wrapper
+    }
+    softAvoids: {
+      genres: ...
+    }
+    currentIntent?: ...
+    shortTermFeedback?: ...
+  }
+  policy: {
+    confidenceMode: 'cold_start' | 'thin' | 'high_signal'
+    statedPreferenceWeight: number
+    statedPreferenceFloor: number
+    softAvoidPenalty: number
+    decayMultiplier?: number
+  }
+  build: {
+    cause: BuildCause
+    configHash?: string | existing P0B hash reference if appropriate
+    builtAt: number
+    schemaVersion: string
+  }
+}
+
+Critical:
+- Do not invent fields that are completely dead today unless they are needed to preserve the architecture shape.
+- It is acceptable for some signal classes to be present as typed placeholders if they are intentionally marked “not yet consumed in P1.”
+- Do not build the full future Control Plane in one batch.
+
+2. Introduce BuildCause v1
+Define BuildCause at the request layer.
+
+Support at minimum:
+- 'session_open'
+- 'explicit_preference_edit'
+
+Only propagate causes that have clear present usage today.
+If 'manual_refresh', 'intent_apply', etc. are not live yet, define the union only if doing so is harmless and useful for the locked architecture, but do not add behavioral logic for them in P1.
+
+Required current behavior:
+- normal For You pipeline build defaults to session_open unless an explicit cause is passed
+- Reading Taste save path should make the next build request identifiable as explicit_preference_edit if this can be done cleanly within allowed files
+- If clean propagation from app/edit-preferences.tsx to the next RecommendationsFeed build is not viable without new state plumbing, stop and explain the smallest required mechanism rather than half-implementing it
+
+3. Introduce signal provenance v1
+Create the smallest viable signal layer.
+
+At minimum:
+- stated durable genres from reader_preferences.favorite_genres
+- soft avoids from reader_preferences.avoid_genres
+- behavioral/revealed profile signals should remain usable from existing tasteProfile fields, but P1 should explicitly separate “stated” from “revealed” at the request/control layer
+
+The goal is not to rewrite tasteProfile now.
+The goal is to prevent stated and revealed signals from being anonymous inputs to later logic.
+
+4. Introduce recPolicy.ts
+Create lib/recPolicy.ts to centralize initial P1 policy values.
+
+At minimum, policy should own:
+- stated preference nonzero floor
+- tier/confidence-mode multipliers if needed
+- soft avoid penalty / floor
+- decay values if decay is implemented in P1
+
+Important:
+The architecture spec said numerical values are calibration hypotheses, not architecture truths.
+Make that clear in naming/comments.
+Do not scatter numbers throughout recommender.ts.
+
+5. Remove zero-effect tier gate for explicit genres/avoids
+In lib/tasteProfile.ts and/or the smallest downstream path:
+- explicit favorite_genres must continue to affect genre_affinities for tier 2+ users with a nonzero floor
+- explicit avoid_genres must continue to affect genre_affinities or downstream ranking with a nonzero negative influence for tier 2+ users
+- row-level updated_at may be used for decay if already cleanly available; if decay complicates this batch, stop and propose deferring decay while still shipping the nonzero floor
+
+Acceptance of P1 does not require perfect final weighting.
+It requires:
+- zeroing by tier is gone
+- explicit stated inputs have measurable, deterministic nonzero influence at all tiers
+- the values live in policy, not scattered inline
+
+6. Make recommender consume RecRequest
+lib/recommender.ts should take or derive the new RecRequest in the smallest sound way.
+
+Options:
+- adapt the existing entry point to accept RecRequest directly
+- or introduce a compatibility wrapper that builds RecRequest from existing inputs and passes a structured object into the relevant scoring path
+
+Prefer the path that:
+- preserves current behavior outside the intended P1 changes
+- avoids a full pipeline rewrite
+- creates a clean foundation for P2 branch planner
+
+Do not leave RecRequest entirely unused.
+P1 must begin shifting the recommender toward request-driven operation.
+
+7. Soft avoid ranking semantics
+P1 should ensure soft avoid_genres are materially represented in ranking influence across all tiers.
+
+At minimum:
+- their negative influence must not drop to zero for tier 2+
+- the policy lives in recPolicy.ts
+- the effect is inspectable through deterministic validation
+
+Do not implement retrieval deprioritization yet; that is P2.
+
+8. Deterministic validation
+Add scripts/validate_rec_request.ts or an equivalent sound validation script.
+
+It should verify at minimum:
+
+A3-style request delta:
+- a synthetic user/request with no stated History preference
+- then with History added
+- RecRequest.signals.statedTaste changes deterministically
+- relevant request/config identity or serialized control input changes if appropriate
+
+A10-style build cause:
+- session_open request preserves session_open
+- explicit_preference_edit request preserves explicit_preference_edit
+
+P1 floor validation:
+- tier 0, tier 1, tier 2, tier 3 fixture snapshots
+- stated History favorite produces nonzero positive stated preference effect at every tier
+- stated Sci-Fi avoid produces nonzero negative effect at every tier
+
+If scoring-level validation is too coupled for a small script, validate at the tightest honest layer available and report the limitation explicitly.
+Do not pretend a test proves ranking if it only proves policy wiring.
+
+────────────────────────────────
+ACCEPTANCE CRITERIA
+────────────────────────────────
+
+1. RecRequest v1 exists and is used by the recommendation path in a non-dead way.
+2. BuildCause v1 exists and is preserved through request construction.
+3. Stated durable genre preferences are explicitly represented apart from revealed/behavioral taste.
+4. Soft avoid genres are explicitly represented apart from other taste signals.
+5. Explicit favorite_genres no longer drop to zero influence at tier 2+.
+6. Explicit avoid_genres no longer drop to zero influence at tier 2+.
+7. Numerical policy values live in lib/recPolicy.ts rather than scattered ad hoc.
+8. Existing recommendation retrieval behavior is unchanged in this batch.
+9. Existing cache/deck validity behavior from P0B is unchanged.
+10. Deterministic validation demonstrates:
+   - RecRequest delta on pref edit
+   - BuildCause preservation
+   - nonzero stated-pref/avoid effect across tiers
+11. Typecheck remains at baseline with zero new errors.
+12. Diff scope confirms no forbidden systems touched.
+
+────────────────────────────────
+VALIDATION REQUIRED
+────────────────────────────────
+
+Return:
+
+1. Preflight architecture findings
+- whether P1 could be done as one batch
+- what exact modules were introduced
+- why this shape is forward-compatible with P2/P3
+
+2. Changed files
+
+3. Implementation summary
+
+4. RecRequest structure summary
+- fields implemented now
+- fields intentionally deferred
+
+5. Signal provenance summary
+- stated vs revealed vs avoid separation
+
+6. BuildCause behavior
+- where session_open originates
+- where explicit_preference_edit originates, if implemented
+- any honest limitations
+
+7. Nonzero stated preference behavior
+- before/after description of the old tier-gate problem
+- exact P1 behavior at tier 0/1/2/3
+- policy values and where they live
+
+8. Soft avoid behavior
+- before/after effect across tiers
+
+9. Recommender integration note
+- what recommendation entry point now consumes RecRequest
+- what remains legacy until P2/P3
+
+10. Validation script result
+
+11. Typecheck delta
+
+12. Workflow status
+
+13. Known limitations
+
+14. Deviations
+
+────────────────────────────────
+STOP CONDITIONS
+────────────────────────────────
+
+Stop and report before coding further if:
+
+- A clean P1 implementation requires more than 10 files.
+- BuildCause propagation from explicit preference save to next recommendation build cannot be implemented soundly within this scope.
+- Nonzero stated preference influence cannot be introduced without materially changing retrieval behavior.
+- RecRequest cannot be meaningfully introduced without a much wider recommender refactor.
+- Decay logic is not cleanly implementable from current timestamps; in that case stop and propose “floor now, decay later” if needed.
+- Deterministic validation cannot honestly demonstrate the nonzero-pref behavior at a meaningful layer.
+- Implementing P1 would touch forbidden systems.
+
+Return format:
+- Changed files
+- Preflight findings
+- Implementation summary
+- RecRequest/control-plane design
+- Signal provenance details
+- BuildCause propagation
+- Nonzero stated preference / avoid behavior by tier
+- Recommender integration
+- Validation results
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Deviations

@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabase';
 import { clearRecSession } from '../lib/recSession';
 import { clearRecPayload } from '../lib/recPayloadCache';
 import { clearAll as clearRecQueue } from '../lib/recQueue';
+import { setPendingBuildCause } from '../lib/recRequest';
 import { EDIT_GENRE_IDS, editLabel } from '../lib/taxonomy/genres';
 
 // P0A: chip labels are derived from the canonical taxonomy. Order is
@@ -169,6 +170,10 @@ export default function EditPreferencesScreen() {
       clearRecSession();
       clearRecQueue();
       void clearRecPayload(userId);
+      // P1: tag the next runPipeline() as caused by an explicit preference
+      // edit so RecRequest.build.cause = 'explicit_preference_edit'. Module
+      // state self-clears on first consume — no leakage into subsequent runs.
+      setPendingBuildCause('explicit_preference_edit');
       setSaveSuccess(true);
       setTimeout(() => router.back(), 700);
     }

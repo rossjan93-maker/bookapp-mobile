@@ -31,6 +31,7 @@ import type { ReaderThesis } from '../lib/expertRec';
 import { type RecSessionCache, getRecSession, getRecSessionFor, setRecSession, clearRecSession } from '../lib/recSession';
 import { addActedOnIds, loadActedOnIds, saveRecPayload, computeRecFingerprint } from '../lib/recPayloadCache';
 import { loadCurrentConfigHash } from '../lib/recValidity';
+import { buildRecRequest, consumePendingBuildCause } from '../lib/recRequest';
 import { GuidedActionBanner } from './OnboardingWalkthrough';
 
 import { RecCard, UndoToast, LearningToast, DeckAssemblingLoader, RefreshingDot } from './RecCard';
@@ -562,12 +563,30 @@ export function RecommendationsFeed({
       // Clear any previous timeout state so the retry path starts clean.
       setPipelineTimedOut(false);
 
+      // ── P1: Compile typed RecRequest for this pipeline run ─────────────
+      // BuildCause precedence:
+      //   1. consumePendingBuildCause() — set by app/edit-preferences.tsx
+      //      after a successful Reading Taste save (and self-clears so it
+      //      affects exactly the next pipeline run, not subsequent runs).
+      //   2. fall back to 'session_open' for normal pipeline triggers.
+      // Recommender step 7 reads req.signals to inject the stated-pref
+      // floor; deck-validity stores remain governed by configHash unchanged.
+      const recRequest = await buildRecRequest(supabase, {
+        userId,
+        profile:    tasteProfile,
+        cause:      consumePendingBuildCause() ?? 'session_open',
+        configHash: currentConfigHash,
+        intent:     activeIntentRef.current ?? null,
+        feedback:   feedbackCtx ?? null,
+      });
+
       const recResult = await Promise.race([
         getPersonalizedRecsWithExpert(
           supabase, userId, tasteProfile, activeEnt, 12,
           feedbackCtx,
           activeIntentRef.current ?? undefined,
           opts?.exhaustionBypass ? { exhaustionBypass: true, clearOLCache: true } : undefined,
+          recRequest,
         ),
         makePipelineTimeoutRace(),
       ]);

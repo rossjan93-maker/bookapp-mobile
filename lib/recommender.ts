@@ -76,6 +76,8 @@ import { buildEvidencePack }                                  from './evidencePa
 import { composeTraitPhrase }                                 from './traitCopy';
 import { getRetrievalSubjects, AFFINITY_RETRIEVAL_SUBJECTS } from './taxonomy/genres';
 import { loadCachedRecs, persistRecCache, shouldRebuild, buildSignalSnapshot } from './recCache';
+import { computeStatedTasteContribution } from './recPolicy';
+import type { RecRequest } from './recRequest';
 import { applyIntegrityLayer, buildSeriesReadSet, buildSeriesProgress, buildSeriesPositionsRead, stripTitleSubtitle, getEligibleSeriesSeeds } from './recommendationIntegrity';
 
 // ── Quality gate constants ─────────────────────────────────────────────────────
@@ -150,6 +152,7 @@ export type ScoreBreakdown = {
   feedback_boost:   number;   // step 4 — More-Like-This genre boost
   enrichment_bonus: number;   // step 5 — consensus trait + popularity signal
   metadata_penalty: number;   // step 6 — weak metadata down-weight
+  stated_taste?:    number;   // step 7 (P1) — stated taste contribution (favorite + soft avoid). Optional: only set when a RecRequest is provided.
   raw_score:        number;   // sum before clamping
   final_score:      number;   // clamped 0–1 total (after CoG delta)
   book_form:        string | null;   // detected form (poetry/play/etc.)
@@ -1481,6 +1484,12 @@ export function scoreBookForUser(
   profile:     TasteProfile,
   feedback?:   FeedbackContext,
   enrichment?: BookEnrichmentProfile,
+  // P1: when supplied, the typed RecRequest enables the stated-taste
+  // contribution (step 7) at all tiers via lib/recPolicy. When omitted,
+  // scoring is bit-identical to pre-P1 behavior — every existing call site
+  // that hasn't yet been converted continues to work without behavior
+  // change. The new path activates only via the threaded recommender entry.
+  req?:        RecRequest,
 ): Pick<ScoredBook, 'score' | 'confidence' | 'reasons' | 'risks' | '_score_breakdown'> {
   const bt         = getBookTraits(book);
   const pref       = profile.preferred_traits;
@@ -1822,8 +1831,40 @@ export function scoreBookForUser(
   // large penalty (e.g. noir −0.22, spiritual −0.22) is unaffected.
   s6_meta_pen = Math.max(S6_PENALTY_FLOOR, s6_meta_pen);
 
+  // ── Step 7 (P1): Stated-taste contribution ────────────────────────────────
+  // Closes the pre-P1 trust failure where reader_preferences.favorite_genres
+  // and avoid_genres dropped to ZERO scoring influence for tier ≥ 2 users
+  // (the legacy tasteProfile blend was gated to tier ≤ 1).
+  //
+  // Mechanism: when a typed RecRequest is supplied, we ask the central
+  // policy module for the stated contribution given (book.primaryGenre,
+  // statedFavorites, statedAvoids, tier). The policy guarantees a NONZERO
+  // floor at all tiers — the +0.05 floor specified in the locked spec.
+  //
+  // Why a separate step rather than mutating step 3 / genre_affinities:
+  //   - tasteProfile.ts still blends prefs into genre_affinities at tier ≤ 1.
+  //     Mutating step 3 here would double-count for those users.
+  //   - Keeping stated separate from revealed (step 3 = revealed-from-rated)
+  //     realizes the locked architecture's stated/revealed split at the
+  //     scoring layer, which P3 contribution attribution will rely on.
+  //   - When req is undefined (legacy callers), s7_stated stays 0 — no
+  //     behavior change at any non-converted call site.
+  let s7_stated = 0;
+  if (req) {
+    const contrib = computeStatedTasteContribution(
+      bt.primaryGenre,
+      req.signals.statedTaste.favoriteGenres,
+      req.signals.softAvoids.genres,
+      profile.tier,
+    );
+    s7_stated = contrib.bonus + contrib.penalty;
+    if (contrib.matched) {
+      audit_flags.push(`stated_${contrib.matched.kind}:${contrib.matched.key}`);
+    }
+  }
+
   // ── Final score ───────────────────────────────────────────────────────────
-  const rawScore   = s1_trait + s2_avoid + s3_genre + s4_feed + s5_enr + s6_meta_pen;
+  const rawScore   = s1_trait + s2_avoid + s3_genre + s4_feed + s5_enr + s6_meta_pen + s7_stated;
   const finalScore = Math.max(0, Math.min(1, rawScore));
 
   // Confidence follows profile tier + score magnitude (thresholds adjusted for
@@ -1847,6 +1888,7 @@ export function scoreBookForUser(
       feedback_boost:   fmt(s4_feed),
       enrichment_bonus: fmt(s5_enr),
       metadata_penalty: fmt(s6_meta_pen),
+      stated_taste:     fmt(s7_stated),
       raw_score:        fmt(rawScore),
       final_score:      fmt(finalScore),
       book_form:        bt.bookForm,
@@ -1877,6 +1919,9 @@ export function getRankedRecs(
   seriesProgress:       Map<string, number>     = new Map(),
   authorReadCounts:     Map<string, number>     = new Map(),
   seriesPositionsRead:  Map<string, Set<number>> = new Map(),
+  // P1: optional RecRequest threaded into per-book scoring so step 7
+  // (stated-taste contribution) can activate. Undefined = legacy behavior.
+  req?:                 RecRequest,
 ): RankedRecsResult {
   const poolSize = candidates.length;
 
@@ -1917,7 +1962,7 @@ export function getRankedRecs(
     const enrichment = book.external_id ? enrichmentMap.get(book.external_id) : undefined;
     return {
       ...book,
-      ...scoreBookForUser(book, profile, feedback, enrichment),
+      ...scoreBookForUser(book, profile, feedback, enrichment, req),
       _debug: { pool_size: poolSize, rank: 0 },
     } as ScoredBook;
   });
@@ -3056,13 +3101,17 @@ export async function getPersonalizedRecsWithExpert(
   feedback?:   FeedbackContext,
   intent?:     NextReadIntent,
   opts?:       { skipCache?: boolean; additionalExcludeIds?: Set<string>; forceNewOL?: boolean },
+  // P1: optional RecRequest. When supplied (RecommendationsFeed wires this
+  // through), step 7 stated-taste contribution activates in scoring. When
+  // omitted (legacy callers, e.g. forensic scripts), behavior is unchanged.
+  req?:        RecRequest,
 ): Promise<RankedRecsResult> {
   // ── Step 1: Deterministic pipeline (always runs) ──────────────────────────
   const { candidates, enrichmentMap, retrieval_trace, seriesReadSet, seriesProgress, seriesPositionsRead, authorReadCounts } =
     await getCandidateBooks(client, userId, profile, feedback, opts?.additionalExcludeIds, opts?.forceNewOL);
   if (__DEV__) console.log('[PERF] phase2_scoring_start', `| candidates=${candidates.length}`);
   const _scoreStart = Date.now();
-  const baseResult = getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet, seriesProgress, authorReadCounts, seriesPositionsRead);
+  const baseResult = getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet, seriesProgress, authorReadCounts, seriesPositionsRead, req);
   if (__DEV__) console.log('[PERF] phase2_scoring_end', `| ms=${Date.now() - _scoreStart}`);
 
   // ── Forensic audit log (forensic user only, dev mode) ────────────────────
