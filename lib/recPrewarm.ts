@@ -4,6 +4,7 @@ import { getPersonalizedRecsWithExpert } from './recommender';
 import { saveRecPayload, computeRecFingerprint } from './recPayloadCache';
 import { loadCurrentConfigHash } from './recValidity';
 import type { RecEntitlement } from './recEntitlement';
+import { buildRecRequest } from './recRequest';
 
 // ── Background recommendation prewarm ─────────────────────────────────────────
 //
@@ -97,8 +98,19 @@ export function triggerRecPrewarm(supabase: SupabaseClient, userId: string): voi
       );
 
       // ── Run deterministic pipeline ──────────────────────────────────────────
+      // P2A: build a typed RecRequest so the branch planner sees stated
+      // favorite_genres + soft-avoids (mirrors RecommendationsFeed.runPipeline).
+      // Cause is `session_open` — prewarm is not a user-initiated edit.
+      // Without this, prewarm would fall through to the legacy synthetic-empty
+      // fallback in getOLCandidates and lose stated-pref retrieval influence.
+      const recRequest = await buildRecRequest(supabase, {
+        userId,
+        profile,
+        cause: 'session_open',
+      });
       const result = await getPersonalizedRecsWithExpert(
         supabase, userId, profile, FREE_ENTITLEMENT, 5,
+        undefined, undefined, undefined, recRequest,
       );
 
       const recs = result.recs ?? [];

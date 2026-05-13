@@ -1,0 +1,45 @@
+Approved: split P2. Do not force P2A + P2B into one oversized batch.
+
+The split is sound:
+- P2A — planner infrastructure + statedGenres branch + dense-bypass replacement
+- P2B — BuildCause-aware top-slate reservation
+- Intent/exploration formalization remains deferred because intent is still post-retrieval today and formalizing it now would be cosmetic or provider-semantics overreach.
+
+One required refinement before you begin P2A:
+
+The locked architecture and quality-gate matrix still require P2 to address soft-avoid retrieval behavior, not just soft-avoid ranking.
+- P1 already made stated avoid_genres materially affect scoring/ranking.
+- P2 must eventually ensure soft avoids affect retrieval/deprioritization as well.
+- The current proposed split does not yet account for that.
+
+Please do one quick architecture check before coding P2A:
+
+1. Can soft-avoid retrieval deprioritization be implemented cleanly inside P2A while the branch planner is being introduced?
+   - For example, planner/branch logic can lower priority or deprioritize branch retrieval that clearly matches a soft-avoided lane, without turning soft avoids into hard filters.
+   - Do not force a poor abstraction or overreach into provider semantics.
+
+2. If yes:
+   - include that minimal soft-avoid retrieval treatment in P2A
+   - extend the P2A validator accordingly
+
+3. If no:
+   - explicitly reserve it as P2C — Soft-Avoid Retrieval Deprioritization
+   - keep P2A focused on statedGenres + dense-bypass replacement
+   - keep P2B focused on top-slate reservation
+   - do not let soft-avoid retrieval disappear from the P2 roadmap
+
+Otherwise, proceed with the P2A plan exactly as proposed.
+
+P2A approval conditions:
+- stated favorite_genres always enter the candidate pool, including for dense users
+- dense behavior is preserved as a revealed branch rather than a hard bypass
+- branch metadata/provenance exists
+- BuildCause-keyed quota delta is represented
+- retrieval invariants remain intact
+- no top-slate reservation yet; that is P2B
+- no intent/exploration branch formalization yet; deferred honestly
+
+Return either:
+A. “Soft-avoid retrieval fits cleanly in P2A; proceeding with revised P2A”
+or
+B. “Soft-avoid retrieval belongs in P2C; proceeding with P2A as originally scoped, with P2C explicitly added to the roadmap”

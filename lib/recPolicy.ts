@@ -144,3 +144,44 @@ export function computeStatedTasteContribution(
 
   return empty;
 }
+
+// ── P2A: branch planner quotas ───────────────────────────────────────────────
+//
+// Per-branch retrieval quotas keyed off confidenceMode. These are the
+// maximum FetchItem counts each branch may emit, BEFORE BuildCause modifier
+// and soft-avoid multiplier. Calibration hypotheses; tunable without
+// architecture change.
+//
+// Plan-size invariant: sum across branches at every confidenceMode is ≤ 11
+// (the pre-P2A maximum), so OL load characteristics are preserved. The
+// statedGenres quota is intentionally non-zero at every confidenceMode —
+// that is the entire P2A retrieval-side fix mirroring the P1 scoring fix.
+
+export type BranchQuotas = {
+  statedGenres:    number;
+  revealedAuthors: number;
+  revealedLanes:   number;
+};
+
+export const BRANCH_QUOTAS: Readonly<Record<ConfidenceMode, BranchQuotas>> = {
+  // Cold start: stated dominates because the user has nothing else to draw on.
+  cold_start:  { statedGenres: 4, revealedAuthors: 1, revealedLanes: 5 },
+  // Thin: similar; revealed signals exist but are unreliable.
+  thin:        { statedGenres: 4, revealedAuthors: 1, revealedLanes: 5 },
+  // High signal (dense / tier ≥ 2): revealed dominates BUT stated keeps a
+  // material seat at the table — the pre-P2A bug was statedGenres = 0 here.
+  high_signal: { statedGenres: 3, revealedAuthors: 3, revealedLanes: 4 },
+};
+
+/** BuildCause = 'explicit_preference_edit': boost stated, trim lanes,
+ *  net plan size unchanged. Other causes leave quotas at base. */
+export const EDIT_CAUSE_BRANCH_BOOST: { statedGenres: number; revealedLanes: number } = {
+  statedGenres:  +1,
+  revealedLanes: -1,
+};
+
+/** Multiplier applied to revealedLanes quota when the user's dominant lanes
+ *  intersect their soft-avoids. 0.5 = retrieve half as much from a lane the
+ *  user said they want less of. Floored at 1 so the branch never zeroes out
+ *  (revealed lanes still inform some retrieval — soft avoid is not exclude). */
+export const SOFT_AVOID_RETRIEVAL_MULTIPLIER = 0.5;

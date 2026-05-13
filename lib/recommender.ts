@@ -78,6 +78,7 @@ import { getRetrievalSubjects, AFFINITY_RETRIEVAL_SUBJECTS } from './taxonomy/ge
 import { loadCachedRecs, persistRecCache, shouldRebuild, buildSignalSnapshot } from './recCache';
 import { computeStatedTasteContribution } from './recPolicy';
 import type { RecRequest } from './recRequest';
+import { planBranches } from './retrieval/branchPlanner';
 import { applyIntegrityLayer, buildSeriesReadSet, buildSeriesProgress, buildSeriesPositionsRead, stripTitleSubtitle, getEligibleSeriesSeeds } from './recommendationIntegrity';
 
 // ── Quality gate constants ─────────────────────────────────────────────────────
@@ -300,20 +301,10 @@ export function fitColor(score: number): string {
 // Use `getRetrievalSubjects(key)` for the safe `?? general` lookup.
 
 // ── Dense-import lane → OL subject mapping ─────────────────────────────────────
-// Used exclusively in dense-import mode where dominant reading lanes are known.
-// More specific than GENRE_OL_SUBJECTS — avoids literary / canon drift entirely
-// unless 'literary' is actually a dominant lane for this user.
-
-const DENSE_LANE_OL_SUBJECTS: Record<DeterministicLane, [string, string]> = {
-  romantasy:            ['romantasy',                     'fantasy romance'],
-  contemporary_fiction: ["women's fiction",               'book club fiction'],
-  modern_suspense:      ['psychological thriller',         'domestic thriller'],
-  memoir_nonfiction:    ['personal memoirs',               'narrative nonfiction'],
-  literary:             ['literary fiction',               'contemporary literary fiction'],
-  scifi_fantasy:        ['epic fantasy',                   'dystopian fiction'],
-  romance:              ['contemporary romance',           'romance fiction'],
-  horror:               ['horror fiction',                 'supernatural fiction'],
-};
+// P2A: moved to lib/retrieval/branches/revealedLanes.ts as LANE_OL_SUBJECTS.
+// The dense-vs-non-dense retrieval orchestration is now centralized in the
+// branch planner (lib/retrieval/branchPlanner.ts) so stated favorite_genres
+// can never be silently bypassed by dense mode.
 
 // Lane-aware reason templates — shown instead of generic trait-match lines
 const LANE_REASON: Record<DeterministicLane, string> = {
@@ -1076,6 +1067,13 @@ async function getOLCandidates(
   readExternalIds:      Set<string>,
   excludeExternalIds:   Set<string>,
   trueReadExternalIds?: Set<string>,  // truly-read subset — for OL supplement (series-started detection only)
+  // P2A: optional RecRequest. When supplied, the branch planner runs and
+  // stated favorite_genres are guaranteed to enter the candidate pool
+  // (including for dense users). When omitted (legacy callers without
+  // request threading, e.g. forensic scripts), behavior degrades to the
+  // pre-P2A inline plan via a synthetic empty-stated request — preserving
+  // pre-P1 retrieval shape exactly for those callers.
+  req?:                 RecRequest,
 ): Promise<OLResult> {
   const affinities = profile.genre_affinities ?? {};
   const det        = profile.det_lanes;
@@ -1084,104 +1082,71 @@ async function getOLCandidates(
   // A user is "dense" for retrieval if they have ≥2 dominant lanes OR ≥3 repeated authors.
   const isDense    = !!(det && (det.dominant_lanes.length >= 2 || det.repeated_liked_authors.length >= 3));
 
-  // ── Build fetch plan ──────────────────────────────────────────────────────
-  type FetchItem =
-    | { kind: 'subject'; value: string; reason: string }
-    | { kind: 'author';  value: string; reason: string };
-
-  const plan: FetchItem[] = [];
-  const ol_queries: string[] = [];
-
-  if (isDense && det) {
-    // ── Dense-import mode ─────────────────────────────────────────────────
-    // Primary: up to 3 repeated-liked authors (strongest signal — user reads
-    //   the same author repeatedly, which OL author search handles well).
-    // Secondary: OL subjects derived ONLY from dominant lanes (no literary
-    //   fallback unless 'literary' is genuinely a dominant lane for this user).
-    // This prevents the "canon tolerance → canon retrieval" failure mode.
-
-    for (const author of det.repeated_liked_authors.slice(0, 3)) {
-      plan.push({ kind: 'author', value: author, reason: `repeated_author:${author}` });
-    }
-
-    for (const lane of det.dominant_lanes.slice(0, 3)) {
-      const [s1, s2] = DENSE_LANE_OL_SUBJECTS[lane] ?? [];
-      if (s1) plan.push({ kind: 'subject', value: s1, reason: `lane:${lane}` });
-      if (s2 && plan.length < 10) plan.push({ kind: 'subject', value: s2, reason: `lane:${lane}` });
-    }
-
-    // Fallback if completely empty (should rarely happen)
-    if (plan.length === 0) {
-      const likedSubjectAnchors = (profile.liked_subjects ?? [])
-        .filter(s => !GENERIC_RETRIEVAL_SUBJECTS.has(s.toLowerCase()))
-        .slice(0, 3);
-      for (const s of likedSubjectAnchors) {
-        plan.push({ kind: 'subject', value: s, reason: `liked_subject:${s}` });
-      }
-    }
-
-  } else {
-    // ── Standard multi-anchor retrieval ───────────────────────────────────
-    // ── 1. Genre affinities: always top-3, plus any with affinity > 0.4 ──
-    // Rationale: a user whose #4 genre (e.g. thriller_mystery) has 0.5+
-    // affinity should still get OL candidates in that genre, otherwise the
-    // local catalog's old spy/noir books go uncontested at scoring time.
-    const sortedAffinities = Object.entries(affinities)
-      .filter(([, score]) => score > 0)
-      .sort((a, b) => b[1] - a[1]);
-    let topGenres = sortedAffinities
-      .filter((entry, i) => i < 3 || entry[1] > 0.4)
-      .slice(0, 5)
-      .map(([g]) => g);
-
-    // Fallback: infer from trait preferences if no rated genres yet.
-    // NOTE: fallback is 'general' (contemporary/popular fiction) — NOT 'literary',
-    // which was causing Hemingway/Rand/Chandler drift for blank-affinity users.
-    if (topGenres.length === 0) {
-      const pref = profile.preferred_traits;
-      if ((pref['Insight'] ?? 0) + (pref['Evidence'] ?? 0) > 0.4)
-        topGenres = ['nonfiction', 'memoir_bio'];
-      else if ((pref['Suspense'] ?? 0) + (pref['Pacing'] ?? 0) > 0.5)
-        topGenres = ['thriller_mystery'];
-      else if ((pref['Worldbuilding'] ?? 0) > 0.4)
-        topGenres = ['fantasy_scifi'];
-      else
-        topGenres = ['general'];  // was 'literary' — now defaults to contemporary/popular fiction
-    }
-
-    // ── 2. Top 3 liked subjects (filter out noise) ────────────────────────
-    const likedSubjectAnchors = (profile.liked_subjects ?? [])
-      .filter(s => !GENERIC_RETRIEVAL_SUBJECTS.has(s.toLowerCase()))
-      .slice(0, 3);
-
-    // ── 3. Top 1 liked author ─────────────────────────────────────────────
-    const likedAuthorAnchor = (profile.liked_authors ?? []).slice(0, 1);
-
-    // Genre anchors — 2 specific subjects per genre
-    // P0A.1: lookup delegated to taxonomy. getRetrievalSubjects() provides
-    // the same `?? general` fallback the inline map used pre-P0A.1.
-    for (const genre of topGenres) {
-      const [s1, s2] = getRetrievalSubjects(genre);
-      plan.push({ kind: 'subject', value: s1, reason: `genre:${genre}` });
-      if (plan.length < 8) plan.push({ kind: 'subject', value: s2, reason: `genre:${genre}` });
-    }
-
-    // Subject anchors from liked books
-    for (const s of likedSubjectAnchors) {
-      if (plan.length >= 10) break;
-      plan.push({ kind: 'subject', value: s, reason: `liked_subject:${s}` });
-    }
-
-    // Author anchor
-    for (const a of likedAuthorAnchor) {
-      if (plan.length >= 11) break;
-      plan.push({ kind: 'author', value: a, reason: `author_anchor:${a}` });
-    }
+  // ── Build branch context (pre-P2A topGenres / liked_subjects derivation) ──
+  // These computations are unchanged from pre-P2A; the planner just consumes
+  // them instead of inline if/else branches consuming them.
+  const sortedAffinities = Object.entries(affinities)
+    .filter(([, score]) => score > 0)
+    .sort((a, b) => b[1] - a[1]);
+  let topGenres = sortedAffinities
+    .filter((entry, i) => i < 3 || entry[1] > 0.4)
+    .slice(0, 5)
+    .map(([g]) => g);
+  if (topGenres.length === 0) {
+    const pref = profile.preferred_traits;
+    if ((pref['Insight'] ?? 0) + (pref['Evidence'] ?? 0) > 0.4)
+      topGenres = ['nonfiction', 'memoir_bio'];
+    else if ((pref['Suspense'] ?? 0) + (pref['Pacing'] ?? 0) > 0.5)
+      topGenres = ['thriller_mystery'];
+    else if ((pref['Worldbuilding'] ?? 0) > 0.4)
+      topGenres = ['fantasy_scifi'];
+    else
+      topGenres = ['general'];
   }
 
-  // ── Execute fetch plan (parallel) ─────────────────────────────────────────
+  const likedSubjectAnchors = (profile.liked_subjects ?? [])
+    .filter(s => !GENERIC_RETRIEVAL_SUBJECTS.has(s.toLowerCase()))
+    .slice(0, 3);
+
+  const branchContext = {
+    topGenres,
+    dominantLanes:   det?.dominant_lanes.slice(0, 3) ?? [],
+    repeatedAuthors: det?.repeated_liked_authors.slice(0, 3) ?? [],
+    likedAuthors:    (profile.liked_authors ?? []).slice(0, 1),
+    likedSubjects:   likedSubjectAnchors,
+    isDense,
+  };
+
+  // ── Plan + execute fetch (P2A: planner-driven; legacy fallback for no-req) ──
+  // When `req` is provided, the planner runs all enabled branches in order
+  // (statedGenres → revealedAuthors → revealedLanes), with quotas keyed off
+  // confidenceMode + BuildCause + soft-avoid intersection. When `req` is
+  // absent (legacy callers), we synthesize a minimal request with empty
+  // stated/avoid signals so behavior matches pre-P2A exactly: statedGenres
+  // branch is disabled (no favorites), revealedLanes/Authors emit the same
+  // anchors the inline plan did.
+  const effectiveReq: RecRequest = req ?? {
+    userId:  '',
+    signals: {
+      statedTaste:   { signalClass: 'stated_durable', favoriteGenres: [], readingStyles: [], favoriteAuthors: [], updatedAt: null },
+      revealedTaste: { signalClass: 'revealed_behavioral', profile },
+      softAvoids:    { signalClass: 'soft_avoid', genres: [], updatedAt: null },
+    },
+    policy: {
+      confidenceMode:         'high_signal',
+      statedPreferenceFloor:  0.05,
+      statedPreferenceWeight: 0.12,
+      softAvoidFloor:        -0.06,
+      softAvoidPenalty:      -0.15,
+    },
+    build: { cause: 'session_open', builtAt: Date.now(), schemaVersion: 'rrv1' },
+  };
+
+  const plan = planBranches(effectiveReq, branchContext);
+
+  const ol_queries: string[] = [];
   const resultSets = await Promise.all(
-    plan.map(item => {
+    plan.fetchItems.map(item => {
       ol_queries.push(item.value);
       if (item.kind === 'author') {
         return fetchOLByAuthor(item.value, 12);
@@ -1217,14 +1182,19 @@ async function getOLCandidates(
     }
   }
 
-  // Extract trace metadata from the plan items
-  const top_genres_used     = isDense
-    ? []
-    : plan.filter(i => i.reason.startsWith('genre:')).map(i => i.reason.slice(6)).filter((v, i, a) => a.indexOf(v) === i);
-  const liked_subjects_used = plan.filter(i => i.reason.startsWith('liked_subject:')).map(i => i.value);
+  // Extract trace metadata from the plan items.
+  // P2A: top_genres_used now includes BOTH revealedLanes-branch `genre:`
+  // anchors AND statedGenres-branch `stated_genre:` anchors, regardless of
+  // dense mode. Pre-P2A returned [] for dense users — that masked the bug
+  // this batch fixes (stated favorites silently bypassed at retrieval).
+  const top_genres_used     = plan.fetchItems
+    .filter(i => i.reason.startsWith('genre:') || i.reason.startsWith('stated_genre:'))
+    .map(i => i.reason.includes(':') ? i.reason.slice(i.reason.indexOf(':') + 1) : i.reason)
+    .filter((v, i, a) => a.indexOf(v) === i);
+  const liked_subjects_used = plan.fetchItems.filter(i => i.reason.startsWith('liked_subject:')).map(i => i.value);
   const liked_authors_used  = isDense
-    ? plan.filter(i => i.reason.startsWith('repeated_author:')).map(i => i.value)
-    : plan.filter(i => i.reason.startsWith('author_anchor:')).map(i => i.value);
+    ? plan.fetchItems.filter(i => i.reason.startsWith('repeated_author:')).map(i => i.value)
+    : plan.fetchItems.filter(i => i.reason.startsWith('author_anchor:')).map(i => i.value);
 
   return {
     candidates:           merged,
@@ -2609,6 +2579,11 @@ export async function getCandidateBooks(
   feedback?:             FeedbackContext,
   additionalExcludeIds?: Set<string>,
   forceNewOL?:           boolean,
+  // P2A: optional RecRequest. Threaded down to getOLCandidates so the branch
+  // planner sees stated favorite_genres + soft-avoids + BuildCause. When
+  // absent (legacy callers, e.g. forensic scripts), getOLCandidates uses
+  // a synthesized empty-stated request — pre-P2A behavior preserved.
+  req?:                  RecRequest,
 ): Promise<CandidateResult> {
   // ── Stage timing — [REC_TIMING] log emitted at the end of this function ───
   const _t0 = Date.now();
@@ -2839,7 +2814,7 @@ export async function getCandidateBooks(
     } else {
       // ── Live OL multi-anchor fetch ─────────────────────────────────────
       if (__DEV__) console.log('[PERF] phase2_external_fetch_start — live_ol');
-      olResult = await getOLCandidates(profile, local.readExternalIds, excludeForOL, local.trueReadExternalIds);
+      olResult = await getOLCandidates(profile, local.readExternalIds, excludeForOL, local.trueReadExternalIds, req);
       if (__DEV__) console.log('[PERF] phase2_external_fetch_end — live_ol', `| ms=${Date.now() - _t2}`, `| candidates=${olResult.candidates.length}`);
 
       // Save to session cache for background refreshes within this session
@@ -3108,7 +3083,7 @@ export async function getPersonalizedRecsWithExpert(
 ): Promise<RankedRecsResult> {
   // ── Step 1: Deterministic pipeline (always runs) ──────────────────────────
   const { candidates, enrichmentMap, retrieval_trace, seriesReadSet, seriesProgress, seriesPositionsRead, authorReadCounts } =
-    await getCandidateBooks(client, userId, profile, feedback, opts?.additionalExcludeIds, opts?.forceNewOL);
+    await getCandidateBooks(client, userId, profile, feedback, opts?.additionalExcludeIds, opts?.forceNewOL, req);
   if (__DEV__) console.log('[PERF] phase2_scoring_start', `| candidates=${candidates.length}`);
   const _scoreStart = Date.now();
   const baseResult = getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet, seriesProgress, authorReadCounts, seriesPositionsRead, req);
