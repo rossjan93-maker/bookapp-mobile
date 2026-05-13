@@ -14,6 +14,7 @@ import { fitLabel, fitColor } from '../lib/recommender';
 import type { ScoredBook } from '../lib/recommender';
 import type { DeterministicLane } from '../lib/bookTraits';
 import type { TasteProfile } from '../lib/tasteProfile';
+import { rehumanizeReasonPhrase } from '../lib/traitCopy';
 import { getSeriesCatalog } from '../lib/seriesCatalog';
 import { setRecContext } from '../lib/recContext';
 import { persistRecSnapshot } from '../lib/recSnapshot';
@@ -229,31 +230,42 @@ function _pickGated<T>(
 }
 
 // ── ALIGNS — "Aligns with your preference for X" rewrites ────────────────────
+// FX-1 (2026-05-13): pool refresh. Pre-fix the templates ("Strong match for X.",
+// "Anchored in X.") could not recover when X was a malformed key concatenation
+// like "prose and emotional". The upstream recommender now humanizes via
+// composeTraitPhrase() in lib/traitCopy.ts, so X is always a complete natural
+// noun phrase ("literary writing with real emotional weight" / "emotional
+// weight"). Templates are written to read as recommendation reasoning rather
+// than as system labels. Hash tag bumped to 'aligns_v2' so users aren't pinned
+// to the same hash slot under the new pool contents.
 const ALIGNS_POOL_SAFE = [
-  (x: string) => `Strong match for ${x}.`,
+  (x: string) => `A strong fit if you're after ${x}.`,
+  (x: string) => `Leans into ${x}.`,
   (x: string) => `Built around ${x}.`,
-  (x: string) => `${capitalize(x)} comes through clearly.`,
-  (x: string) => `Anchored in ${x}.`,
+  (x: string) => `A solid pick for ${x}.`,
 ] as const;
 const ALIGNS_POOL_HISTORY = [
-  (x: string) => `Strong match for ${x}.`,
   (x: string) => `Lines up with your taste for ${x}.`,
-  (x: string) => `${capitalize(x)} — squarely in your wheelhouse.`,
-  (x: string) => `${capitalize(x)} runs through what you tend to pick up.`,
+  (x: string) => `Right in line with ${x} — territory you keep returning to.`,
+  (x: string) => `Plays to your taste for ${x}.`,
+  (x: string) => `Fits squarely with ${x}, the kind your library leans on.`,
 ] as const;
 
 // ── APPRECIATION — "Matches your appreciation for X" rewrites ────────────────
+// FX-1: same architecture as ALIGNS — X is now humanized upstream. Templates
+// rewritten so "emotional weight" / "literary writing" / "forward momentum"
+// read as natural sentence completions. Hash tag bumped to 'appreciation_v2'.
 const APPRECIATION_POOL_SAFE = [
   (x: string) => `Strong on ${x}.`,
-  (x: string) => `Notable ${x}.`,
-  (x: string) => `${capitalize(x)} stands out here.`,
-  (x: string) => `Built on its ${x}.`,
+  (x: string) => `Leans into ${x}.`,
+  (x: string) => `Reads heavy on ${x}.`,
+  (x: string) => `Built around ${x}.`,
 ] as const;
 const APPRECIATION_POOL_HISTORY = [
-  (x: string) => `Strong ${x} — exactly the kind you tend to rate highly.`,
-  (x: string) => `Notable ${x}, the kind your highest-rated reads share.`,
-  (x: string) => `Heavy on ${x} — a hallmark of the books you finish strongest.`,
-  (x: string) => `Built on ${x}, the quality your ratings reliably reward.`,
+  (x: string) => `Strong on ${x} — exactly the kind you tend to rate highly.`,
+  (x: string) => `Heavy on ${x}, the kind your highest-rated reads share.`,
+  (x: string) => `Built around ${x}, a quality your ratings reliably reward.`,
+  (x: string) => `Leans into ${x}, the kind that tends to land for you.`,
 ] as const;
 
 // ── READERS_TRAIT — "Readers note strong X" rewrites ─────────────────────────
@@ -373,11 +385,21 @@ function rewriteReasonText(
 
   // ── "Aligns with your preference for X and Y" ──────────────────────────
   const alignsM = raw.match(/^Aligns with your preference for (.+)$/i);
-  if (alignsM) return _pickGated(ALIGNS_POOL_SAFE, ALIGNS_POOL_HISTORY, isHistory, bookId, 'aligns')(alignsM[1].toLowerCase());
+  if (alignsM) {
+    // FX-1 defensive re-humanization: closes the legacy-cache leak path so
+    // pre-FX-1 cached reason strings ("prose and emotional") get rebuilt
+    // into natural copy before reaching the template. Already-humanized
+    // phrases pass through unchanged.
+    const phrase = rehumanizeReasonPhrase(alignsM[1].toLowerCase());
+    return _pickGated(ALIGNS_POOL_SAFE, ALIGNS_POOL_HISTORY, isHistory, bookId, 'aligns_v2')(phrase);
+  }
 
   // ── "Matches your appreciation for X" ─────────────────────────────────
   const appreciationM = raw.match(/^Matches your appreciation for (.+)$/i);
-  if (appreciationM) return _pickGated(APPRECIATION_POOL_SAFE, APPRECIATION_POOL_HISTORY, isHistory, bookId, 'appreciation')(appreciationM[1].toLowerCase());
+  if (appreciationM) {
+    const phrase = rehumanizeReasonPhrase(appreciationM[1].toLowerCase());
+    return _pickGated(APPRECIATION_POOL_SAFE, APPRECIATION_POOL_HISTORY, isHistory, bookId, 'appreciation_v2')(phrase);
+  }
 
   // ── "Readers note strong X — which fits your profile" ─────────────────
   const readersM = raw.match(/^Readers note strong (.+?) — which fits your profile$/i);

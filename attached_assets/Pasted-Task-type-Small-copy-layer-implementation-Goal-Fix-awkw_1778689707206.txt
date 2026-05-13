@@ -1,0 +1,174 @@
+Task type:
+Small copy-layer implementation.
+
+Goal:
+Fix awkward recommendation explanation copy caused by raw trait labels and malformed trait-pair phrasing, while preserving all scoring, ranking, retrieval, and trust-gating behavior.
+
+User problem:
+For You cards currently surface explanations like:
+- “Strong match for prose and emotional.”
+- “Anchored in prose and emotional.”
+- “Prose and emotional comes through clearly.”
+
+These do not read like reader-facing recommendation reasoning. They sound like internal model labels leaked into UI.
+
+Audit-confirmed root cause:
+- lib/recommender.ts assembles trait-pair reasons from raw trait keys via join(' and '), producing malformed strings like “prose and emotional.”
+- components/RecCard.tsx then inserts those strings into ALIGNS_POOL_SAFE / HISTORY templates that cannot recover from the bad phrase.
+- APPRECIATION_POOL_SAFE / HISTORY also reads awkwardly for single raw trait keys.
+
+Allowed files:
+- lib/traitCopy.ts — new shared helper file
+- lib/recommender.ts — reason-string assembly only
+- components/RecCard.tsx — trait explanation rewrite pools/helpers
+- replit.md
+
+File budget:
+Maximum 4 files. If this requires more than 4 files, stop and explain.
+
+Forbidden files/systems:
+- recommender scoring math
+- recommender ranking
+- recommender retrieval
+- candidate pool construction
+- recommendation persistence
+- queue behavior
+- recSession / recPayloadCache
+- schema
+- migrations
+- auth
+- Sentry
+- native config
+- Open Library
+- Google Books
+- metadata repair
+- LLM/API calls
+- TasteReadout
+- onboarding
+- HomeShortlist
+- RecommendationsFeed unless a stop-condition proves absolutely necessary
+
+Hard constraints:
+- Do not change how books are scored, ranked, retrieved, or selected.
+- Do not alter V3 anchored-explanation gating.
+- Do not change isHistoryRich() or SAFE/HISTORY selection rules.
+- Do not touch author pools, lane pools, subject pools, or theme-tail pools unless the diff proves a trait-specific dependency.
+- This is trait-copy humanization and sentence-quality work only.
+
+Implementation requirements:
+
+1. Create shared trait-copy helper
+Add lib/traitCopy.ts with pure helpers such as:
+- humanizeTraitKey(key: string): string
+- composeTraitPhrase(keys: string[]): string
+- optional curated pair/combination table for common high-frequency combinations
+
+Expected humanized directions:
+- prose / literary_prose → “literary writing”
+- emotional / emotionality → “emotional weight”
+- characters → “character depth” or “character-driven storytelling”
+- pacing → “momentum” / “forward motion”
+- insight → “ideas worth sitting with”
+- originality → “freshness” / “something more unexpected”
+- depth → “substance”
+
+Use carefully chosen copy, not raw label echo.
+
+2. Improve upstream trait reason assembly in lib/recommender.ts
+Only in the reason-string construction path:
+- Replace raw trait-key concatenation with the shared helper output.
+- Do not alter scoring, prefMatches selection logic, or match thresholds.
+- The generated reasons should already be more human-readable before they ever reach RecCard or HomeShortlist.
+
+Examples:
+Before:
+“Aligns with your preference for prose and emotional”
+
+After direction:
+“Aligns with literary writing and emotional weight”
+or an equivalent natural phrase returned by the helper.
+
+Single-trait path:
+Before:
+“Matches your appreciation for emotional”
+
+After direction:
+“Matches your appreciation for emotional weight”
+
+3. Improve RecCard trait explanation rendering
+In components/RecCard.tsx:
+- Use the shared trait-copy helper in the ALIGNS and APPRECIATION rewrite paths where appropriate.
+- Refresh ALIGNS_POOL_SAFE / HISTORY and APPRECIATION_POOL_SAFE / HISTORY so the resulting full sentences sound like recommendation reasoning, not debug output.
+
+Desired tone examples:
+- “A strong fit if you want literary writing with real emotional weight.”
+- “Leans into emotional intensity without losing momentum.”
+- “This lines up with your taste for substantive, original reads.”
+- “Starting from your interest in literary writing, this is a reasonable early fit.”
+
+Do not overclaim history for thin users. SAFE/HISTORY gating remains intact.
+
+4. Coverage strategy
+Use curated phrasing for common combinations such as:
+- prose + emotional
+- characters + emotional
+- pacing + insight
+- depth + originality
+- prose + pacing
+- emotional + pacing
+
+For long-tail/unmapped combos:
+- fall back to a safe, readable single-trait sentence rather than emitting malformed “X and Y” phrasing.
+
+5. Deterministic-copy hashes
+If changing pool contents, update deterministic variant tags as needed so users are not pinned to old hash-slot expectations after copy changes. Cosmetic only, but maintain the existing pattern.
+
+Acceptance criteria:
+1. The user-reported phrases can no longer render in For You cards.
+2. Trait-based RecCard explanations read naturally for both single-trait and trait-pair paths.
+3. Raw trait-key combinations like “prose and emotional” do not reach user-facing explanation strings.
+4. HomeShortlist benefits from more human-readable upstream reasons[] where trait-pair reasons are shown raw.
+5. SAFE/HISTORY trust gating remains unchanged.
+6. No scoring/ranking/retrieval changes.
+7. Typecheck remains at baseline with zero new errors.
+8. Diff scope confirms no forbidden systems touched.
+
+Validation required:
+- Before/after examples for:
+  - prose + emotional
+  - characters + emotional
+  - pacing + insight
+  - depth + originality
+  - single-trait emotional
+  - single-trait prose
+- Rendered output examples for:
+  - thin profile SAFE path
+  - history-rich HISTORY path
+- Banned-output scan confirming zero hits for:
+  - “prose and emotional”
+  - “characters and emotional”
+  - “pacing and insight” if rendered as raw labels
+  - “Strong match for prose”
+  - “Anchored in prose”
+  - “comes through clearly” if still paired with trait-label copy
+- Confirm V3 anchored explanation, author pools, lane pools, and subject pools are untouched.
+- Typecheck delta.
+- Workflow status.
+
+Stop conditions:
+- If trait vocabulary is too broad to humanize safely with a curated map/table, stop and propose a smaller safe fallback strategy.
+- If the fix requires touching V3 anchored explanation flow, stop.
+- If the fix requires changes to recommender scoring/ranking/retrieval, stop.
+- If this requires more than 4 files, stop.
+
+Return format:
+- Changed files
+- Implementation summary
+- Before/after explanation examples
+- Trait-copy helper design
+- Behavior preservation check
+- Banned-output audit results
+- Typecheck delta
+- Workflow status
+- Known limitations
+- Any deviations from prompt

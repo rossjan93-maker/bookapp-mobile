@@ -73,6 +73,7 @@ import { canRunExpertRecs, consumeExpertRefresh }             from './recEntitle
 import type { ReaderThesis, ExpertRecResult, CandidateJudgment } from './expertRec';
 import { buildReaderThesis, judgeCandidateFit, composeRecommendationSet } from './expertRec';
 import { buildEvidencePack }                                  from './evidencePack';
+import { composeTraitPhrase }                                 from './traitCopy';
 import { loadCachedRecs, persistRecCache, shouldRebuild, buildSignalSnapshot } from './recCache';
 import { applyIntegrityLayer, buildSeriesReadSet, buildSeriesProgress, buildSeriesPositionsRead, stripTitleSubtitle, getEligibleSeriesSeeds } from './recommendationIntegrity';
 
@@ -1526,10 +1527,16 @@ export function scoreBookForUser(
     prefMatches.push(trait.toLowerCase());
     s1_trait = Math.min(traitOnlyCap, s1_trait + contribution);
   }
+  // FX-1 (2026-05-13): humanize trait keys via shared helper before joining.
+  // Pre-fix this emitted raw key concatenations like "prose and emotional",
+  // which then routed into RecCard ALIGNS pools producing
+  // "Strong match for prose and emotional." See lib/traitCopy.ts.
+  // Scoring math, prefMatches selection, and match thresholds are unchanged —
+  // this only affects the user-facing string assembled below.
   if (prefMatches.length >= 2) {
-    reasons.push(`Aligns with your preference for ${prefMatches.slice(0, 2).join(' and ')}`);
+    reasons.push(`Aligns with your preference for ${composeTraitPhrase(prefMatches.slice(0, 2))}`);
   } else if (prefMatches.length === 1) {
-    reasons.push(`Matches your appreciation for ${prefMatches[0]}`);
+    reasons.push(`Matches your appreciation for ${composeTraitPhrase(prefMatches.slice(0, 1))}`);
   }
 
   // ── Step 1b: Subject overlap density ─────────────────────────────────────
