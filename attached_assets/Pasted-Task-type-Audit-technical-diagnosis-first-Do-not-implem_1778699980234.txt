@@ -1,0 +1,168 @@
+Task type:
+Audit / technical diagnosis first. Do not implement until the failure mode is proven.
+
+Goal:
+Determine why a radical Reading Taste change is not visibly changing the For You recommendation deck, and assess whether the recommender backend is architected responsively enough to explicit user preferences.
+
+User-reported retest:
+After the recent fix that now clears:
+- recSession
+- recPayloadCache
+- recQueue via clearAll()
+
+the user changed Reading Taste to:
+- Genres I tend to enjoy: History, Biography
+- Genres I usually skip: Sci-Fi
+- No reading styles selected
+- No authors entered
+
+But For You still surfaced the same prior deck:
+- A Little Life
+- The Great Believers
+- All the Ugly and Wonderful Things
+- This Is How It Always Is
+
+with similar literary/emotional explanation copy.
+
+This is incoherent with the updated taste preferences and suggests either:
+A. The live preview is still not running the latest stale-state fix,
+B. The rec pipeline is rebuilding but explicit preferences are not influencing retrieval/ranking strongly enough,
+C. The visible feed is still somehow reusing stale card state,
+D. The explanation copy is disconnected from the actual recommendation basis,
+or some combination.
+
+Do not implement yet.
+
+Allowed files to inspect:
+- app/edit-preferences.tsx
+- lib/recSession.ts
+- lib/recPayloadCache.ts
+- lib/recQueue.ts
+- components/RecommendationsFeed.tsx
+- lib/tasteProfile.ts
+- lib/recommender.ts
+- lib/expertRec.ts if it contributes to final deck choice
+- lib/recommendationIntegrity.ts
+- lib/recSnapshot.ts
+- any candidate-pool or queue logic directly involved in building the For You deck
+
+Forbidden:
+- Do not edit code.
+- Do not touch schema/migrations.
+- Do not touch UI copy.
+- Do not touch onboarding, TasteReadout, Home, auth, Sentry, native config, Open Library, Google Books, metadata repair, or LLM calls.
+- Do not change scoring/ranking/retrieval yet. Diagnose first.
+
+Audit questions:
+
+1. Verify the latest stale-state fix is logically complete
+Trace the exact post-save sequence after Reading Taste edit:
+- clearRecSession()
+- clearRecPayload(userId)
+- recQueue.clearAll()
+- router.back()
+- user visits For You
+- runPipeline re-fires
+- queue initializes from new entries, not stale head
+
+Confirm whether any stale-state path still exists.
+
+2. Prove whether the pipeline rebuilt in the user-reported flow
+From code/logs/probes, determine:
+- does For You runPipeline actually fire after the preference save?
+- does it read the updated reader_preferences values?
+- does tasteProfile reflect History/Biography/Sci-Fi skip after the edit?
+
+3. Inspect tasteProfile after the edit
+For the exact edited state:
+- favorite_genres = History, Biography
+- avoid_genres = Sci-Fi
+- reading_styles empty
+- favorite_authors empty
+
+What does computeTasteProfile produce?
+Report the relevant profile fields that downstream recommender uses.
+
+4. Assess recommender responsiveness to explicit preferences
+Determine exactly how favorite_genres and avoid_genres affect:
+- candidate retrieval
+- candidate scoring
+- candidate filtering
+- recommendation reason assembly
+
+Answer explicitly:
+- Are preferred genres used only as soft boosts?
+- Do they constrain retrieval?
+- Do avoid genres suppress candidates?
+- Are skips currently advisory only?
+- Could a History/Biography preference still reasonably produce the literary/emotional fiction deck shown?
+
+5. Compare before vs after profile edit
+Construct or trace a representative before/after:
+
+Before:
+- prior taste state that produced the current fiction/emotional slate
+
+After:
+- History + Biography enjoy
+- Sci-Fi skip
+
+For each, report:
+- tasteProfile diffs
+- candidate pool differences
+- score/rank differences for top cards
+- final visible top 4 differences, if any
+
+6. Explanation consistency audit
+For the observed stale-looking cards:
+- are “literary writing with real emotional weight” explanations coming from reasons genuinely generated under the new taste state?
+- or are these explanations necessarily stale remnants from the old deck?
+
+If the deck did rebuild but the same explanations persist, explain why.
+
+7. Architecture judgment
+Based on the audit, assess whether the current backend is architected correctly for the product promise:
+“Tell Readstack your taste, and it will meaningfully change what it recommends.”
+
+Return one of:
+- Architecture is sound; this is still a stale-state/runtime issue.
+- Architecture is partially sound but explicit preferences are underweighted or insufficiently integrated.
+- Architecture needs a more substantial adjustment to separate durable taste, current intent, and recommendation generation.
+
+Explain clearly.
+
+8. Reading Taste settings depth
+Do not implement UI changes, but assess whether the current Reading Taste fields are sufficient to drive high-quality durable personalization.
+
+Current fields:
+- genres I enjoy
+- genres I skip
+- reading style I prefer
+- authors I love
+
+Recommend:
+- whether these are sufficient if properly wired
+- whether more durable controls should exist
+- which additional controls would be high leverage
+- which controls belong instead in “Your Next Read” as situational filters
+
+9. Proposed next steps
+Based on findings, recommend the next implementation batch:
+- if stale-state remains: fix it
+- if prefs are underweighted: propose a focused recommender responsiveness batch
+- if skip genres are not used: propose how to wire them safely
+- if settings are underpowered: propose a durable-taste model enhancement plan
+- if this requires more architecture work, say so directly
+
+Return format:
+- Executive diagnosis
+- Stale-state completeness check
+- Pipeline rebuild proof
+- Post-edit tasteProfile snapshot
+- Recommender responsiveness analysis
+- Before/after comparison
+- Explanation consistency finding
+- Backend architecture verdict
+- Reading Taste settings depth assessment
+- Recommended next implementation batch
+- Risks/tradeoffs
