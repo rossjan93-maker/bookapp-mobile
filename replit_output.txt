@@ -1,154 +1,204 @@
-P2B.1 — statedReservation retrieval-provenance gate (architectural audit fix)
-================================================================================
+# P2C — Soft-Avoid Retrieval Deprioritization (PLAN ONLY — awaiting approval)
 
-CONFIRMATION
-------------
-The architect audit identified that the original P2B `pickStatedReservation`
-detector proved SCORING provenance (`stated_favorite:*` audit flag +
-`stated_taste > 0`) but did NOT prove RETRIEVAL provenance (the candidate
-was actually fetched by the P2A statedGenres branch in this pipeline run).
-A book that arrived via revealedLanes / revealedAuthors / catalog branches
-and merely happened to align with a stated favorite at scoring time would
-have been wrongly reservable.
+Status: NOT IMPLEMENTED. This document is the mapping/scoping plan per the user's
+instruction to "map (DO NOT IMPLEMENT) P2C." Stop point for human review before
+any code lands.
 
-Fix shipped (3 files, 12-budget OK):
+---
 
-  1. lib/composition/statedReservation.ts
-     Added retrieval-provenance gate: `book._retrieval_reason.startsWith
-     ('stated_genre:')`. Runs FIRST in the candidate scan (cheap, fail-fast).
-     Existing scoring-provenance gate runs SECOND. Both required — defense
-     in depth, neither subsumes the other.
+## 1. Why P2C exists (gap analysis vs P2A's partial coverage)
 
-  2. scripts/validate_stated_reservation.ts
-     Added 4 new cases (C9 / C10 / C11 / C12) + 2 sub-cases (C9b / C12b)
-     covering the audit's exact drift case, exhaustive non-stated prefix
-     sweep, strict AND-gate success, retrieval-only-without-scoring,
-     catalog-source rejection, and mixed-pool selection.
+P2A shipped soft-avoid handling at retrieval, but only partially. Survey of
+current touchpoints (lib/retrieval/, lib/recommender.ts, lib/recPolicy.ts):
 
-  3. replit.md
-     Appended P2B.1 bullet documenting the drift, the AND-gate fix, the
-     soundness argument (planner branchOrder + first-seen-wins dedup at
-     line ~1176 makes the `stated_genre:` prefix check reliable), and two
-     known residuals NOT addressed by this patch (P2A-era author-branch
-     reason hardcoding at line 705; absence of `_retrieval_reasons: string[]`
-     multi-source provenance trail).
+| Surface                                          | Soft-avoid behavior today                                                              | Status |
+|--------------------------------------------------|----------------------------------------------------------------------------------------|--------|
+| statedGenres branch                              | Drops favorites that ALSO appear in soft-avoids (defense-in-depth)                     | OK     |
+| revealedLanes branch — dense, per-anchor         | Skips lanes whose `LANE_TO_AFFINITY` maps to a soft-avoided AffinityKey                | OK     |
+| revealedLanes branch — sparse, per-anchor        | Skips topGenres that are themselves in soft-avoids                                     | OK     |
+| revealedLanes branch — branch-level quota cut    | Multiplies quota by `SOFT_AVOID_RETRIEVAL_MULTIPLIER=0.5` ONLY when **dominant lanes** intersect — sparse users (no dominant lanes) never trigger this | **GAP A** |
+| revealedAuthors branch                           | Zero soft-avoid handling                                                                | **GAP B** (acknowledged limit, see §3) |
+| `liked_subjects` fallback inside revealedLanes   | No mask — free-form subject strings vs AffinityKeys not comparable today               | **GAP C** |
+| Catalog/local fallback (`local:fallback_scan` @ recommender.ts:~2640) | No soft-avoid filter on the SQL `.select()`                                            | **GAP D** |
+| `getLocalCandidates` (`local:eligible`)          | No soft-avoid filter                                                                    | **GAP D** |
+| Cross-branch trace surfacing                     | `RetrievalPlan.softAvoidLanesApplied` exists; `FetchItem.softAvoidDeprioritized?` field exists in `lib/retrieval/types.ts:47` but is never set | **GAP E** |
+| `RankedRecsResult.meta`                          | No `soft_avoid_*` aggregate counter for debug surfaces                                  | **GAP E** |
 
-User decision honored: trace `reason` enum NOT split — both miss modes
-collapse to existing 'no_eligible_candidate'.
+P2C closes Gaps A, C, D, E and **explicitly defers Gap B** with a documented
+rationale (see §3).
 
-TS-signature parity preserved: `pickStatedReservation` signature unchanged
-(`_retrieval_reason` is already on `CandidateBook` / `ScoredBook`);
-`RankedRecsResult.meta.stated_reservation_used` shape unchanged;
-`STATED_RESERVATION_POLICY` constants unchanged.
+---
 
-Forbidden surfaces untouched: taxonomy, recPayloadCache/Session/Queue/
-Validity, branch planner, recPrewarm, edit-preferences, schema, RecCard/
-Home/TasteReadout, OL/GBooks/LLM, recommender pipeline geometry.
+## 2. Scope (what P2C ships)
 
-VALIDATOR RESULTS
------------------
-Command: npx tsx scripts/validate_stated_reservation.ts
-Exit code: 0
-Total checks: 56 (39 pre-existing + 17 new)
-Failures: 0
+### S1. Sparse-user branch-quota trigger (Gap A)
+- Extend `softAvoidedLanes()` semantics — or add a sibling helper
+  `softAvoidedTopGenres()` — so the planner can detect intersections in BOTH
+  `ctx.dominantLanes` (dense) AND `ctx.topGenres` (sparse).
+- `lib/retrieval/branchPlanner.ts`: soft-avoid quota multiplier (`SOFT_AVOID_RETRIEVAL_MULTIPLIER`)
+  fires whenever EITHER intersection is non-empty. `softAvoidLanesApplied` trace
+  field continues to record the AffinityKeys that triggered the reduction.
+- No change to `BRANCH_QUOTAS` constants.
+- No change to multiplier value (`0.5`) — calibration knob, owned by `recPolicy.ts`.
 
-Full output:
+### S2. `liked_subjects` fallback mask (Gap C — bounded)
+- Inside `buildRevealedLanesBranch` sparse path, the `liked_subjects` loop
+  consults a new `lib/recPolicy.ts` constant `LIKED_SUBJECT_AVOID_GUARDS:
+  Partial<Record<AffinityKey, readonly string[]>>` — a small curated list of
+  subject substrings that obviously belong to each AffinityKey (e.g.
+  `fantasy_scifi → ['fantasy', 'sci-fi', 'science fiction', 'dragons',
+  'wizard']`). If a `liked_subject` matches a guard for a soft-avoided
+  AffinityKey, it is skipped.
+- Deliberately a guard list, NOT a free-text classifier — stays auditable and
+  removes the LLM/embeddings dependency that would otherwise leak into a free-
+  plane surface.
+- Empty-by-default safe: if the constant is empty, behavior is identical to
+  pre-P2C.
 
-— C1 — Eligible cause + eligible candidate → reserved —
-  PASS  pick is non-null
-  PASS  pick is book B (first eligible)
-  PASS  trace.applied === true
-  PASS  trace.reason === reserved
-  PASS  trace.cause === explicit_preference_edit
-  PASS  trace.key === nonfiction
+### S3. Catalog/local soft-avoid filter (Gap D)
+- `lib/recommender.ts` `getLocalCandidates` (and the fallback `.select()` block
+  near line 2640): when `req?.signals.softAvoids.genres.length > 0`, post-filter
+  the local candidate list to demote — NOT exclude — books whose `primaryGenre`
+  ∈ softAvoids.
+- "Demote" semantics: keep at most `Math.floor(softAvoidedCount * (1 -
+  SOFT_AVOID_RETRIEVAL_MULTIPLIER))` of them, sampled by the existing local
+  ordering (no shuffle — determinism preserved). This mirrors the lane-quota
+  multiplier shape rather than introducing a new "exclude" semantic.
+- If `req` is absent (legacy callers), no-op — preserves pre-P2A retrieval
+  shape exactly.
 
-— C2 — Wrong cause (session_open) → null —
-  PASS  pick is null
-  PASS  trace.applied === false
-  PASS  trace.reason === wrong_cause
-  PASS  trace.cause carried through
+### S4. Per-`FetchItem` and `RankedRecsResult.meta` trace surfacing (Gap E)
+- `lib/retrieval/types.ts`: keep `FetchItem.softAvoidDeprioritized?: boolean`;
+  populate it (`true`) on revealedLanes items emitted under reduced quota AND
+  on revealedLanes items emitted from a per-anchor mask near-miss
+  (informational — does not change retrieval).
+- `lib/recommender.ts` extend `RankedRecsResult.meta` with optional
+  `soft_avoid_retrieval?: { lanesApplied: AffinityKey[]; localDemoted: number;
+  branchQuotaMultiplier: number }` populated from the planner result + local
+  filter delta. Optional field — debug surfaces can read it; existing readers
+  compile unchanged.
 
-— C2b — Missing RecRequest (legacy caller) → null, reason=no_req —
-  PASS  pick is null
-  PASS  trace.reason === no_req
-  PASS  trace.cause undefined
+### S5. Validator extension
+- `scripts/validate_retrieval_planner.ts` adds A7-class cases:
+  - **A7a** sparse user with topGenres ∩ softAvoids ≠ ∅ → revealedLanes quota
+    reduced; previously A7 only covered dense.
+  - **A7b** sparse user with NO topGenres intersection → no quota reduction
+    (regression guard).
+  - **A7c** `liked_subject` matching `LIKED_SUBJECT_AVOID_GUARDS` for a soft-
+    avoided AffinityKey is skipped; non-matching subjects pass through.
+  - **A7d** local-candidate post-filter respects `SOFT_AVOID_RETRIEVAL_MULTIPLIER`
+    (input N candidates with primaryGenre ∈ softAvoids → output ≈ N/2).
+  - **A7e** legacy caller (`req=undefined`) → no soft-avoid filtering applied
+    (legacy parity).
+- No live OL / Supabase / DB calls — same shape as the existing validator.
 
-— C3 — Eligible cause but zero favoriteGenres → null, reason=no_favorites —
-  PASS  pick is null
-  PASS  trace.reason === no_favorites
+---
 
-— C4 — No candidate carries stated_favorite flag → null, reason=no_eligible_candidate —
-  PASS  pick is null
-  PASS  trace.reason === no_eligible_candidate
+## 3. Out-of-scope (explicit rejections, with rationale)
 
-— C4b — Flag present but stated_taste contribution ≤ 0 → skipped —
-  PASS  pick is null when no positive stated_taste
-  PASS  trace.reason === no_eligible_candidate
+### Gap B — revealedAuthors branch soft-avoid
+**Deferred to P4 (hard-avoid global pre-branch exclusion) or later.** An author
+whose dominant work is in a soft-avoided genre would require an author→genre
+mapping the codebase doesn't have today. Implementing it in P2C would either
+(a) require a new lookup table (adds maintenance surface for marginal value;
+soft-avoid is "less of, not none of"), or (b) require post-fetch per-book
+filtering on retrieved-by-author candidates (acceptable as a downstream filter
+but conflates the per-anchor branch responsibility with cross-cut filtering —
+which is the P4 hard-avoid shape). Document the limitation in `replit.md`
+gotchas; do not paper over.
 
-— C5 — compositionAllows() denial skips candidate; next eligible wins —
-  PASS  pick is the non-denied candidate
-  PASS  trace.reason === reserved
+### Hard candidate-level exclusion at retrieval
+Soft avoid means **less of, not exclude**. A hard pre-branch exclusion is
+explicitly P4 territory and would silently widen the soft/hard distinction
+the architecture spec keeps separate.
 
-— C5b — All eligible candidates denied by compositionAllows → null —
-  PASS  pick is null
-  PASS  trace.reason === no_eligible_candidate
+### `RecRequest` / `BuildCause` / signal-class surface changes
+None. P2C consumes the existing `req.signals.softAvoids.genres` array and
+the existing `BuildCause` enum unchanged.
 
-— C5c — alreadyComposedKeys excludes a candidate (defensive) —
-  PASS  pick skips already-composed key
+### Composition / scoring / explanation faithfulness
+None. P2C is retrieval-side only. The composition layer's P2B + P2B.1
+reservation logic and the P1 stated_taste contribution math are untouched —
+P2C reduces upstream supply; downstream demand handling is unchanged.
 
-— C6 — Only candidate is ADJACENT (fit_class != core_fit) and policy disallows → null —
-  PASS  pick is null when ADJACENT-only and allowAdjacent=false
-  PASS  STATED_RESERVATION_POLICY.allowAdjacentReservation === false
+---
 
-— C6b — weak_metadata flag demotes candidate (mirrors isCompCore) —
-  PASS  weak_metadata book skipped, next CORE used
+## 4. Files touched (file budget: 6 of ≤12)
 
-— C7 — STATED_RESERVATION_POLICY enforces single-slot invariant —
-  PASS  maxReservedSlots === 1
-  PASS  returns one pick (not array)
+1. `lib/recPolicy.ts` — add `LIKED_SUBJECT_AVOID_GUARDS` constant. (~15 lines)
+2. `lib/retrieval/branchPlanner.ts` — extend trigger to `(dominantLanes ∪
+   topGenres)`; populate per-`FetchItem` `softAvoidDeprioritized`. (~10 lines)
+3. `lib/retrieval/branches/revealedLanes.ts` — add (or expose) `softAvoidedTopGenres()`
+   sibling; consult `LIKED_SUBJECT_AVOID_GUARDS` in the liked-subjects loop. (~25 lines)
+4. `lib/recommender.ts` — local soft-avoid post-filter on `getLocalCandidates`
+   + the fallback `.select()` block; surface `meta.soft_avoid_retrieval`.
+   (~30 lines, all additive — no edits to existing dedup / merge / pipeline geometry)
+5. `scripts/validate_retrieval_planner.ts` — A7a–A7e cases. (~80 lines)
+6. `replit.md` — one-line P2C entry under "Recently shipped — summarized" +
+   gotcha documenting Gap B deferral.
 
-— C9 — Scoring-provenance fires but _retrieval_reason is NOT stated_genre: → SKIPPED —
-  PASS  pick is null when retrieval reason is not stated_genre:
-  PASS  trace.reason === no_eligible_candidate
+**Forbidden surfaces untouched** (per ongoing batch contract): taxonomy
+(`lib/taxonomy/*`), `recPayloadCache` / `recSession` / `recQueue` / `recValidity`,
+P2B composition `lib/composition/statedReservation.ts` (P2B.1 AND-gate
+preserved verbatim — P2C upstream changes do not affect the
+`_retrieval_reason.startsWith('stated_genre:')` check or the `stated_taste > 0`
+check), `recPrewarm`, `app/edit-preferences.tsx`, schema / migrations, RecCard /
+Home / TasteReadout, OL / GBooks / LLM, Semantic Plane.
 
-— C9b — author / liked_subject / genre / cache prefixes all fail retrieval gate —
-  PASS  reason=author_anchor:Brandon Sanderson: pick is null
-  PASS  reason=repeated_author:Brandon Sanderson: pick is null
-  PASS  reason=liked_subject:dragons: pick is null
-  PASS  reason=genre:fantasy_scifi: pick is null
-  PASS  reason=cache:restored: pick is null
+**Pipeline geometry preserved**: 6-phase recommender pipeline — Phases 1/2/3
+of `getRankedRecs` execute in identical order; no new phase, no reorder.
+First-seen-wins merge dedup at `lib/recommender.ts:~1176` unchanged so
+P2B.1's `stated_genre:` provenance prefix continues to hold.
 
-— C10 — Strict AND-gate: stated_genre: prefix + scoring provenance → reserved —
-  PASS  pick is non-null
-  PASS  trace.reason === reserved
-  PASS  trace.key === nonfiction
+**No DB migrations.** No schema changes. No new env vars.
 
-— C11 — stated_genre: prefix present but stated_taste = 0 → SKIPPED —
-  PASS  pick is null when retrieval-only, no scoring
-  PASS  trace.reason === no_eligible_candidate
+---
 
-— C12 — Catalog source (local:eligible) with full scoring → SKIPPED —
-  PASS  catalog/fallback books always skipped
-  PASS  trace.reason === no_eligible_candidate
+## 5. Soundness checks vs P2B.1 contract
 
-— C12b — Mixed pool: local book skipped, next stated_genre: candidate wins —
-  PASS  pick is the stated_genre: candidate (local skipped)
-  PASS  trace.reason === reserved
+P2B.1 reserves `pickStatedReservation` to candidates that satisfy BOTH
+`book._retrieval_reason.startsWith('stated_genre:')` AND
+`_score_breakdown.stated_taste > 0`. P2C changes:
 
-— C8 — eligibleCauses contains exactly explicit_preference_edit —
-  PASS  eligibleCauses.length === 1
-  PASS  eligibleCauses[0] === explicit_preference_edit
-  PASS  cause=session_open: pick is null
-  PASS  cause=session_open: reason=wrong_cause
-  PASS  cause=manual_refresh: pick is null
-  PASS  cause=manual_refresh: reason=wrong_cause
-  PASS  cause=intent_apply: pick is null
-  PASS  cause=intent_apply: reason=wrong_cause
-  PASS  cause=intent_clear: pick is null
-  PASS  cause=intent_clear: reason=wrong_cause
-  PASS  cause=feedback_action: pick is null
-  PASS  cause=feedback_action: reason=wrong_cause
-  PASS  cause=onboarding_completion: pick is null
-  PASS  cause=onboarding_completion: reason=wrong_cause
+- **statedGenres branch unchanged** — emits `stated_genre:<key>` reasons
+  identically. P2B.1 retrieval-provenance check passes for any book the
+  `statedGenres` branch returned.
+- **No multi-source `_retrieval_reasons[]` introduction** — first-seen-wins
+  dedup still wins; P2B.1's reliance on the prefix string is preserved.
+- **No new branch added** — `BRANCH_ORDER` is still
+  `statedGenres → revealedAuthors → revealedLanes`, so any cross-branch
+  duplicate book retains the earliest branch's `_retrieval_reason`.
+- **Local soft-avoid post-filter operates on `local:*` candidates only** —
+  these books carry `_retrieval_reason='local:eligible'` /
+  `'local:fallback_scan'` and correctly fail the P2B.1 retrieval gate. The
+  filter cannot promote a non-stated book into a stated-eligible position.
 
-OK — 0 failure(s)
+---
+
+## 6. Validator pass criteria
+
+`npx tsx scripts/validate_retrieval_planner.ts` exit 0 with all prior cases
+plus 5 new (A7a–A7e) green. `scripts/validate_stated_reservation.ts` (P2B.1)
+must remain 56/56 green — P2C does not touch it but it MUST be re-run as a
+regression guard.
+
+---
+
+## 7. Known limitation P2C does NOT close
+
+- Gap B (revealedAuthors soft-avoid) — see §3.
+- End-to-end deck-shift verification on a live account (the V1–V4 caveat in
+  `replit.md` already flags this as outstanding for the broader stream).
+- Subject-string ↔ AffinityKey mapping for arbitrary `liked_subjects` is
+  guard-list bounded (`LIKED_SUBJECT_AVOID_GUARDS`) — not a full classifier.
+  Subjects outside the guard list pass through unfiltered. Acceptable: soft
+  avoid is bias not exclusion, and the guard list is editable.
+
+---
+
+## 8. Stop here
+
+This is a plan, not a code change. Awaiting human approval before
+implementation. On approval, the implementation batch will land in a single
+commit covering files §4 + a `replit.md` "Recently shipped" entry summarizing
+the actual delta against this plan.
