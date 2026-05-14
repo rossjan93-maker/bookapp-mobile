@@ -81,9 +81,29 @@ export function pickStatedReservation(
   for (const book of compPool) {
     if (alreadyComposedKeys.has(compIdOf(book))) continue;
 
+    // ── Retrieval-provenance gate (P2B.1) ──────────────────────────────────
+    // The candidate must have been fetched by the P2A statedGenres branch in
+    // THIS pipeline run. Without this gate, a book that arrived via lane /
+    // author / catalog branches and merely happened to match a stated
+    // favorite at scoring time would qualify — which would conflate scoring
+    // alignment with retrieval origin and let the reservation slot fire on
+    // a candidate the user's stated edit did NOT actually steer the planner
+    // toward.
+    //
+    // Soundness: the planner's branchOrder puts statedGenres FIRST
+    // (lib/retrieval/branchPlanner.ts), and the merge-dedup at
+    // lib/recommender.ts:~1176 is first-seen-wins. So any book the
+    // statedGenres branch returned reliably retains its `stated_genre:`
+    // _retrieval_reason. Books returned ONLY by other branches carry
+    // `lane:` / `genre:` / `liked_subject:` / `author_anchor:` /
+    // `repeated_author:` / `local:*` / `cache:*` and correctly fail here.
+    const reason = book._retrieval_reason ?? '';
+    if (!reason.startsWith('stated_genre:')) continue;
+
     const sb = book._score_breakdown;
     if (!sb) continue;
 
+    // ── Scoring-provenance gate (P2B original) ─────────────────────────────
     // P1 step 7 surface: audit_flags carry `stated_favorite:<key>`; stated_taste
     // breakdown carries the numeric contribution. Both must be present and
     // positive — flag alone could match an avoid case in the future.
@@ -92,6 +112,12 @@ export function pickStatedReservation(
     // req.signals.statedTaste.favoriteGenres. We trust that invariant rather
     // than re-checking favoriteGenres.includes(key) here — adding the runtime
     // check would mask any future scorer-side drift instead of surfacing it.
+    //
+    // Both gates are required (defense-in-depth):
+    //   - retrieval-only would let a stated-branch book with zero scoring
+    //     contribution be reserved (e.g., book primaryGenre doesn't actually
+    //     match any stated favorite — common for broad subject queries).
+    //   - scoring-only is the pre-P2B.1 drift the architect audit caught.
     const flag = sb.audit_flags?.find(f => f.startsWith('stated_favorite:'));
     if (!flag) continue;
     const statedContrib = (sb.stated_taste ?? 0);

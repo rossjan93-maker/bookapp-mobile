@@ -69,29 +69,35 @@ function mkReq(opts: {
 }
 
 type MkBookOpts = {
-  id:            string;
-  author:        string;
-  statedFlag?:   string | null;     // e.g. 'stated_favorite:nonfiction', or null/undefined
-  statedTaste?:  number;            // _score_breakdown.stated_taste
-  fitClass?:     'core_fit' | 'adjacent_fit' | 'reject';
-  weakMetadata?: boolean;
-  bookLane?:     string | null;
+  id:               string;
+  author:           string;
+  statedFlag?:      string | null;     // e.g. 'stated_favorite:nonfiction', or null/undefined
+  statedTaste?:     number;            // _score_breakdown.stated_taste
+  fitClass?:        'core_fit' | 'adjacent_fit' | 'reject';
+  weakMetadata?:    boolean;
+  bookLane?:        string | null;
+  /** P2B.1 retrieval-provenance. Default is `stated_genre:nonfiction` so
+   *  pre-existing C1–C8 cases that test scoring/composition gates continue
+   *  to pass without modification. C9+ cases override this to test the new
+   *  retrieval gate explicitly. */
+  retrievalReason?: string;
 };
 function mkBook(o: MkBookOpts): ScoredBook {
   const audit_flags: string[] = [];
   if (o.statedFlag) audit_flags.push(o.statedFlag);
   if (o.weakMetadata) audit_flags.push('weak_metadata');
   return {
-    external_id:  o.id,
-    title:        `Title ${o.id}`,
-    author:       o.author,
-    cover_url:    null,
-    description:  null,
-    isbn:         null,
-    page_count:   200,
-    published_at: null,
-    subjects:     [],
-    _source:      'open_library',
+    external_id:       o.id,
+    title:             `Title ${o.id}`,
+    author:            o.author,
+    cover_url:         null,
+    description:       null,
+    isbn:              null,
+    page_count:        200,
+    published_at:      null,
+    subjects:          [],
+    _source:           'open_library',
+    _retrieval_reason: o.retrievalReason ?? 'stated_genre:nonfiction',
     score:        0.5,
     confidence:   'medium',
     reasons:      [],
@@ -274,6 +280,146 @@ section('C7 — STATED_RESERVATION_POLICY enforces single-slot invariant');
   ];
   const r = pickStatedReservation(pool, req, new Set(), allowAlways, compIdOf);
   check('returns one pick (not array)', r.pick !== null && !Array.isArray(r.pick));
+}
+
+// ── C9: retrieval-provenance gate (P2B.1 audit fix) ─────────────────────────
+section('C9 — Scoring-provenance fires but _retrieval_reason is NOT stated_genre: → SKIPPED');
+{
+  const req = mkReq({ cause: 'explicit_preference_edit', favorites: ['nonfiction' as AffinityKey] });
+  // Book has full scoring provenance (flag + positive contribution + CORE)
+  // but arrived via the revealedLanes branch. Pre-P2B.1 this would have been
+  // wrongly reserved — the architect audit's exact drift case.
+  const pool = [
+    mkBook({
+      id: 'B', author: 'Bravo',
+      statedFlag: 'stated_favorite:nonfiction',
+      statedTaste: 0.12,
+      fitClass: 'core_fit',
+      retrievalReason: 'lane:scifi_fantasy',
+    }),
+  ];
+  const r = pickStatedReservation(pool, req, new Set(), allowAlways, compIdOf);
+  check('pick is null when retrieval reason is not stated_genre:',
+    r.pick === null, `pick: ${r.pick?.external_id}`);
+  check('trace.reason === no_eligible_candidate',
+    r.trace.reason === 'no_eligible_candidate', r.trace.reason);
+}
+
+// ── C9b: other non-stated retrieval prefixes also fail ──────────────────────
+section('C9b — author / liked_subject / genre / cache prefixes all fail retrieval gate');
+{
+  const req = mkReq({ cause: 'explicit_preference_edit', favorites: ['nonfiction' as AffinityKey] });
+  const prefixes = [
+    'author_anchor:Brandon Sanderson',
+    'repeated_author:Brandon Sanderson',
+    'liked_subject:dragons',
+    'genre:fantasy_scifi',
+    'cache:restored',
+  ];
+  for (const reason of prefixes) {
+    const pool = [
+      mkBook({
+        id: 'B', author: 'B',
+        statedFlag: 'stated_favorite:nonfiction',
+        statedTaste: 0.12,
+        fitClass: 'core_fit',
+        retrievalReason: reason,
+      }),
+    ];
+    const r = pickStatedReservation(pool, req, new Set(), allowAlways, compIdOf);
+    check(`reason=${reason}: pick is null`, r.pick === null);
+  }
+}
+
+// ── C10: AND-gate — both retrieval AND scoring provenance present → reserved
+section('C10 — Strict AND-gate: stated_genre: prefix + scoring provenance → reserved');
+{
+  const req = mkReq({ cause: 'explicit_preference_edit', favorites: ['nonfiction' as AffinityKey] });
+  const pool = [
+    mkBook({
+      id: 'B', author: 'Bravo',
+      statedFlag: 'stated_favorite:nonfiction',
+      statedTaste: 0.12,
+      fitClass: 'core_fit',
+      retrievalReason: 'stated_genre:nonfiction',
+    }),
+  ];
+  const r = pickStatedReservation(pool, req, new Set(), allowAlways, compIdOf);
+  check('pick is non-null', r.pick !== null);
+  check('trace.reason === reserved', r.trace.reason === 'reserved');
+  check('trace.key === nonfiction', r.trace.key === 'nonfiction');
+}
+
+// ── C11: retrieval provenance only, no scoring contribution → SKIPPED ───────
+section('C11 — stated_genre: prefix present but stated_taste = 0 → SKIPPED');
+{
+  const req = mkReq({ cause: 'explicit_preference_edit', favorites: ['nonfiction' as AffinityKey] });
+  // Models the realistic case where statedGenres fetched a book by subject
+  // but the book's primaryGenre doesn't actually match the favorite, so
+  // computeStatedTasteContribution returned 0 and no flag was pushed.
+  const pool = [
+    mkBook({
+      id: 'B', author: 'B',
+      statedFlag: null,
+      statedTaste: 0,
+      fitClass: 'core_fit',
+      retrievalReason: 'stated_genre:nonfiction',
+    }),
+  ];
+  const r = pickStatedReservation(pool, req, new Set(), allowAlways, compIdOf);
+  check('pick is null when retrieval-only, no scoring',
+    r.pick === null, `pick: ${r.pick?.external_id}`);
+  check('trace.reason === no_eligible_candidate',
+    r.trace.reason === 'no_eligible_candidate');
+}
+
+// ── C12: catalog/local source can never satisfy the contract ─────────────────
+section('C12 — Catalog source (local:eligible) with full scoring → SKIPPED');
+{
+  const req = mkReq({ cause: 'explicit_preference_edit', favorites: ['nonfiction' as AffinityKey] });
+  const pool = [
+    mkBook({
+      id: 'B', author: 'B',
+      statedFlag: 'stated_favorite:nonfiction',
+      statedTaste: 0.12,
+      fitClass: 'core_fit',
+      retrievalReason: 'local:eligible',
+    }),
+    mkBook({
+      id: 'C', author: 'C',
+      statedFlag: 'stated_favorite:nonfiction',
+      statedTaste: 0.10,
+      fitClass: 'core_fit',
+      retrievalReason: 'local:fallback_scan',
+    }),
+  ];
+  const r = pickStatedReservation(pool, req, new Set(), allowAlways, compIdOf);
+  check('catalog/fallback books always skipped',
+    r.pick === null, `pick: ${r.pick?.external_id}`);
+  check('trace.reason === no_eligible_candidate',
+    r.trace.reason === 'no_eligible_candidate');
+}
+
+// ── C12b: mixed pool — local book first, statedGenres book second → wins ────
+section('C12b — Mixed pool: local book skipped, next stated_genre: candidate wins');
+{
+  const req = mkReq({ cause: 'explicit_preference_edit', favorites: ['nonfiction' as AffinityKey] });
+  const pool = [
+    mkBook({
+      id: 'A', author: 'A',
+      statedFlag: 'stated_favorite:nonfiction', statedTaste: 0.15, fitClass: 'core_fit',
+      retrievalReason: 'local:eligible',
+    }),
+    mkBook({
+      id: 'B', author: 'B',
+      statedFlag: 'stated_favorite:nonfiction', statedTaste: 0.12, fitClass: 'core_fit',
+      retrievalReason: 'stated_genre:nonfiction',
+    }),
+  ];
+  const r = pickStatedReservation(pool, req, new Set(), allowAlways, compIdOf);
+  check('pick is the stated_genre: candidate (local skipped)',
+    r.pick?.external_id === 'B', `got ${r.pick?.external_id}`);
+  check('trace.reason === reserved', r.trace.reason === 'reserved');
 }
 
 // ── C8: cause membership ─────────────────────────────────────────────────────

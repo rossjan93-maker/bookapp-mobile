@@ -1,0 +1,154 @@
+P2B.1 — statedReservation retrieval-provenance gate (architectural audit fix)
+================================================================================
+
+CONFIRMATION
+------------
+The architect audit identified that the original P2B `pickStatedReservation`
+detector proved SCORING provenance (`stated_favorite:*` audit flag +
+`stated_taste > 0`) but did NOT prove RETRIEVAL provenance (the candidate
+was actually fetched by the P2A statedGenres branch in this pipeline run).
+A book that arrived via revealedLanes / revealedAuthors / catalog branches
+and merely happened to align with a stated favorite at scoring time would
+have been wrongly reservable.
+
+Fix shipped (3 files, 12-budget OK):
+
+  1. lib/composition/statedReservation.ts
+     Added retrieval-provenance gate: `book._retrieval_reason.startsWith
+     ('stated_genre:')`. Runs FIRST in the candidate scan (cheap, fail-fast).
+     Existing scoring-provenance gate runs SECOND. Both required — defense
+     in depth, neither subsumes the other.
+
+  2. scripts/validate_stated_reservation.ts
+     Added 4 new cases (C9 / C10 / C11 / C12) + 2 sub-cases (C9b / C12b)
+     covering the audit's exact drift case, exhaustive non-stated prefix
+     sweep, strict AND-gate success, retrieval-only-without-scoring,
+     catalog-source rejection, and mixed-pool selection.
+
+  3. replit.md
+     Appended P2B.1 bullet documenting the drift, the AND-gate fix, the
+     soundness argument (planner branchOrder + first-seen-wins dedup at
+     line ~1176 makes the `stated_genre:` prefix check reliable), and two
+     known residuals NOT addressed by this patch (P2A-era author-branch
+     reason hardcoding at line 705; absence of `_retrieval_reasons: string[]`
+     multi-source provenance trail).
+
+User decision honored: trace `reason` enum NOT split — both miss modes
+collapse to existing 'no_eligible_candidate'.
+
+TS-signature parity preserved: `pickStatedReservation` signature unchanged
+(`_retrieval_reason` is already on `CandidateBook` / `ScoredBook`);
+`RankedRecsResult.meta.stated_reservation_used` shape unchanged;
+`STATED_RESERVATION_POLICY` constants unchanged.
+
+Forbidden surfaces untouched: taxonomy, recPayloadCache/Session/Queue/
+Validity, branch planner, recPrewarm, edit-preferences, schema, RecCard/
+Home/TasteReadout, OL/GBooks/LLM, recommender pipeline geometry.
+
+VALIDATOR RESULTS
+-----------------
+Command: npx tsx scripts/validate_stated_reservation.ts
+Exit code: 0
+Total checks: 56 (39 pre-existing + 17 new)
+Failures: 0
+
+Full output:
+
+— C1 — Eligible cause + eligible candidate → reserved —
+  PASS  pick is non-null
+  PASS  pick is book B (first eligible)
+  PASS  trace.applied === true
+  PASS  trace.reason === reserved
+  PASS  trace.cause === explicit_preference_edit
+  PASS  trace.key === nonfiction
+
+— C2 — Wrong cause (session_open) → null —
+  PASS  pick is null
+  PASS  trace.applied === false
+  PASS  trace.reason === wrong_cause
+  PASS  trace.cause carried through
+
+— C2b — Missing RecRequest (legacy caller) → null, reason=no_req —
+  PASS  pick is null
+  PASS  trace.reason === no_req
+  PASS  trace.cause undefined
+
+— C3 — Eligible cause but zero favoriteGenres → null, reason=no_favorites —
+  PASS  pick is null
+  PASS  trace.reason === no_favorites
+
+— C4 — No candidate carries stated_favorite flag → null, reason=no_eligible_candidate —
+  PASS  pick is null
+  PASS  trace.reason === no_eligible_candidate
+
+— C4b — Flag present but stated_taste contribution ≤ 0 → skipped —
+  PASS  pick is null when no positive stated_taste
+  PASS  trace.reason === no_eligible_candidate
+
+— C5 — compositionAllows() denial skips candidate; next eligible wins —
+  PASS  pick is the non-denied candidate
+  PASS  trace.reason === reserved
+
+— C5b — All eligible candidates denied by compositionAllows → null —
+  PASS  pick is null
+  PASS  trace.reason === no_eligible_candidate
+
+— C5c — alreadyComposedKeys excludes a candidate (defensive) —
+  PASS  pick skips already-composed key
+
+— C6 — Only candidate is ADJACENT (fit_class != core_fit) and policy disallows → null —
+  PASS  pick is null when ADJACENT-only and allowAdjacent=false
+  PASS  STATED_RESERVATION_POLICY.allowAdjacentReservation === false
+
+— C6b — weak_metadata flag demotes candidate (mirrors isCompCore) —
+  PASS  weak_metadata book skipped, next CORE used
+
+— C7 — STATED_RESERVATION_POLICY enforces single-slot invariant —
+  PASS  maxReservedSlots === 1
+  PASS  returns one pick (not array)
+
+— C9 — Scoring-provenance fires but _retrieval_reason is NOT stated_genre: → SKIPPED —
+  PASS  pick is null when retrieval reason is not stated_genre:
+  PASS  trace.reason === no_eligible_candidate
+
+— C9b — author / liked_subject / genre / cache prefixes all fail retrieval gate —
+  PASS  reason=author_anchor:Brandon Sanderson: pick is null
+  PASS  reason=repeated_author:Brandon Sanderson: pick is null
+  PASS  reason=liked_subject:dragons: pick is null
+  PASS  reason=genre:fantasy_scifi: pick is null
+  PASS  reason=cache:restored: pick is null
+
+— C10 — Strict AND-gate: stated_genre: prefix + scoring provenance → reserved —
+  PASS  pick is non-null
+  PASS  trace.reason === reserved
+  PASS  trace.key === nonfiction
+
+— C11 — stated_genre: prefix present but stated_taste = 0 → SKIPPED —
+  PASS  pick is null when retrieval-only, no scoring
+  PASS  trace.reason === no_eligible_candidate
+
+— C12 — Catalog source (local:eligible) with full scoring → SKIPPED —
+  PASS  catalog/fallback books always skipped
+  PASS  trace.reason === no_eligible_candidate
+
+— C12b — Mixed pool: local book skipped, next stated_genre: candidate wins —
+  PASS  pick is the stated_genre: candidate (local skipped)
+  PASS  trace.reason === reserved
+
+— C8 — eligibleCauses contains exactly explicit_preference_edit —
+  PASS  eligibleCauses.length === 1
+  PASS  eligibleCauses[0] === explicit_preference_edit
+  PASS  cause=session_open: pick is null
+  PASS  cause=session_open: reason=wrong_cause
+  PASS  cause=manual_refresh: pick is null
+  PASS  cause=manual_refresh: reason=wrong_cause
+  PASS  cause=intent_apply: pick is null
+  PASS  cause=intent_apply: reason=wrong_cause
+  PASS  cause=intent_clear: pick is null
+  PASS  cause=intent_clear: reason=wrong_cause
+  PASS  cause=feedback_action: pick is null
+  PASS  cause=feedback_action: reason=wrong_cause
+  PASS  cause=onboarding_completion: pick is null
+  PASS  cause=onboarding_completion: reason=wrong_cause
+
+OK — 0 failure(s)
