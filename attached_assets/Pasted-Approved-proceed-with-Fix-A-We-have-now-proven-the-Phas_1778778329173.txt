@@ -1,0 +1,109 @@
+Approved: proceed with Fix A.
+
+We have now proven the Phase 2 live acceptance blocker precisely:
+
+- stated retrieval returns real candidates
+- stated candidates survive into compPool
+- reservation still fails because every viable stated candidate is `adjacent_fit`
+- `pickStatedReservation()` currently rejects all adjacent candidates because `STATED_RESERVATION_POLICY.allowAdjacentReservation = false`
+
+This policy is now too conservative for the Phase 2 product contract in the dense-user/off-lane edit case.
+
+Implement the targeted policy correction:
+
+## Required behavior change
+
+Allow `adjacent_fit` stated-reservation candidates **only** when:
+
+- `BuildCause === 'explicit_preference_edit'`
+- all existing P2B.1 gates still pass:
+  - stated retrieval provenance
+  - stated scoring provenance
+  - positive stated-taste contribution
+  - non-weak metadata
+  - composition caps / existing reservation constraints
+
+Do NOT globally enable adjacent reservations for every build cause.
+
+Preferred implementation:
+- keep the existing global conservative default intact
+- add a per-cause allowlist such as:
+  - `allowAdjacentForCauses: ['explicit_preference_edit']`
+- use that to permit adjacent reservation only in this specific post-edit trust moment
+
+## Preserve exactly
+
+Do not change:
+- P2B.1 AND-gate semantics
+- retrieval provenance requirements
+- scoring provenance requirements
+- weak_metadata hard rejection
+- reservation insertion order
+- composition geometry
+- P2 retrieval planner
+- fitClassifier behavior
+- scoring weights/floors
+- taxonomy
+- BuildCause propagation
+- cache/session/deck validity
+- schema/migrations
+- P3 work
+
+## Validator updates required
+
+Update `scripts/validate_stated_reservation.ts` to reflect the corrected product contract.
+
+At minimum:
+
+1. Replace or revise the existing C6-style assertion that adjacent-only stated candidates must return null under `explicit_preference_edit`.
+2. Add a positive case proving:
+   - cause = explicit_preference_edit
+   - candidate = adjacent_fit
+   - stated retrieval provenance present
+   - stated scoring provenance present
+   - positive stated contribution present
+   - candidate is accepted for reservation
+3. Preserve a negative case proving adjacent candidates are still rejected for non-approved causes, such as `session_open`.
+4. Preserve all existing P2B.1 drift-protection cases.
+
+## Add one small diagnostic aid
+
+Also add a minimal `__DEV__`-gated gate-failure summary inside the reservation evaluation loop, so the immediate live retest can self-explain if reservation still fails.
+
+Desired shape:
+- grep-friendly prefix, e.g. `[P2RESERVE/gates]`
+- aggregate counts only, not noisy per-candidate spam
+- count failures by gate category where already available:
+  - fit gate
+  - retrieval provenance
+  - scoring provenance
+  - stated contribution
+  - caps
+  - weak metadata
+- if a reservation candidate succeeds, it is fine for the summary to show zero or partial failures alongside the accepted pick
+
+Keep this instrumentation tiny, read-only, and easy to remove later.
+
+## Explicit non-goal
+
+Do NOT tighten `statedContrib > 0` to `>= floor` in this batch.
+That is a separate policy refinement and is not required to solve the proven live failure.
+
+## Validation
+
+Run:
+- stated reservation validator
+- any directly relevant existing P2 validators if needed to confirm no regression
+- typecheck baseline check
+
+Return:
+- changed files
+- exact policy change
+- validator before/after contract shift
+- confirmation that adjacent reservation is only widened for explicit_preference_edit
+- confirmation P2B.1 AND-gate remains intact
+- new debug log shape
+- typecheck delta
+- workflow status
+
+After implementation, stop. We will run the live acceptance test again before declaring Phase 2 product-accepted.

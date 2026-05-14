@@ -2608,6 +2608,22 @@ export function getRankedRecs(
       `compPoolSize=${compPool.length}`,
       `statedInPool=${statedInPool}`,
     );
+    // Per-gate failure summary — aggregate counts only, mutually exclusive
+    // per candidate (first-failed-gate wins). Lets the next live retest
+    // self-explain whether the policy widening landed on the right gate.
+    const gc = reservation.trace.gateCounts;
+    if (gc) {
+      console.log('[P2RESERVE/gates]',
+        `pool=${gc.pool_eligible_for_scan}`,
+        `retrieval_prov=${gc.retrieval_provenance}`,
+        `no_score=${gc.no_score_breakdown}`,
+        `scoring_prov=${gc.scoring_provenance}`,
+        `stated_contrib=${gc.stated_contribution}`,
+        `fit_class=${gc.fit_class}`,
+        `weak_metadata=${gc.weak_metadata}`,
+        `caps=${gc.caps}`,
+      );
+    }
   }
 
   // Phase 1: Lane seeding — guarantee one CORE book per dominant lane.

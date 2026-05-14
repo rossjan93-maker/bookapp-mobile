@@ -39,11 +39,30 @@ export type StatedReservationReason =
   | 'no_eligible_candidate'
   | 'reserved';
 
+/** Per-gate failure tally for the candidate scan. Aggregate counts only —
+ *  read by the recommender to emit a single grep-friendly diagnostic line.
+ *  Counts are mutually exclusive per candidate: each book that is skipped
+ *  increments exactly one bucket (the FIRST gate it fails). A reserved
+ *  candidate's trace will show zeroes for every later candidate it short-
+ *  circuited. `pool_eligible_for_scan` reflects compPool minus
+ *  alreadyComposedKeys; the per-gate counts sum to <= that figure. */
+export type StatedReservationGateCounts = {
+  retrieval_provenance: number; // _retrieval_reason did not start with stated_genre:
+  no_score_breakdown:   number; // candidate had no _score_breakdown
+  scoring_provenance:   number; // no audit_flags 'stated_favorite:*'
+  stated_contribution:  number; // stated_taste <= 0
+  fit_class:            number; // adjacent/stretch/reject without policy widening
+  weak_metadata:        number; // weak_metadata flag rejected even when widened
+  caps:                 number; // compositionAllows() returned false
+  pool_eligible_for_scan: number;
+};
+
 export type StatedReservationTrace = {
-  applied: boolean;
-  cause?:  BuildCause;
-  key?:    string;        // the AffinityKey that the reserved candidate matched
-  reason:  StatedReservationReason;
+  applied:     boolean;
+  cause?:      BuildCause;
+  key?:        string;        // the AffinityKey that the reserved candidate matched
+  reason:      StatedReservationReason;
+  gateCounts?: StatedReservationGateCounts;
 };
 
 export type StatedReservationResult = {
@@ -77,9 +96,37 @@ export function pickStatedReservation(
     return { pick: null, trace: { applied: false, cause, reason: 'no_favorites' } };
   }
 
+  // ── Adjacent-fit policy resolution (per-cause widening) ──────────────────
+  // Global default `allowAdjacentReservation` stays conservative (false). The
+  // per-cause allowlist `allowAdjacentForCauses` widens reservation to
+  // adjacent_fit ONLY for explicitly listed causes (currently only
+  // `explicit_preference_edit`). Required for the Phase 2 product contract:
+  // dense users editing toward off-lane genres routinely produce only
+  // adjacent_fit stated candidates because computeFitClass keys on the
+  // user's REVEALED dominant lane. All other P2B.1 AND-gates (retrieval
+  // provenance, scoring provenance, positive stated_taste, non-weak
+  // metadata, composition caps) still apply.
+  const allowAdjacentThisCause =
+       STATED_RESERVATION_POLICY.allowAdjacentReservation
+    || STATED_RESERVATION_POLICY.allowAdjacentForCauses.includes(cause);
+
   // (3) (4) (5) (6) candidate scan — single pass, first eligible wins.
+  // gateCounts increments at most once per candidate (first-failed-gate wins)
+  // so the recommender can emit a tight diagnostic summary post-scan.
+  const gateCounts: StatedReservationGateCounts = {
+    retrieval_provenance: 0,
+    no_score_breakdown:   0,
+    scoring_provenance:   0,
+    stated_contribution:  0,
+    fit_class:            0,
+    weak_metadata:        0,
+    caps:                 0,
+    pool_eligible_for_scan: 0,
+  };
+
   for (const book of compPool) {
     if (alreadyComposedKeys.has(compIdOf(book))) continue;
+    gateCounts.pool_eligible_for_scan += 1;
 
     // ── Retrieval-provenance gate (P2B.1) ──────────────────────────────────
     // The candidate must have been fetched by the P2A statedGenres branch in
@@ -98,10 +145,16 @@ export function pickStatedReservation(
     // `lane:` / `genre:` / `liked_subject:` / `author_anchor:` /
     // `repeated_author:` / `local:*` / `cache:*` and correctly fail here.
     const reason = book._retrieval_reason ?? '';
-    if (!reason.startsWith('stated_genre:')) continue;
+    if (!reason.startsWith('stated_genre:')) {
+      gateCounts.retrieval_provenance += 1;
+      continue;
+    }
 
     const sb = book._score_breakdown;
-    if (!sb) continue;
+    if (!sb) {
+      gateCounts.no_score_breakdown += 1;
+      continue;
+    }
 
     // ── Scoring-provenance gate (P2B original) ─────────────────────────────
     // P1 step 7 surface: audit_flags carry `stated_favorite:<key>`; stated_taste
@@ -119,23 +172,47 @@ export function pickStatedReservation(
     //     match any stated favorite — common for broad subject queries).
     //   - scoring-only is the pre-P2B.1 drift the architect audit caught.
     const flag = sb.audit_flags?.find(f => f.startsWith('stated_favorite:'));
-    if (!flag) continue;
+    if (!flag) {
+      gateCounts.scoring_provenance += 1;
+      continue;
+    }
     const statedContrib = (sb.stated_taste ?? 0);
-    if (statedContrib <= 0) continue;
+    if (statedContrib <= 0) {
+      gateCounts.stated_contribution += 1;
+      continue;
+    }
 
-    // CORE gate (unless adjacent allowed). Mirrors isCompCore() in recommender.
-    const isCore = sb.fit_class === 'core_fit' && !sb.audit_flags?.includes('weak_metadata');
-    if (!isCore && !STATED_RESERVATION_POLICY.allowAdjacentReservation) continue;
+    // ── Fit-class gate ─────────────────────────────────────────────────────
+    // weak_metadata is ALWAYS a hard reject (mirrors isCompCore()) regardless
+    // of whether adjacent is allowed: the quality floor is independent of
+    // fit class. Otherwise: core_fit is always accepted; adjacent/stretch/
+    // reject are accepted only when the per-cause allowlist widened the gate
+    // for this BuildCause.
+    const isWeak = sb.audit_flags?.includes('weak_metadata') ?? false;
+    if (isWeak) {
+      gateCounts.weak_metadata += 1;
+      continue;
+    }
+    if (sb.fit_class !== 'core_fit' && !allowAdjacentThisCause) {
+      gateCounts.fit_class += 1;
+      continue;
+    }
 
     // Existing author/lane caps must hold.
-    if (!compositionAllows(book)) continue;
+    if (!compositionAllows(book)) {
+      gateCounts.caps += 1;
+      continue;
+    }
 
     const key = flag.slice('stated_favorite:'.length);
     return {
       pick:  book,
-      trace: { applied: true, cause, key, reason: 'reserved' },
+      trace: { applied: true, cause, key, reason: 'reserved', gateCounts },
     };
   }
 
-  return { pick: null, trace: { applied: false, cause, reason: 'no_eligible_candidate' } };
+  return {
+    pick:  null,
+    trace: { applied: false, cause, reason: 'no_eligible_candidate', gateCounts },
+  };
 }

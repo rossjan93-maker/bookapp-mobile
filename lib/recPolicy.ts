@@ -240,10 +240,21 @@ export type StatedReservationPolicy = {
   /** When false, only CORE candidates may be reserved. Conservative default —
    *  setting true would silently widen ADJACENT exposure on every pref edit. */
   allowAdjacentReservation:  boolean;
+  /** Per-cause allowlist that widens reservation to ADJACENT candidates
+   *  ONLY for the listed BuildCauses, while keeping the global default
+   *  (allowAdjacentReservation) conservative. Required for the Phase 2
+   *  product contract: a dense user editing toward an off-lane genre
+   *  routinely produces adjacent_fit (not core_fit) stated candidates,
+   *  and core-only reservation cannot honor the "visible deck shift after
+   *  pref edit, dense users included" pre-beta gate. All other P2B.1
+   *  AND-gates (retrieval provenance, scoring provenance, positive
+   *  stated_taste, non-weak metadata, composition caps) still apply. */
+  allowAdjacentForCauses:    readonly BuildCause[];
 };
 
 export const STATED_RESERVATION_POLICY: StatedReservationPolicy = {
   eligibleCauses:           ['explicit_preference_edit'],
   maxReservedSlots:         1,
   allowAdjacentReservation: false,
+  allowAdjacentForCauses:   ['explicit_preference_edit'],
 };

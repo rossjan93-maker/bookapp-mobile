@@ -238,20 +238,94 @@ section('C5c — alreadyComposedKeys excludes a candidate (defensive)');
   check('pick skips already-composed key', r.pick?.external_id === 'C', `got ${r.pick?.external_id}`);
 }
 
-// ── C6: ADJACENT-only candidate, allowAdjacent=false → null ─────────────────
-section('C6 — Only candidate is ADJACENT (fit_class != core_fit) and policy disallows → null');
+// ── C6: ADJACENT stated candidate accepted under explicit_preference_edit ──
+// Phase 2 product contract: dense users editing toward an off-lane genre
+// routinely produce only adjacent_fit stated candidates because
+// computeFitClass keys on the user's REVEALED dominant lane. The original
+// CORE-only contract failed this case. The corrected policy widens
+// reservation to adjacent_fit ONLY for the explicit_preference_edit cause.
+section('C6 — ADJACENT stated candidate accepted under explicit_preference_edit (P2 product contract)');
 {
-  // STATED_RESERVATION_POLICY.allowAdjacentReservation is false in production,
-  // so we test the production behavior directly.
-  const req = mkReq({ cause: 'explicit_preference_edit', favorites: ['nonfiction' as AffinityKey] });
+  const req = mkReq({ cause: 'explicit_preference_edit', favorites: ['thriller_mystery' as AffinityKey] });
   const pool = [
-    mkBook({ id: 'B', author: 'Bravo', statedFlag: 'stated_favorite:nonfiction', statedTaste: 0.12, fitClass: 'adjacent_fit' }),
+    mkBook({
+      id: 'B', author: 'Bravo',
+      statedFlag: 'stated_favorite:thriller_mystery',
+      statedTaste: 0.08,                              // P1 floor
+      fitClass: 'adjacent_fit',                       // off dominant lane
+      retrievalReason: 'stated_genre:thriller_mystery',
+    }),
   ];
   const r = pickStatedReservation(pool, req, new Set(), allowAlways, compIdOf);
-  check('pick is null when ADJACENT-only and allowAdjacent=false',
-    r.pick === null, `pick: ${r.pick?.external_id}`);
-  check('STATED_RESERVATION_POLICY.allowAdjacentReservation === false',
+  check('pick is non-null when adjacent + explicit_preference_edit',
+    r.pick !== null, `pick: ${r.pick?.external_id}`);
+  check('trace.reason === reserved', r.trace.reason === 'reserved', r.trace.reason);
+  check('trace.key === thriller_mystery', r.trace.key === 'thriller_mystery', r.trace.key);
+  // Defense-in-depth — the global default is intentionally still conservative.
+  // Adjacent acceptance comes from the per-cause allowlist, NOT from flipping
+  // the global flag. Both invariants are asserted here so a future change
+  // that relaxes one without the other will fail this case.
+  check('STATED_RESERVATION_POLICY.allowAdjacentReservation === false (global default unchanged)',
     STATED_RESERVATION_POLICY.allowAdjacentReservation === false);
+  check('STATED_RESERVATION_POLICY.allowAdjacentForCauses includes explicit_preference_edit',
+    STATED_RESERVATION_POLICY.allowAdjacentForCauses.includes('explicit_preference_edit'));
+}
+
+// ── C6.neg: ADJACENT stated candidate REJECTED for non-allowlisted causes ──
+section('C6.neg — ADJACENT stated candidate still rejected when cause not in allowAdjacentForCauses');
+{
+  // session_open is reservation-ineligible at the cause gate (returns
+  // wrong_cause), so we exercise the fit-class gate via a hypothetical
+  // future cause that might be added to eligibleCauses but NOT to
+  // allowAdjacentForCauses. We simulate this by using ANOTHER eligible-
+  // cause-but-not-adjacent-allowlisted scenario: at the time of writing,
+  // eligibleCauses === allowAdjacentForCauses === ['explicit_preference_edit'],
+  // so to prove the gate works we assert the policy invariant directly
+  // AND prove session_open ADJACENT is rejected at the prior wrong_cause gate.
+  const reqWrongCause = mkReq({ cause: 'session_open', favorites: ['thriller_mystery' as AffinityKey] });
+  const pool = [
+    mkBook({
+      id: 'B', author: 'Bravo',
+      statedFlag: 'stated_favorite:thriller_mystery',
+      statedTaste: 0.08,
+      fitClass: 'adjacent_fit',
+      retrievalReason: 'stated_genre:thriller_mystery',
+    }),
+  ];
+  const r = pickStatedReservation(pool, reqWrongCause, new Set(), allowAlways, compIdOf);
+  check('session_open never reserves regardless of fit class',
+    r.pick === null && r.trace.reason === 'wrong_cause', r.trace.reason);
+
+  // Future-proofing: explicitly assert no non-edit cause is in the adjacent
+  // allowlist. If a future maintainer adds intent_apply to eligibleCauses
+  // they must consciously decide whether to also add it here.
+  const adjacencyExtras = STATED_RESERVATION_POLICY.allowAdjacentForCauses.filter(
+    c => c !== 'explicit_preference_edit',
+  );
+  check('allowAdjacentForCauses contains no causes other than explicit_preference_edit',
+    adjacencyExtras.length === 0, `unexpected: ${adjacencyExtras.join(',')}`);
+}
+
+// ── C6.weak: weak_metadata ALWAYS rejected, even under explicit_preference_edit
+section('C6.weak — weak_metadata flag is a hard reject regardless of fit class widening');
+{
+  const req = mkReq({ cause: 'explicit_preference_edit', favorites: ['thriller_mystery' as AffinityKey] });
+  const pool = [
+    mkBook({
+      id: 'B', author: 'Bravo',
+      statedFlag: 'stated_favorite:thriller_mystery',
+      statedTaste: 0.12,
+      fitClass: 'adjacent_fit',
+      weakMetadata: true,                             // hard reject
+      retrievalReason: 'stated_genre:thriller_mystery',
+    }),
+  ];
+  const r = pickStatedReservation(pool, req, new Set(), allowAlways, compIdOf);
+  check('weak_metadata hard-rejects even when adjacent would otherwise pass',
+    r.pick === null, `pick: ${r.pick?.external_id}`);
+  check('gateCounts.weak_metadata recorded',
+    (r.trace.gateCounts?.weak_metadata ?? 0) === 1,
+    `weak=${r.trace.gateCounts?.weak_metadata}`);
 }
 
 // ── C6b: weak_metadata demotes a CORE candidate to non-CORE for reservation ─
