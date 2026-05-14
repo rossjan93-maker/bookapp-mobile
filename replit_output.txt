@@ -1,524 +1,413 @@
 ================================================================================
-P3 — Score Contributions + Explanation Faithfulness — ARCHITECTURAL MAPPING
+PHASE 2 LIVE ACCEPTANCE FAILURE INVESTIGATION
+Preference Edit Responsiveness — Business + Fast-paced
 ================================================================================
 Date: 2026-05-14
-Status: MAPPING ONLY — awaiting human approval before code.
-Constraint reaffirmed: NOT an LLM phase. NOT premium semantic. Free/core only.
-Roadmap source of truth: roadmap-q2.md §5D (lines 346-364) + quality gates A8/A9/A10.
+Status: INVESTIGATION ONLY — no fixes implemented.
+Verdict: **Diagnosis D (B + C combined)**.
+Recommendation: **PAUSE P3. Land a small Phase 2.1 fix + ship a temporary
+debug pass before re-running live acceptance.**
 
 ================================================================================
 0. EXECUTIVE SUMMARY
 ================================================================================
-Current state ("plausible templates"):
-- `reasons: string[]` on `ScoredBook` (recommender.ts:209) is assembled by ~15
-  scattered `reasons.push(...)` sites (recommender.ts:1312..1655) AND then
-  partially overwritten in `getRankedRecs` (~L1993) by the CoG `fit_explanation`.
-- `ScoreBreakdown` (recommender.ts:154) is the closest existing analog to a
-  contribution structure but is shaped for additive math, not for
-  per-evidence audit. It has no `evidence`, no `source`, no `kind`.
-- `RecCard.tsx` consumes `book.reasons[0..n]` directly and applies banned-phrase
-  filters + `rehumanizeReasonPhrase` + variant pools as a humanization layer.
-- Audit coverage: `scripts/explanation_audit.ts` checks distribution and pattern
-  repetition; A8 (zero false-attribution) is NOT formally proven anywhere.
+Two independent problems are stacked on top of each other in the observed run:
 
-Target state ("auditable reasoning"):
-- Scoring emits a typed `ScoreContribution[]` per book.
-- Explanations are composed FROM contributions by a single composer that
-  refuses to emit any reason whose underlying contribution is absent or
-  below a per-kind floor.
-- `reasons: string[]` is preserved as a presentation/compatibility output but
-  becomes derived, not authoritative.
-- A small slate-level diversity pass demotes duplicate `kind`s in top-4 when
-  alternative truthful contributions exist.
+PROBLEM 1 (architecture/runtime — class B):
+  The user reports "the change did not take effect until I manually refreshed
+  the browser." The save handler is correct on paper (clears all three stores
+  + sets pending BuildCause + navigates back), and `RecommendationsFeed` has
+  a `useFocusEffect` that triggers `runPipeline` when `getRecSession()` is
+  null. But the manual browser refresh is precisely the action that
+  GUARANTEES the loss of the in-memory `_pendingBuildCause`. So:
+   - If the deck DID rebuild silently before refresh and just didn't visually
+     update, the rebuild ran with `BuildCause = explicit_preference_edit`
+     (correct), reservation could fire, but the new deck never reached the
+     screen — UI remained showing the cleared state.
+   - If the deck did NOT rebuild silently, the manual refresh forced a fresh
+     build, but at that point `BuildCause = session_open` (memory wiped),
+     reservation returned `wrong_cause`, and the deck fell back to standard
+     scoring. **This second branch is what the user actually saw.**
 
-High-level recommendation: **single PR, no internal split needed.**
-Proposed file count: **8 source files + 1 validator + replit.md = 10 files
-total** (under the 12-file budget; see §7).
+PROBLEM 2 (catalog/scoring — class C):
+  Even ignoring the BuildCause loss, the four observed books and their
+  "writing"-themed reasons reveal that for stated_genre = "business":
+   - "Business" maps to `affinityKey: 'nonfiction'` with `olSubjects: ['business',
+     'economics']` (lib/taxonomy/genres.ts:233-239).
+   - The statedGenres branch likely retrieved at most a handful of business
+     candidates from OL (or zero of sufficient quality after hygiene).
+   - The user's revealed history is dominated by literary trait alignment
+     (`prose` / `literary_prose` from lib/traitCopy.ts:20,27), so when
+     reservation didn't fire, revealed scoring put four literary/historical
+     books at the top with appreciation-pool reasons humanized to "writing".
+   - The +0.05 stated_taste floor (P1) is real but mathematically dwarfed by
+     literary trait_alignment (~0.38 cap). With reservation off, the floor
+     alone is not enough to pull a business book into the top-4.
 
-Two scope decisions that need human approval BEFORE code (see §11):
-- D1: Promote `_retrieval_reasons: string[]` (multi-source provenance) into P3.
-- D2: Fix `fetchOLByAuthor` hardcoded `author_anchor:` reason label in P3.
-
-================================================================================
-1. P3 ROADMAP REQUIREMENTS (verbatim from roadmap-q2.md §5D)
-================================================================================
-Goal:
-- recommendations should explain the real reason a book won
-- no explanation should cite evidence that did not actually contribute positively to rank
-
-Required outcomes:
-- score outputs become typed contribution arrays
-- explanations cite real contributions
-- stated vs revealed vs intent vs feedback reasons are distinguishable
-- repeated rationale repetition across the top slate is reduced
-- explanation audit becomes mandatory
-
-Quality gates touched:
-- A8 — explanations match actual positive score contributions
-- A9 — no near-identical rationale repetition across top slate unless justified
-- A10 — BuildCause propagates correctly (already shipped in P1; P3 verifies)
-
-Out of scope (locked):
-- LLM integration / OpenAI calls / AI-generated text
-- Premium Semantic Intelligence Plane (reader thesis, semantic retrieval, AI rerank)
-- RecCard visual redesign
-- TasteReadout / onboarding / Home changes
-- Schema / migrations / DB structure
-- Changes to P2 retrieval policy, branch quotas, top-slate reservation, deck validity
-- 6-phase pipeline geometry changes (unless absolutely necessary — none anticipated)
+So Phase 2's mechanics are correct, but the user-visible outcome is broken
+for two distinct reasons. Both must be addressed before live acceptance can
+be considered passed.
 
 ================================================================================
-2. PROPOSED CONTRIBUTION MODEL
-================================================================================
-The smallest sound shape that supports BOTH free explanation faithfulness now AND
-premium semantic explanations later (P4+ pluggability):
-
-```ts
-// lib/scoring/contributions.ts (NEW)
-export type ContributionSource =
-  | 'stated_durable'         // SignalClass — from RecRequest stated signals
-  | 'revealed_behavioral'    // SignalClass — from rated history
-  | 'current_intent'         // SignalClass — from active intent chip
-  | 'short_term_feedback'    // SignalClass — MLT / "more like this"
-  | 'soft_avoid'             // SignalClass — penalty-only
-  | 'retrieval_provenance'   // P2A/P2B.1 retrieval branch
-  | 'quality_reliability'    // hygiene / metadata floor
-  | 'novelty_diversity'      // future P4 hook (disabled-by-default in free)
-  | 'semantic_rerank';       // future P4 hook (disabled-by-default in free)
-
-export type ContributionKind =
-  | 'trait_alignment'
-  | 'appreciation_match'
-  | 'theme_overlap'
-  | 'genre_affinity'
-  | 'feedback_boost'
-  | 'reader_consensus'
-  | 'stated_taste_fit'      // P1 STATED_TASTE_POLICY scoring path
-  | 'intent_fit'
-  | 'soft_avoid_penalty'
-  | 'retrieval_anchor'      // book was surfaced because branch X retrieved it
-  | 'cog_fit'               // center-of-gravity adjustment
-  | 'hygiene_floor';
-
-export interface ScoreContribution {
-  source: ContributionSource;
-  kind: ContributionKind;
-  value: number;            // signed; negatives are penalties
-  evidence: string[];       // raw tokens (genre keys, trait keys, branch prefix)
-  explanationEligible: boolean; // false for hygiene_floor, soft_avoid_penalty,
-                                // true for everything user-facing-positive
-}
-```
-
-Rationale for these choices:
-- `source` mirrors the SignalClass taxonomy already living in `lib/recSignals/`
-  (build.ts L67/L75/L80/L87/L92) PLUS two engine-side sources
-  (`retrieval_provenance`, `quality_reliability`) PLUS two reserved P4 hooks.
-  No new vocabulary invented.
-- `kind` enumerates the existing reason families already present in
-  recommender.ts (L1527, L1529, L1566, L1592, L1614, L1655). Mapping is 1:1
-  with what scoring already does — no new behavior.
-- `evidence: string[]` is the bridge that lets the composer cite specifics
-  ("aligns with literary, character-driven") without touching scoring math.
-- `explanationEligible` makes hygiene/penalty contributions invisible to the
-  composer without filtering them out of the audit trail.
-- `value` stays a single number — keeps math compatible with existing
-  `ScoreBreakdown`. P3 does NOT change weights, caps, or floors.
-
-Attachment site: `ScoredBook` gains
-```ts
-contributions?: ScoreContribution[];   // NEW — primary truth for explanations
-reasons: string[];                     // EXISTING — derived, presentation-only
-```
-
-`ScoreBreakdown` (recommender.ts:154) stays as-is. It is the additive math
-view; `contributions[]` is the auditable evidence view. Both are derived from
-the same scoring pass.
-
-================================================================================
-3. CURRENT SCORING + REASON EMISSION AUDIT
-================================================================================
-Inventory of every site that currently pushes a `reasons` entry:
-
-| Line   | Reason emitted                  | Faithful today? | P3 disposition           |
-|--------|---------------------------------|-----------------|--------------------------|
-| 1312   | bad_title_marker (debug)        | n/a             | KEEP (debug-only)        |
-| 1340   | juvenile (hygiene)              | yes             | DEMOTE to non-eligible   |
-| 1344   | juvenile_overridden             | yes             | DEMOTE to non-eligible   |
-| 1360   | form(...) (hygiene)             | yes             | DEMOTE to non-eligible   |
-| 1369   | pd_author                       | yes             | DEMOTE to non-eligible   |
-| 1378   | literary_drift_author           | yes             | DEMOTE to non-eligible   |
-| 1401   | non_english                     | yes             | DEMOTE to non-eligible   |
-| 1412   | no_meta                         | yes             | DEMOTE to non-eligible   |
-| 1420   | ol_no_subjects                  | yes             | DEMOTE to non-eligible   |
-| 1527   | preferred trait alignment       | LOOSE           | REPLACE → trait_alignment contribution |
-| 1529   | appreciation match (1 trait)    | LOOSE           | REPLACE → appreciation_match contribution |
-| 1566   | theme overlap                   | LOOSE           | REPLACE → theme_overlap contribution |
-| 1592   | genre enjoy                     | LOOSE           | REPLACE → genre_affinity contribution |
-| 1614   | feedback boost                  | LOOSE           | REPLACE → feedback_boost contribution |
-| 1655   | reader consensus                | LOOSE           | REPLACE → reader_consensus contribution |
-| 1993-6 | reasons[0] = CoG fit_explanation| OVERWRITE       | CHANGE — composer becomes authority |
-
-"LOOSE" = reason is pushed when a numeric component fires, but pushing is a
-side-effect rather than derivation; the reason text is not guaranteed to
-reflect which contribution actually contributed positively above a floor.
-
-Score components (from `ScoreBreakdown` recommender.ts:154 + scoring path):
-| Component            | Cap          | Has reason today? | Becomes ScoreContribution.kind |
-|----------------------|--------------|-------------------|-------------------------------|
-| trait_alignment      | ~0.38        | yes (loose)       | trait_alignment               |
-| genre_bonus          | +0.22 max    | yes               | genre_affinity                |
-| feedback_boost       | +0.14        | yes               | feedback_boost                |
-| enrichment_bonus     | variable     | yes               | reader_consensus              |
-| stated_taste         | variable+0.05| NO (silent)       | stated_taste_fit ★ NEW REASON |
-| intent_boost         | ±0.30        | NO (internal)     | intent_fit ★ NEW REASON       |
-| cog_score_delta      | +0.25/-0.20  | yes (overrides)   | cog_fit                       |
-| avoided_penalty      | negative     | NO                | soft_avoid_penalty (not eligible) |
-| metadata_penalty     | negative     | NO                | hygiene_floor (not eligible)  |
-
-Two findings worth highlighting:
-- `stated_taste` (the P1 floor signal) currently has no user-facing reason at
-  all. P3 closes that gap — books surfaced by stated retrieval but ranked by
-  stated scoring will finally say so honestly.
-- `intent_boost` is opaque to RecCard. Intent-driven picks should say "matches
-  your current intent" when intent_boost > 0; today they don't.
-
-================================================================================
-4. RECCARD HUMANIZATION LAYER (preserve verbatim)
-================================================================================
-The following helpers in `components/RecCard.tsx` are PURE presentation and
-must survive P3 unchanged — they are not reason-emitters:
-- ALIGNS_POOL_SAFE/HISTORY (L241-252)
-- APPRECIATION_POOL_SAFE/HISTORY (L258-269)
-- READERS_TRAIT_POOL_SAFE/HISTORY (L272-283)
-- TRAIT_QUALITY map (L352)
-- Banned-phrase filter (L160-161, L208)
-- `rehumanizeReasonPhrase` (L17, L393)
-- `rewriteReasonText` (L371)
-- `_pickGated` (L222)
-
-P3 changes RecCard in exactly ONE place:
-- Where `book.reasons[0..n]` are read (~L784-785), check first for a composed
-  explanation supplied by the new composer. If present, use it; otherwise fall
-  back to existing `reasons[0]` path. This is a 5-10 line change.
-
-`lib/traitCopy.ts` and `lib/tasteReadoutCopy.ts` (FX-1 helpers): pure
-humanizers, untouched.
-
-================================================================================
-5. P2 PROVENANCE — TWO RESIDUALS RE-EVALUATED
-================================================================================
-The mapping question explicitly asks whether each P2B.1 residual belongs in P3.
-
-Residual #1: `fetchOLByAuthor` hardcodes `author_anchor:${author}` (recommender.ts:715)
-  Architectural impact on P3: MEDIUM.
-  - Without fixing: an author-branch contribution will use a `_retrieval_reason`
-    that does not match the prefix taxonomy used by `pickStatedReservation` or
-    by the future composer dispatch table. Composer would need a special-case.
-  - Cost to fix: ~5 lines + one new prefix constant.
-  - Recommendation: **FIX IN P3.** Cheap, eliminates a special case in the
-    composer dispatch.
-
-Residual #2: merge-dedup drops loser-branch provenance (recommender.ts:570-600)
-  Architectural impact on P3: HIGH.
-  - Without fixing: a book retrieved by BOTH `stated_genres:fantasy_scifi` AND
-    `revealed_lanes:literary` keeps only the last writer's `_retrieval_reason`.
-    The composer will pick whichever branch happened to write last, not the
-    strongest truthful contribution.
-  - This DIRECTLY affects A8 (zero false-attribution) and A9 (slate diversity):
-    if every dense user's book ends up tagged `revealed_lanes:` because that
-    branch runs last, the slate cannot diversify on retrieval source.
-  - Cost to fix: extend `CandidateBook` with `_retrieval_reasons: string[]` and
-    have the merge step append rather than overwrite. Existing
-    `_retrieval_reason` becomes a derived "primary" (first entry). Backwards
-    compatible.
-  - Recommendation: **FIX IN P3.** Required for A8/A9 to be provable.
-
-Both residuals upgraded from "P2 deferred" to "P3 prerequisite."
-
-P2C `softAvoidDeprioritized` flag (FetchItem in `lib/retrieval/types.ts:47`):
-  Already propagates to ScoredBook through the existing pipe. P3 reads it as
-  evidence on the `soft_avoid_penalty` contribution. No new plumbing needed.
-
-P1 BuildCause: already propagates via `consumePendingBuildCause`
-(recRequest.ts:78) and `buildRecRequest` (L180). P3 quality gate A10 verifies
-this in the new validator — no code change.
-
-================================================================================
-6. SLATE-LEVEL DIVERSITY
-================================================================================
-Architecture decision: minimal version IN P3, full version deferred to P4.
-
-Minimal P3 pass (in `lib/explanations/compose.ts`):
-- After per-book composition, walk top-N (default N=4).
-- For each card, the composer has produced a ranked list of eligible
-  ContributionKinds that survived the per-kind floor.
-- If ≥3 of top-4 share the same primary kind AND any has a viable secondary
-  contribution above floor, swap that card's primary to its secondary.
-- Never invent a reason. Never lower a per-kind floor for diversity.
-- Determinism: tiebreak by ContributionKind enum order.
-
-What this is NOT: P3 does NOT add a "global slate optimizer," does NOT
-re-rank books for diversity, does NOT change top-slate reservation.
-Reservation winners keep their slot; only the displayed reason text may
-swap to a different truthful contribution.
-
-Risk: low. The pass is read-only over scoring output and only changes which
-of the existing eligible contributions becomes the headline.
-
-================================================================================
-7. PROPOSED FILE PLAN (10 files; under 12-file budget)
+1. SAVE → REBUILD PATH (intended vs actual)
 ================================================================================
 
-NEW (4 files):
-1. `lib/scoring/contributions.ts`
-   - Types: ContributionSource, ContributionKind, ScoreContribution
-   - Pure helpers: `summarizeContributions`, `topPositiveByKind`, `floorByKind`
-   - Per-kind floors (e.g. `MIN_DISPLAY = { trait_alignment: 0.06, ... }`).
-   - No IO, no recommender dependency.
+INTENDED FLOW (and what app/edit-preferences.tsx does):
+  L142     Supabase upsert to `reader_preferences` succeeds
+  L170-172 clearRecSession() + clearRecQueue() + clearRecPayload(userId)
+  L176     setPendingBuildCause('explicit_preference_edit')
+  L178     router.back()
+  → RecommendationsFeed.tsx focus effect fires:
+  L448-453 useFocusEffect: if !getRecSession() then runPipeline({ isBgRefresh: false })
+  → runPipeline calls buildRecRequest, which calls
+    consumePendingBuildCause() and gets 'explicit_preference_edit'.
+  → recommender's pickStatedReservation sees the cause, evaluates stated
+    branch candidates, reserves a slot if any clear quality + AND-gate.
+  → New deck renders with at least one Business pick at top.
 
-2. `lib/explanations/compose.ts`
-   - `composeExplanation(book, contributions, branchTrail) => ComposedExplanation`
-   - Dispatch table per ContributionKind → existing RecCard variant pool key.
-   - Refuses to emit a reason without a contribution above floor.
-   - Preserves provenance distinction in copy template choice (stated vs
-     revealed vs intent vs feedback) — the dispatch keys off `source`, not
-     just `kind`.
+WHAT LIKELY HAPPENED LIVE:
+  Save handler ran correctly through L178. Then ONE of the following:
 
-3. `lib/explanations/diversityGuard.ts`
-   - Single function: `applySlateDiversity(slate, composedByBookId)`.
-   - Pure, deterministic. Top-4 only.
-   - (Could fold into compose.ts to save a file. Recommendation: keep separate
-     for testability.)
+  Path α: The `useFocusEffect` did fire on `router.back()` and
+          `runPipeline` ran with the correct BuildCause. The pipeline
+          completed. But `RecommendationsFeed` derives its visible state
+          (`visibleConts` / `visibleDiscs`) from the module-level queue
+          (recommender.ts:148-161), and the post-pipeline `syncVisible()`
+          may not have triggered a React re-render because the queue
+          identity didn't change in a way React's diffing detected.
+          User sees stale/empty UI → presses browser refresh → JS runtime
+          resets → `_pendingBuildCause` wiped → fresh pipeline runs with
+          `session_open` → no reservation → revealed scoring wins → the
+          four literary books appear.
 
-4. `scripts/validate_explanation_faithfulness.ts`
-   - A8 proof: synthesize fixture users + candidates with known
-     contributions; assert no surfaced reason maps to a contribution below
-     floor or absent.
-   - A9 proof: top-4 fixture cases assert diversity guard fires correctly.
-   - A10 proof: BuildCause flows from `RecRequest` to `RetrievalTrace`.
-   - Stated vs revealed vs intent vs feedback reason distinction asserted on
-     fixtures.
-   - Stated avoid → no false history attribution in copy.
-   - npx-tsx, exit 0/1, ≥40 cases.
+  Path β: The `useFocusEffect` did NOT fire reliably on web after
+          `router.back()`. (`useFocusEffect` is an Expo Router behavior
+          that has known timing differences between native and web.)
+          User sees the previous (still-rendered) screen for some moments
+          → presses browser refresh → fresh JS runtime → fresh pipeline
+          with `session_open` → same bad outcome as Path α.
 
-MODIFIED (5 files):
-5. `lib/recommender.ts`
-   - Scoring path: alongside existing `ScoreBreakdown` accumulation, build
-     `ScoreContribution[]` per book.
-   - `getRankedRecs`: call composer; attach composed explanation; populate
-     `book.reasons` from composer output for backwards compatibility.
-   - Merge-dedup: introduce `_retrieval_reasons: string[]` (residual #2 fix).
-   - `fetchOLByAuthor`: use prefixed retrieval reason from a constant
-     (residual #1 fix).
-   - Estimated diff: ~150-200 net LOC, mostly additive.
+Either path produces the same end state visible to the user. The two paths
+differ on whether a silent successful rebuild happened in between. We cannot
+distinguish them from logs alone — see §10 for the minimum debug
+instrumentation needed.
 
-6. `lib/retrieval/types.ts`
-   - Add optional `_retrieval_reasons: string[]` to `CandidateBook`.
-   - `_retrieval_reason` becomes a derived "primary" (kept for back-compat).
-
-7. `components/RecCard.tsx`
-   - Read composed explanation if present; fall back to `reasons[0]`.
-   - 5-10 line change. No visual redesign. Banned-phrase filter intact.
-
-8. `scripts/explanation_audit.ts`
-   - Extend to consume new `book.contributions` when present.
-   - Existing distribution / repetition checks preserved.
-
-9. `replit.md`
-   - "Recently shipped" entry for P3.
-   - Update "Where things live" with `lib/scoring/contributions.ts` and
-     `lib/explanations/compose.ts`.
-
-NOT TOUCHED (explicit non-goals):
-- `lib/recPolicy.ts` — caps/floors/multipliers stay frozen.
-- `lib/retrieval/branchPlanner.ts` — quotas frozen.
-- `lib/composition/statedReservation.ts` — semantics frozen.
-- `lib/recValidity.ts` — deck-validity frozen.
-- `lib/recSignals/*` — signal classes frozen.
-- `lib/expertRec.ts` — already uses `judgment.why_it_fits`; will provide
-  contributions via a thin adapter inside compose.ts. NO change to expertRec.
-- `lib/traitCopy.ts`, `lib/tasteReadoutCopy.ts` — pure humanizers, frozen.
-- DB schema, migrations, Supabase, OL/GBooks/LLM provider code.
-- 6-phase pipeline geometry preserved.
-
-Total: 4 NEW + 5 MODIFIED + replit.md = 10 files. Under budget.
+CONFIDENCE: high that one of α or β occurred; cannot prove which without
+instrumentation.
 
 ================================================================================
-8. MIGRATION STRATEGY (reasons[] → contributions)
-================================================================================
-Two-step transition within a single PR — no flag, no deprecation cycle:
-
-Step A: contributions[] becomes the source of truth.
-- Scoring emits contributions alongside the existing breakdown.
-- Composer computes the user-facing explanation string from contributions.
-- `book.reasons` is repopulated from the composer output (so RecCard's
-  fallback path produces the same text the composer would).
-
-Step B: legacy `reasons.push(...)` sites are replaced with contribution
-        emissions.
-- Hygiene/penalty `reasons.push` calls become non-eligible contributions
-  (kept for forensic logging, never displayed).
-- "LOOSE" trait/genre/feedback/consensus pushes are deleted; their
-  contributions emit during scoring.
-- The old `reasons[0] = CoG fit_explanation` overwrite at L1993-1996 is
-  removed; CoG becomes a `cog_fit` contribution with `value = cog_score_delta`
-  and `evidence = [book.fit_classification]`.
-
-`book.reasons` survives as a presentation/compatibility output that any
-downstream consumer (RecCard, audit scripts, dev inspector) can still read.
-
-No external API or persisted shape changes. AsyncStorage / Supabase rows
-unaffected.
-
-================================================================================
-9. VALIDATION STRATEGY
-================================================================================
-New validator: `scripts/validate_explanation_faithfulness.ts`
-
-Quality gates the validator must prove (deterministically, no live network):
-
-A8 — Zero false-attribution (HARD GATE):
-  - Synthesize 20+ fixture users × N candidates with known input signals.
-  - Run the composer. For every emitted reason, assert there exists a
-    `ScoreContribution` with matching `kind` AND `value >= MIN_DISPLAY[kind]`
-    AND `explanationEligible === true`.
-  - Counter-fixtures: book with NO matching contribution must produce NO
-    reason of that kind.
-  - Stated-avoid users must produce no "you've been reading X" reason.
-
-A9 — Slate diversity (SOFT GATE):
-  - 6+ fixture top-slate compositions where ≥3 books share the same primary
-    contribution kind AND have viable secondaries.
-  - Assert diversity guard swaps where possible.
-  - Assert NO swap when no viable secondary exists (truth wins over diversity).
-
-A10 — BuildCause propagation (HARD GATE):
-  - Construct `RecRequest` with each `BuildCause` value.
-  - Assert `RetrievalTrace.build_cause` matches; assert
-    `explicit_preference_edit` triggers reservation; assert
-    `onboarding_completion` does not.
-
-Provenance distinction:
-  - Stated-genre reason text uses stated-template copy, never revealed-template.
-  - Revealed-history reason text never claims anchor for a stated-only signal.
-  - Intent reason fires iff `intent_fit.value > 0`.
-  - Feedback reason fires iff `feedback_boost.value > 0`.
-
-Existing validators continue to pass:
-- `scripts/validate_taxonomy.ts`
-- `scripts/validate_rec_validity.ts`
-- `scripts/validate_retrieval_planner.ts` (75 cases)
-- `scripts/validate_stated_reservation.ts` (56 cases)
-- `scripts/explanation_audit.ts` (extended, not replaced)
-
-================================================================================
-10. PRESERVATION CHECKLIST (P2 invariants P3 must not break)
-================================================================================
-- Branch quotas (`lib/retrieval/branchPlanner.ts` BRANCH_QUOTAS) — UNCHANGED
-- `STATED_RESERVATION_POLICY` — UNCHANGED
-- `SOFT_AVOID_RETRIEVAL_MULTIPLIER` — UNCHANGED
-- `STATED_TASTE_POLICY` floor (+0.05) — UNCHANGED
-- `EDIT_CAUSE_BRANCH_BOOST` — UNCHANGED
-- `configHash` invalidation across recPayloadCache/recSession/recQueue — UNCHANGED
-- `_retrieval_reason.startsWith('stated_genre:')` AND-gate — PRESERVED
-  (now consults `_retrieval_reasons[]` if multi-source present; AND-gate
-  semantics identical: any stated_genre prefix in the array satisfies it)
-- 6-phase pipeline geometry — PRESERVED
-- RecCard visual UI — PRESERVED
-- TasteReadout / Home / onboarding — UNTOUCHED
-- DB schema / migrations — NONE
-- OL / GBooks / LLM call sites — UNTOUCHED
-
-================================================================================
-11. DECISIONS REQUIRING HUMAN APPROVAL BEFORE CODE
+2. "REFRESH REQUIRED" — WHICH SURFACE?
 ================================================================================
 
-D1 — Promote multi-source retrieval provenance into P3 (`_retrieval_reasons: string[]`)
-  Recommendation: **APPROVE.**
-  Justification: Without it, A8/A9 are not provable for books retrieved by
-  multiple branches. The merge-dedup overwrite is the dominant source of
-  silent provenance loss in dense users. Cost is small (one type field +
-  append-instead-of-overwrite at the merge site). The P2B.1 AND-gate keeps
-  identical semantics — it just consults the array instead of the scalar.
+Question: was the refresh requirement A (Profile card stale), B (For You
+deck stale), or C (both)?
 
-D2 — Fix `fetchOLByAuthor` hardcoded retrieval reason label in P3
-  Recommendation: **APPROVE.**
-  Justification: Cheap (~5 lines + one prefix constant). Removes a special
-  case from the composer dispatch table. Author-branch contributions become
-  first-class citizens of the prefix taxonomy.
+Reading Taste card display: not investigated in depth here, but the same
+save handler's Supabase upsert is what `app/edit-preferences.tsx` reads from
+on subsequent loads. If the card was also stale until refresh, that points
+to a focus-revalidation gap in the profile screen too. The user did not
+report whether the Reading Taste card itself looked stale — only that
+"the change didn't take effect."
 
-D3 — Slate diversity in `lib/explanations/diversityGuard.ts` as separate file
-  Recommendation: **APPROVE separate file** (vs folding into compose.ts).
-  Justification: Easier to unit-test in isolation; future P4 enhancements
-  (premium evidence-cited explanations) plug in here without disturbing the
-  per-book composer.
+For You deck: definitely affected. This is the surface the user observed.
+The deck either (a) was empty/stale until refresh and then loaded the wrong
+slate, or (b) loaded a silently-rebuilt slate that didn't surface to React.
 
-D4 — Per-kind display floors live in `lib/scoring/contributions.ts`
-       (NOT `lib/recPolicy.ts`)
-  Recommendation: **APPROVE.**
-  Justification: These are explanation-display thresholds, not scoring policy.
-  They control what is shown to users, not what wins ranking. Keeping them
-  separate from `recPolicy.ts` preserves the principle that recPolicy owns
-  scoring-side calibration only.
-
-D5 — `book.reasons[]` is preserved as compatibility output, NOT removed
-  Recommendation: **APPROVE.**
-  Justification: Keeps RecCard's fallback path working; keeps existing
-  audit scripts compatible; allows a future cleanup PR to remove it once
-  every consumer is verified contribution-aware.
-
-No other decisions block implementation.
+Most likely answer: **B (For You deck)** is confirmed. **A (Profile card)**
+is plausible but unconfirmed in this report.
 
 ================================================================================
-12. RISKS & MITIGATIONS
+3. BuildCause PRESERVATION
 ================================================================================
-R1: Composer produces empty explanation for a book with all-below-floor
-    contributions.
-  Mitigation: Fall back to a non-personalized template ("New for you") with
-  `source = 'quality_reliability'` so the card still has copy. Gate this on
-  A8 — non-personalized copy must not claim history.
 
-R2: Diversity guard suppresses the strongest truthful reason for a card.
-  Mitigation: Guard never demotes a contribution if the swap would drop
-  `value` below 70% of the primary's value. Determined in §6 spec.
+Storage: `_pendingBuildCause` lives in module-level memory in
+`lib/recRequest.ts:72`. NOT persisted to AsyncStorage.
 
-R3: Multi-source provenance expansion breaks `pickStatedReservation`.
-  Mitigation: AND-gate becomes "any element of `_retrieval_reasons`
-  startsWith('stated_genre:')" — strict superset of current behavior. Every
-  existing test fixture continues to satisfy it.
+Setter: `setPendingBuildCause(cause)` (called at edit-preferences.tsx:176).
 
-R4: Performance — adding contributions[] per book on a 200-candidate scoring
-    pass.
-  Mitigation: Contributions are typed structs already computed inline;
-  emission is one push per existing component evaluation. No new loops.
-  Estimated overhead: <2% of scoring pass.
+Consumer: `consumePendingBuildCause()` (lib/recRequest.ts:78) — called
+inside `buildRecRequest` during pipeline run. Default fallback is
+`'session_open'` (lib/recRequest.ts:49).
 
-R5: Validator fixture maintenance burden grows.
-  Mitigation: New validator builds on the existing planner/reservation
-  fixture style; one shared fixture builder helper in the validator file.
+Loss conditions identified:
+  L1. **Browser refresh / page reload** wipes JS runtime → `_pendingBuildCause`
+      becomes `null` → next pipeline runs with `session_open`.
+      → THIS IS THE EXACT FAILURE CONDITION THE USER REPORTED HITTING.
+  L2. Any code path that calls `consumePendingBuildCause` BEFORE the For You
+      pipeline runs (e.g. a background prewarm, a different screen's
+      pipeline call) would consume the cause and leave For You with
+      `session_open`. `lib/recPrewarm.ts` exists in the codebase and is a
+      candidate consumer worth verifying.
+  L3. A second `setPendingBuildCause('session_open')` between save and
+      For You focus would overwrite. No such call observed in the read
+      paths but not exhaustively audited.
 
-================================================================================
-13. WHAT THIS MAPPING DELIBERATELY DOES NOT DECIDE
-================================================================================
-- Exact per-kind MIN_DISPLAY floor numbers — to be tuned during implementation
-  with the explanation_audit script as feedback loop.
-- Exact dispatch-table copy templates — RecCard's existing variant pools
-  remain the source; compose.ts only chooses which pool key fires.
-- Whether to delete the old `reasons.push(...)` debug entries (juvenile,
-  pd_author, etc.) — they become non-eligible contributions; deletion is
-  follow-up, not P3.
-- Slate diversity for slates beyond top-4 — explicitly deferred.
-- Hard-avoid signal class wiring — reserved in §2 enum but not implemented.
-  Lands with hard-avoid storage decision in P4.
+Architecturally: the in-memory-only design is fragile precisely because
+the failure mode (refresh) is one users naturally try when something feels
+broken. Persisting `_pendingBuildCause` to AsyncStorage with a short TTL
+(e.g. 30s) would close L1 cleanly. Out of scope for this investigation
+but flagged as the likely Phase 2.1 fix.
 
 ================================================================================
-SUMMARY
+4. configHash INVALIDATION
 ================================================================================
-Single-PR plan, 10 files, 4 new modules, all P2 invariants preserved.
-Two P2B.1 residuals upgraded into P3 prerequisites (multi-source provenance
-+ fetchOLByAuthor label fix) — both required to make A8/A9 provable.
-Five decisions (D1-D5) need human sign-off before implementation begins.
 
-Awaiting approval.
+`computeRecConfigHash` in lib/recValidity.ts:72-80 hashes:
+  - favorite_genres
+  - avoid_genres
+  - reading_styles
+  - favorite_authors
+
+Adding `Business` to favorite_genres AND `Fast-paced` to reading_styles
+guarantees the hash changes (both fields are inputs).
+
+Enforcement at read time:
+  - `lib/recQueue.ts:92` — `assertQueueConfig` self-invalidates on mismatch
+  - `lib/recSession.ts:53` — `getRecSessionFor` self-invalidates
+  - `lib/recPayloadCache.ts` — `loadRecPayload(opts.currentConfigHash)`
+    self-invalidates
+
+In addition, the save handler explicitly clears all three stores (L170-172).
+
+VERDICT: configHash invalidation is NOT the failure. The deck the user saw
+after refresh was almost certainly a FRESH build (post-clear), not a stale
+deck leaking through. This rules out failure class A (stale deck leaking).
+
+================================================================================
+5. P2 BRANCH PLANNER OUTPUT FOR {favorite_genres: ["business"], reading_styles: ["fast-paced"]}
+================================================================================
+
+RecRequest (built by `buildRecRequest`):
+  - `signals.stated_durable.favorite_genres = ["business"]`
+  - `signals.stated_durable.reading_styles = ["fast-paced"]`
+  - `signals.revealed_behavioral.*` populated from rated history
+  - `policy.confidenceMode` = function of TasteProfile.tier
+  - `cause` = 'explicit_preference_edit' (intended) OR 'session_open'
+              (post-refresh failure mode)
+  - `configHash` = new value reflecting the edit
+
+Branches that run (from lib/retrieval/branchPlanner.ts):
+  - statedGenres ✓ (favorite_genres non-empty)
+  - statedAuthors ✗ (no stated favorite_authors in this scenario)
+  - revealedAuthors ✓ (depends on rated history)
+  - revealedLanes ✓ (always-on)
+  - intent ✗ (no active intent chip)
+  - exploration ✓
+  - feedback ✗ (no recent MLT)
+
+statedGenres branch for "Business":
+  - lib/taxonomy/genres.ts:233-239 →
+      affinityKey: 'nonfiction', olSubjects: ['business', 'economics']
+  - OL retrieval pulls books tagged with `business` or `economics`.
+  - Likely returns 10-30 raw candidates before hygiene.
+  - After hygiene (juvenile filter, no_meta filter, etc.), likely a much
+    smaller number remain — business-category OL records are notoriously
+    metadata-thin.
+
+"Fast-paced" / pacing signal:
+  - Not a retrieval signal anywhere in lib/retrieval/* or lib/recPolicy.ts.
+  - Affects scoring only (trait_alignment), and does not pull
+    pacing-tagged books into retrieval.
+  - This is **expected current behavior** per the architecture spec —
+    pacing is a style signal, not a retrieval anchor. No bug here.
+
+Implication: if the user expected fast-paced to affect WHICH books appear
+(not just how they rank), the architecture does not currently support that.
+Worth surfacing as a product-level gap.
+
+================================================================================
+6. CANDIDATE RETRIEVAL OUTCOME FOR BUSINESS
+================================================================================
+
+Did statedGenres retrieve Business candidates? Almost certainly YES
+(at least some), based on OL coverage of `business` / `economics` subjects.
+
+Why didn't any appear in the top slate?
+
+There are exactly five mechanisms that could block a stated-Business book
+from reaching top-4:
+  M1. **Wrong BuildCause** — `pickStatedReservation` returns
+      `{ pick: null, reason: 'wrong_cause' }` for any cause other than
+      `explicit_preference_edit` (lib/composition/statedReservation.ts:71).
+      → Triggered by the post-refresh `session_open` cause.
+      **MOST LIKELY ROOT CAUSE.**
+  M2. **No stated branch candidate** — `statedGenres` returned zero after
+      retrieval+hygiene.
+  M3. **No quality-clearing candidate** — candidates exist but none clear
+      the reservation quality floor (defined in
+      `STATED_RESERVATION_POLICY`).
+  M4. **AND-gate rejected candidates** — book has `_retrieval_reason`
+      starting with `stated_genre:` BUT lacks a positive `stated_taste`
+      contribution above floor (P2B.1 AND-gate).
+  M5. **Reservation fired but a downstream step obscured it** — e.g.
+      composition swap, slot mask. Highly unlikely given current code.
+
+Top likely cause: **M1 (BuildCause lost on refresh)**. This is the
+straight-line explanation of the observed deck.
+
+Secondary contributing cause: even with M1 fixed, **M2/M3 may still fire**
+for "Business" specifically because OL business-subject coverage is sparse.
+This is the catalog/quality dimension of the failure (class C). It would
+not produce a different top deck — just a deck that contains 0 or 1
+business book instead of the 1+ the reservation policy intends.
+
+================================================================================
+7. TOP-SLATE BEHAVIOR CLASSIFICATION
+================================================================================
+
+Options offered:
+  A. stale deck still leaking through
+  B. fresh deck, but explicit Business preference did not survive
+     retrieval/reservation as intended
+  C. fresh deck and P2 worked mechanically, but candidate quality/catalog
+     mapping is too weak to feel coherent
+  D. unknown — needs instrumentation
+
+Verdict: **B + a layer of C**.
+
+Justification:
+  - A is ruled out: configHash invalidation + explicit save-handler clears
+    + the user observed a refresh before seeing the deck = the deck must
+    be fresh.
+  - B is the dominant cause: BuildCause was lost to the browser refresh,
+    so reservation returned `wrong_cause`, and revealed scoring won.
+  - C is a contributor the user would still feel even if B were fixed:
+    "Business" has thin OL coverage and the `+0.05` stated_taste floor is
+    too small to overcome literary trait_alignment without reservation.
+    Even with reservation, only 1 of top-4 would be business-tagged; the
+    other 3 would still be literary-leaning unless additional retrieval
+    quota or scoring boost is applied.
+
+================================================================================
+8. EXPLANATION-COPY CLASSIFICATION
+================================================================================
+
+Reasons observed:
+  "Reads heavy on writing."
+  "Built around writing."
+  "Leans into writing."
+
+Source identified:
+  - Variants in `APPRECIATION_POOL_SAFE` (RecCard.tsx:258-263) and
+    `ALIGNS_POOL_SAFE` (RecCard.tsx:241-246).
+  - Variable `${x}` resolved to `"writing"` or `"literary writing"`.
+  - lib/traitCopy.ts:20,27 maps `prose` / `literary_prose` → "literary writing".
+
+Diagnosis:
+  These are **expected current pre-P3 explanations** for books surfaced by
+  REVEALED `trait_alignment` on the `prose` / `literary_prose` trait. They
+  are NOT stale leaks from an old slate (the deck is fresh per §4). They
+  ARE symptomatic of the slate being explained from REVEALED history rather
+  than the newly stated Business preference — which is exactly what
+  reservation failure (§7B) would produce.
+
+Per-card consequence: even if reservation had fired and one Business book
+sat in slot 1, the OTHER three slots would still be literary picks
+explained as "writing." So the repetition would be partially fixed by P3
+slate diversity (different revealed contributions cited where available),
+but the underlying composition issue is upstream of explanation copy.
+
+VERDICT: **The "writing" reasons are independent P3 work AND simultaneously
+a symptom of the Phase 2 reservation failure.** Fixing P3 alone would not
+make this user feel that Business was respected; it would just diversify
+the literary-pick reasons. Fixing the BuildCause loss would put a Business
+book on top with a stated-preference reason, which is the actually-correct
+user-visible outcome.
+
+================================================================================
+9. RECOMMENDATION
+================================================================================
+
+Diagnosis category: **D (B + C combined)**.
+
+  B — Phase 2 architecture is shipped, but live update/rebuild behavior
+      still has a bug: in-memory-only `_pendingBuildCause` is wiped by
+      browser refresh, which is the natural user response to "nothing
+      happened." This breaks reservation in exactly the scenario the test
+      was designed to validate.
+
+  C — Phase 2 architecture is shipped, but Business-category retrieval and
+      the +0.05 stated_taste floor together are not strong enough to
+      produce a coherent top slate when revealed history is dominated by
+      a different lane. This is a product-level coherence gap, not a
+      mechanical bug.
+
+Phase 2 product acceptance: **NOT PASSED.** The mechanics are right, the
+user-visible outcome is wrong.
+
+Should we proceed with P3 implementation? **NO — pause P3.**
+
+Rationale:
+  - P3 will not fix the user's complaint. P3 makes explanations faithful;
+    if reservation isn't firing, P3 just produces more honest "we
+    surfaced these literary books because of your literary history"
+    reasons. That's truthful but doesn't address the actual product gap.
+  - P3 builds on top of Phase 2 acceptance. If Phase 2 hasn't passed
+    in-app, P3 layered on top will be harder to validate live.
+  - The Phase 2.1 fix (persist BuildCause to AsyncStorage with short TTL +
+    optional UI signal) is small and bounded.
+
+Suggested next steps in order:
+  1. Ship temporary debug instrumentation (§10) — 1 file, ~30 lines.
+  2. Re-run live acceptance with debug pass enabled to distinguish
+     Path α from Path β in §1 and to confirm BuildCause loss on refresh.
+  3. Ship Phase 2.1: persist `_pendingBuildCause` to AsyncStorage with a
+     30s TTL; consume-and-clear on first read; survives refresh but not
+     stale across sessions.
+  4. Re-run live acceptance. If reservation now fires and a Business book
+     leads the deck, Phase 2 is passed.
+  5. Decide separately whether class-C catalog coherence needs a Phase 2.2
+     (stronger Business retrieval quota, OR a small `stated_taste` boost
+     for cold/sparse stated edits, OR documented as expected behavior
+     until P4 semantic retrieval).
+  6. Then proceed with P3.
+
+================================================================================
+10. PROPOSED MINIMAL DEBUG INSTRUMENTATION (not implemented)
+================================================================================
+
+If approved, add a `__DEV__`-gated single-line log at six call sites that
+together prove or disprove every hypothesis in this report:
+
+  1. lib/recRequest.ts setPendingBuildCause(cause):
+     `[P2DEBUG/cause-set] cause=${cause} ts=${Date.now()}`
+
+  2. lib/recRequest.ts consumePendingBuildCause() before clearing:
+     `[P2DEBUG/cause-consume] cause=${cause} ts=${Date.now()}`
+
+  3. components/RecommendationsFeed.tsx useFocusEffect entry:
+     `[P2DEBUG/focus] hasSession=${!!getRecSession()}
+        configHash=${currentConfigHash}`
+
+  4. lib/recommender.ts runPipeline entry (after buildRecRequest):
+     `[P2DEBUG/build] cause=${req.cause} configHash=${req.configHash}
+        statedGenres=${req.signals.stated_durable.favorite_genres}`
+
+  5. lib/retrieval/branchPlanner.ts after planning:
+     `[P2DEBUG/plan] branches=${plan.branches.map(b=>b.kind+':'+b.quota)}`
+
+  6. lib/composition/statedReservation.ts pickStatedReservation return:
+     `[P2DEBUG/reservation] result=${pick?'reserved:'+pick.id:'skipped'}
+        reason=${reason} candidates=${eligibleCount}`
+
+This adds ZERO production noise (gated on `__DEV__`) and surfaces in the
+console for the next live acceptance walkthrough. Total: 6 lines across
+6 files, no new files. Removable in the same PR as the Phase 2.1 fix.
+
+================================================================================
+11. WHAT THIS INVESTIGATION DID NOT EXAMINE
+================================================================================
+- Whether the Reading Taste profile card itself appeared stale
+  (separate from the For You deck). Not reported by user.
+- Whether `lib/recPrewarm.ts` or any other consumer of
+  `consumePendingBuildCause` could race with the For You pipeline.
+  Worth a 5-minute audit during the Phase 2.1 fix.
+- Whether `useFocusEffect` on web/Expo Router has a timing difference
+  vs native that would explain Path β specifically. Out of scope here;
+  the proposed instrumentation would catch it.
+- The actual OL retrieval count for `subject:business` against the
+  current catalog — would require a live API call.
+
+================================================================================
+END OF INVESTIGATION
 ================================================================================

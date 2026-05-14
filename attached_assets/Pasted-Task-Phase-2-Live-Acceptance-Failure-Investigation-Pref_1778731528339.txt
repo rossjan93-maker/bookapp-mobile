@@ -1,0 +1,152 @@
+Task: Phase 2 Live Acceptance Failure Investigation — Preference Edit Responsiveness
+
+Context:
+We paused before P3 implementation to run the required live in-app Phase 2 acceptance test.
+
+The test did not clearly pass.
+
+User flow observed:
+1. In Reading Taste, the user changed preferences to:
+   - Genre: Business
+   - Style: Fast-paced
+2. They saved the preference update.
+3. The user reports that the change did not take effect until they manually refreshed the page/browser.
+4. After refresh, the For You deck showed:
+   - Murder in the High Himalaya: Loyalty, Tragedy and Escape from Tibet
+   - Fall of Giants
+   - The Fault in Our Stars
+   - The Song of Achilles
+5. The visible explanation copy was also odd and repetitive:
+   - “Reads heavy on writing.”
+   - “Built around writing.”
+   - “Leans into writing.”
+
+This does not feel like a clear, user-visible response to Business + Fast-paced.
+
+Important:
+Do not implement fixes yet.
+This is an investigation and failure classification task.
+We need to determine whether Phase 2 is working but the catalog/output is surprising, or whether the live acceptance path is still failing.
+
+Read:
+- roadmap-q2.md Phase 2 acceptance intent
+- replit.md latest P2A/P2B/P2B.1/P2C notes
+- app/edit-preferences.tsx
+- components/RecommendationsFeed.tsx
+- lib/recRequest.ts
+- lib/recValidity.ts
+- lib/recSession.ts
+- lib/recQueue.ts
+- lib/recPayloadCache.ts
+- lib/recommender.ts
+- lib/retrieval/branchPlanner.ts and P2 branch modules
+- lib/recPolicy.ts
+- any P2C local-filter / soft-avoid trace paths
+- current explanation reason assembly only as needed to classify whether the visible “writing” rationales are stale, currently expected, or symptomatic of a deeper mismatch
+
+Core questions to answer:
+
+1. Save → rebuild path
+Trace the actual intended flow after a Reading Taste save:
+- save succeeds
+- setPendingBuildCause('explicit_preference_edit')
+- config hash changes
+- stale deck invalidates
+- RecommendationsFeed rebuilds on next For You focus
+
+Could the user reasonably have needed a manual browser refresh for this to happen?
+If yes, identify why.
+If no, identify which live update path is likely not firing.
+
+2. Clarify the “refresh required” issue
+Determine whether the refresh requirement most likely affected:
+A. the Profile Reading Taste card reflecting the saved value,
+B. the For You deck rebuilding,
+C. both.
+
+If both are possible, say so and identify the code paths for each.
+
+3. BuildCause preservation
+For the post-save build:
+- is BuildCause === 'explicit_preference_edit' reliably preserved from edit-preferences → next For You pipeline run?
+- are there route/navigation cases where the pending cause can be missed, consumed too early, or lost before For You rebuilds?
+
+4. Config-validity behavior
+After saving Business + Fast-paced:
+- does configHash definitely change?
+- would recPayload/recSession/recQueue be invalidated before reuse?
+- is there any remaining path where the old deck can survive or the rebuild can be deferred until a hard refresh?
+
+5. P2 branch planner proof for this exact input
+For:
+- stated favorite genre = Business
+- stated style = Fast-paced
+
+Report:
+- what RecRequest contains
+- whether statedGenres branch runs
+- which retrieval anchors are generated for Business
+- whether any fast-paced signal affects retrieval yet or only scoring/filtering
+- whether this current product behavior is expected given the architecture
+
+6. Candidate retrieval outcome
+For Business:
+- did the statedGenres branch likely retrieve Business-related candidates?
+- if not, why not?
+- if yes, why did none of them appear in the top slate shown?
+- was top-slate reservation invoked?
+- if reservation did not apply, give the exact likely reason:
+  - wrong BuildCause
+  - no stated branch candidate
+  - no quality-clearing candidate
+  - AND-gate rejected candidates
+  - reservation applied but another issue obscured it
+
+7. Top-slate behavior classification
+Classify the observed deck as one of:
+A. stale deck still leaking through,
+B. fresh deck, but explicit Business preference did not survive retrieval/reservation as intended,
+C. fresh deck and P2 worked mechanically, but candidate quality/catalog mapping is too weak to feel coherent,
+D. unknown — need targeted debug instrumentation.
+
+8. Explanation-copy classification
+The reasons shown are:
+- “Reads heavy on writing.”
+- “Built around writing.”
+- “Leans into writing.”
+
+Determine whether:
+- these are expected current pre-P3 explanations,
+- they expose stale reasons from an old slate,
+- or they indicate the surfaced books were not explained from the newly stated preference at all.
+
+Do not fix explanation copy in this task. We only need to know whether it is independent P3 work or a symptom of the Phase 2 failure.
+
+9. Recommendation
+Return one of:
+A. Phase 2 product acceptance passed; the deck is actually consistent once properly interpreted.
+B. Phase 2 architecture is shipped, but live update/rebuild behavior still has a bug.
+C. Phase 2 architecture is shipped, but the Business/Fast-paced retrieval-reservation behavior is not producing a sufficiently coherent top slate.
+D. Both B and C.
+E. Insufficient information; propose the smallest debug instrumentation required.
+
+10. If instrumentation is needed
+If you cannot prove the answer statically, propose the smallest temporary debug pass that would report for the next live test:
+- BuildCause
+- config hash changed?
+- branch planner branches run
+- stated branch candidate count
+- reservation applied/skipped reason
+- top-slate branch provenance
+
+Do not implement it yet unless explicitly asked.
+
+Output:
+Write the full investigation report to replit_output.txt.
+
+Return in chat:
+- concise diagnosis category A/B/C/D/E
+- whether Phase 2 product acceptance should be considered passed or not
+- whether we should proceed with P3 implementation or pause for a Phase 2 fix/debug pass
+
+Stop after the investigation. Do not implement fixes yet.
