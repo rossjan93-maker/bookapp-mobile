@@ -1,0 +1,103 @@
+Approved: proceed with granular Open Library fetch instrumentation only.
+
+Context:
+The Phase 2 live acceptance investigation has now proven:
+
+1. Save → rebuild works in the no-refresh path.
+2. BuildCause remains explicit_preference_edit.
+3. The P2 planner dispatches live retrieval work:
+   - stated retrieval budget allocated
+   - lane retrieval budget allocated
+   - 8 total fetch operations attempted
+4. The poor visible slate is effectively local-catalog-only because:
+   - [P2SURVIVE/post_ol_merge] merged_total=0
+   - therefore externalCandidates ≈ 0
+   - therefore no stated_genre provenance reaches compPool
+   - therefore reservation fails with no_eligible_candidate
+
+The latest investigation identified the core diagnostic gap:
+fetchOLSubject and fetchOLByAuthor currently collapse all distinguishable failure modes into `return []`, including:
+- timeout
+- non-200 response
+- network error
+- parse error
+- empty raw docs
+- post-filter wipeout
+
+Because of that, we cannot yet distinguish:
+A. fetch transport/provider failure,
+B. genuine OL empty-result behavior,
+C. post-fetch filtering removing all docs.
+
+Goal:
+Add granular __DEV__-gated Open Library fetch diagnostics only.
+Do not implement behavior changes yet.
+
+Instrumentation targets:
+- fetchOLSubject
+- fetchOLByAuthor
+
+For each fetch attempt, log enough information to classify the outcome.
+
+Required log prefix:
+[OLFETCH/...]
+
+Recommended log events:
+1. Dispatch/start
+   - kind=subject|author
+   - query/subject/author
+   - URL or a safe concise request descriptor
+   - request start timestamp
+
+2. HTTP response
+   - status
+   - ok true/false
+   - elapsed ms
+
+3. Parsed payload
+   - raw docs.length before local filtering
+   - if the payload shape is malformed, capture that as a parse/shape failure
+
+4. Post-filter result
+   - returned count after any current local filtering/normalization
+   - if raw docs > 0 but returned count = 0, make that visible
+
+5. Error path
+   - error name
+   - error message if safe
+   - timeout vs fetch/network exception if distinguishable
+   - elapsed ms
+
+Critical requirement:
+Do not swallow failures silently in the debug trace. Production behavior may still return [], but the DEV log must explain WHY it returned [].
+
+Constraints:
+- __DEV__-gated only
+- no production behavior change
+- no retry policy changes
+- no provider query changes
+- no anchor mapping changes
+- no Business taxonomy changes
+- no fitClassifier changes
+- no reservation logic changes
+- no scoring changes
+- no schema/migration
+- no P3 work
+- no BuildCause persistence fix yet
+
+Validation:
+- Typecheck should remain baseline-clean in touched files.
+- Report exactly which files changed.
+- Tell me the exact OLFETCH console lines to look for in the next live test.
+- Stop after instrumentation is ready and wait for live-test output.
+
+Next live test:
+Repeat the same no-refresh flow:
+- Reading Taste: Business + Mystery
+- Style: Slow-burn
+- Save
+- Navigate to For You
+- Capture:
+  - [OLFETCH/...]
+  - [P2SURVIVE/...]
+  - [P2DEBUG/...]

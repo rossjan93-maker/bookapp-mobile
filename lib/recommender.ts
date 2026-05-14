@@ -626,46 +626,81 @@ async function fetchOLSubject(
   limit:            number,
   retrieval_reason: string,
 ): Promise<CandidateBook[]> {
+  const _started = Date.now();
+  const url =
+    `https://openlibrary.org/search.json` +
+    `?subject=${encodeURIComponent(subject)}` +
+    `&fields=key,title,author_name,cover_i,number_of_pages_median,subject,first_publish_year,language` +
+    `&sort=rating` +
+    `&limit=${limit}`;
+  if (__DEV__) console.log('[OLFETCH/subject:start]',
+    `subject="${subject}"`, `reason="${retrieval_reason}"`, `limit=${limit}`,
+  );
   try {
-    const url =
-      `https://openlibrary.org/search.json` +
-      `?subject=${encodeURIComponent(subject)}` +
-      `&fields=key,title,author_name,cover_i,number_of_pages_median,subject,first_publish_year,language` +
-      `&sort=rating` +
-      `&limit=${limit}`;
-
     const controller = new AbortController();
     const timer      = setTimeout(() => controller.abort(), 3500);
     const res        = await fetch(url, { signal: controller.signal });
     clearTimeout(timer);
+    const _httpMs = Date.now() - _started;
 
-    if (!res.ok) return [];
+    if (!res.ok) {
+      if (__DEV__) console.warn('[OLFETCH/subject:http_not_ok]',
+        `subject="${subject}"`, `status=${res.status}`, `ms=${_httpMs}`,
+      );
+      return [];
+    }
     const json = await res.json() as { docs?: OLDoc[] };
+    const rawDocs = json?.docs;
+    if (!Array.isArray(rawDocs)) {
+      if (__DEV__) console.warn('[OLFETCH/subject:malformed_payload]',
+        `subject="${subject}"`, `docs_type=${typeof rawDocs}`, `ms=${Date.now() - _started}`,
+      );
+      return [];
+    }
+    const rawCount = rawDocs.length;
 
-    return (json.docs ?? [])
-      .filter(doc => doc.key && doc.title)
-      // Hard-reject pre-1950 books from broad subject searches: they are almost
-      // always public-domain or canonical-literary classics that contaminate
-      // modern commercial recommendations (Anthem 1938, For Whom the Bell Tolls
-      // 1940, Brave New World 1932, The Sun Also Rises 1926 all blocked here).
-      .filter(doc => !doc.first_publish_year || doc.first_publish_year >= 1950)
-      .map((doc): CandidateBook => ({
-        id:                `ol:${doc.key}`,
-        title:             stripTitleSubtitle(doc.title ?? ''),
-        author:            doc.author_name?.[0] ?? 'Unknown author',
-        cover_url:         doc.cover_i
-                             ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
-                             : null,
-        external_id:       doc.key ?? null,
-        subjects:          doc.subject?.slice(0, 20) ?? null,
-        page_count:        typeof doc.number_of_pages_median === 'number'
-                             ? doc.number_of_pages_median
-                             : null,
-        description:       null,
-        _source:           'open_library',
-        _retrieval_reason: retrieval_reason,
-      }));
-  } catch {
+    const afterKeyTitle = rawDocs.filter(doc => doc.key && doc.title);
+    // Hard-reject pre-1950 books from broad subject searches: they are almost
+    // always public-domain or canonical-literary classics that contaminate
+    // modern commercial recommendations (Anthem 1938, For Whom the Bell Tolls
+    // 1940, Brave New World 1932, The Sun Also Rises 1926 all blocked here).
+    const afterYear = afterKeyTitle.filter(doc => !doc.first_publish_year || doc.first_publish_year >= 1950);
+
+    const result = afterYear.map((doc): CandidateBook => ({
+      id:                `ol:${doc.key}`,
+      title:             stripTitleSubtitle(doc.title ?? ''),
+      author:            doc.author_name?.[0] ?? 'Unknown author',
+      cover_url:         doc.cover_i
+                           ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
+                           : null,
+      external_id:       doc.key ?? null,
+      subjects:          doc.subject?.slice(0, 20) ?? null,
+      page_count:        typeof doc.number_of_pages_median === 'number'
+                           ? doc.number_of_pages_median
+                           : null,
+      description:       null,
+      _source:           'open_library',
+      _retrieval_reason: retrieval_reason,
+    }));
+
+    if (__DEV__) console.log('[OLFETCH/subject:result]',
+      `subject="${subject}"`, `status=${res.status}`, `ms=${Date.now() - _started}`,
+      `raw=${rawCount}`, `after_key_title=${afterKeyTitle.length}`,
+      `after_year=${afterYear.length}`, `returned=${result.length}`,
+      rawCount > 0 && result.length === 0 ? 'WIPEOUT' : '',
+    );
+    return result;
+  } catch (e) {
+    if (__DEV__) {
+      const err = e as { name?: string; message?: string } | null;
+      const isTimeout = err?.name === 'AbortError';
+      console.warn('[OLFETCH/subject:error]',
+        `subject="${subject}"`,
+        `kind=${isTimeout ? 'timeout' : (err?.name ?? 'unknown')}`,
+        `msg="${(err?.message ?? '').slice(0, 120)}"`,
+        `ms=${Date.now() - _started}`,
+      );
+    }
     return [];
   }
 }
@@ -676,45 +711,80 @@ async function fetchOLByAuthor(
   author: string,
   limit:  number,
 ): Promise<CandidateBook[]> {
+  const _started = Date.now();
+  const url =
+    `https://openlibrary.org/search.json` +
+    `?author=${encodeURIComponent(author)}` +
+    `&fields=key,title,author_name,cover_i,number_of_pages_median,subject,first_publish_year,language` +
+    `&sort=rating` +
+    `&limit=${limit}`;
+  if (__DEV__) console.log('[OLFETCH/author:start]',
+    `author="${author}"`, `limit=${limit}`,
+  );
   try {
-    const url =
-      `https://openlibrary.org/search.json` +
-      `?author=${encodeURIComponent(author)}` +
-      `&fields=key,title,author_name,cover_i,number_of_pages_median,subject,first_publish_year,language` +
-      `&sort=rating` +
-      `&limit=${limit}`;
-
     const controller = new AbortController();
     const timer      = setTimeout(() => controller.abort(), 3000);
     const res        = await fetch(url, { signal: controller.signal });
     clearTimeout(timer);
+    const _httpMs = Date.now() - _started;
 
-    if (!res.ok) return [];
+    if (!res.ok) {
+      if (__DEV__) console.warn('[OLFETCH/author:http_not_ok]',
+        `author="${author}"`, `status=${res.status}`, `ms=${_httpMs}`,
+      );
+      return [];
+    }
     const json = await res.json() as { docs?: OLDoc[] };
+    const rawDocs = json?.docs;
+    if (!Array.isArray(rawDocs)) {
+      if (__DEV__) console.warn('[OLFETCH/author:malformed_payload]',
+        `author="${author}"`, `docs_type=${typeof rawDocs}`, `ms=${Date.now() - _started}`,
+      );
+      return [];
+    }
+    const rawCount = rawDocs.length;
 
-    return (json.docs ?? [])
-      .filter(doc => doc.key && doc.title)
-      // Same pre-1950 block applied to author searches — prevents old spy/noir
-      // works (Casino Royale 1953 exempt, Fleming's later works in) while still
-      // rejecting pulp-era authors whose earliest works predate 1950.
-      .filter(doc => !doc.first_publish_year || doc.first_publish_year >= 1950)
-      .map((doc): CandidateBook => ({
-        id:                `ol:${doc.key}`,
-        title:             stripTitleSubtitle(doc.title ?? ''),
-        author:            doc.author_name?.[0] ?? author,
-        cover_url:         doc.cover_i
-                             ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
-                             : null,
-        external_id:       doc.key ?? null,
-        subjects:          doc.subject?.slice(0, 20) ?? null,
-        page_count:        typeof doc.number_of_pages_median === 'number'
-                             ? doc.number_of_pages_median
-                             : null,
-        description:       null,
-        _source:           'open_library',
-        _retrieval_reason: `author_anchor:${author}`,
-      }));
-  } catch {
+    const afterKeyTitle = rawDocs.filter(doc => doc.key && doc.title);
+    // Same pre-1950 block applied to author searches — prevents old spy/noir
+    // works (Casino Royale 1953 exempt, Fleming's later works in) while still
+    // rejecting pulp-era authors whose earliest works predate 1950.
+    const afterYear = afterKeyTitle.filter(doc => !doc.first_publish_year || doc.first_publish_year >= 1950);
+
+    const result = afterYear.map((doc): CandidateBook => ({
+      id:                `ol:${doc.key}`,
+      title:             stripTitleSubtitle(doc.title ?? ''),
+      author:            doc.author_name?.[0] ?? author,
+      cover_url:         doc.cover_i
+                           ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
+                           : null,
+      external_id:       doc.key ?? null,
+      subjects:          doc.subject?.slice(0, 20) ?? null,
+      page_count:        typeof doc.number_of_pages_median === 'number'
+                           ? doc.number_of_pages_median
+                           : null,
+      description:       null,
+      _source:           'open_library',
+      _retrieval_reason: `author_anchor:${author}`,
+    }));
+
+    if (__DEV__) console.log('[OLFETCH/author:result]',
+      `author="${author}"`, `status=${res.status}`, `ms=${Date.now() - _started}`,
+      `raw=${rawCount}`, `after_key_title=${afterKeyTitle.length}`,
+      `after_year=${afterYear.length}`, `returned=${result.length}`,
+      rawCount > 0 && result.length === 0 ? 'WIPEOUT' : '',
+    );
+    return result;
+  } catch (e) {
+    if (__DEV__) {
+      const err = e as { name?: string; message?: string } | null;
+      const isTimeout = err?.name === 'AbortError';
+      console.warn('[OLFETCH/author:error]',
+        `author="${author}"`,
+        `kind=${isTimeout ? 'timeout' : (err?.name ?? 'unknown')}`,
+        `msg="${(err?.message ?? '').slice(0, 120)}"`,
+        `ms=${Date.now() - _started}`,
+      );
+    }
     return [];
   }
 }
