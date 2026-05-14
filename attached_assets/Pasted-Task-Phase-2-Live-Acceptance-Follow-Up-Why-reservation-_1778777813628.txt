@@ -1,0 +1,109 @@
+Task: Phase 2 Live Acceptance Follow-Up — Why reservation reports no_eligible_candidate despite statedInPool=10
+
+Context:
+We reran the live preference-edit acceptance test with OLFETCH + P2SURVIVE instrumentation.
+
+The logs now prove Open Library retrieval is working for stated thriller/mystery retrieval:
+
+OLFETCH:
+- psychological thriller, reason=stated_genre:thriller_mystery → returned=14
+- crime fiction, reason=stated_genre:thriller_mystery → returned=9
+
+Survival trace:
+[P2SURVIVE/post_ol_merge]
+merged_total=20
+stated_count=20
+
+[P2SURVIVE/post_hygiene]
+stated_in=20
+stated_out=12
+stated_dropped=8
+
+[P2SURVIVE/post_scoring]
+stated_scored=12
+byFitClass={"core_fit":0,"adjacent_fit":10,"stretch_fit":0,"reject":2,"other":0}
+
+[P2SURVIVE/comp_pool]
+compPoolSize=212
+stated_in_compPool=10
+byFitClass={"core_fit":0,"adjacent_fit":10,"stretch_fit":0,"other":0}
+
+The compPool sample shows stated candidates with:
+- _retrieval_reason=stated_genre:thriller_mystery
+- positive stated taste score, e.g. st=0.08
+- fit=adjacent_fit
+
+Yet reservation still reports:
+
+[P2DEBUG/reservation]
+applied=false
+reason=no_eligible_candidate
+cause=explicit_preference_edit
+statedInPool=10
+
+The visible top slate therefore remains dominated by unrelated local/revealed books and fails the Phase 2 product acceptance test.
+
+Goal:
+Investigate the reservation eligibility contradiction.
+
+This is investigation only. Do not implement a fix yet.
+
+Read:
+- lib/composition/statedReservation.ts
+- any caller/composition logic that passes compPool into reservation
+- P2B/P2B.1 validator assumptions
+- replit.md / recently_shipped notes for the intended P2B reservation contract
+
+Questions to answer:
+
+1. Why does pickStatedReservation return no_eligible_candidate when statedInPool=10?
+Trace the exact eligibility predicates applied after the compPool count is computed.
+
+2. Are adjacent_fit stated candidates currently considered ineligible for reservation?
+If yes:
+- identify the exact rule
+- explain whether that was intentional
+- explain whether it conflicts with the intended Phase 2 acceptance contract
+
+3. What exact candidate classes are reservation-eligible today?
+List:
+- fit classes allowed
+- retrieval provenance required
+- stated scoring provenance required
+- any score thresholds or candidate flags required
+
+4. Compare validator assumptions to live behavior
+Do the P2B/P2B.1 validators:
+- cover adjacent_fit stated candidates in compPool?
+- accidentally only prove reservation for core_fit examples?
+- miss the live failure class we are seeing now?
+
+5. Does the current reservation rule make Phase 2 acceptance too weak?
+If the reservation only accepts core_fit but realistic stated retrieval often produces adjacent_fit after a radical preference edit, then the product promise may still fail in practice.
+
+Assess this directly.
+
+6. Recommended next fix category
+Do not implement yet.
+Recommend one of:
+A. Expand reservation eligibility to adjacent_fit when BuildCause=explicit_preference_edit and candidate still satisfies the P2B.1 AND-gate.
+B. Keep core_fit-only reservation and treat the current result as expected, meaning Phase 2 product standard must be revised.
+C. Another narrower reservation logic correction.
+D. Need one more trace before deciding.
+
+7. Phase 2 acceptance status
+State clearly:
+- product acceptance remains blocked or passed
+- what exact condition must be fixed before we can accept P2
+
+Output:
+Write the full investigation to replit_output.txt.
+
+Return in chat:
+- primary cause of the no_eligible_candidate contradiction
+- whether adjacent_fit is currently excluded
+- whether the validators missed this case
+- recommended fix direction
+- whether Phase 2 acceptance remains blocked
+
+Stop after investigation. Do not implement code yet.

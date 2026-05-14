@@ -1,252 +1,247 @@
-Phase 2 Live-Acceptance Follow-Up — Investigation Report
-=========================================================
-Run input:  genres=["Business","Mystery"], styles=["Slow-burn"], avoid=[]
-Resolved:   statedGenres=["nonfiction","thriller_mystery"]
-Plan:       cause=explicit_preference_edit, stated=5 authors=1 lanes=4 fetchItems=8
-            byBranch=stated:4 / authors:0 / lanes:4
-Symptom:    [P2SURVIVE/post_ol_merge] merged_total=0 stated_count=0
-            ⇒ post_hygiene/post_scoring/comp_pool all 0
-            ⇒ reservation no_eligible_candidate
-Status:     INVESTIGATION ONLY — no fixes applied this turn.
+Phase 2 Live-Acceptance Follow-Up — Reservation eligibility contradiction
+=========================================================================
+Run input:  Business + Mystery favorites, Slow-burn style, no avoid
+            cause = explicit_preference_edit
+Symptom:    OL retrieval works (psych_thriller=14, crime_fiction=9)
+            [P2SURVIVE/post_ol_merge]   merged=20 stated=20
+            [P2SURVIVE/post_hygiene]    stated_in=20 → stated_out=12 (8 dropped)
+            [P2SURVIVE/post_scoring]    byFitClass={core:0, adjacent:10, stretch:0, reject:2}
+            [P2SURVIVE/comp_pool]       statedInPool=10 (all adjacent_fit, st≈0.08)
+            [P2DEBUG/reservation]       applied=false reason=no_eligible_candidate
+            ⇒ visible top slate fails Phase 2 product acceptance.
+Status:     INVESTIGATION ONLY. No code changes.
 
 ----------------------------------------------------------
-Q1. Did getOLCandidates execute live OL fetches?
+Q1. Why no_eligible_candidate when statedInPool=10?
 ----------------------------------------------------------
-YES. The `[P2SURVIVE/post_ol_merge]` log is emitted only at lib/recommender.ts:1224,
-inside getOLCandidates, AFTER the Promise.all merge loop at L1165-1173. For that line
-to fire at all, the function had to:
-  1. Pass the cache-vs-live decision at L2962-2983 down the `else` branch.
-  2. Build effectiveReq + branchContext (L1128-1160).
-  3. Run planBranches (L1162) — confirmed by [P2DEBUG/plan].
-  4. Dispatch Promise.all over plan.fetchItems (L1165-1173) — exactly 8 promises
-     for the logged plan (stated:4 + lanes:4 = 8 fetchItems).
-  5. Iterate resultSets and merge (L1183-1200).
+The CORE-only gate at lib/composition/statedReservation.ts:127-128 rejects
+every candidate in compPool. Trace, in order, applied to each of the 10
+stated books:
 
-So 8 fetch *operations were attempted*. No upstream gate prevented dispatch. The
-ol_session_cache and rec_candidate_cache fast paths were both bypassed (their
-distinct PERF logs `[PERF] phase2_external_fetch_start — ol_session_cache_hit` /
-`[PERF] phase2_external_fetch_end — live_ol | candidates=N` are mutually
-exclusive with [P2SURVIVE/post_ol_merge], and the latter fired).
+  L82  alreadyComposedKeys.has(...)            → false (set is empty here)
+  L100 reason starts with 'stated_genre:'      → ✅ PASS (all 10 do)
+  L103 _score_breakdown present                → ✅ PASS
+  L121 audit_flags 'stated_favorite:*' present → ✅ PASS
+        (P1 step 7 emits this when computeStatedTasteContribution matched
+         a key in req.signals.statedTaste.favoriteGenres — the 10 carry
+         st=0.08, which is the P1 floor; the flag is also pushed when
+         floor is applied)
+  L123 statedContrib > 0                       → ✅ PASS (st=0.08)
+  L127 isCore = fit_class==='core_fit' && !weak_metadata
+        → ❌ FAIL  fit_class==='adjacent_fit' for ALL 10
+  L128 if (!isCore && !allowAdjacentReservation) continue;
+        STATED_RESERVATION_POLICY.allowAdjacentReservation = false
+        ⇒ continue, every iteration
 
-----------------------------------------------------------
-Q2. Exact subject/anchor queries for this run
-----------------------------------------------------------
-From AFFINITY_RETRIEVAL_SUBJECTS (lib/taxonomy/genres.ts:373-382) and
-buildStatedGenresBranch (lib/retrieval/branches/statedGenres.ts:23-58):
+Loop exits without a pick → L140 returns
+  { applied: false, cause: 'explicit_preference_edit', reason: 'no_eligible_candidate' }
 
-statedGenres branch (Business → nonfiction, Mystery → thriller_mystery):
-  fetch #1  fetchOLSubject("popular science",        18, "stated_genre:nonfiction")
-  fetch #2  fetchOLSubject("popular nonfiction",     18, "stated_genre:nonfiction")
-  fetch #3  fetchOLSubject("psychological thriller", 18, "stated_genre:thriller_mystery")
-  fetch #4  fetchOLSubject("crime fiction",          18, "stated_genre:thriller_mystery")
+Primary cause: a CORE-only reservation gate met by an ALL-ADJACENT stated
+sub-pool. Not a missing flag, not a missing scoring contribution, not a
+provenance mismatch, not an author/lane cap.
 
-revealedLanes branch (4 fetches; exact values depend on the user's profile.det_lanes
-.dominant_lanes / topGenres / likedSubjects — not in the captured log lines).
-For a Goodreads-import dense user, this is most likely 4 of:
-  fetchOLSubject("epic fantasy",     18, "lane:fantasy")
-  fetchOLSubject("dystopian fiction",18, "lane:fantasy")
-  fetchOLSubject("literary fiction", 18, "lane:literary")
-  fetchOLSubject("contemporary literary fiction", 18, "lane:literary")
-…or topGenres/liked_subjects equivalents. No author fetches (authors:0).
-
-Of these 8, the four directly mapped to the user's stated edit are #1-#4. None
-of them is a "Business" subject — Business collapses to `nonfiction` whose
-retrieval anchors are `popular science` + `popular nonfiction` (replit.md
-"Known open quality issues"). That mapping coarseness is real but is NOT what
-produced merged_total=0 (see Q7).
+Secondary observation (root of WHY they're adjacent, but a separate fix):
+For this dense user the dominant lanes are presumably literary / nonfiction
+non-thriller. computeFitClass classifies books off-dominant-lane as
+adjacent_fit. Crime/psychological-thriller titles arrive on a stated edit
+but are off-lane vs the user's revealed history → adjacent. This is the
+exact "stated edit produces adjacent_fit" pattern the previous report
+predicted as the next failure once retrieval was unblocked.
 
 ----------------------------------------------------------
-Q3. Raw provider result count per query
+Q2. Are adjacent_fit stated candidates currently ineligible?
 ----------------------------------------------------------
-UNKNOWN — and that is itself the diagnostic finding.
+YES — categorically.
 
-fetchOLSubject (lib/recommender.ts:624-671) and fetchOLByAuthor (L675-720)
-have ZERO per-fetch instrumentation:
+Exact rule: lib/composition/statedReservation.ts:127-128
 
-   try {
-     const url = `https://openlibrary.org/search.json?subject=…&limit=18`;
-     const res = await fetch(url, { signal: controller.signal });   // 3500 ms
-     if (!res.ok) return [];                                        // silent
-     const json = await res.json() as { docs?: OLDoc[] };
-     return (json.docs ?? [])
-       .filter(doc => doc.key && doc.title)
-       .filter(doc => !doc.first_publish_year || doc.first_publish_year >= 1950)
-       .map(...);
-   } catch {
-     return [];                                                     // silent
-   }
+   const isCore = sb.fit_class === 'core_fit' && !sb.audit_flags?.includes('weak_metadata');
+   if (!isCore && !STATED_RESERVATION_POLICY.allowAdjacentReservation) continue;
 
-Failure modes that all collapse to `return []` with no log:
-  • AbortError on the 3500 ms timer
-  • Non-OK HTTP (5xx, 429, 403)
-  • TypeError from fetch (DNS/CORS/network)
-  • JSON parse error
-  • Empty docs array from OL
-  • All docs filtered out by `key && title` guard
-  • All docs filtered out by `first_publish_year >= 1950` guard
+Was it intentional? YES at the policy level. lib/recPolicy.ts:240-242
+documents the choice:
 
-The captured logs distinguish none of these. The only signal we have is the
-aggregate `merged_total=0` — which means every one of the 8 returned arrays was
-empty after filtering.
+   /** When false, only CORE candidates may be reserved. Conservative default —
+    *  setting true would silently widen ADJACENT exposure on every pref edit. */
+   allowAdjacentReservation:  boolean;
+   …
+   allowAdjacentReservation: false,
+
+Intent was conservatism (don't dilute slate quality). It was NOT designed
+to be permanent — `allowAdjacentReservation` is a tunable policy knob, not
+a hard architectural rule. The header at lib/recPolicy.ts:227 explicitly
+calls these "calibration hypotheses; tunable without architectural change."
+
+Conflict with the Phase 2 product contract? YES, in this exact failure
+mode. The pre-beta gate says "visible deck shift after pref edit, dense
+users included." For dense users an explicit edit toward an off-lane genre
+will routinely produce adjacent_fit (not core_fit) candidates, because
+core_fit requires alignment with the user's REVEALED dominant lane. Holding
+reservation to core-only means the deck shift gate cannot pass for the
+exact population it was written to protect.
 
 ----------------------------------------------------------
-Q4. Where does the zeroing happen?
+Q3. What candidate classes are reservation-eligible today?
 ----------------------------------------------------------
-Classification: BETWEEN A AND B — almost certainly NOT C/D/E.
+Conjunction of (every bullet must hold):
 
-NOT (C) normalization/dedupe wiped them out:
-  The merge loop at L1183-1200 only excludes books in `exclude` (read +
-  excludeForOL) or already-`seen` external_ids. It does NOT do any
-  metadata/subject-quality filtering at this stage; that is hygiene's job
-  later. If even one fetch had returned even one non-excluded book, merged
-  would be ≥ 1 and the survival log would show it.
+  Cause               req.build.cause === 'explicit_preference_edit'
+                      (the only entry in eligibleCauses; see recPolicy:246)
+  User signal         req.signals.statedTaste.favoriteGenres.length ≥ 1
+  Retrieval prov.     book._retrieval_reason starts with 'stated_genre:'
+                      (i.e. the P2A statedGenres branch returned it; first-
+                       seen-wins dedupe guarantees this label survives)
+  Scoring prov.       book._score_breakdown.audit_flags contains a string
+                      starting with 'stated_favorite:'  (pushed by P1 step 7)
+  Score threshold     book._score_breakdown.stated_taste > 0
+                      (the P1 +0.05 floor satisfies this — st≈0.08 in run)
+  Fit class           book._score_breakdown.fit_class === 'core_fit'
+                      AND audit_flags does NOT contain 'weak_metadata'
+                      (because allowAdjacentReservation is false)
+  Composition caps    compositionAllows(book) — author cap + lane cap respected
+  Composition state   compIdOf(book) NOT in alreadyComposedKeys
 
-NOT (D) misleading log placement:
-  `merged_total = ${merged.length}` is the canonical OL output of
-  getOLCandidates — the same array is returned at L1233 as `olResult.candidates`
-  and immediately logged at L2987 as `[PERF] phase2_external_fetch_end —
-  live_ol | candidates=${olResult.candidates.length}`. The two counts must
-  match by construction; merged_total=0 ⇒ olResult.candidates.length=0.
-
-So the zero is real. It is one (or some combination) of:
-  (A) all 8 fetches threw / aborted / returned non-200 — silently swallowed
-  (B) all 8 fetches returned 200 with `docs: []` (or all docs filtered out by
-      the pre-1950 / missing-key guards)
-
-Sub-finding: even partial-(A) is suspicious. Subjects "psychological thriller"
-and "crime fiction" against OL `search.json?sort=rating&limit=18` reliably
-return ≥18 modern docs in normal operation. For ALL FOUR stated fetches AND
-ALL FOUR lane fetches to return zero is consistent with a runtime/transport
-failure (e.g. abort timer firing, CORS pre-flight failing in this browser
-context, OL temporarily 5xx-ing) more than with all eight subject queries
-genuinely returning empty pages.
+First book in compPool (already sorted by score) satisfying all of the
+above is reserved. Single slot (maxReservedSlots=1).
 
 ----------------------------------------------------------
-Q5. Is merged_total=0 global OL output or a sub-path?
+Q4. Did P2B/P2B.1 validators miss this case?
 ----------------------------------------------------------
-GLOBAL. `merged` (L1178) is the single output array of getOLCandidates. Every
-book from every fetch in the plan is funneled through the same dedupe loop
-into this one array. There is no parallel sub-path; no later append; no other
-OL collector that bypasses it. `merged.length === 0` means ZERO OL books
-crossed the function boundary into the rest of the pipeline this run.
+YES — the live failure class is not exercised by the validator's product-
+behavior assertions.
 
-----------------------------------------------------------
-Q6. Does this explain the poor visible deck?
-----------------------------------------------------------
-YES, decisively, FOR THIS RUN.
+scripts/validate_stated_reservation.ts (cases C1-C13) enumerated:
+  C1-C5    happy-path reservation, all candidates fitClass='core_fit'
+  C6       "Only candidate is ADJACENT and policy disallows → null"
+            asserts pick === null AND
+            STATED_RESERVATION_POLICY.allowAdjacentReservation === false
+  C7-C13   weak_metadata / sort-order / cap-respect / etc., all fitClass='core_fit'
 
-Downstream evidence chain (all live-confirmed):
-  externalCandidates = [...olResult.candidates(=0), ...nonDupStale]   (L2997)
-       ↓
-  if (cacheResult?.isFresh)  → cache rows would be merged in via the cache
-                                branch instead; this run did NOT take that
-                                branch, so externalCandidates is at most the
-                                stale rows (rec_candidate_cache rows older
-                                than CACHE_TTL_MS that the L2993 fallback
-                                still tries to glue on). With a fresh edit
-                                and ≤80 stale rows likely also empty for
-                                this profile, externalCandidates ≈ 0.
-       ↓
-  Hygiene + scoring run on (externalCandidates ∪ local) which collapses to
-  effectively the LOCAL CATALOG ONLY.
-       ↓
-  compPoolSize=184 in the [P2DEBUG/reservation] line is local-catalog books
-  scored against the user's profile. None of them was retrieved by the
-  stated branch (impossible — the local catalog never carries
-  `_retrieval_reason starting with "stated_genre:"`), so statedInPool=0
-  by construction.
+Coverage analysis vs. live failure:
 
-So yes: the visible deck this run is effectively local-catalog-only. The
-literary slate showing only the P1 floor `stated_taste≈0.08` is the expected
-output of running the scoring pipeline against the local catalog with no
-external supplement — those are the books that happen to land near the top
-of local scoring after the floor is applied.
+  ❌ NOT covered: an "all candidates ADJACENT, zero CORE" pool produced by
+                  realistic post-edit retrieval for a dense user.
+  ⚠️ Inverted:    C6 PROVES the current behavior is mechanically correct
+                  (returns null) — but it asserts that as the DESIRED
+                  behavior, treating ADJACENT-only as a non-product case.
+                  No validator case asks "did the pref edit visibly shift
+                  the deck?" because that is a product-acceptance question,
+                  not a unit invariant.
 
-This also disproves the previous hypothesis that `computeFitClass` was
-rejecting stated candidates on dominant-lane mismatch. There were no stated
-candidates to reject. The fit-class hypothesis remains plausible for
-*future* runs once OL fetches are returning books, but is not what fired
-this run.
+Net: validators prove the helper's contract (CORE-only, single-slot, caps
+respected). They cannot — and were never designed to — fail when the
+product-acceptance promise fails. The mechanical contract is being met;
+the product promise is not.
+
+There is no validator gap to "fix" by adding a unit case. The gap is the
+absence of a product-level acceptance fixture (e.g., dense-user-edit-to-
+off-lane-genre snapshot replaying through composition and asserting at
+least one stated_genre:* book lands in top-4). That fixture would have
+caught this at CI time.
 
 ----------------------------------------------------------
-Q7. Is Business → nonfiction a secondary or primary issue?
+Q5. Is the current rule too weak for Phase 2 acceptance?
 ----------------------------------------------------------
-SECONDARY. The Business→nonfiction collapse is real and will produce
-broad/non-business results when OL DOES return docs (a known P4-territory
-quality issue documented in replit.md). But it is NOT what produced
-merged_total=0 in this live run because:
+YES — and this run is the canonical proof.
 
-  1. Even if Business→nonfiction returned 0 business-specific titles, it
-     would still return SOME `popular science` / `popular nonfiction` books
-     (Sapiens, Atomic Habits, etc.) — those would land in `merged` even if
-     they didn't satisfy the user's actual intent.
-  2. The Mystery→thriller_mystery fetches (`psychological thriller` +
-     `crime fiction`) have NO mapping-coarseness issue and reliably return
-     modern thrillers in normal operation. Their contribution to
-     merged_total being zero too rules out a mapping-only explanation.
-  3. The 4 lane fetches (whatever the user's revealed lanes resolved to)
-     also returned 0. Lane fetches don't go through the
-     Business→nonfiction collapse at all.
+The acceptance gate ("visible deck shift after pref edit, dense users
+included") commits us to two things:
+  (i)  retrieval makes stated candidates available, and
+  (ii) at least one of them surfaces in the visible top slate.
 
-Put differently: a mapping problem can produce *wrong* books, but it cannot
-produce *zero* books across 8 different subject queries. Something
-transport-level or environment-level is the immediate blocker.
+For dense users an explicit edit toward a genre off their revealed
+dominant lane is the COMMON case (the whole point of editing prefs is
+usually to nudge AWAY from prior behavior). computeFitClass will
+classify those candidates as adjacent_fit by design — that's the
+classifier doing its job.
 
-----------------------------------------------------------
-Q8. Recommended next fix category
-----------------------------------------------------------
-ADD MORE GRANULAR OL FETCH DEBUG LOGGING ONLY.
+If reservation is core-only, then:
+  • a dense user editing toward an off-lane genre never sees the deck shift,
+  • a dense user editing toward an on-lane genre would already see it
+    without any reservation needed (those candidates would land in the
+    top slate organically),
+  • therefore reservation as currently configured is a no-op for the
+    population it was written to serve.
 
-Rationale: we cannot pick the right repair (gate, query construction,
-empty-result fallback, transport handling) until we know which of A/B is
-actually firing. Right now both `fetchOLSubject` and `fetchOLByAuthor`
-silently swallow every distinguishable failure mode into `return []`. The
-smallest change that unblocks the next decision is per-fetch instrumentation
-in those two helpers:
+That is "too weak" against the stated contract. The product promise of
+P2 cannot be met under the current policy.
 
-  • Log the URL that was sent (subject string + reason).
-  • Log HTTP status + ms elapsed.
-  • If thrown: log the error name (AbortError vs TypeError vs other).
-  • Log raw `docs.length` BEFORE the two `.filter()` passes.
-  • Log post-filter count.
-
-Suggested log key: `[OLFETCH/<subject|author>]`. __DEV__-gated, no behavior
-change. After one repro cycle this report is replaced by an actionable one
-naming the specific failure mode (timeout? non-200? DNS-blocked in this
-container? all 200 with empty docs?).
-
-Only after that should we choose between the heavier remediations the task
-listed (gate repair, anchor-query repair, normalization repair, empty-result
-fallback). Picking now is guessing.
+Caveat: widening to adjacent unconditionally could meaningfully lower
+top-4 quality for users whose edits don't actually shift their genre
+mix. The mitigation lever is the OTHER three gates (provenance AND
+scoring-flag AND composition caps) — those still protect against
+spurious reservations even when fit_class is widened.
 
 ----------------------------------------------------------
-Q9. Phase 2 product acceptance status
+Q6. Recommended next fix category
+----------------------------------------------------------
+RECOMMENDATION: A — expand reservation eligibility to adjacent_fit
+specifically when BuildCause === 'explicit_preference_edit', preserving
+the full P2B.1 AND-gate (retrieval provenance, scoring flag, positive
+stated_taste contribution, composition caps).
+
+Concretely (NOT yet implementing — sketch only):
+  • Either add an opt-in `allowAdjacentForCauses: BuildCause[]` to
+    STATED_RESERVATION_POLICY (e.g. ['explicit_preference_edit']),
+    OR set allowAdjacentReservation = true outright. The former is
+    more conservative and keeps a future cause (e.g. intent_apply)
+    from inheriting the widening.
+  • Keep weak_metadata as a hard reject regardless of cause (quality
+    floor; hygiene already drops the worst offenders, this is belt-
+    and-braces).
+  • Optional defense-in-depth: require statedContrib ≥ FLOOR (0.05)
+    rather than > 0, so a future reduction in the P1 floor doesn't
+    silently widen reservation.
+
+Why not the others:
+  B (keep core-only, revise product standard) — would mean publicly
+    backing off the pre-beta gate. The whole P0A→P2C investment was
+    made to honor that gate. Do not retreat.
+  C (some narrower correction) — the diagnostic is unambiguous: the
+    gate failing is fit_class. Anything narrower than (A) is just
+    (A) under another name.
+  D (one more trace) — not needed. The trace already pinpoints L127
+    deterministically. Further instrumentation would be busywork.
+
+Before implementing (A), worth one small live re-check: confirm the 10
+adjacent stated candidates' compositionAllows() outcome would not have
+rejected them anyway (author/lane caps). The trace at [P2DEBUG/reservation]
+doesn't currently surface compositionAllows results per candidate. Adding
+ONE line of per-candidate trace inside the loop (which-gate-fired counts)
+would make the post-fix re-test self-evident. This is a 5-line follow-up
+to the same instrumentation pattern already in place.
+
+----------------------------------------------------------
+Q7. Phase 2 acceptance status
 ----------------------------------------------------------
 REMAINS BLOCKED.
 
-The pre-beta gate "P2 retrieval responsiveness; visible deck shift after
-pref edit, dense users included" is not met. Exact condition required to
-pass:
+Conditions to pass, restated against current evidence:
 
-  After an explicit Reading Taste edit (cause=explicit_preference_edit) for
-  a dense user, at least one stated-branch candidate whose primary affinity
-  matches a stated favorite must reach the visible top slate (top-4) of
-  the For-You deck — i.e. [P2DEBUG/reservation] reports `reserved` (not
-  `no_eligible_candidate`) for that next deck rebuild, AND the reserved
-  book renders in the visible top-4.
+  ✅ A. Save → rebuild fires under explicit_preference_edit
+  ✅ B. BuildCause survives no-refresh nav
+  ✅ C. Planner emits stated branch
+  ✅ D. OL retrieval returns stated candidates (newly verified this run:
+        psychological thriller=14, crime fiction=9, merged_total=20)
+  ✅ E. Hygiene preserves stated candidates (12/20 survive — acceptable)
+  ✅ F. Scoring assigns positive stated_taste contribution (P1 floor)
+  ✅ G. Stated candidates reach compPool (statedInPool=10)
+  ❌ H. Reservation produces a pick   ← BLOCKED here
+  ❌ I. Reserved book renders in top-4
 
-For that to be reachable, getOLCandidates must first be returning a
-non-empty `merged` for the stated-branch fetches. It currently is not.
+Exact next condition required to unblock H:
+  STATED_RESERVATION_POLICY must permit at least one fit_class state
+  beyond core_fit when cause === 'explicit_preference_edit', without
+  weakening the P2B.1 AND-gate (retrieval provenance + scoring flag +
+  positive contribution + composition caps + non-weak metadata).
 
-Open items, in dependency order:
-  1. (Active) Resolve merged_total=0 — needs OLFETCH instrumentation first
-     to classify, then the appropriate fix.
-  2. (Once #1 is fixed) Re-test the survival trace — confirm
-     stated_count > 0 at post_ol_merge, then check post_hygiene /
-     post_scoring / comp_pool to see whether the original fit-class
-     hypothesis re-emerges.
-  3. (Already-known, not the current blocker) Business→nonfiction anchor
-     coarseness — P4 territory; do NOT spot-patch before the retrieval
-     transport layer is verified working.
-  4. (Already-known, not the current blocker) BuildCause browser-refresh
-     persistence — separate fix, separate blocker class.
+Once H passes, condition I should follow mechanically — the reserved
+pick is added via addComposed BEFORE Phase 1 lane seeding, so it occupies
+slot 0 of the visible slate by construction. Worth re-verifying with the
+post-fix live test.
+
+Out-of-scope-for-this-blocker (already documented; do NOT touch now):
+  • Business → nonfiction anchor coarseness (P4)
+  • Cross-session BuildCause persistence on browser hard-refresh
+  • Author chips / stated-author signal provenance
+  • Hard-avoid storage + UI (P4)
