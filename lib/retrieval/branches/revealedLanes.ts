@@ -29,6 +29,7 @@
 import type { RecRequest } from '../../recRequest';
 import type { DeterministicLane } from '../../bookTraits';
 import { getRetrievalSubjects, type AffinityKey } from '../../taxonomy/genres';
+import { LIKED_SUBJECT_AVOID_GUARDS } from '../../recPolicy';
 import type { BranchContext, FetchItem } from '../types';
 
 // ── Dense-lane → OL subject anchors (moved from recommender.ts:307) ─────────
@@ -80,10 +81,51 @@ export function softAvoidedLanes(
   return out;
 }
 
+/** P2C: topGenres (sparse-user signal) whose AffinityKey intersects the
+ *  user's soft-avoids. Mirrors `softAvoidedLanes` but for the sparse path
+ *  where dominantLanes is empty. Pure / synchronous. */
+export function softAvoidedTopGenres(
+  topGenres:  readonly string[],
+  softAvoids: readonly AffinityKey[],
+): AffinityKey[] {
+  if (topGenres.length === 0 || softAvoids.length === 0) return [];
+  const avoidSet = new Set<string>(softAvoids);
+  const out: AffinityKey[] = [];
+  for (const g of topGenres) {
+    if (avoidSet.has(g)) out.push(g as AffinityKey);
+  }
+  return out;
+}
+
+/** P2C: returns true when a free-form liked_subject string clearly belongs
+ *  to a soft-avoided AffinityKey via the curated guard list. Used by the
+ *  sparse-path liked_subjects loop to skip "epic fantasy" / "magic systems"
+ *  / etc. when the user soft-avoided fantasy_scifi. */
+function isLikedSubjectAvoided(
+  subject:    string,
+  softAvoids: ReadonlySet<string>,
+): boolean {
+  if (softAvoids.size === 0) return false;
+  const lower = subject.toLowerCase();
+  for (const key of softAvoids) {
+    const guards = LIKED_SUBJECT_AVOID_GUARDS[key as AffinityKey];
+    if (!guards) continue;
+    for (const g of guards) {
+      if (lower.includes(g.toLowerCase())) return true;
+    }
+  }
+  return false;
+}
+
 export function buildRevealedLanesBranch(
   req: RecRequest,
   ctx: BranchContext,
   quota: number,
+  /** P2C: when true, every emitted FetchItem carries
+   *  `softAvoidDeprioritized=true` so debug surfaces can identify items
+   *  retained at reduced priority. The planner sets this when it applied
+   *  the SOFT_AVOID_RETRIEVAL_MULTIPLIER quota reduction. */
+  deprioritizedFlag: boolean = false,
 ): FetchItem[] {
   if (quota <= 0) return [];
 
@@ -94,6 +136,10 @@ export function buildRevealedLanesBranch(
   };
 
   const items: FetchItem[] = [];
+  const push = (item: FetchItem): void => {
+    if (deprioritizedFlag) item.softAvoidDeprioritized = true;
+    items.push(item);
+  };
 
   if (ctx.isDense) {
     // Dense path: dominant_lanes → LANE_OL_SUBJECTS anchors. Lanes whose
@@ -104,14 +150,14 @@ export function buildRevealedLanesBranch(
       const anchors = LANE_OL_SUBJECTS[lane];
       if (!anchors) continue;
       const [s1, s2] = anchors;
-      items.push({
+      push({
         kind: 'subject', value: s1,
         reason: `lane:${lane}`,
         branch: 'revealedLanes',
         signalClass: 'revealed_behavioral',
       });
       if (items.length < quota && s2) {
-        items.push({
+        push({
           kind: 'subject', value: s2,
           reason: `lane:${lane}`,
           branch: 'revealedLanes',
@@ -126,14 +172,14 @@ export function buildRevealedLanesBranch(
       if (items.length >= quota) break;
       if (avoidSet.has(genre)) continue;
       const [s1, s2] = getRetrievalSubjects(genre);
-      items.push({
+      push({
         kind: 'subject', value: s1,
         reason: `genre:${genre}`,
         branch: 'revealedLanes',
         signalClass: 'revealed_behavioral',
       });
       if (items.length < quota && s2) {
-        items.push({
+        push({
           kind: 'subject', value: s2,
           reason: `genre:${genre}`,
           branch: 'revealedLanes',
@@ -144,9 +190,12 @@ export function buildRevealedLanesBranch(
 
     // Liked-subject fallback anchors (only if quota remains). Pre-P2A this
     // ran unconditionally up to 3 items; here it consumes residual quota.
+    // P2C: skip subjects whose substring matches the LIKED_SUBJECT_AVOID_GUARDS
+    // entry for any soft-avoided AffinityKey.
     for (const subject of ctx.likedSubjects) {
       if (items.length >= quota) break;
-      items.push({
+      if (isLikedSubjectAvoided(subject, avoidSet)) continue;
+      push({
         kind: 'subject', value: subject,
         reason: `liked_subject:${subject}`,
         branch: 'revealedLanes',

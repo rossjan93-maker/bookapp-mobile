@@ -35,7 +35,16 @@ import { planBranches } from '../lib/retrieval/branchPlanner';
 import type { BranchContext, RetrievalPlan } from '../lib/retrieval/types';
 import type { RecRequest, BuildCause } from '../lib/recRequest';
 import type { AffinityKey } from '../lib/taxonomy/genres';
-import { BRANCH_QUOTAS, EDIT_CAUSE_BRANCH_BOOST, SOFT_AVOID_RETRIEVAL_MULTIPLIER } from '../lib/recPolicy';
+import {
+  BRANCH_QUOTAS,
+  EDIT_CAUSE_BRANCH_BOOST,
+  SOFT_AVOID_RETRIEVAL_MULTIPLIER,
+  LIKED_SUBJECT_AVOID_GUARDS,
+} from '../lib/recPolicy';
+import {
+  applyLocalSoftAvoidFilter,
+  classifyCandidateAvoidKey,
+} from '../lib/retrieval/softAvoidLocal';
 
 let failures = 0;
 function check(label: string, ok: boolean, detail?: string): void {
@@ -319,6 +328,246 @@ section('Non-edit BuildCauses leave quotas at base');
     check(`cause=${cause}: statedGenres at base quota`,
       plan.branchPolicies.statedGenres.quota === BRANCH_QUOTAS.high_signal.statedGenres);
   }
+}
+
+// =============================================================================
+// P2C — Soft-Avoid Retrieval Deprioritization
+// =============================================================================
+
+// ── Case A7a: sparse user with topGenres ∩ softAvoids triggers reduction ────
+section('A7a — sparse user topGenres ∩ softAvoids → revealedLanes quota cut');
+{
+  // Sparse user (thin tier, no dominant lanes) whose topGenres include a
+  // soft-avoided AffinityKey. Pre-P2C the planner only checked dominantLanes,
+  // so sparse users never got the branch-level quota reduction.
+  const req = mkReq({
+    favorites: ['nonfiction'],
+    avoids:    ['fantasy_scifi'],
+    confidenceMode: 'thin',
+  });
+  const ctx: BranchContext = {
+    topGenres:       ['fantasy_scifi', 'literary'],
+    dominantLanes:   [],
+    repeatedAuthors: [],
+    likedAuthors:    ['Ursula K. Le Guin'],
+    likedSubjects:   ['epic fantasy'],
+    isDense:         false,
+  };
+  const plan = planBranches(req, ctx);
+
+  check('softAvoidLanesApplied populated for sparse user',
+    plan.softAvoidLanesApplied.includes('fantasy_scifi'),
+    `got: ${plan.softAvoidLanesApplied.join(', ')}`);
+  const expectedReduced = Math.max(1, Math.floor(BRANCH_QUOTAS.thin.revealedLanes * SOFT_AVOID_RETRIEVAL_MULTIPLIER));
+  check('sparse-user revealedLanes quota reduced',
+    plan.branchPolicies.revealedLanes.quota === expectedReduced,
+    `expected ${expectedReduced}, got ${plan.branchPolicies.revealedLanes.quota}`);
+
+  // Per-anchor mask still fires.
+  const fantasyItems = plan.fetchItems.filter(i => i.reason === 'genre:fantasy_scifi');
+  check('sparse path filters out soft-avoided topGenre anchor',
+    fantasyItems.length === 0, `leaked ${fantasyItems.length} items`);
+}
+
+// ── Case A7b: sparse user with NO intersection → no reduction ───────────────
+section('A7b — sparse user NO topGenres ∩ softAvoids → no quota cut');
+{
+  const req = mkReq({
+    favorites: ['literary'],
+    avoids:    ['horror'],
+    confidenceMode: 'thin',
+  });
+  const ctx: BranchContext = {
+    topGenres:       ['literary', 'nonfiction'],
+    dominantLanes:   [],
+    repeatedAuthors: [],
+    likedAuthors:    ['Marilynne Robinson'],
+    likedSubjects:   ['family saga'],
+    isDense:         false,
+  };
+  const plan = planBranches(req, ctx);
+
+  check('softAvoidLanesApplied empty when no intersection',
+    plan.softAvoidLanesApplied.length === 0,
+    `got: ${plan.softAvoidLanesApplied.join(', ')}`);
+  check('revealedLanes quota at base when no intersection',
+    plan.branchPolicies.revealedLanes.quota === BRANCH_QUOTAS.thin.revealedLanes,
+    `expected ${BRANCH_QUOTAS.thin.revealedLanes}, got ${plan.branchPolicies.revealedLanes.quota}`);
+}
+
+// ── Case A7c: liked_subject guard list filters obvious soft-avoid subjects ──
+section('A7c — liked_subject guards drop soft-avoided subject anchors');
+{
+  // The user's revealed liked_subjects include "epic fantasy" but they have
+  // soft-avoided fantasy_scifi. The guard list LIKED_SUBJECT_AVOID_GUARDS
+  // should catch the substring match and skip the anchor.
+  const req = mkReq({
+    favorites: ['literary'],
+    avoids:    ['fantasy_scifi'],
+    confidenceMode: 'thin',
+  });
+  const ctx: BranchContext = {
+    topGenres:       ['literary'],
+    dominantLanes:   [],
+    repeatedAuthors: [],
+    likedAuthors:    [],
+    likedSubjects:   ['epic fantasy', 'family saga', 'magic systems'],
+    isDense:         false,
+  };
+  const plan = planBranches(req, ctx);
+
+  const subjectItems = plan.fetchItems.filter(i => i.reason.startsWith('liked_subject:'));
+  const leakedFantasy = subjectItems.find(i =>
+    /fantasy|magic|wizard|dragon|sci-?fi|science fiction/i.test(i.value)
+  );
+  check('liked_subject guard skips fantasy-themed subject when fantasy_scifi avoided',
+    !leakedFantasy,
+    leakedFantasy ? `leaked: ${leakedFantasy.value}` : undefined);
+
+  const survivor = subjectItems.find(i => i.value === 'family saga');
+  check('non-matching liked_subject (family saga) survives',
+    !!survivor, 'family saga not emitted');
+
+  // Guard table is non-empty and includes fantasy_scifi.
+  check('LIKED_SUBJECT_AVOID_GUARDS includes fantasy_scifi entry',
+    Array.isArray(LIKED_SUBJECT_AVOID_GUARDS.fantasy_scifi)
+      && (LIKED_SUBJECT_AVOID_GUARDS.fantasy_scifi as readonly string[]).length > 0,
+    `got: ${JSON.stringify(LIKED_SUBJECT_AVOID_GUARDS.fantasy_scifi)}`);
+}
+
+// ── Case A7d: per-FetchItem softAvoidDeprioritized flag populated ───────────
+section('A7d — softAvoidDeprioritized flag set on revealedLanes items under reduction');
+{
+  const req = mkReq({
+    favorites: ['nonfiction'],
+    avoids:    ['fantasy_scifi'],
+    confidenceMode: 'high_signal',
+  });
+  // dominantLanes intersect → quota reduced AND survivor lane items flagged.
+  const ctx = mkDenseCtx({ dominantLanes: ['scifi_fantasy', 'modern_suspense'] });
+  const plan = planBranches(req, ctx);
+
+  const survivors = plan.fetchItems.filter(i =>
+    i.branch === 'revealedLanes' && i.reason === 'lane:modern_suspense'
+  );
+  check('non-avoided lane survivors get softAvoidDeprioritized=true',
+    survivors.length > 0 && survivors.every(i => i.softAvoidDeprioritized === true),
+    `survivors: ${JSON.stringify(survivors.map(i => ({ r: i.reason, d: i.softAvoidDeprioritized })))}`);
+
+  // Other branches must NOT have the flag set.
+  const statedItems = plan.fetchItems.filter(i => i.branch === 'statedGenres');
+  check('statedGenres items do NOT carry softAvoidDeprioritized',
+    statedItems.every(i => i.softAvoidDeprioritized !== true),
+    `flagged: ${statedItems.filter(i => i.softAvoidDeprioritized).length}`);
+}
+
+// ── Case A7e: classifyCandidateAvoidKey heuristic ───────────────────────────
+section('A7e — classifyCandidateAvoidKey resolves subjects to soft-avoided AffinityKey');
+{
+  const avoids: AffinityKey[] = ['fantasy_scifi'];
+  // Clear hit
+  const hit = classifyCandidateAvoidKey(['epic fantasy', 'magic'], avoids);
+  check('epic fantasy subject + fantasy_scifi avoid → returns fantasy_scifi',
+    hit === 'fantasy_scifi', `got ${String(hit)}`);
+
+  // No hit (subjects don't match any guard)
+  const miss = classifyCandidateAvoidKey(['family saga'], avoids);
+  check('non-matching subject → returns null',
+    miss === null, `got ${String(miss)}`);
+
+  // Empty subjects → null (defensive)
+  const empty = classifyCandidateAvoidKey([], avoids);
+  check('empty subjects → null', empty === null);
+  const nullSubj = classifyCandidateAvoidKey(null, avoids);
+  check('null subjects → null', nullSubj === null);
+
+  // No avoids → null (no work to do)
+  const noAvoid = classifyCandidateAvoidKey(['epic fantasy'], []);
+  check('empty softAvoids → null', noAvoid === null);
+}
+
+// ── Case A7f: applyLocalSoftAvoidFilter demotes by SOFT_AVOID_RETRIEVAL_MULTIPLIER ──
+section('A7f — applyLocalSoftAvoidFilter keeps multiplier-fraction of soft-avoided');
+{
+  type Cand = { id: string; subjects: string[] | null };
+  // 6 fantasy candidates (would all be soft-avoided) + 4 non-fantasy
+  const cands: Cand[] = [
+    { id: 'f1', subjects: ['epic fantasy'] },
+    { id: 'f2', subjects: ['fantasy fiction'] },
+    { id: 'f3', subjects: ['magic systems'] },
+    { id: 'f4', subjects: ['dragons'] },
+    { id: 'f5', subjects: ['sci-fi'] },
+    { id: 'f6', subjects: ['science fiction'] },
+    { id: 'k1', subjects: ['family saga'] },
+    { id: 'k2', subjects: ['literary fiction'] },
+    { id: 'k3', subjects: null },
+    { id: 'k4', subjects: ['historical fiction'] },
+  ];
+  const result = applyLocalSoftAvoidFilter(
+    cands,
+    ['fantasy_scifi'] as AffinityKey[],
+    (b) => b.subjects,
+  );
+
+  // Half (floor(6 * 0.5) = 3) of the fantasy candidates dropped → 3 kept.
+  const remainingFantasy = result.kept.filter(c => /^f/.test(c.id)).length;
+  const expectedFantasyKept = Math.ceil(6 * (1 - SOFT_AVOID_RETRIEVAL_MULTIPLIER));
+  check('multiplier-fraction of soft-avoided candidates kept',
+    remainingFantasy === expectedFantasyKept,
+    `expected ${expectedFantasyKept}, got ${remainingFantasy}`);
+
+  // All non-soft-avoided candidates survive untouched.
+  const remainingNonAvoid = result.kept.filter(c => /^k/.test(c.id)).length;
+  check('non-soft-avoided candidates fully preserved',
+    remainingNonAvoid === 4, `got ${remainingNonAvoid}/4`);
+
+  // demotedCount == drops (3)
+  check('demotedCount reports drops',
+    result.demotedCount === 3, `got ${result.demotedCount}`);
+
+  // Determinism — first-seen-wins ordering preserved
+  const second = applyLocalSoftAvoidFilter(
+    cands,
+    ['fantasy_scifi'] as AffinityKey[],
+    (b) => b.subjects,
+  );
+  check('filter is deterministic across calls',
+    JSON.stringify(result.kept.map(c => c.id))
+      === JSON.stringify(second.kept.map(c => c.id)),
+    'order changed between identical calls');
+
+  // Empty avoids → no-op
+  const noop = applyLocalSoftAvoidFilter(cands, [] as AffinityKey[], (b) => b.subjects);
+  check('empty softAvoids → kept identical to input',
+    noop.kept.length === cands.length && noop.demotedCount === 0,
+    `kept=${noop.kept.length} demoted=${noop.demotedCount}`);
+}
+
+// ── Case A7g: P2B.1 retrieval-provenance prefix preserved ───────────────────
+section('A7g — P2B.1 stated_genre: prefix unchanged by P2C');
+{
+  // P2B.1 reservation gate keys off `_retrieval_reason.startsWith('stated_genre:')`.
+  // P2C must NOT alter the statedGenres branch's reason emission, even when
+  // soft-avoid is active.
+  const req = mkReq({
+    favorites: ['nonfiction', 'memoir_bio'],
+    avoids:    ['fantasy_scifi'],
+    confidenceMode: 'high_signal',
+    cause:     'explicit_preference_edit',
+  });
+  const ctx = mkDenseCtx({ dominantLanes: ['scifi_fantasy', 'modern_suspense'] });
+  const plan = planBranches(req, ctx);
+
+  const statedReasons = plan.fetchItems
+    .filter(i => i.branch === 'statedGenres')
+    .map(i => i.reason);
+  check('every statedGenres item still uses `stated_genre:` prefix',
+    statedReasons.length > 0 && statedReasons.every(r => r.startsWith('stated_genre:')),
+    `reasons: ${JSON.stringify(statedReasons)}`);
+  check('statedGenres items NOT flagged softAvoidDeprioritized',
+    plan.fetchItems
+      .filter(i => i.branch === 'statedGenres')
+      .every(i => i.softAvoidDeprioritized !== true));
 }
 
 // ── Result ──────────────────────────────────────────────────────────────────

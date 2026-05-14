@@ -79,6 +79,9 @@ import { loadCachedRecs, persistRecCache, shouldRebuild, buildSignalSnapshot } f
 import { computeStatedTasteContribution } from './recPolicy';
 import type { RecRequest } from './recRequest';
 import { planBranches } from './retrieval/branchPlanner';
+import { applyLocalSoftAvoidFilter } from './retrieval/softAvoidLocal';
+import { SOFT_AVOID_RETRIEVAL_MULTIPLIER } from './recPolicy';
+import type { AffinityKey } from './taxonomy/genres';
 import { pickStatedReservation } from './composition/statedReservation';
 import type { StatedReservationTrace } from './composition/statedReservation';
 import { applyIntegrityLayer, buildSeriesReadSet, buildSeriesProgress, buildSeriesPositionsRead, stripTitleSubtitle, getEligibleSeriesSeeds } from './recommendationIntegrity';
@@ -231,8 +234,15 @@ export type RetrievalTrace = {
   enriched_count:       number;
   // Dense-import mode debug (present when det_lanes.is_dense_import = true)
   dense_import_mode?:    boolean;
-  detected_lanes?:       string[];  // dominant lanes detected from reading history
-  repeated_authors_used?: string[]; // repeated-author anchors used in retrieval
+  detected_lanes?:       string[];
+  repeated_authors_used?: string[];
+  // P2C: local-candidate soft-avoid filter trace. Present when softAvoids
+  // were active for this run (regardless of whether any candidate matched).
+  soft_avoid_retrieval?: {
+    avoidsApplied:         AffinityKey[];
+    localDemoted:          number;
+    branchQuotaMultiplier: number;
+  };
 };
 
 export type RankedRecsResult = {
@@ -2617,6 +2627,31 @@ export async function getCandidateBooks(
   const local = await getLocalCandidates(client, userId);
   const _t1 = Date.now();
 
+  // ── P2C: local-candidate soft-avoid filter ────────────────────────────────
+  // Local catalog candidates bypass the branch planner entirely. Pre-P2C, a
+  // user with a soft-avoided AffinityKey still saw a full catalog draw of
+  // that genre. Demote (not exclude) by SOFT_AVOID_RETRIEVAL_MULTIPLIER.
+  // Tracked through `soft_avoid_retrieval` on the retrieval_trace.
+  const softAvoids = (req?.signals.softAvoids.genres ?? []) as readonly AffinityKey[];
+  let localDemotedTotal = 0;
+  if (softAvoids.length > 0 && local.candidates.length > 0) {
+    const filtered = applyLocalSoftAvoidFilter(
+      local.candidates,
+      softAvoids,
+      (b) => b.subjects,
+    );
+    localDemotedTotal += filtered.demotedCount;
+    if (__DEV__ && filtered.demotedCount > 0) {
+      console.log(
+        '[SOFT_AVOID_LOCAL] primary',
+        `| avoids=${softAvoids.join(',')}`,
+        `| demoted=${filtered.demotedCount}`,
+        `| kept=${filtered.kept.length}/${local.candidates.length}`,
+      );
+    }
+    local.candidates = filtered.kept;
+  }
+
   // ── Catalog-exhaustion fallback ───────────────────────────────────────────
   // Primary query fetches CATALOG_QUERY_LIMIT books then filters client-side.
   // For users who have read most of the catalog, the primary draw may include
@@ -2674,13 +2709,32 @@ export async function getCandidateBooks(
       }));
 
     if (newCandidates.length > 0) {
-      local.candidates.push(...newCandidates);
+      // P2C: apply the same soft-avoid filter to fallback-scan additions
+      // before merging. Symmetric to the primary filter above.
+      let toMerge = newCandidates;
+      if (softAvoids.length > 0) {
+        const filteredFallback = applyLocalSoftAvoidFilter(
+          newCandidates,
+          softAvoids,
+          (b) => b.subjects,
+        );
+        localDemotedTotal += filteredFallback.demotedCount;
+        if (__DEV__ && filteredFallback.demotedCount > 0) {
+          console.log(
+            '[SOFT_AVOID_LOCAL] fallback',
+            `| demoted=${filteredFallback.demotedCount}`,
+            `| kept=${filteredFallback.kept.length}/${newCandidates.length}`,
+          );
+        }
+        toMerge = filteredFallback.kept;
+      }
+      local.candidates.push(...toMerge);
       if (__DEV__) {
         console.log(
           '[CATALOG_FALLBACK] merged',
-          `| added=${newCandidates.length}`,
+          `| added=${toMerge.length}`,
           `| total_local=${local.candidates.length}`,
-          `| titles=${newCandidates.map(b => `"${b.title}"`).join(', ')}`,
+          `| titles=${toMerge.map(b => `"${b.title}"`).join(', ')}`,
         );
       }
     }
@@ -3014,6 +3068,14 @@ export async function getCandidateBooks(
       dense_import_mode:    true,
       detected_lanes:       det.dominant_lanes,
       repeated_authors_used: det.repeated_liked_authors.slice(0, 3),
+    } : {}),
+    // P2C: surfaced when softAvoids was non-empty for this run.
+    ...(softAvoids.length > 0 ? {
+      soft_avoid_retrieval: {
+        avoidsApplied:         [...softAvoids],
+        localDemoted:          localDemotedTotal,
+        branchQuotaMultiplier: SOFT_AVOID_RETRIEVAL_MULTIPLIER,
+      },
     } : {}),
   };
 

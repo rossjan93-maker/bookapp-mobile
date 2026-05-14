@@ -40,7 +40,7 @@ import {
 } from './types';
 import { buildStatedGenresBranch } from './branches/statedGenres';
 import { buildRevealedAuthorsBranch } from './branches/revealedAuthors';
-import { buildRevealedLanesBranch, softAvoidedLanes } from './branches/revealedLanes';
+import { buildRevealedLanesBranch, softAvoidedLanes, softAvoidedTopGenres } from './branches/revealedLanes';
 
 const BRANCH_ORDER: readonly BranchKind[] = ['statedGenres', 'revealedAuthors', 'revealedLanes'];
 
@@ -64,13 +64,23 @@ export function planBranches(req: RecRequest, ctx: BranchContext): RetrievalPlan
 
   // Step 3: soft-avoid retrieval policy. Only revealedLanes is reduced —
   // statedGenres already drops conflicted favorites at anchor selection.
-  const avoidedLanes = softAvoidedLanes(ctx.dominantLanes, req.signals.softAvoids.genres as readonly AffinityKey[]);
+  // P2C: trigger covers BOTH dense (dominantLanes ∩ softAvoids) AND sparse
+  // (topGenres ∩ softAvoids) intersections. Pre-P2C only dense triggered.
+  const avoidsAsKeys   = req.signals.softAvoids.genres as readonly AffinityKey[];
+  const avoidedLanes   = softAvoidedLanes(ctx.dominantLanes, avoidsAsKeys);
+  const avoidedTopGens = softAvoidedTopGenres(ctx.topGenres,  avoidsAsKeys);
   const softAvoidLanesApplied: AffinityKey[] = [];
-  if (avoidedLanes.length > 0) {
+  let lanesDeprioritized = false;
+  if (avoidedLanes.length > 0 || avoidedTopGens.length > 0) {
     const reduced = Math.max(1, Math.floor(qLanes * SOFT_AVOID_RETRIEVAL_MULTIPLIER));
+    const triggers = [
+      ...avoidedLanes.length   > 0 ? [`dominant_lanes:${avoidedLanes.join(',')}`] : [],
+      ...avoidedTopGens.length > 0 ? [`top_genres:${avoidedTopGens.join(',')}`]   : [],
+    ].join(' & ');
     causeNotes.revealedLanes = (causeNotes.revealedLanes ?? '') +
-      ` | soft-avoid intersect: ${avoidedLanes.join(',')} → quota ${qLanes}→${reduced}`;
+      ` | soft-avoid intersect: ${triggers} → quota ${qLanes}→${reduced}`;
     qLanes = reduced;
+    lanesDeprioritized = true;
     // Surface the AffinityKeys (not the lane labels) for validator inspection.
     const seen = new Set<AffinityKey>();
     for (const k of req.signals.softAvoids.genres) {
@@ -116,7 +126,7 @@ export function planBranches(req: RecRequest, ctx: BranchContext): RetrievalPlan
     } else if (branch === 'revealedAuthors') {
       branchItems = buildRevealedAuthorsBranch(ctx, pol.quota);
     } else {
-      branchItems = buildRevealedLanesBranch(req, ctx, pol.quota);
+      branchItems = buildRevealedLanesBranch(req, ctx, pol.quota, lanesDeprioritized);
     }
     items.push(...branchItems);
   }

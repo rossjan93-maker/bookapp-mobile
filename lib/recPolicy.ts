@@ -181,10 +181,41 @@ export const EDIT_CAUSE_BRANCH_BOOST: { statedGenres: number; revealedLanes: num
 };
 
 /** Multiplier applied to revealedLanes quota when the user's dominant lanes
- *  intersect their soft-avoids. 0.5 = retrieve half as much from a lane the
- *  user said they want less of. Floored at 1 so the branch never zeroes out
- *  (revealed lanes still inform some retrieval — soft avoid is not exclude). */
+ *  OR topGenres (P2C) intersect their soft-avoids. 0.5 = retrieve half as
+ *  much from a lane the user said they want less of. Floored at 1 so the
+ *  branch never zeroes out (revealed lanes still inform some retrieval —
+ *  soft avoid is not exclude). */
 export const SOFT_AVOID_RETRIEVAL_MULTIPLIER = 0.5;
+
+// ── P2C: liked-subject guard list + local soft-avoid classifier ──────────────
+//
+// `liked_subjects` are free-form strings sourced from books the user has rated
+// well. They aren't AffinityKeys, so the per-anchor mask in revealedLanes
+// can't filter them by AffinityKey equality. The guard list maps each
+// AffinityKey to a small curated set of substring patterns that obviously
+// belong to that key. A liked_subject whose lower-cased value contains any
+// guard substring for a *soft-avoided* key is dropped at the anchor stage.
+//
+// Doubles as the local-candidate classifier (subject → soft-avoided
+// AffinityKey) consumed by lib/retrieval/softAvoidLocal.ts. Guard substrings
+// are intentionally narrow and unambiguous — bias toward false negatives
+// (let a borderline subject through) rather than false positives (drop a
+// subject the user actually wants). Editable without architecture change.
+//
+// Empty-by-default safe: if a key is absent here, the local classifier
+// returns null for it and the liked_subject loop skips the guard check.
+//
+// Key universe matches `lib/taxonomy/genres.ts` AffinityKey union.
+
+export const LIKED_SUBJECT_AVOID_GUARDS: Partial<Record<AffinityKey, readonly string[]>> = {
+  fantasy_scifi:    ['fantasy', 'sci-fi', 'sci fi', 'science fiction', 'dystopian', 'wizard', 'dragon', 'magic', 'epic'],
+  thriller_mystery: ['thriller', 'mystery', 'detective', 'whodunit', 'noir', 'crime fiction', 'suspense'],
+  horror:           ['horror', 'supernatural', 'gothic', 'haunted', 'occult'],
+  romance:          ['romance', 'romantic', 'love story', 'rom-com'],
+  literary:         ['literary fiction'],
+  memoir_bio:       ['memoir', 'biography', 'autobiography'],
+  nonfiction:       ['business', 'economics', 'self-help', 'self help', 'science writing'],
+};
 
 // ── P2B: BuildCause-aware top-slate reservation policy ───────────────────────
 //
