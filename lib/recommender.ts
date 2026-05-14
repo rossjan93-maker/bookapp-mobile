@@ -128,6 +128,23 @@ const CACHE_MIN_ROWS = 5;
 // path rejects any row whose retrieval_reason does NOT start with this tag,
 // which forces a live OL re-fetch and a fresh cache write.
 const CACHE_VERSION  = 'v5:';
+
+// Strip the CACHE_VERSION prefix from a stored retrieval_reason so the
+// in-memory candidate carries the same semantic provenance the live OL path
+// would have produced (e.g. `v5:stated_genre:thriller_mystery` →
+// `stated_genre:thriller_mystery`). Single source of truth for this
+// normalization — both the per-candidate restore in
+// `getCachedExternalCandidates` and the trace-string reconstruction in the
+// cache_hit branch must agree, otherwise downstream `startsWith(...)`
+// branch-provenance checks (P2B.1 retrieval-prov AND-gate, P2SURVIVE
+// counters, stated reservation, genre/lane/liked_subject/author scoring)
+// silently miss every cache-restored row.
+function stripCacheVersion(reason: string | null | undefined): string {
+  if (!reason) return 'cache:restored';
+  return reason.startsWith(CACHE_VERSION)
+    ? reason.slice(CACHE_VERSION.length)
+    : reason;
+}
 // User ID to force full live forensic audit (bypasses both caches, emits
 // structured trace logs). Only active in __DEV__ builds.
 // Set to an empty string in production to ensure the forensic path never fires
@@ -1101,7 +1118,7 @@ async function getCachedExternalCandidates(
         page_count:        r.page_count,
         description:       null,
         _source:           'cached_external',
-        _retrieval_reason: r.retrieval_reason ?? 'cache:restored',
+        _retrieval_reason: stripCacheVersion(r.retrieval_reason),
       }));
 
     return { candidates, isFresh };
@@ -3001,10 +3018,11 @@ export async function getCandidateBooks(
     externalCandidates = cacheResult.candidates;
     // Reconstruct trace from cache retrieval_reasons.
     // Strip CACHE_VERSION prefix (e.g. "v3:") so trace shows clean reason strings.
+    // Per-candidate `_retrieval_reason` is already normalized at the
+    // restore source (`getCachedExternalCandidates` → `stripCacheVersion`),
+    // so the trace strings are simply the candidates' own reasons.
     const cacheReasons = cacheResult.candidates
-      .map(c => c._retrieval_reason.startsWith(CACHE_VERSION)
-        ? c._retrieval_reason.slice(CACHE_VERSION.length)
-        : c._retrieval_reason)
+      .map(c => c._retrieval_reason)
       .filter(Boolean);
     olResult.ol_queries = [...new Set(cacheReasons)].slice(0, 10);
 

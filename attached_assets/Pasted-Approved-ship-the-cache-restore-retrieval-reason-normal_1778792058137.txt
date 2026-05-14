@@ -1,0 +1,71 @@
+Approved: ship the cache-restore retrieval-reason normalization fix.
+
+The investigation is convincing:
+
+- The live OL path works.
+- Cached external candidates are restored with `_retrieval_reason` still prefixed, e.g.
+  `v5:stated_genre:thriller_mystery`
+- Downstream P2 logic expects unprefixed provenance strings such as:
+  `stated_genre:thriller_mystery`
+- Therefore cache-restored stated candidates become invisible to:
+  - P2SURVIVE stated counters
+  - P2B.1 retrieval-provenance AND-gate
+  - stated reservation eligibility
+  - likely other branch-provenance startsWith checks
+
+This is a source-normalization bug on the cache-hit path.
+
+## Required fix
+
+In `lib/recommender.ts`, normalize the restored candidate’s `_retrieval_reason` inside `getCachedExternalCandidates` by stripping the `CACHE_VERSION` prefix before returning the candidate object.
+
+The restored candidate should round-trip to the same semantic provenance string the live OL path uses.
+
+Example:
+
+Before restore:
+- DB row: `v5:stated_genre:thriller_mystery`
+
+After restore:
+- candidate._retrieval_reason: `stated_genre:thriller_mystery`
+
+## Implementation guidance
+
+- Prefer reusing the same prefix-stripping logic already used elsewhere in the cache-hit trace path.
+- If that logic is currently inline only, use the smallest clean shared helper or exact mirrored logic — choose whichever keeps the code clearer without over-expanding scope.
+- Fix at the restore source, not by adding downstream special-case checks for `v5:...`.
+
+## Preserve
+
+Do not change:
+- cache freshness semantics
+- cache version value
+- cache write behavior
+- live OL fetch behavior
+- reservation logic
+- adjacent-fit Fix A
+- P2B.1 AND-gate semantics
+- scoring, taxonomy, fitClassifier, schema, migrations, or P3 work
+
+## Validation
+
+Please provide:
+
+1. A before/after code-path explanation:
+   - live OL provenance
+   - DB cache stored provenance
+   - restored in-memory provenance after fix
+
+2. A focused regression check if there is a clean deterministic validator location:
+   - cache-restored `v5:stated_genre:...` becomes `stated_genre:...`
+   - cache-restored `v5:lane:...`, `v5:liked_subject:...`, etc. also normalize correctly if the helper is generic
+
+3. If no clean validator exists, say so plainly and keep the fix surgical.
+
+4. Typecheck delta.
+
+5. Workflow status.
+
+6. Confirmation that this source fix repairs all downstream `startsWith(...)` branch-provenance checks, not only stated reservation.
+
+After implementation, stop. We will rerun the live Phase 2 acceptance test on the cache-hit path before declaring Phase 2 product-complete.
