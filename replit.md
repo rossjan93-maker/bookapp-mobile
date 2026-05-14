@@ -42,28 +42,55 @@ The revised Recommendation Architecture Spec is **locked**. Readstack now operat
 
 ---
 
-## Recently shipped — summarized
+## Phase status (Recommendation Architecture)
 
-Compressed reference for completed work. Full diffs in git history; expand a cluster with `git log -p -- <path>`.
+| Phase | Status | Notes |
+|---|---|---|
+| P0A · canonical taxonomy | ✅ shipped | `lib/taxonomy/genres.ts` + `normalize.ts` |
+| P0A.1 · retrieval-side fold-in | ✅ shipped | `getRetrievalSubjects` |
+| P0B / P0B.1 · deck-validity configHash | ✅ shipped | `lib/recValidity.ts`; manual 3-store clear in `app/edit-preferences.tsx` retained as defense-in-depth |
+| P1 · signal contract + non-zero stated-pref floor | ✅ shipped | `lib/recPolicy.ts` `STATED_TASTE_POLICY` + `lib/recRequest.ts` + `lib/recSignals/` |
+| P2A · branch planner | ✅ shipped | `lib/retrieval/branchPlanner.ts`, branch modules, `BRANCH_QUOTAS`, `EDIT_CAUSE_BRANCH_BOOST` |
+| P2B / P2B.1 · top-slate reservation + provenance AND-gate | ✅ shipped | `lib/composition/statedReservation.ts` |
+| P2C · soft-avoid retrieval deprioritization | ✅ shipped | `softAvoidedTopGenres()`, `LIKED_SUBJECT_AVOID_GUARDS`, `lib/retrieval/softAvoidLocal.ts` |
+| **Phase 2 product acceptance** | 🔴 **blocked** | see active blocker below |
+| P3 · contribution-grounded ranking + explanation faithfulness | ⏸ paused | unblocks once Phase 2 acceptance passes |
+| P4 · semantic intelligence foundation | ⏳ future | hard-avoid UI + storage lands here |
 
-- **Recommendation Control Plane (P0A → P2C)** — shipped 2026-05-13 → 2026-05-14. Full prose for P0A→P2B.1 archived in `docs/recently_shipped.md`. Headline outcomes: P0A canonical genre taxonomy (`lib/taxonomy/genres.ts` + `normalize.ts`); P0A.1 retrieval-side fold-in (`getRetrievalSubjects`); P0B + P0B.1 deck-validity / configHash invalidation across `recPayloadCache` / `recSession` / `recQueue` (`lib/recValidity.ts`); P1 signal contract + non-zero stated-pref floor at all tiers (`lib/recPolicy.ts` `STATED_TASTE_POLICY` + `lib/recRequest.ts` + `lib/recSignals/`); P2A retrieval branch planner — `statedGenres → revealedAuthors → revealedLanes`, always-on stated, partial soft-avoid deprioritization (`lib/retrieval/branchPlanner.ts` + branch modules + `BRANCH_QUOTAS` + `EDIT_CAUSE_BRANCH_BOOST` + `SOFT_AVOID_RETRIEVAL_MULTIPLIER`); P2B BuildCause-aware top-slate reservation (`lib/composition/statedReservation.ts` + `STATED_RESERVATION_POLICY`); P2B.1 retrieval-provenance AND-gate on stated reservation; **P2C (2026-05-14) soft-avoid retrieval deprioritization** — branch trigger extended to dense AND sparse paths (`softAvoidedTopGenres()` in `lib/retrieval/branches/revealedLanes.ts` joins existing `softAvoidedLanes()`); curated `LIKED_SUBJECT_AVOID_GUARDS` table in `lib/recPolicy.ts` filters fantasy-ish liked_subjects when fantasy_scifi avoided; new pure helper `lib/retrieval/softAvoidLocal.ts` (`applyLocalSoftAvoidFilter` + `classifyCandidateAvoidKey`) demotes — never excludes — local catalog candidates and the catalog-fallback scan by `SOFT_AVOID_RETRIEVAL_MULTIPLIER`; `softAvoidDeprioritized` flag populated on revealedLanes FetchItems when reduction applied; new `RetrievalTrace.soft_avoid_retrieval = { avoidsApplied, localDemoted, branchQuotaMultiplier }` surfaces in the meta. Gap B (revealedAuthors) deferred to P4. P2B.1 stated_genre: provenance prefix preserved verbatim. Validators all green: taxonomy / recValidity / stated reservation / retrieval planner (planner suite now 56 + 19 P2C cases). Pipeline geometry, schema, OL/GBooks/LLM, RecCard / Home / TasteReadout untouched.
-- **First-session value loop V1–V4 + UX Correction Sprint UX-1A → UX-3F.1 + FS-5a + FX-1** — shipped 2026-05-11 → 2026-05-13. Full prose archived in `docs/recently_shipped.md`. UI/copy-only on existing handlers + existing `TasteProfile`. New surfaces: `app/taste-readout.tsx`, `components/TasteReadout.tsx`, `components/HomeShortlist.tsx`, `lib/tasteReadoutCopy.ts` (incl. FS-5a `buildIntakeSynthesis`), `lib/traitCopy.ts` (FX-1 `composeTraitPhrase` + 18-entry `PAIR_TABLE`); RecCard variant pools refreshed (`_v2` tags), `LearningToast`, anchored explanations, thin-profile copy gating, MLT clarity copy, avoid-genres + `q_outcome` + `q_tone` intake steps + readout chips, author-anchor `_RATED` / `_NEUTRAL` split. No recommender / scoring / ranking / retrieval / persistence / schema / LLM / OL / GBooks changes. Home does not fetch or generate recommendations.
-- **Profile save-trust three-store clear** — `app/edit-preferences.tsx` save calls `clearRecSession()` + `clearRecQueue()` + `void clearRecPayload(userId)` before back-nav. Redundant after P0B `configHash` invalidation but retained as defense-in-depth for one release.
-- **Catalog subsystem (P0 / P0.5 / P1.5a / P1.5b-1 / -1.1 / -2 / -3)** — see `docs/catalog_subsystem.md` and runbooks. Verification reconciler deployed + scheduled (latest applied migration `20260512000000_p1_5b_1_verification_reconciler.sql`).
+Verbose prose for every shipped phase lives in `docs/recently_shipped.md`. Catalog subsystem history (P0 / P0.5 / P1.5a/b series) lives in `docs/catalog_subsystem.md`.
 
-### V1–V4 known limitations still relevant
-- **No authenticated / on-device UX walkthrough yet** — V1-V4 verified statically (typecheck + truth-table probes + banned-phrase audits). Cold-start onboarding → For You → Home tap-through has not been walked end-to-end with a live account.
-- **V1A: anchor-book name acknowledgement deferred** — TasteReadout doesn't name a specific 4★+ anchor ("because you liked *X*"). Intentional to keep V1A LLM-free and avoid over-personalization on thin profiles.
-- **V4: thin-state proxy is heuristic** — `librarySize = currentReads.length + yearStack.length`. A user with many finished books but zero in-progress + zero year-stack sees "Build your shortlist" instead of "Your shortlist is waiting." Acceptable trade-off; swap in `tasteProfile.tier` later if Home loads it for another reason.
-- **V4: shortlist reasons use `reasons[0]`, not the polished V3 `buildExplanation` output** — keeps Home dependency-free.
-- **V4: tap-through writes `evidenceTags: []`** — Home doesn't compute the full evidence-tag array; detail "Why this book?" still gets the explanation string but less rich than tapping from For You.
+### Active Phase 2 blocker — `statedInPool=0` after explicit pref edit
+
+Repro flow: Reading Taste edit (e.g. Business + Mystery favorites, Slow-burn style, Fantasy avoid) → save → navigate to For You **without browser refresh**.
+
+What works:
+- Save → rebuild fires.
+- BuildCause survives no-refresh nav as `explicit_preference_edit`.
+- Planner runs and emits stated branch (`[P2DEBUG/plan] byBranch=stated:4/...`).
+- P2B reservation gate executes correctly.
+
+What fails:
+- Reservation returns `reason=no_eligible_candidate` with `compPoolSize=184, statedInPool=0`.
+- Top slate after edit still shows literary books carrying only the P1 floor `stated_taste≈0.08`.
+
+Stated-branch candidates are retrieved by OL but eliminated between OL fetch and compPool. Most likely sub-mechanism: `computeFitClass` rejects them on dominant-lane mismatch. **Survival-trace instrumentation is in place** (`[P2SURVIVE/post_ol_merge|post_hygiene|post_scoring|comp_pool]` in `lib/recommender.ts`). Next live run pinpoints the attrition stage.
+
+Until a stated-branch book whose primary affinity matches a stated favorite reaches the visible top slate after an explicit edit, Phase 2 product acceptance is not passed and the pre-beta gate "P2 retrieval responsiveness; visible deck shift after pref edit, dense users included" is not met.
+
+### Known open quality issues (not the current blocker)
+- **`Business` chip → broad `nonfiction` retrieval anchors** — Per P0A `affinityKey`, `Business` (and `Self-Help`, `History`, `Politics`, `Science`, `Reference`, `Health`) all collapse to `nonfiction`, whose `AFFINITY_RETRIEVAL_SUBJECTS` are `popular science` + `popular nonfiction`. Neither returns business-specific titles. Sub-affinity granularity is P4 territory (book intelligence / appeal vectors); do NOT spot-patch by adding business-only anchors before then.
+- **BuildCause browser-refresh persistence** — `setPendingBuildCause` is module-state only. A hard browser refresh between save and For-You nav loses the cause and the rebuild runs as `session_open`. Separate from the current no-refresh blocker; documented for when we revisit cross-session cause persistence.
 
 ### Parked / explicitly deferred
-- **Sentry / analytics instrumentation** — out of scope across the current stream. Do not add until that constraint is lifted.
-- **Author chips / stated-author model** — `lib/tasteProfile.ts:711-726` merge of stated `favorite_authors` with rated authors remains in place; recommender still consumes `liked_authors` as anchor candidates. Parked until P1 signal-provenance work cleans this up. UX-3F.1 closed only the RecCard copy overclaim.
-- **MLT auto-add settings UI** — `lib/mltAutoaddPref.ts` AsyncStorage pref exists; no settings-screen toggle (parked).
+- **Sentry / analytics instrumentation** — out of scope across the current stream.
+- **Author chips / stated-author model** — `lib/tasteProfile.ts:711-726` mixed-provenance merge stays until P1-style signal provenance lands for authors.
+- **MLT auto-add settings UI** — `lib/mltAutoaddPref.ts` AsyncStorage pref exists; no settings-screen toggle.
 - **B3 Goodreads import-success routing polish** — current routing acceptable.
-- **Hard avoid ("never recommend X") UI + storage** — designed in spec (signal class slot reserved); ships in P4 with finalized storage decision.
+- **Hard avoid ("never recommend X") UI + storage** — ships in P4 with finalized storage decision.
+- **V1A anchor-book name acknowledgement** — TasteReadout intentionally LLM-free and unnamed.
+- **V4 thin-state proxy** — `librarySize = currentReads.length + yearStack.length` (acceptable trade-off; swap to `tasteProfile.tier` later if Home loads it).
+- **V4 shortlist reasons use `reasons[0]`** (raw, not V3 `buildExplanation`); tap-through writes `evidenceTags: []`.
+- **Authenticated end-to-end UX walkthrough for V1-V4** — verified statically only; live cold-start tap-through pending.
 
 ---
 

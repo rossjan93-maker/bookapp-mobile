@@ -1,0 +1,79 @@
+Task: replit.md Context Trim — Preserve Current Phase 2 Acceptance Work
+
+Goal:
+Reduce replit.md context weight before the next Phase 2 corrective batch, while preserving all live operational context needed for the current investigation.
+
+Why now:
+We are in a natural pause while waiting on live survival-trace console output. Replit has repeatedly flagged that replit.md is growing heavy again and competing with useful working context. Address it now before the next implementation/debug cycle.
+
+This is docs-only housekeeping.
+Do not edit product code.
+Do not change roadmap-q2.md.
+Do not alter implementation state.
+
+Allowed files:
+- replit.md
+- docs/recently_shipped.md
+
+File budget:
+2 files max.
+
+Required actions:
+
+1. Move detailed shipped-history prose out of replit.md
+Archive or consolidate detailed entries for already-shipped phases that no longer need to live in the always-loaded working brief, including:
+- P0A / P0A.1
+- P0B / P0B.1
+- P1
+- P2A
+- P2B / P2B.1
+- P2C
+- any older verbose shipped summaries that still remain and are already stable
+
+Append/move them into docs/recently_shipped.md without losing substantive content.
+
+2. Keep only a highly condensed summary in replit.md
+The recommender architecture section in replit.md should remain clear, but compact.
+
+Preserve:
+- locked dual-plane strategy:
+  - free Recommendation Control Plane
+  - paid Semantic Intelligence Plane
+- phase status at a glance:
+  - P0A ✅
+  - P0A.1 ✅
+  - P0B/P0B.1 ✅
+  - P1 ✅
+  - P2A/P2B/P2B.1/P2C shipped, but Phase 2 product acceptance still blocked by live survival issue
+- current active blocker:
+  - save → rebuild works
+  - BuildCause survives normal no-refresh flow
+  - stated retrieval runs
+  - reservation fails because statedInPool=0
+  - current next step is survival-trace live test to locate attrition stage
+- browser-refresh BuildCause persistence remains a separate known issue, not the current no-refresh blocker
+- P3 mapping exists but implementation is paused until Phase 2 product acceptance passes
+
+3. Preserve live caveats and active gotchas
+Do not accidentally remove:
+- current Phase 2 live acceptance blocker
+- P2B.1 provenance AND-gate importance
+- Business → broad nonfiction coherence note, if it is currently documented as a known open quality issue
+- BuildCause browser-refresh persistence issue
+- any active environment/workflow gotchas that still matter
+
+4. Make replit.md function as a live brief
+It should be short, scannable, and focused on:
+- what is active now
+- what just matters for the next decisions
+- where to find archive detail
+
+5. Validation
+Report:
+- before/after line count
+- before/after approximate byte count
+- what moved to docs/recently_shipped.md
+- what stayed in replit.md
+- git diff confirms only the two allowed docs changed
+
+Stop after docs cleanup. No code changes.
