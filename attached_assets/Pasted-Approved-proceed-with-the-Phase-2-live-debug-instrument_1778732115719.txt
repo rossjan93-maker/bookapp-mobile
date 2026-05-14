@@ -1,0 +1,71 @@
+Approved: proceed with the Phase 2 live debug instrumentation first.
+
+Do NOT jump straight to the AsyncStorage BuildCause fix yet.
+The diagnosis is directionally right, but we need to disambiguate two different live-product issues before patching:
+
+Issue 1:
+After a Reading Taste save, the user reported that nothing visibly changed until they manually refreshed the page/browser.
+
+Issue 2:
+After refresh, the rebuilt slate still did not feel coherent with Business + Fast-paced, and Replit identified that browser refresh wipes the module-memory-only pending BuildCause, causing the post-refresh build to degrade to session_open and skip stated reservation.
+
+We need a small __DEV__-gated diagnostic pass that proves the actual runtime path for both:
+A. save → navigate to For You with NO browser refresh
+B. save → browser refresh → For You
+
+Goal:
+Add temporary debug instrumentation only. No behavior changes yet.
+
+Instrumentation must report, at minimum:
+
+1. On Reading Taste save:
+- setPendingBuildCause value written
+- current saved preference summary relevant to the test if already locally available
+
+2. On For You recommendation build:
+- whether RecommendationsFeed pipeline was triggered
+- whether consumePendingBuildCause returned:
+  - explicit_preference_edit
+  - null/defaulted session_open
+- current effective BuildCause used for RecRequest
+- current configHash if already readily available
+
+3. P2 planner/output:
+- statedGenres branch ran? yes/no
+- stated branch candidate count
+- relevant stated genre keys/anchors if already available in trace
+- soft-avoid treatment active? yes/no if available in existing trace
+
+4. P2B reservation:
+- reservation attempted? yes/no
+- applied or skipped
+- if skipped, reason:
+  - wrong_cause
+  - no stated candidates
+  - no quality-clearing candidate
+  - AND-gate/provenance failure
+  - other existing enum reason if applicable
+
+5. Visible slate:
+- enough debug trace to connect the final visible top slate to:
+  - build cause
+  - whether reservation applied
+  - whether the top slate had any stated-branch reserved item
+
+Constraints:
+- __DEV__-gated only
+- no production behavior change
+- no schema/migration
+- no scoring/ranking/retrieval policy changes
+- no BuildCause persistence fix yet
+- no P3 work
+- no explanation work
+- keep the instrumentation minimal and easy to remove after diagnosis
+
+Output protocol:
+1. Implement the debug instrumentation.
+2. Tell me exactly which logs to look for during:
+   - Test A: no browser refresh
+   - Test B: with browser refresh
+3. Do not attempt the Phase 2.1 AsyncStorage fix yet.
+4. Stop after instrumentation is ready and wait for live-test results.

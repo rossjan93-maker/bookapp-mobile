@@ -131,6 +131,22 @@ export function planBranches(req: RecRequest, ctx: BranchContext): RetrievalPlan
     items.push(...branchItems);
   }
 
+  if (__DEV__) {
+    const stCount = items.filter(i => i.branch === 'statedGenres').length;
+    const auCount = items.filter(i => i.branch === 'revealedAuthors').length;
+    const laCount = items.filter(i => i.branch === 'revealedLanes').length;
+    console.log('[P2DEBUG/plan]',
+      `cause=${cause}`,
+      `stated=${policies.statedGenres.enabled ? policies.statedGenres.quota : 'OFF'}`,
+      `authors=${policies.revealedAuthors.enabled ? policies.revealedAuthors.quota : 'OFF'}`,
+      `lanes=${policies.revealedLanes.enabled ? policies.revealedLanes.quota : 'OFF'}`,
+      `fetchItems=${items.length}`,
+      `byBranch=stated:${stCount}/authors:${auCount}/lanes:${laCount}`,
+      `softAvoidLanesApplied=${JSON.stringify(softAvoidLanesApplied)}`,
+      policies.statedGenres.notes ? `statedNotes="${policies.statedGenres.notes}"` : '',
+    );
+  }
+
   return {
     branchOrder:           BRANCH_ORDER,
     branchPolicies:        policies,

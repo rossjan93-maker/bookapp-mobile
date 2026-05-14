@@ -446,9 +446,16 @@ export function RecommendationsFeed({
   // and force a pipeline rerun so the bucket repopulates immediately
   // instead of waiting for the 4-min TTL or a signal-count change.
   useFocusEffect(useCallback(() => {
+    if (__DEV__) console.log('[P2DEBUG/focus]',
+      `hasTasteProfile=${!!tasteProfile}`,
+      `tier=${tasteProfile?.tier ?? '-'}`,
+      `hasUserId=${!!userId}`,
+      `hasSession=${!!getRecSession()}`,
+    );
     if (!tasteProfile || tasteProfile.tier < 1 || !userId || !supabase) return;
     if (getRecSession()) return; // session still valid — nothing to do
     if (__DEV__) console.log('[REC_REFRESH]', 'reason=session_cleared_on_focus');
+    if (__DEV__) console.log('[P2DEBUG/focus-trigger]', 'willRunPipeline=true');
     setIsInitialLoading(true);
     runPipeline({ isBgRefresh: false });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -571,14 +578,22 @@ export function RecommendationsFeed({
       //   2. fall back to 'session_open' for normal pipeline triggers.
       // Recommender step 7 reads req.signals to inject the stated-pref
       // floor; deck-validity stores remain governed by configHash unchanged.
+      const _consumedCause = consumePendingBuildCause();
       const recRequest = await buildRecRequest(supabase, {
         userId,
         profile:    tasteProfile,
-        cause:      consumePendingBuildCause() ?? 'session_open',
+        cause:      _consumedCause ?? 'session_open',
         configHash: currentConfigHash,
         intent:     activeIntentRef.current ?? null,
         feedback:   feedbackCtx ?? null,
       });
+      if (__DEV__) console.log('[P2DEBUG/build]',
+        `effectiveCause=${recRequest.build.cause}`,
+        `consumedWas=${_consumedCause ?? 'null'}`,
+        `configHash=${recRequest.build.configHash?.slice(0, 12) ?? '-'}`,
+        `statedGenres=${JSON.stringify(recRequest.signals.statedTaste.favoriteGenres)}`,
+        `softAvoids=${JSON.stringify(recRequest.signals.softAvoids.genres)}`,
+      );
 
       const recResult = await Promise.race([
         getPersonalizedRecsWithExpert(

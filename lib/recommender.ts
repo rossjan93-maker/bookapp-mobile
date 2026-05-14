@@ -2462,6 +2462,19 @@ export function getRankedRecs(
   if (reservation.pick) {
     addComposed(reservation.pick);
   }
+  if (__DEV__) {
+    const statedInPool = compPool.filter(b => (b._retrieval_reason ?? '').startsWith('stated_genre:')).length;
+    console.log('[P2DEBUG/reservation]',
+      `applied=${reservation.trace.applied}`,
+      `reason=${reservation.trace.reason}`,
+      `cause=${reservation.trace.cause ?? '-'}`,
+      `key=${reservation.trace.key ?? '-'}`,
+      `pickId=${reservation.pick?.id ?? '-'}`,
+      `pickTitle="${reservation.pick?.title ?? '-'}"`,
+      `compPoolSize=${compPool.length}`,
+      `statedInPool=${statedInPool}`,
+    );
+  }
 
   // Phase 1: Lane seeding — guarantee one CORE book per dominant lane.
   // Applied only for dense users who have ≥2 distinct dominant lanes.
@@ -2559,6 +2572,20 @@ export function getRankedRecs(
   const diverse = composed.map(
     (b, i) => ({ ...b, _debug: { pool_size: poolSize, rank: i + 1 } })
   );
+
+  if (__DEV__) {
+    const top4 = composed.slice(0, 4).map((b, i) => {
+      const ret = (b._retrieval_reason ?? '').split(':')[0] || '-';
+      const stated = (b._score_breakdown?.stated_taste ?? 0).toFixed(2);
+      return `${i + 1}.[${ret}|st:${stated}]"${b.title}"`;
+    }).join(' ');
+    console.log('[P2DEBUG/topSlate]',
+      `cause=${req?.build.cause ?? '-'}`,
+      `reservationApplied=${reservation.trace.applied}`,
+      `reservationReason=${reservation.trace.reason}`,
+      `top4=${top4}`,
+    );
+  }
 
   // Audit order: CoG-sorted non-rejects first, then reject-class books at end.
   // Audit always reflects the CoG-filtered pool (before intent), so the debug

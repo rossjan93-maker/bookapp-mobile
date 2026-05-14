@@ -174,6 +174,12 @@ export default function EditPreferencesScreen() {
       // edit so RecRequest.build.cause = 'explicit_preference_edit'. Module
       // state self-clears on first consume — no leakage into subsequent runs.
       setPendingBuildCause('explicit_preference_edit');
+      if (__DEV__) console.log('[P2DEBUG/save]',
+        `cause=explicit_preference_edit`,
+        `genres=${JSON.stringify(favoriteGenres)}`,
+        `styles=${JSON.stringify(readingStyles)}`,
+        `avoid=${JSON.stringify(avoidGenres)}`,
+      );
       setSaveSuccess(true);
       setTimeout(() => router.back(), 700);
     }

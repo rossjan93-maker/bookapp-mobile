@@ -73,11 +73,13 @@ let _pendingBuildCause: BuildCause | null = null;
 
 export function setPendingBuildCause(cause: BuildCause): void {
   _pendingBuildCause = cause;
+  if (__DEV__) console.log('[P2DEBUG/cause-set]', `cause=${cause}`, `ts=${Date.now()}`);
 }
 
 export function consumePendingBuildCause(): BuildCause | null {
   const c = _pendingBuildCause;
   _pendingBuildCause = null;
+  if (__DEV__) console.log('[P2DEBUG/cause-consume]', `cause=${c ?? 'null'}`, `ts=${Date.now()}`);
   return c;
 }
 

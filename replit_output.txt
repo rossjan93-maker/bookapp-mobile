@@ -1,413 +1,119 @@
-================================================================================
-PHASE 2 LIVE ACCEPTANCE FAILURE INVESTIGATION
-Preference Edit Responsiveness — Business + Fast-paced
-================================================================================
-Date: 2026-05-14
-Status: INVESTIGATION ONLY — no fixes implemented.
-Verdict: **Diagnosis D (B + C combined)**.
-Recommendation: **PAUSE P3. Land a small Phase 2.1 fix + ship a temporary
-debug pass before re-running live acceptance.**
-
-================================================================================
-0. EXECUTIVE SUMMARY
-================================================================================
-Two independent problems are stacked on top of each other in the observed run:
-
-PROBLEM 1 (architecture/runtime — class B):
-  The user reports "the change did not take effect until I manually refreshed
-  the browser." The save handler is correct on paper (clears all three stores
-  + sets pending BuildCause + navigates back), and `RecommendationsFeed` has
-  a `useFocusEffect` that triggers `runPipeline` when `getRecSession()` is
-  null. But the manual browser refresh is precisely the action that
-  GUARANTEES the loss of the in-memory `_pendingBuildCause`. So:
-   - If the deck DID rebuild silently before refresh and just didn't visually
-     update, the rebuild ran with `BuildCause = explicit_preference_edit`
-     (correct), reservation could fire, but the new deck never reached the
-     screen — UI remained showing the cleared state.
-   - If the deck did NOT rebuild silently, the manual refresh forced a fresh
-     build, but at that point `BuildCause = session_open` (memory wiped),
-     reservation returned `wrong_cause`, and the deck fell back to standard
-     scoring. **This second branch is what the user actually saw.**
-
-PROBLEM 2 (catalog/scoring — class C):
-  Even ignoring the BuildCause loss, the four observed books and their
-  "writing"-themed reasons reveal that for stated_genre = "business":
-   - "Business" maps to `affinityKey: 'nonfiction'` with `olSubjects: ['business',
-     'economics']` (lib/taxonomy/genres.ts:233-239).
-   - The statedGenres branch likely retrieved at most a handful of business
-     candidates from OL (or zero of sufficient quality after hygiene).
-   - The user's revealed history is dominated by literary trait alignment
-     (`prose` / `literary_prose` from lib/traitCopy.ts:20,27), so when
-     reservation didn't fire, revealed scoring put four literary/historical
-     books at the top with appreciation-pool reasons humanized to "writing".
-   - The +0.05 stated_taste floor (P1) is real but mathematically dwarfed by
-     literary trait_alignment (~0.38 cap). With reservation off, the floor
-     alone is not enough to pull a business book into the top-4.
-
-So Phase 2's mechanics are correct, but the user-visible outcome is broken
-for two distinct reasons. Both must be addressed before live acceptance can
-be considered passed.
-
-================================================================================
-1. SAVE → REBUILD PATH (intended vs actual)
-================================================================================
-
-INTENDED FLOW (and what app/edit-preferences.tsx does):
-  L142     Supabase upsert to `reader_preferences` succeeds
-  L170-172 clearRecSession() + clearRecQueue() + clearRecPayload(userId)
-  L176     setPendingBuildCause('explicit_preference_edit')
-  L178     router.back()
-  → RecommendationsFeed.tsx focus effect fires:
-  L448-453 useFocusEffect: if !getRecSession() then runPipeline({ isBgRefresh: false })
-  → runPipeline calls buildRecRequest, which calls
-    consumePendingBuildCause() and gets 'explicit_preference_edit'.
-  → recommender's pickStatedReservation sees the cause, evaluates stated
-    branch candidates, reserves a slot if any clear quality + AND-gate.
-  → New deck renders with at least one Business pick at top.
-
-WHAT LIKELY HAPPENED LIVE:
-  Save handler ran correctly through L178. Then ONE of the following:
-
-  Path α: The `useFocusEffect` did fire on `router.back()` and
-          `runPipeline` ran with the correct BuildCause. The pipeline
-          completed. But `RecommendationsFeed` derives its visible state
-          (`visibleConts` / `visibleDiscs`) from the module-level queue
-          (recommender.ts:148-161), and the post-pipeline `syncVisible()`
-          may not have triggered a React re-render because the queue
-          identity didn't change in a way React's diffing detected.
-          User sees stale/empty UI → presses browser refresh → JS runtime
-          resets → `_pendingBuildCause` wiped → fresh pipeline runs with
-          `session_open` → no reservation → revealed scoring wins → the
-          four literary books appear.
-
-  Path β: The `useFocusEffect` did NOT fire reliably on web after
-          `router.back()`. (`useFocusEffect` is an Expo Router behavior
-          that has known timing differences between native and web.)
-          User sees the previous (still-rendered) screen for some moments
-          → presses browser refresh → fresh JS runtime → fresh pipeline
-          with `session_open` → same bad outcome as Path α.
-
-Either path produces the same end state visible to the user. The two paths
-differ on whether a silent successful rebuild happened in between. We cannot
-distinguish them from logs alone — see §10 for the minimum debug
-instrumentation needed.
-
-CONFIDENCE: high that one of α or β occurred; cannot prove which without
-instrumentation.
-
-================================================================================
-2. "REFRESH REQUIRED" — WHICH SURFACE?
-================================================================================
-
-Question: was the refresh requirement A (Profile card stale), B (For You
-deck stale), or C (both)?
-
-Reading Taste card display: not investigated in depth here, but the same
-save handler's Supabase upsert is what `app/edit-preferences.tsx` reads from
-on subsequent loads. If the card was also stale until refresh, that points
-to a focus-revalidation gap in the profile screen too. The user did not
-report whether the Reading Taste card itself looked stale — only that
-"the change didn't take effect."
-
-For You deck: definitely affected. This is the surface the user observed.
-The deck either (a) was empty/stale until refresh and then loaded the wrong
-slate, or (b) loaded a silently-rebuilt slate that didn't surface to React.
-
-Most likely answer: **B (For You deck)** is confirmed. **A (Profile card)**
-is plausible but unconfirmed in this report.
-
-================================================================================
-3. BuildCause PRESERVATION
-================================================================================
-
-Storage: `_pendingBuildCause` lives in module-level memory in
-`lib/recRequest.ts:72`. NOT persisted to AsyncStorage.
-
-Setter: `setPendingBuildCause(cause)` (called at edit-preferences.tsx:176).
-
-Consumer: `consumePendingBuildCause()` (lib/recRequest.ts:78) — called
-inside `buildRecRequest` during pipeline run. Default fallback is
-`'session_open'` (lib/recRequest.ts:49).
-
-Loss conditions identified:
-  L1. **Browser refresh / page reload** wipes JS runtime → `_pendingBuildCause`
-      becomes `null` → next pipeline runs with `session_open`.
-      → THIS IS THE EXACT FAILURE CONDITION THE USER REPORTED HITTING.
-  L2. Any code path that calls `consumePendingBuildCause` BEFORE the For You
-      pipeline runs (e.g. a background prewarm, a different screen's
-      pipeline call) would consume the cause and leave For You with
-      `session_open`. `lib/recPrewarm.ts` exists in the codebase and is a
-      candidate consumer worth verifying.
-  L3. A second `setPendingBuildCause('session_open')` between save and
-      For You focus would overwrite. No such call observed in the read
-      paths but not exhaustively audited.
-
-Architecturally: the in-memory-only design is fragile precisely because
-the failure mode (refresh) is one users naturally try when something feels
-broken. Persisting `_pendingBuildCause` to AsyncStorage with a short TTL
-(e.g. 30s) would close L1 cleanly. Out of scope for this investigation
-but flagged as the likely Phase 2.1 fix.
-
-================================================================================
-4. configHash INVALIDATION
-================================================================================
-
-`computeRecConfigHash` in lib/recValidity.ts:72-80 hashes:
-  - favorite_genres
-  - avoid_genres
-  - reading_styles
-  - favorite_authors
-
-Adding `Business` to favorite_genres AND `Fast-paced` to reading_styles
-guarantees the hash changes (both fields are inputs).
-
-Enforcement at read time:
-  - `lib/recQueue.ts:92` — `assertQueueConfig` self-invalidates on mismatch
-  - `lib/recSession.ts:53` — `getRecSessionFor` self-invalidates
-  - `lib/recPayloadCache.ts` — `loadRecPayload(opts.currentConfigHash)`
-    self-invalidates
-
-In addition, the save handler explicitly clears all three stores (L170-172).
-
-VERDICT: configHash invalidation is NOT the failure. The deck the user saw
-after refresh was almost certainly a FRESH build (post-clear), not a stale
-deck leaking through. This rules out failure class A (stale deck leaking).
-
-================================================================================
-5. P2 BRANCH PLANNER OUTPUT FOR {favorite_genres: ["business"], reading_styles: ["fast-paced"]}
-================================================================================
-
-RecRequest (built by `buildRecRequest`):
-  - `signals.stated_durable.favorite_genres = ["business"]`
-  - `signals.stated_durable.reading_styles = ["fast-paced"]`
-  - `signals.revealed_behavioral.*` populated from rated history
-  - `policy.confidenceMode` = function of TasteProfile.tier
-  - `cause` = 'explicit_preference_edit' (intended) OR 'session_open'
-              (post-refresh failure mode)
-  - `configHash` = new value reflecting the edit
-
-Branches that run (from lib/retrieval/branchPlanner.ts):
-  - statedGenres ✓ (favorite_genres non-empty)
-  - statedAuthors ✗ (no stated favorite_authors in this scenario)
-  - revealedAuthors ✓ (depends on rated history)
-  - revealedLanes ✓ (always-on)
-  - intent ✗ (no active intent chip)
-  - exploration ✓
-  - feedback ✗ (no recent MLT)
-
-statedGenres branch for "Business":
-  - lib/taxonomy/genres.ts:233-239 →
-      affinityKey: 'nonfiction', olSubjects: ['business', 'economics']
-  - OL retrieval pulls books tagged with `business` or `economics`.
-  - Likely returns 10-30 raw candidates before hygiene.
-  - After hygiene (juvenile filter, no_meta filter, etc.), likely a much
-    smaller number remain — business-category OL records are notoriously
-    metadata-thin.
-
-"Fast-paced" / pacing signal:
-  - Not a retrieval signal anywhere in lib/retrieval/* or lib/recPolicy.ts.
-  - Affects scoring only (trait_alignment), and does not pull
-    pacing-tagged books into retrieval.
-  - This is **expected current behavior** per the architecture spec —
-    pacing is a style signal, not a retrieval anchor. No bug here.
-
-Implication: if the user expected fast-paced to affect WHICH books appear
-(not just how they rank), the architecture does not currently support that.
-Worth surfacing as a product-level gap.
-
-================================================================================
-6. CANDIDATE RETRIEVAL OUTCOME FOR BUSINESS
-================================================================================
-
-Did statedGenres retrieve Business candidates? Almost certainly YES
-(at least some), based on OL coverage of `business` / `economics` subjects.
-
-Why didn't any appear in the top slate?
-
-There are exactly five mechanisms that could block a stated-Business book
-from reaching top-4:
-  M1. **Wrong BuildCause** — `pickStatedReservation` returns
-      `{ pick: null, reason: 'wrong_cause' }` for any cause other than
-      `explicit_preference_edit` (lib/composition/statedReservation.ts:71).
-      → Triggered by the post-refresh `session_open` cause.
-      **MOST LIKELY ROOT CAUSE.**
-  M2. **No stated branch candidate** — `statedGenres` returned zero after
-      retrieval+hygiene.
-  M3. **No quality-clearing candidate** — candidates exist but none clear
-      the reservation quality floor (defined in
-      `STATED_RESERVATION_POLICY`).
-  M4. **AND-gate rejected candidates** — book has `_retrieval_reason`
-      starting with `stated_genre:` BUT lacks a positive `stated_taste`
-      contribution above floor (P2B.1 AND-gate).
-  M5. **Reservation fired but a downstream step obscured it** — e.g.
-      composition swap, slot mask. Highly unlikely given current code.
-
-Top likely cause: **M1 (BuildCause lost on refresh)**. This is the
-straight-line explanation of the observed deck.
-
-Secondary contributing cause: even with M1 fixed, **M2/M3 may still fire**
-for "Business" specifically because OL business-subject coverage is sparse.
-This is the catalog/quality dimension of the failure (class C). It would
-not produce a different top deck — just a deck that contains 0 or 1
-business book instead of the 1+ the reservation policy intends.
-
-================================================================================
-7. TOP-SLATE BEHAVIOR CLASSIFICATION
-================================================================================
-
-Options offered:
-  A. stale deck still leaking through
-  B. fresh deck, but explicit Business preference did not survive
-     retrieval/reservation as intended
-  C. fresh deck and P2 worked mechanically, but candidate quality/catalog
-     mapping is too weak to feel coherent
-  D. unknown — needs instrumentation
-
-Verdict: **B + a layer of C**.
-
-Justification:
-  - A is ruled out: configHash invalidation + explicit save-handler clears
-    + the user observed a refresh before seeing the deck = the deck must
-    be fresh.
-  - B is the dominant cause: BuildCause was lost to the browser refresh,
-    so reservation returned `wrong_cause`, and revealed scoring won.
-  - C is a contributor the user would still feel even if B were fixed:
-    "Business" has thin OL coverage and the `+0.05` stated_taste floor is
-    too small to overcome literary trait_alignment without reservation.
-    Even with reservation, only 1 of top-4 would be business-tagged; the
-    other 3 would still be literary-leaning unless additional retrieval
-    quota or scoring boost is applied.
-
-================================================================================
-8. EXPLANATION-COPY CLASSIFICATION
-================================================================================
-
-Reasons observed:
-  "Reads heavy on writing."
-  "Built around writing."
-  "Leans into writing."
-
-Source identified:
-  - Variants in `APPRECIATION_POOL_SAFE` (RecCard.tsx:258-263) and
-    `ALIGNS_POOL_SAFE` (RecCard.tsx:241-246).
-  - Variable `${x}` resolved to `"writing"` or `"literary writing"`.
-  - lib/traitCopy.ts:20,27 maps `prose` / `literary_prose` → "literary writing".
-
-Diagnosis:
-  These are **expected current pre-P3 explanations** for books surfaced by
-  REVEALED `trait_alignment` on the `prose` / `literary_prose` trait. They
-  are NOT stale leaks from an old slate (the deck is fresh per §4). They
-  ARE symptomatic of the slate being explained from REVEALED history rather
-  than the newly stated Business preference — which is exactly what
-  reservation failure (§7B) would produce.
-
-Per-card consequence: even if reservation had fired and one Business book
-sat in slot 1, the OTHER three slots would still be literary picks
-explained as "writing." So the repetition would be partially fixed by P3
-slate diversity (different revealed contributions cited where available),
-but the underlying composition issue is upstream of explanation copy.
-
-VERDICT: **The "writing" reasons are independent P3 work AND simultaneously
-a symptom of the Phase 2 reservation failure.** Fixing P3 alone would not
-make this user feel that Business was respected; it would just diversify
-the literary-pick reasons. Fixing the BuildCause loss would put a Business
-book on top with a stated-preference reason, which is the actually-correct
-user-visible outcome.
-
-================================================================================
-9. RECOMMENDATION
-================================================================================
-
-Diagnosis category: **D (B + C combined)**.
-
-  B — Phase 2 architecture is shipped, but live update/rebuild behavior
-      still has a bug: in-memory-only `_pendingBuildCause` is wiped by
-      browser refresh, which is the natural user response to "nothing
-      happened." This breaks reservation in exactly the scenario the test
-      was designed to validate.
-
-  C — Phase 2 architecture is shipped, but Business-category retrieval and
-      the +0.05 stated_taste floor together are not strong enough to
-      produce a coherent top slate when revealed history is dominated by
-      a different lane. This is a product-level coherence gap, not a
-      mechanical bug.
-
-Phase 2 product acceptance: **NOT PASSED.** The mechanics are right, the
-user-visible outcome is wrong.
-
-Should we proceed with P3 implementation? **NO — pause P3.**
-
-Rationale:
-  - P3 will not fix the user's complaint. P3 makes explanations faithful;
-    if reservation isn't firing, P3 just produces more honest "we
-    surfaced these literary books because of your literary history"
-    reasons. That's truthful but doesn't address the actual product gap.
-  - P3 builds on top of Phase 2 acceptance. If Phase 2 hasn't passed
-    in-app, P3 layered on top will be harder to validate live.
-  - The Phase 2.1 fix (persist BuildCause to AsyncStorage with short TTL +
-    optional UI signal) is small and bounded.
-
-Suggested next steps in order:
-  1. Ship temporary debug instrumentation (§10) — 1 file, ~30 lines.
-  2. Re-run live acceptance with debug pass enabled to distinguish
-     Path α from Path β in §1 and to confirm BuildCause loss on refresh.
-  3. Ship Phase 2.1: persist `_pendingBuildCause` to AsyncStorage with a
-     30s TTL; consume-and-clear on first read; survives refresh but not
-     stale across sessions.
-  4. Re-run live acceptance. If reservation now fires and a Business book
-     leads the deck, Phase 2 is passed.
-  5. Decide separately whether class-C catalog coherence needs a Phase 2.2
-     (stronger Business retrieval quota, OR a small `stated_taste` boost
-     for cold/sparse stated edits, OR documented as expected behavior
-     until P4 semantic retrieval).
-  6. Then proceed with P3.
-
-================================================================================
-10. PROPOSED MINIMAL DEBUG INSTRUMENTATION (not implemented)
-================================================================================
-
-If approved, add a `__DEV__`-gated single-line log at six call sites that
-together prove or disprove every hypothesis in this report:
-
-  1. lib/recRequest.ts setPendingBuildCause(cause):
-     `[P2DEBUG/cause-set] cause=${cause} ts=${Date.now()}`
-
-  2. lib/recRequest.ts consumePendingBuildCause() before clearing:
-     `[P2DEBUG/cause-consume] cause=${cause} ts=${Date.now()}`
-
-  3. components/RecommendationsFeed.tsx useFocusEffect entry:
-     `[P2DEBUG/focus] hasSession=${!!getRecSession()}
-        configHash=${currentConfigHash}`
-
-  4. lib/recommender.ts runPipeline entry (after buildRecRequest):
-     `[P2DEBUG/build] cause=${req.cause} configHash=${req.configHash}
-        statedGenres=${req.signals.stated_durable.favorite_genres}`
-
-  5. lib/retrieval/branchPlanner.ts after planning:
-     `[P2DEBUG/plan] branches=${plan.branches.map(b=>b.kind+':'+b.quota)}`
-
-  6. lib/composition/statedReservation.ts pickStatedReservation return:
-     `[P2DEBUG/reservation] result=${pick?'reserved:'+pick.id:'skipped'}
-        reason=${reason} candidates=${eligibleCount}`
-
-This adds ZERO production noise (gated on `__DEV__`) and surfaces in the
-console for the next live acceptance walkthrough. Total: 6 lines across
-6 files, no new files. Removable in the same PR as the Phase 2.1 fix.
-
-================================================================================
-11. WHAT THIS INVESTIGATION DID NOT EXAMINE
-================================================================================
-- Whether the Reading Taste profile card itself appeared stale
-  (separate from the For You deck). Not reported by user.
-- Whether `lib/recPrewarm.ts` or any other consumer of
-  `consumePendingBuildCause` could race with the For You pipeline.
-  Worth a 5-minute audit during the Phase 2.1 fix.
-- Whether `useFocusEffect` on web/Expo Router has a timing difference
-  vs native that would explain Path β specifically. Out of scope here;
-  the proposed instrumentation would catch it.
-- The actual OL retrieval count for `subject:business` against the
-  current catalog — would require a live API call.
-
-================================================================================
-END OF INVESTIGATION
-================================================================================
+# P2DEBUG Instrumentation — Logs to Look For
+
+All logs are `__DEV__`-gated, prefixed `[P2DEBUG/...]`. To remove later:
+`rg -n "P2DEBUG" lib/ components/ app/` and delete each block.
+
+## Instrumentation map (single source of truth)
+
+| Tag                     | File                                       | Fires when                                              |
+|-------------------------|--------------------------------------------|---------------------------------------------------------|
+| `[P2DEBUG/save]`        | `app/edit-preferences.tsx`                 | User taps Save in Reading Taste editor                  |
+| `[P2DEBUG/cause-set]`   | `lib/recRequest.ts` (setPendingBuildCause) | Save handler stamps the next-pipeline cause             |
+| `[P2DEBUG/cause-consume]`| `lib/recRequest.ts` (consumePendingBuildCause) | Pipeline reads + clears the pending cause          |
+| `[P2DEBUG/focus]`       | `components/RecommendationsFeed.tsx`       | For-You tab gains focus (every focus, gated or not)     |
+| `[P2DEBUG/focus-trigger]`| `components/RecommendationsFeed.tsx`      | Focus passed all gates → pipeline will run              |
+| `[P2DEBUG/build]`       | `components/RecommendationsFeed.tsx`       | RecRequest assembled — shows effective cause + signals  |
+| `[P2DEBUG/plan]`        | `lib/retrieval/branchPlanner.ts`           | Branch planner finished — quotas + per-branch counts    |
+| `[P2DEBUG/reservation]` | `lib/recommender.ts`                       | pickStatedReservation result (applied / reason / pick)  |
+| `[P2DEBUG/topSlate]`    | `lib/recommender.ts`                       | Final composed slate — top4 ids/titles + retrieval src  |
+
+---
+
+## Test A — No refresh (save → back-nav → For-You)
+
+Steps:
+1. Open Reading Taste editor.
+2. Add favorite_genres = [business], reading_styles = [fast_paced], avoid = [fantasy_scifi].
+3. Tap Save. Wait for back-nav.
+4. Land on For-You tab. Do **not** refresh the browser.
+
+Expected log sequence (in order — note `cause-set` fires *before* `save` because
+`setPendingBuildCause()` runs first inside the save handler):
+
+```
+[P2DEBUG/cause-set]     cause=explicit_preference_edit
+[P2DEBUG/save]          cause=explicit_preference_edit  genres=[...]  styles=[...]  avoid=[...]
+[P2DEBUG/focus]         hasTasteProfile=true tier=2 hasUserId=true hasSession=false
+[P2DEBUG/focus-trigger] willRunPipeline=true
+[P2DEBUG/cause-consume] cause=explicit_preference_edit
+[P2DEBUG/build]         effectiveCause=explicit_preference_edit  consumedWas=explicit_preference_edit  configHash=<12-char>  statedGenres=[...]  softAvoids=[...]
+[P2DEBUG/plan]          cause=explicit_preference_edit  stated=<n>  authors=<n>  lanes=<n>  fetchItems=<N>  byBranch=stated:X/authors:Y/lanes:Z  softAvoidLanesApplied=[...]
+[P2DEBUG/reservation]   applied=true  reason=reserved  cause=explicit_preference_edit  key=<genre>  pickId=<id>  pickTitle="..."  compPoolSize=<n>  statedInPool=<n>
+[P2DEBUG/topSlate]      cause=explicit_preference_edit  reservationApplied=true  reservationReason=reserved  top4=1.[<src>|st:0.??]"..." 2.[...] ...
+```
+
+The `<src>` token in `topSlate` is the prefix of `Book._retrieval_reason` — actual
+values include `stated_genre`, `dominant_lane`, `liked_subject`, `local`, `repeated_author`,
+`author_anchor`, etc. (NOT planner branch names like `revealedLanes`).
+
+The `genres` / `styles` / `avoid` arrays in `[P2DEBUG/save]` reflect whatever the
+chip components push into local state (canonical keys per the rest of Readstack;
+treat this only as "did the values match what I tapped").
+
+**Pass condition for Test A:** `effectiveCause=explicit_preference_edit` AND
+`reservationApplied=true` AND at least one of the top4 entries has source prefix
+`stated_genre`. Slot 1 is not guaranteed — the reservation seeds the comp pool
+but final ordering can move other strong candidates ahead.
+
+**Fail patterns:**
+- `[P2DEBUG/focus]` shows `hasSession=true` → session wasn't cleared on save (regression in `clearRecSession` path).
+- `[P2DEBUG/focus-trigger]` missing → focus gate (tier/userId/supabase) is blocking; check `tier`.
+- `[P2DEBUG/build]` shows `consumedWas=null` → setPendingBuildCause never ran (save handler didn't reach line 179) or the consumer ran first.
+- `[P2DEBUG/plan]` shows `stated=OFF` despite `statedGenres=["business"]` → planner gate bug.
+- `[P2DEBUG/reservation]` shows `reason=no_eligible_candidate` despite `statedInPool>0` → reservation eligibility filter bug; if `statedInPool=0` despite `stated=<n>` in plan → retrieval didn't return business candidates.
+
+---
+
+## Test B — Refresh after save (save → back-nav → browser refresh → For-You)
+
+Steps:
+1–3 same as Test A.
+4. Browser hard-refresh (Cmd-Shift-R / Ctrl-Shift-R).
+5. Wait for For-You tab to render.
+
+Expected log sequence (note `cause-set` precedes `save` for the same reason as Test A):
+
+```
+[P2DEBUG/cause-set]     cause=explicit_preference_edit
+[P2DEBUG/save]          cause=explicit_preference_edit  ...
+--- BROWSER REFRESH (module memory wiped) ---
+[P2DEBUG/focus]         hasTasteProfile=true tier=2 hasUserId=true hasSession=false
+[P2DEBUG/focus-trigger] willRunPipeline=true
+[P2DEBUG/cause-consume] cause=null                          ← key signal: pending cause is gone
+[P2DEBUG/build]         effectiveCause=session_open  consumedWas=null  configHash=<same 12-char as Test A>  statedGenres=["business"]  softAvoids=["fantasy_scifi"]
+[P2DEBUG/plan]          cause=session_open  stated=<n>  ...
+[P2DEBUG/reservation]   applied=false  reason=wrong_cause  cause=session_open  ...
+[P2DEBUG/topSlate]      cause=session_open  reservationApplied=false  reservationReason=wrong_cause  top4=1.[revealedLanes|...]"<literary title>" ...
+```
+
+**Pass condition for Test B (confirms diagnosis D):** `consumedWas=null` AND `effectiveCause=session_open` AND `reservation.reason=wrong_cause` AND top4 slot 1 is NOT `stated_genre`.
+
+This sequence proves the failure class is exactly:
+> `setPendingBuildCause()` writes to module-only memory in `lib/recRequest.ts`. Browser refresh wipes that module, so the rebuilt pipeline sees `cause=session_open`, which fails the `STATED_RESERVATION_POLICY.allowedCauses` gate, so the top slate falls back to revealedLanes (literary).
+
+---
+
+## Cross-test invariants
+
+- `configHash` should be **identical** between Test A and Test B (prefs unchanged between runs).
+- `statedGenres` / `softAvoids` should be **identical** between Test A and Test B (proves signal compilation is correct in both cases — failure is purely the cause).
+- `[P2DEBUG/cause-set]` will appear in Test B before refresh; the absence of a corresponding `[P2DEBUG/cause-consume]` with the same cause after refresh is the smoking gun.
+
+---
+
+## What this instrumentation does NOT cover
+
+- AsyncStorage hydration (no fix attempted; that's the Phase 2.1 work).
+- Scoring contributions / `_score_breakdown` deltas — `topSlate` shows `stated_taste` only as a coarse number.
+- Explanation faithfulness — out of scope (P3).
+- Retrieval-trace meta — already surfaced via existing `pipeline_meta`, not duplicated here.
+
+## Removal
+
+When the diagnosis is confirmed and the AsyncStorage fix lands:
+
+```
+rg -l "P2DEBUG" lib/ components/ app/
+```
+
+Then delete each `if (__DEV__) console.log('[P2DEBUG/...')` block (and the `_consumedCause` helper variable in `RecommendationsFeed.tsx` — collapse back to inline `cause: consumePendingBuildCause() ?? 'session_open'`).
