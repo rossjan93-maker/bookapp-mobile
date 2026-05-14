@@ -1,0 +1,88 @@
+Task: Phase 2 Live Acceptance Follow-Up — Why P2 survival logs run but OLFETCH logs do not fire
+
+Context:
+We reran the live recommendation rebuild after adding OLFETCH instrumentation.
+
+Important new observation:
+- The fresh [P2SURVIVE/...] logs appear, so the latest instrumentation bundle is definitely loaded.
+- However, filtering the browser console for [OLFETCH/...] during the same preference-save → For You rebuild produced no lines at all.
+
+The visible P2SURVIVE logs from this run show:
+- stated_in=0
+- stated_out=0
+- stated_scored=0
+- stated_in_compPool=0
+
+This means the downstream pipeline executed, but no stated external candidates entered it.
+
+Because the OLFETCH instrumentation did not emit anything, the instrumented fetchOLSubject / fetchOLByAuthor functions appear not to have executed in this run.
+
+This is a new diagnostic contradiction:
+- In a prior live run, OLFETCH emitted and OL returned stated thriller/mystery candidates.
+- In this live run, P2SURVIVE emitted but OLFETCH emitted nothing.
+
+Goal:
+Investigate why a recommendation rebuild can reach the downstream P2 survival-trace stages while skipping the live OL fetch functions entirely.
+
+Investigation only. Do not implement a behavior fix yet.
+
+Read:
+- lib/recommender.ts around getOLCandidates and the calls to fetchOLSubject / fetchOLByAuthor
+- any branches that can return before those fetch helpers run
+- any cache fast paths or mode gates that can skip live OL fetches
+- any entitlement/free-preview/live-fetch conditions
+- any logic deciding whether to use:
+  - local candidates only
+  - cached external candidates
+  - live OL candidates
+- any conditions tied to profile tier, signal count, rec mode, or candidate sufficiency
+
+Questions to answer:
+
+1. Under what exact conditions do fetchOLSubject / fetchOLByAuthor run?
+List all preconditions.
+
+2. Under what exact conditions can getOLCandidates or its caller skip those fetch helpers entirely while the rest of the recommendation pipeline still continues?
+
+3. Which path most likely occurred in the latest live run where:
+- P2SURVIVE logs emitted
+- OLFETCH logs did not emit
+- stated candidate counts were all zero
+
+4. Compare against the earlier run where OLFETCH did emit and OL returned stated candidates.
+What input/state/path difference most likely changed the behavior?
+
+5. Does a cache, prewarm, stale session, entitlement gate, candidate sufficiency gate, or live-fetch throttle explain the missing OLFETCH logs?
+
+6. If live OL retrieval can be skipped, should the existing P2DEBUG plan log be made more explicit about:
+- “planned”
+versus
+- “actually executed”
+retrieval branches?
+Do not implement unless needed; just assess.
+
+7. Classify the failure:
+A. live OL retrieval was intentionally skipped by a gate
+B. live OL retrieval should have run but was bypassed unexpectedly
+C. OLFETCH instrumentation is placed in a sub-path that this rebuild did not use
+D. mixed/other
+
+8. Recommend the smallest next corrective step:
+- add a single gate-path debug line
+- fix a wrong skip condition
+- adjust cache/live-fetch orchestration
+- or another targeted change
+
+9. State whether Phase 2 product acceptance remains blocked.
+It should remain blocked unless the user-visible deck can visibly respond to explicit preference edits.
+
+Output:
+Write the full investigation report to replit_output.txt.
+
+Return in chat:
+- primary classification A/B/C/D
+- why OLFETCH did not fire
+- recommended next step
+- whether Phase 2 acceptance remains blocked
+
+Stop after investigation. Do not implement code yet.

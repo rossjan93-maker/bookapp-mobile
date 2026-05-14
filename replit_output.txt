@@ -1,246 +1,323 @@
-Phase 2 Live-Acceptance Follow-Up — Reservation eligibility contradiction
-=========================================================================
-Run input:  Business + Mystery favorites, Slow-burn style, no avoid
-            cause = explicit_preference_edit
-Symptom:    OL retrieval works (psych_thriller=14, crime_fiction=9)
-            [P2SURVIVE/post_ol_merge]   merged=20 stated=20
-            [P2SURVIVE/post_hygiene]    stated_in=20 → stated_out=12 (8 dropped)
-            [P2SURVIVE/post_scoring]    byFitClass={core:0, adjacent:10, stretch:0, reject:2}
-            [P2SURVIVE/comp_pool]       statedInPool=10 (all adjacent_fit, st≈0.08)
-            [P2DEBUG/reservation]       applied=false reason=no_eligible_candidate
-            ⇒ visible top slate fails Phase 2 product acceptance.
-Status:     INVESTIGATION ONLY. No code changes.
+Phase 2 Live-Acceptance Follow-Up — Why OLFETCH did not fire while P2SURVIVE did
+================================================================================
+Run input:    Same Reading Taste edit (Business + Mystery, Slow-burn, no avoid),
+              save → For You no-refresh.
+Symptom:      [P2SURVIVE/...] lines all emit, but with stated_in=0 / stated_out=0
+              / stated_scored=0 / stated_in_compPool=0.
+              [OLFETCH/...] emits ZERO lines.
+Prior run:    Same flow, same instrumentation bundle — OLFETCH emitted
+              (psychological thriller=14, crime fiction=9), and stated
+              candidates reached compPool (statedInPool=10).
+Status:       INVESTIGATION ONLY. No code changes.
 
-----------------------------------------------------------
-Q1. Why no_eligible_candidate when statedInPool=10?
-----------------------------------------------------------
-The CORE-only gate at lib/composition/statedReservation.ts:127-128 rejects
-every candidate in compPool. Trace, in order, applied to each of the 10
-stated books:
+================================================================================
+Q1. Under what exact conditions do fetchOLSubject / fetchOLByAuthor run?
+================================================================================
+Both helpers are called ONLY from inside `getOLCandidates`
+(lib/recommender.ts:~1162 onwards). For either to fire:
 
-  L82  alreadyComposedKeys.has(...)            → false (set is empty here)
-  L100 reason starts with 'stated_genre:'      → ✅ PASS (all 10 do)
-  L103 _score_breakdown present                → ✅ PASS
-  L121 audit_flags 'stated_favorite:*' present → ✅ PASS
-        (P1 step 7 emits this when computeStatedTasteContribution matched
-         a key in req.signals.statedTaste.favoriteGenres — the 10 carry
-         st=0.08, which is the P1 floor; the flag is also pushed when
-         floor is applied)
-  L123 statedContrib > 0                       → ✅ PASS (st=0.08)
-  L127 isCore = fit_class==='core_fit' && !weak_metadata
-        → ❌ FAIL  fit_class==='adjacent_fit' for ALL 10
-  L128 if (!isCore && !allowAdjacentReservation) continue;
-        STATED_RESERVATION_POLICY.allowAdjacentReservation = false
-        ⇒ continue, every iteration
+  Precondition chain (all must hold, in order):
 
-Loop exits without a pick → L140 returns
-  { applied: false, cause: 'explicit_preference_edit', reason: 'no_eligible_candidate' }
+  P1.  Caller is `getCandidateBooks` and reaches the external-source block
+       (lib/recommender.ts:2980+).
+  P2.  `getCachedExternalCandidates(...)` returns a result whose `.isFresh`
+       is FALSE  (lib/recommender.ts:3000).
+       isFresh = (validRows.length >= CACHE_MIN_ROWS=5) and
+                 validRows = rows where retrieval_reason starts with
+                 CACHE_VERSION = 'v5:' and cached_at >= (now − 24h).
+  P3.  `_olCandidateSession` is INVALID  (lib/recommender.ts:3048-3053):
+         olSessionValid = !forceNewOL
+                       && _olCandidateSession !== null
+                       && _olCandidateSession.userId      === userId
+                       && _olCandidateSession.signalCount === currentSignal
+                       && (now − _olCandidateSession.loadedAt) < 10 min
+       i.e. the module-level session cache is null, expired, for a different
+       user, or the user's strongSignalCount changed.
+  P4.  The else-branch at lib/recommender.ts:3069 is taken, calling
+       `getOLCandidates(profile, …, req)` (lib/recommender.ts:3072).
+  P5.  Inside `getOLCandidates`, the branch planner emits ≥1 fetchItem and
+       Promise.all dispatches them (lib/recommender.ts:1162+).
 
-Primary cause: a CORE-only reservation gate met by an ALL-ADJACENT stated
-sub-pool. Not a missing flag, not a missing scoring contribution, not a
-provenance mismatch, not an author/lane cap.
+Only then does ANY OLFETCH/start | OLFETCH/result | OLFETCH/error line
+emit. Skipping at P2 OR P3 produces zero OLFETCH lines while the rest of
+the pipeline (scoring → composition → reservation → P2SURVIVE traces)
+proceeds against an alternate candidate source.
 
-Secondary observation (root of WHY they're adjacent, but a separate fix):
-For this dense user the dominant lanes are presumably literary / nonfiction
-non-thriller. computeFitClass classifies books off-dominant-lane as
-adjacent_fit. Crime/psychological-thriller titles arrive on a stated edit
-but are off-lane vs the user's revealed history → adjacent. This is the
-exact "stated edit produces adjacent_fit" pattern the previous report
-predicted as the next failure once retrieval was unblocked.
+================================================================================
+Q2. How can the pipeline continue while OL fetches are skipped?
+================================================================================
+There are exactly two skip paths upstream of the OL fetch helpers; both
+populate `externalCandidates` from a non-fetch source and short-circuit
+past `getOLCandidates`:
 
-----------------------------------------------------------
-Q2. Are adjacent_fit stated candidates currently ineligible?
-----------------------------------------------------------
-YES — categorically.
+  SKIP-A: cache_hit  (lib/recommender.ts:3000-3033)
+    if (cacheResult?.isFresh) {
+       externalCandidates = cacheResult.candidates;   // ← from rec_candidate_cache (DB)
+       … reconstruct trace …
+       _t3 = Date.now();    // cache_hit path — no OL latency
+    } else { … live_ol … }
 
-Exact rule: lib/composition/statedReservation.ts:127-128
+    Diagnostic log fingerprint:
+      • [CACHE DIAG] valid_rows (v5:): N (where N >= 5)
+      • NO `[PERF] phase2_external_fetch_start — live_ol` line
+      • NO `[PERF] phase2_external_fetch_start — ol_session_cache_hit` line
+      • NO OLFETCH/* lines
 
-   const isCore = sb.fit_class === 'core_fit' && !sb.audit_flags?.includes('weak_metadata');
-   if (!isCore && !STATED_RESERVATION_POLICY.allowAdjacentReservation) continue;
+  SKIP-B: ol_session_cache_hit  (lib/recommender.ts:3055-3068)
+    Module-level `_olCandidateSession` (10 min TTL, keyed by userId +
+    strongSignalCount) — short-circuits inside the `else` of cacheResult.
 
-Was it intentional? YES at the policy level. lib/recPolicy.ts:240-242
-documents the choice:
+    Diagnostic log fingerprint:
+      • [PERF] phase2_external_fetch_start — ol_session_cache_hit
+      • [PERF] phase2_external_fetch_end   — ol_session_cache_hit | candidates=N
+      • NO live_ol PERF lines, NO OLFETCH/* lines
 
-   /** When false, only CORE candidates may be reserved. Conservative default —
-    *  setting true would silently widen ADJACENT exposure on every pref edit. */
-   allowAdjacentReservation:  boolean;
-   …
-   allowAdjacentReservation: false,
+In both cases, the rest of the pipeline runs normally on the
+candidate set provided by the cache, and every downstream survival trace
+([P2SURVIVE/post_ol_merge|post_hygiene|post_scoring|comp_pool],
+[P2DEBUG/reservation], [P2RESERVE/gates]) STILL fires.
 
-Intent was conservatism (don't dilute slate quality). It was NOT designed
-to be permanent — `allowAdjacentReservation` is a tunable policy knob, not
-a hard architectural rule. The header at lib/recPolicy.ts:227 explicitly
-calls these "calibration hypotheses; tunable without architectural change."
+================================================================================
+Q3. Which path most likely occurred in the latest live run?
+================================================================================
+SKIP-A (DB rec_candidate_cache hit — `cacheResult.isFresh === true`).
 
-Conflict with the Phase 2 product contract? YES, in this exact failure
-mode. The pre-beta gate says "visible deck shift after pref edit, dense
-users included." For dense users an explicit edit toward an off-lane genre
-will routinely produce adjacent_fit (not core_fit) candidates, because
-core_fit requires alignment with the user's REVEALED dominant lane. Holding
-reservation to core-only means the deck shift gate cannot pass for the
-exact population it was written to protect.
+Reasoning chain (ordered, each step a verifiable artifact):
 
-----------------------------------------------------------
-Q3. What candidate classes are reservation-eligible today?
-----------------------------------------------------------
-Conjunction of (every bullet must hold):
+  1. The PRIOR successful run (psych_thriller=14, crime_fiction=9, merged=20)
+     ran getOLCandidates → got 20 stated books → wrote them to the DB cache
+     via `persistOLCandidates(client, userId, olResult.candidates)` at
+     lib/recommender.ts:3086. Each row is written with
+     `retrieval_reason = '${CACHE_VERSION}${original}'` =
+     `v5:stated_genre:thriller_mystery` (per persistOLCandidates,
+     lib/recommender.ts:1314+ / `${CACHE_VERSION}${b._retrieval_reason}`
+     at 1331).
 
-  Cause               req.build.cause === 'explicit_preference_edit'
-                      (the only entry in eligibleCauses; see recPolicy:246)
-  User signal         req.signals.statedTaste.favoriteGenres.length ≥ 1
-  Retrieval prov.     book._retrieval_reason starts with 'stated_genre:'
-                      (i.e. the P2A statedGenres branch returned it; first-
-                       seen-wins dedupe guarantees this label survives)
-  Scoring prov.       book._score_breakdown.audit_flags contains a string
-                      starting with 'stated_favorite:'  (pushed by P1 step 7)
-  Score threshold     book._score_breakdown.stated_taste > 0
-                      (the P1 +0.05 floor satisfies this — st≈0.08 in run)
-  Fit class           book._score_breakdown.fit_class === 'core_fit'
-                      AND audit_flags does NOT contain 'weak_metadata'
-                      (because allowAdjacentReservation is false)
-  Composition caps    compositionAllows(book) — author cap + lane cap respected
-  Composition state   compIdOf(book) NOT in alreadyComposedKeys
+  2. The current run came WITHIN 24h (CACHE_TTL_MS) of step 1, with
+     ≥5 valid_rows still present. So `getCachedExternalCandidates` returns
+     `{ candidates: […cache rows…], isFresh: true }`.
 
-First book in compPool (already sorted by score) satisfying all of the
-above is reserved. Single slot (maxReservedSlots=1).
+  3. cache_hit branch fires:
+     externalCandidates = cacheResult.candidates  (lib/recommender.ts:3001)
+     getOLCandidates is NEVER called.
+     Therefore no OLFETCH log emits this run.
 
-----------------------------------------------------------
-Q4. Did P2B/P2B.1 validators miss this case?
-----------------------------------------------------------
-YES — the live failure class is not exercised by the validator's product-
-behavior assertions.
+  4. CRITICAL — the cached candidates' `_retrieval_reason` field RETAINS
+     the `v5:` prefix:
 
-scripts/validate_stated_reservation.ts (cases C1-C13) enumerated:
-  C1-C5    happy-path reservation, all candidates fitClass='core_fit'
-  C6       "Only candidate is ADJACENT and policy disallows → null"
-            asserts pick === null AND
-            STATED_RESERVATION_POLICY.allowAdjacentReservation === false
-  C7-C13   weak_metadata / sort-order / cap-respect / etc., all fitClass='core_fit'
+       lib/recommender.ts:1094-1105 (getCachedExternalCandidates mapping):
+         _retrieval_reason: r.retrieval_reason ?? 'cache:restored'
+                                                     ↑
+              raw DB value, NOT prefix-stripped
 
-Coverage analysis vs. live failure:
+     The cache_hit branch only strips `v5:` from the trace strings
+     (`olResult.ol_queries`, lib/recommender.ts:3005-3008) — it does NOT
+     strip the prefix on each candidate's `_retrieval_reason` field.
 
-  ❌ NOT covered: an "all candidates ADJACENT, zero CORE" pool produced by
-                  realistic post-edit retrieval for a dense user.
-  ⚠️ Inverted:    C6 PROVES the current behavior is mechanically correct
-                  (returns null) — but it asserts that as the DESIRED
-                  behavior, treating ADJACENT-only as a non-product case.
-                  No validator case asks "did the pref edit visibly shift
-                  the deck?" because that is a product-acceptance question,
-                  not a unit invariant.
+  5. Downstream code asks `(b._retrieval_reason ?? '').startsWith('stated_genre:')`
+     in many places (recommender L2603 / statedReservation L150 / survival
+     traces). For a cache-restored candidate the actual value is
+     `v5:stated_genre:thriller_mystery`, so EVERY such check returns false.
 
-Net: validators prove the helper's contract (CORE-only, single-slot, caps
-respected). They cannot — and were never designed to — fail when the
-product-acceptance promise fails. The mechanical contract is being met;
-the product promise is not.
+  6. Hence:
+     [P2SURVIVE/post_ol_merge]   merged_total=N  stated_count=0
+     [P2SURVIVE/post_scoring]    stated_scored=0
+     [P2SURVIVE/comp_pool]       stated_in_compPool=0
+     [P2DEBUG/reservation]       statedInPool=0  reason=no_eligible_candidate
+     [P2RESERVE/gates]           pool=N  retrieval_prov=N (i.e. all rejected
+                                  by the retrieval-prov gate, because the
+                                  prefix is `v5:stated_genre:` not
+                                  `stated_genre:`)
 
-There is no validator gap to "fix" by adding a unit case. The gap is the
-absence of a product-level acceptance fixture (e.g., dense-user-edit-to-
-off-lane-genre snapshot replaying through composition and asserting at
-least one stated_genre:* book lands in top-4). That fixture would have
-caught this at CI time.
+  Independent corroboration to look for in the captured console logs of
+  this run (any single one is dispositive):
+    a. Presence of `[CACHE DIAG] valid_rows (v5:): N` with N≥5.
+    b. Absence of `[PERF] phase2_external_fetch_start — live_ol`.
+    c. Absence of `[PERF] phase2_external_fetch_start — ol_session_cache_hit`.
+    d. `[P2RESERVE/gates] retrieval_prov=…` equal to compPool's
+       cache-sourced count, with `fit_class=0`.
 
-----------------------------------------------------------
-Q5. Is the current rule too weak for Phase 2 acceptance?
-----------------------------------------------------------
-YES — and this run is the canonical proof.
+  SKIP-B (session cache hit) is also possible but less likely as the sole
+  explanation, because:
+    • SKIP-B emits its own distinctive PERF log lines (3057, 3067), so
+      its absence/presence is visible.
+    • SKIP-B preserves whatever `_retrieval_reason` was in `_olCandidateSession.result`,
+      i.e. the original `stated_genre:thriller_mystery` (no `v5:` prefix),
+      so it would still produce stated_count > 0 downstream.
+    • SKIP-B has a 10-minute TTL — possibly already expired between runs.
+    • SKIP-B won't survive a hard browser refresh (module state).
 
-The acceptance gate ("visible deck shift after pref edit, dense users
-included") commits us to two things:
-  (i)  retrieval makes stated candidates available, and
-  (ii) at least one of them surfaces in the visible top slate.
+  So the unique fingerprint matching ALL observed symptoms is SKIP-A
+  (DB cache_hit) plus the prefix-leak.
 
-For dense users an explicit edit toward a genre off their revealed
-dominant lane is the COMMON case (the whole point of editing prefs is
-usually to nudge AWAY from prior behavior). computeFitClass will
-classify those candidates as adjacent_fit by design — that's the
-classifier doing its job.
+================================================================================
+Q4. Input/state difference vs the prior successful run
+================================================================================
+Identical user input. The state difference is downstream side-effects of
+the prior successful run:
 
-If reservation is core-only, then:
-  • a dense user editing toward an off-lane genre never sees the deck shift,
-  • a dense user editing toward an on-lane genre would already see it
-    without any reservation needed (those candidates would land in the
-    top slate organically),
-  • therefore reservation as currently configured is a no-op for the
-    population it was written to serve.
+  Prior run                     →  This run
+  ─────────────────────────────    ─────────────────────────────
+  cacheResult.isFresh === false    cacheResult.isFresh === true
+  (no/insufficient cache rows)     (≥5 v5:-prefixed rows < 24h old)
+  → live_ol branch                 → cache_hit branch
+  → getOLCandidates runs           → getOLCandidates NEVER runs
+  → 8 OLFETCH lines emit           → 0 OLFETCH lines emit
+  → persistOLCandidates writes     → cache_hit returns cached rows with
+    rows tagged v5:stated_genre:*    intact v5: prefix on _retrieval_reason
+  → downstream sees                → downstream startsWith('stated_genre:')
+    stated_genre:* on candidates     misses every cached row → stated*=0
 
-That is "too weak" against the stated contract. The product promise of
-P2 cannot be met under the current policy.
+The prior run silently created the conditions that broke this run. Every
+subsequent rebuild within the next ~24 hours (or until CACHE_VERSION bumps)
+will SKIP-A and exhibit the same failure mode.
 
-Caveat: widening to adjacent unconditionally could meaningfully lower
-top-4 quality for users whose edits don't actually shift their genre
-mix. The mitigation lever is the OTHER three gates (provenance AND
-scoring-flag AND composition caps) — those still protect against
-spurious reservations even when fit_class is widened.
+================================================================================
+Q5. Cache / prewarm / stale-session / entitlement / sufficiency / throttle?
+================================================================================
+The DB rec_candidate_cache (Source B at lib/recommender.ts:2981 +
+getCachedExternalCandidates at L1024) explains it ALONE. None of the other
+candidates apply:
 
-----------------------------------------------------------
-Q6. Recommended next fix category
-----------------------------------------------------------
-RECOMMENDATION: A — expand reservation eligibility to adjacent_fit
-specifically when BuildCause === 'explicit_preference_edit', preserving
-the full P2B.1 AND-gate (retrieval provenance, scoring flag, positive
-stated_taste contribution, composition caps).
+  • prewarm:                 N/A — there is no prewarm path.
+  • module session cache:    SKIP-B; would have left its own PERF logs and
+                             wouldn't have produced stated_count=0.
+  • entitlement / paid gate: N/A — no entitlement check exists in
+                             getCandidateBooks.
+  • candidate sufficiency:   N/A — there is no "we have enough locals,
+                             skip OL" gate in the live path.
+  • live-fetch throttle:     N/A — no throttle exists between rebuilds.
+  • forensic bypass:         applies only when userId === FORENSIC_USER_ID
+                             (constant `''` in commits).
 
-Concretely (NOT yet implementing — sketch only):
-  • Either add an opt-in `allowAdjacentForCauses: BuildCause[]` to
-    STATED_RESERVATION_POLICY (e.g. ['explicit_preference_edit']),
-    OR set allowAdjacentReservation = true outright. The former is
-    more conservative and keeps a future cause (e.g. intent_apply)
-    from inheriting the widening.
-  • Keep weak_metadata as a hard reject regardless of cause (quality
-    floor; hygiene already drops the worst offenders, this is belt-
-    and-braces).
-  • Optional defense-in-depth: require statedContrib ≥ FLOOR (0.05)
-    rather than > 0, so a future reduction in the P1 floor doesn't
-    silently widen reservation.
+The DB cache is the sole skip explanation, and the prefix-leak in
+`getCachedExternalCandidates` is what turns "skip OL with cached rows"
+into "stated_count=0 across the entire pipeline".
 
-Why not the others:
-  B (keep core-only, revise product standard) — would mean publicly
-    backing off the pre-beta gate. The whole P0A→P2C investment was
-    made to honor that gate. Do not retreat.
-  C (some narrower correction) — the diagnostic is unambiguous: the
-    gate failing is fit_class. Anything narrower than (A) is just
-    (A) under another name.
-  D (one more trace) — not needed. The trace already pinpoints L127
-    deterministically. Further instrumentation would be busywork.
+================================================================================
+Q6. Should P2DEBUG plan log distinguish "planned" vs "actually executed"?
+================================================================================
+YES — minimally — but a much smaller change addresses the root cause.
 
-Before implementing (A), worth one small live re-check: confirm the 10
-adjacent stated candidates' compositionAllows() outcome would not have
-rejected them anyway (author/lane caps). The trace at [P2DEBUG/reservation]
-doesn't currently surface compositionAllows results per candidate. Adding
-ONE line of per-candidate trace inside the loop (which-gate-fired counts)
-would make the post-fix re-test self-evident. This is a 5-line follow-up
-to the same instrumentation pattern already in place.
+The current `[P2DEBUG/plan]` only describes the branch planner's intent
+inside `getOLCandidates`. When the cache_hit branch fires, getOLCandidates
+is bypassed entirely — so `[P2DEBUG/plan]` does not emit at all that run.
+That absence IS the "did live retrieval run" signal, but only if you
+already know to grep for it.
 
-----------------------------------------------------------
-Q7. Phase 2 acceptance status
-----------------------------------------------------------
+Cheaper fix than a separate "executed" log: the `[CACHE DIAG]` log already
+exists (lib/recommender.ts:1077-1082), and the `[PERF]
+phase2_external_fetch_start — live_ol | ol_session_cache_hit` PERF lines
+already emit in their respective branches. A single one-line addition in
+the cache_hit branch — e.g. `[P2RETRIEVAL/source] cache_hit
+candidates=N stated_count=N` — would make the source-of-record obvious
+without a wider plan-vs-executed taxonomy. Defer the larger taxonomy
+change to P3.
+
+================================================================================
+Q7. Failure classification
+================================================================================
+Primary: A — live OL retrieval was intentionally skipped by a gate
+              (`cacheResult?.isFresh` cache_hit branch).
+
+         A is necessary but not sufficient on its own. The cache_hit
+         branch is by design: the rec_candidate_cache exists precisely to
+         avoid hitting OL twice within 24h for the same user. The reason
+         this run produced stated_count=0 is a SECOND, latent bug in the
+         same code path:
+
+Secondary: B (in spirit) — the cache_hit branch was bypassed-correctly,
+           but the cached rows leak the `v5:` CACHE_VERSION prefix into
+           their per-candidate `_retrieval_reason` field. That breaks
+           every downstream gate that uses `startsWith('stated_genre:')`
+           — including the P2SURVIVE stated counters and P2B.1's
+           retrieval-provenance reservation gate.
+
+           This is NOT C: the OLFETCH instrumentation is correctly
+           placed in the path that the live_ol branch uses.
+           This is NOT pure-A: pure-A would mean the design intends
+           statedInPool=0 on cache hit — it does not.
+
+           So: A (intentional skip) + a latent prefix-strip bug
+           in the cache restore path that turns the intentional skip
+           into a Phase 2 product failure.
+
+================================================================================
+Q8. Smallest next corrective step
+================================================================================
+RECOMMEND: a 1-line cache-restore prefix-strip in
+`getCachedExternalCandidates` at lib/recommender.ts:1094-1105, mirroring
+exactly what the cache_hit trace-reconstruction block already does for
+trace strings at L3005-3008.
+
+Conceptual change (do NOT apply yet — investigation only):
+
+  -  _retrieval_reason: r.retrieval_reason ?? 'cache:restored'
+  +  _retrieval_reason: (r.retrieval_reason ?? 'cache:restored').startsWith(CACHE_VERSION)
+  +    ? (r.retrieval_reason as string).slice(CACHE_VERSION.length)
+  +    : (r.retrieval_reason ?? 'cache:restored')
+
+After this 1-line strip:
+  • Cache-restored candidates carry the same `_retrieval_reason` they had
+    when first written (e.g. `stated_genre:thriller_mystery`).
+  • `startsWith('stated_genre:')` matches across the entire pipeline.
+  • P2B.1 retrieval-provenance gate behaves identically to the live_ol path.
+  • P2RESERVE/gates show retrieval_prov=0 (with fit_class possibly the
+    new gate to inspect, but the C6 widening from the previous batch
+    handles that).
+  • The reservation reserves the cache-restored stated candidate.
+
+Why this over the alternatives:
+  • DON'T add a "cache_hit invalidates if statedInPool=0" recovery — that
+    masks the real bug and re-fetches OL on every rebuild post-edit.
+  • DON'T flip the OL session cache to bypass on explicit_preference_edit
+    — the DB cache (Source B) is the actual blocker, not the session cache.
+  • DON'T raise CACHE_VERSION to v6 — that purges every user's cache on
+    next deploy and forces a global OL re-fetch storm.
+  • DON'T add a larger plan-vs-executed taxonomy here — the cheaper
+    `[P2RETRIEVAL/source]` line proposed in Q6 is a follow-up nicety,
+    not a fix.
+
+Optional defense-in-depth (separately, not blocking):
+  • Add a one-line `[P2RETRIEVAL/source] cache_hit candidates=N
+    stated_count=N` log in the cache_hit branch so future rebuilds
+    self-explain at a glance.
+  • Add a validator case in scripts/validate_stated_reservation.ts (or
+    a new scripts/validate_cache_restore.ts) that asserts a cache row
+    with `retrieval_reason='v5:stated_genre:nonfiction'` is restored
+    with `_retrieval_reason='stated_genre:nonfiction'`. This codifies
+    the contract so it cannot drift again.
+
+Worth flagging: there may be OTHER `startsWith` checks elsewhere that
+are equally affected by the prefix leak (`startsWith('genre:')`,
+`startsWith('lane:')`, `startsWith('liked_subject:')`,
+`startsWith('author_anchor:')`, `startsWith('repeated_author:')`,
+`startsWith('local:')`, `startsWith('cache:')`). The 1-line strip
+fixes them ALL at the source — the prefix should never have leaked
+past `getCachedExternalCandidates`.
+
+================================================================================
+Q9. Phase 2 product acceptance status
+================================================================================
 REMAINS BLOCKED.
 
-Conditions to pass, restated against current evidence:
+The C6 fit-class widening from the previous batch is correct and
+necessary, but cannot be observed working from a cache-restored deck
+because the latent prefix-leak in `getCachedExternalCandidates` causes
+the retrieval-provenance gate to reject every cache-restored stated
+candidate before the fit-class gate is even evaluated.
 
-  ✅ A. Save → rebuild fires under explicit_preference_edit
-  ✅ B. BuildCause survives no-refresh nav
-  ✅ C. Planner emits stated branch
-  ✅ D. OL retrieval returns stated candidates (newly verified this run:
-        psychological thriller=14, crime fiction=9, merged_total=20)
-  ✅ E. Hygiene preserves stated candidates (12/20 survive — acceptable)
-  ✅ F. Scoring assigns positive stated_taste contribution (P1 floor)
-  ✅ G. Stated candidates reach compPool (statedInPool=10)
-  ❌ H. Reservation produces a pick   ← BLOCKED here
-  ❌ I. Reserved book renders in top-4
+To unblock, the cache-restore path must round-trip `_retrieval_reason`
+losslessly (sans CACHE_VERSION prefix) so that:
 
-Exact next condition required to unblock H:
-  STATED_RESERVATION_POLICY must permit at least one fit_class state
-  beyond core_fit when cause === 'explicit_preference_edit', without
-  weakening the P2B.1 AND-gate (retrieval provenance + scoring flag +
-  positive contribution + composition caps + non-weak metadata).
+  ✅ A live retest after a fresh OL fetch shows the C6 widening landing
+     stated candidates in the top slate (already verified plausible
+     from the prior run's geometry).
+  ✅ A live retest from a cache-restored deck (the COMMON case for
+     repeat preference edits within 24h) ALSO shows stated candidates
+     surviving into compPool and reservation succeeding.
 
-Once H passes, condition I should follow mechanically — the reserved
-pick is added via addComposed BEFORE Phase 1 lane seeding, so it occupies
-slot 0 of the visible slate by construction. Worth re-verifying with the
-post-fix live test.
-
-Out-of-scope-for-this-blocker (already documented; do NOT touch now):
+Out-of-scope-for-this-blocker (unchanged):
   • Business → nonfiction anchor coarseness (P4)
   • Cross-session BuildCause persistence on browser hard-refresh
   • Author chips / stated-author signal provenance
