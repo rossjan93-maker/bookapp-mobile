@@ -1,0 +1,161 @@
+Task: Phase 2 Live Acceptance Follow-Up — Why stated retrieval produced zero eligible reservation candidates
+
+Context:
+We ran the live Phase 2 Test A path with NO browser refresh.
+
+User flow:
+- Reading Taste saved with:
+  - genres=["Business","Mystery"]
+  - styles=["Slow-burn"]
+  - avoid=["Fantasy"]
+- User navigated back to For You without refreshing the browser.
+
+The debug logs prove the rebuild path works:
+
+[P2DEBUG/cause-set]
+cause=explicit_preference_edit
+
+[P2DEBUG/focus-trigger]
+willRunPipeline=true
+
+[P2DEBUG/cause-consume]
+cause=explicit_preference_edit
+
+[P2DEBUG/build]
+effectiveCause=explicit_preference_edit
+consumedWas=explicit_preference_edit
+statedGenres=["nonfiction","thriller_mystery"]
+softAvoids=["fantasy_scifi"]
+
+[P2DEBUG/plan]
+cause=explicit_preference_edit
+stated=5 authors=1 lanes=4 fetchItems=8
+byBranch=stated:4/authors:0/lanes:4
+
+But the reservation failed:
+
+[P2DEBUG/reservation]
+applied=false
+reason=no_eligible_candidate
+compPoolSize=184
+statedInPool=0
+
+And the visible top slate remained:
+- Murder in the High Himalaya
+- Fall of Giants
+- The Fault in Our Stars
+- The Song of Achilles
+
+Conclusion so far:
+- Save → rebuild path works without refresh.
+- BuildCause propagation works in the no-refresh path.
+- P2A planner runs and allocates stated retrieval.
+- P2B reservation is not applying because zero stated-branch candidates survive into compPool.
+
+Goal:
+Investigate exactly where and why the stated-branch candidates are being lost between:
+- branch planner output
+- merged candidate set
+- quality/hygiene filtering
+- compPool
+- reservation eligibility
+
+This is investigation only. Do not implement fixes yet.
+
+Read:
+- replit_output.txt latest Phase 2 diagnostic notes if useful
+- lib/retrieval/branchPlanner.ts
+- lib/retrieval/branches/statedGenres.ts
+- lib/recommender.ts candidate merge/dedup path
+- compPool construction
+- any quality/hygiene filters between retrieval and composition
+- reservation eligibility logic
+- taxonomy/retrieval mapping only as needed to explain Business/Mystery normalization
+
+Questions to answer:
+
+1. Trace the stated branch for this exact live input
+For:
+- Business
+- Mystery
+
+Report:
+- why RecRequest logged statedGenres=["nonfiction","thriller_mystery"]
+- whether that is expected
+- whether the actual retrieval subjects used were:
+  - Business/economics specific,
+  - broader nonfiction,
+  - thriller/mystery specific,
+  - or some mix
+
+2. Branch output count vs survival count
+The planner log says:
+- stated branch fetch budget = 4
+
+Determine:
+- how many stated branch candidates were actually returned from retrieval
+- how many were deduped away
+- how many failed hygiene filters
+- how many failed quality gates
+- how many reached merged candidates
+- how many reached compPool
+- why reservation saw statedInPool=0
+
+3. Does the current stated branch fetch count mean “attempted fetches” or “candidates returned”?
+The log’s `byBranch=stated:4` may be misleading.
+Clarify whether that means:
+- 4 fetch operations planned,
+- 4 branches/items requested,
+- or 4 actual candidate books returned.
+
+This matters for interpreting the live trace.
+
+4. Why did final top slate books carry stated_taste ≈ 0.08?
+The topSlate log shows the four literary/local books with `st:0.08`.
+
+Explain:
+- what that 0.08 means
+- whether those books matched Business/Mystery stated scoring only through broad bucket mapping
+- whether this indicates stated scoring is firing too broadly or appropriately
+
+5. Business → nonfiction coherence concern
+Assess whether mapping Business into a generic `nonfiction` stated genre is:
+A. correct and intentional,
+B. acceptable but too broad for coherent retrieval,
+C. a taxonomy/control-plane weakness that should be revised,
+D. not actually what the retrieval branch uses despite the log shape.
+
+Be precise.
+
+6. Reservation failure classification
+Classify the no_eligible_candidate result as primarily:
+A. no actual stated candidates returned from provider retrieval,
+B. stated candidates returned but filtered out before compPool,
+C. stated candidates present but their provenance was lost,
+D. branch log interpreted incorrectly and no real stated branch result existed,
+E. mixed / other.
+
+7. What is the smallest corrective direction?
+Do not implement yet, but recommend the right next fix category:
+- improve branch trace/logging only
+- adjust stated branch retrieval mapping/anchors
+- increase/alter stated branch candidate survival
+- revise Business taxonomy mapping
+- alter quality gate interaction for explicit-edit stated branches
+- something else
+
+8. Does this alter our Phase 2 acceptance status?
+State clearly:
+- Is Phase 2 product acceptance still not passed?
+- What exact condition must be true before we accept it?
+
+Output:
+Write the full investigation report to replit_output.txt.
+
+Return in chat:
+- the primary failure classification
+- whether the current stated branch is doing real work for Business/Mystery
+- the recommended next fix category
+- whether Phase 2 product acceptance remains blocked
+
+Stop after the investigation. Do not implement changes yet.

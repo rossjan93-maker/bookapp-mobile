@@ -1,119 +1,197 @@
-# P2DEBUG Instrumentation — Logs to Look For
+# Phase 2 Live Acceptance Follow-Up — Investigation Report
 
-All logs are `__DEV__`-gated, prefixed `[P2DEBUG/...]`. To remove later:
-`rg -n "P2DEBUG" lib/ components/ app/` and delete each block.
+Live trace under investigation:
+```
+[P2DEBUG/build]       statedGenres=["nonfiction","thriller_mystery"]  softAvoids=["fantasy_scifi"]
+[P2DEBUG/plan]        cause=explicit_preference_edit  stated=5 authors=1 lanes=4  fetchItems=8  byBranch=stated:4/authors:0/lanes:4
+[P2DEBUG/reservation] applied=false  reason=no_eligible_candidate  compPoolSize=184  statedInPool=0
+top4 = Murder in the High Himalaya / Fall of Giants / The Fault in Our Stars / The Song of Achilles
+```
 
-## Instrumentation map (single source of truth)
-
-| Tag                     | File                                       | Fires when                                              |
-|-------------------------|--------------------------------------------|---------------------------------------------------------|
-| `[P2DEBUG/save]`        | `app/edit-preferences.tsx`                 | User taps Save in Reading Taste editor                  |
-| `[P2DEBUG/cause-set]`   | `lib/recRequest.ts` (setPendingBuildCause) | Save handler stamps the next-pipeline cause             |
-| `[P2DEBUG/cause-consume]`| `lib/recRequest.ts` (consumePendingBuildCause) | Pipeline reads + clears the pending cause          |
-| `[P2DEBUG/focus]`       | `components/RecommendationsFeed.tsx`       | For-You tab gains focus (every focus, gated or not)     |
-| `[P2DEBUG/focus-trigger]`| `components/RecommendationsFeed.tsx`      | Focus passed all gates → pipeline will run              |
-| `[P2DEBUG/build]`       | `components/RecommendationsFeed.tsx`       | RecRequest assembled — shows effective cause + signals  |
-| `[P2DEBUG/plan]`        | `lib/retrieval/branchPlanner.ts`           | Branch planner finished — quotas + per-branch counts    |
-| `[P2DEBUG/reservation]` | `lib/recommender.ts`                       | pickStatedReservation result (applied / reason / pick)  |
-| `[P2DEBUG/topSlate]`    | `lib/recommender.ts`                       | Final composed slate — top4 ids/titles + retrieval src  |
+Cause-propagation, planner, branch quotas, and the reservation gate are all working. The reservation was correctly bypassed because **zero candidates carrying `_retrieval_reason='stated_genre:*'` made it into compPool**. The investigation below traces exactly where those candidates die.
 
 ---
 
-## Test A — No refresh (save → back-nav → For-You)
+## Q1 — Trace the stated branch for this exact input
 
-Steps:
-1. Open Reading Taste editor.
-2. Add favorite_genres = [business], reading_styles = [fast_paced], avoid = [fantasy_scifi].
-3. Tap Save. Wait for back-nav.
-4. Land on For-You tab. Do **not** refresh the browser.
+User picked UI labels `Business`, `Mystery` (favorite_genres) and `Slow-burn` (reading_styles); `Fantasy` for avoid.
 
-Expected log sequence (in order — note `cause-set` fires *before* `save` because
-`setPendingBuildCause()` runs first inside the save handler):
+### Why `statedGenres=["nonfiction","thriller_mystery"]`
+
+These are **canonical `affinityKey` values from `lib/taxonomy/genres.ts`**, not raw labels. The flow is:
+
+1. Save handler writes the toggled chip values into `profiles.favorite_genres`. Per the P0A taxonomy contract, every chip in the editor has a `GenreDef` whose `affinityKey` is one of the eight retrieval keys (`fantasy_scifi`, `thriller_mystery`, `romance`, `horror`, `memoir_bio`, `nonfiction`, `literary`, `general`).
+2. **Multiple GenreDef chips share the same `affinityKey`**:
+   - `Business`, `Self-Help`, `Health & Wellness`, `Science`, `History`, `Politics`, `Economics`, `Reference` all map to `affinityKey: 'nonfiction'`.
+   - `Mystery`, `Thriller`, `Crime` all map to `affinityKey: 'thriller_mystery'`.
+3. `lib/recSignals/statedTaste.ts` (compiled into `RecRequest.signals.statedTaste.favoriteGenres`) deduplicates to the affinity-key set — so two chips that share an affinity collapse to one entry. With `Business + Mystery`, the user sees `["nonfiction","thriller_mystery"]` in the build log, which is **expected and correct under P0A**.
+
+### Actual retrieval subjects used
+
+`lib/retrieval/branches/statedGenres.ts` looks up `AFFINITY_RETRIEVAL_SUBJECTS[key]` from `lib/taxonomy/genres.ts:373`:
 
 ```
-[P2DEBUG/cause-set]     cause=explicit_preference_edit
-[P2DEBUG/save]          cause=explicit_preference_edit  genres=[...]  styles=[...]  avoid=[...]
-[P2DEBUG/focus]         hasTasteProfile=true tier=2 hasUserId=true hasSession=false
-[P2DEBUG/focus-trigger] willRunPipeline=true
-[P2DEBUG/cause-consume] cause=explicit_preference_edit
-[P2DEBUG/build]         effectiveCause=explicit_preference_edit  consumedWas=explicit_preference_edit  configHash=<12-char>  statedGenres=[...]  softAvoids=[...]
-[P2DEBUG/plan]          cause=explicit_preference_edit  stated=<n>  authors=<n>  lanes=<n>  fetchItems=<N>  byBranch=stated:X/authors:Y/lanes:Z  softAvoidLanesApplied=[...]
-[P2DEBUG/reservation]   applied=true  reason=reserved  cause=explicit_preference_edit  key=<genre>  pickId=<id>  pickTitle="..."  compPoolSize=<n>  statedInPool=<n>
-[P2DEBUG/topSlate]      cause=explicit_preference_edit  reservationApplied=true  reservationReason=reserved  top4=1.[<src>|st:0.??]"..." 2.[...] ...
+nonfiction       → ['popular science',          'popular nonfiction']
+thriller_mystery → ['psychological thriller',   'crime fiction']
 ```
 
-The `<src>` token in `topSlate` is the prefix of `Book._retrieval_reason` — actual
-values include `stated_genre`, `dominant_lane`, `liked_subject`, `local`, `repeated_author`,
-`author_anchor`, etc. (NOT planner branch names like `revealedLanes`).
+Each affinity emits two `FetchItem`s (one per OL subject anchor), so favorites=[nonfiction, thriller_mystery] × 2 anchors = **4 stated FetchItems**, matching the planner log `byBranch=stated:4`.
 
-The `genres` / `styles` / `avoid` arrays in `[P2DEBUG/save]` reflect whatever the
-chip components push into local state (canonical keys per the rest of Readstack;
-treat this only as "did the values match what I tapped").
+For Business specifically: the retrieval subject is **NOT** `business` or `economics`. It is **`popular science`** + **`popular nonfiction`** — generic nonfiction buckets. There is no business/economics-specific OL anchor anywhere in the affinity table.
 
-**Pass condition for Test A:** `effectiveCause=explicit_preference_edit` AND
-`reservationApplied=true` AND at least one of the top4 entries has source prefix
-`stated_genre`. Slot 1 is not guaranteed — the reservation seeds the comp pool
-but final ordering can move other strong candidates ahead.
-
-**Fail patterns:**
-- `[P2DEBUG/focus]` shows `hasSession=true` → session wasn't cleared on save (regression in `clearRecSession` path).
-- `[P2DEBUG/focus-trigger]` missing → focus gate (tier/userId/supabase) is blocking; check `tier`.
-- `[P2DEBUG/build]` shows `consumedWas=null` → setPendingBuildCause never ran (save handler didn't reach line 179) or the consumer ran first.
-- `[P2DEBUG/plan]` shows `stated=OFF` despite `statedGenres=["business"]` → planner gate bug.
-- `[P2DEBUG/reservation]` shows `reason=no_eligible_candidate` despite `statedInPool>0` → reservation eligibility filter bug; if `statedInPool=0` despite `stated=<n>` in plan → retrieval didn't return business candidates.
+For Mystery specifically: `psychological thriller` + `crime fiction` — these are mystery/thriller-specific and reasonable.
 
 ---
 
-## Test B — Refresh after save (save → back-nav → browser refresh → For-You)
+## Q2 — Branch output count vs survival count
 
-Steps:
-1–3 same as Test A.
-4. Browser hard-refresh (Cmd-Shift-R / Ctrl-Shift-R).
-5. Wait for For-You tab to render.
-
-Expected log sequence (note `cause-set` precedes `save` for the same reason as Test A):
+The current instrumentation captures **plan-time** counts only. Survival counts at later pipeline stages are not logged. From code reading the pipeline is:
 
 ```
-[P2DEBUG/cause-set]     cause=explicit_preference_edit
-[P2DEBUG/save]          cause=explicit_preference_edit  ...
---- BROWSER REFRESH (module memory wiped) ---
-[P2DEBUG/focus]         hasTasteProfile=true tier=2 hasUserId=true hasSession=false
-[P2DEBUG/focus-trigger] willRunPipeline=true
-[P2DEBUG/cause-consume] cause=null                          ← key signal: pending cause is gone
-[P2DEBUG/build]         effectiveCause=session_open  consumedWas=null  configHash=<same 12-char as Test A>  statedGenres=["business"]  softAvoids=["fantasy_scifi"]
-[P2DEBUG/plan]          cause=session_open  stated=<n>  ...
-[P2DEBUG/reservation]   applied=false  reason=wrong_cause  cause=session_open  ...
-[P2DEBUG/topSlate]      cause=session_open  reservationApplied=false  reservationReason=wrong_cause  top4=1.[revealedLanes|...]"<literary title>" ...
+plan.fetchItems (4 stated FetchItems)
+  → Promise.all(fetchOLSubject(value, 18, reason))             [lib/recommender.ts:1166-1173]
+       OL search.json?subject=<v>&limit=18                        [each query may return 0..18 docs]
+       pre-1950 hard reject                                       [L651]
+       _retrieval_reason = 'stated_genre:nonfiction' (etc.)       [L666]
+  → merge + dedup (first-seen-wins, branchOrder puts stated FIRST)  [L1183-1200]
+  → externalCandidates = [...olResult.candidates, ...nonDupStaleDBCache]  [L2933]
+  → all = [...externalCandidates, ...localCandidates]             [L2988]
+  → finished/DNF safety-net exclusion
+  → applyHygiene()                                                [L3031, defined L1285]
+       drops: bad-data title markers, juvenile, poetry/play,
+              PD authors, classic-drift authors (non-literary lanes),
+              ancient classics, etc.
+  → scoring + computeFitClass → fit_class ∈ {core_fit, adjacent_fit, stretch_fit, reject}
+  → nonRejected = scored.filter(fit_class !== 'reject')           [L2028]
+  → CoG + intent filtering
+  → intentFiltered → sort by effective score → compPool           [L2398]
+  → statedInPool = compPool.filter(_retrieval_reason starts 'stated_genre:')  [L2466]
 ```
 
-**Pass condition for Test B (confirms diagnosis D):** `consumedWas=null` AND `effectiveCause=session_open` AND `reservation.reason=wrong_cause` AND top4 slot 1 is NOT `stated_genre`.
+`statedInPool=0` with `compPoolSize=184` means stated books were eliminated **somewhere between OL fetch and compPool**. The current logs do not pinpoint which stage. The most likely stage given the data is **fit-class assignment** (see Q4 + Q6 below) — either `reject` (excluded at L2028) or, even if surviving as `adjacent_fit`, the `_retrieval_reason` should still start `stated_genre:` so they would still be counted unless they were dropped earlier.
 
-This sequence proves the failure class is exactly:
-> `setPendingBuildCause()` writes to module-only memory in `lib/recRequest.ts`. Browser refresh wipes that module, so the rebuilt pipeline sees `cause=session_open`, which fails the `STATED_RESERVATION_POLICY.allowedCauses` gate, so the top slate falls back to revealedLanes (literary).
+The single most diagnostic next instrumentation would be a one-line count log at four points:
+1. `olResult.candidates.length` filtered by `_retrieval_reason.startsWith('stated_genre:')` right after L1198
+2. After hygiene (L3031): `hygiene.passed.filter(...)` count
+3. After scoring (L2028): `scored.filter(fit_class !== 'reject' && _retrieval_reason starts 'stated_genre:')` count
+4. compPool (already logged)
+
+This four-point trace would conclusively isolate the death stage in the next live run.
 
 ---
 
-## Cross-test invariants
+## Q3 — Does `byBranch=stated:4` mean attempts or returned candidates?
 
-- `configHash` should be **identical** between Test A and Test B (prefs unchanged between runs).
-- `statedGenres` / `softAvoids` should be **identical** between Test A and Test B (proves signal compilation is correct in both cases — failure is purely the cause).
-- `[P2DEBUG/cause-set]` will appear in Test B before refresh; the absence of a corresponding `[P2DEBUG/cause-consume]` with the same cause after refresh is the smoking gun.
+**It means "FetchItems planned" — i.e. attempted retrievals**, not candidates returned.
+
+The instrumentation in `lib/retrieval/branchPlanner.ts:138` counts `items.filter(i => i.branch === 'statedGenres').length`. `items` is the array of FetchItems pushed by each branch module (statedGenres pushes one FetchItem per subject anchor it intends to fetch). The planner runs **before** any OL network call — it has no idea what OL will return.
+
+So `byBranch=stated:4` exactly means "4 OL subject queries were planned for the stated branch." Whether OL returned 0 or 72 books from those 4 queries is invisible in the current logs.
+
+This is a real instrumentation gap. The log label should probably be renamed to `plannedByBranch=stated:4/authors:0/lanes:4` to avoid implying retrieved counts.
 
 ---
 
-## What this instrumentation does NOT cover
+## Q4 — Why does the final top slate carry `stated_taste ≈ 0.08`?
 
-- AsyncStorage hydration (no fix attempted; that's the Phase 2.1 work).
-- Scoring contributions / `_score_breakdown` deltas — `topSlate` shows `stated_taste` only as a coarse number.
-- Explanation faithfulness — out of scope (P3).
-- Retrieval-trace meta — already surfaced via existing `pipeline_meta`, not duplicated here.
+The four visible top books are clearly literary (Murder in the High Himalaya = mountaineering nonfiction-leaning literary; Fall of Giants = historical epic; Fault in Our Stars = YA literary; Song of Achilles = literary mythology). None are business or mystery.
 
-## Removal
+Their `stated_taste = 0.08` is the **P1 non-zero floor** (`STATED_TASTE_POLICY.statedPreferenceFloor = 0.05` plus a small per-favorite-match bump). Per `lib/recPolicy.ts` step 7, every book gets a baseline stated_taste contribution at all tiers regardless of whether its primary lane matches a favorite. The 0.08 specifically indicates these books matched **broad bucket evidence** (e.g., `nonfiction` is satisfied by Fall of Giants having a "history" subject; Murder in the High Himalaya satisfies `nonfiction` via "mountaineering--accidents" subjects).
 
-When the diagnosis is confirmed and the AsyncStorage fix lands:
+What 0.08 does NOT mean:
+- It does **not** mean the book came from the stated retrieval branch.
+- It does **not** mean the user's stated edit steered the recommender toward this book.
+- It does **not** mean the book's primary lane matches a stated favorite.
 
-```
-rg -l "P2DEBUG" lib/ components/ app/
-```
+The 0.08 is essentially "this book got the across-the-board floor + a token bucket-match bump." This is the **stated-pref floor doing what it was designed to do** at the scoring layer (P1 contract: non-zero stated contribution at every tier). The problem is not the 0.08 — it is that the **stated retrieval branch did not deliver any candidate that scored substantially higher on stated_taste than these literary books**.
 
-Then delete each `if (__DEV__) console.log('[P2DEBUG/...')` block (and the `_consumedCause` helper variable in `RecommendationsFeed.tsx` — collapse back to inline `cause: consumePendingBuildCause() ?? 'session_open'`).
+---
+
+## Q5 — Business → `nonfiction` coherence assessment
+
+**Classification: B + C — acceptable bucket but too broad for coherent retrieval, and a real Control Plane weakness for Business specifically.**
+
+What's correct (B):
+- The 8-affinity table is the locked P0A taxonomy. It is intentionally coarse to keep the OL retrieval surface small and testable.
+- Business chip → `affinityKey: 'nonfiction'` is consistent with how `Self-Help`, `Health & Wellness`, `History`, etc. all collapse — preserving editor breadth without exploding retrieval anchor count.
+- The OL subject taxonomy itself does not have a clean "business" tag that returns commercial business titles reliably; `business` as an OL subject is dominated by old textbooks and generic management guides.
+
+What's broken (C):
+- The retrieval anchors for `nonfiction` are **`popular science` + `popular nonfiction`**. Neither of these returns business books in any meaningful proportion. A user who picks Business gets popular-science books retrieved on their behalf and labeled (in the explanation layer) as "matching your nonfiction interest" — which is technically true at the affinity-bucket level but feels like a category error to the user.
+- There is no per-affinity branching by sub-key. `nonfiction` is monolithic from retrieval's perspective. A user who picks `Business + Self-Help + Science` retrieves the exact same OL queries as a user who picks `History + Politics`.
+- This is the structural shortcoming the P4 "book intelligence" / appeal-vector work in the locked architecture is supposed to solve. P2 was never going to fix it because P2 is signal/branch geometry, not subject-vocabulary depth.
+
+Not-D: the retrieval branch IS doing what the log shape implies — those four OL queries did go out. The log is honest.
+
+---
+
+## Q6 — Reservation-failure classification
+
+**Primary class: B — stated candidates returned from OL but filtered out before reaching compPool.**
+
+Confidence rationale:
+- `byBranch=stated:4` confirms the planner emitted the 4 stated FetchItems.
+- The fetch loop at L1166-1173 unconditionally executes them (no cache short-circuit inside `getOLCandidates`; the outer cache short-circuit at L2900-2916 was bypassed because the planner log fired this run).
+- OL `subject:"popular science"`, `subject:"popular nonfiction"`, `subject:"psychological thriller"`, `subject:"crime fiction"` are common, well-populated OL subjects. They almost certainly returned non-zero books each (typical 5-15 hits after the pre-1950 filter).
+- Merge at L1175-1200 is first-seen-wins and branchOrder puts statedGenres first — stated books cannot be deduped away by other branches.
+- Therefore stated books **did enter `merged`** carrying `_retrieval_reason='stated_genre:*'`.
+- They then pass through `applyHygiene` (subject-/author-based filters; popular-science and crime-fiction books are not categorically excluded), CoG/intent filtering, scoring, and `nonRejected` filter (L2028).
+- `compPoolSize=184` is high — clearly local catalog + lanes + OL all contributed. The stated 4-anchor sub-pool is small (~20-60 books before any filtering) relative to that 184. If even 10% of stated OL hits survived to compPool, `statedInPool` would be >0.
+
+Most-likely sub-mechanism inside class B (rank-ordered):
+1. **Fit-class rejection** (highest confidence). The user's revealed center-of-gravity is literary/contemporary fiction (evidenced by the visible top slate). Books retrieved from `popular science` / `popular nonfiction` queries land in the `nonfiction` lane, which is not in the user's dominant lanes, so `computeFitClass` assigns them `fit_class='reject'` or `'stretch_fit'`. Reject is filtered out at L2028. Stretch survives but the comment at L1961 indicates `stretch −0.20` score penalty, pushing them far down the sort and out of the visible top4.
+2. **Hygiene attrition** (medium confidence). `popular science` returns many books with weak metadata (no subjects, missing covers, OL-only edition stubs). `applyHygiene` drops weak-metadata books and the `ol_no_subjects` check (referenced at L2945-2948) likely culls a significant share.
+3. **Author/lane composition cap collision** (low confidence — only matters if some stated books survived to compPool). `compositionAllows` enforces author/lane caps; this affects placement but does not zero `statedInPool`.
+
+Not-A: OL returning literally zero books for all 4 stated queries simultaneously is implausible given the subject popularity.
+Not-C: `_retrieval_reason` is set at the doc map step (L666) and never rewritten in the candidate path; provenance is not lost.
+Not-D: planner log is honest (see Q3).
+
+---
+
+## Q7 — Smallest corrective direction
+
+Recommended fix category: **adjust stated branch candidate survival, NOT the taxonomy mapping or scoring policy**.
+
+Specifically, in priority order:
+
+1. **Add the four-point survival trace described in Q2** as a one-shot live diagnostic. This is 4 `__DEV__`-gated `console.log` lines in `lib/recommender.ts`. Run the same Test A flow once with this in place. It will conclusively distinguish "OL returned nothing" vs "hygiene killed them" vs "fit_class rejected them" — a one-pipeline-run answer to a question that has been speculative across two investigation rounds.
+
+2. **Conditional on the trace showing fit-class rejection** (the most likely outcome): introduce a narrow rule in `lib/recPolicy.ts` or `lib/fitClassifier.ts` that promotes a `stated_genre:*`-provenanced book to `adjacent_fit` (not `core_fit`) when the only reason for `reject`/`stretch_fit` was lane mismatch with dominant_lanes. This preserves quality gates (PD authors, weak metadata still reject) but lets stated retrieval branch books reach `compPool` so the P2B reservation has something to reserve. This is a small, surgical scope change — not a P3 rewrite.
+
+3. **Conditional on the trace showing OL returning very few books**: the fix moves to `AFFINITY_RETRIEVAL_SUBJECTS` — replace `popular science` / `popular nonfiction` with something with better OL hit rates, or add a third anchor for `nonfiction`. This is a taxonomy-data change, not architecture.
+
+What I am NOT recommending:
+- Re-mapping Business out of `nonfiction` into its own affinity. That's P4 territory (sub-key affinities) and would require a Control Plane change.
+- Changing the reservation eligibility gate. The gate is correctly returning `no_eligible_candidate` because the precondition (stated books in compPool) is genuinely unmet.
+- Touching scoring weights or the stated-pref floor. P1 floor at 0.08 is operating as designed; the issue is upstream.
+
+---
+
+## Q8 — Phase 2 acceptance status
+
+**Phase 2 product acceptance is NOT passed.**
+
+What Phase 2 actually delivered (validated):
+- P2A retrieval branch planner runs and emits stated branch FetchItems for users with mapped favorites, dense or sparse. ✓
+- BuildCause `explicit_preference_edit` propagates from save → pipeline (no-refresh path). ✓
+- P2B reservation gate is wired correctly and short-circuits with the right `reason` codes. ✓
+- P2C soft-avoid retrieval deprioritization. ✓ (not exercised in this trace)
+
+What Phase 2 has NOT delivered to the end user (the entire point of P2):
+- A visibly stated-aligned book in the top slate after an explicit preference edit.
+
+Acceptance requires both:
+1. **(Existing condition, met)** No-refresh save → rebuild fires; cause is `explicit_preference_edit`; planner emits stated branch.
+2. **(Currently failing)** Top slate after the rebuild contains at least one book whose `_retrieval_reason` begins `stated_genre:` AND whose primary affinity matches one of the user's stated favorites.
+
+Until condition 2 holds for a representative test case (the Business+Mystery case being the obvious one), P2 ships infrastructure without delivering its product promise. The pre-beta gate "P2 retrieval responsiveness; visible deck shift after pref edit, dense users included" from the locked architecture spec is **not** met by the current behavior even though the code paths exist.
+
+---
+
+## Summary for chat
+
+- **Primary failure classification:** B — stated branch candidates are retrieved by OL but eliminated between OL fetch and compPool. Most likely sub-mechanism: `computeFitClass` assigns `reject` because the stated retrieval lane doesn't match the user's revealed dominant lanes, and `nonRejected` filter at L2028 removes them.
+- **Is the stated branch doing real work for Business/Mystery?** Partially. For Mystery, yes — `psychological thriller`/`crime fiction` are appropriate OL anchors. For Business, no — Business collapses into `nonfiction` and gets retrieved as `popular science`/`popular nonfiction`, which is a P4-class structural weakness, not a P2 bug.
+- **Recommended next fix category:** Add a four-point survival trace (4 log lines) and run Test A once to conclusively isolate the death stage. Then, conditional on what that trace shows, either (a) narrow promotion of `stated_genre:*` books past the dominant-lanes gate in `fitClassifier`, or (b) replace `nonfiction` retrieval anchors. Both are small, scoped changes — no P3 work, no Control Plane reshape.
+- **Phase 2 product acceptance:** Still blocked. Infrastructure ships, product promise (visible stated-aligned slate after explicit edit) does not.
