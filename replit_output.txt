@@ -1,197 +1,252 @@
-# Phase 2 Live Acceptance Follow-Up — Investigation Report
+Phase 2 Live-Acceptance Follow-Up — Investigation Report
+=========================================================
+Run input:  genres=["Business","Mystery"], styles=["Slow-burn"], avoid=[]
+Resolved:   statedGenres=["nonfiction","thriller_mystery"]
+Plan:       cause=explicit_preference_edit, stated=5 authors=1 lanes=4 fetchItems=8
+            byBranch=stated:4 / authors:0 / lanes:4
+Symptom:    [P2SURVIVE/post_ol_merge] merged_total=0 stated_count=0
+            ⇒ post_hygiene/post_scoring/comp_pool all 0
+            ⇒ reservation no_eligible_candidate
+Status:     INVESTIGATION ONLY — no fixes applied this turn.
 
-Live trace under investigation:
-```
-[P2DEBUG/build]       statedGenres=["nonfiction","thriller_mystery"]  softAvoids=["fantasy_scifi"]
-[P2DEBUG/plan]        cause=explicit_preference_edit  stated=5 authors=1 lanes=4  fetchItems=8  byBranch=stated:4/authors:0/lanes:4
-[P2DEBUG/reservation] applied=false  reason=no_eligible_candidate  compPoolSize=184  statedInPool=0
-top4 = Murder in the High Himalaya / Fall of Giants / The Fault in Our Stars / The Song of Achilles
-```
+----------------------------------------------------------
+Q1. Did getOLCandidates execute live OL fetches?
+----------------------------------------------------------
+YES. The `[P2SURVIVE/post_ol_merge]` log is emitted only at lib/recommender.ts:1224,
+inside getOLCandidates, AFTER the Promise.all merge loop at L1165-1173. For that line
+to fire at all, the function had to:
+  1. Pass the cache-vs-live decision at L2962-2983 down the `else` branch.
+  2. Build effectiveReq + branchContext (L1128-1160).
+  3. Run planBranches (L1162) — confirmed by [P2DEBUG/plan].
+  4. Dispatch Promise.all over plan.fetchItems (L1165-1173) — exactly 8 promises
+     for the logged plan (stated:4 + lanes:4 = 8 fetchItems).
+  5. Iterate resultSets and merge (L1183-1200).
 
-Cause-propagation, planner, branch quotas, and the reservation gate are all working. The reservation was correctly bypassed because **zero candidates carrying `_retrieval_reason='stated_genre:*'` made it into compPool**. The investigation below traces exactly where those candidates die.
+So 8 fetch *operations were attempted*. No upstream gate prevented dispatch. The
+ol_session_cache and rec_candidate_cache fast paths were both bypassed (their
+distinct PERF logs `[PERF] phase2_external_fetch_start — ol_session_cache_hit` /
+`[PERF] phase2_external_fetch_end — live_ol | candidates=N` are mutually
+exclusive with [P2SURVIVE/post_ol_merge], and the latter fired).
 
----
+----------------------------------------------------------
+Q2. Exact subject/anchor queries for this run
+----------------------------------------------------------
+From AFFINITY_RETRIEVAL_SUBJECTS (lib/taxonomy/genres.ts:373-382) and
+buildStatedGenresBranch (lib/retrieval/branches/statedGenres.ts:23-58):
 
-## Q1 — Trace the stated branch for this exact input
+statedGenres branch (Business → nonfiction, Mystery → thriller_mystery):
+  fetch #1  fetchOLSubject("popular science",        18, "stated_genre:nonfiction")
+  fetch #2  fetchOLSubject("popular nonfiction",     18, "stated_genre:nonfiction")
+  fetch #3  fetchOLSubject("psychological thriller", 18, "stated_genre:thriller_mystery")
+  fetch #4  fetchOLSubject("crime fiction",          18, "stated_genre:thriller_mystery")
 
-User picked UI labels `Business`, `Mystery` (favorite_genres) and `Slow-burn` (reading_styles); `Fantasy` for avoid.
+revealedLanes branch (4 fetches; exact values depend on the user's profile.det_lanes
+.dominant_lanes / topGenres / likedSubjects — not in the captured log lines).
+For a Goodreads-import dense user, this is most likely 4 of:
+  fetchOLSubject("epic fantasy",     18, "lane:fantasy")
+  fetchOLSubject("dystopian fiction",18, "lane:fantasy")
+  fetchOLSubject("literary fiction", 18, "lane:literary")
+  fetchOLSubject("contemporary literary fiction", 18, "lane:literary")
+…or topGenres/liked_subjects equivalents. No author fetches (authors:0).
 
-### Why `statedGenres=["nonfiction","thriller_mystery"]`
+Of these 8, the four directly mapped to the user's stated edit are #1-#4. None
+of them is a "Business" subject — Business collapses to `nonfiction` whose
+retrieval anchors are `popular science` + `popular nonfiction` (replit.md
+"Known open quality issues"). That mapping coarseness is real but is NOT what
+produced merged_total=0 (see Q7).
 
-These are **canonical `affinityKey` values from `lib/taxonomy/genres.ts`**, not raw labels. The flow is:
+----------------------------------------------------------
+Q3. Raw provider result count per query
+----------------------------------------------------------
+UNKNOWN — and that is itself the diagnostic finding.
 
-1. Save handler writes the toggled chip values into `profiles.favorite_genres`. Per the P0A taxonomy contract, every chip in the editor has a `GenreDef` whose `affinityKey` is one of the eight retrieval keys (`fantasy_scifi`, `thriller_mystery`, `romance`, `horror`, `memoir_bio`, `nonfiction`, `literary`, `general`).
-2. **Multiple GenreDef chips share the same `affinityKey`**:
-   - `Business`, `Self-Help`, `Health & Wellness`, `Science`, `History`, `Politics`, `Economics`, `Reference` all map to `affinityKey: 'nonfiction'`.
-   - `Mystery`, `Thriller`, `Crime` all map to `affinityKey: 'thriller_mystery'`.
-3. `lib/recSignals/statedTaste.ts` (compiled into `RecRequest.signals.statedTaste.favoriteGenres`) deduplicates to the affinity-key set — so two chips that share an affinity collapse to one entry. With `Business + Mystery`, the user sees `["nonfiction","thriller_mystery"]` in the build log, which is **expected and correct under P0A**.
+fetchOLSubject (lib/recommender.ts:624-671) and fetchOLByAuthor (L675-720)
+have ZERO per-fetch instrumentation:
 
-### Actual retrieval subjects used
+   try {
+     const url = `https://openlibrary.org/search.json?subject=…&limit=18`;
+     const res = await fetch(url, { signal: controller.signal });   // 3500 ms
+     if (!res.ok) return [];                                        // silent
+     const json = await res.json() as { docs?: OLDoc[] };
+     return (json.docs ?? [])
+       .filter(doc => doc.key && doc.title)
+       .filter(doc => !doc.first_publish_year || doc.first_publish_year >= 1950)
+       .map(...);
+   } catch {
+     return [];                                                     // silent
+   }
 
-`lib/retrieval/branches/statedGenres.ts` looks up `AFFINITY_RETRIEVAL_SUBJECTS[key]` from `lib/taxonomy/genres.ts:373`:
+Failure modes that all collapse to `return []` with no log:
+  • AbortError on the 3500 ms timer
+  • Non-OK HTTP (5xx, 429, 403)
+  • TypeError from fetch (DNS/CORS/network)
+  • JSON parse error
+  • Empty docs array from OL
+  • All docs filtered out by `key && title` guard
+  • All docs filtered out by `first_publish_year >= 1950` guard
 
-```
-nonfiction       → ['popular science',          'popular nonfiction']
-thriller_mystery → ['psychological thriller',   'crime fiction']
-```
+The captured logs distinguish none of these. The only signal we have is the
+aggregate `merged_total=0` — which means every one of the 8 returned arrays was
+empty after filtering.
 
-Each affinity emits two `FetchItem`s (one per OL subject anchor), so favorites=[nonfiction, thriller_mystery] × 2 anchors = **4 stated FetchItems**, matching the planner log `byBranch=stated:4`.
+----------------------------------------------------------
+Q4. Where does the zeroing happen?
+----------------------------------------------------------
+Classification: BETWEEN A AND B — almost certainly NOT C/D/E.
 
-For Business specifically: the retrieval subject is **NOT** `business` or `economics`. It is **`popular science`** + **`popular nonfiction`** — generic nonfiction buckets. There is no business/economics-specific OL anchor anywhere in the affinity table.
+NOT (C) normalization/dedupe wiped them out:
+  The merge loop at L1183-1200 only excludes books in `exclude` (read +
+  excludeForOL) or already-`seen` external_ids. It does NOT do any
+  metadata/subject-quality filtering at this stage; that is hygiene's job
+  later. If even one fetch had returned even one non-excluded book, merged
+  would be ≥ 1 and the survival log would show it.
 
-For Mystery specifically: `psychological thriller` + `crime fiction` — these are mystery/thriller-specific and reasonable.
+NOT (D) misleading log placement:
+  `merged_total = ${merged.length}` is the canonical OL output of
+  getOLCandidates — the same array is returned at L1233 as `olResult.candidates`
+  and immediately logged at L2987 as `[PERF] phase2_external_fetch_end —
+  live_ol | candidates=${olResult.candidates.length}`. The two counts must
+  match by construction; merged_total=0 ⇒ olResult.candidates.length=0.
 
----
+So the zero is real. It is one (or some combination) of:
+  (A) all 8 fetches threw / aborted / returned non-200 — silently swallowed
+  (B) all 8 fetches returned 200 with `docs: []` (or all docs filtered out by
+      the pre-1950 / missing-key guards)
 
-## Q2 — Branch output count vs survival count
+Sub-finding: even partial-(A) is suspicious. Subjects "psychological thriller"
+and "crime fiction" against OL `search.json?sort=rating&limit=18` reliably
+return ≥18 modern docs in normal operation. For ALL FOUR stated fetches AND
+ALL FOUR lane fetches to return zero is consistent with a runtime/transport
+failure (e.g. abort timer firing, CORS pre-flight failing in this browser
+context, OL temporarily 5xx-ing) more than with all eight subject queries
+genuinely returning empty pages.
 
-The current instrumentation captures **plan-time** counts only. Survival counts at later pipeline stages are not logged. From code reading the pipeline is:
+----------------------------------------------------------
+Q5. Is merged_total=0 global OL output or a sub-path?
+----------------------------------------------------------
+GLOBAL. `merged` (L1178) is the single output array of getOLCandidates. Every
+book from every fetch in the plan is funneled through the same dedupe loop
+into this one array. There is no parallel sub-path; no later append; no other
+OL collector that bypasses it. `merged.length === 0` means ZERO OL books
+crossed the function boundary into the rest of the pipeline this run.
 
-```
-plan.fetchItems (4 stated FetchItems)
-  → Promise.all(fetchOLSubject(value, 18, reason))             [lib/recommender.ts:1166-1173]
-       OL search.json?subject=<v>&limit=18                        [each query may return 0..18 docs]
-       pre-1950 hard reject                                       [L651]
-       _retrieval_reason = 'stated_genre:nonfiction' (etc.)       [L666]
-  → merge + dedup (first-seen-wins, branchOrder puts stated FIRST)  [L1183-1200]
-  → externalCandidates = [...olResult.candidates, ...nonDupStaleDBCache]  [L2933]
-  → all = [...externalCandidates, ...localCandidates]             [L2988]
-  → finished/DNF safety-net exclusion
-  → applyHygiene()                                                [L3031, defined L1285]
-       drops: bad-data title markers, juvenile, poetry/play,
-              PD authors, classic-drift authors (non-literary lanes),
-              ancient classics, etc.
-  → scoring + computeFitClass → fit_class ∈ {core_fit, adjacent_fit, stretch_fit, reject}
-  → nonRejected = scored.filter(fit_class !== 'reject')           [L2028]
-  → CoG + intent filtering
-  → intentFiltered → sort by effective score → compPool           [L2398]
-  → statedInPool = compPool.filter(_retrieval_reason starts 'stated_genre:')  [L2466]
-```
+----------------------------------------------------------
+Q6. Does this explain the poor visible deck?
+----------------------------------------------------------
+YES, decisively, FOR THIS RUN.
 
-`statedInPool=0` with `compPoolSize=184` means stated books were eliminated **somewhere between OL fetch and compPool**. The current logs do not pinpoint which stage. The most likely stage given the data is **fit-class assignment** (see Q4 + Q6 below) — either `reject` (excluded at L2028) or, even if surviving as `adjacent_fit`, the `_retrieval_reason` should still start `stated_genre:` so they would still be counted unless they were dropped earlier.
+Downstream evidence chain (all live-confirmed):
+  externalCandidates = [...olResult.candidates(=0), ...nonDupStale]   (L2997)
+       ↓
+  if (cacheResult?.isFresh)  → cache rows would be merged in via the cache
+                                branch instead; this run did NOT take that
+                                branch, so externalCandidates is at most the
+                                stale rows (rec_candidate_cache rows older
+                                than CACHE_TTL_MS that the L2993 fallback
+                                still tries to glue on). With a fresh edit
+                                and ≤80 stale rows likely also empty for
+                                this profile, externalCandidates ≈ 0.
+       ↓
+  Hygiene + scoring run on (externalCandidates ∪ local) which collapses to
+  effectively the LOCAL CATALOG ONLY.
+       ↓
+  compPoolSize=184 in the [P2DEBUG/reservation] line is local-catalog books
+  scored against the user's profile. None of them was retrieved by the
+  stated branch (impossible — the local catalog never carries
+  `_retrieval_reason starting with "stated_genre:"`), so statedInPool=0
+  by construction.
 
-The single most diagnostic next instrumentation would be a one-line count log at four points:
-1. `olResult.candidates.length` filtered by `_retrieval_reason.startsWith('stated_genre:')` right after L1198
-2. After hygiene (L3031): `hygiene.passed.filter(...)` count
-3. After scoring (L2028): `scored.filter(fit_class !== 'reject' && _retrieval_reason starts 'stated_genre:')` count
-4. compPool (already logged)
+So yes: the visible deck this run is effectively local-catalog-only. The
+literary slate showing only the P1 floor `stated_taste≈0.08` is the expected
+output of running the scoring pipeline against the local catalog with no
+external supplement — those are the books that happen to land near the top
+of local scoring after the floor is applied.
 
-This four-point trace would conclusively isolate the death stage in the next live run.
+This also disproves the previous hypothesis that `computeFitClass` was
+rejecting stated candidates on dominant-lane mismatch. There were no stated
+candidates to reject. The fit-class hypothesis remains plausible for
+*future* runs once OL fetches are returning books, but is not what fired
+this run.
 
----
+----------------------------------------------------------
+Q7. Is Business → nonfiction a secondary or primary issue?
+----------------------------------------------------------
+SECONDARY. The Business→nonfiction collapse is real and will produce
+broad/non-business results when OL DOES return docs (a known P4-territory
+quality issue documented in replit.md). But it is NOT what produced
+merged_total=0 in this live run because:
 
-## Q3 — Does `byBranch=stated:4` mean attempts or returned candidates?
+  1. Even if Business→nonfiction returned 0 business-specific titles, it
+     would still return SOME `popular science` / `popular nonfiction` books
+     (Sapiens, Atomic Habits, etc.) — those would land in `merged` even if
+     they didn't satisfy the user's actual intent.
+  2. The Mystery→thriller_mystery fetches (`psychological thriller` +
+     `crime fiction`) have NO mapping-coarseness issue and reliably return
+     modern thrillers in normal operation. Their contribution to
+     merged_total being zero too rules out a mapping-only explanation.
+  3. The 4 lane fetches (whatever the user's revealed lanes resolved to)
+     also returned 0. Lane fetches don't go through the
+     Business→nonfiction collapse at all.
 
-**It means "FetchItems planned" — i.e. attempted retrievals**, not candidates returned.
+Put differently: a mapping problem can produce *wrong* books, but it cannot
+produce *zero* books across 8 different subject queries. Something
+transport-level or environment-level is the immediate blocker.
 
-The instrumentation in `lib/retrieval/branchPlanner.ts:138` counts `items.filter(i => i.branch === 'statedGenres').length`. `items` is the array of FetchItems pushed by each branch module (statedGenres pushes one FetchItem per subject anchor it intends to fetch). The planner runs **before** any OL network call — it has no idea what OL will return.
+----------------------------------------------------------
+Q8. Recommended next fix category
+----------------------------------------------------------
+ADD MORE GRANULAR OL FETCH DEBUG LOGGING ONLY.
 
-So `byBranch=stated:4` exactly means "4 OL subject queries were planned for the stated branch." Whether OL returned 0 or 72 books from those 4 queries is invisible in the current logs.
+Rationale: we cannot pick the right repair (gate, query construction,
+empty-result fallback, transport handling) until we know which of A/B is
+actually firing. Right now both `fetchOLSubject` and `fetchOLByAuthor`
+silently swallow every distinguishable failure mode into `return []`. The
+smallest change that unblocks the next decision is per-fetch instrumentation
+in those two helpers:
 
-This is a real instrumentation gap. The log label should probably be renamed to `plannedByBranch=stated:4/authors:0/lanes:4` to avoid implying retrieved counts.
+  • Log the URL that was sent (subject string + reason).
+  • Log HTTP status + ms elapsed.
+  • If thrown: log the error name (AbortError vs TypeError vs other).
+  • Log raw `docs.length` BEFORE the two `.filter()` passes.
+  • Log post-filter count.
 
----
+Suggested log key: `[OLFETCH/<subject|author>]`. __DEV__-gated, no behavior
+change. After one repro cycle this report is replaced by an actionable one
+naming the specific failure mode (timeout? non-200? DNS-blocked in this
+container? all 200 with empty docs?).
 
-## Q4 — Why does the final top slate carry `stated_taste ≈ 0.08`?
+Only after that should we choose between the heavier remediations the task
+listed (gate repair, anchor-query repair, normalization repair, empty-result
+fallback). Picking now is guessing.
 
-The four visible top books are clearly literary (Murder in the High Himalaya = mountaineering nonfiction-leaning literary; Fall of Giants = historical epic; Fault in Our Stars = YA literary; Song of Achilles = literary mythology). None are business or mystery.
+----------------------------------------------------------
+Q9. Phase 2 product acceptance status
+----------------------------------------------------------
+REMAINS BLOCKED.
 
-Their `stated_taste = 0.08` is the **P1 non-zero floor** (`STATED_TASTE_POLICY.statedPreferenceFloor = 0.05` plus a small per-favorite-match bump). Per `lib/recPolicy.ts` step 7, every book gets a baseline stated_taste contribution at all tiers regardless of whether its primary lane matches a favorite. The 0.08 specifically indicates these books matched **broad bucket evidence** (e.g., `nonfiction` is satisfied by Fall of Giants having a "history" subject; Murder in the High Himalaya satisfies `nonfiction` via "mountaineering--accidents" subjects).
+The pre-beta gate "P2 retrieval responsiveness; visible deck shift after
+pref edit, dense users included" is not met. Exact condition required to
+pass:
 
-What 0.08 does NOT mean:
-- It does **not** mean the book came from the stated retrieval branch.
-- It does **not** mean the user's stated edit steered the recommender toward this book.
-- It does **not** mean the book's primary lane matches a stated favorite.
+  After an explicit Reading Taste edit (cause=explicit_preference_edit) for
+  a dense user, at least one stated-branch candidate whose primary affinity
+  matches a stated favorite must reach the visible top slate (top-4) of
+  the For-You deck — i.e. [P2DEBUG/reservation] reports `reserved` (not
+  `no_eligible_candidate`) for that next deck rebuild, AND the reserved
+  book renders in the visible top-4.
 
-The 0.08 is essentially "this book got the across-the-board floor + a token bucket-match bump." This is the **stated-pref floor doing what it was designed to do** at the scoring layer (P1 contract: non-zero stated contribution at every tier). The problem is not the 0.08 — it is that the **stated retrieval branch did not deliver any candidate that scored substantially higher on stated_taste than these literary books**.
+For that to be reachable, getOLCandidates must first be returning a
+non-empty `merged` for the stated-branch fetches. It currently is not.
 
----
-
-## Q5 — Business → `nonfiction` coherence assessment
-
-**Classification: B + C — acceptable bucket but too broad for coherent retrieval, and a real Control Plane weakness for Business specifically.**
-
-What's correct (B):
-- The 8-affinity table is the locked P0A taxonomy. It is intentionally coarse to keep the OL retrieval surface small and testable.
-- Business chip → `affinityKey: 'nonfiction'` is consistent with how `Self-Help`, `Health & Wellness`, `History`, etc. all collapse — preserving editor breadth without exploding retrieval anchor count.
-- The OL subject taxonomy itself does not have a clean "business" tag that returns commercial business titles reliably; `business` as an OL subject is dominated by old textbooks and generic management guides.
-
-What's broken (C):
-- The retrieval anchors for `nonfiction` are **`popular science` + `popular nonfiction`**. Neither of these returns business books in any meaningful proportion. A user who picks Business gets popular-science books retrieved on their behalf and labeled (in the explanation layer) as "matching your nonfiction interest" — which is technically true at the affinity-bucket level but feels like a category error to the user.
-- There is no per-affinity branching by sub-key. `nonfiction` is monolithic from retrieval's perspective. A user who picks `Business + Self-Help + Science` retrieves the exact same OL queries as a user who picks `History + Politics`.
-- This is the structural shortcoming the P4 "book intelligence" / appeal-vector work in the locked architecture is supposed to solve. P2 was never going to fix it because P2 is signal/branch geometry, not subject-vocabulary depth.
-
-Not-D: the retrieval branch IS doing what the log shape implies — those four OL queries did go out. The log is honest.
-
----
-
-## Q6 — Reservation-failure classification
-
-**Primary class: B — stated candidates returned from OL but filtered out before reaching compPool.**
-
-Confidence rationale:
-- `byBranch=stated:4` confirms the planner emitted the 4 stated FetchItems.
-- The fetch loop at L1166-1173 unconditionally executes them (no cache short-circuit inside `getOLCandidates`; the outer cache short-circuit at L2900-2916 was bypassed because the planner log fired this run).
-- OL `subject:"popular science"`, `subject:"popular nonfiction"`, `subject:"psychological thriller"`, `subject:"crime fiction"` are common, well-populated OL subjects. They almost certainly returned non-zero books each (typical 5-15 hits after the pre-1950 filter).
-- Merge at L1175-1200 is first-seen-wins and branchOrder puts statedGenres first — stated books cannot be deduped away by other branches.
-- Therefore stated books **did enter `merged`** carrying `_retrieval_reason='stated_genre:*'`.
-- They then pass through `applyHygiene` (subject-/author-based filters; popular-science and crime-fiction books are not categorically excluded), CoG/intent filtering, scoring, and `nonRejected` filter (L2028).
-- `compPoolSize=184` is high — clearly local catalog + lanes + OL all contributed. The stated 4-anchor sub-pool is small (~20-60 books before any filtering) relative to that 184. If even 10% of stated OL hits survived to compPool, `statedInPool` would be >0.
-
-Most-likely sub-mechanism inside class B (rank-ordered):
-1. **Fit-class rejection** (highest confidence). The user's revealed center-of-gravity is literary/contemporary fiction (evidenced by the visible top slate). Books retrieved from `popular science` / `popular nonfiction` queries land in the `nonfiction` lane, which is not in the user's dominant lanes, so `computeFitClass` assigns them `fit_class='reject'` or `'stretch_fit'`. Reject is filtered out at L2028. Stretch survives but the comment at L1961 indicates `stretch −0.20` score penalty, pushing them far down the sort and out of the visible top4.
-2. **Hygiene attrition** (medium confidence). `popular science` returns many books with weak metadata (no subjects, missing covers, OL-only edition stubs). `applyHygiene` drops weak-metadata books and the `ol_no_subjects` check (referenced at L2945-2948) likely culls a significant share.
-3. **Author/lane composition cap collision** (low confidence — only matters if some stated books survived to compPool). `compositionAllows` enforces author/lane caps; this affects placement but does not zero `statedInPool`.
-
-Not-A: OL returning literally zero books for all 4 stated queries simultaneously is implausible given the subject popularity.
-Not-C: `_retrieval_reason` is set at the doc map step (L666) and never rewritten in the candidate path; provenance is not lost.
-Not-D: planner log is honest (see Q3).
-
----
-
-## Q7 — Smallest corrective direction
-
-Recommended fix category: **adjust stated branch candidate survival, NOT the taxonomy mapping or scoring policy**.
-
-Specifically, in priority order:
-
-1. **Add the four-point survival trace described in Q2** as a one-shot live diagnostic. This is 4 `__DEV__`-gated `console.log` lines in `lib/recommender.ts`. Run the same Test A flow once with this in place. It will conclusively distinguish "OL returned nothing" vs "hygiene killed them" vs "fit_class rejected them" — a one-pipeline-run answer to a question that has been speculative across two investigation rounds.
-
-2. **Conditional on the trace showing fit-class rejection** (the most likely outcome): introduce a narrow rule in `lib/recPolicy.ts` or `lib/fitClassifier.ts` that promotes a `stated_genre:*`-provenanced book to `adjacent_fit` (not `core_fit`) when the only reason for `reject`/`stretch_fit` was lane mismatch with dominant_lanes. This preserves quality gates (PD authors, weak metadata still reject) but lets stated retrieval branch books reach `compPool` so the P2B reservation has something to reserve. This is a small, surgical scope change — not a P3 rewrite.
-
-3. **Conditional on the trace showing OL returning very few books**: the fix moves to `AFFINITY_RETRIEVAL_SUBJECTS` — replace `popular science` / `popular nonfiction` with something with better OL hit rates, or add a third anchor for `nonfiction`. This is a taxonomy-data change, not architecture.
-
-What I am NOT recommending:
-- Re-mapping Business out of `nonfiction` into its own affinity. That's P4 territory (sub-key affinities) and would require a Control Plane change.
-- Changing the reservation eligibility gate. The gate is correctly returning `no_eligible_candidate` because the precondition (stated books in compPool) is genuinely unmet.
-- Touching scoring weights or the stated-pref floor. P1 floor at 0.08 is operating as designed; the issue is upstream.
-
----
-
-## Q8 — Phase 2 acceptance status
-
-**Phase 2 product acceptance is NOT passed.**
-
-What Phase 2 actually delivered (validated):
-- P2A retrieval branch planner runs and emits stated branch FetchItems for users with mapped favorites, dense or sparse. ✓
-- BuildCause `explicit_preference_edit` propagates from save → pipeline (no-refresh path). ✓
-- P2B reservation gate is wired correctly and short-circuits with the right `reason` codes. ✓
-- P2C soft-avoid retrieval deprioritization. ✓ (not exercised in this trace)
-
-What Phase 2 has NOT delivered to the end user (the entire point of P2):
-- A visibly stated-aligned book in the top slate after an explicit preference edit.
-
-Acceptance requires both:
-1. **(Existing condition, met)** No-refresh save → rebuild fires; cause is `explicit_preference_edit`; planner emits stated branch.
-2. **(Currently failing)** Top slate after the rebuild contains at least one book whose `_retrieval_reason` begins `stated_genre:` AND whose primary affinity matches one of the user's stated favorites.
-
-Until condition 2 holds for a representative test case (the Business+Mystery case being the obvious one), P2 ships infrastructure without delivering its product promise. The pre-beta gate "P2 retrieval responsiveness; visible deck shift after pref edit, dense users included" from the locked architecture spec is **not** met by the current behavior even though the code paths exist.
-
----
-
-## Summary for chat
-
-- **Primary failure classification:** B — stated branch candidates are retrieved by OL but eliminated between OL fetch and compPool. Most likely sub-mechanism: `computeFitClass` assigns `reject` because the stated retrieval lane doesn't match the user's revealed dominant lanes, and `nonRejected` filter at L2028 removes them.
-- **Is the stated branch doing real work for Business/Mystery?** Partially. For Mystery, yes — `psychological thriller`/`crime fiction` are appropriate OL anchors. For Business, no — Business collapses into `nonfiction` and gets retrieved as `popular science`/`popular nonfiction`, which is a P4-class structural weakness, not a P2 bug.
-- **Recommended next fix category:** Add a four-point survival trace (4 log lines) and run Test A once to conclusively isolate the death stage. Then, conditional on what that trace shows, either (a) narrow promotion of `stated_genre:*` books past the dominant-lanes gate in `fitClassifier`, or (b) replace `nonfiction` retrieval anchors. Both are small, scoped changes — no P3 work, no Control Plane reshape.
-- **Phase 2 product acceptance:** Still blocked. Infrastructure ships, product promise (visible stated-aligned slate after explicit edit) does not.
+Open items, in dependency order:
+  1. (Active) Resolve merged_total=0 — needs OLFETCH instrumentation first
+     to classify, then the appropriate fix.
+  2. (Once #1 is fixed) Re-test the survival trace — confirm
+     stated_count > 0 at post_ol_merge, then check post_hygiene /
+     post_scoring / comp_pool to see whether the original fit-class
+     hypothesis re-emerges.
+  3. (Already-known, not the current blocker) Business→nonfiction anchor
+     coarseness — P4 territory; do NOT spot-patch before the retrieval
+     transport layer is verified working.
+  4. (Already-known, not the current blocker) BuildCause browser-refresh
+     persistence — separate fix, separate blocker class.

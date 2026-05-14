@@ -1,0 +1,129 @@
+Task: Phase 2 Live Acceptance Follow-Up — Why OL retrieval returns zero merged candidates
+
+Context:
+We ran the Phase 2 survival-trace live test after a preference edit with:
+- genres=["Business","Mystery"]
+- styles=["Slow-burn"]
+- avoid=[]
+
+The live logs show the save/rebuild path works and the planner allocates stated retrieval:
+
+[P2DEBUG/build]
+effectiveCause=explicit_preference_edit
+statedGenres=["nonfiction","thriller_mystery"]
+
+[P2DEBUG/plan]
+cause=explicit_preference_edit
+stated=5 authors=1 lanes=4 fetchItems=8
+byBranch=stated:4/authors:0/lanes:4
+
+However, the new survival trace proved that no external OL candidates enter the pipeline at all:
+
+[P2SURVIVE/post_ol_merge]
+merged_total=0
+stated_count=0
+
+Then naturally:
+- post_hygiene stated_in=0
+- post_scoring stated_scored=0
+- comp_pool stated_in_compPool=0
+- reservation fails with no_eligible_candidate
+
+This disproves the previous “fit-class likely rejected stated candidates” hypothesis for this live run.
+The current live blocker is upstream:
+
+The retrieval planner allocates stated/live retrieval work, but the OL retrieval path contributes zero merged candidates.
+
+Goal:
+Investigate exactly why Open Library candidate retrieval produces merged_total=0 in the live app path.
+
+This is investigation only. Do not implement fixes yet.
+
+Read:
+- lib/recommender.ts, especially getOLCandidates and where [P2SURVIVE/post_ol_merge] was inserted
+- P2A branch planner outputs
+- statedGenres branch generation
+- any Open Library candidate fetch helpers called by getOLCandidates
+- live OL gating flags / allow-live conditions / cache checks if present
+- timeout/fallback behavior if present
+- existing debug logs around OL fetches if any
+- replit_output.txt latest diagnostic notes if useful
+
+Questions to answer:
+
+1. Does `getOLCandidates` actually execute live OL fetches in this build?
+For the logged plan:
+- stated:4
+- lanes:4
+- fetchItems=8
+
+Report:
+- whether 8 fetch operations were attempted
+- or whether a gate prevented them from firing
+
+2. If fetches were attempted, what were the exact subject/anchor queries?
+For this live input, identify:
+- the 4 stated retrieval queries
+- the 4 lane retrieval queries
+- which queries correspond to:
+  - nonfiction / Business-derived retrieval
+  - thriller_mystery / Mystery-derived retrieval
+
+3. What is the raw provider result count per query?
+For each attempted OL query:
+- number of raw works returned
+- whether provider returned error/empty/timeout
+- whether any cached response was used
+
+4. Where does the zeroing happen?
+Classify merged_total=0 as:
+A. no fetch attempts fired
+B. fetches fired but provider returned zero results
+C. provider returned results but normalization/dedupe removed all before the merge
+D. a later merge bookkeeping/log placement issue means merged_total is misleading
+E. mixed/other
+
+5. Is `merged_total=0` global OL output or only a specific local variable?
+Confirm exactly what that survival log counts.
+We need to know whether:
+- OL returned absolutely nothing across all fetches,
+or
+- the log is attached to a narrower sub-path.
+
+6. Does this explain the poor visible deck?
+State clearly whether:
+- the final deck is effectively local-catalog-only in this live run,
+- which would explain why the slate ignores stated preference lanes despite the planner/reservation architecture.
+
+7. Is Business→nonfiction a secondary issue or the primary issue?
+The previous report noted Business collapses to broad nonfiction.
+Now that OL output is zero, assess whether:
+- the immediate blocker is retrieval-return failure regardless of mapping,
+or
+- the Business anchor mapping itself is contributing directly to the zero result problem.
+
+8. Recommended next fix category
+Do not implement yet. Recommend the smallest appropriate fix category:
+- add more granular OL fetch debug logging only
+- repair a disabled/gated OL fetch path
+- repair subject anchor/query construction
+- repair normalization/merge behavior
+- handle provider empty-result fallback differently
+- something else
+
+9. Phase 2 acceptance status
+State clearly:
+- Phase 2 product acceptance remains blocked or not
+- the exact condition required to pass
+
+Output:
+Write the full investigation report to replit_output.txt.
+
+Return in chat:
+- primary failure classification A/B/C/D/E
+- whether live OL fetches are firing
+- whether the poor deck is effectively local-only
+- the recommended next fix category
+- whether Phase 2 acceptance remains blocked
+
+Stop after the investigation. Do not implement fixes yet.
