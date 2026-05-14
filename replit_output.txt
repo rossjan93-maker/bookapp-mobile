@@ -1,104 +1,524 @@
 ================================================================================
-P2C — Soft-Avoid Retrieval Deprioritization — COMPLETE
+P3 — Score Contributions + Explanation Faithfulness — ARCHITECTURAL MAPPING
 ================================================================================
 Date: 2026-05-14
-Approved scope: Gaps A, C, D, E (Gap B / revealedAuthors deferred to P4)
-Protocol: Strict TDD (tests-first), ≤2 auto-recovery attempts per failure
-DB schema/migrations: untouched
-P2B.1 retrieval-provenance AND-gate: preserved verbatim
-6-phase pipeline geometry: preserved
-
---------------------------------------------------------------------------------
-FILES TOUCHED (7)
---------------------------------------------------------------------------------
-  M  lib/recPolicy.ts                              (+LIKED_SUBJECT_AVOID_GUARDS, doc updated)
-  M  lib/retrieval/branchPlanner.ts                (sparse trigger + lanesDeprioritized flag passthrough)
-  M  lib/retrieval/branches/revealedLanes.ts       (+softAvoidedTopGenres, +liked-subject guard, +deprioritizedFlag)
-  A  lib/retrieval/softAvoidLocal.ts               (NEW — applyLocalSoftAvoidFilter + classifyCandidateAvoidKey)
-  M  lib/recommender.ts                            (wired filter at primary + fallback; meta surfaced; RetrievalTrace extended)
-  M  scripts/validate_retrieval_planner.ts         (+A7a/b/c/d/e/f/g sections — 19 new assertions)
-  M  replit.md                                     (P2B.1 entry extended → P2C)
-
---------------------------------------------------------------------------------
-TDD TIMELINE
---------------------------------------------------------------------------------
-RED (Step 1 verification, before implementation):
-  Error: Cannot find module '../lib/retrieval/softAvoidLocal'
-  → confirmed validator could not even load → tests fail by import.
-
-GREEN (Step 3 final, after implementation):
-  retrieval planner          OK — 0 failure(s)   (56 prior + 19 P2C = 75 PASS)
-  stated reservation         OK — 0 failure(s)   (56/56, P2B.1 unchanged)
-  taxonomy                   OK — 21 defs / 53 aliases / 18 edit / 17 intake / 17 legacy
-  recValidity                OK — hash determinism, tolerance, configHash semantics
-  tsc --noEmit               0 errors in lib/{recommender,recPolicy,retrieval,recRequest}
-                             (pre-existing app/(tabs)/* PostgrestSingleResponse errors unrelated)
-
-Auto-recovery used: 1 (broke RetrievalTrace closing brace on a multi-line edit;
-fixed in next turn). 0 second-attempts needed.
-
---------------------------------------------------------------------------------
-GAP-BY-GAP MAPPING
---------------------------------------------------------------------------------
-Gap A — sparse-user trigger (topGenres ∩ softAvoids)
-  Where: lib/retrieval/branchPlanner.ts step 3 + softAvoidedTopGenres()
-  Tests: A7a (trigger fires, quota cut, anchor masked) + A7b (no-intersect → no cut)
-
-Gap C — liked_subject guard list
-  Where: LIKED_SUBJECT_AVOID_GUARDS in lib/recPolicy.ts
-       + isLikedSubjectAvoided() in lib/retrieval/branches/revealedLanes.ts
-  Tests: A7c (epic-fantasy dropped when fantasy_scifi avoided; family-saga survives)
-
-Gap D — local-candidate soft-avoid filter
-  Where: lib/retrieval/softAvoidLocal.ts (pure helper, deterministic)
-       + wired in lib/recommender.ts after getLocalCandidates AND after the
-         catalog-fallback scan
-  Behavior: keep ceil(N * (1 - SOFT_AVOID_RETRIEVAL_MULTIPLIER)) of avoided;
-           non-avoided pass through; first-seen-wins ordering
-  Tests: A7e (classifyCandidateAvoidKey) + A7f (filter ratio + determinism + no-op)
-
-Gap E — observability
-  Where: FetchItem.softAvoidDeprioritized (already in types.ts) populated by
-         buildRevealedLanesBranch when planner sets deprioritizedFlag;
-         RetrievalTrace.soft_avoid_retrieval { avoidsApplied, localDemoted,
-         branchQuotaMultiplier } populated in getCandidateBooks
-  Tests: A7d (per-FetchItem flag) + A7g (P2B.1 stated_genre: prefix preserved
-         AND statedGenres items NOT flagged)
-
-Gap B — revealedAuthors deprioritization: DEFERRED to P4 (per approved scope)
-
---------------------------------------------------------------------------------
-INVARIANTS HELD
---------------------------------------------------------------------------------
-✓ Soft avoid demotes — never excludes (multiplier=0.5; quota floored at 1)
-✓ Determinism: identical inputs → identical kept[] order across runs
-✓ statedGenres branch untouched: every item still emits `stated_genre:` prefix
-✓ statedGenres items never carry softAvoidDeprioritized=true
-✓ P2B.1 retrieval-provenance AND-gate operates unchanged (gate keys off
-  `_retrieval_reason.startsWith('stated_genre:')` AND positive contribution)
-✓ Empty softAvoids → no-op (kept === input, demotedCount === 0)
-✓ Pre-P2C dense behavior preserved when softAvoids empty
-✓ No DB writes / migrations / schema changes
-✓ Subject classification confined to LIKED_SUBJECT_AVOID_GUARDS — no LLM, no
-  fuzzy matching beyond curated substrings
-
---------------------------------------------------------------------------------
-HONEST LIMITATIONS / FOLLOW-UPS
---------------------------------------------------------------------------------
-- Subject coverage in `books.subjects` remains the bottleneck for local filter
-  precision. The classifier returns null for any candidate without subjects,
-  so soft-avoid demotion is naturally bounded by enrichment coverage.
-  (Tracked separately under "Subject coverage batch repair" follow-up.)
-- LIKED_SUBJECT_AVOID_GUARDS is curated (7 keys). Adding more keys is a
-  one-line policy edit — no architectural change required.
-- Gap B (revealedAuthors) deferred to P4. Author-level soft-avoid signal does
-  not exist in the current taxonomy; closing it requires a hard-avoid storage
-  decision per the architecture spec.
-- Local filter has not been walked end-to-end against a live account yet
-  (consistent with existing P2B.1 verification gap).
+Status: MAPPING ONLY — awaiting human approval before code.
+Constraint reaffirmed: NOT an LLM phase. NOT premium semantic. Free/core only.
+Roadmap source of truth: roadmap-q2.md §5D (lines 346-364) + quality gates A8/A9/A10.
 
 ================================================================================
-RESULT: GREEN — P2C ready for hand-off to P3 (contribution scoring +
-explanation faithfulness). Quality gates A1–A7 satisfied; A8–A10 remain in
-P3 scope.
+0. EXECUTIVE SUMMARY
+================================================================================
+Current state ("plausible templates"):
+- `reasons: string[]` on `ScoredBook` (recommender.ts:209) is assembled by ~15
+  scattered `reasons.push(...)` sites (recommender.ts:1312..1655) AND then
+  partially overwritten in `getRankedRecs` (~L1993) by the CoG `fit_explanation`.
+- `ScoreBreakdown` (recommender.ts:154) is the closest existing analog to a
+  contribution structure but is shaped for additive math, not for
+  per-evidence audit. It has no `evidence`, no `source`, no `kind`.
+- `RecCard.tsx` consumes `book.reasons[0..n]` directly and applies banned-phrase
+  filters + `rehumanizeReasonPhrase` + variant pools as a humanization layer.
+- Audit coverage: `scripts/explanation_audit.ts` checks distribution and pattern
+  repetition; A8 (zero false-attribution) is NOT formally proven anywhere.
+
+Target state ("auditable reasoning"):
+- Scoring emits a typed `ScoreContribution[]` per book.
+- Explanations are composed FROM contributions by a single composer that
+  refuses to emit any reason whose underlying contribution is absent or
+  below a per-kind floor.
+- `reasons: string[]` is preserved as a presentation/compatibility output but
+  becomes derived, not authoritative.
+- A small slate-level diversity pass demotes duplicate `kind`s in top-4 when
+  alternative truthful contributions exist.
+
+High-level recommendation: **single PR, no internal split needed.**
+Proposed file count: **8 source files + 1 validator + replit.md = 10 files
+total** (under the 12-file budget; see §7).
+
+Two scope decisions that need human approval BEFORE code (see §11):
+- D1: Promote `_retrieval_reasons: string[]` (multi-source provenance) into P3.
+- D2: Fix `fetchOLByAuthor` hardcoded `author_anchor:` reason label in P3.
+
+================================================================================
+1. P3 ROADMAP REQUIREMENTS (verbatim from roadmap-q2.md §5D)
+================================================================================
+Goal:
+- recommendations should explain the real reason a book won
+- no explanation should cite evidence that did not actually contribute positively to rank
+
+Required outcomes:
+- score outputs become typed contribution arrays
+- explanations cite real contributions
+- stated vs revealed vs intent vs feedback reasons are distinguishable
+- repeated rationale repetition across the top slate is reduced
+- explanation audit becomes mandatory
+
+Quality gates touched:
+- A8 — explanations match actual positive score contributions
+- A9 — no near-identical rationale repetition across top slate unless justified
+- A10 — BuildCause propagates correctly (already shipped in P1; P3 verifies)
+
+Out of scope (locked):
+- LLM integration / OpenAI calls / AI-generated text
+- Premium Semantic Intelligence Plane (reader thesis, semantic retrieval, AI rerank)
+- RecCard visual redesign
+- TasteReadout / onboarding / Home changes
+- Schema / migrations / DB structure
+- Changes to P2 retrieval policy, branch quotas, top-slate reservation, deck validity
+- 6-phase pipeline geometry changes (unless absolutely necessary — none anticipated)
+
+================================================================================
+2. PROPOSED CONTRIBUTION MODEL
+================================================================================
+The smallest sound shape that supports BOTH free explanation faithfulness now AND
+premium semantic explanations later (P4+ pluggability):
+
+```ts
+// lib/scoring/contributions.ts (NEW)
+export type ContributionSource =
+  | 'stated_durable'         // SignalClass — from RecRequest stated signals
+  | 'revealed_behavioral'    // SignalClass — from rated history
+  | 'current_intent'         // SignalClass — from active intent chip
+  | 'short_term_feedback'    // SignalClass — MLT / "more like this"
+  | 'soft_avoid'             // SignalClass — penalty-only
+  | 'retrieval_provenance'   // P2A/P2B.1 retrieval branch
+  | 'quality_reliability'    // hygiene / metadata floor
+  | 'novelty_diversity'      // future P4 hook (disabled-by-default in free)
+  | 'semantic_rerank';       // future P4 hook (disabled-by-default in free)
+
+export type ContributionKind =
+  | 'trait_alignment'
+  | 'appreciation_match'
+  | 'theme_overlap'
+  | 'genre_affinity'
+  | 'feedback_boost'
+  | 'reader_consensus'
+  | 'stated_taste_fit'      // P1 STATED_TASTE_POLICY scoring path
+  | 'intent_fit'
+  | 'soft_avoid_penalty'
+  | 'retrieval_anchor'      // book was surfaced because branch X retrieved it
+  | 'cog_fit'               // center-of-gravity adjustment
+  | 'hygiene_floor';
+
+export interface ScoreContribution {
+  source: ContributionSource;
+  kind: ContributionKind;
+  value: number;            // signed; negatives are penalties
+  evidence: string[];       // raw tokens (genre keys, trait keys, branch prefix)
+  explanationEligible: boolean; // false for hygiene_floor, soft_avoid_penalty,
+                                // true for everything user-facing-positive
+}
+```
+
+Rationale for these choices:
+- `source` mirrors the SignalClass taxonomy already living in `lib/recSignals/`
+  (build.ts L67/L75/L80/L87/L92) PLUS two engine-side sources
+  (`retrieval_provenance`, `quality_reliability`) PLUS two reserved P4 hooks.
+  No new vocabulary invented.
+- `kind` enumerates the existing reason families already present in
+  recommender.ts (L1527, L1529, L1566, L1592, L1614, L1655). Mapping is 1:1
+  with what scoring already does — no new behavior.
+- `evidence: string[]` is the bridge that lets the composer cite specifics
+  ("aligns with literary, character-driven") without touching scoring math.
+- `explanationEligible` makes hygiene/penalty contributions invisible to the
+  composer without filtering them out of the audit trail.
+- `value` stays a single number — keeps math compatible with existing
+  `ScoreBreakdown`. P3 does NOT change weights, caps, or floors.
+
+Attachment site: `ScoredBook` gains
+```ts
+contributions?: ScoreContribution[];   // NEW — primary truth for explanations
+reasons: string[];                     // EXISTING — derived, presentation-only
+```
+
+`ScoreBreakdown` (recommender.ts:154) stays as-is. It is the additive math
+view; `contributions[]` is the auditable evidence view. Both are derived from
+the same scoring pass.
+
+================================================================================
+3. CURRENT SCORING + REASON EMISSION AUDIT
+================================================================================
+Inventory of every site that currently pushes a `reasons` entry:
+
+| Line   | Reason emitted                  | Faithful today? | P3 disposition           |
+|--------|---------------------------------|-----------------|--------------------------|
+| 1312   | bad_title_marker (debug)        | n/a             | KEEP (debug-only)        |
+| 1340   | juvenile (hygiene)              | yes             | DEMOTE to non-eligible   |
+| 1344   | juvenile_overridden             | yes             | DEMOTE to non-eligible   |
+| 1360   | form(...) (hygiene)             | yes             | DEMOTE to non-eligible   |
+| 1369   | pd_author                       | yes             | DEMOTE to non-eligible   |
+| 1378   | literary_drift_author           | yes             | DEMOTE to non-eligible   |
+| 1401   | non_english                     | yes             | DEMOTE to non-eligible   |
+| 1412   | no_meta                         | yes             | DEMOTE to non-eligible   |
+| 1420   | ol_no_subjects                  | yes             | DEMOTE to non-eligible   |
+| 1527   | preferred trait alignment       | LOOSE           | REPLACE → trait_alignment contribution |
+| 1529   | appreciation match (1 trait)    | LOOSE           | REPLACE → appreciation_match contribution |
+| 1566   | theme overlap                   | LOOSE           | REPLACE → theme_overlap contribution |
+| 1592   | genre enjoy                     | LOOSE           | REPLACE → genre_affinity contribution |
+| 1614   | feedback boost                  | LOOSE           | REPLACE → feedback_boost contribution |
+| 1655   | reader consensus                | LOOSE           | REPLACE → reader_consensus contribution |
+| 1993-6 | reasons[0] = CoG fit_explanation| OVERWRITE       | CHANGE — composer becomes authority |
+
+"LOOSE" = reason is pushed when a numeric component fires, but pushing is a
+side-effect rather than derivation; the reason text is not guaranteed to
+reflect which contribution actually contributed positively above a floor.
+
+Score components (from `ScoreBreakdown` recommender.ts:154 + scoring path):
+| Component            | Cap          | Has reason today? | Becomes ScoreContribution.kind |
+|----------------------|--------------|-------------------|-------------------------------|
+| trait_alignment      | ~0.38        | yes (loose)       | trait_alignment               |
+| genre_bonus          | +0.22 max    | yes               | genre_affinity                |
+| feedback_boost       | +0.14        | yes               | feedback_boost                |
+| enrichment_bonus     | variable     | yes               | reader_consensus              |
+| stated_taste         | variable+0.05| NO (silent)       | stated_taste_fit ★ NEW REASON |
+| intent_boost         | ±0.30        | NO (internal)     | intent_fit ★ NEW REASON       |
+| cog_score_delta      | +0.25/-0.20  | yes (overrides)   | cog_fit                       |
+| avoided_penalty      | negative     | NO                | soft_avoid_penalty (not eligible) |
+| metadata_penalty     | negative     | NO                | hygiene_floor (not eligible)  |
+
+Two findings worth highlighting:
+- `stated_taste` (the P1 floor signal) currently has no user-facing reason at
+  all. P3 closes that gap — books surfaced by stated retrieval but ranked by
+  stated scoring will finally say so honestly.
+- `intent_boost` is opaque to RecCard. Intent-driven picks should say "matches
+  your current intent" when intent_boost > 0; today they don't.
+
+================================================================================
+4. RECCARD HUMANIZATION LAYER (preserve verbatim)
+================================================================================
+The following helpers in `components/RecCard.tsx` are PURE presentation and
+must survive P3 unchanged — they are not reason-emitters:
+- ALIGNS_POOL_SAFE/HISTORY (L241-252)
+- APPRECIATION_POOL_SAFE/HISTORY (L258-269)
+- READERS_TRAIT_POOL_SAFE/HISTORY (L272-283)
+- TRAIT_QUALITY map (L352)
+- Banned-phrase filter (L160-161, L208)
+- `rehumanizeReasonPhrase` (L17, L393)
+- `rewriteReasonText` (L371)
+- `_pickGated` (L222)
+
+P3 changes RecCard in exactly ONE place:
+- Where `book.reasons[0..n]` are read (~L784-785), check first for a composed
+  explanation supplied by the new composer. If present, use it; otherwise fall
+  back to existing `reasons[0]` path. This is a 5-10 line change.
+
+`lib/traitCopy.ts` and `lib/tasteReadoutCopy.ts` (FX-1 helpers): pure
+humanizers, untouched.
+
+================================================================================
+5. P2 PROVENANCE — TWO RESIDUALS RE-EVALUATED
+================================================================================
+The mapping question explicitly asks whether each P2B.1 residual belongs in P3.
+
+Residual #1: `fetchOLByAuthor` hardcodes `author_anchor:${author}` (recommender.ts:715)
+  Architectural impact on P3: MEDIUM.
+  - Without fixing: an author-branch contribution will use a `_retrieval_reason`
+    that does not match the prefix taxonomy used by `pickStatedReservation` or
+    by the future composer dispatch table. Composer would need a special-case.
+  - Cost to fix: ~5 lines + one new prefix constant.
+  - Recommendation: **FIX IN P3.** Cheap, eliminates a special case in the
+    composer dispatch.
+
+Residual #2: merge-dedup drops loser-branch provenance (recommender.ts:570-600)
+  Architectural impact on P3: HIGH.
+  - Without fixing: a book retrieved by BOTH `stated_genres:fantasy_scifi` AND
+    `revealed_lanes:literary` keeps only the last writer's `_retrieval_reason`.
+    The composer will pick whichever branch happened to write last, not the
+    strongest truthful contribution.
+  - This DIRECTLY affects A8 (zero false-attribution) and A9 (slate diversity):
+    if every dense user's book ends up tagged `revealed_lanes:` because that
+    branch runs last, the slate cannot diversify on retrieval source.
+  - Cost to fix: extend `CandidateBook` with `_retrieval_reasons: string[]` and
+    have the merge step append rather than overwrite. Existing
+    `_retrieval_reason` becomes a derived "primary" (first entry). Backwards
+    compatible.
+  - Recommendation: **FIX IN P3.** Required for A8/A9 to be provable.
+
+Both residuals upgraded from "P2 deferred" to "P3 prerequisite."
+
+P2C `softAvoidDeprioritized` flag (FetchItem in `lib/retrieval/types.ts:47`):
+  Already propagates to ScoredBook through the existing pipe. P3 reads it as
+  evidence on the `soft_avoid_penalty` contribution. No new plumbing needed.
+
+P1 BuildCause: already propagates via `consumePendingBuildCause`
+(recRequest.ts:78) and `buildRecRequest` (L180). P3 quality gate A10 verifies
+this in the new validator — no code change.
+
+================================================================================
+6. SLATE-LEVEL DIVERSITY
+================================================================================
+Architecture decision: minimal version IN P3, full version deferred to P4.
+
+Minimal P3 pass (in `lib/explanations/compose.ts`):
+- After per-book composition, walk top-N (default N=4).
+- For each card, the composer has produced a ranked list of eligible
+  ContributionKinds that survived the per-kind floor.
+- If ≥3 of top-4 share the same primary kind AND any has a viable secondary
+  contribution above floor, swap that card's primary to its secondary.
+- Never invent a reason. Never lower a per-kind floor for diversity.
+- Determinism: tiebreak by ContributionKind enum order.
+
+What this is NOT: P3 does NOT add a "global slate optimizer," does NOT
+re-rank books for diversity, does NOT change top-slate reservation.
+Reservation winners keep their slot; only the displayed reason text may
+swap to a different truthful contribution.
+
+Risk: low. The pass is read-only over scoring output and only changes which
+of the existing eligible contributions becomes the headline.
+
+================================================================================
+7. PROPOSED FILE PLAN (10 files; under 12-file budget)
+================================================================================
+
+NEW (4 files):
+1. `lib/scoring/contributions.ts`
+   - Types: ContributionSource, ContributionKind, ScoreContribution
+   - Pure helpers: `summarizeContributions`, `topPositiveByKind`, `floorByKind`
+   - Per-kind floors (e.g. `MIN_DISPLAY = { trait_alignment: 0.06, ... }`).
+   - No IO, no recommender dependency.
+
+2. `lib/explanations/compose.ts`
+   - `composeExplanation(book, contributions, branchTrail) => ComposedExplanation`
+   - Dispatch table per ContributionKind → existing RecCard variant pool key.
+   - Refuses to emit a reason without a contribution above floor.
+   - Preserves provenance distinction in copy template choice (stated vs
+     revealed vs intent vs feedback) — the dispatch keys off `source`, not
+     just `kind`.
+
+3. `lib/explanations/diversityGuard.ts`
+   - Single function: `applySlateDiversity(slate, composedByBookId)`.
+   - Pure, deterministic. Top-4 only.
+   - (Could fold into compose.ts to save a file. Recommendation: keep separate
+     for testability.)
+
+4. `scripts/validate_explanation_faithfulness.ts`
+   - A8 proof: synthesize fixture users + candidates with known
+     contributions; assert no surfaced reason maps to a contribution below
+     floor or absent.
+   - A9 proof: top-4 fixture cases assert diversity guard fires correctly.
+   - A10 proof: BuildCause flows from `RecRequest` to `RetrievalTrace`.
+   - Stated vs revealed vs intent vs feedback reason distinction asserted on
+     fixtures.
+   - Stated avoid → no false history attribution in copy.
+   - npx-tsx, exit 0/1, ≥40 cases.
+
+MODIFIED (5 files):
+5. `lib/recommender.ts`
+   - Scoring path: alongside existing `ScoreBreakdown` accumulation, build
+     `ScoreContribution[]` per book.
+   - `getRankedRecs`: call composer; attach composed explanation; populate
+     `book.reasons` from composer output for backwards compatibility.
+   - Merge-dedup: introduce `_retrieval_reasons: string[]` (residual #2 fix).
+   - `fetchOLByAuthor`: use prefixed retrieval reason from a constant
+     (residual #1 fix).
+   - Estimated diff: ~150-200 net LOC, mostly additive.
+
+6. `lib/retrieval/types.ts`
+   - Add optional `_retrieval_reasons: string[]` to `CandidateBook`.
+   - `_retrieval_reason` becomes a derived "primary" (kept for back-compat).
+
+7. `components/RecCard.tsx`
+   - Read composed explanation if present; fall back to `reasons[0]`.
+   - 5-10 line change. No visual redesign. Banned-phrase filter intact.
+
+8. `scripts/explanation_audit.ts`
+   - Extend to consume new `book.contributions` when present.
+   - Existing distribution / repetition checks preserved.
+
+9. `replit.md`
+   - "Recently shipped" entry for P3.
+   - Update "Where things live" with `lib/scoring/contributions.ts` and
+     `lib/explanations/compose.ts`.
+
+NOT TOUCHED (explicit non-goals):
+- `lib/recPolicy.ts` — caps/floors/multipliers stay frozen.
+- `lib/retrieval/branchPlanner.ts` — quotas frozen.
+- `lib/composition/statedReservation.ts` — semantics frozen.
+- `lib/recValidity.ts` — deck-validity frozen.
+- `lib/recSignals/*` — signal classes frozen.
+- `lib/expertRec.ts` — already uses `judgment.why_it_fits`; will provide
+  contributions via a thin adapter inside compose.ts. NO change to expertRec.
+- `lib/traitCopy.ts`, `lib/tasteReadoutCopy.ts` — pure humanizers, frozen.
+- DB schema, migrations, Supabase, OL/GBooks/LLM provider code.
+- 6-phase pipeline geometry preserved.
+
+Total: 4 NEW + 5 MODIFIED + replit.md = 10 files. Under budget.
+
+================================================================================
+8. MIGRATION STRATEGY (reasons[] → contributions)
+================================================================================
+Two-step transition within a single PR — no flag, no deprecation cycle:
+
+Step A: contributions[] becomes the source of truth.
+- Scoring emits contributions alongside the existing breakdown.
+- Composer computes the user-facing explanation string from contributions.
+- `book.reasons` is repopulated from the composer output (so RecCard's
+  fallback path produces the same text the composer would).
+
+Step B: legacy `reasons.push(...)` sites are replaced with contribution
+        emissions.
+- Hygiene/penalty `reasons.push` calls become non-eligible contributions
+  (kept for forensic logging, never displayed).
+- "LOOSE" trait/genre/feedback/consensus pushes are deleted; their
+  contributions emit during scoring.
+- The old `reasons[0] = CoG fit_explanation` overwrite at L1993-1996 is
+  removed; CoG becomes a `cog_fit` contribution with `value = cog_score_delta`
+  and `evidence = [book.fit_classification]`.
+
+`book.reasons` survives as a presentation/compatibility output that any
+downstream consumer (RecCard, audit scripts, dev inspector) can still read.
+
+No external API or persisted shape changes. AsyncStorage / Supabase rows
+unaffected.
+
+================================================================================
+9. VALIDATION STRATEGY
+================================================================================
+New validator: `scripts/validate_explanation_faithfulness.ts`
+
+Quality gates the validator must prove (deterministically, no live network):
+
+A8 — Zero false-attribution (HARD GATE):
+  - Synthesize 20+ fixture users × N candidates with known input signals.
+  - Run the composer. For every emitted reason, assert there exists a
+    `ScoreContribution` with matching `kind` AND `value >= MIN_DISPLAY[kind]`
+    AND `explanationEligible === true`.
+  - Counter-fixtures: book with NO matching contribution must produce NO
+    reason of that kind.
+  - Stated-avoid users must produce no "you've been reading X" reason.
+
+A9 — Slate diversity (SOFT GATE):
+  - 6+ fixture top-slate compositions where ≥3 books share the same primary
+    contribution kind AND have viable secondaries.
+  - Assert diversity guard swaps where possible.
+  - Assert NO swap when no viable secondary exists (truth wins over diversity).
+
+A10 — BuildCause propagation (HARD GATE):
+  - Construct `RecRequest` with each `BuildCause` value.
+  - Assert `RetrievalTrace.build_cause` matches; assert
+    `explicit_preference_edit` triggers reservation; assert
+    `onboarding_completion` does not.
+
+Provenance distinction:
+  - Stated-genre reason text uses stated-template copy, never revealed-template.
+  - Revealed-history reason text never claims anchor for a stated-only signal.
+  - Intent reason fires iff `intent_fit.value > 0`.
+  - Feedback reason fires iff `feedback_boost.value > 0`.
+
+Existing validators continue to pass:
+- `scripts/validate_taxonomy.ts`
+- `scripts/validate_rec_validity.ts`
+- `scripts/validate_retrieval_planner.ts` (75 cases)
+- `scripts/validate_stated_reservation.ts` (56 cases)
+- `scripts/explanation_audit.ts` (extended, not replaced)
+
+================================================================================
+10. PRESERVATION CHECKLIST (P2 invariants P3 must not break)
+================================================================================
+- Branch quotas (`lib/retrieval/branchPlanner.ts` BRANCH_QUOTAS) — UNCHANGED
+- `STATED_RESERVATION_POLICY` — UNCHANGED
+- `SOFT_AVOID_RETRIEVAL_MULTIPLIER` — UNCHANGED
+- `STATED_TASTE_POLICY` floor (+0.05) — UNCHANGED
+- `EDIT_CAUSE_BRANCH_BOOST` — UNCHANGED
+- `configHash` invalidation across recPayloadCache/recSession/recQueue — UNCHANGED
+- `_retrieval_reason.startsWith('stated_genre:')` AND-gate — PRESERVED
+  (now consults `_retrieval_reasons[]` if multi-source present; AND-gate
+  semantics identical: any stated_genre prefix in the array satisfies it)
+- 6-phase pipeline geometry — PRESERVED
+- RecCard visual UI — PRESERVED
+- TasteReadout / Home / onboarding — UNTOUCHED
+- DB schema / migrations — NONE
+- OL / GBooks / LLM call sites — UNTOUCHED
+
+================================================================================
+11. DECISIONS REQUIRING HUMAN APPROVAL BEFORE CODE
+================================================================================
+
+D1 — Promote multi-source retrieval provenance into P3 (`_retrieval_reasons: string[]`)
+  Recommendation: **APPROVE.**
+  Justification: Without it, A8/A9 are not provable for books retrieved by
+  multiple branches. The merge-dedup overwrite is the dominant source of
+  silent provenance loss in dense users. Cost is small (one type field +
+  append-instead-of-overwrite at the merge site). The P2B.1 AND-gate keeps
+  identical semantics — it just consults the array instead of the scalar.
+
+D2 — Fix `fetchOLByAuthor` hardcoded retrieval reason label in P3
+  Recommendation: **APPROVE.**
+  Justification: Cheap (~5 lines + one prefix constant). Removes a special
+  case from the composer dispatch table. Author-branch contributions become
+  first-class citizens of the prefix taxonomy.
+
+D3 — Slate diversity in `lib/explanations/diversityGuard.ts` as separate file
+  Recommendation: **APPROVE separate file** (vs folding into compose.ts).
+  Justification: Easier to unit-test in isolation; future P4 enhancements
+  (premium evidence-cited explanations) plug in here without disturbing the
+  per-book composer.
+
+D4 — Per-kind display floors live in `lib/scoring/contributions.ts`
+       (NOT `lib/recPolicy.ts`)
+  Recommendation: **APPROVE.**
+  Justification: These are explanation-display thresholds, not scoring policy.
+  They control what is shown to users, not what wins ranking. Keeping them
+  separate from `recPolicy.ts` preserves the principle that recPolicy owns
+  scoring-side calibration only.
+
+D5 — `book.reasons[]` is preserved as compatibility output, NOT removed
+  Recommendation: **APPROVE.**
+  Justification: Keeps RecCard's fallback path working; keeps existing
+  audit scripts compatible; allows a future cleanup PR to remove it once
+  every consumer is verified contribution-aware.
+
+No other decisions block implementation.
+
+================================================================================
+12. RISKS & MITIGATIONS
+================================================================================
+R1: Composer produces empty explanation for a book with all-below-floor
+    contributions.
+  Mitigation: Fall back to a non-personalized template ("New for you") with
+  `source = 'quality_reliability'` so the card still has copy. Gate this on
+  A8 — non-personalized copy must not claim history.
+
+R2: Diversity guard suppresses the strongest truthful reason for a card.
+  Mitigation: Guard never demotes a contribution if the swap would drop
+  `value` below 70% of the primary's value. Determined in §6 spec.
+
+R3: Multi-source provenance expansion breaks `pickStatedReservation`.
+  Mitigation: AND-gate becomes "any element of `_retrieval_reasons`
+  startsWith('stated_genre:')" — strict superset of current behavior. Every
+  existing test fixture continues to satisfy it.
+
+R4: Performance — adding contributions[] per book on a 200-candidate scoring
+    pass.
+  Mitigation: Contributions are typed structs already computed inline;
+  emission is one push per existing component evaluation. No new loops.
+  Estimated overhead: <2% of scoring pass.
+
+R5: Validator fixture maintenance burden grows.
+  Mitigation: New validator builds on the existing planner/reservation
+  fixture style; one shared fixture builder helper in the validator file.
+
+================================================================================
+13. WHAT THIS MAPPING DELIBERATELY DOES NOT DECIDE
+================================================================================
+- Exact per-kind MIN_DISPLAY floor numbers — to be tuned during implementation
+  with the explanation_audit script as feedback loop.
+- Exact dispatch-table copy templates — RecCard's existing variant pools
+  remain the source; compose.ts only chooses which pool key fires.
+- Whether to delete the old `reasons.push(...)` debug entries (juvenile,
+  pd_author, etc.) — they become non-eligible contributions; deletion is
+  follow-up, not P3.
+- Slate diversity for slates beyond top-4 — explicitly deferred.
+- Hard-avoid signal class wiring — reserved in §2 enum but not implemented.
+  Lands with hard-avoid storage decision in P4.
+
+================================================================================
+SUMMARY
+================================================================================
+Single-PR plan, 10 files, 4 new modules, all P2 invariants preserved.
+Two P2B.1 residuals upgraded into P3 prerequisites (multi-source provenance
++ fetchOLByAuthor label fix) — both required to make A8/A9 provable.
+Five decisions (D1-D5) need human sign-off before implementation begins.
+
+Awaiting approval.
 ================================================================================

@@ -1,0 +1,191 @@
+Task: Architectural Mapping for P3 — Score Contributions + Explanation Faithfulness
+
+Context:
+Phase 2 of the Recommendation Control Plane is now complete:
+- P2A — retrieval branch planner + stated preference retrieval + dense-user bypass replacement
+- P2B — explicit_preference_edit top-slate reservation
+- P2B.1 — AND-gate fix requiring both stated retrieval provenance and stated-taste scoring provenance
+- P2C — soft-avoid retrieval deprioritization
+
+We are now moving to the next locked roadmap phase:
+
+P3 — Score Contributions + Explanation Faithfulness.
+
+This is NOT an LLM integration phase.
+Do not propose replacing expertRec.ts with OpenAI calls.
+Do not introduce AI-generated explanations.
+P3 is still part of the free/core Recommendation Control Plane.
+
+The goal of P3 is:
+1. Make recommendation reasons faithful to the actual mechanics that surfaced/ranked each book.
+2. Replace loosely assembled / side-effect-driven reasons with structured contribution evidence.
+3. Preserve provenance from the Control Plane:
+   - stated preference
+   - revealed behavioral taste
+   - soft avoid
+   - current intent if currently represented
+   - short-term feedback if currently represented
+   - retrieval branch provenance established in P2A/P2B.1
+4. Reduce repeated near-identical explanations across the top slate where a different truthful reason is available.
+5. Build the foundation that later Semantic Intelligence explanations can plug into without rewriting the free system.
+
+Execution Protocol:
+Mapping only. Do not write or execute final code yet.
+
+Read:
+- roadmap-q2.md and isolate the exact P3 requirements
+- replit.md current focus and recently shipped architecture notes
+- the current scoring/reason-generation paths in lib/recommender.ts
+- the current explanation rewrite/selection path in components/RecCard.tsx
+- any existing explanation audit script or validator, including prior FX-1 work
+- P2 provenance fields now available on candidates / score breakdowns
+- the two P2B.1 residuals documented in replit.md:
+  1. fetchOLByAuthor callers hardcode retrieval reason labels in a way that may blur branch provenance
+  2. merge-dedup currently drops loser-branch provenance because there is no _retrieval_reasons: string[] multi-source trail
+
+Core architectural question:
+What is the cleanest P3 implementation plan that moves Readstack from:
+“reasons are plausible strings emitted during scoring”
+to:
+“reasons are composed from typed, auditable score contributions and retrieval provenance”?
+
+Map the architecture before coding.
+
+Strict requirements:
+
+1. Preserve current roadmap sequencing
+P3 is:
+- score contributions
+- explanation faithfulness
+- slate-level rationale diversity where possible
+
+P3 is NOT:
+- LLM integration
+- premium Semantic Intelligence
+- reader thesis
+- book intelligence
+- semantic retrieval
+- AI reranking
+
+2. Define the contribution model
+Propose a typed contribution structure, likely something in the spirit of:
+
+ScoreContribution {
+  source: SignalClass | retrieval/provenance class
+  kind: string
+  value: number
+  evidence: string[]
+  explanationEligible: boolean
+}
+
+But do not assume this exact interface if the existing code suggests a better shape.
+Recommend the smallest sound structure that can support:
+- free explanation faithfulness now
+- premium semantic explanations later
+
+3. Audit current scoring and reason emission
+Map exactly:
+- where score components are currently added
+- where reasons[] are currently pushed or assembled
+- which existing reasons are faithful
+- which reasons are only loosely correlated with scoring
+- which existing FX-1 copy helpers should remain as humanization layers
+- which reason paths should be replaced, preserved, or temporarily bridged
+
+4. Decide how to migrate from reasons[] to contribution-grounded explanations
+We do not need to delete every legacy field in one step if a compatibility layer is safer.
+Propose the correct transition strategy:
+- contributions become the source of truth
+- reasons[] may remain as a presentation/output compatibility field if needed
+- RecCard may consume a composed explanation string while underlying evidence becomes typed
+
+Be explicit about what becomes primary vs compatibility-only.
+
+5. Preserve and use P2 provenance
+P3 must not lose the architectural gains of P2:
+- stated retrieval branch provenance
+- explicit-edit reservation correctness
+- soft-avoid retrieval treatment
+- BuildCause meaning where it matters
+
+Evaluate whether P3 should:
+- formalize multi-source retrieval provenance now via _retrieval_reasons: string[]
+- fix the author-branch retrieval reason hardcode now
+- or defer either item, with a precise justification
+
+My bias:
+If multi-source provenance is needed to make explanations faithful or contributions complete, it belongs in P3.
+If it is only a future “nice to have,” defer it.
+Make the judgment based on architecture, not convenience.
+
+6. Slate-level explanation diversity
+P3 should assess how to avoid a top slate where every card says essentially the same thing, while remaining truthful.
+
+Map a minimal architecture for:
+- selecting the strongest eligible explanation per book
+- preferring diversity of explanation kinds across the top slate when multiple truthful contributions exist
+- not inventing weak secondary explanations just for variety
+
+This may be:
+- in the explanation composer
+- in a slate explanation pass
+- or deferred if the current architecture cannot support it cleanly yet
+
+Make a recommendation.
+
+7. Proposed P3 file plan
+Return a strict file-by-file architecture plan.
+
+Expected possible files may include, but are not limited to:
+- NEW lib/scoring/contributions.ts
+- NEW lib/explanations/compose.ts
+- lib/recommender.ts
+- components/RecCard.tsx
+- scripts/validate_explanation_faithfulness.ts
+- scripts/explanation_audit.ts if already present and better to extend
+- replit.md
+
+But do not invent files unnecessarily.
+Use the smallest coherent plan.
+
+File budget for the eventual P3 implementation:
+Keep it strictly under 12 files if possible.
+If P3 must be split, propose the split before coding.
+
+8. Required validation strategy
+Map the validator/test harness P3 will need.
+
+At minimum, P3 must be able to prove:
+- every surfaced personalized explanation maps to a real positive contribution above a threshold
+- stated-preference explanations cite stated contributions
+- revealed-history explanations cite behavioral contributions
+- avoid-related explanation/risk copy does not falsely imply observed reading history when it comes from stated avoid signals
+- no reason survives if its underlying contribution is absent
+- top-slate rationale repetition is reduced where alternative eligible contributions exist, or explicitly deferred with justification
+
+Use deterministic validators where possible.
+Do not rely only on manual screenshot review.
+
+9. Constraints
+Do not:
+- touch schema/migrations
+- change database structure
+- change recommendation retrieval policy from P2
+- change P2 branch quotas
+- change top-slate reservation semantics except if required to preserve contribution truth, and stop to explain first
+- change deck-validity logic
+- introduce OpenAI or any LLM/API calls
+- redesign RecCard visual UI
+- broaden into TasteReadout/onboarding/Home
+- alter the 6-phase recommender pipeline geometry unless absolutely necessary, in which case stop and explain
+
+10. Output protocol
+Write the P3 architectural mapping plan directly to replit_output.txt.
+
+Return in chat:
+- a concise confirmation that the P3 mapping plan is complete
+- the high-level split recommendation, if any
+- the file count for the proposed implementation
+- any architecture decisions that need human approval before coding
+
+Stop and wait for human approval. Do not implement P3 code yet.
