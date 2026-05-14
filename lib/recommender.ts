@@ -1213,6 +1213,22 @@ async function getOLCandidates(
     ? plan.fetchItems.filter(i => i.reason.startsWith('repeated_author:')).map(i => i.value)
     : plan.fetchItems.filter(i => i.reason.startsWith('author_anchor:')).map(i => i.value);
 
+  if (__DEV__) {
+    const stated = merged.filter(b => (b._retrieval_reason ?? '').startsWith('stated_genre:'));
+    const sample = stated.slice(0, 3).map(b => `"${b.title}"[${b._retrieval_reason}]`).join(', ');
+    const reasonHist: Record<string, number> = {};
+    for (const b of stated) {
+      const k = (b._retrieval_reason ?? '').split(':').slice(0, 2).join(':');
+      reasonHist[k] = (reasonHist[k] ?? 0) + 1;
+    }
+    console.log('[P2SURVIVE/post_ol_merge]',
+      `merged_total=${merged.length}`,
+      `stated_count=${stated.length}`,
+      `by_reason=${JSON.stringify(reasonHist)}`,
+      `sample=${sample || '(none)'}`,
+    );
+  }
+
   return {
     candidates:           merged,
     ol_queries,
@@ -2024,6 +2040,34 @@ export function getRankedRecs(
     };
   }
 
+  if (__DEV__) {
+    const statedScored = scored.filter(b => (b._retrieval_reason ?? '').startsWith('stated_genre:'));
+    const byFit: Record<string, number> = { core_fit: 0, adjacent_fit: 0, stretch_fit: 0, reject: 0, other: 0 };
+    const laneHist: Record<string, number> = {};
+    let weakMeta = 0;
+    for (const b of statedScored) {
+      const fc = b._score_breakdown.fit_class ?? 'other';
+      byFit[fc] = (byFit[fc] ?? 0) + 1;
+      const lane = (b._score_breakdown.book_lane as string | null | undefined) ?? '(none)';
+      laneHist[lane] = (laneHist[lane] ?? 0) + 1;
+      if (b._score_breakdown.audit_flags?.includes('weak_metadata')) weakMeta++;
+    }
+    const dominant = JSON.stringify(profile.det_lanes?.dominant_lanes ?? []);
+    const sampleReject = statedScored
+      .filter(b => b._score_breakdown.fit_class === 'reject')
+      .slice(0, 3)
+      .map(b => `"${b.title}"[lane=${b._score_breakdown.book_lane ?? '-'}|score=${b.score.toFixed(2)}|st=${(b._score_breakdown.stated_taste ?? 0).toFixed(2)}]`)
+      .join(', ');
+    console.log('[P2SURVIVE/post_scoring]',
+      `stated_scored=${statedScored.length}`,
+      `byFitClass=${JSON.stringify(byFit)}`,
+      `byBookLane=${JSON.stringify(laneHist)}`,
+      `weak_metadata=${weakMeta}`,
+      `dominant_lanes=${dominant}`,
+      `reject_sample=${sampleReject || '(none)'}`,
+    );
+  }
+
   // Remove rejects, then re-sort by adjusted score
   const nonRejected = scored.filter(b => b._score_breakdown.fit_class !== 'reject');
   nonRejected.sort((a, b) => b.score - a.score);
@@ -2414,6 +2458,26 @@ export function getRankedRecs(
   const adjacentThreshold = Math.max(3, Math.ceil(limit * ADJACENT_VISIBLE_THRESHOLD_FRAC));
   const coreInPool    = compPool.filter(isCompCore).length;
   const showAdjacent  = coreInPool < adjacentThreshold;
+
+  if (__DEV__) {
+    const stated = compPool.filter(b => (b._retrieval_reason ?? '').startsWith('stated_genre:'));
+    const byFit: Record<string, number> = { core_fit: 0, adjacent_fit: 0, stretch_fit: 0, other: 0 };
+    for (const b of stated) {
+      const fc = b._score_breakdown.fit_class ?? 'other';
+      byFit[fc] = (byFit[fc] ?? 0) + 1;
+    }
+    const sample = stated.slice(0, 5).map(b =>
+      `"${b.title}"[fit=${b._score_breakdown.fit_class}|lane=${b._score_breakdown.book_lane ?? '-'}|score=${b.score.toFixed(2)}|st=${(b._score_breakdown.stated_taste ?? 0).toFixed(2)}|reason=${b._retrieval_reason}]`
+    ).join(', ');
+    console.log('[P2SURVIVE/comp_pool]',
+      `compPoolSize=${compPool.length}`,
+      `stated_in_compPool=${stated.length}`,
+      `byFitClass=${JSON.stringify(byFit)}`,
+      `core_visible_threshold=${adjacentThreshold}`,
+      `coreInPool=${coreInPool}`,
+      `sample=${sample || '(none)'}`,
+    );
+  }
 
   // Per-lane cap: prevent any single lane from monopolising the set.
   // For a user with N dominant lanes and a limit of L, each lane can hold
@@ -3034,6 +3098,20 @@ export async function getCandidateBooks(
     profile.liked_authors ?? [],
     profile.det_lanes?.dominant_lanes,
   );
+  if (__DEV__) {
+    const statedIn  = safeAll.filter(b => (b._retrieval_reason ?? '').startsWith('stated_genre:')).length;
+    const statedOut = hygiene.passed.filter(b => (b._retrieval_reason ?? '').startsWith('stated_genre:')).length;
+    const sampleReasons = (hygiene.reasons ?? []).filter(r => /stated|popular science|popular nonfiction|psychological thriller|crime fiction/i.test(r)).slice(0, 5);
+    console.log('[P2SURVIVE/post_hygiene]',
+      `pre_hygiene_total=${safeAll.length}`,
+      `post_hygiene_total=${hygiene.passed.length}`,
+      `stated_in=${statedIn}`,
+      `stated_out=${statedOut}`,
+      `stated_dropped=${statedIn - statedOut}`,
+      `hygiene_excluded_total=${hygiene.excluded ?? '?'}`,
+      `sample_reasons=${JSON.stringify(sampleReasons)}`,
+    );
+  }
 
   // ── Apply dismissals from feedback ────────────────────────────────────────
   let filtered = hygiene.passed;

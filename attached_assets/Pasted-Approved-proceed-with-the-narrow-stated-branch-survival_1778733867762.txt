@@ -1,0 +1,89 @@
+Approved: proceed with the narrow stated-branch survival-trace instrumentation pass.
+
+Context:
+The live Phase 2 Test A path with NO browser refresh proved:
+- save → rebuild works
+- BuildCause survives as explicit_preference_edit
+- planner runs and allocates stated retrieval
+- reservation attempts to apply
+
+But reservation failed with:
+- reason=no_eligible_candidate
+- compPoolSize=184
+- statedInPool=0
+
+The follow-up investigation concluded that stated-branch candidates are most likely being retrieved upstream, then eliminated before compPool — likely by fit-class rejection or an earlier filter — but this is not yet proven.
+
+We now need a small __DEV__-gated survival trace to locate the exact attrition point before implementing any fix.
+
+Goal:
+Add minimal diagnostic instrumentation that tracks stated-branch candidate survival across the relevant pipeline stages.
+
+Do NOT implement a behavioral fix yet.
+Do NOT touch P3.
+Do NOT alter scoring, retrieval policy, fitClassifier behavior, reservation logic, schema, or migrations.
+
+Instrumentation target:
+Only candidates whose retrieval provenance indicates stated branch origin:
+- `_retrieval_reason` starts with `stated_genre:`
+- or the equivalent canonical provenance field already used by P2B.1
+
+Add __DEV__ logs at the smallest sound points needed to report:
+
+1. Post-OL / branch merge
+- stated-branch candidate count immediately after OL branch outputs are merged into the retrieval candidate stream
+- if feasible, include a compact summary:
+  - count
+  - first few titles or external ids
+  - retrieval reason prefixes
+
+2. Post-hygiene / dedup / early candidate filtering
+- stated-branch candidate count after existing dedup and hygiene exclusions
+- if count drops, include how many were removed if that data is locally available without adding complex bookkeeping
+
+3. Post-scoring / fit-class assignment
+- stated-branch candidate count after scoring and fit classification
+- breakdown by fit class if already accessible:
+  - core_fit
+  - adjacent_fit
+  - stretch_fit
+  - reject
+- if reject dominates, surface that clearly
+
+4. Pre-composition / compPool
+- stated-branch candidate count entering compPool
+- this should align with the `statedInPool=0` diagnostic from reservation, allowing us to verify the exact drop stage
+
+Optional but useful if cleanly available:
+5. If stated candidates are rejected by fit class, log the primary reject reason or enough local context to identify whether dominant-lane mismatch is the cause.
+
+Constraints:
+- __DEV__-gated only
+- side-effect-free
+- no behavior changes
+- no new persistence
+- no new policy
+- no changes to P2B.1 AND-gate logic
+- no changes to reservation behavior
+- no changes to taxonomy mapping
+- no BuildCause AsyncStorage fix yet
+
+Output protocol:
+1. Implement the debug logs.
+2. Tell me the exact `[P2SURVIVE/...]` or similarly prefixed console lines to look for.
+3. Keep the prefix consistent and grep-friendly.
+4. Stop and wait for the live test output.
+
+The next live test will repeat:
+- Reading Taste: Business + Mystery, Slow-burn, avoid Fantasy
+- Save
+- Navigate to For You without refreshing
+- capture the new survival logs
+
+Return:
+- changed files
+- log sites added
+- exact expected debug output prefixes
+- typecheck delta
+- workflow status
+- no-fix confirmation
