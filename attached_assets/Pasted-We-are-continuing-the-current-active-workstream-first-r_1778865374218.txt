@@ -1,0 +1,101 @@
+We are continuing the current active workstream: first-run auth/onboarding integrity closeout.
+
+Do not start P3 recommender work yet. P3 is parked until this first-run acceptance path is complete.
+
+Context:
+The recent onboarding/final-setup diagnosis was that “Answer a few questions” appeared dead because `onboarding-import.tsx` routed before releasing the local onboarding guard. The intended fix was:
+
+- wire `onboarding-import.tsx` into the onboarding bridge
+- call `completeOnboarding()` before the final-setup route changes
+- send the intake path to a dedicated `/onboarding-questions` route
+- allow that route through the root onboarding guard
+- only write durable DB completion for the intake path at the end of the questions flow, not immediately when the user taps the button
+
+Task type:
+Acceptance verification / targeted investigation only.
+
+Goal:
+Confirm the fix is actually present in current code and verify the full final-setup branch matrix end to end. We are trying to close this workstream with confidence, not broaden scope.
+
+Please do the following:
+
+## 1. Confirm current code state
+Inspect the relevant files and state precisely whether the intended fix is already landed.
+
+At minimum, check:
+- the final setup screen / `onboarding-import.tsx`
+- the onboarding bridge / `completeOnboarding()` usage
+- `/onboarding-questions` route registration
+- the root onboarding/auth guard behavior for that route
+- where durable DB `onboarding_completed` is written for the intake/questions path
+
+Report:
+- whether the landed implementation matches the intended model
+- exact files/locations involved
+- any mismatch, stale logic, or edge-case concern
+
+## 2. Run the final-setup acceptance matrix
+Verify these flows as concretely as possible in the current environment:
+
+### Flow A — Final setup → Import
+Starting from the final setup screen:
+- tap Import
+- confirm the user enters the import flow cleanly
+- confirm no onboarding guard bounce occurs
+
+### Flow B — Final setup → Answer a few questions
+Starting from the final setup screen:
+- tap Answer a few questions
+- confirm `/onboarding-questions` opens immediately
+- confirm no redirect/bounce back to onboarding root occurs
+
+### Flow C — Final setup → Not right now
+Starting from the final setup screen:
+- tap Not right now
+- confirm the user enters the app cleanly
+- confirm no bounce or broken intermediate state
+
+### Flow D — Refresh/direct re-entry on `/onboarding-questions`
+- confirm refresh or direct landing on `/onboarding-questions` does not get kicked back by the root guard
+- confirm the route remains usable
+
+## 3. Confirm state model correctness
+We need a crisp explanation of the distinction between:
+- local onboarding guard release via `completeOnboarding()`
+- durable DB onboarding completion
+
+Specifically confirm:
+- Import path behavior
+- Answer a few questions path behavior
+- Not right now behavior
+- whether any of these can create a “locally resolved but durably incomplete” state that breaks the next app launch
+
+If that state exists, classify whether it is:
+- intentional and safe
+- acceptable but worth documenting
+- or a blocker
+
+## 4. Validation and evidence
+Please provide:
+- exact files reviewed
+- exact files changed, if any
+- typecheck delta against current baseline
+- workflow/app status
+- any browser/device-level observations available
+- logs or route behavior evidence where useful
+
+## Hard constraints
+- Do not start P3.
+- Do not perform opportunistic refactors.
+- Do not redesign onboarding.
+- Do not touch recommender code.
+- Do not make product-copy changes.
+- If the intended onboarding fix is missing or incomplete, stop after identifying the precise gap and recommend the minimal correction. Do not implement a broader workaround unless it is clearly the originally intended fix.
+
+## Return format
+1. Executive verdict: PASS / PASS WITH NOTE / BLOCKED
+2. Current code-state confirmation
+3. Acceptance matrix results
+4. State-model assessment
+5. Validation evidence
+6. Any blocker or minimal next action
