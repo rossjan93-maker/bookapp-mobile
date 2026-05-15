@@ -1,0 +1,72 @@
+We reran the standalone-browser Google OAuth new-user test after the callback failure-leg fix.
+
+Important result:
+- The callback exchange did NOT fail in this run.
+- Google OAuth succeeded.
+- The user eventually routed into onboarding.
+
+Observed log sequence:
+- [OAUTH] WebBrowser result.type= success
+- [WARM_BOOT] onAuthStateChange SIGNED_IN
+- [WARM_BOOT] session state updated — bootstrap starting
+- [WARM_BOOT] localStage=null + JWT not authoritative — checking DB to distinguish new vs returning user
+- @supabase/gotrue-js: Lock "...auth-token" was not released within 5000ms. Forcefully acquiring the lock to recover.
+- [WARM_BOOT] checkOnboardingCompleted timed out (attempt 1) after 10s
+- [WARM_BOOT] DB: onboarding not complete — needsOnboarding=true (new user) in 10129 ms
+- [ROOT_GUARD] session+inAuth → /onboarding
+- [ONBOARDING] welcome_started
+
+Conclusion:
+The app no longer hard-freezes, but the first-run user is left on the “Almost there… Setting up your reading life” screen for roughly 10 seconds, which feels broken. This appears to be a warm-boot / onboarding-state resolution latency issue, not an exchangeCodeForSession failure in this repro.
+
+Task type:
+Targeted investigation only. Do not implement a fix until root cause is clear.
+
+Goal:
+Explain why the post-auth warm boot takes ~10 seconds before routing a newly signed-in Google user to onboarding, and determine whether the Supabase auth-token lock warning and repeated SIGNED_IN bootstrap passes are causal.
+
+Please investigate:
+
+1. The exact code path for:
+   - [WARM_BOOT] localStage=null + JWT not authoritative — checking DB
+   - checkOnboardingCompleted(...)
+   - timeout handling / retry logic
+   - when needsOnboarding=true is finally committed
+
+2. Why the first DB check waits the full 10s before resolving as "onboarding not complete"
+   - Is the DB query actually hung?
+   - Is it blocked behind Supabase auth lock recovery?
+   - Is the timeout wrapper firing while the underlying request eventually returns?
+   - Is there a dependency on profile upsert/session hydration that should not block the route?
+
+3. The Supabase auth lock warning:
+   - why it appears during this path
+   - whether it is expected dev-only noise or materially delaying bootstrap
+   - whether React Strict Mode / duplicate auth listener work is involved
+
+4. Repeated bootstrap execution:
+   - multiple [WARM_BOOT] SIGNED_IN → bootstrap starting passes appear in the same session
+   - determine whether this is expected or avoidable
+   - state whether repeated bootstrap work can contribute to the perceived freeze
+
+5. Product-level assessment:
+   - Is the ~10s callback/onboarding loader delay reproducible?
+   - Should a brand-new Google user be able to route to onboarding optimistically before the DB completion check finishes?
+   - Or is the DB check unavoidable for correctness?
+
+6. If a fix is warranted, recommend the smallest correct fix, but do not implement yet.
+
+Hard constraints:
+- Do not start P3.
+- Do not touch recommender code.
+- Do not broaden into auth redesign.
+- Do not reopen the callback failure-leg fix; that was valid and remains landed.
+- Investigation only.
+
+Return format:
+1. Executive verdict
+2. Exact warm-boot path causing the ~10s wait
+3. Root-cause assessment
+4. Lock-warning / duplicate-bootstrap assessment
+5. Whether current behavior is acceptable
+6. Minimal recommended fix, if any
