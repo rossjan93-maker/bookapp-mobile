@@ -1,0 +1,156 @@
+We completed the live first-run onboarding import branch.
+
+Routing / flow result:
+- PASS.
+- New user → final setup → Import my library entered the Goodreads import flow cleanly.
+- File preview completed.
+- Import executed successfully.
+- Post-import result screen appeared.
+- “Explore recommendations” routed into the Taste Readout and then For You.
+
+However, the live import path exposed four product/data integrity concerns. Do not implement yet. Investigate first.
+
+Uploaded Goodreads CSV context from the actual live test:
+- 273 rows total
+- 158 read
+- 113 to-read
+- 2 currently-reading
+
+## Concern 1 — “Already in readstack” preview label is misleading for a new user
+
+Observed preview:
+- 273 Books found
+- 196 Already in readstack — “Exact match found — will be linked to your record”
+- 77 New books to add
+
+Observed final import result:
+- 273 Added to library
+- 0 Merged with existing
+- 0 Already up to date
+
+Question:
+Does “Already in readstack” mean:
+- already in the global canonical `books` catalog, not already in this user’s library?
+
+If yes:
+- confirm the exact code/data meaning
+- explain why the final import result can correctly say all 273 were added to the user’s library
+- assess whether this preview copy should be changed later to something like “Matched in our catalog” or equivalent
+
+Do not change copy yet. Diagnose only.
+
+## Concern 2 — The import wait took about a minute
+
+This is not necessarily a bug, but it is strategically important.
+The import loader currently says:
+- Adding to your library
+- Linking reading history
+- Finding covers & details
+- Finishing up
+
+Question:
+- What is actually happening during this ~1 minute?
+- Which parts consume the most time?
+- Are there truthful progress milestones/data points already available that could support a more engaging first-run import experience later?
+- For example:
+  - rows processed
+  - books linked vs newly created
+  - read/to-read/currently-reading counts
+  - preliminary taste lanes discovered
+  - recommendation build progress
+
+Do not redesign the loader yet. Just map the real available signals and likely UX opportunity.
+
+## Concern 3 — Import-derived “Here’s what we heard” appears without the quiz
+
+Observed post-import readout:
+- “You read fantasy and speculative fiction with a clear pattern we can work with.”
+- chips:
+  - Sci-fi & fantasy
+  - Thriller & mystery
+  - Alka Joshi
+
+Question:
+- Confirm this readout is import-derived rather than quiz-derived.
+- Explain exactly what data/evidence produced:
+  - the main sentence
+  - each chip
+- Assess whether these claims are well supported by the imported library.
+
+Important actual CSV observations to reconcile:
+- Fantasy/speculative and thriller/mystery seem plausible:
+  - Sarah J. Maas: 12 read
+  - Robin Hobb: 6 read
+  - Anthony Horowitz: 6 read
+  - Lucy Foley: 5 read
+  - Freida McFadden: 3 read
+- But “Alka Joshi” appears to be based on only one imported book:
+  - The Henna Artist
+  - rated 4
+
+Determine whether the author-chip selection is too weak/noisy or whether some other internal evidence justifies it.
+
+Do not change the readout yet. Diagnose only.
+
+## Concern 4 — The first recommendations appear factually wrong relative to the imported Goodreads file
+
+Observed For You after import:
+- Royal Assassin (Farseer Trilogy, #2) shown as a “Continue” recommendation / expert pick.
+- The same Royal Assassin also appears under “Currently Reading.”
+- Ship of Destiny (Liveship Traders, #3) shown as a Discover Next recommendation.
+- Lightlark (Lightlark, #1) shown as a Start Here recommendation.
+
+Actual Goodreads CSV facts:
+- Royal Assassin (Farseer Trilogy, #2)
+  - Exclusive Shelf = read
+  - My Rating = 4
+  - Date Read = 2025/01/06
+- Ship of Destiny (Liveship Traders, #3)
+  - Exclusive Shelf = read
+  - Date Read = 2026/01/15
+- Lightlark (Lightlark, #1)
+  - Exclusive Shelf = to-read
+- The CSV’s actual currently-reading books are:
+  - The Two Towers (The Lord of the Rings, #2)
+  - The Immortal Life of Henrietta Lacks
+
+This means at least two displayed recommendations are clearly inconsistent with the uploaded reading history, and one “Currently Reading” card appears flatly wrong.
+
+Please investigate:
+1. After import, did `user_books` persist these statuses correctly?
+2. Is Royal Assassin stored as `read/finished`, `currently_reading`, or something else in the database after import?
+3. Is Ship of Destiny stored as finished/read?
+4. Is Lightlark stored as want-to-read/to-read, and what is the intended policy for showing to-read books in Discover Next?
+5. Is the first recommendation deck being built:
+   - before import user_books/status rows are fully committed,
+   - before cache invalidation,
+   - or from stale rec/session state?
+6. Does the series-continuation logic fail to exclude imported books already marked read?
+7. Why did “Currently Reading” choose Royal Assassin instead of the two actual currently-reading titles from the CSV?
+
+Classify the root issue precisely:
+- import persistence bug
+- status mapping bug
+- post-import rec timing/race bug
+- stale cache bug
+- series recommender exclusion bug
+- currently-reading surface bug
+- or a combination
+
+## Hard constraints
+- Investigation only.
+- Do not start P3.
+- Do not redesign cold start.
+- Do not change loader copy yet.
+- Do not change readout copy yet.
+- Do not patch recommendation behavior until the root cause is clearly identified.
+- This is a post-import correctness and trust investigation.
+
+## Return format
+1. Executive verdict
+2. Concern 1 — catalog vs user-library explanation
+3. Concern 2 — import timing / available progress signals
+4. Concern 3 — import-derived readout evidence audit
+5. Concern 4 — recommendation/currently-reading correctness audit
+6. Root-cause classification for the incorrect recs
+7. Minimal fix recommendation(s), clearly separated from larger UX/strategy improvements
