@@ -1,0 +1,73 @@
+We are continuing the Phase 2 recommender acceptance investigation.
+
+Current confirmed state:
+- The live no-refresh acceptance trace proved that save → rebuild works.
+- BuildCause='explicit_preference_edit' survives the normal post-save navigation path.
+- The planner runs and allocates stated-preference retrieval.
+- Reservation still fails with `no_eligible_candidate`.
+- The blocker appears to be that zero stated-branch candidates survive into `compPool`.
+- We do NOT yet know where those candidates are being lost, so do not implement a corrective fix yet.
+
+Task type:
+Narrow investigation / instrumentation only.
+
+Goal:
+Add a DEV-only stated-branch survival trace that tells us exactly where stated-preference retrieval candidates disappear between retrieval and composition.
+
+Please instrument the recommender pipeline so that, during an explicit preference edit rebuild, we can count stated-branch candidates at these stages:
+
+1. Post retrieval merge:
+   - After Open Library / stated retrieval candidates have been merged into the broader candidate pool
+   - Count how many candidates carry stated-preference retrieval provenance
+
+2. Post hygiene / eligibility filtering:
+   - Count how many stated-provenance candidates remain after hygiene, dedupe, validity, and other pre-score exclusion filters
+
+3. Post scoring / fit-class filtering:
+   - Count how many stated-provenance candidates survive scoring and any fit-class or quality rejection logic
+
+4. Pre-composition / compPool:
+   - Count how many stated-provenance candidates are actually present in `compPool`
+
+5. Reservation eligibility:
+   - Count how many of the stated-provenance candidates in or near composition are eligible for the reserved explicit-preference-edit slot under the current P2B.1 AND-gate:
+     - stated retrieval provenance
+     - positive stated-taste scoring provenance
+
+Instrumentation requirements:
+- DEV-only only. No production behavior changes.
+- No recommendation logic changes.
+- No ranking, scoring, retrieval, or composition behavior changes.
+- No schema changes.
+- No UI changes.
+- No opportunistic cleanup.
+- Keep logging compact, grouped, and easy to read in a single acceptance trace.
+- Use a stable log prefix such as:
+  `[P2SURVIVE]`
+- Prefer one summary log object per rebuild rather than scattered noisy lines, unless a stage-local log is genuinely necessary.
+- Include BuildCause and enough identifiers to prove the trace corresponds to the explicit preference edit path.
+- Where practical, include a small sample of candidate titles / IDs for stated-branch candidates at the last stage where they exist, so we can inspect whether the branch is producing plausible books before attrition.
+
+Important provenance expectation:
+The stated branch should be identified from the retrieval provenance we already established:
+- `_retrieval_reason` with `stated_genre:` prefix
+or the exact current equivalent in code.
+Do not broaden the definition casually. If the existing code has evolved, explain exactly what field you used and why.
+
+Stop condition:
+Stop after adding the DEV-only survival trace and validating that the app builds cleanly. Do not fix the attrition yet. We want evidence first.
+
+Validation required:
+1. Confirm exact files touched.
+2. Run typecheck and report the delta against the current baseline.
+3. Confirm app/workflow status.
+4. Confirm no recommender behavior changed.
+5. Provide the exact expected `[P2SURVIVE]` log shape so I know what to look for during the in-app acceptance test.
+6. Briefly state the most likely attrition stage based only on code inspection, but do not act on it yet.
+
+Return format:
+- What changed
+- Files touched
+- Validation
+- Expected debug output
+- Any code-review concerns or deviations
