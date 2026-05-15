@@ -121,6 +121,22 @@ Deno.serve(async (req) => {
       .eq('user_id', uid);
     assertOk(e4, 'reader_preferences');
 
+    // ── Step 4.5 (NEW): import_rows owned by this user ──────────────────────
+    // MUST run before user_books delete. import_rows.user_book_id references
+    // user_books(id) with no ON DELETE clause (defaults to NO ACTION), so
+    // any user who has imported a Goodreads CSV would otherwise trip
+    // import_rows_user_book_id_fkey at Step 5. import_rows is user-scoped
+    // (user_id NOT NULL) and the rows are pure audit history of one-time
+    // ingest — safe to delete with the account. import_batches cascades
+    // automatically when profiles is deleted at Step 7, so we do not need
+    // to touch it explicitly. Mirrors the SQL fix in
+    // supabase/migrations/20260515000000_account_deletion_fix_import_rows.sql.
+    const { error: e4_5 } = await adminClient
+      .from('import_rows')
+      .delete()
+      .eq('user_id', uid);
+    assertOk(e4_5, 'import_rows');
+
     // ── Step 5: user_books (user_book_history cascades automatically) ───────
     const { error: e5 } = await adminClient
       .from('user_books')

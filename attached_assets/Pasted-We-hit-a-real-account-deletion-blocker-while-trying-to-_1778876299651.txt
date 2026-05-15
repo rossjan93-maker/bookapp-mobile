@@ -1,0 +1,81 @@
+We hit a real account-deletion blocker while trying to reset a test user after Goodreads import.
+
+Observed error from app/settings.tsx delete account flow:
+
+[settings] delete_own_account failed:
+update or delete on table "user_books" violates foreign key constraint
+"import_rows_user_book_id_fkey" on table "import_rows"
+
+This happened after importing a Goodreads CSV and then attempting to delete the user account from Settings.
+
+Task type:
+Targeted investigation + minimal fix. Do not broaden into account lifecycle redesign.
+
+Goal:
+Fix account deletion for users who have imported Goodreads data, without breaking import history, user_books integrity, or RLS/security assumptions.
+
+Please investigate:
+
+## 1. Current delete path
+Find the implementation behind `delete_own_account`.
+
+Report:
+- where the RPC/function is defined
+- what tables it deletes from
+- in what order
+- whether it deletes `import_rows`, `import_batches`, `import_jobs`, or equivalent import tables
+- whether it deletes `user_books` before deleting rows that reference `user_books`
+
+## 2. Constraint audit
+Inspect the FK:
+
+`import_rows_user_book_id_fkey`
+
+Report:
+- exact columns involved
+- current ON DELETE behavior
+- whether `import_rows` is user-scoped
+- whether `import_rows` should be deleted on account deletion
+- whether it is safe to cascade or better to delete explicitly inside `delete_own_account`
+
+## 3. Root cause
+Confirm whether the failure is:
+- delete-order bug in `delete_own_account`
+- missing ON DELETE CASCADE / SET NULL
+- import rows not included in account deletion
+- or some other related import lifecycle issue
+
+## 4. Minimal fix
+Implement the smallest correct fix.
+
+Likely candidates:
+- update `delete_own_account` to delete user-owned `import_rows` before deleting `user_books`
+- or alter the FK to `ON DELETE CASCADE` / `ON DELETE SET NULL` if that is clearly the correct schema semantics
+
+Prefer an explicit delete-order fix inside the account deletion function unless the schema strongly indicates the FK should cascade.
+
+## 5. Validation
+Required validation:
+1. Create or use a user with Goodreads-imported rows.
+2. Confirm account deletion succeeds.
+3. Confirm no orphaned user-owned import rows remain.
+4. Confirm no orphaned user_books remain.
+5. Confirm unrelated global `books` catalog rows are not deleted.
+6. Confirm a non-import user can still delete account successfully.
+7. Confirm RLS/security posture is not weakened.
+
+## Hard constraints
+- Do not touch recommender logic.
+- Do not touch onboarding.
+- Do not touch import recommendation behavior.
+- Do not make broad schema changes beyond what is required.
+- Do not delete global catalog books as part of user deletion.
+- No opportunistic cleanup.
+
+Return format:
+- Executive verdict
+- Root cause
+- Files/migrations/functions touched
+- Exact delete order after fix
+- Validation results
+- Any remaining account-lifecycle risks
