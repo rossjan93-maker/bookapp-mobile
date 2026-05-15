@@ -91,11 +91,48 @@ async function bulkQueryGoodreadsLinks(goodreadsIds: string[]): Promise<Map<stri
   return map;
 }
 
+// Strip parenthetical/colon/dash subtitle suffixes so Goodreads-shaped titles
+// like "Royal Assassin (Farseer Trilogy, #2)" collapse to "Royal Assassin"
+// before normalisation. Mirrors lib/goodreadsExecutor.ts:stripSubtitleLocal.
+function stripSubtitleLocal(title: string): string {
+  return title
+    .replace(/\s*\(.*\)\s*$/, '')
+    .replace(/\s*:\s+.*$/, '')
+    .replace(/\s+\/\s+.*$/, '')
+    .replace(/\s+[-\u2013\u2014]\s+.*$/, '')
+    .trim();
+}
+
+export function normTitleAuthorKey(title: string, author: string | null): string {
+  const n = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  return `${n(stripSubtitleLocal(title))}||${n((author ?? '').split(',')[0])}`;
+}
+
+// P1.5a-gated catalog snapshot for stager-side title+author fallback. Only
+// returns books that are verified, legacy, or this user's own prior inserts —
+// the same anti-poisoning gate the executor applies. Without this fallback,
+// rows like "Royal Assassin (Farseer Trilogy, #2)" with no ISBN13 are forced
+// into the executor's groupCreate path even when a clean catalog row exists.
+async function bulkQueryTitleAuthor(userId: string): Promise<Map<string, string>> {
+  if (!supabase) return new Map();
+  const { data } = await supabase
+    .from('books')
+    .select('id, title, author')
+    .or(`provenance_state.in.(verified,legacy),provenance_inserted_by.eq.${userId}`)
+    .limit(10000);
+  const map = new Map<string, string>();
+  for (const b of (data ?? []) as { id: string; title: string; author: string | null }[]) {
+    map.set(normTitleAuthorKey(b.title, b.author), b.id);
+  }
+  return map;
+}
+
 function resolveMatch(
   row: ParsedGoodreadsRow,
   isbn13Map: Map<string, string>,
   isbnMap: Map<string, string>,
   goodreadsMap: Map<string, string>,
+  titleAuthorMap: Map<string, string>,
 ): MatchResult {
   // Priority 1: Goodreads source link (exact platform match)
   const gdBookId = goodreadsMap.get(row.source_book_id);
@@ -116,6 +153,18 @@ function resolveMatch(
     const bookId = isbnMap.get(row.isbn);
     if (bookId) {
       return { matchedBookId: bookId, matchConfidence: 0.85, matchMethod: 'isbn' };
+    }
+  }
+
+  // Priority 4: title+author fallback (P1.5a-gated, subtitle-stripped). Many
+  // older Goodreads CSV rows have no ISBN/ISBN13 yet still correspond to a
+  // catalog book. Without this, the executor's title+author dedup is the only
+  // line of defence — and a single bulk-insert chunk failure there silently
+  // drops the entire batch (see goodreadsExecutor fix).
+  if (row.title) {
+    const bookId = titleAuthorMap.get(normTitleAuthorKey(row.title, row.author));
+    if (bookId) {
+      return { matchedBookId: bookId, matchConfidence: 0.7, matchMethod: 'title_author' };
     }
   }
 
@@ -234,10 +283,11 @@ export async function stageGoodreadsImport(
   const allIsbn13s  = parsedRows.map(r => r.isbn13).filter((v): v is string => !!v);
   const allIsbns    = parsedRows.map(r => r.isbn).filter((v): v is string => !!v);
 
-  const [goodreadsMap, isbn13Map, isbnMap] = await Promise.all([
+  const [goodreadsMap, isbn13Map, isbnMap, titleAuthorMap] = await Promise.all([
     bulkQueryGoodreadsLinks(allGoodreadsIds),
     bulkQueryISBN13(allIsbn13s),
     bulkQueryISBN(allIsbns),
+    bulkQueryTitleAuthor(userId),
   ]);
 
   // ── 3. Build import_rows payload ──────────────────────────────────────────
@@ -277,7 +327,7 @@ export async function stageGoodreadsImport(
   let needsReview = 0;
 
   for (const row of parsedRows) {
-    const match = resolveMatch(row, isbn13Map, isbnMap, goodreadsMap);
+    const match = resolveMatch(row, isbn13Map, isbnMap, goodreadsMap, titleAuthorMap);
     const { resolution, reviewReason } = classifyResolution(row, match);
 
     if (resolution === 'review_needed') {

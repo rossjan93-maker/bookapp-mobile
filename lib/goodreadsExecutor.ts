@@ -62,6 +62,28 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
+// Strip parenthetical/colon/dash subtitle suffixes so Goodreads-shaped titles
+// like "Royal Assassin (Farseer Trilogy, #2)" collapse to "Royal Assassin"
+// before normalization. Mirrors lib/recommendationIntegrity.ts:stripTitleSubtitle
+// but inlined here to keep the executor self-contained (it is the source of
+// truth for import-time book matching, not the recommender).
+function stripSubtitleLocal(title: string): string {
+  return title
+    .replace(/\s*\(.*\)\s*$/, '')              // "(Series, #2)"
+    .replace(/\s*:\s+.*$/, '')                 // ": A Subtitle"
+    .replace(/\s+\/\s+.*$/, '')                // " / Alternate Title"
+    .replace(/\s+[-\u2013\u2014]\s+.*$/, '')   // " - " / " – " / " — " subtitle
+    .trim();
+}
+
+// Normalised title+author key used for catalog dedup. Strips parens / colons /
+// dashes BEFORE the punctuation-collapse pass so series-suffixed Goodreads
+// titles match their clean catalog counterparts.
+function normBookKey(title: string, author: string | null): string {
+  const n = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  return `${n(stripSubtitleLocal(title))}||${n((author ?? '').split(',')[0])}`;
+}
+
 function mapShelfToStatus(shelf: string | null): UserBookStatus {
   switch (shelf) {
     case 'read':              return 'finished';
@@ -168,25 +190,19 @@ export async function executeGoodreadsImport(
     }
   }
 
-  // Title+author dedup guard: before creating new rows, check whether a book
-  // with the same normalised title+first-author already exists in the catalog.
-  // This prevents duplicate rows when the same book appears under a different
-  // Goodreads edition ID (e.g. re-import after a metadata repair run).
+  // Title+author dedup guard (P1.5a-gated): catalog rows that are verified,
+  // legacy, or this user's own prior inserts get reused so we don't create
+  // duplicates. The pre-fix `normBookKey` (local, no subtitle strip) silently
+  // missed Goodreads-shaped titles like "Royal Assassin (Farseer Trilogy, #2)"
+  // against catalog "Royal Assassin"; the module-level normBookKey now strips
+  // those before normalising. We deliberately keep the verified/legacy/own-user
+  // gate — widening it would re-open the P1.5a poisoning vector.
   if (allSids.some(sid => !bookIdBySid.has(sid))) {
     const { data: existingBooks } = await supabase
       .from('books')
       .select('id, title, author')
-      // P1.5a: only consider catalog rows that are either trusted (legacy
-      // grandfathered or service-role-verified) or this user's own prior
-      // inserts. Prevents a malicious manual entry from another user being
-      // absorbed as the canonical row for this user's Goodreads import.
       .or(`provenance_state.in.(verified,legacy),provenance_inserted_by.eq.${userId}`)
       .limit(10000);
-
-    function normBookKey(title: string, author: string | null) {
-      const n = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-      return `${n(title)}||${n((author ?? '').split(',')[0])}`;
-    }
 
     const existingByKey = new Map<string, string>();
     for (const b of (existingBooks ?? []) as { id: string; title: string; author: string | null }[]) {
@@ -194,7 +210,7 @@ export async function executeGoodreadsImport(
     }
 
     for (const sid of allSids) {
-      if (bookIdBySid.has(sid)) continue; // already resolved via book_source_links
+      if (bookIdBySid.has(sid)) continue;
       const row = sidToRow.get(sid)!;
       const match = existingByKey.get(normBookKey(row.title!, row.author ?? ''));
       if (match) {
@@ -204,40 +220,83 @@ export async function executeGoodreadsImport(
     }
   }
 
-  // Insert books only for Goodreads IDs not yet in book_source_links or catalog.
-  // Returns inserted rows in the same order as the input — we zip by index.
+  // Insert books for sids still unresolved.
+  //
+  // Pre-fix this was one bulk INSERT per chunk-of-100 — atomic per statement,
+  // so any single row violating a constraint/trigger/RLS aborted the entire
+  // chunk and silently dropped up to 100 books per failure (Royal Assassin /
+  // Ship of Destiny / Lightlark / Two Towers all hit this on the canonical
+  // 273-row import). The old code also zip-by-index on the returned rows,
+  // which silently misaligned book_id ↔ source_book_id when RLS filtered any
+  // row. Fix: try the bulk path for speed; on error OR partial result, fall
+  // back to per-row inserts so each row's failure is independent. Re-key by
+  // normalised title+author rather than index in both paths.
   const newSids = allSids.filter(sid => !bookIdBySid.has(sid));
 
-  for (const chunk of chunkArray(newSids, 100)) {
-    const inserts = chunk.map(sid => {
-      const row = sidToRow.get(sid)!;
-      return {
-        title:                     row.title!,
-        author:                    row.author!,
-        isbn:                      row.isbn   ?? null,
-        isbn13:                    row.isbn13  ?? null,
-        publisher:                 row.publisher ?? null,
-        binding:                   row.binding ?? null,
-        page_count:                null as number | null,
-        publication_year:          row.publication_year ?? null,
-        original_publication_year: row.original_publication_year ?? null,
-        cover_url:                 null as string | null,
-        // external_id intentionally left absent — will be set to an OL work id
-        // once metadata repair runs.  Goodreads source id lives in book_source_links.
-      };
-    });
+  function buildBookInsert(sid: string) {
+    const row = sidToRow.get(sid)!;
+    return {
+      title:                     row.title!,
+      author:                    row.author!,
+      isbn:                      row.isbn   ?? null,
+      isbn13:                    row.isbn13  ?? null,
+      publisher:                 row.publisher ?? null,
+      binding:                   row.binding ?? null,
+      page_count:                null as number | null,
+      publication_year:          row.publication_year ?? null,
+      original_publication_year: row.original_publication_year ?? null,
+      cover_url:                 null as string | null,
+    };
+  }
 
+  const perRowInsertErrors = new Map<string, string>();
+
+  for (const chunk of chunkArray(newSids, 100)) {
+    const inserts = chunk.map(buildBookInsert);
     const { data: inserted, error: insertError } = await supabase
       .from('books')
       .insert(inserts)
-      .select('id');
+      .select('id, title, author');
 
-    if (insertError) {
-      console.warn('Book insert partial error:', insertError.message);
+    if (!insertError && (inserted ?? []).length === chunk.length) {
+      const insertedByKey = new Map<string, string>();
+      for (const b of inserted as { id: string; title: string; author: string }[]) {
+        insertedByKey.set(normBookKey(b.title, b.author), b.id);
+      }
+      for (const sid of chunk) {
+        const row = sidToRow.get(sid)!;
+        const id = insertedByKey.get(normBookKey(row.title!, row.author));
+        if (id) bookIdBySid.set(sid, id);
+      }
     } else {
-      (inserted ?? []).forEach((b: { id: string }, i: number) => {
-        if (chunk[i]) bookIdBySid.set(chunk[i], b.id);
-      });
+      if (insertError) {
+        console.warn(`[goodreadsExecutor] bulk book insert failed (${insertError.message}); retrying ${chunk.length} rows individually`);
+      } else {
+        console.warn(`[goodreadsExecutor] bulk book insert returned ${(inserted ?? []).length}/${chunk.length}; retrying remainder individually`);
+        const insertedByKey = new Map<string, string>();
+        for (const b of (inserted ?? []) as { id: string; title: string; author: string }[]) {
+          insertedByKey.set(normBookKey(b.title, b.author), b.id);
+        }
+        for (const sid of chunk) {
+          const row = sidToRow.get(sid)!;
+          const id = insertedByKey.get(normBookKey(row.title!, row.author));
+          if (id) bookIdBySid.set(sid, id);
+        }
+      }
+
+      for (const sid of chunk) {
+        if (bookIdBySid.has(sid)) continue;
+        const { data: row, error: rowErr } = await supabase
+          .from('books')
+          .insert(buildBookInsert(sid))
+          .select('id')
+          .maybeSingle();
+        if (row?.id) {
+          bookIdBySid.set(sid, row.id);
+        } else {
+          perRowInsertErrors.set(sid, rowErr?.message ?? 'Insert returned no row (possible RLS filter)');
+        }
+      }
     }
   }
 
@@ -250,9 +309,10 @@ export async function executeGoodreadsImport(
       createWithBookId.push({ row, bookId });
     } else {
       counters.failed++;
+      const reason = sid ? (perRowInsertErrors.get(sid) ?? 'Book could not be created') : 'Missing source_book_id';
       await supabase
         .from('import_rows')
-        .update({ resolution: 'failed', error_message: 'Book could not be created', resolved_at: now })
+        .update({ resolution: 'failed', error_message: reason, resolved_at: now })
         .eq('id', row.id);
     }
   }
@@ -374,12 +434,21 @@ export async function executeGoodreadsImport(
   // Map import_row_id → book_id for result tracking
   const importRowToBookId = new Map(toInsert.map(r => [r._importRowId, r.book_id]));
 
+  // user_books has UNIQUE(user_id, book_id). Pre-fix bulk INSERT was atomic
+  // per statement — a single duplicate (e.g. when staging collapsed two
+  // Goodreads source IDs to the same canonical books.id via shared ISBN13)
+  // aborted the entire 100-row chunk and silently dropped real user_books
+  // rows. UPSERT with onConflict ignoreDuplicates makes each row's outcome
+  // independent. ignoreDuplicates is correct here — the merge path below
+  // handles the "row already existed" case for pre-existing user_books;
+  // collisions inside this insert batch are intra-import duplicates and
+  // should be silently absorbed, not overwritten.
   for (const chunk of chunkArray(insertPayloads, 100)) {
     const { error: ubInsertError } = await supabase
       .from('user_books')
-      .insert(chunk);
+      .upsert(chunk, { onConflict: 'user_id,book_id', ignoreDuplicates: true });
     if (ubInsertError) {
-      console.warn('user_books bulk insert partial error:', ubInsertError.message);
+      console.warn('[goodreadsExecutor] user_books bulk upsert error:', ubInsertError.message);
     }
   }
 
@@ -396,13 +465,69 @@ export async function executeGoodreadsImport(
     });
   }
 
-  // Update import_rows for inserted user_books
+  // Update import_rows for inserted user_books. Counter increments only when
+  // the post-insert fetch confirms a real user_book row — pre-fix, counters.added
+  // fired unconditionally per toInsert entry, overstating success when the
+  // bulk insert had silently dropped rows.
+  //
+  // Intra-batch duplicate collapse: when staging mapped two Goodreads source
+  // IDs (different editions) to the same canonical books.id (typically via
+  // shared ISBN13), both rows land in toInsert with the same book_id. The
+  // upsert with ignoreDuplicates produces ONE user_books row, but pre-second-fix
+  // both source rows would still receive `_resolution` and bump counters.added
+  // — overcounting against a single physical write. Track first-seen book_ids
+  // and demote subsequent same-book rows to resolution='skipped' / counters.skipped
+  // so import_batches.imported_rows + skipped_rows + failed_rows still sums to
+  // the staged total without claiming duplicate work.
+  //
+  // We also write matched_book_id back here so import_rows reflects what we
+  // actually linked, regardless of whether the match happened during staging
+  // or during executor recovery.
+  const claimedBookIds = new Set<string>();
   for (const insertedRow of toInsert) {
     const ubId = newlyInsertedUBMap.get(insertedRow.book_id);
+    if (!ubId) {
+      counters.failed++;
+      await supabase
+        .from('import_rows')
+        .update({
+          resolution: 'failed',
+          error_message: 'user_books row not found after insert (possible RLS or duplicate-collapse)',
+          resolved_at: now,
+        })
+        .eq('id', insertedRow._importRowId);
+      continue;
+    }
+
+    if (claimedBookIds.has(insertedRow.book_id)) {
+      // Duplicate intra-batch source row → physical user_books already created
+      // for the first occurrence. Link this import_row to the same user_book
+      // (audit truth: the row WAS imported, just absorbed) but count as skipped
+      // not added.
+      counters.skipped++;
+      await supabase
+        .from('import_rows')
+        .update({
+          resolution: 'skipped',
+          user_book_id: ubId,
+          matched_book_id: insertedRow.book_id,
+          error_message: 'Duplicate of another row in the same import (collapsed to one user_books entry)',
+          resolved_at: now,
+        })
+        .eq('id', insertedRow._importRowId);
+      continue;
+    }
+
+    claimedBookIds.add(insertedRow.book_id);
     counters.added++;
     await supabase
       .from('import_rows')
-      .update({ resolution: insertedRow._resolution, user_book_id: ubId ?? null, resolved_at: now })
+      .update({
+        resolution: insertedRow._resolution,
+        user_book_id: ubId,
+        matched_book_id: insertedRow.book_id,
+        resolved_at: now,
+      })
       .eq('id', insertedRow._importRowId);
   }
 

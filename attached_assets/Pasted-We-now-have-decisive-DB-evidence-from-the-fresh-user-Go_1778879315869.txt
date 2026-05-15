@@ -1,0 +1,204 @@
+We now have decisive DB evidence from the fresh-user Goodreads import retest.
+
+Context:
+- We already shipped M1 post-import cache invalidation.
+- We already shipped M2 author-strength sorting.
+- M2 passed: Taste Readout now surfaces Sarah J. Maas instead of Alka Joshi.
+- But For You still recommended already-read CSV books:
+  - Royal Assassin
+  - Ship of Destiny
+
+We ran DB probes for the affected user:
+
+user_id:
+7dc10017-ec4b-499f-b773-43d44437c728
+
+Import counts:
+- import_rows: 273
+- user_books: 200
+
+Import shelf distribution:
+- read: 158
+- to-read: 113
+- currently-reading: 2
+
+User_books status distribution:
+- finished: 109
+- want_to_read: 90
+- reading: 1
+
+Critical named rows:
+
+Royal Assassin:
+- import_rows row exists
+- exclusive_shelf = read
+- user_book_id = null
+- matched_book_id = null
+
+Ship of Destiny:
+- import_rows row exists
+- exclusive_shelf = read
+- user_book_id = null
+- matched_book_id = null
+
+Lightlark:
+- import_rows row exists
+- exclusive_shelf = to-read
+- user_book_id = null
+- matched_book_id = null
+
+The Two Towers:
+- import_rows row exists
+- exclusive_shelf = currently-reading
+- user_book_id = null
+- matched_book_id = null
+
+The Immortal Life of Henrietta Lacks:
+- import_rows row exists
+- exclusive_shelf = currently-reading
+- user_book_id populated
+- matched_book_id populated
+- user_books.status = reading
+
+Global books catalog check:
+- Royal Assassin exists in books
+- Ship of Destiny exists in books
+- Lightlark exists in books
+
+Conclusion:
+The recommender is likely behaving correctly relative to stored user_books. The real bug is that the importer staged all 273 rows but only created/linked 200 user_books. At least 73 rows, including valid read/current/to-read rows, were left with null user_book_id and null matched_book_id.
+
+Task type:
+Targeted import correctness investigation + minimal fix.
+
+Goal:
+Ensure every eligible Goodreads import row that the UI counts as “added to library” actually creates or links:
+1. a canonical books row via matched_book_id, and
+2. a user_books row via user_book_id.
+
+Do not touch recommender logic unless you prove the importer has correctly written user_books and the recommender is still ignoring them. Current evidence points to importer persistence/linking.
+
+Please investigate and fix the import executor/stager path.
+
+## 1. Confirm where the 73 missing user_books are lost
+Trace the Goodreads import pipeline for unmatched rows:
+- parser
+- stager / catalog match
+- groupMatched vs groupCreate partition
+- new book insert/upsert
+- user_books insert/upsert
+- import_rows update with matched_book_id and user_book_id
+
+Specifically determine why these rows ended with both matched_book_id and user_book_id null:
+- Royal Assassin
+- Ship of Destiny
+- Lightlark
+- The Two Towers
+
+## 2. Check the “new books to add” path
+The preview showed roughly:
+- 196 matched in catalog
+- 77 new books to add
+
+The final DB shows:
+- 200 user_books
+
+This strongly suggests that only a few of the “new books to add” rows were actually inserted/linked.
+
+Investigate:
+- Does the new-book creation path silently drop rows when book insertion returns no row?
+- Does it use ON CONFLICT DO NOTHING without a fallback lookup?
+- If a supposedly new book actually already exists in books but was missed by staging, does the executor fail to recover and link it?
+- Are rows with null ISBN / external_id / Goodreads source links handled differently?
+- Are title/author rows with series suffixes being normalized consistently?
+
+## 3. Compare global catalog existence vs import-row matching
+Global books table already contains:
+- Royal Assassin
+- Ship of Destiny
+- Lightlark
+
+But the corresponding import_rows have matched_book_id=null.
+
+Investigate:
+- Why did staging not match those existing books?
+- Should matching use normalized title+author as fallback after goodreads_id/ISBN matching?
+- Is title normalization stripping or preserving series suffixes consistently?
+- Is author normalization correct?
+- Are book_source_links missing for these global books, causing the primary match path to miss?
+
+## 4. Fix requirement
+Implement the smallest correct fix so that eligible import rows cannot remain half-staged.
+
+Acceptable fix shape may include:
+- after attempting to create unmatched books, if an insert conflicts or returns no row, perform a fallback lookup by normalized title+author / ISBN / external_id to recover the existing book_id
+- update import_rows.matched_book_id for recovered rows
+- ensure user_books rows are inserted/upserted for all eligible import rows
+- ensure import_rows.user_book_id is populated after user_books insertion
+
+The correct invariant after import:
+- For this 273-row CSV, user_books should be 273 unless rows are explicitly classified as skipped/failed.
+- If any import row is not linked to a user_book, it must be counted and surfaced as skipped/failed, not counted as successfully added.
+
+## 5. Result counters
+Audit the result counters:
+- The UI claimed 273 added to library.
+- DB shows only 200 user_books.
+
+Fix or explain:
+- how added/linked/failed/skipped counters are computed
+- why they overstated success
+- how to make the success count reflect actual user_books rows created/updated
+
+## 6. Validation required
+Use the affected scenario or a fixture matching it.
+
+Validate:
+1. Import same Goodreads CSV for a fresh user.
+2. import_rows count = 273.
+3. user_books count = 273, or any missing rows are explicitly failed/skipped and reflected in the UI count.
+4. Royal Assassin:
+   - exclusive_shelf=read
+   - matched_book_id populated
+   - user_book_id populated
+   - user_books.status=finished
+5. Ship of Destiny:
+   - exclusive_shelf=read
+   - matched_book_id populated
+   - user_book_id populated
+   - user_books.status=finished
+6. Lightlark:
+   - exclusive_shelf=to-read
+   - matched_book_id populated
+   - user_book_id populated
+   - user_books.status=want_to_read
+7. The Two Towers:
+   - exclusive_shelf=currently-reading
+   - matched_book_id populated
+   - user_book_id populated
+   - user_books.status=reading
+8. The Immortal Life of Henrietta Lacks remains correctly linked as reading.
+9. After Explore recommendations:
+   - Royal Assassin does not appear as a recommendation
+   - Ship of Destiny does not appear as a recommendation
+   - Lightlark does not appear as a fresh Start Here recommendation
+   - Home currently-reading can surface the actual currently-reading books.
+
+## Hard constraints
+- Do not start P3.
+- Do not redesign import UI.
+- Do not change import loader copy.
+- Do not change Taste Readout copy.
+- Do not touch recommender ranking/scoring.
+- Do not paper over the symptom by excluding titles in recommender if the importer is still failing to persist rows.
+- No opportunistic refactors.
+
+Return format:
+1. Executive verdict
+2. Exact point where the 73 rows are lost
+3. Root cause
+4. Files touched
+5. Minimal fix implemented
+6. Result-counter correction, if any
+7. Validation results
+8. Remaining import lifecycle risks
