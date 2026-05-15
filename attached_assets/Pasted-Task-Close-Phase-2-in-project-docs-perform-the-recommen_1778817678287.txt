@@ -1,0 +1,130 @@
+Task: Close Phase 2 in project docs + perform the recommended replit.md context trim
+
+Context:
+Phase 2 product acceptance has now PASSED in live app testing.
+
+The final live retest confirmed:
+- explicit preference edit rebuilt the deck
+- cache-restored stated candidates retained valid provenance
+- stated reservation applied successfully
+- B1 post-sort re-promotion preserved the reserved pick in visible slot 1
+- the UI visibly surfaced the stated-preference pick:
+  - “Darkly dreaming Dexter” appeared as the first card in For You
+
+Therefore:
+Phase 2 — Recommendation Control Plane retrieval responsiveness / visible preference-edit response — should now be documented as ✅ product accepted.
+
+This is a docs-only housekeeping batch before we resume P3.
+Do not touch product code.
+
+## Goals
+
+1. Formally close Phase 2 in the project docs.
+2. Archive the now-resolved verbose Phase 2 blocker history out of replit.md.
+3. Reduce replit.md context weight before P3.
+4. Record the process lesson we just agreed to adopt going forward:
+   major recommender/system phases require product-level acceptance, not just green local validators.
+
+## Allowed files
+
+- replit.md
+- docs/recently_shipped.md
+- docs/file_inventory.md — create only if helpful for the file-inventory move
+- roadmap-q2.md — only if needed to reflect the official Phase 2 → Phase 3 transition and new execution standard
+
+No other files.
+
+## Required doc updates
+
+### 1. Mark Phase 2 as product accepted
+In replit.md and roadmap-q2.md if roadmap-q2.md tracks phase status:
+
+Update the status from “Phase 2 shipped but product acceptance blocked” to something equivalent to:
+
+- P2 ✅ Product accepted — 2026-05-14
+- Live acceptance passed:
+  - explicit preference edit visibly changes top slate
+  - stated candidate reservation survives cache restore, adjacent-fit eligibility, and post-sort quality ordering
+  - reserved stated pick appeared in slot 1 in the live retest
+
+Keep this concise in replit.md.
+Detailed history belongs in docs/recently_shipped.md.
+
+### 2. Archive the detailed Phase 2 blocker/fix sequence
+Move or append the substantive Phase 2 acceptance history into docs/recently_shipped.md, including the important shipped sequence:
+
+- P2B.1 AND-gate drift fix
+- P2C soft-avoid retrieval deprioritization
+- live acceptance blocker discovery
+- survival tracing
+- OLFETCH instrumentation
+- cache-hit retrieval_reason normalization
+- Fix A: adjacent_fit reservation allowed only for explicit_preference_edit
+- B1: post-EXP_QUALITY re-promotion of the reserved pick
+- final live product acceptance result
+
+Do not lose the architectural reasoning, but keep replit.md free of the long narrative.
+
+### 3. Trim replit.md materially
+Replit has repeatedly flagged this file as too large. Use this natural phase boundary to reduce the always-loaded context.
+
+Specifically:
+- Replace verbose Phase 2 active-blocker prose with a concise “P2 accepted” summary and pointer to docs/recently_shipped.md.
+- Compress any already-shipped P0→P2 status prose that is more detailed than needed for live operating context.
+- Preserve the locked dual-plane strategy and current roadmap orientation.
+- Preserve active work context for the next phase:
+  - P3 is now the next recommender workstream.
+- Preserve any current gotchas that are still operationally relevant.
+- Do not remove information needed to safely execute P3.
+
+### 4. Move the full “Where things live” inventory if appropriate
+If replit.md still contains a long file-by-file inventory section that is materially contributing to context size:
+- move that inventory to docs/file_inventory.md
+- leave a short pointer in replit.md
+- preserve only the few file references genuinely necessary for next-phase execution
+
+Do this only if it creates a meaningful reduction and keeps the working brief clearer.
+
+### 5. Record the new operating standard going forward
+We want to reduce the kind of iterative back-and-forth that Phase 2 required.
+
+Add a concise project rule in the appropriate live operating section of replit.md, and roadmap-q2.md too if that is where phase execution protocol belongs:
+
+For major recommender/system phases:
+1. architecture mapping
+2. implementation
+3. local contract validators
+4. product-level acceptance fixture or consolidated end-to-end trace
+5. live smoke test before the phase is called product-accepted
+
+Clarify:
+- “shipped” can mean code merged and validators green
+- “product accepted” requires the end-user promise to pass through an end-to-end acceptance check
+
+This should be concise but explicit, because we want it to govern P3 and later phases.
+
+## Do not do
+
+- No code changes
+- No recommender changes
+- No validator changes
+- No new implementation work for P3
+- No deletion of useful architectural decisions
+- No vague “trimmed some prose” response — report exactly what changed
+
+## Validation/reporting
+
+Return:
+- files changed
+- before/after replit.md:
+  - line count
+  - byte count
+  - approximate reduction
+- what moved into docs/recently_shipped.md
+- whether docs/file_inventory.md was created and what moved there
+- exact updated Phase 2 status text
+- exact new operating-standard text or section added
+- whether roadmap-q2.md was updated, and why
+- git diff confirmation that only allowed docs files changed
+
+Stop after docs cleanup. Do not proceed into P3 implementation yet.

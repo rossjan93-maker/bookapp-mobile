@@ -100,8 +100,8 @@ It is the mountain in the distance that should influence architectural optionali
 
 ## Active now
 1. Recommendation Architecture Refinement
-2. Finish P2 retrieval responsiveness workstream
-3. Continue phased recommender Control Plane build
+2. ~~Finish P2 retrieval responsiveness workstream~~ ✅ product accepted 2026-05-14
+3. P3 contribution-grounded ranking + explanation faithfulness (next active workstream)
 4. Then retest recommendation responsiveness and explanation quality in-app
 5. Then resume first-session wow work and broader UX roadmap
 
@@ -321,17 +321,15 @@ Expected behavior:
 
 ---
 
-### P2C — Soft-Avoid Retrieval Deprioritization
+### P2C — Soft-Avoid Retrieval Deprioritization ✅ shipped
 Goal:
 - soft avoids must affect retrieval, not only ranking
 
-Current state:
-- P1 already added soft avoid scoring penalties
-- retrieval-side handling still needs to be finalized
-
-Decision point:
-- if soft-avoid retrieval fits cleanly into P2A, include it there
-- otherwise preserve it explicitly as P2C
+What shipped:
+- branch trigger extended to dense AND sparse paths (`softAvoidedTopGenres()`)
+- curated `LIKED_SUBJECT_AVOID_GUARDS` table in `lib/recPolicy.ts`
+- `lib/retrieval/softAvoidLocal.ts` demotes (never excludes) local catalog candidates by `SOFT_AVOID_RETRIEVAL_MULTIPLIER`
+- `RetrievalTrace.soft_avoid_retrieval` surfaces in meta
 
 Soft avoid means:
 > “Show me less of this,” not “hard exclude this forever.”
@@ -340,6 +338,17 @@ Soft avoid means:
 
 ### Deferred from P2
 Intent branch formalization remains deferred because current intent behavior is post-retrieval filtering/reranking, not true retrieval. Formalizing it prematurely would be architectural noise.
+
+---
+
+### Phase 2 product acceptance ✅ 2026-05-14
+P2A + P2B + P2B.1 reached "shipped" (validators green) on 2026-05-13; P2C followed on 2026-05-14. Phase 2 nonetheless did **not** reach product acceptance until later that same day, after three additional fixes:
+
+1. **Cache-hit retrieval_reason normalization** — `stripCacheVersion()` in `lib/recommender.ts` strips the cache `v5:` prefix at restore source so AND-gate `startsWith('stated_genre:')` matches cache-restored rows.
+2. **Fix A — adjacent-fit reservation widening** — `STATED_RESERVATION_POLICY.allowAdjacentForCauses: ['explicit_preference_edit']` lets `pickStatedReservation` accept `adjacent_fit` candidates after explicit edits (the user's revealed lane hasn't caught up to the just-saved edit yet).
+3. **B1 — post-sort re-promotion of the reserved pick** — immediately after the EXP_QUALITY `composed.sort(...)`, splice `reservation.pick` back to index 0. The reservation AND-gate verdict was being erased by a reservation-blind quality sort that judged cache-restored stated picks on metadata richness.
+
+Live acceptance: Reading Taste edit (Business + Mystery favorites) → save → For You. **"Darkly dreaming Dexter" appeared as slot 1.** Pre-beta gate "P2 retrieval responsiveness; visible deck shift after pref edit, dense users included" met. Full archived narrative in `docs/recently_shipped.md` § "Phase 2 product-acceptance arc".
 
 ---
 
@@ -472,6 +481,32 @@ Must eventually prove:
    - safe
    - stretch
    - surprise
+
+---
+
+## 5G. Phase acceptance protocol (operating standard)
+
+Adopted 2026-05-14 in response to the Phase 2 acceptance arc. Governs all major recommender / Control Plane / Semantic Intelligence phases from P3 onward.
+
+### Required execution sequence
+For every major phase, all five steps below are required. Step 4 vs. step 5 is a *form* choice, not an opt-out — at least one of the two must produce evidence of the end-user promise.
+
+1. **Architecture mapping** — explicit contract, interface boundaries, expected behavioral delta over the prior phase.
+2. **Implementation** — code merged on green typecheck.
+3. **Local contract validators** — script(s) under `scripts/validate_*.ts` that prove the unit contract synthetically; must exit 0 in CI/local before phase is "shipped". Current suite: `validate_taxonomy`, `validate_rec_validity`, `validate_rec_request`, `validate_retrieval_planner`, `validate_stated_reservation`. P3 will add an explanation-faithfulness validator.
+4. **End-to-end acceptance evidence** — either (a) a fixture-replay validator that exercises the multi-stage pipeline (retrieval → scoring → composition → display) and asserts the user-visible promise on canonical fixtures, OR (b) a consolidated end-to-end trace from an instrumented live session showing the same. Mandatory for any phase whose promise crosses pipeline stages.
+5. **Live smoke test** — actual app run reproducing the user-facing scenario the phase advertises. **Mandatory** for phases that promise a visible UI/deck change. Optional (but recommended) for purely backend/contract phases whose step-4 fixture replay already exercises the user-visible promise.
+
+### Status vocabulary (load-bearing)
+- **"shipped"** — code merged + all relevant local validators (step 3) green. Necessary, not sufficient.
+- **"product accepted"** — the end-user promise has been demonstrated. For phases with a visible UI promise, this requires a passing step 5 live smoke (step 4 alone is not enough). For phases with a purely contract-level promise, a passing step 4 fixture replay suffices.
+
+A phase may sit "shipped" for multiple iterations (Fix A, B1, cache normalization for P2) before reaching "product accepted". Validators going green is **not** acceptance; it is a precondition.
+
+### Why this exists
+Phase 2 reached "shipped" on 2026-05-13 with all three then-current validators green (`validate_taxonomy`, `validate_rec_validity`, `validate_stated_reservation`) and the visible deck-shift promise still failed in live use. The contract gates were correct in isolation but the reservation pick was being erased by a downstream EXP_QUALITY sort that no validator covered. Future phases must either include an end-to-end fixture replay in their validator suite or block on a live smoke before claiming acceptance.
+
+Mirrored in `replit.md` ("Operating standard — phase acceptance protocol").
 
 ---
 

@@ -1,6 +1,44 @@
 # Recently Shipped — Archived Detail
 
-Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/onboarding sprints. Moved out of replit.md on 2026-05-14 to keep the live operating reference compact. Order is reverse-chronological as it was in replit.md at archive time. For full diffs use `git log -p -- <path>`.
+Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/onboarding sprints. Moved out of replit.md on 2026-05-14 to keep the live operating reference compact. Order is reverse-chronological. For full diffs use `git log -p -- <path>`.
+
+## Phase 2 product-acceptance arc (2026-05-13 → 2026-05-14)
+
+This section captures the iterative path from "P2A/P2B/P2B.1/P2C all shipped with green validators" to "Phase 2 product-accepted in live use". It is the canonical example for the new phase-acceptance protocol in `replit.md` ("Operating standard — phase acceptance protocol") and `roadmap-q2.md` §5G: validators going green is necessary but not sufficient.
+
+### Live acceptance — final result (2026-05-14)
+- **Phase 2 product accepted.** Repro: Reading Taste edit (Business + Mystery favorites, Slow-burn style, Fantasy avoid) → save → For You without browser refresh.
+- Visible result: **"Darkly dreaming Dexter" appeared as slot 1 of For You.** The reserved stated-branch pick survived cache restore, adjacent-fit reservation widening, AND-gate, and the post-EXP_QUALITY re-promotion. Top slate visibly responded to the explicit edit.
+- Pre-beta gate "P2 retrieval responsiveness; visible deck shift after pref edit, dense users included" met.
+
+### Blocker discovery (2026-05-13, post-P2C ship)
+- Symptom: after `explicit_preference_edit` rebuild, reservation returned `reason=no_eligible_candidate` with `compPoolSize=184, statedInPool=0`. Top slate after edit still showed literary books carrying only the P1 floor `stated_taste≈0.08`. All three validators were green throughout.
+- Diagnosis trail required because the contract failure was multi-stage and split across retrieval, scoring, composition, and post-sort layers. No single validator covered the cross-layer survival path.
+
+### Survival-trace instrumentation (2026-05-13)
+- Added `[P2SURVIVE/post_ol_merge|post_hygiene|post_scoring|comp_pool]` traces in `lib/recommender.ts` to pinpoint the attrition stage of stated-branch candidates between OL fetch and compPool.
+- Added `[OLFETCH/...]` instrumentation around `getOLCandidates` to confirm stated-branch books were actually being requested and returned by Open Library (separating "OL never fetched them" from "they were fetched then dropped downstream").
+
+### Cache-hit retrieval_reason normalization (commits eef2912 / 41337bb)
+- Root cause #1: cache-restored candidates carried a versioned `_retrieval_reason` prefix (e.g. `v5:stated_genre:business`) instead of the bare `stated_genre:business` the AND-gate `startsWith('stated_genre:')` check expected. Cache-restored stated picks were silently failing the retrieval-provenance half of the AND-gate.
+- Fix: new `stripCacheVersion()` helper in `lib/recommender.ts`; `getCachedExternalCandidates` strips the `CACHE_VERSION 'v5:'` prefix at restore source so all downstream `startsWith('stated_genre:'|'genre:'|'lane:'|'liked_subject:'|'author_anchor:'|'repeated_author:'|'local:')` checks match cache-restored rows.
+- Validators all green. After this fix `statedInPool` rose from 0 to 10, but the user-visible top slate was still wrong → uncovered the next attrition stage.
+
+### Fix A — adjacent-fit reservation widening for explicit_preference_edit (commit 845326b)
+- Root cause #2: `pickStatedReservation` filtered to CORE-only (`fit_class === 'core_fit'`) by default, but cache-restored stated picks classified by `computeFitClass` were typically `adjacent_fit` (their dominant lane was the user's prior revealed lane, not the freshly-edited stated favorite — the lane reading hadn't caught up to the edit yet). The reservation policy was rejecting otherwise-eligible stated picks on a fit-class technicality that was itself a stale-signal artifact of the very edit the reservation was trying to honor.
+- Fix: new `STATED_RESERVATION_POLICY.allowAdjacentForCauses: BuildCause[]` (currently `['explicit_preference_edit']`). When the cause is in the allow-list, `pickStatedReservation` accepts both `core_fit` and `adjacent_fit` candidates. All other causes preserve CORE-only behavior. Validator extended; all green.
+- After Fix A `pickStatedReservation` started returning `pickTitle="Darkly dreaming Dexter"` with `reservationApplied=true` — but the live `[P2DEBUG/topSlate]` log still showed unrelated literary picks in slots 1–4.
+
+### B1 — post-sort re-promotion of the reserved pick (commit 4c2583c)
+- Root cause #3 (final): the EXP_QUALITY tier-sort at the end of composition (`composed.sort(...)` in `lib/recommender.ts`) is reservation-blind. Cache-restored stated picks have `description=null` and minimal subjects by cache schema, so `explanation_quality` classifies them ≤ `acceptable_generic` and they sort *behind* `strong`-tier local-catalog literary picks. The reservation AND-gate verdict — that for this slot, on this `explicit_preference_edit` cause, this candidate is the right answer — was being silently overridden by a downstream sort that judged it on metadata richness instead of stated-pref provenance.
+- Fix: immediately after `composed.sort(...)`, if `reservation.pick` exists, find that book in `composed` via `compId` and splice it back to index 0. Idempotent at `idx===0` and safe at `idx===-1`. Slots 1..N continue following EXP_QUALITY ordering. `STATED_RESERVATION_POLICY.maxReservedSlots=1` ensures at most one pin. New `[P2RESERVE/pinned]` debug line emits `reservedId / idx_before_promote / idx_after_promote / splice_applied`. When P3 contribution-grounded ranking lets stated picks earn `strong` organically, this becomes a silent no-op without removal.
+- Architect review PASS — all 10 validation points satisfied; no regressions.
+
+### Process lesson (now codified)
+- Phase 2 sat in "shipped" status with three green validators for ~24 hours while the actual end-user promise — "explicit pref edit visibly changes the top slate" — failed in live use. The validators correctly proved the unit contracts of `pickStatedReservation`, `recValidity`, and `taxonomy`. None of them covered the multi-stage survival path retrieval → scoring → composition → post-sort → display.
+- Going forward, "shipped" and "product accepted" are distinct status terms (see `replit.md` "Operating standard — phase acceptance protocol" and `roadmap-q2.md` §5G). Phases whose user-visible promise involves multi-stage pipeline survival require either an end-to-end fixture replay validator or a live smoke test before claiming acceptance.
+
+---
 
 ## Recommendation Control Plane (P0A → P2C)
 

@@ -15,30 +15,20 @@ React Native + Expo Router, Supabase (Postgres + Auth + RLS), TypeScript, Expo b
 
 ## Current focus — Recommendation Architecture Refinement
 
-The revised Recommendation Architecture Spec is **locked**. Readstack now operates under a dual-plane strategy:
+The Recommendation Architecture Spec is **locked**. Readstack operates under a dual-plane strategy:
 
 1. **Free / core — Recommendation Control Plane.** Trustworthy, responsive to explicit input, structurally coherent, explanation-faithful, testable, cache-safe. Basic correctness is **not** paywalled.
 2. **Paid / premium — Semantic Intelligence Plane.** Reader thesis, book intelligence, semantic cross-genre retrieval, bounded AI reranking, "surprising but right" discovery, advanced next-read decision sessions, taste evolution insights.
 
-### Implementation sequence (in order)
-- **P0A** — Canonical genre taxonomy integrity (single source of truth; zero silent unmapped labels)
-- **P0A.1** — Recommender retrieval-side map fold-in (recommender consults the same taxonomy)
-- **P0B** — Full deck-validity / configHash invalidation (payload + session + queue stores)
-- **P1** — Signal/control contract (`RecRequest`, typed signals, **non-zero stated-pref floor at all tiers**)
-- **P2** — Retrieval responsiveness / branch planner (visible deck shift after pref edit, dense users included)
-- **P3** — Score contributions + explanation faithfulness (reasons cite real contributions)
-
-**Honest scope note:** P0A alone does **not** fix the tier-2+ silent-zeroing of explicit prefs. That **shipped in P1** (scoring-side via `lib/recPolicy.ts` step 7 with non-zero floor at all tiers); retrieval responsiveness still lands in P2. P0A delivers correctness for cold/thin users and unblocks every later phase.
-
 ### Strategic thesis (locked)
-- **Free Readstack must be genuinely good.** Correct taxonomy, explicit-preference responsiveness, honest avoid behavior, robust deck invalidation, and coherent explanations are **never** paywalled.
-- **Paid Readstack monetizes deeper intelligence**, not basic correctness: reader thesis, book intelligence (appeal vectors + closed-vocabulary descriptors), semantic retrieval, bounded AI reranking, premium evidence-cited explanations, decision sessions, taste evolution.
-- **Architectural commitment:** the Semantic Intelligence Plane plugs into Control Plane interfaces (signal slots, branch registry, contribution sources). No recommender rewrite at the free/paid boundary.
+- Free Readstack must be genuinely good — correct taxonomy, explicit-pref responsiveness, honest avoid behavior, robust deck invalidation, coherent explanations are **never** paywalled.
+- Paid Readstack monetizes deeper intelligence, not basic correctness.
+- The Semantic Intelligence Plane plugs into Control Plane interfaces (signal slots, branch registry, contribution sources). No recommender rewrite at the free/paid boundary.
 
 ### Pre-beta gates
 - **Required before external beta:** P0A + P0A.1 + P0B + P1 + P2, plus P3 minimum (zero false-attribution reasons in fixture replay).
 - **Required before paid beta:** full P3, plus P4 (Semantic Intelligence foundation) and P5 (premium discovery engine).
-- Quotas, score caps, decay half-life, slot-reservation rules are **calibration hypotheses** owned by `lib/recPolicy.ts` (to be created in P1) — tunable without architectural change.
+- Quotas, score caps, decay half-life, slot-reservation rules are **calibration hypotheses** owned by `lib/recPolicy.ts` — tunable without architectural change.
 
 ---
 
@@ -53,33 +43,15 @@ The revised Recommendation Architecture Spec is **locked**. Readstack now operat
 | P2A · branch planner | ✅ shipped | `lib/retrieval/branchPlanner.ts`, branch modules, `BRANCH_QUOTAS`, `EDIT_CAUSE_BRANCH_BOOST` |
 | P2B / P2B.1 · top-slate reservation + provenance AND-gate | ✅ shipped | `lib/composition/statedReservation.ts` |
 | P2C · soft-avoid retrieval deprioritization | ✅ shipped | `softAvoidedTopGenres()`, `LIKED_SUBJECT_AVOID_GUARDS`, `lib/retrieval/softAvoidLocal.ts` |
-| **Phase 2 product acceptance** | 🔴 **blocked** | see active blocker below |
-| P3 · contribution-grounded ranking + explanation faithfulness | ⏸ paused | unblocks once Phase 2 acceptance passes |
+| **Phase 2 product acceptance** | ✅ **product accepted — 2026-05-14** | live retest passed: explicit pref edit visibly changes top slate; reserved stated pick survives cache restore + adjacent-fit eligibility + post-sort quality ordering; "Darkly dreaming Dexter" appeared in slot 1 after Business+Mystery edit. Detailed Fix A (adjacent-fit) + B1 (post-sort re-promotion) + cache-restore prefix normalization history in `docs/recently_shipped.md`. |
+| **P3 · contribution-grounded ranking + explanation faithfulness** | 🟡 **next active workstream** | scoring → typed `ScoreContribution[]`; explanation faithfulness via `lib/explanations/compose.ts`; slate diversity guard. Required before external beta. |
 | P4 · semantic intelligence foundation | ⏳ future | hard-avoid UI + storage lands here |
 
-Verbose prose for every shipped phase lives in `docs/recently_shipped.md`. Catalog subsystem history (P0 / P0.5 / P1.5a/b series) lives in `docs/catalog_subsystem.md`.
+Verbose prose for every shipped phase lives in `docs/recently_shipped.md`. Catalog subsystem history (P0 / P0.5 / P1.5a/b series) lives in `docs/catalog_subsystem.md`. Full file inventory ("Where things live") lives in `docs/file_inventory.md`.
 
-### Active Phase 2 blocker — `statedInPool=0` after explicit pref edit
-
-Repro flow: Reading Taste edit (e.g. Business + Mystery favorites, Slow-burn style, Fantasy avoid) → save → navigate to For You **without browser refresh**.
-
-What works:
-- Save → rebuild fires.
-- BuildCause survives no-refresh nav as `explicit_preference_edit`.
-- Planner runs and emits stated branch (`[P2DEBUG/plan] byBranch=stated:4/...`).
-- P2B reservation gate executes correctly.
-
-What fails:
-- Reservation returns `reason=no_eligible_candidate` with `compPoolSize=184, statedInPool=0`.
-- Top slate after edit still shows literary books carrying only the P1 floor `stated_taste≈0.08`.
-
-Stated-branch candidates are retrieved by OL but eliminated between OL fetch and compPool. Most likely sub-mechanism: `computeFitClass` rejects them on dominant-lane mismatch. **Survival-trace instrumentation is in place** (`[P2SURVIVE/post_ol_merge|post_hygiene|post_scoring|comp_pool]` in `lib/recommender.ts`). Next live run pinpoints the attrition stage.
-
-Until a stated-branch book whose primary affinity matches a stated favorite reaches the visible top slate after an explicit edit, Phase 2 product acceptance is not passed and the pre-beta gate "P2 retrieval responsiveness; visible deck shift after pref edit, dense users included" is not met.
-
-### Known open quality issues (not the current blocker)
-- **`Business` chip → broad `nonfiction` retrieval anchors** — Per P0A `affinityKey`, `Business` (and `Self-Help`, `History`, `Politics`, `Science`, `Reference`, `Health`) all collapse to `nonfiction`, whose `AFFINITY_RETRIEVAL_SUBJECTS` are `popular science` + `popular nonfiction`. Neither returns business-specific titles. Sub-affinity granularity is P4 territory (book intelligence / appeal vectors); do NOT spot-patch by adding business-only anchors before then.
-- **BuildCause browser-refresh persistence** — `setPendingBuildCause` is module-state only. A hard browser refresh between save and For-You nav loses the cause and the rebuild runs as `session_open`. Separate from the current no-refresh blocker; documented for when we revisit cross-session cause persistence.
+### Known open quality issues (not blocking P3)
+- **`Business` chip → broad `nonfiction` retrieval anchors** — Per P0A `affinityKey`, `Business` (and `Self-Help`, `History`, `Politics`, `Science`, `Reference`, `Health`) all collapse to `nonfiction`, whose `AFFINITY_RETRIEVAL_SUBJECTS` are `popular science` + `popular nonfiction`. Sub-affinity granularity is P4 territory (book intelligence / appeal vectors); do NOT spot-patch by adding business-only anchors before then.
+- **BuildCause browser-refresh persistence** — `setPendingBuildCause` is module-state only. A hard browser refresh between save and For-You nav loses the cause and the rebuild runs as `session_open`. Documented for when we revisit cross-session cause persistence.
 
 ### Parked / explicitly deferred
 - **Sentry / analytics instrumentation** — out of scope across the current stream.
@@ -94,76 +66,60 @@ Until a stated-branch book whose primary affinity matches a stated favorite reac
 
 ---
 
+## Operating standard — phase acceptance protocol
+
+For all major recommender / Control Plane / Semantic Intelligence phases, the required execution sequence is (all five steps required; step 4 vs. step 5 is a *form* choice, not an opt-out):
+
+1. **Architecture mapping** — explicit contract, interface boundaries, expected behavioral delta over the prior phase.
+2. **Implementation** — code merged on green typecheck.
+3. **Local contract validators** — script(s) under `scripts/validate_*.ts` that prove the unit contract synthetically; must exit 0 before phase is "shipped". Current suite: `validate_taxonomy`, `validate_rec_validity`, `validate_rec_request`, `validate_retrieval_planner`, `validate_stated_reservation`.
+4. **End-to-end acceptance evidence** — either (a) a fixture-replay validator that exercises the multi-stage pipeline (retrieval → scoring → composition → display) and asserts the user-visible promise on canonical fixtures, OR (b) a consolidated end-to-end trace from an instrumented live session showing the same. Mandatory for any phase whose promise crosses pipeline stages.
+5. **Live smoke test** — actual app run reproducing the user-facing scenario. **Mandatory** for phases with a visible UI/deck promise. Optional (but recommended) for purely contract-level phases whose step-4 fixture replay already exercises the user-visible promise.
+
+**Status vocabulary (load-bearing):**
+- **"shipped"** — code merged + all relevant validators (step 3) green. Necessary, not sufficient.
+- **"product accepted"** — end-user promise demonstrated. Visible-UI phases require a passing step 5 live smoke (step 4 alone is not enough). Contract-only phases may rely on a passing step 4 fixture replay.
+
+Phase status table above uses both terms intentionally. A phase may sit "shipped" for multiple iterations (Fix A, B1, cache normalization for P2) before reaching "product accepted". Validators going green is **not** acceptance; it is a precondition.
+
+This standard exists because Phase 2 reached "shipped" on 2026-05-13 with all three then-current validators green and the visible deck-shift promise still failed in live use — the contract gates were correct in isolation but the reservation pick was being erased by a downstream EXP_QUALITY sort that no validator covered. Future phases must either include an end-to-end fixture replay in their validator suite, or block on a live smoke before claiming acceptance.
+
+Mirrored in `roadmap-q2.md` §5G.
+
+---
+
 ## Recommendation Architecture (locked blueprint — concise)
 
-Live operating reference for the architecture P0A→P6 implements. Full spec lives in chat history (architecture revision turn).
+Live operating reference for the architecture P0A→P6 implements.
 
-- **Canonical taxonomy** (P0A): `lib/taxonomy/genres.ts` will be the single source of truth for `GenreDef { id, uiLabels{edit/intake/cardTag/aliasInputs}, affinityKey, olSubjects, laneTag, fictionality }`. Same pattern slated for traits (P1) and subjects (P4). Adding a chip without a `GenreDef` becomes a typecheck failure. `normalizeGenreInput()` is the only legal entry of genre strings; misses go to a telemetry sink.
-- **Typed signal provenance** (P1): six classes — `stated_durable`, `revealed_behavioral`, `soft_avoid`, `hard_avoid` (reserved), `current_intent`, `short_term_feedback`. Each carries source + confidence + decay policy + retrieval/ranking/explanation eligibility. `TasteProfile` becomes a derived view; signals are primary.
-- **`RecRequest` compiler** (P1): single typed object compiling all signals + policy + `BuildCause` + `configHash` + `schemaVersion`. Replaces hidden tier gates (tier becomes one input to `policy.confidenceMode`, not a load-bearing branch). `BuildCause ∈ { session_open, manual_refresh, explicit_preference_edit, intent_apply, intent_clear, feedback_action, onboarding_completion }` — `explicit_preference_edit` triggers one-session top-4 slot reservation for stated-branch candidates that clear the quality floor.
-- **Deck validity** (P0B): `configHash` carried by all three stores (`recPayloadCache`, `recSession`, `recQueue`); central `lib/recValidity.ts` `assertCurrent()` check at every read. Mismatch invalidates that store. Manual clears become redundant.
-- **Branch-based retrieval** (P2): `lib/retrieval/branchPlanner.ts` always runs `revealed_lanes`, `revealed_authors`, `stated_genres`, `stated_authors`, `intent`, `exploration`, `feedback` branches with quotas keyed off `policy.confidenceMode` and `BuildCause`. **`stated_genres` quota is never zero while user has any mapped favorite_genre** — including dense users. Soft avoid deprioritizes within branches; hard avoid (P4) is global pre-branch exclusion.
-- **Contribution-grounded ranking** (P3): scoring produces typed `ScoreContribution[] { source, kind, value, evidence }`. Components: `behavioral_fit`, `stated_taste_fit` (**+0.05 floor at all tiers**, decay by row `updated_at`), `intent_fit`, `quality_reliability`, `feedback_fit`, `novelty_diversity`, `soft_avoid_penalty`, `repetition_suppression`, `hygiene_floor`. All cap values are policy.
-- **Explanation faithfulness** (P3): `lib/explanations/compose.ts` reads contributions. **No reason emitted without a corresponding positive contribution above a per-kind floor.** Provenance dictates copy template (stated vs revealed vs intent vs feedback). Slate diversity guard rejects 3rd instance of same `kind` in top-4 unless no alternative. FX-1 humanization survives but cannot misrepresent.
+- **Canonical taxonomy** (P0A): `lib/taxonomy/genres.ts` is the single source of truth for `GenreDef { id, uiLabels{edit/intake/cardTag/aliasInputs}, affinityKey, olSubjects, laneTag, fictionality }`. Adding a chip without a `GenreDef` becomes a typecheck failure. `normalizeGenreInput()` is the only legal entry of genre strings.
+- **Typed signal provenance** (P1): six classes — `stated_durable`, `revealed_behavioral`, `soft_avoid`, `hard_avoid` (reserved), `current_intent`, `short_term_feedback`. Each carries source + confidence + decay policy + retrieval/ranking/explanation eligibility.
+- **`RecRequest` compiler** (P1): single typed object compiling all signals + policy + `BuildCause` + `configHash` + `schemaVersion`. `BuildCause ∈ { session_open, manual_refresh, explicit_preference_edit, intent_apply, intent_clear, feedback_action, onboarding_completion }`.
+- **Deck validity** (P0B): `configHash` carried by all three stores (`recPayloadCache`, `recSession`, `recQueue`); central `lib/recValidity.ts` `assertCurrent()` check at every read.
+- **Branch-based retrieval** (P2): `lib/retrieval/branchPlanner.ts` always runs `revealed_lanes`, `revealed_authors`, `stated_genres`, `stated_authors`, `intent`, `exploration`, `feedback` branches. **`stated_genres` quota is never zero while the user has any mapped favorite_genre** — including dense users. Soft avoid deprioritizes within branches; hard avoid (P4) is global pre-branch exclusion.
+- **Stated reservation** (P2B/P2B.1, post-acceptance shape): `lib/composition/statedReservation.ts` AND-gates retrieval provenance (`_retrieval_reason.startsWith('stated_genre:')`) AND scoring provenance (`audit_flags` contains `stated_favorite:<key>` AND `stated_taste > 0`). `STATED_RESERVATION_POLICY.allowAdjacentForCauses` widens fit-class eligibility for `explicit_preference_edit`. After EXP_QUALITY composed.sort, the reserved pick is re-promoted to index 0 (P2 B1) so the AND-gate verdict is not erased by a reservation-blind sort.
+- **Contribution-grounded ranking** (P3, next): scoring produces typed `ScoreContribution[] { source, kind, value, evidence }`. Components: `behavioral_fit`, `stated_taste_fit` (+0.05 floor at all tiers), `intent_fit`, `quality_reliability`, `feedback_fit`, `novelty_diversity`, `soft_avoid_penalty`, `repetition_suppression`, `hygiene_floor`.
+- **Explanation faithfulness** (P3): `lib/explanations/compose.ts` reads contributions. **No reason emitted without a corresponding positive contribution above a per-kind floor.** Slate diversity guard rejects 3rd instance of same `kind` in top-4 unless no alternative.
 - **Quality gates** (CI from introducing phase): A1 zero-unmapped-labels (P0A), A2 configHash invalidates all 3 stores (P0B), A3 pref edit changes RecRequest (P1), A4–A6 retrieval/top-4 deltas including dense (P2), A7 soft avoid in retrieval+ranking (P2), A8 zero false-attribution reasons (P3 minimum), A9 slate diversity (P3 full), A10 BuildCause propagation (P1).
-- **Semantic Intelligence hooks** (kept open in Control Plane so P4–P6 plug in additively): `RecRequest.signals` is open record (room for `reader_thesis`); branch registry accepts `semantic_appeal` as one more entry (disabled-by-default in free); contribution model accepts `semantic_rerank` and `premium_evidence_match` sources; explanation layer reads kinds (premium kinds plug in).
+- **Semantic Intelligence hooks** kept open in Control Plane so P4–P6 plug in additively: `RecRequest.signals` is open record; branch registry accepts `semantic_appeal` (disabled-by-default in free); contribution model accepts `semantic_rerank` and `premium_evidence_match` sources.
 
 ---
 
 ## Where things live
-- `lib/tokens.ts` — color palette / design tokens.
-- `lib/screenLayout.ts` — `useScreenTopPadding()` (`insets.top + 16`); single source of truth for top-of-screen padding on `headerShown:false` routes.
-- `lib/shelves.ts` — smart-shelf filtering (`matchesSubjects`).
-- `lib/customShelves.ts` — `user_shelves` / `user_shelf_books` CRUD.
-- `lib/contentWarnings.ts` — content-warning matching + two-tier confidence.
-- `lib/metadataProvider.ts` — canonical book metadata + cover selection.
-- `lib/metadataRepair.ts` — Open Library → Google Books repair.
-- `lib/openLibrary.ts` — Open Library API + author bibliography.
-- `lib/recommender.ts` — recommender (contains `FORENSIC_USER_ID`).
-- `lib/nextReadIntent.ts` — soft-boost / mood-boost weights for the For-You feed.
-- `lib/intentMatcher.ts` — Want-to-Read intent parser (`parseIntent` / `matchBookToIntent`).
-- `lib/sessionSegment.ts` — reset-aware session segmentation.
-- `lib/pacing.ts` — reading pacing.
-- `lib/readingWraps.ts` — monthly / yearly wrap aggregation.
-- `lib/socialAuth.ts` — shared OAuth helper.
-- `lib/friendshipActions.ts` — `sendFriendRequest()` (RPC wrapper) + `deleteFriendship()`.
-- `lib/goodreadsExecutor.ts` — Goodreads import + dedup.
-- `lib/userBookActions.ts` — `setYearGoal()` and other user_books mutations.
-- `lib/saveBookFromRec.ts` — save-from-rec path (creates books row by external_id, upserts user_books).
-- `lib/seededPicks.ts` — hardcoded 6-book starter strip (verified rows only) shown to zero-library / zero-signal users on the For-You tab.
-- `lib/tasteReadoutCopy.ts` — pure copy assembly for the post-intake "Here's what we heard" surface (humanizers, hedged summary/chip builders, thin-state detection, FS-5a synthesis). Also owns `humanizeGenreKey`. No IO.
-- `lib/traitCopy.ts` — FX-1 trait humanization (`humanizeTraitKey`, `composeTraitPhrase` with `PAIR_TABLE`, `rehumanizeReasonPhrase`).
-- `lib/mltAutoaddPref.ts` — AsyncStorage pref for "more like this" auto-add.
-- `lib/subjectVocabulary.ts` — curated subject vocab for LLM inference.
-- `lib/recSession.ts` / `lib/recQueue.ts` / `lib/recPayloadCache.ts` — three deck-state stores; share P0B `configHash` (carried as optional field; strict accessors `getRecSessionFor` / `assertQueueConfig` / `loadRecPayload(opts.currentConfigHash)` self-invalidate on mismatch).
-- `lib/recValidity.ts` — P0B deck-validity helper. `computeRecConfigHash` (versioned `rcv1`, normalized over `favorite_genres` / `avoid_genres` / `reading_styles` / `favorite_authors`), `assertCurrent`, `loadCurrentConfigHash`. Single source of truth for "does this stored deck still belong to the user's current rec config?". Forward-compatible with P1 `RecRequest.configHash`.
-- `scripts/validate_rec_validity.ts` — npx-tsx integrity check for `recValidity` (hash determinism + tolerance + per-field uniqueness + `assertCurrent` semantics + prior-bug-class invalidation); exit 0/1.
-- `lib/taxonomy/genres.ts` — P0A canonical genre taxonomy (21 `GenreDef`s; `EDIT_GENRE_IDS` / `INTAKE_FICTION_IDS` / `INTAKE_NONFICTION_IDS`; `editLabel` / `intakeLabel` helpers). Single source of truth for chip labels + `affinityKey` + `olSubjects`.
-- `lib/taxonomy/normalize.ts` — `normalizeGenreInput()` — only legal entry for resolving free-form genre labels to a `GenreDef`. Misses → `__DEV__ console.warn`.
-- `scripts/validate_taxonomy.ts` — npx-tsx integrity check (every chip + 17 legacy/alias probes); exit 0/1.
-- `app/_layout.tsx` — root Stack (`headerShown:false`), bootstrap context, onboarding bridge.
-- `app/book/[id].tsx` — book detail (rating UI, paused toggle, year-stack toggle, recommend-to-friend, rec quick-actions card).
-- `app/(tabs)/index.tsx` — home (yearly progress bar, year-stack strip, streak flame; mounts HomeShortlist above Reading Now).
-- `app/(tabs)/library.tsx` — library w/ smart + custom shelves, Priority filter chip.
-- `app/(tabs)/search.tsx` — Discover/For-You tab.
-- `app/stats/index.tsx` — Reading Insights.
-- `app/onboarding.tsx`, `app/onboarding-import.tsx`, `app/onboarding-questions.tsx` — onboarding flow.
-- `app/taste-readout.tsx` — post-intake "Here's what we heard" route.
-- `app/edit-preferences.tsx` — Reading Taste editor (currently calls 3-store manual clear after save; redundant after P0B ships).
-- `app/legal.tsx` — Help & Legal (placeholder URLs marked `TODO(beta-launch)`).
-- `components/CoverThumb.tsx` — every cover surface (3D treatment, `flat` opt-out).
-- `components/HalfStarRating.tsx` — `HalfStarRating`, `StarDisplay`, `ratingToSentiment`, `formatRating`.
-- `components/RecCard.tsx` — for-you card + rationale variant pools + `UndoToast` + `LearningToast`.
-- `components/RecommendationsFeed.tsx` — for-you feed + intent chips (`handleApplyIntent`) + V2 toast wiring.
-- `components/RecommendBookSheet.tsx` — recommend-finished-to-friend sheet.
-- `components/TasteReadout.tsx` — pure presentational "Here's what we heard" view.
-- `components/HomeShortlist.tsx` — V4 top-of-Home next-read surface; read-only consumer of `getRecSession()` + `loadActedOnIds()`.
-- `components/RecEntryScreen.tsx` — quick-intake (genres → avoid → outcome → taste → anchor); chip lists currently duplicated with `lib/tasteProfile.ts` maps (P0A consolidates).
-- `components/ShelfRow.tsx` / `ShelfPickerSheet.tsx` — shelf chips + add-to-shelf bottom sheet.
-- `components/LibraryGalleryView.tsx` — library gallery view.
-- `scripts/repairSubjectCoverage.ts`, `scripts/inferSubjectsLLM.ts`, `scripts/backfillSessionCorrections.ts`, `scripts/deduplicateBooks.ts` — maintenance scripts.
-- `app.json` — Expo config (camera plugin + explicit iOS `NSCameraUsageDescription`).
-- `docs/google-signin.md`, `docs/dev-testing.md`, `docs/ios-testflight-checklist.md`, `docs/catalog_subsystem.md`.
+
+The full file inventory lives in `docs/file_inventory.md`. The few files genuinely needed for next-phase (P3) execution context:
+
+- `lib/recommender.ts` — recommender (contains `FORENSIC_USER_ID`); P3 scoring contributions and EXP_QUALITY sort/re-promotion site.
+- `lib/recPolicy.ts` — all policy constants (stated taste, branch quotas, edit-cause boost, stated reservation including `allowAdjacentForCauses`).
+- `lib/recRequest.ts` / `lib/recSignals/` — typed signal contract; P3 contribution arrays attach here.
+- `lib/composition/statedReservation.ts` — top-slate reservation AND-gate.
+- `lib/retrieval/branchPlanner.ts` + `lib/retrieval/branches/*` — branch planner and branch modules.
+- `lib/recValidity.ts` — configHash producer + restore gate.
+- `lib/taxonomy/genres.ts` + `lib/taxonomy/normalize.ts` — canonical taxonomy + sole legal entry point.
+- `components/RecCard.tsx` — for-you card; explanation surface that P3 will rewire.
+- `components/RecommendationsFeed.tsx` — for-you feed; bootstrap path that runs the pipeline.
+- `app/edit-preferences.tsx` — Reading Taste editor (manual 3-store clear retained as defense-in-depth).
+- `scripts/validate_taxonomy.ts`, `scripts/validate_rec_validity.ts`, `scripts/validate_rec_request.ts`, `scripts/validate_retrieval_planner.ts`, `scripts/validate_stated_reservation.ts` — current validator suite. P3 introduces an explanation-faithfulness validator + an end-to-end fixture replay (per the operating standard above).
 
 ## Architecture decisions
 
@@ -183,20 +139,20 @@ Live operating reference for the architecture P0A→P6 implements. Full spec liv
 - **Half-star ratings:** `user_books.rating` and `activity_events.rating` are `numeric(3,1)` constrained to `{0.5,1,…,5}`. All rating UI uses `HalfStarRating`; sentiment thresholds in `ratingToSentiment` (≥4.5 loved / ≥3.5 liked / ≥2.5 okay / else not_for_me).
 - **Custom shelves alongside smart shelves:** `user_shelves` (unique by `lower(name)`) + `user_shelf_books` (CASCADE on shelf delete only — books survive). Mutations route through `lib/customShelves.ts`.
 - **Year-goal stack (per book, per year):** `user_books.year_goal_year` is a nullable integer (check 2000–2100, partial index where not null). Mutations: `setYearGoal()` in `lib/userBookActions.ts` (schema-tolerant: 42703/PGRST204 → friendly error). Home strip on `app/(tabs)/index.tsx` loads via `loadYearStack(uid)` filtered to `status in ('reading','want_to_read')`. **Reading is implicit** — three places enforce: book-detail toggle only renders when `localStatus === 'want_to_read'`; `loadYearStack` selects `or('status.eq.reading,and(status.eq.want_to_read,year_goal_year.eq.${y})')`; library Priority filter treats `status === 'reading'` as priority too. Book-detail user_books select cascades through 4 column-set fallbacks for stale Supabase projects.
-- **Priority filter chip:** `app/(tabs)/library.tsx` exposes `'priority'` second (after `All`). Finished books retained in this view (vs. home strip which excludes them). Routes accept `?initialFilter=priority`.
-- **Reading-progress motion (home):** yearly-goal bar (`progressAnim`) eases 0 → live pct on mount and on goal change; streak flame (`flameAnim`) loops a subtle scale pulse only when `streakValue > 0`. Both refs near top of `app/(tabs)/index.tsx`.
+- **Priority filter chip:** `app/(tabs)/library.tsx` exposes `'priority'` second (after `All`). Finished books retained in this view. Routes accept `?initialFilter=priority`.
+- **Reading-progress motion (home):** yearly-goal bar (`progressAnim`) eases 0 → live pct; streak flame (`flameAnim`) loops a subtle scale pulse only when `streakValue > 0`.
 
 ### For-You feed / recommendations
-- **For-You intent chips → hard rules + soft boosts:** `handleApplyIntent` in `RecommendationsFeed.tsx` derives `hard` filters and `exclude` rules in addition to `soft` prefs. Soft / mood boosts use `0.12` per signal capped at `±0.30`. Mapping: `tone='light' | intensity='low' | mood∈{light_fun,palate_cleanser}` → `exclude.avoid_dark`; `mood='light_fun'` → `exclude.avoid_literary`; `mood='palate_cleanser'` → `hard.max_page_count=400` (intentionally NOT `standalone_only`). `tone='dark'` always wins over avoid_dark.
+- **For-You intent chips → hard rules + soft boosts:** `handleApplyIntent` in `RecommendationsFeed.tsx` derives `hard` filters and `exclude` rules in addition to `soft` prefs. Soft / mood boosts use `0.12` per signal capped at `±0.30`. Mapping: `tone='light' | intensity='low' | mood∈{light_fun,palate_cleanser}` → `exclude.avoid_dark`; `mood='light_fun'` → `exclude.avoid_literary`; `mood='palate_cleanser'` → `hard.max_page_count=400`. `tone='dark'` always wins over avoid_dark.
 - **Want-to-Read intent matching:** `lib/intentMatcher.ts` parses queries like "short fantasy" into AND-combined `IntentSignal`s. Runs locally on every keystroke; `signalsRequireMetadata` powers an honest empty state.
-- **Recommendation rationale variants:** `RecCard.tsx` builds explanations from variant pools (4 phrasings each for aligns_v2/appreciation_v2/reader-trait/subject/lane-fallback/theme-tail; 3 for author-loyalty + author-anchor `_RATED`/`_NEUTRAL`). FNV-1a hash of `book.id + pattern-tag` deterministically picks one. Banned phrasings (`"you gravitate toward"`, `"because you liked"`, `"you loved"`, `"perfect for you"`, `"consistently"`, `"always"`, `"most"`) absent from every pool.
+- **Recommendation rationale variants:** `RecCard.tsx` builds explanations from variant pools (4 phrasings each for aligns_v2/appreciation_v2/reader-trait/subject/lane-fallback/theme-tail; 3 for author-loyalty + author-anchor `_RATED`/`_NEUTRAL`). FNV-1a hash of `book.id + pattern-tag` deterministically picks one. Banned phrasings (`"you gravitate toward"`, `"because you liked"`, `"you loved"`, `"perfect for you"`, `"consistently"`, `"always"`, `"most"`) absent from every pool. **P3 will rewire the rationale-source side of this from variant pools toward contribution-grounded copy templates.**
 - **Rec quick-actions card (saved-from-rec):** when `recCtx != null && !userBookId`, `app/book/[id].tsx` shows a sage card above "Why this book?" with Want to Read / Add to {year} stack / More like this / Not for me. Save path is `lib/saveBookFromRec.ts`. Every action also fires `persistFeedback`. The MLT-auto-add preference (`'always' | 'ask' | null`) lives in AsyncStorage via `lib/mltAutoaddPref.ts`; first MLT tap asks once.
 - **Recommend-from-finished:** sage button in book detail Your-History card when `localStatus === 'finished'`. Reuses the existing `recommendations` table; inserts `status='sent'` + `activity_events` row. Native `Share.share` fallback always available.
-- **Cold-start seeded strip is non-personalized by contract:** `lib/seededPicks.ts` is a hardcoded array (no network fetch) shown only when the For-You tier-`<1` branch sees `librarySize === 0`. Strip header always reads "POPULAR STARTING POINTS · Not personalized yet". Three invariants for any future seed entry: (a) `provenance_state='verified'` in production catalog, (b) canonical `/works/OL…W` `external_id`, (c) baked-in `id`/`title`/`author`/`cover_url`/`page_count`. Tap routes through standard `/book/[id]` and never calls `persistFeedback`. Strip never appears for users with even one `user_books` row. P2: re-validate the 6 seed external_ids quarterly.
-- **Three-store deck-state invariant (current, pre-P0B):** `recSession` (in-memory), `recQueue` (in-memory `_queue` + `_pendingDismiss`), `recPayloadCache` (AsyncStorage). Any user-pref-mutation surface that wants the next deck rebuild to honor the new prefs MUST call `clearRecSession()` + `clearRecQueue()` + `void clearRecPayload(userId)` before back-nav. **This invariant goes away with P0B** (configHash mismatch self-invalidates each store on read); manual clears retained as defense-in-depth for one release post-P0B.
+- **Cold-start seeded strip is non-personalized by contract:** `lib/seededPicks.ts` is a hardcoded array (no network fetch) shown only when the For-You tier-`<1` branch sees `librarySize === 0`. Strip header always reads "POPULAR STARTING POINTS · Not personalized yet". Three invariants for any future seed entry: (a) `provenance_state='verified'` in production catalog, (b) canonical `/works/OL…W` `external_id`, (c) baked-in `id`/`title`/`author`/`cover_url`/`page_count`. Tap routes through standard `/book/[id]` and never calls `persistFeedback`. Strip never appears for users with even one `user_books` row. Re-validate the 6 seed external_ids quarterly.
+- **Three-store deck-state invariant (post-P0B):** `recSession` (in-memory), `recQueue` (in-memory `_queue` + `_pendingDismiss`), `recPayloadCache` (AsyncStorage) all carry `configHash` and self-invalidate on mismatch. Manual three-store clear in `app/edit-preferences.tsx` retained as defense-in-depth.
 
 ### Author / bibliography
-- **Author bibliography (OL-catalog-only, de-bundled):** `fetchAuthorBibliography` resolves the name to a canonical OL author key via `search/authors.json` then queries `search.json?author_key=…` (the old `?author=…` query was fuzzy — Lucy Foley returned 1940s/1970s books by other Foleys); a strict `author_name` normalized-equality guard runs as backstop. Falls back to `?author=` if author lookup fails. Every doc filtered through `isBoxSet({ title })` from `lib/boxSetDetection.ts`. **No OL ratings** — Readstack ratings come from `user_books.rating`. Hero covers rank by recency.
+- **Author bibliography (OL-catalog-only, de-bundled):** `fetchAuthorBibliography` resolves the name to a canonical OL author key via `search/authors.json` then queries `search.json?author_key=…` (the old `?author=…` query was fuzzy); a strict `author_name` normalized-equality guard runs as backstop. Falls back to `?author=` if author lookup fails. Every doc filtered through `isBoxSet({ title })` from `lib/boxSetDetection.ts`. **No OL ratings** — Readstack ratings come from `user_books.rating`. Hero covers rank by recency.
 
 ## Product
 Discovery & recommendations (with recommender credibility), library management (status, ratings, goals, gallery view), reading progress (streaks, pace, projected finish), social (sharing, friend activity, Goodreads import), edition specificity, barcode "Will I like this?", reading insights / year wraps.
@@ -204,7 +160,7 @@ Discovery & recommendations (with recommender credibility), library management (
 ## Beta-readiness
 **Beta-readiness Batches 1-3 shipped (2026-05-10)** — see git history for full diffs:
 - **B1:** `app/legal.tsx` + Help & Legal in `app/settings.tsx` + `app.json` build metadata. **Placeholder URLs** at `https://readstack.co/{privacy,terms}` and mailbox `hello@readstack.co` — replace before public launch (grep `TODO(beta-launch)`). `NSPhotoLibraryUsageDescription` was intentionally NOT added.
-- **B2 / B4 / B6:** `saveCurrentPage` in `lib/userBookActions.ts` validates page input fail-loud (also see Gotchas); cold-start JWT fast-path in `app/_layout.tsx` writes `onboardingStage='done'` for self-healing.
+- **B2 / B4 / B6:** `saveCurrentPage` in `lib/userBookActions.ts` validates page input fail-loud; cold-start JWT fast-path in `app/_layout.tsx` writes `onboardingStage='done'` for self-healing.
 - **B3 / B5:** cold-start "POPULAR STARTING POINTS" strip — see "Cold-start seeded strip" architecture bullet. `RecEntryScreen.tsx` third CTA is "Browse popular books →".
 
 ### Pre-submission backlog (must clear before App Store / Play submission)
@@ -223,12 +179,13 @@ Discovery & recommendations (with recommender credibility), library management (
 - **Goodreads dedup:** title+author guard in `lib/goodreadsExecutor.ts` prevents duplicate book rows.
 - **Native changes:** run `npm run build:android:dev` (or iOS equivalent), not just a JS reload.
 - **Top-of-screen padding:** new full-screen routes must use `useScreenTopPadding()` — never bare `SafeAreaView` (no-op on web/Android) and never hardcoded `paddingTop: 56/60`.
-- **Friend-request ingress is RPC-only:** direct INSERT on `friendships` is REVOKED. All sends route through `sendFriendRequest()` in `lib/friendshipActions.ts` → `public.send_friend_request(p_addressee_id)` SECURITY DEFINER RPC. RPC enforces no-self, addressee-exists, canonical-pair dedup, and per-requester pending cap of 50 (raises SQLSTATE 53400 with prefix `FRIEND_REQUEST_PENDING_CAP_EXCEEDED`). Cap is race-safe via `pg_advisory_xact_lock(hashtext(v_uid::text))`. INSERT is wrapped in an exception block that catches `unique_violation` and re-raises as `FRIEND_REQUEST_DUPLICATE`. The classifier in `lib/friendshipActions.ts` uses SQLSTATE codes (23505, 53400, 23503) as fallbacks. Cancel / decline / unfriend route through `deleteFriendship()` (plain DELETE; RLS allows either party to delete). **Never re-add a direct INSERT policy on `friendships` — it would bypass the cap.**
+- **Friend-request ingress is RPC-only:** direct INSERT on `friendships` is REVOKED. All sends route through `sendFriendRequest()` in `lib/friendshipActions.ts` → `public.send_friend_request(p_addressee_id)` SECURITY DEFINER RPC. RPC enforces no-self, addressee-exists, canonical-pair dedup, and per-requester pending cap of 50 (raises SQLSTATE 53400 with prefix `FRIEND_REQUEST_PENDING_CAP_EXCEEDED`). Cap is race-safe via `pg_advisory_xact_lock(hashtext(v_uid::text))`. INSERT is wrapped in an exception block that catches `unique_violation` and re-raises as `FRIEND_REQUEST_DUPLICATE`. Cancel / decline / unfriend route through `deleteFriendship()` (plain DELETE; RLS allows either party to delete). **Never re-add a direct INSERT policy on `friendships` — it would bypass the cap.**
 - **`current_page` validation is fail-loud:** column-level CHECK enforces `current_page >= 0`; trigger `_user_books_validate_current_page` raises `CURRENT_PAGE_EXCEEDS_PAGE_COUNT` (SQLSTATE 23514) when `current_page > books.page_count` (only when both are known). Code that writes `current_page` must clamp upstream — the trigger does NOT clamp silently.
 - **Catalog gotchas (Books INSERT guardrail, reconciler service-role key, attempt-count semantics, terminal classification, lock primitive, mergeFields invariant, multi-column UPDATE atomicity):** see `docs/catalog_subsystem.md` §7-§13.
 - **User-text length CHECK constraints:** `recommendations.note <= 2000`, `user_books.review_body <= 10000`, `user_books.private_note <= 5000`, `book_club_comments.body <= 2000`. Violations are SQLSTATE 23514.
-- **Metro `FallbackWatcher` ENOENT crash (dev-environment noise):** the workflow can die seconds after the first bundle with `ENOENT … watch '.local/skills/.old-delegation-*'`. Race between Metro's recursive `fs.watch()` and the agent runtime cleaning up its own temp dirs — `metro.config.js`'s `resolver.blockList` doesn't filter `FallbackWatcher._watchdir`. Not an app/catalog/runtime issue; native dev/prod builds unaffected. Remediation: restart the workflow. **P2:** install `watchman` via Nix (touches `replit.nix` only).
-- **Genre labels:** every genre string entering scoring/blending MUST go through `normalizeGenreInput()` from `lib/taxonomy/normalize.ts` (P0A). Never re-introduce a local `Record<string, …>` keyed on display labels — P0A exists specifically to prevent that silent-drop class. New chip surfaces derive their lists from `EDIT_GENRE_IDS` / `INTAKE_FICTION_IDS` / `INTAKE_NONFICTION_IDS` (typed `GenreId[]`). Tier-2+ explicit-pref zeroing is a separate bug (the `tier <= 1` gate at `lib/tasteProfile.ts:~754`) — fixes in P1 + P2; do not widen the gate as a spot-patch.
+- **Metro `FallbackWatcher` ENOENT crash (dev-environment noise):** workflow can die seconds after the first bundle with `ENOENT … watch '.local/skills/.old-delegation-*'`. Race between Metro's recursive `fs.watch()` and the agent runtime cleaning up its own temp dirs. Not an app/catalog/runtime issue; native dev/prod builds unaffected. Remediation: restart the workflow.
+- **Genre labels:** every genre string entering scoring/blending MUST go through `normalizeGenreInput()` from `lib/taxonomy/normalize.ts` (P0A). Never re-introduce a local `Record<string, …>` keyed on display labels — P0A exists specifically to prevent that silent-drop class. New chip surfaces derive their lists from `EDIT_GENRE_IDS` / `INTAKE_FICTION_IDS` / `INTAKE_NONFICTION_IDS` (typed `GenreId[]`).
+- **Reservation pin survives EXP_QUALITY sort (P2 B1):** in `lib/recommender.ts` immediately after the EXP_QUALITY `composed.sort(...)`, a re-promotion block splices `reservation.pick` back to index 0 if it exists. **Do not delete this block** when refactoring scoring — it enforces the P2B contract that the AND-gate reservation verdict is not erased by the reservation-blind quality sort. When P3 contribution-grounded ranking lets stated picks earn 'strong' organically, this becomes a silent no-op without removal.
 
 ## Pointers
 - Supabase: https://supabase.com/docs
@@ -238,3 +195,6 @@ Discovery & recommendations (with recommender credibility), library management (
 - TypeScript: https://www.typescriptlang.org/docs/handbook/intro.html
 - Google Sign-In setup: `docs/google-signin.md`
 - Device testing: `docs/dev-testing.md`
+- Recommender history: `docs/recently_shipped.md`
+- File inventory: `docs/file_inventory.md`
+- Roadmap & phase-acceptance protocol: `roadmap-q2.md` §5G
