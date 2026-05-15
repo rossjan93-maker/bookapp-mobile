@@ -1,0 +1,109 @@
+We just completed the live standalone-browser first-run acceptance test for:
+
+Final setup → “Take the quick taste check”
+
+Routing/integrity result:
+- PASS.
+- The tap opens the intake immediately.
+- The user can progress through:
+  - genre step
+  - preference questions
+  - optional anchor-book step
+  - “Here’s what we heard”
+- “See my picks” routes into the app without a bounce.
+
+However, the live product experience exposed a first-session state-honesty problem:
+
+Observed sequence:
+1. User completes the quick taste check.
+2. Taste Readout shows personalized summary chips, e.g.:
+   - Reading for: surprise
+   - Tone: darker
+   - unusual premises
+   - Less of: Fantasy
+3. User taps “See my picks.”
+4. For You opens, but shows:
+   - “Popular starting points · Not personalized yet”
+   - generic seeded books
+   - the “Let’s set up your shelf” card still offering:
+     - Import your library
+     - Add a few
+     - Quick quiz
+
+This is visibly inconsistent. The user just completed the quick quiz and was told they were about to see their picks, but the destination treats them as not personalized and offers the same quick quiz again.
+
+Important strategic framing:
+We are not treating the current quick taste check as the final cold-start product direction. Our current Readstack strategy has evolved:
+
+- The non-import cold start should ultimately become a higher-signal intelligence-gathering experience, not merely a taxonomy-first quiz.
+- The likely future direction includes richer book-native anchors, expressive “why this worked / didn’t work” signal, sharper ambiguity-resolving questions, a stronger Reader Thesis / Taste Readout, and a more opinionated first recommendation deck.
+- Therefore, do not use this investigation to polish or expand the current quiz architecture.
+- The task here is only to diagnose whether the current flow has a state/persistence/handoff bug or an intentional-but-now-misleading product rule that makes the post-quiz landing experience dishonest.
+
+Task type:
+Targeted investigation only. Do not implement yet.
+
+Goal:
+Explain exactly why the post-quick-taste destination is still rendering as “Not personalized yet” and still showing the “Quick quiz” setup affordance.
+
+Please investigate:
+
+## 1. Current intended state model
+After the quick taste check completes:
+- What durable/profile state is written?
+- What local state/cache state is written?
+- What routing destination is intended?
+- Is the user supposed to receive personalized recs immediately, or only a reflected readout plus generic deck?
+
+## 2. For You screen gating
+Trace the exact conditions that cause:
+- “Popular starting points · Not personalized yet”
+- the seeded generic books row
+- the “Let’s set up your shelf” card
+- the “Quick quiz” CTA to remain visible
+
+For each one, state:
+- which file/component owns it
+- what condition is evaluating true
+- whether that condition should still be true after a completed quick taste intake
+
+## 3. Recommendation handoff
+Confirm whether completed quick intake is supposed to:
+- trigger a rec prewarm / rec rebuild
+- create enough TasteProfile state to leave the “not personalized yet” UI
+- populate a personalized deck in For You
+- or remain below the threshold by current design
+
+If the current design intentionally keeps this user in “not personalized yet,” say so plainly and assess whether that behavior contradicts the promise of:
+- “See my picks”
+- the prior Taste Readout
+- our first-session value-loop strategy
+
+## 4. Determine whether this is:
+- a state persistence bug
+- a stale-cache / rec-session issue
+- an overly strict thin-state gating issue
+- or an intentional-but-now-wrong product rule
+
+## 5. Strategic constraint
+Because the broader cold-start experience is likely to be redesigned, recommend only:
+- the smallest integrity/honesty fix worth doing now, if one is needed
+- and clearly distinguish that from any larger onboarding/recommendation experience improvement that should be deferred into the upcoming cold-start redesign workstream
+
+Do not propose polishing the current quiz beyond what is necessary to make the current production path logically honest.
+
+Hard constraints:
+- Do not start P3.
+- Do not broaden into onboarding redesign yet.
+- Do not change copy yet.
+- Do not opportunistically refactor the For You screen.
+- Investigation only.
+
+Return format:
+1. Executive verdict
+2. Intended post-quick-taste state
+3. Actual gating logic producing the observed For You screen
+4. Root-cause classification
+5. Product-impact assessment
+6. Minimal integrity fix recommendation, if any
+7. What should be deferred into the upcoming cold-start redesign workstream
