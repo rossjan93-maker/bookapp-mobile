@@ -2710,6 +2710,46 @@ export function getRankedRecs(
     return b.score - a.score;
   });
 
+  // ── P2B B1: post-sort re-promotion of the reserved stated pick ────────────
+  // The EXP_QUALITY tier-sort above is reservation-blind and would otherwise
+  // bury cache-restored stated picks (which by cache schema have
+  // description=null and minimal subjects, so their explanation_quality
+  // classifies ≤ acceptable_generic) behind local-catalog 'strong'-tier
+  // cards. That violates the P2B product contract:
+  //
+  //   "After explicit_preference_edit, a quality-clearing stated-branch
+  //    candidate must visibly surface in the top slate."
+  //
+  // The reservation AND-gate (lib/composition/statedReservation.ts) is the
+  // authoritative quality gate for stated picks; if a candidate cleared it,
+  // EXP_QUALITY's verdict that the same candidate is "weak" is — for THIS
+  // one slot — superseded by the explicit user edit. Slots 1..N continue
+  // to honor EXP_QUALITY ordering unchanged. STATED_RESERVATION_POLICY
+  // .maxReservedSlots = 1, so at most one card is pinned.
+  //
+  // Idempotent: when the sort already left the pick at index 0 (e.g. a
+  // strong-tier stated pick), the splice short-circuits via `idx > 0`.
+  // When P3 contribution-grounded ranking lands and cache-restored stated
+  // picks can earn 'strong' organically, this block becomes a silent no-op
+  // without removal.
+  if (reservation.pick) {
+    const reservedCompId = compId(reservation.pick);
+    const idx = composed.findIndex(b => compId(b) === reservedCompId);
+    const idxBefore = idx;
+    if (idx > 0) {
+      const [pinned] = composed.splice(idx, 1);
+      composed.unshift(pinned);
+    }
+    if (__DEV__) {
+      console.log('[P2RESERVE/pinned]',
+        `reservedId=${reservation.pick.id}`,
+        `idx_before_promote=${idxBefore}`,
+        `idx_after_promote=${idx > 0 ? 0 : idxBefore}`,
+        `splice_applied=${idx > 0}`,
+      );
+    }
+  }
+
   if (__DEV__) {
     const byTier = { strong: 0, acceptable_specific: 0, acceptable_generic: 0, weak: 0 };
     for (const b of composed) {
