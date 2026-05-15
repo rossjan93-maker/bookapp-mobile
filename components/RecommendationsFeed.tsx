@@ -1117,6 +1117,26 @@ export function RecommendationsFeed({
 
   if (!userId) return null;
 
+  // ── Unresolved-profile guard ───────────────────────────────────────────────
+  // `tasteProfile === null` means the parent hub has not yet returned a
+  // computed TasteProfile (first mount on a fresh login, or just after the
+  // hub cache was busted by quick-intake completion). Treating null as Tier 0
+  // would render the "Popular starting points · Not personalized yet" strip
+  // and "Let's set up your shelf" / repeated "Quick quiz" CTAs to a user
+  // whose taste data is in flight — including the user who just completed
+  // the quick taste check and would compute to Tier 1 once the fetch lands.
+  // Render the same neutral assembling shim used by the loading_initial
+  // display state so the post-intake handoff stays honest until the profile
+  // resolves. Real Tier-0 users (resolved profile, tier===0) still fall
+  // through to the cold-start branch below on the next render.
+  if (tasteProfile === null) {
+    return (
+      <View style={{ marginBottom: 36 }}>
+        <DeckAssemblingLoader />
+      </View>
+    );
+  }
+
   // ── Insufficient-confidence gate ───────────────────────────────────────────
   // tier < 1 means we do NOT have enough reader signal to make picks we trust.
   // The pipeline is intentionally not running (it has its own tier < 1 guard),

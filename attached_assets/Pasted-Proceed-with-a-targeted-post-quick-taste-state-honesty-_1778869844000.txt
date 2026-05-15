@@ -1,0 +1,83 @@
+Proceed with a targeted post-quick-taste state-honesty fix, with one refinement to your proposed patch.
+
+We accept the investigation verdict:
+- This is a real state-honesty bug, not an intentional product rule.
+- A user who completes quick intake with favorite genres should graduate to Tier 1 under the existing `intake_completed='true'` boost in `lib/tasteProfile.ts`.
+- Therefore they should not land on:
+  - “Popular starting points · Not personalized yet”
+  - the “Let’s set up your shelf” card
+  - the repeated “Quick quiz” CTA
+
+We also accept your root-cause class:
+- stale or unresolved For You tasteProfile state at the post-intake handoff.
+
+However, do not implement only `_hubCache` invalidation and defer the loading-state issue. Your own report identifies two concrete failure modes:
+1. stale cached pre-intake Tier-0 profile
+2. first-render-with-null tasteProfile while hub data is loading, currently treated as Tier 0 and therefore able to flash the same misleading cold-start UI
+
+We want to close both integrity branches now in one small targeted batch.
+
+## Implement this two-part fix
+
+### 1. Invalidate stale For You state after quick intake completion
+At the correct post-save seam in `saveQuickIntake` or its immediate caller:
+- clear the stale For You hub snapshot (`_hubCache` or the correct exported clearer)
+- clear any dependent rec-session / rec-payload caches that should not survive a preference/intake write
+- use existing cache-clear primitives where possible rather than inventing a broad new mechanism
+
+Goal:
+When the user reaches For You after intake, it must not seed from a pre-intake Tier-0 snapshot.
+
+### 2. Do not render Tier-0 cold-start UI while tasteProfile is unresolved
+In the For You / RecommendationsFeed render path:
+- when `tasteProfile === null` and the hub/feed is still actively loading, do not interpret that as Tier 0
+- do not render:
+  - “Popular starting points · Not personalized yet”
+  - the seeded generic strip
+  - the “Let’s set up your shelf” card
+  - the repeated “Quick quiz” CTA
+- instead render the existing neutral loading/deck-assembling state or the smallest appropriate loading shim already consistent with this screen
+
+Once the profile resolves:
+- real Tier 0 users may still see the Tier-0 cold-start UI
+- completed quick-intake users who now compute to Tier 1 should enter the personalized branch
+
+## Strategic constraint
+This is only an integrity/honesty fix for the current production path.
+Do not use this batch to polish, extend, or redesign the current quick taste check.
+The broader non-import cold-start experience is likely to be reworked later around:
+- richer book-native anchors
+- expressive “why this worked / didn’t work” signal
+- sharper ambiguity-resolving questions
+- a stronger Reader Thesis / Taste Readout
+- a more opinionated first recommendation deck
+
+Keep those larger product questions deferred.
+
+## Hard constraints
+- Do not start P3.
+- Do not redesign onboarding.
+- Do not change intake copy.
+- Do not change tier thresholds or recommender scoring.
+- Do not change the seeded-picks semantics for true Tier-0 users.
+- No opportunistic refactors.
+
+## Validation required
+1. Exact files changed.
+2. Typecheck delta against current baseline.
+3. Workflow/app status.
+4. Confirm that quick-intake completion invalidates stale For You state.
+5. Confirm that `tasteProfile === null && loading === true` no longer renders Tier-0 cold-start UI.
+6. Confirm true Tier-0 users still get the existing cold-start experience after loading resolves.
+7. State the exact live acceptance test we should run next:
+   - complete quick taste intake
+   - tap “See my picks”
+   - verify no “Not personalized yet” or repeated “Quick quiz” UI appears during the transition
+   - verify either a neutral loader or personalized deck appears
+
+Return format:
+- What changed
+- Files touched
+- Validation
+- Why this closes both identified handoff failure modes
+- Expected next manual acceptance flow

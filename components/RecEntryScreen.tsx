@@ -36,6 +36,10 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { readIntakeDraft, writeIntakeDraft, clearIntakeDraft } from '../lib/intakeDraft';
+import { clearAllTabCaches } from '../lib/tabCache';
+import { clearRecSession } from '../lib/recSession';
+import { clearRecPayload } from '../lib/recPayloadCache';
+import { clearAll as clearRecQueue } from '../lib/recQueue';
 import { CoverThumb } from './CoverThumb';
 import { OB, OnboardingShell, StepDots, SubProgressBar } from './OnboardingShell';
 import {
@@ -257,6 +261,21 @@ async function saveQuickIntake(intake: IntakeState): Promise<void> {
       );
     }
   }
+
+  // ── Invalidate stale For-You state ─────────────────────────────────────────
+  // Without this, the Search/For-You hub may render from a pre-intake snapshot
+  // (`_hubCache.tasteProfile` initialized at Tier 0 from before favorite_genres
+  // / intake_completed='true' were written). That mis-render produces the
+  // "Popular starting points · Not personalized yet" + "Let's set up your
+  // shelf" + repeated "Quick quiz" UI immediately after the user just told us
+  // their preferences. Bust the three rec stores AND the tab-hub snapshot so
+  // the next mount of /(tabs)/search must re-fetch a fresh TasteProfile that
+  // sees the just-written reader_preferences row and graduates to Tier 1 via
+  // the intake_completed boost in lib/tasteProfile.ts.
+  clearRecSession();
+  clearRecQueue();
+  void clearRecPayload(user.id);
+  clearAllTabCaches();
 }
 
 // ─── Shared atoms ─────────────────────────────────────────────────────────────
