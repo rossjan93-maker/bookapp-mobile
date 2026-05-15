@@ -56,10 +56,29 @@ export default function AuthCallbackScreen() {
     console.log('[CALLBACK] exchangeCodeForSession start (cold deep-link path)');
     withTimeout(supabase.auth.exchangeCodeForSession(code), 10000, 'exchangeCodeForSession')
       .then(({ error }) => {
-        if (error) console.warn('[CALLBACK] exchangeCodeForSession failed:', error.message);
-        else       console.log('[CALLBACK] exchangeCodeForSession ok');
+        if (error) {
+          console.warn('[CALLBACK] exchangeCodeForSession failed:', error.message);
+          // Failure-leg recovery: without this, the loader stays mounted
+          // forever because no SIGNED_IN event ever fires, so Phase B/C are
+          // gated out (both require `session` to become live). Route back to
+          // /login with a sanitized error code so the user has an affordance
+          // to retry. Raw error.message is intentionally NOT forwarded — the
+          // login surface displays a friendly mapped string only.
+          if (navigatedRef.current) return;
+          navigatedRef.current = true;
+          router.replace('/(auth)/login?authError=exchange_failed');
+        } else {
+          console.log('[CALLBACK] exchangeCodeForSession ok');
+        }
       })
-      .catch((e: Error) => console.warn('[CALLBACK] exchangeCodeForSession threw:', e.message));
+      .catch((e: Error) => {
+        console.warn('[CALLBACK] exchangeCodeForSession threw:', e.message);
+        // Same failure-leg recovery as above for the throw path (timeout,
+        // network blip, unexpected throw inside supabase-js).
+        if (navigatedRef.current) return;
+        navigatedRef.current = true;
+        router.replace('/(auth)/login?authError=exchange_threw');
+      });
   }, [code]);
 
   // ── Phase B: session live → start probe as backup ──────────────────────────

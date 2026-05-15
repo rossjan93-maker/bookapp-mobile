@@ -1,0 +1,62 @@
+Proceed with Fix-the-gap-first.
+
+The investigation confirms a real app bug in `app/auth/callback.tsx` Phase A:
+- both the `.then` error branch and `.catch` branch around `exchangeCodeForSession` are log-only
+- when exchange fails, the callback loader remains mounted forever
+- session never goes live, so Phase B probe and Phase C routing are gated out
+- this produces the user-facing frozen screen:
+  “Almost there… Setting up your reading life”
+
+We are approving the minimal failure-leg correction now.
+
+Task type:
+Targeted bug fix only.
+
+Goal:
+Convert Phase A exchange failures in `app/auth/callback.tsx` from an infinite loader into a recoverable auth failure path that returns the user to login with a visible error message.
+
+Implement the minimal correction you outlined:
+
+1. In BOTH Phase A failure paths:
+   - the `.then` branch where `exchangeCodeForSession` returns an error
+   - the `.catch` branch where it throws
+
+2. Route out of the callback loader to:
+   - `/login?authError=...`
+   or the current equivalent you identified
+
+3. Use the existing login-side `setSocialError` / auth-error display channel rather than creating a new UI system.
+
+4. Preserve useful error content:
+   - enough to distinguish PKCE verifier loss / invalid grant / exchange failure during the next manual repro
+   - but do not expose raw low-level internals in a sloppy way to the end user if the login surface already sanitizes messaging
+
+5. Keep all successful callback behavior unchanged.
+
+Hard constraints:
+- Do not touch `socialAuth.ts`
+- Do not touch `_layout.tsx`
+- Do not touch onboarding flows
+- Do not broaden into a general auth refactor
+- Do not start P3
+- No opportunistic cleanup
+
+Validation required:
+1. Exact files changed
+2. Typecheck delta against current baseline
+3. Workflow/app status
+4. Confirm both Phase A failure legs now route away from the loader
+5. Confirm successful auth path is untouched
+6. Provide the exact user-visible login error text expected after a failed exchange
+7. Provide the exact console log line(s) I should look for on the next standalone-browser Google sign-in repro
+
+Important acceptance framing:
+This fix resolves the infinite-loader bug only. It does NOT yet prove Google OAuth new-user sign-in is working. After this lands, I will immediately repeat the standalone-browser Google new-user test. If it returns to login with an auth error, we will use that error/log to pin the underlying exchange failure and fix that next.
+
+Return format:
+- What changed
+- Files touched
+- Validation
+- Expected behavior after failed exchange
+- Expected behavior after successful exchange
+- Next manual repro instructions

@@ -12,8 +12,24 @@ import {
 } from 'react-native';
 import { BookStackLoader } from '../../components/BookStackLoader';
 import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams } from 'expo-router';
 import { supabase, hasSupabaseConfig } from '../../lib/supabase';
 import { isAppleAvailable, signInWithApple, signInWithGoogle } from '../../lib/socialAuth';
+
+// Friendly mapping for ?authError=… codes routed here from
+// app/auth/callback.tsx when the post-OAuth code exchange fails. The raw
+// supabase-js error.message is intentionally NOT carried in the URL — only
+// these stable codes are. Keep this list aligned with the values
+// callback.tsx passes.
+function mapCallbackAuthError(code: string): string {
+  switch (code) {
+    case 'exchange_failed':
+    case 'exchange_threw':
+      return "Sign-in didn't complete — please try again.";
+    default:
+      return '';
+  }
+}
 
 // ─── Mode type ───────────────────────────────────────────────────────────────
 // signin / signup — primary tab-toggle modes
@@ -484,6 +500,20 @@ export default function LoginScreen() {
   // Keeps the screen in a clear loading state so there's no apparent freeze.
   const [socialSignedIn, setSocialSignedIn] = useState(false);
   const appleAvailable = isAppleAvailable();
+
+  // ── Consume ?authError=… routed here from app/auth/callback.tsx ─────────────
+  // When the post-OAuth code exchange fails, callback.tsx (Phase A failure
+  // legs) routes the user back here with a sanitized error code. Surface it
+  // through the existing socialError display channel so the user sees a
+  // friendly message and can retry, rather than being stranded on the
+  // callback loader. Read-once on mount; no need to clear the URL — a
+  // subsequent successful sign-in clears socialError via setSocialError('').
+  const { authError: authErrorParam } = useLocalSearchParams<{ authError?: string }>();
+  useEffect(() => {
+    if (typeof authErrorParam !== 'string' || !authErrorParam) return;
+    const mapped = mapCallbackAuthError(authErrorParam);
+    if (mapped) setSocialError(mapped);
+  }, [authErrorParam]);
 
   // socialAuth helpers return one of three shapes:
   //   { }              — genuine success; a session was established and
