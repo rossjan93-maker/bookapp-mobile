@@ -1,0 +1,95 @@
+We have a real first-run auth/onboarding blocker in a standalone browser tab.
+
+Observed behavior:
+- Testing Google sign-in as a brand-new user
+- This is NOT Replit’s embedded iframe preview; it is a standalone browser tab
+- After Google auth, the app lands on the full-screen bootstrap/loading state:
+  “Almost there… Setting up your reading life”
+- It remains frozen there instead of routing into onboarding
+
+Treat this as a real app bug unless code evidence proves otherwise.
+
+Task type:
+Targeted blocker investigation only. Do not implement a broad fix until root cause is identified.
+
+Goal:
+Find exactly why a brand-new Google OAuth user is getting stuck on the post-auth “Almost there… Setting up your reading life” screen in a standalone browser tab.
+
+Please investigate the full post-Google-auth path from:
+1. OAuth completion / session creation
+2. login screen social-signed-in handoff
+3. root auth/onboarding bootstrap
+4. profile existence / profile creation / JWT app_metadata checks
+5. onboarding stage resolution
+6. final redirect decision into onboarding or app
+
+## 1. Identify the screen and owning condition
+- Which component renders:
+  “Almost there… Setting up your reading life”
+- What exact state/condition keeps it visible?
+- What must become true for it to disappear and route onward?
+
+## 2. Trace the brand-new Google user path
+For a brand-new Google OAuth user, walk the code path and identify:
+- when Supabase session is expected to exist
+- when profile lookup or profile creation occurs
+- when onboarding state is read
+- what redirect should happen
+- which awaited promise, state variable, or guard can remain unresolved and trap the user on this screen
+
+## 3. Compare against the previously fixed Google auth hang
+We previously fixed a bug where:
+- `socialAuth.ts` used `{ error: '' }` as a silent-cancel sentinel
+- `login.tsx` incorrectly treated that falsy empty string as success and showed the loading overlay forever
+
+Confirm:
+- this current freeze is or is not the same code path
+- whether `error === undefined` / `error === ''` handling remains correct
+- whether a new “OAuth success, but onboarding/bootstrap never resolves” path now exists
+
+## 4. Inspect the most likely new-user bootstrap failure points
+Please specifically check for:
+- new Google users having an auth session but no profile row yet
+- profile creation trigger/function timing issues
+- JWT app_metadata.onboarding_completed being absent/stale for a just-created social user
+- `needsOnboarding` or bootstrap state waiting on a DB/profile condition that never resolves
+- root guard or auth listener paths that can fail to transition out of the loading screen
+- any promise whose error path is swallowed or fails to clear loading state
+
+## 5. Evidence required
+Please provide:
+- exact files/locations involved
+- the exact state that appears to be stuck
+- the intended route target for a brand-new Google user
+- any existing logs that would prove the stuck state
+- any missing logs needed to prove it, but do not add them yet unless absolutely required to diagnose
+- whether this is:
+  - confirmed app bug
+  - highly likely app bug with one unproven branch
+  - or surprisingly still environment-specific despite standalone tab evidence
+
+## 6. Check whether the issue is reproducible in current workflow logs
+If available, inspect the latest workflow/browser logs around a Google sign-in attempt for:
+- auth state transition
+- session existence
+- profile/bootstrap resolution
+- onboarding redirect
+- any silent failure or missing expected log
+
+If the logs are insufficient, state exactly what one minimal diagnostic logging patch would prove the branch before implementing any fix.
+
+Hard constraints:
+- Investigation first.
+- Do not start P3.
+- Do not redesign auth/onboarding.
+- Do not perform opportunistic cleanup.
+- Do not implement a fix until you can state the root cause confidently.
+- Do not dismiss this as iframe preview behavior; the reproduction was in a standalone browser tab.
+
+Return format:
+1. Executive verdict
+2. What screen/state is stuck
+3. Full code-path trace for brand-new Google user
+4. Most likely root cause
+5. Evidence from logs/code
+6. Minimal next action
