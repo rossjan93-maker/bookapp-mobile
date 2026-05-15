@@ -26,6 +26,10 @@ import { resetGoodreadsImport } from '../../lib/goodreadsReset';
 import type { GoodreadsResetResult } from '../../lib/goodreadsReset';
 import { repairBooksMetadata } from '../../lib/metadataRepair';
 import { writeOnboardingStage } from '../../lib/onboardingStage';
+import { clearRecSession } from '../../lib/recSession';
+import { clearAll as clearRecQueue } from '../../lib/recQueue';
+import { clearRecPayload } from '../../lib/recPayloadCache';
+import { clearAllTabCaches } from '../../lib/tabCache';
 
 // ─── Transfer helper constants ─────────────────────────────────────────────
 // Bookmarklet: reads the Goodreads export page text and copies it to clipboard.
@@ -1491,6 +1495,26 @@ export default function GoodreadsImportScreen() {
       await new Promise(r => setTimeout(r, 350));
 
       setExecutionResult(result);
+
+      // ── Invalidate stale For-You / hub state ────────────────────────────────
+      // The 273-row import just rewrote the user's library — read history,
+      // series progress, want-to-read shelf, taste profile inputs all changed
+      // in one shot. Any rec deck or hub-cache snapshot built before the
+      // import (notably the cold-start Tier-0 deck a brand-new user lands on
+      // before importing) is now factually wrong: it has no seriesProgress
+      // entries to drop already-finished continuations, no user_books rows to
+      // exclude already-shelved titles, and a TasteProfile that doesn't yet
+      // reflect any of the imported signal. Without this, the user lands on
+      // /taste-readout → For-You and sees pre-import recommendations (e.g.
+      // already-finished series #2 surfaced as "Continue", already-want-to-read
+      // titles surfaced as "Start Here"). Mirrors the post-write invalidation
+      // pattern in components/RecEntryScreen.tsx (saveQuickIntake) and
+      // app/edit-preferences.tsx:155-172.
+      clearRecSession();
+      clearRecQueue();
+      void clearRecPayload(currentUserId);
+      clearAllTabCaches();
+
       writeOnboardingStage('done'); // fire-and-forget — marks local stage done
       // Belt-and-suspenders: ensure the durable DB flag is set so future logins
       // never restart onboarding (import may be reached directly, bypassing the

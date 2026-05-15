@@ -363,18 +363,51 @@ function buildLikedAnchors(
   liked_authors:  string[];
 } {
   const subjectFreq: Record<string, number> = {};
-  const seenAuthors  = new Set<string>();
-  const liked_authors: string[] = [];
 
-  for (const row of rows) {
+  // ── Author signal tally (replaces first-encountered-order push) ────────────
+  // Previously `liked_authors` collected the FIRST 5 unique authors encountered
+  // while scanning finished+rated≥4 rows in row order. With Goodreads imports
+  // that ingest hundreds of rows in arbitrary CSV order, this surfaces a
+  // 1-book/4-rated author over a 12-book/5-rated author whenever the noisy
+  // author happens to appear earlier in the row stream — observed live: a
+  // single "The Henna Artist" (Alka Joshi, rated 4) outranked 12× Sarah J.
+  // Maas in the Taste Readout chip because the Henna row was scanned first.
+  //
+  // Fix: tally per-author count + rating sum across ALL qualifying rows, then
+  // sort by [count DESC, avgRating DESC, firstSeenIdx ASC] so the strongest
+  // signal wins, with row order only acting as a deterministic tie-breaker
+  // when both count and average rating are identical.
+  //
+  // Scope: local evidence-selection correction only. Does NOT introduce the
+  // larger P1-style author-provenance / stated-author redesign noted as
+  // parked in replit.md ("Author chips / stated-author model").
+  const authorStats = new Map<string, {
+    display: string;
+    count:   number;
+    sumRtg:  number;
+    firstIdx: number;
+  }>();
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     if ((row.rating ?? 0) < 4 || !row.book) continue;
 
     // Authors — only non-generic names from loved books
     const authorRaw = row.book.author?.trim() ?? '';
     const authorKey = authorRaw.toLowerCase();
-    if (authorRaw && !seenAuthors.has(authorKey) && !/^unknown/i.test(authorRaw)) {
-      seenAuthors.add(authorKey);
-      liked_authors.push(authorRaw);
+    if (authorRaw && !/^unknown/i.test(authorRaw)) {
+      const prev = authorStats.get(authorKey);
+      if (prev) {
+        prev.count  += 1;
+        prev.sumRtg += row.rating ?? 0;
+      } else {
+        authorStats.set(authorKey, {
+          display:  authorRaw,
+          count:    1,
+          sumRtg:   row.rating ?? 0,
+          firstIdx: i,
+        });
+      }
     }
 
     // Subjects — normalise, noise-filter, and count frequency
@@ -405,7 +438,21 @@ function buildLikedAnchors(
     .slice(0, 8)
     .map(([s]) => s);
 
-  return { liked_subjects, liked_authors: liked_authors.slice(0, 5) };
+  // Strength-sort authors: count DESC, then avgRating DESC, then firstSeen ASC
+  // (lexical/insertion order only as a final deterministic tie-breaker so the
+  // result is stable across identical signal). Take top 5 display names.
+  const liked_authors = [...authorStats.values()]
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      const aAvg = a.sumRtg / a.count;
+      const bAvg = b.sumRtg / b.count;
+      if (bAvg !== aAvg) return bAvg - aAvg;
+      return a.firstIdx - b.firstIdx;
+    })
+    .slice(0, 5)
+    .map(a => a.display);
+
+  return { liked_subjects, liked_authors };
 }
 
 // ── Deterministic lanes from repeated reading patterns ─────────────────────────

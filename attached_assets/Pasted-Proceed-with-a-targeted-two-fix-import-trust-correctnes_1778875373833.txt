@@ -1,0 +1,78 @@
+Proceed with a targeted two-fix import trust/correctness batch.
+
+We accept the investigation verdict.
+
+Summary of accepted diagnosis:
+1. “Already in readstack” on preview is internally correct but copy-misleading. It means “matched in the global books catalog,” not “already in this user’s library.” Defer copy change for now.
+2. The ~1 minute import loader is operationally acceptable but strategically underpowered; real progress/taste signals exist and should be used in a later import-activation UX pass. Defer for now.
+3. The post-import Taste Readout is correctly import-derived; the headline and genre/lane chips are well supported. However, the “Alka Joshi” author chip exposed a genuine author-selection weakness: `liked_authors` is currently first-encountered-order driven rather than signal-strength driven.
+4. The incorrect first recommendations after import are a correctness blocker caused by missing post-import cache invalidation:
+   - Royal Assassin incorrectly surfaced after being imported as finished
+   - Ship of Destiny incorrectly surfaced after being imported as finished
+   - Lightlark surfaced despite already being imported into Want to Read
+   - root cause: For You deck/cache state survived the 273-row import and was built from pre-import user state
+
+Task type:
+Targeted correctness implementation only.
+
+Implement exactly two fixes.
+
+## M1 — Goodreads import post-write cache invalidation
+In `app/import/goodreads.tsx`, after import execution has completed and result state is available, but before the user proceeds into the post-import Taste Readout / recommendations path, invalidate the same stale stores we already invalidate after quick intake preference saves.
+
+Use the same proven pattern already landed in `components/RecEntryScreen.tsx`:
+- `clearRecSession()`
+- `clearRecQueue()`
+- `void clearRecPayload(currentUserId)`
+- `clearAllTabCaches()`
+
+Use the correct local variables/imports and choose the precise seam carefully, but the intent is:
+> A bulk Goodreads import must bust any For You / recommendation state derived from the pre-import library.
+
+Do not touch recommender logic, series continuation logic, or ranking.
+
+## M2 — Strength-sort imported liked authors before exposing them
+In `lib/tasteProfile.ts`, revise `buildLikedAnchors` / the relevant `liked_authors` assembly so that imported author signals are not determined by first row iteration order.
+
+Minimum acceptable correction:
+- tally authors across qualifying finished+rated rows
+- sort by frequency descending before taking the top slice
+
+Optional only if already trivial and safe:
+- use average rating or rating strength as a secondary tie-breaker
+- use deterministic lexical fallback only for equal signal cases
+
+Goal:
+A user with 12 strong Sarah J. Maas reads should not surface a one-book Alka Joshi chip simply because row order encountered Alka Joshi first.
+
+Do not widen this into the larger stated-author / author-provenance redesign. This is only a local evidence-selection correction for the current import Taste Readout.
+
+## Hard constraints
+- Do not start P3.
+- Do not redesign onboarding.
+- Do not change import loader copy.
+- Do not change “Already in Readstack” copy yet.
+- Do not rename the For You “Currently Reading” continuation bucket yet.
+- Do not touch recommender scoring, ranking, or series logic.
+- No opportunistic cleanup.
+
+## Validation required
+1. Exact files changed.
+2. Typecheck delta against current baseline.
+3. Workflow/app status.
+4. Confirm Goodreads import now invalidates stale recommendation/hub caches after the import completes.
+5. Confirm author-chip ordering now uses signal strength rather than first-encountered row order.
+6. Provide a concrete validation example showing why Sarah J. Maas would now outrank Alka Joshi for the uploaded Goodreads-style profile.
+7. State the exact live acceptance test to run next:
+   - fresh new user
+   - import same Goodreads CSV
+   - confirm post-import recommendations no longer include already-finished Royal Assassin or Ship of Destiny
+   - confirm the first readout no longer surfaces a one-book author over stronger repeated author signals
+
+Return format:
+- What changed
+- Files touched
+- Validation
+- Why M1 fixes the stale post-import deck
+- Why M2 fixes the noisy author chip
+- Expected next manual acceptance flow
