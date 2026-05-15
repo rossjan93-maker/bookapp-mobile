@@ -1,0 +1,147 @@
+The latest live re-test after the M1/M2 patch produced mixed results.
+
+What passed:
+- Taste Readout now shows Sarah J. Maas instead of Alka Joshi.
+- M2 appears accepted.
+
+What failed:
+- After a fresh new-user Goodreads import, For You still recommended already-read imported books:
+  - Royal Assassin (Farseer Trilogy, #2)
+  - Ship of Destiny (Liveship Traders, #3)
+
+This means M1 cache invalidation was either incomplete or the original stale-cache diagnosis was only part of the issue. Do not assume this is still just stale cache. We now need a deeper post-import recommendation integrity investigation.
+
+Task type:
+Targeted investigation only. Do not implement yet.
+
+Goal:
+Determine why already-read Goodreads-imported books are still appearing in For You after the post-import cache invalidation patch.
+
+## Observed live result
+Fresh user imported the same Goodreads CSV.
+
+Taste Readout:
+- Shows Sci-fi & fantasy
+- Shows Thriller & mystery
+- Shows Sarah J. Maas
+This confirms M2 is working.
+
+For You:
+- Shows Never Lie by Freida McFadden
+- Shows Royal Assassin (Farseer Trilogy, #2) by Robin Hobb
+- Shows Ship of Destiny (Liveship Traders, #3) by Robin Hobb
+
+Royal Assassin and Ship of Destiny are both already read in the uploaded Goodreads CSV and should not appear as next-read recommendations.
+
+## Investigation questions
+
+### 1. Confirm M1 actually executed in this path
+Inspect the import completion path and confirm:
+- the four cache clearers run after import execution completes
+- they run before navigation to Taste Readout / For You
+- they are imported from the correct modules
+- no async issue prevents `clearRecPayload(currentUserId)` from completing or being awaited where needed
+- no second cache or in-memory deck survives outside these four clearers
+
+If there are logs for cache invalidation, identify them. If not, say whether one minimal log would help prove execution.
+
+### 2. Inspect imported user_books state for the exact titles
+For the fresh imported user, query or reason through the DB state for:
+
+- Royal Assassin
+- Ship of Destiny
+- Lightlark
+- The Two Towers
+- The Immortal Life of Henrietta Lacks
+
+For each, determine:
+- `user_books.status`
+- `user_books.book_id`
+- `books.title`
+- `books.author`
+- any `external_id`, ISBN, Goodreads ID, Open Library ID, or provider link
+- any series fields available to recommender
+- whether the imported row is attached to the same canonical `books.id` as the recommendation card
+
+The key question:
+Are Royal Assassin and Ship of Destiny actually stored as `finished/read` user_books rows for this user?
+
+### 3. Compare imported book records to recommendation book records
+For each bad recommendation:
+- Royal Assassin
+- Ship of Destiny
+
+Compare:
+- recommended `book.id`
+- imported `user_books.book_id`
+- title/author normalization
+- external IDs
+- series name and series number
+- source / provider / edition identity
+
+Determine whether this is:
+- exact same book id but exclusion failed
+- duplicate canonical book record / alternate edition
+- same work but different edition
+- same series metadata but imported record lacks series metadata
+- or something else
+
+### 4. Trace recommender exclusion logic
+Trace the For You recommendation build after import and answer:
+
+- Where are user-owned books excluded?
+- Does exclusion apply to all `user_books` statuses or only some?
+- Are `finished`, `reading`, and `want_to_read` handled differently?
+- Does the exclusion compare only exact `book_id`, or does it also account for title/author/work-level equivalents?
+- Why did Royal Assassin and Ship of Destiny survive the exclusion layer?
+
+### 5. Trace series-progress logic
+For the imported user, inspect the `seriesProgress` / continuation logic.
+
+Answer:
+- Does `seriesProgress` include Farseer Trilogy?
+- If yes, what max read position does it record?
+- Does it include Liveship Traders?
+- If yes, what max read position does it record?
+- If Royal Assassin is #2 and Ship of Destiny is #3, why were they not dropped?
+- Are series names normalized consistently between imported books and recommendation candidates?
+
+### 6. Check status vocabulary mismatch
+Confirm the importer writes the same status values the recommender expects.
+
+Specifically:
+- If Goodreads `read` maps to `finished`, does the recommender treat `finished` as read?
+- Is any path still checking for `status === 'read'`?
+- Is the local readBooks set populated after import?
+
+### 7. Classify the root cause
+Classify this precisely as one or more of:
+- M1 cache invalidation did not execute
+- additional cache not cleared
+- imported statuses not persisted correctly
+- recommender status vocabulary mismatch
+- exact-book-id exclusion failure
+- duplicate canonical book / edition mismatch
+- series metadata mismatch
+- series-progress calculation bug
+- post-import build timing/race
+- other
+
+## Hard constraints
+- Investigation only.
+- Do not implement a fix yet.
+- Do not start P3.
+- Do not redesign cold start.
+- Do not change recommendation ranking.
+- Do not change import loader or readout copy.
+- Focus only on why already-read imported books survive into the first For You deck.
+
+## Return format
+1. Executive verdict
+2. Whether M1 executed correctly
+3. DB/import state for the named books
+4. Imported-record vs recommendation-record comparison
+5. Exclusion logic audit
+6. Series-progress audit
+7. Root-cause classification
+8. Minimal fix recommendation
