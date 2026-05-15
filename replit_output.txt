@@ -1,324 +1,354 @@
-Phase 2 Live-Acceptance Follow-Up — Why OLFETCH did not fire while P2SURVIVE did
+Phase 2 Final Acceptance Blocker — Reservation applies, but EXP_QUALITY
+post-composition tier-sort buries the reserved pick before slice(0,4)
 ================================================================================
-Run input:    Same Reading Taste edit (Business + Mystery, Slow-burn, no avoid),
+Run input:    Reading-Taste edit (Business + Mystery, Slow-burn, no avoid),
               save → For You no-refresh.
-Symptom:      [P2SURVIVE/...] lines all emit, but with stated_in=0 / stated_out=0
-              / stated_scored=0 / stated_in_compPool=0.
-              [OLFETCH/...] emits ZERO lines.
-Prior run:    Same flow, same instrumentation bundle — OLFETCH emitted
-              (psychological thriller=14, crime fiction=9), and stated
-              candidates reached compPool (statedInPool=10).
+Symptoms:     [P2SURVIVE/comp_pool] stated_in_compPool=10
+              [P2DEBUG/reservation] applied=true reason=reserved
+                                     pickTitle="Darkly dreaming Dexter"
+              [EXP_QUALITY] Demoted to back: ... "Darkly dreaming Dexter"
+              [P2DEBUG/topSlate] reservationApplied=true top4=
+                  1. "Slammed"
+                  2. "A Little Life"
+                  3. "The Great Believers"
+                  4. "All the Ugly and Wonderful Things"
 Status:       INVESTIGATION ONLY. No code changes.
 
 ================================================================================
-Q1. Under what exact conditions do fetchOLSubject / fetchOLByAuthor run?
+Q1. Exact execution order
 ================================================================================
-Both helpers are called ONLY from inside `getOLCandidates`
-(lib/recommender.ts:~1162 onwards). For either to fire:
+Inside getRecommendations() composition engine block (lib/recommender.ts):
 
-  Precondition chain (all must hold, in order):
+  Step 0 (line 2610-2615) — pickStatedReservation()
+    • Picks one stated_genre: candidate that clears the AND-gate.
+    • If found, addComposed(pick) → composed = [pick].
+    • [P2DEBUG/reservation] emits here.
 
-  P1.  Caller is `getCandidateBooks` and reaches the external-source block
-       (lib/recommender.ts:2980+).
-  P2.  `getCachedExternalCandidates(...)` returns a result whose `.isFresh`
-       is FALSE  (lib/recommender.ts:3000).
-       isFresh = (validRows.length >= CACHE_MIN_ROWS=5) and
-                 validRows = rows where retrieval_reason starts with
-                 CACHE_VERSION = 'v5:' and cached_at >= (now − 24h).
-  P3.  `_olCandidateSession` is INVALID  (lib/recommender.ts:3048-3053):
-         olSessionValid = !forceNewOL
-                       && _olCandidateSession !== null
-                       && _olCandidateSession.userId      === userId
-                       && _olCandidateSession.signalCount === currentSignal
-                       && (now − _olCandidateSession.loadedAt) < 10 min
-       i.e. the module-level session cache is null, expired, for a different
-       user, or the user's strongSignalCount changed.
-  P4.  The else-branch at lib/recommender.ts:3069 is taken, calling
-       `getOLCandidates(profile, …, req)` (lib/recommender.ts:3072).
-  P5.  Inside `getOLCandidates`, the branch planner emits ≥1 fetchItem and
-       Promise.all dispatches them (lib/recommender.ts:1162+).
+  Step 1 (line 2650-2662) — Phase 1: dense-user lane seeding
+    • Seeds one CORE book per dominant_lane (literary, etc.).
+    • Calls addComposed for each.
 
-Only then does ANY OLFETCH/start | OLFETCH/result | OLFETCH/error line
-emit. Skipping at P2 OR P3 produces zero OLFETCH lines while the rest of
-the pipeline (scoring → composition → reservation → P2SURVIVE traces)
-proceeds against an alternate candidate source.
+  Step 2 (line 2665-2671) — Phase 2: CORE greedy fill
+    • Fills composed[] greedy by score, respecting lane/author caps.
+    • Reads from compPool (sorted by effective score upstream).
 
-================================================================================
-Q2. How can the pipeline continue while OL fetches are skipped?
-================================================================================
-There are exactly two skip paths upstream of the OL fetch helpers; both
-populate `externalCandidates` from a non-fetch source and short-circuit
-past `getOLCandidates`:
+  Step 3 (line 2674-2683) — Phase 3: ADJACENT fill (only if showAdjacent)
 
-  SKIP-A: cache_hit  (lib/recommender.ts:3000-3033)
-    if (cacheResult?.isFresh) {
-       externalCandidates = cacheResult.candidates;   // ← from rec_candidate_cache (DB)
-       … reconstruct trace …
-       _t3 = Date.now();    // cache_hit path — no OL latency
-    } else { … live_ol … }
+  Step 4 (line 2706-2711) — *** the demotion gate ***
+    composed.sort((a, b) => {
+      const ta = explanationTier(a._score_breakdown.explanation_quality);
+      const tb = explanationTier(b._score_breakdown.explanation_quality);
+      if (ta !== tb) return ta - tb;
+      return b.score - a.score;
+    });
+    Tiers: strong=0, acceptable_specific=1, acceptable_generic=2,
+           weak/unset=3.
 
-    Diagnostic log fingerprint:
-      • [CACHE DIAG] valid_rows (v5:): N (where N >= 5)
-      • NO `[PERF] phase2_external_fetch_start — live_ol` line
-      • NO `[PERF] phase2_external_fetch_start — ol_session_cache_hit` line
-      • NO OLFETCH/* lines
+  Step 5 (line 2719-2736) — [EXP_QUALITY] log emits AFTER the sort,
+    summarising the post-sort tier counts.
 
-  SKIP-B: ol_session_cache_hit  (lib/recommender.ts:3055-3068)
-    Module-level `_olCandidateSession` (10 min TTL, keyed by userId +
-    strongSignalCount) — short-circuits inside the `else` of cacheResult.
+  Step 6 (line 2739-2741) — diverse = composed.map(...) just rewrites the
+    rank field. NO further reordering. Render order = composed[] order.
 
-    Diagnostic log fingerprint:
-      • [PERF] phase2_external_fetch_start — ol_session_cache_hit
-      • [PERF] phase2_external_fetch_end   — ol_session_cache_hit | candidates=N
-      • NO live_ol PERF lines, NO OLFETCH/* lines
+  Step 7 (line 2743-2755) — [P2DEBUG/topSlate] log emits using
+    composed.slice(0, 4).
 
-In both cases, the rest of the pipeline runs normally on the
-candidate set provided by the cache, and every downstream survival trace
-([P2SURVIVE/post_ol_merge|post_hygiene|post_scoring|comp_pool],
-[P2DEBUG/reservation], [P2RESERVE/gates]) STILL fires.
+So the order is unambiguously:
+  reservation → Phase 1 → Phase 2 → Phase 3 → composed.sort by
+  EXP_QUALITY tier → topSlate = composed.slice(0,4).
+
+Reservation runs FIRST. EXP_QUALITY tier-sort runs LAST and is the final
+authority on visible top-4 ordering.
 
 ================================================================================
-Q3. Which path most likely occurred in the latest live run?
+Q2. Why a reserved book with reservationApplied=true vanishes from top4
 ================================================================================
-SKIP-A (DB rec_candidate_cache hit — `cacheResult.isFresh === true`).
+Trace of "Darkly dreaming Dexter" through the pipeline:
 
-Reasoning chain (ordered, each step a verifiable artifact):
+  1. Retrieved via stated_genre:thriller_mystery branch (cache-restored,
+     normalized post-fix).
+  2. Scored normally, satisfies P2B.1 AND-gate, stated_taste > 0,
+     fit_class adjacent_fit (within Fix A's per-cause widening).
+  3. pickStatedReservation returns it; addComposed(pick) → composed = [pick].
+     index 0.
+  4. Phase 1 lane seed for "literary" (the user's dominant revealed lane)
+     pushes "Slammed" (or similar literary CORE) → composed = [pick, lit_seed].
+  5. Phase 2 CORE fill pushes the next 14-ish CORE literary books by score
+     (A Little Life, The Great Believers, All the Ugly and Wonderful
+     Things, etc.) — composed = [pick, lit_seed, lit_2, lit_3, ...].
+     pick is still at index 0.
+  6. composed.sort() runs. The tier of each book is read from
+     `_score_breakdown.explanation_quality`:
+        • Literary CORE books from local catalog → 'strong' (full
+          description + rich subjects + behavioral_fit evidence) →
+          tier 0.
+        • "Darkly dreaming Dexter" — cache-restored OL candidate.
+          getCachedExternalCandidates writes `description: null`
+          (lib/recommender.ts:1121) and minimal subjects[]. The
+          explanation-quality classifier downstream sees no
+          book-specific evidence beyond the stated_taste anchor →
+          'weak' or 'acceptable_generic' → tier 2 or 3.
+     Tier 0 books sort before tier 2/3 books. The reserved pick lands
+     at composed index 4 or later.
+  7. composed.slice(0, 4) returns the four tier-0 (strong) literary books.
+     [EXP_QUALITY] Demoted to back logs the pick. [P2DEBUG/topSlate]
+     emits the buried slate.
 
-  1. The PRIOR successful run (psych_thriller=14, crime_fiction=9, merged=20)
-     ran getOLCandidates → got 20 stated books → wrote them to the DB cache
-     via `persistOLCandidates(client, userId, olResult.candidates)` at
-     lib/recommender.ts:3086. Each row is written with
-     `retrieval_reason = '${CACHE_VERSION}${original}'` =
-     `v5:stated_genre:thriller_mystery` (per persistOLCandidates,
-     lib/recommender.ts:1314+ / `${CACHE_VERSION}${b._retrieval_reason}`
-     at 1331).
-
-  2. The current run came WITHIN 24h (CACHE_TTL_MS) of step 1, with
-     ≥5 valid_rows still present. So `getCachedExternalCandidates` returns
-     `{ candidates: […cache rows…], isFresh: true }`.
-
-  3. cache_hit branch fires:
-     externalCandidates = cacheResult.candidates  (lib/recommender.ts:3001)
-     getOLCandidates is NEVER called.
-     Therefore no OLFETCH log emits this run.
-
-  4. CRITICAL — the cached candidates' `_retrieval_reason` field RETAINS
-     the `v5:` prefix:
-
-       lib/recommender.ts:1094-1105 (getCachedExternalCandidates mapping):
-         _retrieval_reason: r.retrieval_reason ?? 'cache:restored'
-                                                     ↑
-              raw DB value, NOT prefix-stripped
-
-     The cache_hit branch only strips `v5:` from the trace strings
-     (`olResult.ol_queries`, lib/recommender.ts:3005-3008) — it does NOT
-     strip the prefix on each candidate's `_retrieval_reason` field.
-
-  5. Downstream code asks `(b._retrieval_reason ?? '').startsWith('stated_genre:')`
-     in many places (recommender L2603 / statedReservation L150 / survival
-     traces). For a cache-restored candidate the actual value is
-     `v5:stated_genre:thriller_mystery`, so EVERY such check returns false.
-
-  6. Hence:
-     [P2SURVIVE/post_ol_merge]   merged_total=N  stated_count=0
-     [P2SURVIVE/post_scoring]    stated_scored=0
-     [P2SURVIVE/comp_pool]       stated_in_compPool=0
-     [P2DEBUG/reservation]       statedInPool=0  reason=no_eligible_candidate
-     [P2RESERVE/gates]           pool=N  retrieval_prov=N (i.e. all rejected
-                                  by the retrieval-prov gate, because the
-                                  prefix is `v5:stated_genre:` not
-                                  `stated_genre:`)
-
-  Independent corroboration to look for in the captured console logs of
-  this run (any single one is dispositive):
-    a. Presence of `[CACHE DIAG] valid_rows (v5:): N` with N≥5.
-    b. Absence of `[PERF] phase2_external_fetch_start — live_ol`.
-    c. Absence of `[PERF] phase2_external_fetch_start — ol_session_cache_hit`.
-    d. `[P2RESERVE/gates] retrieval_prov=…` equal to compPool's
-       cache-sourced count, with `fit_class=0`.
-
-  SKIP-B (session cache hit) is also possible but less likely as the sole
-  explanation, because:
-    • SKIP-B emits its own distinctive PERF log lines (3057, 3067), so
-      its absence/presence is visible.
-    • SKIP-B preserves whatever `_retrieval_reason` was in `_olCandidateSession.result`,
-      i.e. the original `stated_genre:thriller_mystery` (no `v5:` prefix),
-      so it would still produce stated_count > 0 downstream.
-    • SKIP-B has a 10-minute TTL — possibly already expired between runs.
-    • SKIP-B won't survive a hard browser refresh (module state).
-
-  So the unique fingerprint matching ALL observed symptoms is SKIP-A
-  (DB cache_hit) plus the prefix-leak.
+The reservation insertion is geometrically a no-op for visibility because
+the post-composition tier-sort is unconditional and tier-blind to
+reservation provenance.
 
 ================================================================================
-Q4. Input/state difference vs the prior successful run
+Q3. What is EXP_QUALITY acting on?
 ================================================================================
-Identical user input. The state difference is downstream side-effects of
-the prior successful run:
+B — the composed recommendation array AFTER reservation.
 
-  Prior run                     →  This run
-  ─────────────────────────────    ─────────────────────────────
-  cacheResult.isFresh === false    cacheResult.isFresh === true
-  (no/insufficient cache rows)     (≥5 v5:-prefixed rows < 24h old)
-  → live_ol branch                 → cache_hit branch
-  → getOLCandidates runs           → getOLCandidates NEVER runs
-  → 8 OLFETCH lines emit           → 0 OLFETCH lines emit
-  → persistOLCandidates writes     → cache_hit returns cached rows with
-    rows tagged v5:stated_genre:*    intact v5: prefix on _retrieval_reason
-  → downstream sees                → downstream startsWith('stated_genre:')
-    stated_genre:* on candidates     misses every cached row → stated*=0
+It is NOT a candidate-pool filter (compPool is unchanged), and it is NOT
+a post-render re-rank (it runs before rank assignment at L2740 and before
+the slice(0,4) at L2744).
 
-The prior run silently created the conditions that broke this run. Every
-subsequent rebuild within the next ~24 hours (or until CACHE_VERSION bumps)
-will SKIP-A and exhibit the same failure mode.
+EXP_QUALITY is a stable in-place sort on the composed[] array. It does
+not remove books; it only moves them down the visible feed. From the
+visible-top-4's point of view, "moves them past index 3" is functionally
+identical to "removes them" — but from the composed[] array's point of
+view, the reserved pick is still present at index 5+ (or wherever its
+tier+score lands).
+
+Note: this also explains the [EXP_QUALITY] strong/acc_specific/acc_generic/
+weak counter line — the sort builds a 4-bucket tier order. The pick is
+counted in its tier (likely weak); the visible top4 fills from tier 0.
 
 ================================================================================
-Q5. Cache / prewarm / stale-session / entitlement / sufficiency / throttle?
+Q4. Is the current behavior architecturally coherent?
 ================================================================================
-The DB rec_candidate_cache (Source B at lib/recommender.ts:2981 +
-getCachedExternalCandidates at L1024) explains it ALONE. None of the other
-candidates apply:
+NO — for the explicit_preference_edit cause specifically.
 
-  • prewarm:                 N/A — there is no prewarm path.
-  • module session cache:    SKIP-B; would have left its own PERF logs and
-                             wouldn't have produced stated_count=0.
-  • entitlement / paid gate: N/A — no entitlement check exists in
-                             getCandidateBooks.
-  • candidate sufficiency:   N/A — there is no "we have enough locals,
-                             skip OL" gate in the live path.
-  • live-fetch throttle:     N/A — no throttle exists between rebuilds.
-  • forensic bypass:         applies only when userId === FORENSIC_USER_ID
-                             (constant `''` in commits).
+The Phase 2 product contract (locked in replit.md):
 
-The DB cache is the sole skip explanation, and the prefix-leak in
-`getCachedExternalCandidates` is what turns "skip OL with cached rows"
-into "stated_count=0 across the entire pipeline".
+  "After explicit_preference_edit, a quality-clearing stated-branch
+   candidate must visibly surface in the top slate."
 
-================================================================================
-Q6. Should P2DEBUG plan log distinguish "planned" vs "actually executed"?
-================================================================================
-YES — minimally — but a much smaller change addresses the root cause.
+The reservation layer was added at the COMPOSITION step (Step 0 above)
+on the assumption that "first inserted ⇒ visible top". That assumption
+was true under the pre-EXP_QUALITY sort regime, where composed[] order
+WAS render order. EXP_QUALITY was added later as a quality-floor against
+weak local-catalog cards; it correctly sweeps generic-evidence cards to
+the back.
 
-The current `[P2DEBUG/plan]` only describes the branch planner's intent
-inside `getOLCandidates`. When the cache_hit branch fires, getOLCandidates
-is bypassed entirely — so `[P2DEBUG/plan]` does not emit at all that run.
-That absence IS the "did live retrieval run" signal, but only if you
-already know to grep for it.
+The two layers are individually correct but jointly violate the P2
+contract because the EXP_QUALITY sort is tier-blind to reservation
+provenance. The architecturally correct framing:
 
-Cheaper fix than a separate "executed" log: the `[CACHE DIAG]` log already
-exists (lib/recommender.ts:1077-1082), and the `[PERF]
-phase2_external_fetch_start — live_ol | ol_session_cache_hit` PERF lines
-already emit in their respective branches. A single one-line addition in
-the cache_hit branch — e.g. `[P2RETRIEVAL/source] cache_hit
-candidates=N stated_count=N` — would make the source-of-record obvious
-without a wider plan-vs-executed taxonomy. Defer the larger taxonomy
-change to P3.
+  • EXP_QUALITY is a "no weak card in front of a strong card" rule.
+  • Reservation is a "honor the user's explicit edit by visibly seeding
+    one stated-branch candidate" rule.
+  • These rules conflict whenever the cache-restored stated candidate's
+    metadata (description=null, sparse subjects) yields a weak
+    explanation_quality classification — which is the COMMON case for OL
+    cache-restored stated picks because the cache row schema deliberately
+    drops description.
+
+So the conflict is not just "Darkly dreaming Dexter has weak evidence"
+— it's STRUCTURAL: every cache-restored stated reservation pick will be
+classified ≤ acceptable_generic by construction, and EXP_QUALITY will
+bury every one of them.
+
+The fix needs to express the precedence relationship between the two
+layers explicitly. Today they are layered without coordination.
 
 ================================================================================
-Q7. Failure classification
+Q5. Fix-category comparison (no implementation)
 ================================================================================
-Primary: A — live OL retrieval was intentionally skipped by a gate
-              (`cacheResult?.isFresh` cache_hit branch).
 
-         A is necessary but not sufficient on its own. The cache_hit
-         branch is by design: the rec_candidate_cache exists precisely to
-         avoid hitting OL twice within 24h for the same user. The reason
-         this run produced stated_count=0 is a SECOND, latent bug in the
-         same code path:
+  Category A — Move stated reservation AFTER EXP_QUALITY demotion,
+                so reservation picks from the already-sorted final
+                ordering and inserts at composed[0].
+    Pros:  Clean conceptual order: composition → quality-sort →
+           reservation as a final visible-slot rule.
+    Cons:  Requires extracting Phase 1 lane seeding to also happen
+           after sort, OR teaching Phase 1 about the reserved slot.
+           Today Phase 1 reads composedSet to decide what's already
+           seeded; reservation is part of that set. Moving reservation
+           to after sort means Phase 1 cannot rely on the reserved pick
+           occupying a slot it should skip — Phase 1 might double-seed
+           the same lane the reservation will later take. Larger blast
+           radius across the composition engine.
+    Verdict: Conceptually attractive but invasive. Risks new bugs in
+             lane-cap accounting and author-cap accounting (because
+             reservation pre-decrements those counters in addComposed
+             today).
 
-Secondary: B (in spirit) — the cache_hit branch was bypassed-correctly,
-           but the cached rows leak the `v5:` CACHE_VERSION prefix into
-           their per-candidate `_retrieval_reason` field. That breaks
-           every downstream gate that uses `startsWith('stated_genre:')`
-           — including the P2SURVIVE stated counters and P2B.1's
-           retrieval-provenance reservation gate.
+  Category B — Preserve reservation precedence through EXP_QUALITY
+                for the one reserved slot.
+    Pros:  Surgical. Reservation insertion stays as-is. The EXP_QUALITY
+           sort remains the single source of order for everyone else.
+           One additional invariant: "the reserved pick (if any) is
+           pinned to composed[0] regardless of tier."
+    Cons:  The pinned pick's neighbors at slots 1-3 still get sorted by
+           tier, so the slate is mixed-tier (1 weak + 3 strong). This
+           is acceptable — the reservation is exactly one slot by
+           STATED_RESERVATION_POLICY.maxReservedSlots = 1.
+    Verdict: Cleanest control-plane expression of the precedence
+             relationship. Single point of change.
+    Two flavours, both valid:
+      B1 (post-sort re-promotion):
+         After composed.sort, if reservation.pick exists, find its
+         index in composed[] and splice it back to index 0. ~5 lines.
+      B2 (sort-comparator carve-out):
+         Inject a `reservedId` into the comparator; treat reserved id
+         as tier -1 (sticky-front). ~3 lines but couples comparator
+         to reservation state.
+    B1 is more localized (sort stays pure). B2 is slightly faster
+    (single pass) but adds a closure dependency. Recommend B1.
 
-           This is NOT C: the OLFETCH instrumentation is correctly
-           placed in the path that the live_ol branch uses.
-           This is NOT pure-A: pure-A would mean the design intends
-           statedInPool=0 on cache hit — it does not.
+  Category C — EXP_QUALITY may demote reserved candidates only if no
+                viable stated alternative exists, then re-reserve.
+    Pros:  Quality-aware: if the only stated candidate is genuinely
+           weak, EXP_QUALITY wins.
+    Cons:  Re-reservation loop is non-trivial and the "viable
+           alternative" predicate duplicates pickStatedReservation
+           logic. Worse, it contradicts the P2B contract: the contract
+           says "a quality-CLEARING stated candidate must visibly
+           surface" — and "quality-clearing" is already enforced by
+           the reservation gates (retrieval_provenance + scoring_provenance
+           + stated_contribution + fit_class + weak_metadata). If a
+           candidate cleared those gates, EXP_QUALITY's verdict that
+           it's "weak" is, by P2B definition, wrong.
+    Verdict: Architecturally backward. The reservation gates already
+             ARE the quality gates for stated candidates. EXP_QUALITY
+             is a generic explanation-evidence floor calibrated for
+             the local-catalog majority and is structurally biased
+             against cache-restored rows with description=null.
 
-           So: A (intentional skip) + a latent prefix-strip bug
-           in the cache restore path that turns the intentional skip
-           into a Phase 2 product failure.
+  Category D — Improve cache row metadata so cache-restored stated
+                candidates can earn 'strong' organically.
+    Pros:  Removes the structural cause (cache schema dropping
+           description).
+    Cons:  Schema-level change to rec_candidate_cache + persistOLCandidates.
+           Requires backfill or CACHE_VERSION bump. Doesn't address the
+           coordination gap between reservation and EXP_QUALITY for
+           non-cache-path edge cases (e.g. fresh-OL candidates with
+           thin subjects). Out of scope for this acceptance blocker.
 
 ================================================================================
-Q8. Smallest next corrective step
+Q6. Recommended smallest, architecturally sound fix
 ================================================================================
-RECOMMEND: a 1-line cache-restore prefix-strip in
-`getCachedExternalCandidates` at lib/recommender.ts:1094-1105, mirroring
-exactly what the cache_hit trace-reconstruction block already does for
-trace strings at L3005-3008.
+RECOMMEND: Category B1 — post-sort re-promotion of the reserved pick.
 
 Conceptual change (do NOT apply yet — investigation only):
 
-  -  _retrieval_reason: r.retrieval_reason ?? 'cache:restored'
-  +  _retrieval_reason: (r.retrieval_reason ?? 'cache:restored').startsWith(CACHE_VERSION)
-  +    ? (r.retrieval_reason as string).slice(CACHE_VERSION.length)
-  +    : (r.retrieval_reason ?? 'cache:restored')
-
-After this 1-line strip:
-  • Cache-restored candidates carry the same `_retrieval_reason` they had
-    when first written (e.g. `stated_genre:thriller_mystery`).
-  • `startsWith('stated_genre:')` matches across the entire pipeline.
-  • P2B.1 retrieval-provenance gate behaves identically to the live_ol path.
-  • P2RESERVE/gates show retrieval_prov=0 (with fit_class possibly the
-    new gate to inspect, but the C6 widening from the previous batch
-    handles that).
-  • The reservation reserves the cache-restored stated candidate.
+  // After composed.sort(...)
+  if (reservation.pick) {
+    const idx = composed.findIndex(b => compId(b) === compId(reservation.pick));
+    if (idx > 0) {
+      const [pinned] = composed.splice(idx, 1);
+      composed.unshift(pinned);
+    }
+  }
 
 Why this over the alternatives:
-  • DON'T add a "cache_hit invalidates if statedInPool=0" recovery — that
-    masks the real bug and re-fetches OL on every rebuild post-edit.
-  • DON'T flip the OL session cache to bypass on explicit_preference_edit
-    — the DB cache (Source B) is the actual blocker, not the session cache.
-  • DON'T raise CACHE_VERSION to v6 — that purges every user's cache on
-    next deploy and forces a global OL re-fetch storm.
-  • DON'T add a larger plan-vs-executed taxonomy here — the cheaper
-    `[P2RETRIEVAL/source]` line proposed in Q6 is a follow-up nicety,
-    not a fix.
+
+  • Honors the P2B contract literally: reservation determines slot 0.
+    EXP_QUALITY determines slots 1..N order.
+  • Single point of change, zero coupling between the sort comparator
+    and reservation state, zero new sort passes, zero new helper
+    modules.
+  • Starvation-safe: WEAK cards still go to the back EXCEPT the one
+    explicitly reserved by the user's edit. WEAK behavior for all
+    non-reserved cards is unchanged.
+  • Adjacent-fit Fix A still does its job: the C6 widening is what
+    makes the cache-restored adjacent stated pick eligible for
+    reservation in the first place; B1 is what makes that
+    eligibility visible.
+  • Idempotent: if the sort already left the pick at index 0
+    (which would happen for a strong-tier stated pick), the splice
+    is a no-op (`idx === 0` short-circuit).
+  • Composability with future P3: when P3 contribution-grounded
+    ranking lands and explanation_quality becomes evidence-faithful,
+    cache-restored stated picks can earn 'strong' organically and
+    B1 becomes a no-op without removal. No tech debt.
 
 Optional defense-in-depth (separately, not blocking):
-  • Add a one-line `[P2RETRIEVAL/source] cache_hit candidates=N
-    stated_count=N` log in the cache_hit branch so future rebuilds
-    self-explain at a glance.
-  • Add a validator case in scripts/validate_stated_reservation.ts (or
-    a new scripts/validate_cache_restore.ts) that asserts a cache row
-    with `retrieval_reason='v5:stated_genre:nonfiction'` is restored
-    with `_retrieval_reason='stated_genre:nonfiction'`. This codifies
-    the contract so it cannot drift again.
 
-Worth flagging: there may be OTHER `startsWith` checks elsewhere that
-are equally affected by the prefix leak (`startsWith('genre:')`,
-`startsWith('lane:')`, `startsWith('liked_subject:')`,
-`startsWith('author_anchor:')`, `startsWith('repeated_author:')`,
-`startsWith('local:')`, `startsWith('cache:')`). The 1-line strip
-fixes them ALL at the source — the prefix should never have leaked
-past `getCachedExternalCandidates`.
+  • Add `[P2RESERVE/pinned] idx_before_sort=N idx_after_sort=N
+    splice_applied=true|false reservedId=…` debug line so the next
+    live retest self-explains.
+  • Add a deterministic validator case in
+    scripts/validate_stated_reservation.ts that asserts:
+       given composed = [reservedPick(weak), strongA, strongB, strongC]
+       after sort+pin, composed[0].id === reservedPick.id
+    and the inverse:
+       given composed = [strongA, reservedPick(strong), strongB]
+       after sort+pin, composed[0].id === reservedPick.id (still pinned).
+
+  These can be done in the same fix turn — they're trivial — or
+  deferred to a follow-up.
+
+Why NOT category A (move reservation after sort):
+  • Phase 1 lane seeding currently relies on the reservation being
+    in composedSet so it doesn't double-seed the reserved book's
+    lane. Moving reservation after sort means either:
+       (a) Phase 1 must be told the reservation pick id, OR
+       (b) Phase 1's lane choice must be redone after reservation.
+    Both are wider edits with worse failure modes than B1.
+  • The lane-cap and author-cap counters in addComposed assume
+    composition order corresponds to slot priority. Moving
+    reservation to after sort means those counters under-count the
+    reservation's lane/author allocation during Phase 2 fill,
+    risking 2× the same author or lane in the slate.
+
+Why NOT category C: addressed in Q5 — it contradicts P2B's quality
+contract by treating EXP_QUALITY as a second opinion on stated picks
+when reservation already enforced the AND-gate.
+
+Why NOT category D: schema bump + backfill is disproportionate to
+the failure surface and doesn't fix the same problem for
+non-cache-path stated picks with thin OL metadata.
 
 ================================================================================
-Q9. Phase 2 product acceptance status
+Q7. Phase 2 product acceptance status
 ================================================================================
 REMAINS BLOCKED.
 
-The C6 fit-class widening from the previous batch is correct and
-necessary, but cannot be observed working from a cache-restored deck
-because the latent prefix-leak in `getCachedExternalCandidates` causes
-the retrieval-provenance gate to reject every cache-restored stated
-candidate before the fit-class gate is even evaluated.
+The full chain is now correctly understood end to end:
 
-To unblock, the cache-restore path must round-trip `_retrieval_reason`
-losslessly (sans CACHE_VERSION prefix) so that:
+  ✅ P0A canonical taxonomy
+  ✅ P0A.1 retrieval-side fold-in
+  ✅ P0B configHash invalidation
+  ✅ P1 stated-pref non-zero floor
+  ✅ P2A branch planner with stated quota
+  ✅ P2B retrieval reservation gate (AND-gate)
+  ✅ P2C soft-avoid retrieval deprioritization
+  ✅ Cache-restore prefix normalization (this batch)
+  ✅ Adjacent-fit widening for explicit_preference_edit (Fix A)
+  ✅ Reservation now successfully picks a stated candidate
+  🔴 Visible top-slate placement: blocked by EXP_QUALITY post-sort
 
-  ✅ A live retest after a fresh OL fetch shows the C6 widening landing
-     stated candidates in the top slate (already verified plausible
-     from the prior run's geometry).
-  ✅ A live retest from a cache-restored deck (the COMMON case for
-     repeat preference edits within 24h) ALSO shows stated candidates
-     surviving into compPool and reservation succeeding.
+Acceptance requires BOTH:
+  1. reservation.trace.applied === true (now passing), AND
+  2. composed[0..3] contains the reserved pick (still failing).
+
+Post-sort re-promotion (B1) is the smallest change that closes the gap
+without disturbing any other layer. After B1 lands, a single live retest
+of the same repro should show:
+
+  [P2DEBUG/topSlate] cause=explicit_preference_edit
+                     reservationApplied=true
+                     top4=1.[stated_genre|st:0.08]"Darkly dreaming Dexter"
+                          2. <literary strong>
+                          3. <literary strong>
+                          4. <literary strong>
+
+At which point Phase 2 product acceptance flips to PASSED and the
+"P2 retrieval responsiveness; visible deck shift after pref edit, dense
+users included" pre-beta gate is met.
 
 Out-of-scope-for-this-blocker (unchanged):
-  • Business → nonfiction anchor coarseness (P4)
+  • Business → nonfiction anchor coarseness (P4, book intelligence)
   • Cross-session BuildCause persistence on browser hard-refresh
   • Author chips / stated-author signal provenance
   • Hard-avoid storage + UI (P4)
+  • Deferred Category D (cache schema description backfill) — file as
+    P3 follow-up: when P3 contribution-grounded ranking lands, revisit
+    whether cache rows should retain description for richer
+    explanation_quality classification.

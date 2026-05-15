@@ -1,0 +1,106 @@
+Task: Phase 2 Final Acceptance Blocker — Reservation applies, but EXP_QUALITY demotion removes the reserved pick from the visible top slate
+
+Context:
+The live cache-hit retest after the retrieval-reason normalization fix now proves that the core P2 retrieval + reservation path works:
+
+[P2SURVIVE/comp_pool]
+stated_in_compPool=10
+
+[P2DEBUG/reservation]
+applied=true
+reason=reserved
+cause=explicit_preference_edit
+pickTitle="Darkly dreaming Dexter"
+
+However, Phase 2 product acceptance still fails because the visible top slate does not contain the reserved pick.
+
+Immediately after reservation succeeds, the logs show:
+
+[EXP_QUALITY] Demoted to back:
+...
+"Darkly dreaming Dexter"
+
+Then the final slate still reports:
+
+[P2DEBUG/topSlate]
+reservationApplied=true
+reservationReason=reserved
+top4=
+1. "Slammed"
+2. "A Little Life"
+3. "The Great Believers"
+4. "All the Ugly and Wonderful Things"
+
+This means:
+- cache-path provenance is fixed
+- adjacent-fit widening is fixed
+- stated reservation is now applying
+- but a downstream quality/demotion layer erases the reservation before the slate reaches the user
+
+Goal:
+Investigate the exact ordering and control-flow interaction between:
+1. stated reservation application,
+2. EXP_QUALITY demotion,
+3. final top-slate assembly / rendering order.
+
+Investigation only. Do not implement a behavioral fix yet.
+
+Read:
+- lib/recommender.ts around:
+  - reservation insertion
+  - EXP_QUALITY classification / demotion
+  - final topSlate assembly
+  - any post-composition resorting or requeueing
+- any helpers that perform the EXP_QUALITY demotion
+- current debug logs already emitted for reservation and topSlate
+
+Questions to answer:
+
+1. What is the exact execution order?
+   - Does reservation happen before EXP_QUALITY demotion?
+   - Does EXP_QUALITY reorder the already-composed slate, or demote the broader recommendation array afterward?
+   - At what point does the visible top-4 get finalized?
+
+2. Why does a reserved book with reservationApplied=true fail to appear in top4?
+   Trace Darkly dreaming Dexter from:
+   - reservation pick
+   - post-reservation list
+   - quality demotion
+   - final topSlate
+
+3. Is EXP_QUALITY acting on:
+   A. the candidate pool before composition,
+   B. the composed recommendation array after reservation,
+   C. the final visible deck after top4 is conceptually set,
+   D. mixed/other?
+
+4. Is the current behavior architecturally coherent?
+   Phase 2's product contract is:
+   "After explicit_preference_edit, a quality-clearing stated-branch candidate must visibly surface in top slate."
+   If a later demotion pass can erase it, is the reservation layer positioned too early or insufficiently protected?
+
+5. Compare possible fix categories, but do not implement:
+   A. Move stated reservation after EXP_QUALITY demotion so reservation picks from the already-demoted final ordering.
+   B. Preserve reservation precedence through EXP_QUALITY for the one reserved stated slot.
+   C. Change EXP_QUALITY so it may demote reserved candidates only if no viable stated alternative exists, then re-reserve.
+   D. Another cleaner sequencing correction.
+
+6. Recommend the smallest, most architecturally sound fix.
+   Do not choose based on minimal diff only; choose based on preserving the control-plane contract cleanly.
+
+7. State Phase 2 acceptance status.
+   It remains blocked unless:
+   - reservation applies
+   - and the reserved stated candidate actually appears in the visible top slate.
+
+Output:
+Write the full investigation to replit_output.txt.
+
+Return in chat:
+- exact cause
+- whether EXP_QUALITY runs after reservation
+- why top4 ignores the reservation
+- recommended fix direction
+- whether Phase 2 product acceptance remains blocked
+
+Stop after investigation. No code changes yet.
