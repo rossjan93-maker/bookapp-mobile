@@ -1,0 +1,108 @@
+We are moving on from Phase 2. Do not reopen P2 instrumentation or acceptance work.
+
+Current state:
+- Phase 2 product acceptance is complete.
+- Survival trace instrumentation already exists.
+- The P2 corrective fixes are shipped and documented.
+- The next active workstream is P3: contribution-grounded ranking + explanation faithfulness.
+
+Task type:
+Architecture investigation / design audit only. Do not implement yet.
+
+Goal:
+Define the correct P3 architecture for making recommendation ranking and recommendation explanations contribution-grounded, so that:
+1. The system can identify which meaningful user/model signals actually contributed to a recommendation surfacing and ranking well.
+2. The explanation layer can faithfully reference those contributions rather than assembling loosely plausible but potentially ungrounded copy.
+3. Ranking and explanation can later become more tightly aligned without turning the system brittle, overly rigid, or closed off to surprising recommendations.
+
+Please investigate the current recommendation pipeline and produce a concrete P3 proposal.
+
+Questions to answer:
+
+A. Current-state audit
+1. What contribution/provenance data currently exists at:
+   - retrieval
+   - scoring
+   - composition
+   - reservation/pinning
+   - final displayed card/explanation stage
+2. What is currently lost during:
+   - merge/dedupe
+   - scoring aggregation
+   - compPool selection
+   - final sort / reservation / re-promotion
+3. Where do current explanations risk being:
+   - true but vague
+   - plausible but not actually causal
+   - overclaiming relative to available signal
+
+B. Contribution model
+Propose a clean internal representation for “why this recommendation is here,” suitable for later use by both:
+- ranking diagnostics / integrity checks
+- explanation generation
+
+The model should consider at least:
+- retrieval source contribution
+- stated preference contribution
+- revealed/history-based contribution
+- trait/semantic contribution where currently available
+- source boosts or reservation effects
+- penalties / exclusions if relevant
+- final rank-affecting factors
+
+Do not over-engineer a perfect universal ontology if a simpler extensible contribution ledger would work better.
+
+C. Multi-source provenance
+We previously identified a likely P3 need:
+- after merge/dedupe, we do not preserve a multi-source `_retrieval_reasons: string[]` trail cleanly enough for contribution attribution.
+
+Evaluate:
+1. Whether that is indeed a blocker for P3.
+2. What the minimal sound fix would be.
+3. Whether author-branch retrieval reason hardcoding in `fetchOLByAuthor` should be addressed inside P3 or parked separately.
+
+D. Explanation faithfulness
+Propose a strategy for ensuring the explanation copy:
+1. only references signals actually present,
+2. expresses degree of confidence appropriately,
+3. avoids flattening Readstack into rigid taxonomy language,
+4. still supports surprising, expansive “this fits you in a less obvious way” recommendations.
+
+Please distinguish:
+- “causal contribution” explanations
+- “descriptive fit” explanations
+- “editorial/experience framing” copy
+and say which should be allowed on the card, under what gating.
+
+E. Ranking implications
+Should P3:
+1. merely record contributions faithfully for downstream explanations and diagnostics,
+2. also alter ranking logic to become more contribution-grounded,
+3. or stage this in two sub-batches?
+
+Give a recommendation and justify it.
+
+F. Validators / proof
+Propose the validators or fixture-replay harnesses we should add so P3 can be proven rather than judged by eyeballing.
+Include:
+- what scenarios should be replayed,
+- what invariants should be asserted,
+- how explanation faithfulness would be tested.
+
+Constraints:
+- Investigation only. No implementation yet.
+- Do not modify ranking/scoring/explanation code.
+- Do not touch schema unless you are only discussing a future need.
+- No opportunistic cleanup.
+- Be explicit about what should be in P3A, P3B, and anything that should be deferred.
+
+Return format:
+1. Executive recommendation
+2. Current-state audit
+3. Proposed contribution-grounding architecture
+4. Explanation faithfulness framework
+5. Ranking implications
+6. P3 sub-batch proposal
+7. Validation / proof plan
+8. Risks, tradeoffs, and deferred items
+9. Exact files most likely to be touched later, if implemented
