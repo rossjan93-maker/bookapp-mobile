@@ -1,0 +1,71 @@
+Proceed with the warm-boot deadlock fix.
+
+We approve the diagnosis:
+- The ~10s “Almost there… Setting up your reading life” delay is a confirmed app bug.
+- The root cause is async Supabase-dependent warm-boot work running inside the `onAuthStateChange` SIGNED_IN callback in `app/_layout.tsx`.
+- That creates the documented supabase-js auth-lock deadlock pattern:
+  - the SIGNED_IN listener runs while the auth lock is still held
+  - `checkOnboardingCompleted(...)` performs a same-client PostgREST query
+  - the query waits on the lock
+  - gotrue emits the auth-token lock warning
+  - the first timeout fires at ~10s
+  - only then does onboarding routing proceed
+
+Implement the minimal fix now.
+
+Task type:
+Targeted bug fix only.
+
+Goal:
+Ensure the `SIGNED_IN` auth listener returns quickly and all asynchronous warm-boot/bootstrap work that may touch Supabase runs outside the `onAuthStateChange` callback lock.
+
+Implementation guidance:
+1. In `app/_layout.tsx`, refactor the SIGNED_IN handler so that:
+   - the auth event callback does not await `checkOnboardingCompleted(...)`
+   - the DB/onboarding-resolution path is deferred onto the next task, e.g. `setTimeout(..., 0)` or an equivalent safe deferral
+   - the deferred function contains the existing warm-boot logic unchanged in behavior
+
+2. Keep behavior unchanged:
+   - same session state outcome
+   - same `needsOnboarding` decisions
+   - same cold-start / returning-user routing logic
+   - same profile upsert behavior
+   - same logs where possible, with only minimal additions if needed to prove the deferred execution path
+
+3. Do not paper over the issue by:
+   - widening `isFreshlyCreatedAccount(...)`
+   - extending timeout durations
+   - suppressing the lock warning
+   - changing onboarding semantics
+
+4. If you keep any synchronous local state updates inside the auth listener, that is fine. The requirement is specifically:
+   - no awaited Supabase-dependent bootstrap work should execute within the `onAuthStateChange` callback body.
+
+Hard constraints:
+- Do not touch `socialAuth.ts`
+- Do not touch `app/auth/callback.tsx`
+- Do not touch onboarding screen behavior
+- Do not start P3
+- Do not broaden into auth redesign
+- No opportunistic cleanup
+
+Validation required:
+1. Exact files changed.
+2. Typecheck delta against current baseline.
+3. Workflow/app status.
+4. Code explanation of exactly what remained inside the auth callback and what was deferred.
+5. Confirm the existing new-user/returning-user routing logic is behaviorally unchanged.
+6. Provide the exact expected log sequence for the next standalone-browser Google sign-in repro.
+7. State the acceptance criteria clearly:
+   - no `Lock "...auth-token" was not released within 5000ms` warning
+   - no `checkOnboardingCompleted timed out` message
+   - new-user onboarding resolution completes in normal sub-second / low-hundreds-ms latency rather than ~10s
+   - the user routes into onboarding promptly
+
+Return format:
+- What changed
+- Files touched
+- Validation
+- Why this fixes the deadlock
+- Expected repro logs
+- Acceptance criteria for the next manual test

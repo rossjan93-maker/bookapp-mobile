@@ -329,13 +329,57 @@ export default function RootLayout() {
 
         console.log('[WARM_BOOT] session state updated — bootstrap starting');
 
-        // ── Wrap ALL async bootstrap work in try/catch ─────────────────────
-        // If any DB call throws (RLS, network, trigger conflict from a freshly-
-        // deleted row, etc.) the handler must NOT leave needsOnboarding===undefined
-        // forever — that is the exact deadlock that hangs the callback screen.
-        // Fallback: needsOnboarding=true sends the user to onboarding, which is
-        // the correct safe default for any recreated or genuinely new account.
-        try {
+        // ── Defer bootstrap work off the auth-lock callback ────────────────
+        // supabase-js v2 invokes onAuthStateChange listeners while gotrue
+        // holds the auth-token lock. Any awaited supabase.from(...) inside
+        // this callback enqueues behind the same lock and stalls until
+        // gotrue's 5s lock-recovery timeout — the documented deadlock that
+        // produced a ~10s wait on the callback loader for established Google
+        // accounts (created_at >60s, so isFreshlyCreatedAccount returned
+        // false and we fell into checkOnboardingCompleted).
+        //
+        // setTimeout(..., 0) yields the current task so the dispatcher can
+        // release the lock before our PostgREST queries try to acquire it.
+        // React state updates (setNeedsOnboarding/setSession) above stay
+        // synchronous — they don't touch supabase and the routing guard
+        // already bails on needsOnboarding===undefined, so the callback
+        // loader stays mounted until the deferred bootstrap resolves it.
+        setTimeout(() => { void runBootstrap(newSession); }, 0);
+      } else if (event === 'PASSWORD_RECOVERY' && newSession) {
+        // User arrived via a password-reset email link.
+        // Set session so they're authenticated, mark passwordRecovery=true so the
+        // routing guard routes them to /reset-password instead of the main app,
+        // and set needsOnboarding=false (they're an existing user).
+        console.log('[WARM_BOOT] PASSWORD_RECOVERY — routing to /reset-password');
+        setPasswordRecovery(true);
+        setSession(newSession);
+        setNeedsOnboarding(false);
+
+      } else if (event === 'SIGNED_OUT') {
+        setSession(newSession);
+        console.log('[DELETE_TRACE] SIGNED_OUT — clearing local state');
+        setNeedsOnboarding(false);
+        setPasswordRecovery(false);
+        clearAllTabCaches();
+        await clearLocalOnboardingState();
+        const stageAfter = await readOnboardingStage();
+        console.log('[DELETE_TRACE] cleared keys complete — stage=', stageAfter, '(expect null)');
+      }
+    });
+
+    // ── Deferred bootstrap body ──────────────────────────────────────────
+    // The full body below previously ran inline inside onAuthStateChange,
+    // which deadlocked against the gotrue auth-token lock the listener was
+    // invoked under. Behavior is intentionally unchanged — only the
+    // execution context has moved one task tick later.
+    async function runBootstrap(newSession: Session) {
+      // ── Wrap ALL async bootstrap work in try/catch ─────────────────────
+      // If any DB call throws (RLS, network, trigger conflict from a freshly-
+      // deleted row, etc.) the handler must NOT leave needsOnboarding===undefined
+      // forever — that is the exact deadlock that hangs the callback screen.
+      // Fallback: needsOnboarding=true sends the user to onboarding, which is
+      // the correct safe default for any recreated or genuinely new account.
+      try {
           // ── Critical path: route as soon as possible ──────────────────────
           //
           // Only AsyncStorage (≈10ms) is on the routing critical path.
@@ -465,28 +509,7 @@ export default function RootLayout() {
           console.error('[WARM_BOOT] bootstrap threw — created_at heuristic → needsOnboarding=', fallback, 'msg=', msg);
           setNeedsOnboarding(fallback);
         }
-
-      } else if (event === 'PASSWORD_RECOVERY' && newSession) {
-        // User arrived via a password-reset email link.
-        // Set session so they're authenticated, mark passwordRecovery=true so the
-        // routing guard routes them to /reset-password instead of the main app,
-        // and set needsOnboarding=false (they're an existing user).
-        console.log('[WARM_BOOT] PASSWORD_RECOVERY — routing to /reset-password');
-        setPasswordRecovery(true);
-        setSession(newSession);
-        setNeedsOnboarding(false);
-
-      } else if (event === 'SIGNED_OUT') {
-        setSession(newSession);
-        console.log('[DELETE_TRACE] SIGNED_OUT — clearing local state');
-        setNeedsOnboarding(false);
-        setPasswordRecovery(false);
-        clearAllTabCaches();
-        await clearLocalOnboardingState();
-        const stageAfter = await readOnboardingStage();
-        console.log('[DELETE_TRACE] cleared keys complete — stage=', stageAfter, '(expect null)');
-      }
-    });
+    }
 
     return () => subscription.unsubscribe();
   }, []);
