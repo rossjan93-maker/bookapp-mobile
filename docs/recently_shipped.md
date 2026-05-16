@@ -23,7 +23,7 @@ Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/
 
 **Hard constraints honoured.** No P3B start. No ranking / scoring math / retrieval / composition / RecCard layout change. No onboarding / cold-start / import touch. No copy weakening. No opportunistic cleanup.
 
-**Status.** Scenario B unblocked for re-smoke. P3A product acceptance still BLOCKED pending re-smoke of A / B / C / D (B was the immediate blocker; A and C remain at PASS WITH NOTES from the prior round; D never captured).
+**Status.** Scenario B re-smoke captured 2026-05-16 — **PASS WITH NOTE**. Inputs: `{Thriller & Mystery, escape, lighter, fast pacing, less of Young Adult}`. Top-4 reasons: three "Matches your stated **thriller & mystery** preference" (humanised label rendered; raw `thriller_mystery` absent), one author-anchor "Start with book one of the Mrs. Parrish." Negative checks all clear: no raw snake_case key, no false nonfiction reason, no empty reason line, no library-history overclaiming, no "not personalized yet" regression. Note (non-blocking): onboarding still captures pace/tone/intent without those becoming first-class reason evidence — tracked under Current Intent Layer follow-up in `replit.md` Parked / explicitly deferred, NOT a P3A blocker. P3A product acceptance remains BLOCKED on Scenario D (initial capture still outstanding).
 
 ## P3 readiness — D1–D5 decisions (locked 2026-05-16, foundation shipped same day)
 
