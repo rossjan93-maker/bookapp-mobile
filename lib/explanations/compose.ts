@@ -307,8 +307,18 @@ export function composeExplanation(bundle: ExplanationBundle): ExplanationOutput
       case 'intent_fit':
       case 'novelty_diversity':
       case 'repetition_suppression':
-        // Not emitted by P3A-3 derivation today; if scoring later wires
-        // them, the floors above are already set. Stay silent for now.
+      // ── P4C observe-only kinds ────────────────────────────────────────
+      // Emitted with value=0 by `deriveP4CContributions` so they carry
+      // typed evidence forward without changing visible copy. The composer
+      // stays silent on them; P4D will move them out of `not_yet_emitted`
+      // once user-facing phrasing + calibrated floors land.
+      case 'current_intent_fit':
+      case 'tone_fit':
+      case 'pace_fit':
+      case 'complexity_fit':
+      case 'series_continuation_fit':
+      case 'avoidance_conflict':
+      case 'not_right_now_risk':
         suppressed.push(`${kind}:not_yet_emitted`);
         return null;
     }

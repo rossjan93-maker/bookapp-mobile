@@ -67,7 +67,20 @@ export type ScoringContributionKind =
   | 'novelty_diversity'
   | 'soft_avoid_penalty'
   | 'repetition_suppression'
-  | 'hygiene_floor';
+  | 'hygiene_floor'
+  // ── P4C observe-only kinds (additive) ────────────────────────────────────
+  // Emitted by `deriveP4CContributions` (see lib/scoring/p4cContributions.ts)
+  // with value === 0 so they do NOT participate in score arithmetic. Their
+  // job is to carry typed evidence forward for the P4D wiring batch. The
+  // composer (lib/explanations/compose.ts) treats them as not-yet-emitted
+  // (returns null in the switch), so user-visible copy is unchanged.
+  | 'current_intent_fit'
+  | 'tone_fit'
+  | 'pace_fit'
+  | 'complexity_fit'
+  | 'series_continuation_fit'
+  | 'avoidance_conflict'
+  | 'not_right_now_risk';
 
 export type ScoringContribution = {
   phase:    'scoring';
@@ -150,6 +163,17 @@ export const DISPLAY_FLOORS: Readonly<Record<ScoringContributionKind, number>> =
   soft_avoid_penalty:     0.10,
   repetition_suppression: 0.04,
   hygiene_floor:          0.10,
+  // P4C: observe-only kinds. Floors are conservatively positive so that the
+  // composer's `Math.abs(sum) < floor` gate suppresses any accidentally
+  // non-zero value during the observe-only window. P4D will recalibrate
+  // when these kinds become user-facing.
+  current_intent_fit:      0.04,
+  tone_fit:                0.04,
+  pace_fit:                0.04,
+  complexity_fit:          0.04,
+  series_continuation_fit: 0.04,
+  avoidance_conflict:      0.04,
+  not_right_now_risk:      0.04,
 };
 
 // ── Reason-string → RetrievalContribution mapping (P3A-2) ────────────────────

@@ -80,6 +80,7 @@ import { computeStatedTasteContribution } from './recPolicy';
 import type { RecRequest } from './recRequest';
 import { planBranches } from './retrieval/branchPlanner';
 import { mergeRetrievalReasons, mapRetrievalContributions, deriveScoringContributions } from './scoring/contributions';
+import { deriveP4CContributions } from './scoring/p4cContributions';
 import type { RetrievalContribution, ScoringContribution } from './scoring/contributions';
 import { projectComposerReasons, COMPOSER_REASONS_PROJECTION_ENABLED } from './explanations/projection';
 import { classifyContributionExplanationQuality } from './explanations/contributionQuality';
@@ -2134,15 +2135,31 @@ export function getRankedRecs(
     // P3A-3: derive scoring-phase contributions from the breakdown we just
     // produced. Pure projection — does NOT call back into scoring, does NOT
     // change `score`/`reasons`/`risks`, and contributes nothing to ranking.
+    const scoringContribs = deriveScoringContributions(
+      scoredFields._score_breakdown,
+      scoredFields._score_breakdown.audit_flags ?? [],
+    );
+    // P4C: observe-only contribution wiring. Emits typed evidence entries
+    // (current_intent_fit / tone_fit / pace_fit / complexity_fit /
+    // series_continuation_fit / avoidance_conflict / not_right_now_risk)
+    // with value === 0 so ranking and the score-sum invariant are
+    // unchanged. The composer (lib/explanations/compose.ts) treats every
+    // P4C kind as `not_yet_emitted`, so user-visible copy is byte-identical.
+    // Skipped when `req` is absent (legacy path that never built signals).
+    const p4cContribs: ScoringContribution[] = req
+      ? deriveP4CContributions({
+          book,
+          traits:              getBookTraits(book),
+          signals:             req.signals,
+          seriesPositionsRead,
+        })
+      : [];
     return {
       ...book,
       ...scoredFields,
       _debug: { pool_size: poolSize, rank: 0 },
       _retrieval_contributions: mapRetrievalContributions(reasonsForContrib),
-      _scoring_contributions: deriveScoringContributions(
-        scoredFields._score_breakdown,
-        scoredFields._score_breakdown.audit_flags ?? [],
-      ),
+      _scoring_contributions: [...scoringContribs, ...p4cContribs],
     } as ScoredBook;
   });
 

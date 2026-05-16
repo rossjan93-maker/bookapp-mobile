@@ -1,0 +1,205 @@
+P4B BookTraits Foundation is accepted at the contract/code level.
+
+Proceed to P4C — observe-only contribution wiring.
+
+Important:
+P4C must not change ranking, scoring math, composition, RecCard, visible copy, or explanation output yet.
+
+Current accepted state:
+- P4A added Signal Partition Contract:
+  - durable vs current/session intent
+  - diagnosisAnswers classification
+  - readingStylesDurable / readingStylesIntent / readingStylesUnknown
+  - no behavior change
+- P4B added BookTraits foundation:
+  - tone / toneConfidence
+  - pace / paceConfidence
+  - complexity / complexityConfidence
+  - lengthClass
+  - seriesPosition
+  - all unknown-first
+  - no behavior change
+- Existing validators are green.
+
+Task type:
+P4C observe-only contribution implementation only.
+
+Goal:
+Emit new P4 contribution kinds from the now-typed user-side signals and book-side traits, but keep their score value at 0 / observe-only so ranking remains byte-identical.
+
+## 1. Contribution kinds to emit
+
+Add observe-only scoring contributions for:
+
+- current_intent_fit
+- tone_fit
+- pace_fit
+- complexity_fit
+- series_continuation_fit
+- avoidance_conflict
+- not_right_now_risk
+
+If some are not yet safely emit-able because evidence is insufficient, explicitly defer them and explain why.
+
+## 2. Source signals
+
+Use:
+- P4A signal partition outputs:
+  - readingStylesIntent
+  - diagnosisAnswers.intentShaped
+  - current_intent session/chip state where available
+  - avoid signals
+  - durable/revealed history where needed for series continuation
+- P4B BookTraits:
+  - tone + confidence
+  - pace + confidence
+  - complexity + confidence
+  - lengthClass
+  - seriesPosition
+
+Do not infer from weak evidence.
+
+## 3. Observe-only rule
+
+Every new P4 contribution emitted in this batch must be ranking-neutral.
+
+Requirements:
+- contribution `value = 0`
+- or equivalent explicit observe-only field if the model supports it
+- no score math change
+- no ranking change
+- no composition change
+- no EXP_QUALITY change
+- no reservation behavior change
+
+## 4. Evidence requirements
+
+For each contribution:
+
+### current_intent_fit
+Requires:
+- non-default current/session intent signal
+- specific or reliable book-side trait match
+- evidence fields populated
+
+### tone_fit
+Requires:
+- tone intent signal or intent-shaped diagnosis tone
+- book tone not unknown
+- confidence at least specific or approved broad level
+
+### pace_fit
+Requires:
+- pace intent signal or readingStylesIntent pace signal
+- book pace not unknown
+- confidence at least specific or approved broad level
+
+### complexity_fit
+Requires:
+- user-side complexity/depth/challenge signal
+- book complexity not unknown
+
+### series_continuation_fit
+Requires:
+- user has finished prior book in same series
+- candidate has seriesPosition with index > prior finished index
+- do not emit for want_to_read-only prior book
+
+### avoidance_conflict
+Requires:
+- user avoid / session less-of signal
+- book matches avoided trait/category
+- observe-only for now
+
+### not_right_now_risk
+Requires:
+- current intent suggests light/palette cleanser/low burden
+- book is dark/long/dense enough to conflict
+- evidence populated
+- observe-only for now
+
+## 5. Composer remains unchanged
+
+Do not admit these new contributions into visible explanations yet.
+
+Specifically:
+- do not remove current_intent from composer suppression yet
+- do not change reason copy
+- do not change RecCard
+- do not expose role hints
+
+P4D will handle explanation admission after P4C contributions are validated.
+
+## 6. Validator
+
+Add validators:
+
+- `scripts/validate_intent_contribution.ts`
+- `scripts/validate_tone_pace_fit.ts`
+- `scripts/validate_series_continuation.ts`
+
+Or combine them if cleaner, but coverage must include:
+
+1. New P4 contributions emit when both user-side and book-side evidence exist.
+2. Contributions do not emit when book trait is unknown.
+3. Contributions do not emit from broad/single-token weak evidence unless the P4B confidence rule permits it.
+4. Contributions carry evidence fields.
+5. All emitted P4 contributions are observe-only / zero-value.
+6. Ranking/order remains byte-identical before and after contribution emission.
+7. Series continuation only emits when prior series book is finished.
+8. Series continuation does not emit when prior book is only want_to_read.
+9. Avoidance conflict emits only as conflict/risk evidence, not positive fit.
+10. Not-right-now risk emits only when both current intent and book burden evidence exist.
+11. P3A composer-backed reasons remain unchanged.
+12. P2 stated-reservation path remains unaffected.
+
+## 7. Regression suite
+
+Run:
+- new P4C validators
+- validate_book_trait_coverage
+- validate_signal_partition
+- validate_detect_genre
+- validate_explanation_default_flip
+- validate_explanation_faithfulness
+- validate_explanation_projection
+- validate_explanation_quality_contribution
+- validate_scoring_contributions
+- validate_retrieval_contributions
+- validate_multi_source_provenance
+- validate_stated_reservation
+- validate_rec_validity
+- validate_taxonomy
+
+Also report:
+- typecheck delta against current baseline
+- workflow/app status
+
+## Hard constraints
+
+- Do not change ranking.
+- Do not change scoring math.
+- Do not change composition.
+- Do not change RecCard.
+- Do not change visible copy.
+- Do not change onboarding UI.
+- Do not alter applyStyleBoosts or applyDiagnosisBoosts yet.
+- Do not implement hard-avoid storage.
+- Do not implement role hints yet.
+- Do not start P4C.1 ranking influence.
+- Do not start P4D composer admission.
+- No opportunistic cleanup.
+
+## Return format
+
+1. Executive verdict
+2. What changed
+3. Files touched
+4. Contribution kinds emitted / deferred
+5. Evidence gates
+6. Observe-only guarantees
+7. Validator results
+8. Typecheck/workflow status
+9. Behavior guarantees
+10. Risks / deferred items
+11. Recommended P4C.1 or P4D next step
