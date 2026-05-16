@@ -100,8 +100,13 @@ const PROFILE_STALE_MS = 60_000;
 type ProfileSnapshot = { userId: string; fetchedAt: number };
 
 let _profileCache: ProfileSnapshot | null = null;
-// On sign-out, clear so the next user gets a fresh load
-registerCacheClearer(() => { _profileCache = null; });
+// On sign-out, clear so the next user gets a fresh load.
+// Also tagged 'taste' so a Reading Taste edit (edit-preferences →
+// invalidateTasteCaches()) drops this snapshot, allowing the next
+// useFocusEffect to bypass the 60 s staleness guard and refetch the
+// updated favorite/avoid genres so the Profile pills reflect the edit
+// immediately instead of after the cache window expires.
+registerCacheClearer(() => { _profileCache = null; }, 'taste');
 
 export default function ProfileScreen() {
   const router = useRouter();

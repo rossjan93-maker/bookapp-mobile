@@ -1,0 +1,67 @@
+P3A is product accepted. Do not reopen P3A.
+
+We are doing one small contained polish batch before starting P4.
+
+Task type:
+Preference-edit responsiveness polish only.
+
+Context:
+During Scenario D live smoke, the explicit preference edit path passed functionally:
+- user added Romance
+- avoided Thriller
+- selected Character-driven
+- For You eventually reflected the edit
+- composer-backed reasons were faithful
+
+But there was a UX/state-sync issue:
+- Profile page pills did not update instantaneously after saving Reading Taste
+- For You recommendations were slow to update, though they eventually did
+- This is not recommender correctness, but it weakens confidence that the app heard the user
+
+Goal:
+Make preference edit save feel immediately reflected across Profile and For You without changing recommendation ranking/scoring/composition.
+
+Investigate and implement the smallest correct responsiveness fix.
+
+Please inspect:
+1. Reading Taste save handler
+2. Profile page taste-pill data source
+3. For You tasteProfile / hub cache refresh path
+4. cache clearers after preference save
+5. BuildCause='explicit_preference_edit' / rec rebuild trigger path
+
+Likely issue:
+- stale tasteProfile snapshot on Profile
+- deferred For You rebuild rather than immediate post-save refresh
+- cache invalidation happening but UI surfaces not being notified / refocused quickly
+
+Requirements:
+1. After saving Reading Taste, Profile pills should update immediately or near-immediately.
+2. For You should either:
+   - synchronously start rebuilding with BuildCause='explicit_preference_edit', or
+   - show a clear neutral “updating picks” state rather than stale content.
+3. Preserve the existing proven P2/P3A behavior.
+4. Do not change ranking/scoring/composition math.
+5. Do not touch composer logic.
+6. Do not start P4.
+7. No opportunistic cleanup.
+
+Validation:
+1. Typecheck delta against current baseline.
+2. Workflow/app status.
+3. Confirm Profile pills update immediately after save.
+4. Confirm For You reflects the edit without a confusing stale-state delay.
+5. Confirm cache invalidation still clears relevant rec/session/profile state.
+6. Confirm P2 explicit-preference responsiveness remains intact.
+7. Confirm P3A composer-backed reasons remain unchanged.
+8. Provide manual smoke steps.
+
+Return format:
+1. Executive verdict
+2. Root cause
+3. Files touched
+4. Fix implemented
+5. Validation results
+6. Behavior guarantees
+7. Manual smoke instructions
+8. Recommended next phase

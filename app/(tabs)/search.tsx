@@ -701,6 +701,13 @@ let _hubCache: HubSnapshot | null = null;
 
 // Clear both caches on sign-out so the next user never sees previous user's data
 registerCacheClearer(() => { clearRecSession(); _hubCache = null; });
+// Reading Taste edits (edit-preferences → invalidateTasteCaches()) must drop
+// the cached HubSnapshot so the next loadHub() recomputes TasteProfile from
+// fresh reader_preferences. Without this, the next focus would re-seed
+// `tasteProfile` from the pre-edit snapshot and RecommendationsFeed would
+// (race-window) run its rebuild against stale favorite/avoid genres before
+// loadHub's setTasteProfile(tp) lands.
+registerCacheClearer(() => { _hubCache = null; }, 'taste');
 
 // ─── Entry check helpers ───────────────────────────────────────────────────────
 // hasPersonalizationSignal imported from lib/personalizationSignal.ts
@@ -1097,6 +1104,22 @@ export default function RecommendationsScreen() {
 
     if (__DEV__) console.log('[PERF] recommendations_screen_mount');
 
+    // Synchronous race-close (must run before any await so that a sibling
+    // useFocusEffect inside RecommendationsFeed cannot sample a stale
+    // non-null tasteProfile while we are mid-fetch).
+    //   • Cold start (no cache, no prior state) → full hub skeleton.
+    //   • Taste cache invalidated while prior state survived (Reading Taste
+    //     edit path) → drop tasteProfile so RecommendationsFeed renders its
+    //     neutral null-tasteProfile placeholder ("updating picks") instead
+    //     of rebuilding against pre-edit favorite/avoid genres.
+    if (!_hubCache) {
+      if (tasteProfile === null) {
+        setHubLoading(true);
+      } else {
+        setTasteProfile(null);
+      }
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setHubLoading(false); return; }
     // Belt-and-suspenders: clear stale caches if the user switched accounts
@@ -1105,8 +1128,8 @@ export default function RecommendationsScreen() {
     setCurrentUserId(user.id);
 
     // ── Phase 1: core hub data (all DB queries run concurrently) ─────────
-    // Show skeleton on cold start only; hub cache means instant render.
-    if (!_hubCache) setHubLoading(true);
+    // (Cold-start skeleton vs taste-invalidation neutral state is decided
+    // synchronously above, before the auth await — see race-close comment.)
 
     const _phase1Start = Date.now();
     if (__DEV__) console.log('[PERF] phase1_start');

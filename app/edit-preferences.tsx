@@ -14,6 +14,7 @@ import { clearRecSession } from '../lib/recSession';
 import { clearRecPayload } from '../lib/recPayloadCache';
 import { clearAll as clearRecQueue } from '../lib/recQueue';
 import { setPendingBuildCause } from '../lib/recRequest';
+import { invalidateTasteCaches } from '../lib/tabCache';
 import { EDIT_GENRE_IDS, editLabel } from '../lib/taxonomy/genres';
 
 // P0A: chip labels are derived from the canonical taxonomy. Order is
@@ -170,6 +171,17 @@ export default function EditPreferencesScreen() {
       clearRecSession();
       clearRecQueue();
       void clearRecPayload(userId);
+      // Responsiveness polish: also drop the UI-layer snapshots that
+      // staleness-cache the previous favorite/avoid genres.
+      //   • Profile `_profileCache` (60 s staleness guard) — without this
+      //     drop, the Profile pills would not update until the cache window
+      //     expired or the user pull-to-refreshed.
+      //   • Search/For-You `_hubCache.tasteProfile` — without this drop, the
+      //     next focus would re-seed tasteProfile from the pre-edit snapshot
+      //     and RecommendationsFeed could rebuild against stale genres.
+      // Both clearers live in their tab modules (registered with the 'taste'
+      // tag on lib/tabCache), so this is a single coordinated invalidation.
+      invalidateTasteCaches();
       // P1: tag the next runPipeline() as caused by an explicit preference
       // edit so RecRequest.build.cause = 'explicit_preference_edit'. Module
       // state self-clears on first consume — no leakage into subsequent runs.
