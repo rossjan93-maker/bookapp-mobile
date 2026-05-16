@@ -1,0 +1,130 @@
+P3A-1 is accepted.
+
+We are proceeding to P3A-2.
+
+Current accepted P3A-1 state:
+- Typed contribution/provenance model exists with phase distinction:
+  - retrieval
+  - scoring
+  - composition
+- `_retrieval_reasons: string[]` exists while legacy `_retrieval_reason` remains first/dominant for compatibility.
+- `fetchOLByAuthor` no longer hardcodes all author-triggered reasons into `author_anchor:`.
+- Multi-source provenance validator passes 28/28.
+- No ranking/scoring/copy/RecCard changes were made.
+- P2 explicit-preference acceptance path remains unaffected because the reservation AND-gate still reads singular `_retrieval_reason`.
+
+Task type:
+P3A-2 foundational implementation only.
+
+Goal:
+Begin carrying retrieval-phase contribution evidence forward into scored candidates, without changing ranking, scoring math, recommendation output, RecCard copy, or reservation behavior.
+
+In short:
+Convert `_retrieval_reasons[]` into structured retrieval-phase contributions and attach them to `ScoredBook`, while preserving all existing behavior.
+
+## Scope
+
+### 1. Emit retrieval-phase contributions
+
+For each candidate with `_retrieval_reasons[]`, create one retrieval-phase contribution per retrieval reason.
+
+Use the contribution/provenance model introduced in P3A-1.
+
+Each retrieval contribution should include:
+- `phase: 'retrieval'`
+- source/kind appropriate to the retrieval reason
+- the raw retrieval reason
+- branch/source evidence when available
+- explanation/display eligibility defaulted conservatively
+- no score value unless the model already supports value-less retrieval contributions cleanly
+
+Do not infer scoring causality from retrieval alone.
+
+Retrieval contribution means:
+> “Why was this candidate considered?”
+
+It does not yet mean:
+> “Why did this candidate rank highly?”
+
+### 2. Attach contributions to scored candidates
+
+Carry the retrieval contributions forward into the `ScoredBook` or equivalent scored candidate shape.
+
+Requirements:
+- no score math changes
+- no rank changes
+- no composition changes
+- no RecCard changes
+- no explanation changes
+- no reservation AND-gate changes
+- no behavior changes visible to users
+
+### 3. Preserve legacy fields
+
+Keep:
+- `_retrieval_reason`
+- `_retrieval_reasons`
+- `book.reasons[]`
+- `_score_breakdown`
+- `audit_flags`
+
+Do not delete or replace legacy fields in this batch.
+
+### 4. Cache-hit coherence
+
+P3A-1 notes say cache-hit/restored candidates initialize `_retrieval_reasons` from the singular cached retrieval reason.
+
+For P3A-2, make sure retrieval contributions are also coherent on:
+- live retrieval candidates,
+- restored/cache-hit candidates,
+- candidates that merge duplicate retrieval reasons within the same pipeline run.
+
+Do not bump cache version unless absolutely necessary. If you think a cache version bump is required, stop and explain why before implementing it.
+
+### 5. Validator / fixture
+
+Add or extend a validator to prove retrieval contributions are correct.
+
+The validator should assert:
+1. a candidate with two `_retrieval_reasons` receives two retrieval-phase contributions,
+2. `_retrieval_reason` remains equal to `_retrieval_reasons[0]`,
+3. singular/dominant provenance remains stable,
+4. cache-restored candidates produce coherent retrieval contributions,
+5. retrieval contributions do not alter ordering/ranking,
+6. stated-branch priority remains intact,
+7. P2 reservation compatibility remains intact.
+
+Use deterministic fixtures. Avoid live API dependency where possible.
+
+## Hard constraints
+
+- Do not start explanation rewrite.
+- Do not touch RecCard.
+- Do not change recommendation copy.
+- Do not alter ranking.
+- Do not alter scoring math.
+- Do not migrate reservation AND-gate yet.
+- Do not start P3B.
+- Do not delete legacy fields.
+- No opportunistic cleanup.
+
+## Validation required
+
+1. Exact files touched.
+2. Validator output.
+3. Typecheck delta against current baseline.
+4. Workflow/app status.
+5. Confirmation no ranking/scoring behavior changed.
+6. Confirmation P2 explicit-preference acceptance path remains unaffected.
+7. Cache/versioning implications.
+8. Recommended P3A-3 next step.
+
+Return format:
+1. Executive verdict
+2. What changed
+3. Files touched
+4. Validator results
+5. Typecheck/workflow status
+6. Behavior guarantees
+7. Cache/versioning implications
+8. Recommended P3A-3 next step

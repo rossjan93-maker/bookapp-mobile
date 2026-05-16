@@ -128,6 +128,89 @@ export const DISPLAY_FLOORS: Readonly<Record<ScoringContributionKind, number>> =
   hygiene_floor:         0,
 };
 
+// ── Reason-string → RetrievalContribution mapping (P3A-2) ────────────────────
+//
+// Pure classifier from the legacy `_retrieval_reason` prefix scheme (set by
+// the planner branches and the OL fetch helpers in lib/recommender.ts) to a
+// typed RetrievalContribution. The prefix scheme is the public contract
+// between branches and downstream code; we centralize the mapping here so
+// the recommender doesn't need a second copy of this knowledge.
+//
+// Mapping table (kept in sync with lib/retrieval/branches/* + recommender
+// fetch helpers):
+//
+//   stated_genre:<key>             → statedGenres        / stated_durable      / subject
+//   genre:<key>                    → revealedLanes       / revealed_behavioral / subject
+//   lane:<key>                     → revealedLanes       / revealed_behavioral / subject
+//   liked_subject:<subject>        → revealedLanes       / revealed_behavioral / subject
+//   author_anchor:<author>         → revealedAuthors     / revealed_behavioral / author
+//   repeated_author:<author>       → revealedAuthors     / revealed_behavioral / author
+//   exact_series_seed:<series>#N   → exact_series_seed                          / title
+//   local:eligible                 → catalog
+//   local:fallback_scan            → fallback_scan
+//   cache:restored                 → cached_external
+//   <anything else>                → unknown
+//
+// `displayEligible` is conservatively `false` here: P3A-2 only carries
+// retrieval evidence forward — the explanation-faithfulness rewire that
+// turns retrieval contributions into surfaced reasons ships in P3A-3 and
+// will set per-source eligibility there.
+export function classifyRetrievalReason(reason: string): RetrievalContribution {
+  const colon = reason.indexOf(':');
+  const prefix = colon >= 0 ? reason.slice(0, colon) : reason;
+  const value  = colon >= 0 ? reason.slice(colon + 1) : '';
+
+  switch (prefix) {
+    case 'stated_genre':
+      return {
+        phase: 'retrieval', source: 'statedGenres', reason,
+        signalClass: 'stated_durable',
+        evidence: { queryKind: 'subject', queryValue: value },
+      };
+    case 'genre':
+    case 'lane':
+    case 'liked_subject':
+      return {
+        phase: 'retrieval', source: 'revealedLanes', reason,
+        signalClass: 'revealed_behavioral',
+        evidence: { queryKind: 'subject', queryValue: value },
+      };
+    case 'author_anchor':
+    case 'repeated_author':
+      return {
+        phase: 'retrieval', source: 'revealedAuthors', reason,
+        signalClass: 'revealed_behavioral',
+        evidence: { queryKind: 'author', queryValue: value },
+      };
+    case 'exact_series_seed':
+      return {
+        phase: 'retrieval', source: 'exact_series_seed', reason,
+        evidence: { queryKind: 'title', queryValue: value },
+      };
+    case 'local': {
+      // local:eligible vs local:fallback_scan — distinguish by suffix.
+      const sub: 'catalog' | 'fallback_scan' =
+        value === 'fallback_scan' ? 'fallback_scan' : 'catalog';
+      return { phase: 'retrieval', source: sub, reason };
+    }
+    case 'cache':
+      return { phase: 'retrieval', source: 'cached_external', reason };
+    default:
+      return { phase: 'retrieval', source: 'unknown', reason };
+  }
+}
+
+// Map a candidate's full `_retrieval_reasons[]` to a typed contribution
+// list, preserving arrival order. One contribution per reason — no
+// deduplication beyond what `mergeRetrievalReasons` already enforced at
+// merge time. Stable across cache restore vs. live retrieval (same
+// classifier reads either path's reason strings).
+export function mapRetrievalContributions(
+  reasons: readonly string[],
+): RetrievalContribution[] {
+  return reasons.map(classifyRetrievalReason);
+}
+
 // ── Retrieval-phase merge helper (D1) ────────────────────────────────────────
 //
 // Single source of truth for accumulating `_retrieval_reasons[]` when the

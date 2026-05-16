@@ -79,7 +79,8 @@ import { loadCachedRecs, persistRecCache, shouldRebuild, buildSignalSnapshot } f
 import { computeStatedTasteContribution } from './recPolicy';
 import type { RecRequest } from './recRequest';
 import { planBranches } from './retrieval/branchPlanner';
-import { mergeRetrievalReasons } from './scoring/contributions';
+import { mergeRetrievalReasons, mapRetrievalContributions } from './scoring/contributions';
+import type { RetrievalContribution } from './scoring/contributions';
 import { applyLocalSoftAvoidFilter } from './retrieval/softAvoidLocal';
 import { SOFT_AVOID_RETRIEVAL_MULTIPLIER } from './recPolicy';
 import type { AffinityKey } from './taxonomy/genres';
@@ -247,6 +248,15 @@ export type ScoredBook = CandidateBook & {
   // Populated when "Your Next Read" intent is active.
   // Shows exactly how this book was evaluated by the intent layer.
   _intent_trace?: IntentBookTrace;
+  /** P3A-2: retrieval-phase contribution evidence — one per entry of
+   *  `_retrieval_reasons[]`, in arrival order. Read-only forward of "why was
+   *  this candidate considered?", NOT "why did it rank?". Scoring and
+   *  composition contributions land in subsequent P3A batches. P3A-2 does
+   *  NOT consume this field anywhere that affects ranking, scoring, copy,
+   *  composition, or the reservation AND-gate; it is purely additive
+   *  metadata for the P3A-3 explanation-faithfulness rewire. Optional for
+   *  backward compatibility with non-recommender ScoredBook constructors. */
+  _retrieval_contributions?: readonly RetrievalContribution[];
 };
 
 export type QualityGate =
@@ -2098,10 +2108,19 @@ export function getRankedRecs(
 
   const scored: ScoredBook[] = candidates.map(book => {
     const enrichment = book.external_id ? enrichmentMap.get(book.external_id) : undefined;
+    // P3A-2: forward retrieval-phase provenance into the scored shape so
+    // P3A-3 can read it during explanation composition. Order mirrors
+    // `_retrieval_reasons[]` arrival order. Defaults to a single-element
+    // mapping when only the legacy singular field is present (defensive
+    // for any candidate path that bypassed the merge-loop init).
+    const reasonsForContrib =
+         book._retrieval_reasons
+      ?? (book._retrieval_reason ? [book._retrieval_reason] : []);
     return {
       ...book,
       ...scoreBookForUser(book, profile, feedback, enrichment, req),
       _debug: { pool_size: poolSize, rank: 0 },
+      _retrieval_contributions: mapRetrievalContributions(reasonsForContrib),
     } as ScoredBook;
   });
 
