@@ -1,0 +1,197 @@
+P4C-0.5 is accepted.
+
+Proceed to P4C.1 — limited ranking influence for current intent / semantic-fit contributions.
+
+Important:
+This is the first P4 batch that may change ranking. Keep it tightly bounded, observable, and validator-proven.
+
+Current accepted state:
+- P4A: Signal Partition Contract accepted.
+- P4B: BookTraits Foundation accepted.
+- P4C: observe-only P4 contributions accepted.
+- P4C-0.5: quick-taste writer now stamps intentScope='session' for new intent-shaped answers.
+- Legacy rows without intentScope remain durable/back-compatible.
+- P4C contributions currently emit value=0 and are suppressed by composer.
+
+Goal:
+Activate limited non-zero ranking influence for a very small subset of P4C contributions, while preserving explanation suppression and RecCard behavior.
+
+Do not admit P4C contributions into visible explanations yet. That is P4D.
+
+## 1. Contributions eligible for non-zero value
+
+Eligible for limited ranking influence in this batch:
+
+- tone_fit
+- pace_fit
+- complexity_fit
+- current_intent_fit
+- series_continuation_fit
+- not_right_now_risk
+- avoidance_conflict
+
+But if any kind lacks sufficiently reliable evidence, keep it observe-only and explain why.
+
+## 2. Hard caps
+
+Use conservative caps.
+
+Recommended:
+- per-kind absolute cap: 0.20
+- total P4 intent/semantic stack cap: 0.30
+- negative/risk cap: -0.20 per kind
+- do not allow P4C.1 contributions to overpower explicit stated favorite/avoid genre floors
+
+P4C.1 should shape the deck, not dominate it.
+
+## 3. Evidence requirements
+
+Non-zero value may only be assigned when all relevant evidence exists.
+
+### tone_fit
+Requires:
+- `intentScope='session'` or live current_intent tone signal
+- book tone is not unknown
+- confidence is specific or approved broad
+- match direction is clear
+
+### pace_fit
+Requires:
+- session intent / readingStylesIntent / q_pacing
+- book pace is not unknown
+- confidence sufficient
+
+### complexity_fit
+Requires:
+- durable or session complexity/depth/challenge signal
+- book complexity not unknown
+- do not infer from weak single-token evidence
+
+### current_intent_fit
+Requires:
+- at least one real paired contribution among tone_fit / pace_fit / complexity_fit / not_right_now_risk
+- no free-floating current_intent_fit without a paired observation
+
+### series_continuation_fit
+Requires:
+- user has finished a strictly earlier book in same series
+- candidate has a parsed seriesPosition
+- do not emit non-zero for first-in-series or want_to_read-only prior
+
+### avoidance_conflict
+Should be negative or neutral only.
+Requires:
+- actual soft/session avoid overlap
+- do not turn this into positive reasoning
+- do not hard-exclude yet
+
+### not_right_now_risk
+Should be negative or neutral only.
+Requires:
+- session intent suggests lighter / low-burden / palette-cleanser type need
+- book is dark, long, dense, or otherwise conflicting
+- do not over-suppress if evidence is broad
+
+## 4. Composer remains suppressed
+
+Do not remove P4C kinds from the composer suppression block yet.
+
+Visible explanations should remain unchanged in this batch.
+
+No RecCard changes.
+
+## 5. Ranking no-regression / bounded-delta validator
+
+Add or extend validators to prove:
+
+1. P4C.1 contribution values are non-zero only when evidence gates are satisfied.
+2. All P4C.1 values respect per-kind caps.
+3. Total P4 contribution stack respects total cap.
+4. Legacy rows with `legacy=true` do not receive session-intent ranking influence unless a live current_intent signal is present.
+5. Quick-taste session rows can receive session-intent influence.
+6. Explicit stated favorite/avoid floors remain stronger than P4 intent nudges.
+7. Avoidance conflict and not-right-now risk are never positive.
+8. Series continuation only influences true continuation candidates.
+9. Composer output remains unchanged.
+10. Ranking deltas are bounded and explainable.
+11. P2 explicit-preference path remains intact.
+12. P3A explanation faithfulness remains intact.
+
+Suggested validator:
+- `scripts/validate_p4c_limited_ranking.ts`
+
+## 6. Fixture replay
+
+Create or extend fixture replay with at least:
+
+- quick-taste user with fast/light/escape intent
+- quick-taste user with slow/dark/deep intent
+- legacy diagnosis row without intentScope
+- import-first user with no current intent
+- series continuation user
+- soft avoid conflict user
+- not-right-now risk user
+
+For each:
+- compare pre-P4C.1 and post-P4C.1 scores/order
+- assert changes stay within declared caps
+- assert no visible reason changes
+
+## 7. Cache/versioning
+
+Audit whether activating non-zero P4C.1 score contributions requires a recValidity version bump.
+
+My expectation:
+- yes, if persisted rec payloads can contain scores/order built before P4C.1
+- bump recValidity if needed to avoid stale decks
+
+Explain decision.
+
+## Hard constraints
+
+- Do not change RecCard.
+- Do not change visible copy.
+- Do not admit P4C contributions into composer.
+- Do not implement hard avoid storage.
+- Do not start P4D.
+- Do not start role hints.
+- Do not change onboarding UI.
+- Do not refactor applyStyleBoosts/applyDiagnosisBoosts unless absolutely required for correctness.
+- No opportunistic cleanup.
+
+## Validation required
+
+Run:
+- validate_p4c_limited_ranking
+- validate_intent_contribution
+- validate_tone_pace_fit
+- validate_series_continuation
+- validate_signal_partition
+- validate_book_trait_coverage
+- validate_explanation_default_flip
+- validate_explanation_faithfulness
+- validate_explanation_projection
+- validate_explanation_quality_contribution
+- validate_scoring_contributions
+- validate_rec_validity
+- validate_taxonomy
+
+Also report:
+- typecheck delta
+- workflow/app status
+- cache/versioning decision
+- manual smoke instructions for a quick-taste user
+
+Return format:
+1. Executive verdict
+2. What changed
+3. Files touched
+4. Contributions activated / kept observe-only
+5. Caps and evidence gates
+6. Validator results
+7. Fixture replay results
+8. Cache/versioning decision
+9. Typecheck/workflow status
+10. Behavior guarantees
+11. Manual smoke plan
+12. Go/no-go for P4D

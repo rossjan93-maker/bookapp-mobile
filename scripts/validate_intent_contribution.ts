@@ -14,8 +14,11 @@
 //   2. Intent-shaped answer present but NO book-side pairing → no
 //      current_intent_fit (deferred — no pairing evidence).
 //   3. Intent-shaped answer present AND a pairing emitted (e.g. matching
-//      tone fixture) → exactly one current_intent_fit with value === 0,
-//      evidence.intentKeys + intentScope + legacy + pairedKinds set.
+//      tone fixture) → exactly one current_intent_fit. P4C.1 contract:
+//      value === 0 on legacy rows (intentScope='durable'/legacy=true);
+//      value === P4C_LIMITED_RANKING_POLICY.currentIntentFit (+0.02)
+//      when intentScope='session' / legacy=false. Evidence always
+//      carries intentKeys + intentScope + legacy + pairedKinds.
 //   4. Durable-shaped answers (b_*) alone never trigger emission.
 //   5. Explicit intentScope='session' honored (legacy=false).
 //
@@ -24,6 +27,7 @@
 
 import { deriveP4CContributions } from '../lib/scoring/p4cContributions';
 import { buildSignals } from '../lib/recSignals/build';
+import { P4C_LIMITED_RANKING_POLICY } from '../lib/recPolicy';
 import type { Signals } from '../lib/recSignals/types';
 import type { BookTraits } from '../lib/bookTraits';
 import type { TasteProfile } from '../lib/tasteProfile';

@@ -1,40 +1,49 @@
 // =============================================================================
-// scoring/p4cContributions.ts — P4C observe-only contribution emission
+// scoring/p4cContributions.ts — P4C.1 limited-influence contribution emission
 //
 // Pure / synchronous / read-only helper that derives typed evidence-bearing
-// `ScoringContribution`s for the P4 contribution kinds wired in this batch:
+// `ScoringContribution`s for the P4 contribution kinds:
 //
 //   current_intent_fit       — typed quick-taste intent signal is present
 //   tone_fit                 — book tone known + user tone signal known
 //   pace_fit                 — book pace known + user pace signal known
 //   complexity_fit           — book complexity known + durable craft style known
-//   series_continuation_fit  — book has a series position (catalog or title)
+//   series_continuation_fit  — book continues a series the user is mid-stream on
 //   avoidance_conflict       — book genre intersects soft-avoid stated genres
 //   not_right_now_risk       — current-intent mood/tone conflicts with book trait
 //
-// Every contribution is emitted with `value === 0`. P4C is observe-only by
-// charter: no contribution participates in score arithmetic, no kind enters
-// the composer's emit set, and the user-visible RecCard / reasons[] surface
-// is byte-identical. The composer (lib/explanations/compose.ts) treats every
-// P4C kind as `not_yet_emitted`. The validators in
-//   scripts/validate_intent_contribution.ts
-//   scripts/validate_tone_pace_fit.ts
-//   scripts/validate_series_continuation.ts
-// prove the typed evidence is well-formed without asserting any ranking or
-// copy delta.
+// P4C.1 (this batch): contributions may carry signed score values bounded by
+// `P4C_LIMITED_RANKING_POLICY` (lib/recPolicy.ts). Per-kind absolute cap is
+// 0.20; the recommender additionally applies stack caps + stated-taste floor
+// protection via `clampP4IntentStack`. The composer
+// (lib/explanations/compose.ts) continues to treat every P4C kind as
+// `not_yet_emitted`, so user-visible RecCard / reasons[] copy is unchanged.
 //
-// Hard rules (validator-enforced):
-//   1. Every emitted contribution has `value === 0`.
-//   2. Every emitted contribution has a non-empty `evidence` payload (the
-//      whole point of P4C is to carry that evidence forward).
-//   3. No emission when the corresponding evidence is `unknown` / absent —
-//      observe-only does not mean noise-only.
-//   4. No I/O, no randomness, no dependency on the recommender module.
+// Evidence gates (validator-enforced in
+// scripts/validate_p4c_limited_ranking.ts):
+//   1. tone_fit / pace_fit / complexity_fit signed only when BOTH sides are
+//      known AND the book confidence is `specific`. `partial` matches
+//      (book tone=mixed or pace=medium) always carry value=0 — observe-only.
+//   2. tone_fit / pace_fit / not_right_now_risk require a "live or
+//      session-eligible" user signal. Reading-style chips always qualify
+//      (live durable intent). Diagnosis q_* answers qualify only when
+//      diagnosisAnswers.legacy === false (intentScope='session'); on legacy
+//      rows the kind stays observe-only (value=0).
+//   3. complexity_fit's user side comes only from durable reading_styles
+//      chips today, so it is always live when emitted.
+//   4. series_continuation_fit signs only when priorReadCount > 0 (already
+//      enforced in P4C). Real continuation evidence — no first-in-series.
+//   5. avoidance_conflict and not_right_now_risk are NEGATIVE-ONLY by
+//      contract: they never emit a positive value, regardless of inputs.
+//   6. current_intent_fit signs only when a paired contribution fired AND
+//      diagnosisAnswers.legacy === false. Legacy rows keep value=0.
+//   7. No I/O, no randomness, no dependency on the recommender module.
 // =============================================================================
 
 import type { ScoringContribution } from './contributions';
 import type { BookTraits } from '../bookTraits';
 import type { Signals } from '../recSignals/types';
+import { P4C_LIMITED_RANKING_POLICY } from '../recPolicy';
 
 // ── User-side signal mapping ─────────────────────────────────────────────────
 //
@@ -94,8 +103,7 @@ function deriveUserPace(signals: Signals): { value: UserPace; sources: string[] 
 /** Durable craft preference for dense / literary prose. There is no user
  *  side complexity intent signal in the quick-taste schema today (no
  *  `q_complexity` answer key in DIAGNOSIS_INTENT_KEYS); the only available
- *  user-side signal is the durable reading_styles chips. P4D will revisit
- *  if quick-taste adds an explicit complexity intent. */
+ *  user-side signal is the durable reading_styles chips. */
 function deriveUserComplexity(signals: Signals): { value: UserComplexity; sources: string[] } {
   const sources: string[] = [];
   let value: UserComplexity = 'unknown';
@@ -106,13 +114,38 @@ function deriveUserComplexity(signals: Signals): { value: UserComplexity; source
   return { value, sources };
 }
 
-// ── Helper to build value=0 contributions ────────────────────────────────────
-function obs(
+/** A user-side signal is "ranking eligible" when at least one source comes
+ *  from a live durable reading-style chip, OR all q_* sources come from a
+ *  non-legacy (intentScope='session') row. Pure / data-only — no recommender
+ *  dependency. Legacy rows with only q_* sources stay observe-only.
+ *
+ *  Reading-style chips are always live (they reflect the user's currently
+ *  saved reading_styles preference; not a stale historical artifact).
+ *  Diagnosis q_* answers can be legacy (intentScope absent in the row)
+ *  or session (intentScope='session', stamped by P4C-0.5 writer). Legacy
+ *  q_* alone is not enough to drive ranking — only observation. */
+function isRankingEligible(sources: readonly string[], legacy: boolean): boolean {
+  if (sources.some(s => s.startsWith('reading_style:'))) return true;
+  if (sources.some(s => s.startsWith('q_')) && !legacy)  return true;
+  return false;
+}
+
+// ── Per-kind cap clamp ───────────────────────────────────────────────────────
+const PER_KIND_CAP = P4C_LIMITED_RANKING_POLICY.perKindAbsCap;
+function capPerKind(v: number): number {
+  if (v >  PER_KIND_CAP) return  PER_KIND_CAP;
+  if (v < -PER_KIND_CAP) return -PER_KIND_CAP;
+  return v;
+}
+
+// ── Emit helper ──────────────────────────────────────────────────────────────
+function emit(
   kind: ScoringContribution['kind'],
   source: string,
+  value: number,
   evidence: Record<string, unknown>,
 ): ScoringContribution {
-  return { phase: 'scoring', kind, value: 0, source, evidence };
+  return { phase: 'scoring', kind, value: capPerKind(value), source, evidence };
 }
 
 // ── Inputs ───────────────────────────────────────────────────────────────────
@@ -134,63 +167,90 @@ export type DeriveP4COpts = {
 export function deriveP4CContributions(opts: DeriveP4COpts): ScoringContribution[] {
   const { book, traits, signals, seriesPositionsRead } = opts;
   const out: ScoringContribution[] = [];
+  const W = P4C_LIMITED_RANKING_POLICY;
 
-  // current_intent_fit emission is gated on a real intent-to-book pairing:
-  // it is only emitted when at least one of {tone_fit, pace_fit,
-  // complexity_fit, not_right_now_risk} also emits, so the "fit" name
-  // never appears without a book-side trait actually matched against a
-  // user-side intent signal. Prepared here, pushed at the end.
   const intentShaped = signals.diagnosisAnswers?.intentShaped ?? {};
   const intentKeys   = Object.keys(intentShaped);
+  const intentLegacy = signals.diagnosisAnswers?.legacy ?? true;
 
-  // 2-4. tone_fit / pace_fit / complexity_fit — emit when BOTH sides are known.
+  // 2. tone_fit ──────────────────────────────────────────────────────────────
   const userTone = deriveUserTone(signals);
   if (traits.tone !== 'unknown' && userTone.value !== 'unknown') {
-    out.push(obs('tone_fit', 'tone', {
+    const match: 'match' | 'partial' | 'mismatch' =
+      traits.tone === userTone.value ? 'match'
+      : traits.tone === 'mixed'      ? 'partial'
+      :                                 'mismatch';
+    // P4C.1 sign gates: confidence must be 'specific' AND the user signal
+    // must be ranking-eligible (live chip OR session q_*). 'partial' (book
+    // tone=mixed) stays observe-only regardless.
+    const signedEligible =
+      traits.toneConfidence === 'specific'
+      && isRankingEligible(userTone.sources, intentLegacy)
+      && match !== 'partial';
+    const value =
+        !signedEligible        ? 0
+      : match === 'match'      ? W.toneFitMatch
+      :                          W.toneFitMismatch;
+    out.push(emit('tone_fit', 'tone', value, {
       bookTone:           traits.tone,
       bookToneConfidence: traits.toneConfidence,
       userTone:           userTone.value,
       userToneSources:    userTone.sources,
-      // Match / mismatch is a derived label for downstream convenience.
-      match: traits.tone === userTone.value ? 'match'
-           : traits.tone === 'mixed'        ? 'partial'
-           :                                  'mismatch',
+      match,
+      signedEligible,
     }));
   }
 
+  // 3. pace_fit ──────────────────────────────────────────────────────────────
   const userPace = deriveUserPace(signals);
   if (traits.pace !== 'unknown' && userPace.value !== 'unknown') {
-    out.push(obs('pace_fit', 'pace', {
+    const match: 'match' | 'partial' | 'mismatch' =
+      traits.pace === 'medium' ? 'partial'
+      : traits.pace === userPace.value ? 'match'
+      :                                  'mismatch';
+    const signedEligible =
+      traits.paceConfidence === 'specific'
+      && isRankingEligible(userPace.sources, intentLegacy)
+      && match !== 'partial';
+    const value =
+        !signedEligible        ? 0
+      : match === 'match'      ? W.paceFitMatch
+      :                          W.paceFitMismatch;
+    out.push(emit('pace_fit', 'pace', value, {
       bookPace:           traits.pace,
       bookPaceConfidence: traits.paceConfidence,
       userPace:           userPace.value,
       userPaceSources:    userPace.sources,
-      // Map medium book pace to 'partial' against either fast/slow user pref.
-      match: traits.pace === 'medium'
-        ? 'partial'
-        : (traits.pace === userPace.value ? 'match' : 'mismatch'),
+      match,
+      signedEligible,
     }));
   }
 
+  // 4. complexity_fit ────────────────────────────────────────────────────────
   const userComplexity = deriveUserComplexity(signals);
   if (traits.complexity !== 'unknown' && userComplexity.value !== 'unknown') {
     const bookIsDense = traits.complexity === 'dense' || traits.complexity === 'literary';
-    out.push(obs('complexity_fit', 'complexity', {
+    const match: 'match' | 'mismatch' = bookIsDense ? 'match' : 'mismatch';
+    // Complexity user side is always a live durable chip — always ranking-
+    // eligible when emitted. Confidence gate still applies.
+    const signedEligible = traits.complexityConfidence === 'specific';
+    const value =
+        !signedEligible        ? 0
+      : match === 'match'      ? W.complexityFitMatch
+      :                          W.complexityFitMismatch;
+    out.push(emit('complexity_fit', 'complexity', value, {
       bookComplexity:           traits.complexity,
       bookComplexityConfidence: traits.complexityConfidence,
       userComplexity:           userComplexity.value,
       userComplexitySources:    userComplexity.sources,
-      match: bookIsDense ? 'match' : 'mismatch',
+      match,
+      signedEligible,
     }));
   }
 
-  // 5. series_continuation_fit — emit ONLY when there is real continuation
-  //    evidence: the book sits at index N in a named series AND the user
-  //    has finished at least one strictly-earlier position in that series.
-  //    A book that merely has a seriesPosition but no prior reads ("first
-  //    in series" / "no overlap with read history") is NOT a continuation
-  //    fit; deferred — P4D will introduce a separate `series_starter` kind
-  //    if/when that signal becomes useful.
+  // 5. series_continuation_fit ───────────────────────────────────────────────
+  //    Real continuation evidence only — book at index N in a named series
+  //    AND user has finished at least one strictly-earlier position.
   if (traits.seriesPosition && traits.seriesPosition.seriesName) {
     const sName = traits.seriesPosition.seriesName;
     const sIdx  = traits.seriesPosition.index;
@@ -199,19 +259,20 @@ export function deriveP4CContributions(opts: DeriveP4COpts): ScoringContribution
       ? [...read].filter(n => n < sIdx).length
       : 0;
     if (priorReadCount > 0) {
-      out.push(obs('series_continuation_fit', 'series_position', {
-        seriesName:       sName,
-        bookSeriesIndex:  sIdx as number,
-        seriesTotal:      traits.seriesPosition.of ?? null,
-        priorReadCount,
-        continuesPrior:   true,
-      }));
+      out.push(emit('series_continuation_fit', 'series_position',
+        W.seriesContinuation,
+        {
+          seriesName:       sName,
+          bookSeriesIndex:  sIdx as number,
+          seriesTotal:      traits.seriesPosition.of ?? null,
+          priorReadCount,
+          continuesPrior:   true,
+        },
+      ));
     }
   }
 
-  // 6. avoidance_conflict — book primaryGenre/genres intersects user
-  //    soft-avoid stated genres (AffinityKey). Soft avoid penalty arithmetic
-  //    stays untouched; this only flags the conflict for typed observation.
+  // 6. avoidance_conflict (NEGATIVE-ONLY) ────────────────────────────────────
   const avoidKeys = signals.softAvoids?.genres ?? [];
   if (avoidKeys.length > 0) {
     const bookGenres = new Set<string>();
@@ -221,54 +282,75 @@ export function deriveP4CContributions(opts: DeriveP4COpts): ScoringContribution
     for (const g of book.genres ?? []) bookGenres.add(g);
     const conflicts = avoidKeys.filter(k => bookGenres.has(k));
     if (conflicts.length > 0) {
-      out.push(obs('avoidance_conflict', 'soft_avoid_intersection', {
+      // Stack per conflict, then cap at per-kind floor (negative).
+      const raw = W.avoidanceConflictPerHit * conflicts.length;
+      const value = Math.max(raw, -PER_KIND_CAP);
+      out.push(emit('avoidance_conflict', 'soft_avoid_intersection', value, {
         conflictKeys: conflicts,
         bookGenres:   [...bookGenres],
       }));
     }
   }
 
-  // 7. not_right_now_risk — current intent (tone / pace) conflicts with a
-  //    confirmed book trait. Emits only when user has expressed an intent
-  //    AND the book trait is known AND the pairing is a true mismatch (not
-  //    a 'mixed' / 'medium' partial).
+  // 7. not_right_now_risk (NEGATIVE-ONLY) ────────────────────────────────────
+  //    P4C.1 confidence gate: a mismatch only carries signed ranking influence
+  //    when the book trait is `specific` confidence AND the user signal is
+  //    ranking-eligible. Broad-confidence book traits stay observe-only — the
+  //    metadata isn't strong enough to risk a negative ranking nudge.
   const risks: Array<Record<string, unknown>> = [];
+  const obsRisks: Array<Record<string, unknown>> = [];
   if (userTone.value !== 'unknown' && traits.tone !== 'unknown' && traits.tone !== 'mixed'
       && traits.tone !== userTone.value) {
-    risks.push({
-      axis:     'tone',
-      userWant: userTone.value,
-      bookHas:  traits.tone,
-      sources:  userTone.sources,
-    });
+    const eligible = isRankingEligible(userTone.sources, intentLegacy)
+                      && traits.toneConfidence === 'specific';
+    const entry = { axis: 'tone', userWant: userTone.value, bookHas: traits.tone, sources: userTone.sources };
+    if (eligible) risks.push(entry);
+    else obsRisks.push({ ...entry, observeOnly: true, bookConfidence: traits.toneConfidence });
   }
   if (userPace.value !== 'unknown' && traits.pace !== 'unknown' && traits.pace !== 'medium'
       && traits.pace !== userPace.value) {
-    risks.push({
-      axis:     'pace',
-      userWant: userPace.value,
-      bookHas:  traits.pace,
-      sources:  userPace.sources,
-    });
+    const eligible = isRankingEligible(userPace.sources, intentLegacy)
+                      && traits.paceConfidence === 'specific';
+    const entry = { axis: 'pace', userWant: userPace.value, bookHas: traits.pace, sources: userPace.sources };
+    if (eligible) risks.push(entry);
+    else obsRisks.push({ ...entry, observeOnly: true, bookConfidence: traits.paceConfidence });
   }
   if (risks.length > 0) {
-    out.push(obs('not_right_now_risk', 'intent_trait_mismatch', { risks }));
+    const raw = W.notRightNowRiskPerAxis * risks.length;
+    const value = Math.max(raw, -PER_KIND_CAP);
+    out.push(emit('not_right_now_risk', 'intent_trait_mismatch', value, { risks }));
+  }
+  // ── Observe-only fallback for not_right_now_risk on non-eligible signals.
+  //    Keep evidence flowing for P4D telemetry even when ranking influence
+  //    is gated off (e.g. legacy q_* alone, broad-confidence book trait).
+  if (risks.length === 0) {
+    if (obsRisks.length > 0) {
+      out.push(emit('not_right_now_risk', 'intent_trait_mismatch', 0, { risks: obsRisks }));
+    }
   }
 
-  // 1 (deferred). current_intent_fit — emitted ONLY when the user has at
-  // least one intent-shaped diagnosis answer AND a real intent-to-book
-  // pairing was observed by tone_fit / pace_fit / complexity_fit /
-  // not_right_now_risk above. The name implies a fit; without a pairing
-  // there is nothing to call a fit.
+  // 1. current_intent_fit ────────────────────────────────────────────────────
+  //    Emitted only when the user has intent-shaped answers AND a real
+  //    intent-to-book pairing fired. P4C.1 signed-value gates:
+  //      (a) legacy=false (intentScope='session') — legacy rows stay observe-only.
+  //      (b) at least one paired kind carried a NON-ZERO signed value. A
+  //          paired kind that itself observed only (partial/broad gate)
+  //          must not unlock current_intent_fit ranking influence.
   if (intentKeys.length > 0) {
     const pairingKinds = new Set(['tone_fit', 'pace_fit', 'complexity_fit', 'not_right_now_risk']);
-    const pairedKinds  = out.filter(c => pairingKinds.has(c.kind)).map(c => c.kind);
-    if (pairedKinds.length > 0) {
-      out.push(obs('current_intent_fit', 'diagnosis_answers', {
+    const paired       = out.filter(c => pairingKinds.has(c.kind));
+    if (paired.length > 0) {
+      const pairedKinds       = paired.map(c => c.kind);
+      const pairedSigned      = paired.filter(c => c.value !== 0).map(c => c.kind);
+      const intentScope       = signals.diagnosisAnswers?.intentScope ?? 'durable';
+      const eligibleForSigned = !intentLegacy && pairedSigned.length > 0;
+      const value             = eligibleForSigned ? W.currentIntentFit : 0;
+      out.push(emit('current_intent_fit', 'diagnosis_answers', value, {
         intentKeys,
-        intentScope:  signals.diagnosisAnswers?.intentScope ?? 'durable',
-        legacy:       signals.diagnosisAnswers?.legacy ?? true,
+        intentScope,
+        legacy:        intentLegacy,
         pairedKinds,
+        pairedSigned,
       }));
     }
   }

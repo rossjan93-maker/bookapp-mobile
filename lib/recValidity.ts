@@ -37,7 +37,16 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 // For-You surface never mixes legacy + composer-derived reason strings after
 // deploy. All three deck-state stores (recPayloadCache, recSession,
 // recQueue) self-invalidate on mismatch via `assertCurrent`.
-const VERSION = 'rcv4';
+//
+// P4C.1 (2026-05-16): bumped rcv4 → rcv5 to force-invalidate decks scored
+// under the pre-P4C.1 (observe-only) regime. Persisted payloads contain
+// `score` and ordering computed without the new P4 intent stack
+// (`_score_breakdown.p4_intent_stack`); restoring those into a UI now wired
+// to expect P4C.1 ordering would expose a stale-vs-live mix on the first
+// session-open after deploy. Composer output remains byte-identical (P4C
+// kinds stay suppressed in `not_yet_emitted`), so the bump is purely
+// score/order-driven, not reason-text-driven.
+const VERSION = 'rcv5';
 
 export type RecConfigInputs = {
   favorite_genres:  readonly string[];

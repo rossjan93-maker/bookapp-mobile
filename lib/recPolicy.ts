@@ -258,3 +258,81 @@ export const STATED_RESERVATION_POLICY: StatedReservationPolicy = {
   allowAdjacentReservation: false,
   allowAdjacentForCauses:   ['explicit_preference_edit'],
 };
+
+// ── P4C.1: limited ranking influence for current intent / semantic-fit ──────
+//
+// First P4 batch that lets P4C contribution kinds carry signed score values.
+// All values are calibration hypotheses, intentionally conservative so P4C.1
+// SHAPES the deck rather than DOMINATES it. Caps below are validator-enforced
+// by scripts/validate_p4c_limited_ranking.ts.
+//
+// Locked properties (do not silently relax these — bump the policy version
+// and the validators in lockstep):
+//   - perKindAbsCap   : no single P4C kind may contribute more than ±0.20.
+//   - stackPosCap     : total of positive P4 contributions cannot exceed +0.30.
+//   - stackNegCap     : total of negative P4 contributions cannot exceed -0.30.
+//   - stated-taste protection: when a candidate has positive stated_taste
+//     (stated favorite match), the P4 NEGATIVE stack is clamped to
+//     max(stackNegCap, -stated_taste) so the stated +0.05 floor is never
+//     fully erased by P4 nudges. Mirrored for negative stated_taste
+//     (stated avoid match) against the P4 positive stack.
+//   - kinds whose evidence is "negative or neutral only" (avoidance_conflict,
+//     not_right_now_risk) NEVER emit a positive value.
+
+export type P4cLimitedRankingPolicy = {
+  perKindAbsCap:        number;
+  stackPosCap:          number;
+  stackNegCap:          number;
+  toneFitMatch:         number;
+  toneFitMismatch:      number;
+  paceFitMatch:         number;
+  paceFitMismatch:      number;
+  complexityFitMatch:   number;
+  complexityFitMismatch: number;
+  seriesContinuation:   number;
+  currentIntentFit:     number;
+  avoidanceConflictPerHit: number;
+  notRightNowRiskPerAxis:  number;
+};
+
+export const P4C_LIMITED_RANKING_POLICY: P4cLimitedRankingPolicy = {
+  perKindAbsCap:           0.20,
+  stackPosCap:             0.30,
+  stackNegCap:            -0.30,
+  toneFitMatch:            0.06,
+  toneFitMismatch:        -0.06,
+  paceFitMatch:            0.04,
+  paceFitMismatch:        -0.04,
+  complexityFitMatch:      0.04,
+  complexityFitMismatch:  -0.04,
+  seriesContinuation:      0.10,
+  currentIntentFit:        0.02,
+  avoidanceConflictPerHit:-0.08,
+  notRightNowRiskPerAxis: -0.06,
+};
+
+/** Apply the P4C.1 stack caps + stated-taste protection to a raw P4 sum.
+ *  Pure / synchronous. Inputs:
+ *    - positives: sum of positive P4 contribution values (each already
+ *      capped at perKindAbsCap at emit time).
+ *    - negatives: sum of negative P4 contribution values (each already
+ *      capped at -perKindAbsCap at emit time).
+ *    - statedTaste: the candidate's stated_taste breakdown value (signed).
+ *  Output: the net P4 stack adjustment to apply to the candidate score. */
+export function clampP4IntentStack(
+  positives:    number,
+  negatives:    number,
+  statedTaste:  number,
+): number {
+  const { stackPosCap, stackNegCap } = P4C_LIMITED_RANKING_POLICY;
+  // 1. Stack caps first.
+  let pos = Math.min(positives, stackPosCap);
+  let neg = Math.max(negatives, stackNegCap);
+  // 2. Stated-taste floor protection. When stated_taste is positive (favorite
+  //    match), keep |neg| ≤ stated_taste so the stated bump survives. When
+  //    stated_taste is negative (avoid match), keep pos ≤ |stated_taste| so
+  //    the stated penalty survives.
+  if (statedTaste > 0 && neg < -statedTaste) neg = -statedTaste;
+  if (statedTaste < 0 && pos >  -statedTaste) pos = -statedTaste;
+  return pos + neg;
+}

@@ -76,7 +76,7 @@ import { buildEvidencePack }                                  from './evidencePa
 import { composeTraitPhrase }                                 from './traitCopy';
 import { getRetrievalSubjects, AFFINITY_RETRIEVAL_SUBJECTS } from './taxonomy/genres';
 import { loadCachedRecs, persistRecCache, shouldRebuild, buildSignalSnapshot } from './recCache';
-import { computeStatedTasteContribution } from './recPolicy';
+import { computeStatedTasteContribution, clampP4IntentStack } from './recPolicy';
 import type { RecRequest } from './recRequest';
 import { planBranches } from './retrieval/branchPlanner';
 import { mergeRetrievalReasons, mapRetrievalContributions, deriveScoringContributions } from './scoring/contributions';
@@ -194,7 +194,13 @@ export type ScoreBreakdown = {
   enrichment_bonus: number;   // step 5 — consensus trait + popularity signal
   metadata_penalty: number;   // step 6 — weak metadata down-weight
   stated_taste?:    number;   // step 7 (P1) — stated taste contribution (favorite + soft avoid). Optional: only set when a RecRequest is provided.
-  raw_score:        number;   // sum before clamping
+  raw_score:        number;   // sum before clamping (legacy step 1–7 sum; Σ deriveScoringContributions still equals this)
+  /** P4C.1 — net P4 intent / semantic-fit stack adjustment applied AFTER
+   *  raw_score, bounded by P4C_LIMITED_RANKING_POLICY caps and
+   *  stated-taste floor protection (see lib/recPolicy.ts::clampP4IntentStack).
+   *  Score arithmetic: `score = clamp(raw_score + p4_intent_stack)`. Absent
+   *  when no RecRequest was provided (legacy / observe-only path). */
+  p4_intent_stack?: number;
   final_score:      number;   // clamped 0–1 total (after CoG delta)
   book_form:        string | null;   // detected form (poetry/play/etc.)
   audit_flags:      string[];        // any audit flags applied
@@ -2139,12 +2145,15 @@ export function getRankedRecs(
       scoredFields._score_breakdown,
       scoredFields._score_breakdown.audit_flags ?? [],
     );
-    // P4C: observe-only contribution wiring. Emits typed evidence entries
-    // (current_intent_fit / tone_fit / pace_fit / complexity_fit /
-    // series_continuation_fit / avoidance_conflict / not_right_now_risk)
-    // with value === 0 so ranking and the score-sum invariant are
-    // unchanged. The composer (lib/explanations/compose.ts) treats every
-    // P4C kind as `not_yet_emitted`, so user-visible copy is byte-identical.
+    // P4C.1: limited-influence P4 contribution wiring. Emits typed
+    // evidence entries (current_intent_fit / tone_fit / pace_fit /
+    // complexity_fit / series_continuation_fit / avoidance_conflict /
+    // not_right_now_risk) with signed values bounded per-kind by
+    // P4C_LIMITED_RANKING_POLICY.perKindAbsCap (0.20). The recommender
+    // adds the net stack to score AFTER raw_score (so the legacy
+    // Σ deriveScoringContributions === raw_score invariant is preserved).
+    // The composer (lib/explanations/compose.ts) still treats every P4C
+    // kind as `not_yet_emitted`, so user-visible copy is byte-identical.
     // Skipped when `req` is absent (legacy path that never built signals).
     const p4cContribs: ScoringContribution[] = req
       ? deriveP4CContributions({
@@ -2154,9 +2163,30 @@ export function getRankedRecs(
           seriesPositionsRead,
         })
       : [];
+    let p4Stack = 0;
+    if (p4cContribs.length > 0) {
+      let pos = 0, neg = 0;
+      for (const c of p4cContribs) {
+        if (c.value > 0) pos += c.value;
+        else if (c.value < 0) neg += c.value;
+      }
+      p4Stack = clampP4IntentStack(
+        pos, neg,
+        scoredFields._score_breakdown.stated_taste ?? 0,
+      );
+    }
+    const adjScore = Math.max(0, Math.min(1,
+      (scoredFields._score_breakdown.raw_score ?? scoredFields.score) + p4Stack));
+    const breakdown: ScoreBreakdown = {
+      ...scoredFields._score_breakdown,
+      p4_intent_stack: +p4Stack.toFixed(3),
+      final_score:     +adjScore.toFixed(3),
+    };
     return {
       ...book,
       ...scoredFields,
+      score: +adjScore.toFixed(3),
+      _score_breakdown: breakdown,
       _debug: { pool_size: poolSize, rank: 0 },
       _retrieval_contributions: mapRetrievalContributions(reasonsForContrib),
       _scoring_contributions: [...scoringContribs, ...p4cContribs],

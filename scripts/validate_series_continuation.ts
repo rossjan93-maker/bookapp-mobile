@@ -12,8 +12,9 @@
 //   1b. seriesPosition without seriesName → no contribution.
 //   2. seriesName present, NO priors → no contribution (deferred).
 //   3. seriesName present, priors exist → exactly one contribution,
-//      value === 0, evidence carries seriesName / bookSeriesIndex /
-//      seriesTotal / priorReadCount / continuesPrior=true.
+//      value === P4C_LIMITED_RANKING_POLICY.seriesContinuation (+0.10),
+//      evidence carries seriesName / bookSeriesIndex / seriesTotal /
+//      priorReadCount / continuesPrior=true.
 //   4. priorReadCount counts only strictly-prior positions.
 //   5. Wrong series in readMap → priorReadCount stays 0 → no emission.
 //   6. seriesName but undefined index → no emission (no continuation
@@ -24,6 +25,7 @@
 
 import { deriveP4CContributions } from '../lib/scoring/p4cContributions';
 import { buildSignals } from '../lib/recSignals/build';
+import { P4C_LIMITED_RANKING_POLICY } from '../lib/recPolicy';
 import type { BookTraits } from '../lib/bookTraits';
 import type { TasteProfile } from '../lib/tasteProfile';
 
@@ -107,7 +109,9 @@ console.log('3. priors exist → emit with continuesPrior=true, value=0');
   const e = cs.find(c => c.kind === 'series_continuation_fit');
   check('emitted', !!e);
   if (e) {
-    check('  value === 0',                e.value === 0);
+    check(`  value === +${P4C_LIMITED_RANKING_POLICY.seriesContinuation}`,
+      Math.abs(e.value - P4C_LIMITED_RANKING_POLICY.seriesContinuation) < 1e-9,
+      `got ${e.value}`);
     check('  phase === scoring',          e.phase === 'scoring');
     const ev = e.evidence as Record<string, unknown>;
     check('  seriesName preserved',       ev.seriesName === 'Farseer');

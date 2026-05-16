@@ -16,14 +16,18 @@
 //      bookGenres and softAvoids.genres.
 //   6. not_right_now_risk emits only on a real tone / pace mismatch (not
 //      mixed / medium partial matches).
-//   7. Every emitted contribution has value === 0 and a non-empty
-//      evidence payload.
+//   7. P4C.1: emitted contributions carry signed values bounded by the
+//      per-kind absolute cap (P4C_LIMITED_RANKING_POLICY.perKindAbsCap =
+//      0.20). Reading-style chips are live signals → signed; q_* on
+//      legacy rows stays observe-only (value === 0); 'partial' matches
+//      (mixed tone / medium pace) always stay observe-only.
 //
 // Exit 0 on full pass; exit 1 on any failure.
 // =============================================================================
 
 import { deriveP4CContributions } from '../lib/scoring/p4cContributions';
 import { buildSignals } from '../lib/recSignals/build';
+import { P4C_LIMITED_RANKING_POLICY } from '../lib/recPolicy';
 import type { Signals } from '../lib/recSignals/types';
 import type { BookTraits } from '../lib/bookTraits';
 import type { TasteProfile } from '../lib/tasteProfile';
@@ -125,7 +129,11 @@ for (const { chip, axis, value } of styleMap) {
   const e = cs.find(c => c.kind === kind);
   check(`${chip} → ${kind} emitted`, !!e);
   if (e) {
-    check(`  value === 0`, e.value === 0);
+    const expected = axis === 'tone'
+      ? P4C_LIMITED_RANKING_POLICY.toneFitMatch
+      : P4C_LIMITED_RANKING_POLICY.paceFitMatch;
+    check(`  value === +${expected} (live chip + match)`,
+      Math.abs(e.value - expected) < 1e-9, `got ${e.value}`);
     check(`  evidence is non-empty`, e.evidence && Object.keys(e.evidence).length > 0);
     const ev = e.evidence as Record<string, unknown>;
     const userKey = axis === 'tone' ? 'userTone' : 'userPace';
@@ -137,12 +145,13 @@ for (const { chip, axis, value } of styleMap) {
 // ── 5. q_tone overrides on light/dark + match label correctness ─────────────
 console.log('5. q_tone / q_pacing answers honoured and match label correct');
 {
-  // book mixed vs user light → partial
+  // book mixed vs user light → partial (observe-only regardless of confidence)
   const cs = emit(mkTraits({ tone: 'mixed', toneConfidence: 'broad' }),
                   mkSignals({ diagnosis: { q_tone: 'mostly_light' } }));
   const e = cs.find(c => c.kind === 'tone_fit');
   check('mixed book + light user → partial', e !== undefined &&
         (e.evidence as { match?: string }).match === 'partial');
+  check('  partial → value === 0 (observe-only)', e !== undefined && e.value === 0);
 }
 {
   // pace medium vs user fast → partial
@@ -151,14 +160,42 @@ console.log('5. q_tone / q_pacing answers honoured and match label correct');
   const e = cs.find(c => c.kind === 'pace_fit');
   check('medium book + fast user → partial', e !== undefined &&
         (e.evidence as { match?: string }).match === 'partial');
+  check('  partial → value === 0 (observe-only)', e !== undefined && e.value === 0);
 }
 {
-  // tone dark vs user light → mismatch
+  // tone dark vs user light (chip = live signal) → mismatch → signed negative
   const cs = emit(mkTraits({ tone: 'dark', toneConfidence: 'specific' }),
                   mkSignals({ styles: ['Light read'] }));
   const e = cs.find(c => c.kind === 'tone_fit');
   check('dark book + light user → mismatch', e !== undefined &&
         (e.evidence as { match?: string }).match === 'mismatch');
+  check(`  mismatch → value === ${P4C_LIMITED_RANKING_POLICY.toneFitMismatch}`,
+    e !== undefined && Math.abs(e.value - P4C_LIMITED_RANKING_POLICY.toneFitMismatch) < 1e-9,
+    `got ${e?.value}`);
+}
+{
+  // tone specific + q_tone on a LEGACY row (no intentScope) → observe-only
+  const cs = emit(mkTraits({ tone: 'dark', toneConfidence: 'specific' }),
+                  mkSignals({ diagnosis: { q_tone: 'mostly_light' } }));
+  const e = cs.find(c => c.kind === 'tone_fit');
+  check('dark book + q_tone(light) legacy row → emitted', !!e);
+  check('  legacy q_* alone → value === 0 (observe-only)', e !== undefined && e.value === 0);
+}
+{
+  // tone specific + q_tone in session scope → signed mismatch
+  const cs = emit(mkTraits({ tone: 'dark', toneConfidence: 'specific' }),
+                  mkSignals({ diagnosis: { intentScope: 'session', q_tone: 'mostly_light' } }));
+  const e = cs.find(c => c.kind === 'tone_fit');
+  check('dark book + q_tone(light) session → signed mismatch',
+    e !== undefined && Math.abs(e.value - P4C_LIMITED_RANKING_POLICY.toneFitMismatch) < 1e-9,
+    `got ${e?.value}`);
+}
+{
+  // tone broad confidence with chip → observe-only (specific gate)
+  const cs = emit(mkTraits({ tone: 'dark', toneConfidence: 'broad' }),
+                  mkSignals({ styles: ['Light read'] }));
+  const e = cs.find(c => c.kind === 'tone_fit');
+  check('broad confidence → observe-only', e !== undefined && e.value === 0);
 }
 
 // ── 6. complexity_fit only with durable craft style + known book complexity ─
@@ -177,7 +214,9 @@ console.log('6. complexity_fit gating');
   const e = cs.find(c => c.kind === 'complexity_fit');
   check('Dense prose + dense book → complexity_fit emitted', !!e);
   if (e) {
-    check('  value === 0', e.value === 0);
+    check(`  value === +${P4C_LIMITED_RANKING_POLICY.complexityFitMatch}`,
+      Math.abs(e.value - P4C_LIMITED_RANKING_POLICY.complexityFitMatch) < 1e-9,
+      `got ${e.value}`);
     check('  match === match', (e.evidence as { match?: string }).match === 'match');
   }
 }
@@ -200,7 +239,10 @@ console.log('7. avoidance_conflict emits only on bookGenres ∩ softAvoids.genre
   const e = cs.find(c => c.kind === 'avoidance_conflict');
   check('romance book + avoid Romance → emit', !!e);
   if (e) {
-    check('  value === 0', e.value === 0);
+    check(`  value === ${P4C_LIMITED_RANKING_POLICY.avoidanceConflictPerHit} (1 conflict)`,
+      Math.abs(e.value - P4C_LIMITED_RANKING_POLICY.avoidanceConflictPerHit) < 1e-9,
+      `got ${e.value}`);
+    check('  value is negative (negative-only kind)', e.value < 0);
     const ev = e.evidence as { conflictKeys?: string[] };
     check('  conflictKeys non-empty', Array.isArray(ev.conflictKeys) && ev.conflictKeys.length > 0);
   }
@@ -243,8 +285,8 @@ console.log('8. not_right_now_risk gating');
     cs.filter(c => c.kind === 'not_right_now_risk').length === 0);
 }
 
-// ── 9. Every emission has value === 0 and non-empty evidence ────────────────
-console.log('9. Universal invariants: value === 0 and evidence non-empty');
+// ── 9. Universal invariants: every value bounded by per-kind cap + evidence ─
+console.log('9. Universal invariants: |value| ≤ perKindAbsCap and evidence non-empty');
 {
   const cs = emit(
     mkTraits({
@@ -261,12 +303,20 @@ console.log('9. Universal invariants: value === 0 and evidence non-empty');
     }),
   );
   check(`emitted ≥ 5 contributions (got ${cs.length})`, cs.length >= 5);
+  const cap = P4C_LIMITED_RANKING_POLICY.perKindAbsCap;
   for (const c of cs) {
-    check(`  ${c.kind}: value === 0`, c.value === 0, `value=${c.value}`);
+    check(`  ${c.kind}: |value| ≤ ${cap}`, Math.abs(c.value) <= cap + 1e-9,
+      `value=${c.value}`);
     check(`  ${c.kind}: evidence non-empty`,
       c.evidence && Object.keys(c.evidence).length > 0,
       `evidence=${JSON.stringify(c.evidence)}`);
     check(`  ${c.kind}: phase === scoring`, c.phase === 'scoring');
+  }
+  // Negative-only kinds: value <= 0
+  for (const c of cs) {
+    if (c.kind === 'avoidance_conflict' || c.kind === 'not_right_now_risk') {
+      check(`  ${c.kind}: value ≤ 0 (negative-only)`, c.value <= 0, `value=${c.value}`);
+    }
   }
 }
 
