@@ -1,0 +1,145 @@
+P3A live smoke found a blocker in Scenario B — Quick-taste user.
+
+Do not start P3B.
+Do not patch copy blindly.
+Do not change ranking yet.
+Investigate first.
+
+Context:
+Composer-backed reasons are now production default after P3A-6-C.
+We are running the required live smoke across real app states.
+
+Scenario B setup:
+Fresh quick-taste user.
+Signals selected:
+- Thriller & mystery
+- Nonfiction
+- Reading for: escape
+- Tone: lighter
+- Less of: Horror
+- Anchor book: Lord of the Rings
+
+Observed Taste Readout:
+- “Early signal: you lean toward thriller & mystery.”
+- Chips:
+  - Thriller & mystery
+  - Nonfiction
+  - Reading for: escape
+  - Tone: lighter
+  - Less of: Horror
+
+Observed For You recommendations:
+
+1. Murder in the High Himalaya — Jonathan Green
+Reason: “Matches your stated nonfiction preference”
+Assessment: OK. Appears to be nonfiction.
+
+2. Fall of Giants — Ken Follett
+Reason: “Start with book one of the Century Trilogy.”
+Assessment: Not a P3A blocker. Reason is not overclaiming, though quality/fit can be evaluated separately.
+
+3. The Fault in Our Stars — John Green
+Reason: “Matches your stated nonfiction preference”
+Assessment: BLOCKER. This is fiction, so the reason appears false.
+
+4. The Song of Achilles — Madeline Miller
+Reason: “Matches your stated nonfiction preference”
+Assessment: BLOCKER. This is fiction / mythological literary fiction, so the reason appears false.
+
+Problem statement:
+The composer is not inventing a user preference — the user did state nonfiction. But it appears to be applying that stated nonfiction signal to books that are not nonfiction. That means the reason is user-grounded but not book-grounded.
+
+P3A acceptance should require both:
+1. the user signal exists, and
+2. the book actually matches the cited signal.
+
+Task type:
+Targeted investigation only. Do not implement until root cause is pinned.
+
+Goal:
+Determine why fiction books received a composer-backed reason:
+“Matches your stated nonfiction preference.”
+
+Investigate these specific books:
+- The Fault in Our Stars — John Green
+- The Song of Achilles — Madeline Miller
+Also inspect the control book:
+- Murder in the High Himalaya — Jonathan Green
+
+For each card, report:
+1. book id
+2. title / author
+3. stored genre / primaryGenre / lane / subjects / tags
+4. `_retrieval_reason`
+5. `_retrieval_reasons`
+6. `_retrieval_contributions`
+7. `_score_breakdown.stated_taste`
+8. `_score_breakdown.genre_bonus`
+9. `audit_flags`
+10. `_scoring_contributions`
+11. final `book.reasons[]`
+12. whether the stated_taste_fit contribution has `matchedKey = nonfiction`
+13. what book-side evidence justified nonfiction, if any
+
+Root-cause questions:
+
+## A. Book metadata / catalog classification
+Are The Fault in Our Stars or The Song of Achilles stored with:
+- primaryGenre = nonfiction
+- lane = nonfiction
+- subjects/tags that map to nonfiction
+- any broad subject that the mapper incorrectly treats as nonfiction?
+
+If yes, classify as book-intelligence / catalog-metadata bug.
+
+## B. Retrieval / branch provenance
+Were these books retrieved via a stated_genre:nonfiction branch?
+If yes, why did stated nonfiction retrieval produce fiction books?
+Is the retrieval query too broad, or is Open Library / local corpus matching wrong?
+
+## C. Scoring contribution derivation
+Did `deriveScoringContributions(...)` attach `stated_taste_fit` with `matchedKey = nonfiction` merely because an audit flag existed, without validating book-side match evidence?
+
+If yes, classify as contribution-evidence bug.
+
+## D. Composer gating
+Does `composeExplanation(...)` require both:
+- user-stated key, and
+- book-side match evidence?
+
+Or does it trust the scoring contribution blindly?
+
+If it trusts scoring blindly, determine whether the correct fix belongs:
+- upstream in scoring contribution derivation,
+- in book/lane classification,
+- or as an additional composer-side book-truth gate.
+
+## E. Nonfiction mapper
+Is the nonfiction mapping too permissive?
+Examples to inspect:
+- myth / mythology / history / young adult / literary fiction / romance / biography-like subject tags
+Could The Song of Achilles be mistakenly categorized as nonfiction because of ancient Greece / mythology / historical tags?
+Could The Fault in Our Stars be miscategorized due subject metadata?
+
+Hard constraints:
+- Do not start P3B.
+- Do not change ranking.
+- Do not change scoring math unless root cause clearly requires it.
+- Do not patch by weakening all stated-preference copy generically.
+- Do not hide the symptom with vague copy unless the evidence model truly cannot support specificity.
+- Do not touch RecCard layout.
+- Investigation first.
+
+Return format:
+1. Executive verdict
+2. Per-book evidence table for the three books
+3. Root cause classification
+4. Exact layer responsible:
+   - catalog/book intelligence
+   - retrieval branch
+   - scoring contribution derivation
+   - composer gating
+   - other
+5. Minimal fix recommendation
+6. Validator/live-smoke scenario to prove the fix
+7. Whether P3A product acceptance remains blocked
