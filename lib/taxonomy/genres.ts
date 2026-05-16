@@ -47,6 +47,46 @@ export type AffinityKey =
   | 'memoir_bio'
   | 'nonfiction';
 
+/**
+ * User-facing display label for each AffinityKey, used by the composer
+ * when emitting visible stated-preference copy. Several GenreDef chips
+ * collapse into the same AffinityKey (e.g. `Mystery` + `Thriller` both →
+ * `thriller_mystery`; six chips → `nonfiction`), so per-bucket display
+ * labels live here rather than being derived from any single GenreDef's
+ * uiLabels.cardTag.
+ *
+ * The `Record<AffinityKey, string>` type makes adding a new AffinityKey
+ * without a label a compile error — adding an exhaustiveness validator
+ * (scripts/validate_affinity_display_labels.ts) as belt-and-suspenders.
+ *
+ * Internal keys (the AffinityKey strings themselves) MUST still be used
+ * for evidence, audit flags, and debug — only visible copy goes through
+ * this map. Surfaced via `affinityDisplayLabel(key)` so callers don't
+ * import the map directly and can rely on the defensive fallback.
+ */
+export const AFFINITY_DISPLAY_LABELS: Record<AffinityKey, string> = {
+  literary:         'literary fiction',
+  fantasy_scifi:    'sci-fi & fantasy',
+  thriller_mystery: 'thriller & mystery',
+  romance:          'romance',
+  horror:           'horror',
+  memoir_bio:       'memoir & biography',
+  nonfiction:       'nonfiction',
+};
+
+/**
+ * Look up the user-facing label for an AffinityKey. Falls back to the
+ * raw key only when called with a non-AffinityKey string (defence
+ * against future AffinityKey additions that miss the label map —
+ * the validator below catches this at CI time, this catches it at
+ * runtime). Never returns empty.
+ */
+export function affinityDisplayLabel(key: string | null | undefined): string {
+  if (!key) return '';
+  const hit = (AFFINITY_DISPLAY_LABELS as Record<string, string>)[key];
+  return hit ?? key;
+}
+
 export type Fictionality = 'fiction' | 'nonfiction' | 'both';
 
 export type GenreDef = {

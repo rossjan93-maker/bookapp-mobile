@@ -130,8 +130,11 @@ section('P5 — non-empty reasons when above-floor causal contribution exists');
   const rc = mapRetrievalContributions(['stated_genre:thriller_mystery']);
   const proj = projectComposerReasonsPure({ scoring: sc, retrieval: rc });
   check('projection non-empty', proj.length >= 1, JSON.stringify(proj));
-  check('primary cites matched stated key',
-    proj[0]?.includes('thriller_mystery') ?? false, proj[0]);
+  // Scenario B display-label fix: humanised label expected; raw key banned.
+  check('primary cites matched stated key (humanised label)',
+    proj[0]?.includes('thriller & mystery') ?? false, proj[0]);
+  check('primary does NOT leak raw snake_case key',
+    !(proj[0]?.includes('thriller_mystery') ?? false), proj[0]);
 }
 
 section('P6 — no causal "based on your X" for retrieval-only candidates');

@@ -47,23 +47,25 @@ function section(name: string): void {
   console.log(`\n── ${name} ──`);
 }
 
-// ── §3.11 — cache version moved to rcv3 (source grep) ────────────────────────
-// rcv1 → rcv2 was the P3A-6-C default-on flip.
-// rcv2 → rcv3 is the Scenario B detectGenre fix: cached ScoredBook payloads
-// from before the fix carry false `stated_favorite:nonfiction` audit flags
-// and false "Matches your stated nonfiction preference" reason strings on
-// misclassified fiction books. Bumping the version invalidates all three
-// deck-state stores (recPayloadCache, recSession, recQueue) at next read.
-section('§3.11 — recValidity VERSION moved to rcv3');
+// ── §3.11 — cache version moved to rcv4 (source grep) ────────────────────────
+// rcv1 → rcv2: P3A-6-C default-on flip.
+// rcv2 → rcv3: Scenario B detectGenre fix (false `stated_favorite:nonfiction`
+//   audit flags on misclassified fiction books).
+// rcv3 → rcv4: Scenario B display-label fix — cached ScoredBook payloads
+//   from before the fix carry raw-key reason strings like
+//   "Matches your stated thriller_mystery preference" in `book.reasons[]`
+//   (and parallel softavoid copy). Bumping invalidates all three deck-state
+//   stores so post-fix sessions render humanised labels.
+section('§3.11 — recValidity VERSION moved to rcv4');
 {
   const recValSrc = fs.readFileSync(
     path.resolve(__dirname, '../lib/recValidity.ts'), 'utf8');
-  check("lib/recValidity.ts contains `const VERSION = 'rcv3'`",
-    /const\s+VERSION\s*=\s*['"]rcv3['"]/.test(recValSrc));
-  check("lib/recValidity.ts no longer contains `const VERSION = 'rcv1'`",
-    !/const\s+VERSION\s*=\s*['"]rcv1['"]/.test(recValSrc));
-  check("lib/recValidity.ts no longer contains `const VERSION = 'rcv2'`",
-    !/const\s+VERSION\s*=\s*['"]rcv2['"]/.test(recValSrc));
+  check("lib/recValidity.ts contains `const VERSION = 'rcv4'`",
+    /const\s+VERSION\s*=\s*['"]rcv4['"]/.test(recValSrc));
+  for (const stale of ['rcv1', 'rcv2', 'rcv3']) {
+    check(`lib/recValidity.ts no longer contains \`const VERSION = '${stale}'\``,
+      !new RegExp(`const\\s+VERSION\\s*=\\s*['"]${stale}['"]`).test(recValSrc));
+  }
 }
 
 // ── §3.12 — legacy fallback path remains available ───────────────────────────

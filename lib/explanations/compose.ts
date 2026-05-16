@@ -52,6 +52,7 @@ import type {
   RetrievalContribution,
   ScoringContribution,
 } from '../scoring/contributions';
+import { affinityDisplayLabel } from '../taxonomy/genres';
 
 // ── Input ────────────────────────────────────────────────────────────────────
 export type ExplanationBundle = {
@@ -133,8 +134,16 @@ export type ExplanationOutput = {
 function phrasingForStated(value: number, ev?: Record<string, unknown>): string {
   const key = (ev?.matchedKey as string | undefined) ?? '';
   const kind = (ev?.matchedKind as string | undefined) ?? '';
-  if (kind === 'favorite' && key) return `Matches your stated ${key} preference`;
-  if (kind === 'softavoid' && key) return `Leans into ${key}, which you've marked to see less of`;
+  // Visible copy uses the humanised display label per AffinityKey; the
+  // raw internal key is preserved on `evidence.matchedKey` for audit /
+  // debug / downstream contribution accounting. Scenario B live smoke
+  // (2026-05-16) surfaced `"Matches your stated thriller_mystery
+  // preference"` as user-visible — fixed by routing through
+  // affinityDisplayLabel(). Fallback to the generic phrasing only when
+  // the lookup yields empty, never to a vague copy when a label exists.
+  const label = affinityDisplayLabel(key);
+  if (kind === 'favorite' && label) return `Matches your stated ${label} preference`;
+  if (kind === 'softavoid' && label) return `Leans into ${label}, which you've marked to see less of`;
   return value > 0 ? 'Matches a preference you stated' : 'Leans into a category you said to see less of';
 }
 

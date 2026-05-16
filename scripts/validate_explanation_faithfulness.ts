@@ -116,8 +116,15 @@ section('F2 — stated_taste_fit cites specific key ONLY with matched evidence')
     scoring('stated_taste_fit', 0.08, 'stated_favorite:thriller_mystery',
       { matchedKind: 'favorite', matchedKey: 'thriller_mystery' }),
   ]));
-  check('with evidence: primary text mentions matched key',
-    withEv.primary?.text.includes('thriller_mystery') ?? false,
+  // Scenario B display-label fix: visible reasons now humanise the
+  // matched AffinityKey via affinityDisplayLabel(). The raw key
+  // remains on evidence.matchedKey for audit; only the visible string
+  // is humanised. `thriller_mystery` → `thriller & mystery`.
+  check('with evidence: primary text mentions matched key (humanised label)',
+    withEv.primary?.text.includes('thriller & mystery') ?? false,
+    withEv.primary?.text);
+  check('with evidence: primary text does NOT leak raw snake_case key',
+    !(withEv.primary?.text.includes('thriller_mystery') ?? false),
     withEv.primary?.text);
   check('with evidence: scoringRef.kind=stated_taste_fit',
     withEv.primary?.scoringRef?.kind === 'stated_taste_fit');
@@ -283,8 +290,11 @@ section('FR1 — stated preference fit');
   const out = composeExplanation({ scoring: sc, retrieval: rc });
   check('primary is stated_taste_fit',
     out.primary?.source === 'stated_taste_fit');
-  check('primary cites stated key',
-    out.primary?.text.includes('thriller_mystery') ?? false);
+  // Scenario B display-label fix: humanised label expected; raw key banned.
+  check('primary cites stated key (humanised label)',
+    out.primary?.text.includes('thriller & mystery') ?? false);
+  check('primary does NOT leak raw snake_case key',
+    !(out.primary?.text.includes('thriller_mystery') ?? false));
   check('no overclaim — only one secondary at most',
     out.secondary.length <= 1);
   check('cautions empty',     out.cautions.length === 0);
@@ -371,8 +381,11 @@ section('FR6 — cache-restored singular-only provenance candidate');
   const out = composeExplanation({ scoring: sc, retrieval: rc });
   check('cache-restored: primary is stated_taste_fit',
     out.primary?.source === 'stated_taste_fit');
-  check('cache-restored: primary cites stated key',
-    out.primary?.text.includes('thriller_mystery') ?? false);
+  // Scenario B display-label fix: humanised label expected; raw key banned.
+  check('cache-restored: primary cites stated key (humanised label)',
+    out.primary?.text.includes('thriller & mystery') ?? false);
+  check('cache-restored: primary does NOT leak raw snake_case key',
+    !(out.primary?.text.includes('thriller_mystery') ?? false));
 }
 
 section('FR7 — multi-source retrieval candidate');
