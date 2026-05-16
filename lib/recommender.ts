@@ -81,6 +81,7 @@ import type { RecRequest } from './recRequest';
 import { planBranches } from './retrieval/branchPlanner';
 import { mergeRetrievalReasons, mapRetrievalContributions, deriveScoringContributions } from './scoring/contributions';
 import type { RetrievalContribution, ScoringContribution } from './scoring/contributions';
+import { projectComposerReasons } from './explanations/projection';
 import { applyLocalSoftAvoidFilter } from './retrieval/softAvoidLocal';
 import { SOFT_AVOID_RETRIEVAL_MULTIPLIER } from './recPolicy';
 import type { AffinityKey } from './taxonomy/genres';
@@ -2208,6 +2209,26 @@ export function getRankedRecs(
       // Used by the explanation string generator — zero scoring impact.
       author_books_read:     authorReadCounts.get(book.author.toLowerCase().trim()) ?? 0,
     };
+
+    // P3A-5: composer-backed reasons projection (default OFF).
+    // When the flag in lib/explanations/projection.ts is false (production
+    // default), this returns `book.reasons` byte-identically — no change to
+    // visible output. When ON (validator / fixture replay only in P3A-5),
+    // book.reasons is overridden with the composer-derived projection.
+    //
+    // CRITICAL placement: this runs AFTER the CoG fit_explanation overwrite,
+    // AFTER classifyExplanationQuality has read book.reasons into
+    // _score_breakdown.explanation_quality, and AFTER _score_breakdown is
+    // finalized. So flipping the flag cannot shift score, fit_class,
+    // market_position, lane_match_strength, cog_score_delta, final_score,
+    // or explanation_quality. Validator structurally asserts this.
+    book.reasons = projectComposerReasons(
+      {
+        retrieval: book._retrieval_contributions ?? [],
+        scoring:   book._scoring_contributions   ?? [],
+      },
+      book.reasons,
+    ) as string[];
   }
 
   if (__DEV__) {

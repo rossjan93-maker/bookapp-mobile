@@ -1,0 +1,141 @@
+P3A-4 is accepted.
+
+We are proceeding to P3A-5.
+
+Important sequencing:
+P3A-5 is not the visible UI rollout yet.
+Do not change RecCard visible behavior by default.
+Do not flip the new composer to production default.
+Do not delete the legacy reasons builder.
+
+P3A-5 goal:
+Create a hidden / disabled-by-default back-compat projection path that can derive `book.reasons[]` from the new P3 contribution-based explanation composer, while preserving the legacy reasons path as the default.
+
+Current accepted state:
+- P3A-1: multi-source retrieval provenance exists.
+- P3A-2: retrieval-phase contributions are attached to ScoredBook.
+- P3A-3: scoring-phase contributions are attached to ScoredBook.
+- P3A-4: internal `composeExplanation(...)` exists and passes faithfulness validation.
+- No ranking, scoring, composition, RecCard, or visible explanation behavior has changed.
+- `book.reasons[]` remains legacy/default.
+
+Task type:
+P3A-5 internal integration / compatibility projection only.
+
+## 1. Hidden composer-backed reasons projection
+
+At the current `book.reasons[]` population site in `lib/recommender.ts` or the exact existing projection site:
+
+- add a hidden flag / constant / dev-only switch that is default OFF
+- when OFF, keep the current legacy `book.reasons[]` behavior exactly unchanged
+- when ON, derive `book.reasons[]` from:
+  - `_retrieval_contributions`
+  - `_scoring_contributions`
+  - `composeExplanation(...)`
+  - `deriveBackcompatReasons(...)` or equivalent helper from P3A-4
+
+Do not expose this flag to users.
+Do not turn it on by default.
+Do not alter RecCard.
+
+## 2. Preserve behavior by default
+
+Default production behavior must remain identical:
+- same rankings
+- same scores
+- same composition
+- same reservation behavior
+- same visible explanation copy
+- same RecCard output
+- same `book.reasons[]` legacy path
+
+The new path exists only for validation / fixture replay.
+
+## 3. Fixture replay validator
+
+Add or extend a validator, likely:
+
+- `scripts/validate_explanation_projection.ts`
+
+It should run canonical fixtures with the composer-backed projection ON and assert:
+
+1. ranking/order is byte-identical versus legacy path
+2. scores are byte-identical
+3. composition output is byte-identical
+4. singular `_retrieval_reason` reservation predicate yields the same survival / eligibility set
+5. derived `book.reasons[]` is non-empty when at least one above-floor causal contribution exists
+6. no causal “based on your X” style claim appears for retrieval-only candidates
+7. no personal-taste claim appears for `quality_reliability`-only candidates
+8. negative contributions surface only as caution/risk, not positive reasons
+9. legacy default path remains unchanged when flag is OFF
+10. `book.reasons[]` compatibility shape is preserved
+
+Use deterministic fixtures. Avoid live API dependency.
+
+## 4. No visible UI changes yet
+
+Do not touch:
+- RecCard
+- RecommendationsFeed visible copy
+- recommendation card layout
+- onboarding
+- import
+- ranking/scoring/composition
+
+Do not remove or replace legacy copy variants yet.
+
+## 5. Live smoke plan only
+
+At the end, provide a proposed live smoke plan for the next phase, but do not execute it in code.
+
+The live smoke plan should check:
+- top For You card reasons under flag ON
+- no overclaiming
+- no empty reason regressions
+- no visible weirdness on:
+  - import-first user
+  - quick-taste user
+  - cold-start Tier 0 user
+  - explicit preference edit user
+
+## Hard constraints
+
+- Do not flip composer-backed reasons ON by default.
+- Do not touch RecCard.
+- Do not change visible copy.
+- Do not alter ranking.
+- Do not alter scoring math.
+- Do not alter composition.
+- Do not migrate reservation AND-gate.
+- Do not start P3B.
+- Do not delete legacy fields.
+- No opportunistic cleanup.
+
+## Validation required
+
+1. Exact files touched.
+2. New projection validator output.
+3. Existing validators output:
+   - explanation faithfulness
+   - scoring contributions
+   - retrieval contributions
+   - multi-source provenance
+   - stated-reservation regression
+4. Typecheck delta against current baseline.
+5. Workflow/app status.
+6. Confirmation default visible behavior remains unchanged.
+7. Confirmation composer-backed projection is available only behind flag/off-by-default path.
+8. Cache/versioning implications.
+9. Recommended P3A-6 next step.
+
+Return format:
+1. Executive verdict
+2. What changed
+3. Files touched
+4. Validator / fixture results
+5. Typecheck/workflow status
+6. Behavior guarantees
+7. Default-off flag details
+8. Cache/versioning implications
+9. Proposed live smoke plan
+10. Recommended P3A-6 next step
