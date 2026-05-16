@@ -1,0 +1,187 @@
+P3A-3 is accepted.
+
+We are proceeding to P3A-4.
+
+Important sequencing:
+Do not integrate with RecCard yet.
+Do not rewrite visible card copy yet.
+Do not change book.reasons[] output yet except as a tested derived compatibility projection if needed in fixtures.
+
+P3A-4 should build the explanation composer and faithfulness validator as an internal contract first.
+
+Current accepted state:
+- P3A-1: multi-source retrieval provenance exists.
+- P3A-2: retrieval-phase contributions are attached to ScoredBook.
+- P3A-3: scoring-phase contributions are attached to ScoredBook.
+- Validators are green:
+  - scoring contributions
+  - retrieval contributions
+  - multi-source provenance
+  - stated-reservation regression
+- Ranking, scoring, composition, reservation, RecCard, and explanation copy remain unchanged.
+
+Task type:
+P3A-4 internal explanation faithfulness implementation only.
+
+Goal:
+Create an internal explanation composer that consumes `_retrieval_contributions` + `_scoring_contributions` and produces explanation output only when supported by actual above-floor scoring evidence.
+
+This is not a UI rollout yet.
+
+## 1. Create explanation composer
+
+Add:
+
+- `lib/explanations/compose.ts`
+
+or the doc-approved equivalent.
+
+The composer should accept a scored book / contribution bundle and return a structured explanation output.
+
+Suggested output shape:
+- primary reason
+- secondary reason(s), if supported
+- risk / caution line(s), if supported
+- descriptive fit line(s), if allowed
+- debug/supporting contribution IDs or kinds for validator use
+
+Keep the output internal and deterministic.
+
+## 2. Faithfulness rules
+
+The composer must distinguish:
+
+### A. Causal contribution explanation
+Allowed only when there is an eligible positive scoring contribution above its display floor.
+
+Example:
+- `stated_taste_fit` with evidence from `stated_favorite:mystery`
+- may support language like “based on your mystery preference”
+
+### B. Descriptive fit
+Allowed from book metadata, but must not imply personal causation.
+
+Example:
+- “A fast-paced thriller”
+- is allowed only as descriptive, not “because you love fast-paced thrillers” unless a real contribution supports that.
+
+### C. Risk / caution
+Allowed from negative contributions or hygiene/avoidance signals.
+
+Example:
+- soft avoid penalty
+- metadata/hygiene caution
+
+### D. Quality-only signal
+`quality_reliability` / enrichment must not produce personal-taste language.
+It may support generic discovery framing only.
+
+## 3. Evidence limitations to enforce
+
+Use the P3A-3 evidence audit as a hard boundary:
+
+- `stated_taste_fit` may cite specific matched stated preference evidence.
+- `hygiene_floor` / metadata penalty may cite audit subflags conservatively.
+- `behavioral_fit`, `feedback_fit`, and `genre_affinity` are aggregate today and must remain generic unless specific evidence exists.
+- `quality_reliability` must not be treated as personal taste evidence.
+- `intent_fit`, `novelty_diversity`, and `repetition_suppression` should not be emitted unless supported by actual current contribution fields.
+
+Do not fabricate specificity.
+
+## 4. Display floors
+
+Use the per-kind display floors already placed in `lib/scoring/contributions.ts`.
+
+Requirements:
+- floor checks should be deterministic
+- negative contributions should not become positive causal explanations
+- zero/absent components should emit nothing
+- weak aggregate evidence should either produce no explanation or only a generic, non-overclaiming line
+
+## 5. Preserve backward compatibility
+
+Do not break:
+- `book.reasons[]`
+- existing RecCard behavior
+- current explanation text
+- current ranking/scoring/composition output
+
+If you create a derived `book.reasons[]` compatibility projection for fixtures, keep it internal/test-only or clearly non-breaking.
+
+## 6. Validator
+
+Add:
+
+- `scripts/validate_explanation_faithfulness.ts`
+
+It should assert:
+
+1. No causal reason is emitted without an eligible above-floor scoring contribution.
+2. `stated_taste_fit` can emit a specific reason only when matching stated evidence exists.
+3. `quality_reliability` does not emit personal-taste language.
+4. `behavioral_fit` / `genre_affinity` stay generic unless specific evidence exists.
+5. Negative penalties surface as risk/caution, not positive reasons.
+6. Zero/absent components emit no misleading explanation.
+7. Retrieval-only contributions cannot produce causal fit explanations.
+8. Existing singular `_retrieval_reason` reservation behavior remains unchanged in canonical fixtures.
+9. Ranking/order is unchanged.
+10. `book.reasons[]` compatibility is preserved or derivable.
+
+Use deterministic fixtures. Avoid live API dependency.
+
+## 7. Fixture replay
+
+Add or extend a fixture replay harness only as much as needed for P3A-4.
+
+Minimum scenarios:
+- stated preference fit
+- quality-only / popularity-only book
+- soft-avoid penalty
+- retrieval-only candidate
+- cold-start / weak-signal candidate
+- cache-restored singular provenance candidate
+- multi-source retrieval candidate
+
+For each, assert:
+- explanation output is faithful
+- no overclaiming
+- no ranking delta
+- legacy fields remain intact
+
+## Hard constraints
+
+- Do not touch RecCard.
+- Do not change visible UI copy.
+- Do not alter ranking.
+- Do not alter scoring math.
+- Do not alter composition.
+- Do not migrate reservation AND-gate.
+- Do not start P3B.
+- Do not delete legacy fields.
+- No opportunistic cleanup.
+
+## Validation required
+
+1. Exact files touched.
+2. Validator output.
+3. Fixture replay output, if separate.
+4. Typecheck delta against current baseline.
+5. Workflow/app status.
+6. Confirmation no ranking/scoring/composition behavior changed.
+7. Confirmation no visible explanation/UI behavior changed.
+8. Explanation faithfulness evidence matrix:
+   - which contribution kinds can produce specific causal copy today
+   - which can only produce generic/descriptive copy
+   - which are currently blocked from display
+9. Recommended P3A-5 next step.
+
+Return format:
+1. Executive verdict
+2. What changed
+3. Files touched
+4. Validator / fixture results
+5. Typecheck/workflow status
+6. Behavior guarantees
+7. Explanation faithfulness matrix
+8. Cache/versioning implications
+9. Recommended P3A-5 next step

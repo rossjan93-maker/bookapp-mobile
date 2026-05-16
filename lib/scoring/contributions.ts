@@ -116,16 +116,40 @@ export type Contribution =
 // PER D4: lives here, NOT in lib/recPolicy.ts. recPolicy is for branch
 // quotas / score caps / retrieval policy. Display floors are explanation-
 // faithfulness thresholds and belong with the contribution model.
+//
+// Calibration (P3A-4) — picked against the actual scoring scale documented
+// in lib/recommender.ts Steps 1–7:
+//   trait_alignment   range ~0..0.42  → behavioral_fit floor 0.10
+//                                        (a single capped trait hit of
+//                                        TRAIT_CONTRIB_CAP=0.18 sits above
+//                                        the floor; pure subject-overlap
+//                                        noise of one match (+0.02) does
+//                                        not)
+//   genre_bonus       range −0.18..0.22 → uses behavioral_fit floor 0.10
+//                                        (STEP3_BONUS_MED=0.10 is the
+//                                        explicit "above floor" threshold)
+//   feedback_boost    range 0..0.10  → feedback_fit floor 0.05
+//   enrichment_bonus  range 0..0.08  → quality_reliability floor 0.04
+//                                        (descriptive only — never causal)
+//   stated_taste      ± with +0.05 stated-pref floor → 0.04 so the policy-
+//                                        guaranteed +0.05 floor surfaces
+//                                        as a real reason at all tiers
+//   metadata_penalty  range −0.25..+0.05 → hygiene_floor floor 0.10 (abs);
+//                                        cautions fire on penalties ≤ −0.10
+//   avoided_penalty   range −0.30..0 → soft_avoid_penalty floor 0.10 (abs)
+//   intent_fit / novelty_diversity / repetition_suppression — not yet
+//                     emitted by deriveScoringContributions(); floors set
+//                     conservatively (0.04) for when scoring wires them.
 export const DISPLAY_FLOORS: Readonly<Record<ScoringContributionKind, number>> = {
-  behavioral_fit:        0,
-  stated_taste_fit:      0,
-  intent_fit:            0,
-  quality_reliability:   0,
-  feedback_fit:          0,
-  novelty_diversity:     0,
-  soft_avoid_penalty:    0,
-  repetition_suppression: 0,
-  hygiene_floor:         0,
+  behavioral_fit:         0.10,
+  stated_taste_fit:       0.04,
+  intent_fit:             0.04,
+  quality_reliability:    0.04,
+  feedback_fit:           0.05,
+  novelty_diversity:      0.04,
+  soft_avoid_penalty:     0.10,
+  repetition_suppression: 0.04,
+  hygiene_floor:          0.10,
 };
 
 // ── Reason-string → RetrievalContribution mapping (P3A-2) ────────────────────
