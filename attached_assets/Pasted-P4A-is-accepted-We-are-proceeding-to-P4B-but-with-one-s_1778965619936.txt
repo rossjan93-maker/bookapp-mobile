@@ -1,0 +1,198 @@
+P4A is accepted.
+
+We are proceeding to P4B, but with one sequencing clarification.
+
+Do not start ScoreContribution emission yet.
+
+P4A created the signal partition contract:
+- durable vs current/session intent
+- diagnosisAnswers signal classification
+- readingStylesDurable / readingStylesIntent / readingStylesUnknown
+- behavior-neutral contract only
+
+P4B should now build the Book Intelligence trait foundation:
+- tone
+- pace
+- complexity
+- length_class
+- series_position
+
+All traits must default to unknown when evidence is weak or absent.
+
+Do not wire these traits into scoring contributions yet.
+Do not change ranking.
+Do not change scoring.
+Do not change composition.
+Do not change explanations.
+Do not touch RecCard.
+
+Task type:
+P4B BookTraits Foundation implementation only.
+
+Goal:
+Extend `lib/bookTraits.ts` / related book-trait inference to produce a minimum semantic trait set that later P4C can use for observe-only contributions.
+
+## 1. Extend BookTraits model
+
+Add these fields, or the closest existing-equivalent names if already partially present:
+
+- `tone: 'light' | 'dark' | 'mixed' | 'unknown'`
+- `toneConfidence: 'specific' | 'broad' | 'unknown'`
+- `pace: 'fast' | 'medium' | 'slow' | 'unknown'`
+- `paceConfidence: 'specific' | 'broad' | 'unknown'`
+- `complexity: 'accessible' | 'literary' | 'dense' | 'unknown'`
+- `complexityConfidence: 'specific' | 'broad' | 'unknown'`
+- `lengthClass: 'short' | 'standard' | 'long' | 'tome' | 'unknown'`
+- `seriesPosition: { seriesName?: string; index?: number; of?: number } | null`
+
+If the codebase prefers snake_case or existing naming patterns, follow project convention, but keep the semantics explicit.
+
+## 2. Unknown-first rule
+
+This is critical.
+
+If the evidence is weak, ambiguous, or absent:
+- set trait to `unknown`
+- do not infer aggressively
+- do not impute from genre alone unless the rule is extremely conservative and documented
+
+The purpose of P4B is not to make books seem richly understood. It is to create reliable evidence fields for later contributions.
+
+## 3. Evidence sources
+
+Use only existing metadata:
+- title
+- subtitle/series hints
+- subjects
+- description
+- page_count
+- existing enrichment fields
+- existing deterministic helpers
+
+No LLM calls.
+No new external API calls.
+No embedding system.
+No semantic reranker.
+
+## 4. Length class
+
+Use deterministic page-count buckets.
+
+Propose and implement conservative buckets, for example:
+- short: <= 240 pages
+- standard: 241–420
+- long: 421–700
+- tome: > 700
+- unknown: no page count
+
+If current project conventions suggest different buckets, justify them.
+
+## 5. Series position
+
+Formalize the existing title-derived series-position parsing if present.
+
+Examples:
+- `Royal Assassin (Farseer Trilogy, #2)` should produce:
+  - seriesName: `Farseer Trilogy`
+  - index: 2
+- `Ship of Destiny (Liveship Traders, #3)` should produce:
+  - seriesName: `Liveship Traders`
+  - index: 3
+
+Do not change recommender series-continuation behavior in this batch. This is trait exposure only.
+
+## 6. Tone / pace / complexity heuristics
+
+Implement conservative deterministic heuristics.
+
+Examples of possible signal classes:
+
+Tone:
+- dark: dark, bleak, grim, murder, grief, trauma, psychological, horror, noir
+- light: funny, witty, humorous, heartwarming, cozy, uplifting, feel-good
+- mixed: both strong light and dark evidence
+- unknown: no strong evidence
+
+Pace:
+- fast: thriller, suspense, page-turner, action, fast-paced
+- slow: slow-burn, contemplative, meditative, literary, reflective
+- medium: some evidence but not strong
+- unknown: no reliable evidence
+
+Complexity:
+- accessible: accessible, commercial, popular, cozy, beach read, self-help
+- literary: literary fiction, lyrical, philosophical, reflective
+- dense: dense, academic, complex, epic, experimental, history, theory, long-form nonfiction
+- unknown: no reliable evidence
+
+These examples are not prescriptive. Implement only what is safe.
+
+## 7. Validator
+
+Add:
+
+- `scripts/validate_book_trait_coverage.ts`
+
+It should assert:
+
+1. all new fields exist on BookTraits output
+2. unknown defaults are preserved when evidence is absent
+3. lengthClass buckets are correct
+4. seriesPosition parses common title patterns
+5. tone does not over-infer from genre alone
+6. pace does not over-infer from weak subject noise
+7. complexity does not classify every literary/long book as dense without evidence
+8. confidence fields are set correctly
+9. detectGenre regressions remain fixed
+10. no scoring/ranking/composition output changes
+
+Use deterministic fixtures. Avoid live API dependence.
+
+## 8. Regression validation
+
+Run:
+- validate_book_trait_coverage
+- validate_signal_partition
+- validate_detect_genre
+- validate_explanation_default_flip
+- validate_explanation_faithfulness
+- validate_explanation_projection
+- validate_explanation_quality_contribution
+- validate_scoring_contributions
+- validate_retrieval_contributions
+- validate_multi_source_provenance
+- validate_stated_reservation
+- validate_rec_validity
+- validate_taxonomy
+
+Also report:
+- typecheck delta against current baseline
+- workflow/app status
+
+## Hard constraints
+
+- Do not emit current_intent ScoreContributions yet.
+- Do not change ranking.
+- Do not change scoring.
+- Do not change composition.
+- Do not change RecCard.
+- Do not change visible copy.
+- Do not touch onboarding UI.
+- Do not modify applyStyleBoosts or applyDiagnosisBoosts yet.
+- Do not implement hard avoid.
+- Do not spot-patch Business → nonfiction collapse.
+- No opportunistic cleanup.
+
+## Return format
+
+1. Executive verdict
+2. What changed
+3. Files touched
+4. BookTraits field definitions
+5. Heuristic rules implemented
+6. Unknown/default behavior
+7. Validator results
+8. Typecheck/workflow status
+9. Behavior guarantees
+10. Risks / deferred items
+11. Recommended P4C next step

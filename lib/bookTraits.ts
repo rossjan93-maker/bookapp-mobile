@@ -26,11 +26,57 @@ export type BookForm =
   | 'graphic'
   | 'anthology';
 
+// ── P4B BookIntelligence trait foundation (additive) ─────────────────────────
+//
+// Semantic traits are EVIDENCE FIELDS, not opinions. Their job is to expose
+// what we know about a book in a typed, conservative shape that later phases
+// (P4C ScoreContributions, semantic intelligence plane) can attach to without
+// having to re-do deterministic inference. P4B is observe-only — none of
+// these fields are wired into scoring, ranking, composition, retrieval, or
+// explanation copy.
+//
+// Hard rules:
+//   1. Unknown-first. Weak / ambiguous / absent evidence → 'unknown'.
+//   2. No LLM, no embedding, no new network calls.
+//   3. Subject-driven signals are word-boundary matched (not substring), per
+//      the documented Gotcha in replit.md — the same root cause that broke
+//      detectGenre in P3A live smoke.
+//   4. Genre alone is not enough evidence for tone/pace/complexity except
+//      under an extremely conservative allowlist, individually documented.
+//   5. Confidence tracks the *quality* of the matched evidence:
+//        'specific' — at least one multi-word / unambiguous subject phrase
+//                     matched (e.g. "psychological thriller" for pace=fast)
+//        'broad'    — only a single-token bare signal matched
+//                     (e.g. just "thriller" for pace=fast)
+//        'unknown'  — no evidence
+export type ToneCategory       = 'light' | 'dark' | 'mixed' | 'unknown';
+export type PaceCategory       = 'fast' | 'medium' | 'slow' | 'unknown';
+export type ComplexityCategory = 'accessible' | 'literary' | 'dense' | 'unknown';
+export type LengthClass        = 'short' | 'standard' | 'long' | 'tome' | 'unknown';
+export type TraitConfidence    = 'specific' | 'broad' | 'unknown';
+
+export type SeriesPosition = {
+  seriesName?: string;
+  index?:      number;
+  /** Total volumes in the series, when known from the curated catalog. */
+  of?:         number;
+};
+
 export type BookTraits = {
   primaryGenre: string | null;
   bookForm:     BookForm | null;
   genres:       string[];
   traits:       Record<string, number>;
+
+  // ── P4B additive fields (default 'unknown' / null) ─────────────────────
+  tone:                 ToneCategory;
+  toneConfidence:       TraitConfidence;
+  pace:                 PaceCategory;
+  paceConfidence:       TraitConfidence;
+  complexity:           ComplexityCategory;
+  complexityConfidence: TraitConfidence;
+  lengthClass:          LengthClass;
+  seriesPosition:       SeriesPosition | null;
 };
 
 // ── Form detection signals ────────────────────────────────────────────────────
@@ -460,6 +506,340 @@ export function isPhilosophyOrSpiritual(book: {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// P4B · BookIntelligence trait foundation (observe-only)
+// ─────────────────────────────────────────────────────────────────────────────
+// All helpers below are deterministic, conservative, and unknown-first. They
+// are wired into getBookTraits() so consumers see the new fields, but they
+// are NOT consumed by scoring/ranking/composition/explanation today. P4C will
+// emit ScoreContributions from them under a feature flag.
+
+// ── Length class buckets (deterministic page-count thresholds) ───────────────
+// Buckets agreed in the P4B spec:
+//   short:    <= 240
+//   standard: 241–420
+//   long:     421–700
+//   tome:     > 700
+// Missing/non-positive page_count → 'unknown'. These thresholds are chosen
+// conservatively: a 700-page book is plausibly "long" (Sanderson, Hobb), and
+// "tome" is reserved for genuine doorstoppers (The Way of Kings, Infinite
+// Jest, A Suitable Boy, large reference works).
+export function classifyLength(pageCount: number | null | undefined): LengthClass {
+  if (!pageCount || pageCount <= 0 || !Number.isFinite(pageCount)) return 'unknown';
+  if (pageCount <= 240)  return 'short';
+  if (pageCount <= 420)  return 'standard';
+  if (pageCount <= 700)  return 'long';
+  return 'tome';
+}
+
+// ── Subject signal corpus helper ─────────────────────────────────────────────
+// Combines subjects + description into a single lowercased corpus that the
+// word-boundary matchers test against. Title and author are intentionally
+// excluded: title-only signals are noisy ("Dark Matter" the SF novel is not
+// tonally dark; "Light from Uncommon Stars" is not a light read).
+function buildSemanticCorpus(book: {
+  subjects?:    string[] | null;
+  description?: string | null;
+}): string {
+  const subjects = (book.subjects ?? []).join(' ');
+  const desc     = book.description ?? '';
+  return `${subjects} ${desc}`;
+}
+
+function compileMatchers(signals: readonly string[]): RegExp[] {
+  return signals.map(s => new RegExp(`\\b${escapeRegex(s)}\\b`, 'i'));
+}
+
+// Returns the count of distinct matched phrases (not total hits across the
+// corpus). One phrase matching twice still counts as one.
+function countMatches(corpus: string, matchers: RegExp[]): number {
+  let n = 0;
+  for (const re of matchers) if (re.test(corpus)) n++;
+  return n;
+}
+
+// ── Specificity gate (locked acceptance rule) ────────────────────────────────
+// A "specific" tone/pace/complexity signal must be a multi-word or hyphenated
+// phrase — single tokens are ambiguous on their own ("noir", "grim",
+// "academic", "meditative" can mean many things in isolation) and must
+// instead behave as broad-level evidence requiring corroboration.
+//
+// This is the architect-flagged gate: we keep the original combined signal
+// lists for readability, then split them at module load. A signal is
+// "phrasal" iff it contains a space or hyphen after trimming.
+function isPhrasal(signal: string): boolean {
+  return /[\s-]/.test(signal.trim());
+}
+function partitionBySpecificity(signals: readonly string[]): {
+  phrasal: string[];
+  tokens:  string[];
+} {
+  const phrasal: string[] = [];
+  const tokens:  string[] = [];
+  for (const s of signals) (isPhrasal(s) ? phrasal : tokens).push(s);
+  return { phrasal, tokens };
+}
+
+// ── Tone signals ─────────────────────────────────────────────────────────────
+// SPECIFIC tokens are unambiguous tonal markers. BROAD tokens are weaker
+// genre-adjacent words that only count as evidence when seen alongside other
+// tonal context — they cannot stand on their own at 'specific' confidence.
+const TONE_DARK_SPECIFIC = [
+  'dark fantasy', 'dark fiction', 'dark themes', 'grimdark', 'noir',
+  'psychological thriller', 'psychological horror', 'gothic horror',
+  'true crime', 'trauma', 'grief', 'bleak', 'grim',
+  'tragedy', 'tragic',
+];
+const TONE_DARK_BROAD = [
+  'horror', 'thriller', 'murder', 'death', 'war', 'violence',
+];
+const TONE_LIGHT_SPECIFIC = [
+  'cozy mystery', 'cozy fantasy', 'cozy fiction', 'romantic comedy',
+  'feel-good', 'feel good', 'heartwarming', 'uplifting',
+  'humorous fiction', 'comic fiction', 'comedic',
+  'beach read',
+];
+const TONE_LIGHT_BROAD = [
+  'humor', 'humour', 'comedy', 'funny', 'witty', 'cozy', 'lighthearted',
+  'light-hearted',
+];
+
+// Apply the specificity gate: only phrasal entries qualify as "specific"
+// evidence; single-token entries from the SPECIFIC lists fold into the BROAD
+// pool and therefore require corroboration to fire.
+const _TONE_DARK_SPEC_PART  = partitionBySpecificity(TONE_DARK_SPECIFIC);
+const _TONE_LIGHT_SPEC_PART = partitionBySpecificity(TONE_LIGHT_SPECIFIC);
+const TONE_DARK_SPECIFIC_MATCHERS  = compileMatchers(_TONE_DARK_SPEC_PART.phrasal);
+const TONE_DARK_BROAD_MATCHERS     = compileMatchers([
+  ...TONE_DARK_BROAD,
+  ..._TONE_DARK_SPEC_PART.tokens,
+]);
+const TONE_LIGHT_SPECIFIC_MATCHERS = compileMatchers(_TONE_LIGHT_SPEC_PART.phrasal);
+const TONE_LIGHT_BROAD_MATCHERS    = compileMatchers([
+  ...TONE_LIGHT_BROAD,
+  ..._TONE_LIGHT_SPEC_PART.tokens,
+]);
+
+export function classifyTone(book: {
+  subjects?:    string[] | null;
+  description?: string | null;
+}): { tone: ToneCategory; confidence: TraitConfidence } {
+  const corpus = buildSemanticCorpus(book);
+  if (!corpus.trim()) return { tone: 'unknown', confidence: 'unknown' };
+
+  const darkSpec  = countMatches(corpus, TONE_DARK_SPECIFIC_MATCHERS);
+  const darkBroad = countMatches(corpus, TONE_DARK_BROAD_MATCHERS);
+  const lightSpec  = countMatches(corpus, TONE_LIGHT_SPECIFIC_MATCHERS);
+  const lightBroad = countMatches(corpus, TONE_LIGHT_BROAD_MATCHERS);
+
+  const darkStrong  = darkSpec  >= 1 || darkBroad  >= 2;
+  const lightStrong = lightSpec >= 1 || lightBroad >= 2;
+
+  // Mixed: BOTH sides reach 'strong'. Requires explicit evidence both ways,
+  // otherwise the stronger side wins and the weaker side is ignored.
+  if (darkStrong && lightStrong) {
+    const conf: TraitConfidence = (darkSpec >= 1 && lightSpec >= 1) ? 'specific' : 'broad';
+    return { tone: 'mixed', confidence: conf };
+  }
+  if (darkStrong) {
+    return { tone: 'dark', confidence: darkSpec >= 1 ? 'specific' : 'broad' };
+  }
+  if (lightStrong) {
+    return { tone: 'light', confidence: lightSpec >= 1 ? 'specific' : 'broad' };
+  }
+  // A single broad hit on either side is NOT enough — 'thriller' or 'humor'
+  // alone leaves tone unknown until a second corroborating signal appears.
+  return { tone: 'unknown', confidence: 'unknown' };
+}
+
+// ── Pace signals ─────────────────────────────────────────────────────────────
+const PACE_FAST_SPECIFIC = [
+  'page-turner', 'page turner', 'fast-paced', 'fast paced',
+  'psychological thriller', 'action-packed', 'action packed',
+  'spy thriller', 'spy novel', 'crime thriller', 'legal thriller',
+  'medical thriller',
+];
+const PACE_FAST_BROAD = [
+  'thriller', 'suspense', 'action', 'fast',
+];
+const PACE_SLOW_SPECIFIC = [
+  'slow-burn', 'slow burn', 'literary fiction', 'literary novel',
+  'meditative', 'contemplative', 'philosophical fiction',
+  'character study', 'reflective',
+];
+const PACE_SLOW_BROAD = [
+  'literary', 'philosophical', 'contemplation', 'introspective',
+];
+
+const _PACE_FAST_SPEC_PART = partitionBySpecificity(PACE_FAST_SPECIFIC);
+const _PACE_SLOW_SPEC_PART = partitionBySpecificity(PACE_SLOW_SPECIFIC);
+const PACE_FAST_SPECIFIC_MATCHERS = compileMatchers(_PACE_FAST_SPEC_PART.phrasal);
+const PACE_FAST_BROAD_MATCHERS    = compileMatchers([
+  ...PACE_FAST_BROAD,
+  ..._PACE_FAST_SPEC_PART.tokens,
+]);
+const PACE_SLOW_SPECIFIC_MATCHERS = compileMatchers(_PACE_SLOW_SPEC_PART.phrasal);
+const PACE_SLOW_BROAD_MATCHERS    = compileMatchers([
+  ...PACE_SLOW_BROAD,
+  ..._PACE_SLOW_SPEC_PART.tokens,
+]);
+
+export function classifyPace(book: {
+  subjects?:    string[] | null;
+  description?: string | null;
+}): { pace: PaceCategory; confidence: TraitConfidence } {
+  const corpus = buildSemanticCorpus(book);
+  if (!corpus.trim()) return { pace: 'unknown', confidence: 'unknown' };
+
+  const fastSpec  = countMatches(corpus, PACE_FAST_SPECIFIC_MATCHERS);
+  const fastBroad = countMatches(corpus, PACE_FAST_BROAD_MATCHERS);
+  const slowSpec  = countMatches(corpus, PACE_SLOW_SPECIFIC_MATCHERS);
+  const slowBroad = countMatches(corpus, PACE_SLOW_BROAD_MATCHERS);
+
+  const fastStrong = fastSpec >= 1 || fastBroad >= 2;
+  const slowStrong = slowSpec >= 1 || slowBroad >= 2;
+
+  // Conflicting strong signals → 'medium' with confidence dropped to broad.
+  // This is the analogue of tone='mixed' for pace, but pace is a 1-D
+  // spectrum so the conflict resolves to the middle bucket.
+  if (fastStrong && slowStrong) {
+    return { pace: 'medium', confidence: 'broad' };
+  }
+  if (fastStrong) {
+    return { pace: 'fast', confidence: fastSpec >= 1 ? 'specific' : 'broad' };
+  }
+  if (slowStrong) {
+    return { pace: 'slow', confidence: slowSpec >= 1 ? 'specific' : 'broad' };
+  }
+  return { pace: 'unknown', confidence: 'unknown' };
+}
+
+// ── Complexity signals ───────────────────────────────────────────────────────
+// "Dense" is the most over-claimable bucket — long page counts and the word
+// "history" do NOT make a book dense. Only explicit craft / academic signals
+// qualify, and a corroborating signal (page count >700 OR a second match) is
+// required to reach 'specific'.
+const COMPLEXITY_ACCESSIBLE_SPECIFIC = [
+  'self-help', 'self help', 'how-to', 'beach read', 'cozy mystery',
+  'cozy fantasy', 'popular nonfiction', 'popular science', 'pop science',
+  'commercial fiction',
+];
+const COMPLEXITY_ACCESSIBLE_BROAD = [
+  'accessible', 'commercial', 'popular', 'beginner',
+];
+const COMPLEXITY_LITERARY_SPECIFIC = [
+  'literary fiction', 'literary novel', 'lyrical prose',
+  'man booker', 'booker prize', 'national book award', 'pulitzer prize',
+];
+const COMPLEXITY_LITERARY_BROAD = [
+  'literary', 'lyrical',
+];
+const COMPLEXITY_DENSE_SPECIFIC = [
+  'academic', 'scholarly', 'theoretical', 'experimental fiction',
+  'postmodern', 'philosophical treatise', 'critical theory',
+  'monograph', 'dissertation',
+];
+const COMPLEXITY_DENSE_BROAD = [
+  'dense', 'epic', 'philosophy', 'theology', 'theory',
+];
+
+const _CPX_ACC_SPEC_PART = partitionBySpecificity(COMPLEXITY_ACCESSIBLE_SPECIFIC);
+const _CPX_LIT_SPEC_PART = partitionBySpecificity(COMPLEXITY_LITERARY_SPECIFIC);
+const _CPX_DEN_SPEC_PART = partitionBySpecificity(COMPLEXITY_DENSE_SPECIFIC);
+const COMPLEXITY_ACCESSIBLE_SPECIFIC_MATCHERS = compileMatchers(_CPX_ACC_SPEC_PART.phrasal);
+const COMPLEXITY_ACCESSIBLE_BROAD_MATCHERS    = compileMatchers([
+  ...COMPLEXITY_ACCESSIBLE_BROAD, ..._CPX_ACC_SPEC_PART.tokens,
+]);
+const COMPLEXITY_LITERARY_SPECIFIC_MATCHERS   = compileMatchers(_CPX_LIT_SPEC_PART.phrasal);
+const COMPLEXITY_LITERARY_BROAD_MATCHERS      = compileMatchers([
+  ...COMPLEXITY_LITERARY_BROAD, ..._CPX_LIT_SPEC_PART.tokens,
+]);
+const COMPLEXITY_DENSE_SPECIFIC_MATCHERS      = compileMatchers(_CPX_DEN_SPEC_PART.phrasal);
+const COMPLEXITY_DENSE_BROAD_MATCHERS         = compileMatchers([
+  ...COMPLEXITY_DENSE_BROAD, ..._CPX_DEN_SPEC_PART.tokens,
+]);
+
+export function classifyComplexity(book: {
+  subjects?:    string[] | null;
+  description?: string | null;
+  page_count?:  number | null;
+}): { complexity: ComplexityCategory; confidence: TraitConfidence } {
+  const corpus = buildSemanticCorpus(book);
+  if (!corpus.trim()) return { complexity: 'unknown', confidence: 'unknown' };
+
+  const accSpec  = countMatches(corpus, COMPLEXITY_ACCESSIBLE_SPECIFIC_MATCHERS);
+  const accBroad = countMatches(corpus, COMPLEXITY_ACCESSIBLE_BROAD_MATCHERS);
+  const litSpec  = countMatches(corpus, COMPLEXITY_LITERARY_SPECIFIC_MATCHERS);
+  const litBroad = countMatches(corpus, COMPLEXITY_LITERARY_BROAD_MATCHERS);
+  const denSpec  = countMatches(corpus, COMPLEXITY_DENSE_SPECIFIC_MATCHERS);
+  const denBroad = countMatches(corpus, COMPLEXITY_DENSE_BROAD_MATCHERS);
+
+  // Dense gate: at least one SPECIFIC academic/experimental signal required.
+  // Pure broad hits like 'epic' or 'philosophy' alone do NOT classify as
+  // dense — that was the over-classification trap the spec calls out.
+  if (denSpec >= 1) {
+    return { complexity: 'dense', confidence: 'specific' };
+  }
+  if (litSpec >= 1) {
+    return { complexity: 'literary', confidence: 'specific' };
+  }
+  if (accSpec >= 1) {
+    return { complexity: 'accessible', confidence: 'specific' };
+  }
+  // Broad-only fallback requires TWO matches in the same bucket.
+  if (accBroad >= 2)  return { complexity: 'accessible', confidence: 'broad' };
+  if (litBroad >= 2)  return { complexity: 'literary',   confidence: 'broad' };
+  if (denBroad >= 2)  return { complexity: 'dense',      confidence: 'broad' };
+  return { complexity: 'unknown', confidence: 'unknown' };
+}
+
+// ── Series position parser ───────────────────────────────────────────────────
+// Mirrors the conservative shape already used in lib/boxSetDetection.ts for
+// cover-substitution. Recognised patterns at the END of a title:
+//   "(Series Name, #2)"
+//   "(Series Name #2)"
+//   "(Series Name, Book 2)"
+//   "(Series Name Book 2)"
+// The series sub-string must contain at least one letter (guards against
+// pure-number parens like "(2007)" or "(Hardcover edition)"). When the
+// extracted series name matches a curated SERIES_CATALOG entry we also
+// populate `of` from the catalog total.
+const SERIES_SUFFIX_RE =
+  /\(([^()]+?)[,\s]+(?:#\s*(\d+)|book\s+(\d+))\)\s*$/i;
+
+export function parseSeriesPosition(
+  title: string | null | undefined,
+): SeriesPosition | null {
+  if (!title) return null;
+  const m = title.match(SERIES_SUFFIX_RE);
+  if (!m) return null;
+  const seriesRaw = m[1].trim();
+  if (!/[a-z]/i.test(seriesRaw)) return null;
+  const volStr = m[2] ?? m[3];
+  if (!volStr) return null;
+  const idx = parseInt(volStr, 10);
+  if (!Number.isFinite(idx) || idx <= 0) return null;
+  return { seriesName: seriesRaw, index: idx };
+}
+
+// Looks up `of` from the curated catalog when the parsed seriesName matches
+// a SERIES_CATALOG displayName or key (with leading "the" stripped on both
+// sides to mirror the matcher in boxSetDetection.ts). Kept as a separate
+// function to keep parseSeriesPosition pure (no module-graph side effects)
+// and so consumers that don't need catalog enrichment can skip the import.
+export function enrichSeriesPositionFromCatalog(
+  pos: SeriesPosition,
+  catalogLookup: (normalizedName: string) => { total: number } | null,
+): SeriesPosition {
+  if (!pos.seriesName) return pos;
+  const stripThe = (s: string) => s.replace(/^the\s+/i, '').trim();
+  const norm = stripThe(pos.seriesName).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (!norm) return pos;
+  const hit = catalogLookup(norm);
+  if (!hit) return pos;
+  return { ...pos, of: hit.total };
+}
+
 // ── Main extractor ─────────────────────────────────────────────────────────────
 
 export function getBookTraits(book: {
@@ -492,10 +872,26 @@ export function getBookTraits(book: {
     traits = applyPageCount(traits, book.page_count);
   }
 
+  // ── P4B additive evidence fields (observe-only) ─────────────────────────
+  const tone       = classifyTone(book);
+  const pace       = classifyPace(book);
+  const complexity = classifyComplexity(book);
+  const lengthCls  = classifyLength(book.page_count);
+  const seriesPos  = parseSeriesPosition(book.title);
+
   return {
     primaryGenre,
     bookForm,
     genres: primaryGenre ? [primaryGenre] : ['general'],
     traits,
+
+    tone:                 tone.tone,
+    toneConfidence:       tone.confidence,
+    pace:                 pace.pace,
+    paceConfidence:       pace.confidence,
+    complexity:           complexity.complexity,
+    complexityConfidence: complexity.confidence,
+    lengthClass:          lengthCls,
+    seriesPosition:       seriesPos,
   };
 }
