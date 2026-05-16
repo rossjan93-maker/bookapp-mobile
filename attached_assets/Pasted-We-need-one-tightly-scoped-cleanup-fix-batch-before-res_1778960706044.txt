@@ -1,0 +1,160 @@
+We need one tightly scoped cleanup/fix batch before resuming P3A live smoke.
+
+Context:
+The Layer A detectGenre fix is code/validator accepted:
+- false nonfiction classification was fixed at source
+- recValidity bumped to rcv3
+- validators are green
+- P3A product acceptance remains pending live re-smoke of A/B/C/D
+
+Current live smoke status:
+- Scenario A — Import-first: PASS WITH NOTE
+- Scenario C — Cold-start Tier-0: PASS WITH NOTE
+- Scenario B — Quick-taste: after the detectGenre fix, the nonfiction false-positive issue appears resolved, but a new user-facing copy issue appeared:
+  - visible reason: “Matches your stated thriller_mystery preference”
+  - this leaks an internal snake_case key
+- Scenario D — Explicit preference edit: still pending
+
+We also need to handle the repeated replit.md size warning. This is now a natural pause to trim/reorganize docs.
+
+Task type:
+Targeted composer display-label fix + documentation hygiene.
+
+Do not start P3B.
+Do not change ranking/scoring/composition.
+Do not change RecCard layout.
+Do not mark P3A product accepted yet.
+
+Part A — Fix visible stated-preference display labels
+
+Problem:
+Composer-backed reasons now production-default. In quick-taste Scenario B, a visible reason showed:
+
+“Matches your stated thriller_mystery preference”
+
+This is faithful but not user-ready. It leaks an internal key.
+
+Goal:
+Humanize stated preference keys in visible composer-backed reasons while preserving raw keys internally for evidence/debug.
+
+Requirements:
+1. Add or reuse a display-label helper for stated preference keys.
+2. Apply it wherever composer/projection emits visible stated-preference copy.
+3. Preserve raw matchedKey internally in contribution evidence/debug.
+4. Do not weaken the explanation to vague copy if a known display label exists.
+5. Do not change scoring, ranking, retrieval, composition, RecCard layout, or onboarding.
+
+Examples:
+- thriller_mystery → thriller & mystery
+- scifi_fantasy → sci-fi & fantasy
+- memoir_bio → memoir & biography
+- literary_fiction → literary fiction
+- self_help → self-help
+- nonfiction → nonfiction
+- romance → romance
+- horror → horror
+- business → business
+- history → history
+- biography → biography
+
+If unknown key:
+- use a safe humanized fallback only if it does not expose snake_case
+- preserve raw key only in debug/internal evidence
+
+Validation:
+1. Add/update validator so visible composer reasons do not expose raw snake_case keys.
+2. Assert `thriller_mystery` does not appear in visible reasons.
+3. Assert visible output becomes “thriller & mystery” or equivalent.
+4. Existing validators remain green.
+
+Part B — Record Current Intent Layer follow-up
+
+User note from live smoke:
+Quick-taste onboarding captures more than genres:
+- reading purpose / escape
+- tone
+- pacing
+- light/heavy
+- avoids like “less of self-help”
+- anchor books
+
+Right now, the reasons mostly reflect genre/stated category. That is acceptable for P3A if the system lacks contribution evidence for tone/pace/intent, but it must be tracked.
+
+Please add a concise roadmap/backlog note:
+- Current Intent Layer follow-up: audit all quick-taste answers and map which ones currently affect retrieval, scoring, ranking, and explanation.
+- Inputs shown in Taste Readout should either influence the first deck or be clearly treated as early/future signal.
+- Pace/tone/intent should become first-class scoring/explanation signals later, not just onboarding decoration.
+
+Do not implement Current Intent Layer changes in this batch.
+
+Part C — replit.md trim / docs reorganization
+
+Replit has repeatedly flagged that replit.md is too large and overlaps with docs/recently_shipped.md.
+
+Goal:
+Make replit.md a concise live operating reference again.
+
+Please:
+1. Trim duplicated shipped-history prose from replit.md.
+2. Move or consolidate detailed historical phase notes into docs/recently_shipped.md if not already present.
+3. Preserve operationally important content in replit.md:
+   - current active phase/status
+   - latest applied migration/version state
+   - acceptance gates
+   - current blockers
+   - gotchas that prevent repeated bugs
+   - validator commands / operating standard
+   - current next task
+4. Keep roadmap-q2.md aligned.
+5. Do not remove important gotchas:
+   - subject matching uses word-boundary regex, never raw includes()
+   - deck-state/caching invariant
+   - migration/manual Supabase application convention
+   - P3A live-smoke acceptance remains required
+6. Ensure all docs agree:
+   - P3A code is shipped through the composer/default path
+   - Layer A detectGenre fix shipped
+   - recValidity is rcv3
+   - P3A product acceptance is not yet final
+   - A/C live smoke passed with notes
+   - B needs re-smoke after display-label fix
+   - D remains pending
+
+Hard constraints:
+- Do not start P3B.
+- Do not mark P3A product accepted.
+- Do not rewrite roadmap strategy beyond the small Current Intent note.
+- Do not change app behavior except the display-label fix.
+- No opportunistic code cleanup.
+
+Validation required:
+1. Exact files touched.
+2. Display-label validator output.
+3. Existing validator suite output, especially:
+   - validate_detect_genre
+   - validate_explanation_default_flip
+   - validate_explanation_quality_contribution
+   - smoke_explanation_projection
+   - validate_explanation_projection
+   - validate_explanation_faithfulness
+   - validate_scoring_contributions
+   - validate_retrieval_contributions
+   - validate_multi_source_provenance
+   - validate_stated_reservation
+   - validate_rec_validity
+4. Typecheck delta against current baseline.
+5. Workflow/app status.
+6. Short summary of what was removed from replit.md and where it moved.
+7. Confirmation docs are internally consistent.
+8. Go/no-go for resuming P3A live smoke.
+
+Return format:
+1. Executive verdict
+2. Display-label fix
+3. Docs cleanup summary
+4. Current Intent Layer note added
+5. Files touched
+6. Validator results
+7. Typecheck/workflow status
+8. Remaining P3A live-smoke checklist
+9. Recommended next action

@@ -2,6 +2,41 @@
 
 Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/onboarding sprints. Moved out of replit.md on 2026-05-14 to keep the live operating reference compact. Order is reverse-chronological. For full diffs use `git log -p -- <path>`.
 
+## P3A live-smoke Scenario B copy fix — stated-preference display labels + cache bump rcv3→rcv4 (2026-05-16)
+
+**User-visible bug.** After the detectGenre fix landed (rcv2→rcv3), Scenario B re-smoke with inputs `{Thriller & Mystery, escape, lighter, less of Self-Help}` returned the correct fit class but with a leaked internal key in the visible reason line: "Matches your stated **thriller_mystery** preference." Faithful (the stated taste contribution genuinely matched `affinityKey='thriller_mystery'`) but not user-ready — snake_case keys aren't a copy register users should see.
+
+**Root cause.** `lib/explanations/compose.ts::phrasingForStated` interpolated the raw `evidence.matchedKey` (an `AffinityKey` like `thriller_mystery`, `fantasy_scifi`, `memoir_bio`, `nonfiction`, `literary`, `romance`, `horror`) directly into the visible string. The taxonomy carried per-`GenreDef` `uiLabels.cardTag` but those are per-chip, and several `GenreDef`s collapse into the same `AffinityKey` (Mystery + Thriller → `thriller_mystery`; six chips → `nonfiction`), so there was no single source-of-truth display label for an `AffinityKey`.
+
+**Fix.**
+- `lib/taxonomy/genres.ts` — new `AFFINITY_DISPLAY_LABELS: Record<AffinityKey, string>` (compile-time exhaustive: adding a future `AffinityKey` without a label is a typecheck error) + `affinityDisplayLabel(key)` helper with a defensive fallback. Mapping: `literary → 'literary fiction'`, `fantasy_scifi → 'sci-fi & fantasy'`, `thriller_mystery → 'thriller & mystery'`, `romance → 'romance'`, `horror → 'horror'`, `memoir_bio → 'memoir & biography'`, `nonfiction → 'nonfiction'`.
+- `lib/explanations/compose.ts::phrasingForStated` — both `favorite` and `softavoid` branches now route through `affinityDisplayLabel()`. Raw key preserved on `evidence.matchedKey` for audit/debug/contribution accounting; only visible copy is humanised. Falls back to the existing generic phrasing ("Matches a preference you stated" / "Leans into a category you said to see less of") only when the lookup truly yields empty — never weakened when a label exists.
+- `lib/recValidity.ts` — `VERSION` bumped `rcv3` → `rcv4`. Justification: persisted `ScoredBook` payloads from before the fix carry raw-key strings in `book.reasons[]` ("Matches your stated thriller_mystery preference"). Without the bump, restoring a pre-fix deck would render the bad copy. `assertCurrent()` invalidates all three deck-state stores (`recPayloadCache` / `recSession` / `recQueue`) at next read.
+
+**Validators.**
+- `scripts/validate_affinity_display_labels.ts` (new). §1 exhaustiveness — every `AffinityKey` member has a non-empty label and `affinityDisplayLabel()` returns non-empty. §2 anti-leak — synthesised stated-taste contributions for every key × {favorite, softavoid} produce visible copy that does NOT contain the raw snake_case key AND DOES contain the humanised label. Inspects every visible bucket (`primary` / `secondary` / `cautions` / `descriptive`), not only the favorite-path backcompat projection — softavoid lines land in `cautions` and would otherwise hide a leak. §3 explicit Scenario B regression pin (`thriller_mystery` never visible; `thriller & mystery` always visible).
+- `scripts/validate_explanation_faithfulness.ts` F2 / FR1 / FR6 — assertions widened to a **dual** check: humanised label present AND raw snake_case key absent. Eliminates the failure mode where a future change could weaken the label and still pass a presence check.
+- `scripts/validate_explanation_projection.ts` — same dual check on the projection output.
+- `scripts/validate_explanation_default_flip.ts` §3.11 — pinned to `rcv4`; all prior versions (`rcv1` / `rcv2` / `rcv3`) flagged stale.
+
+**Full suite green.** All 13 owned validators: `affinity_display_labels`, `detect_genre`, `explanation_default_flip`, `explanation_faithfulness`, `explanation_projection`, `explanation_quality_contribution`, `goodreads_import_persistence`, `multi_source_provenance`, `rec_validity`, `retrieval_contributions`, `scoring_contributions`, `stated_reservation`, `taxonomy`. Pre-existing failures NOT touched: `validate_rec_request` + `validate_retrieval_planner` both fail on `__DEV__ is not defined` (React Native global undefined at tsx CLI runtime — pre-existing, unrelated to this change). Architect code review: PASS, scope confirmed copy-only.
+
+**Hard constraints honoured.** No P3B start. No ranking / scoring math / retrieval / composition / RecCard layout change. No onboarding / cold-start / import touch. No copy weakening. No opportunistic cleanup.
+
+**Status.** Scenario B unblocked for re-smoke. P3A product acceptance still BLOCKED pending re-smoke of A / B / C / D (B was the immediate blocker; A and C remain at PASS WITH NOTES from the prior round; D never captured).
+
+## P3 readiness — D1–D5 decisions (locked 2026-05-16, foundation shipped same day)
+
+Five decisions locked before P3A implementation. Moved here from replit.md on 2026-05-16 once the P3A foundation batch shipped — kept for archaeology because P3A scope and the slate-diversity guard file location are still referenced by in-flight work.
+
+- **D1 — Multi-source retrieval provenance.** Each candidate carries `_retrieval_reason[]` (array). Required so a book retrieved by both `stated_genre:mystery` AND `revealed_lane:literary_thriller` is attributable to both. Today's single-string `_retrieval_reason` becomes the "first-seen" entry; no behaviour change at the existing AND-gate, additive only.
+- **D2 — Fix `fetchOLByAuthor` hardcoded reason label.** Emitted a literal `'author_anchor:'` for every book regardless of author. Threaded the resolved author key into the call site; emits `author_anchor:<authorKey>`. No retrieval policy change.
+- **D3 — Slate diversity guard in its own file.** New `lib/composition/slateDiversity.ts` — pure `(composed, topN, contributions) → ScoredBook[]`. Keeps the kind-frequency rule (reject 3rd instance of same dominant `kind` in top-N unless no alternative) testable in isolation. Lets P5 swap in a richer diversity model without touching `recommender.ts` or `statedReservation.ts`.
+- **D4 — Per-kind display floors live in `lib/scoring/contributions.ts`, NOT `lib/recPolicy.ts`.** Floors are explanation-faithfulness thresholds (e.g. "don't surface a `behavioral_fit` reason if its contribution < 0.04"), not branch-quota / score-cap policy. Co-locating with the contribution model keeps explainability semantics together and prevents `recPolicy.ts` from accreting display logic.
+- **D5 — Preserve `book.reasons[]` as a derived compatibility output.** P3 introduces `ScoreContribution[]` as the authoritative reasoning surface, but RecCard / HomeShortlist / cache-restore paths consume `book.reasons[]` directly today. P3 computes `reasons[]` as a derived projection from `contributions[]` (top-K positive contributions formatted via the variant-pool templates) so downstream surfaces work unchanged through the transition. RecCard rewires to `contributions[]` first-class in a follow-up phase, not P3A.
+
+P3A foundation batch (typed contribution model + multi-source retrieval provenance + `fetchOLByAuthor` reason fix + first validator) shipped 2026-05-16; followed by P3A-6-C default-on flip, Scenario B detectGenre fix, and Scenario B display-label fix (all entries above).
+
 ## P3A live-smoke Scenario B blocker fix — detectGenre word-boundary + nonfiction prune + cache bump rcv2→rcv3 (2026-05-16)
 
 **User-visible bug.** Fresh quick-taste user stated `nonfiction`. For-You returned fiction books — The Fault in Our Stars, The Song of Achilles — each with the reason line "Matches your stated nonfiction preference." Control book Murder in the High Himalaya (genuine nonfiction) carried the same reason correctly. Scenarios A (PASS WITH NOTE) and C (PASS) were unaffected; D outstanding.
