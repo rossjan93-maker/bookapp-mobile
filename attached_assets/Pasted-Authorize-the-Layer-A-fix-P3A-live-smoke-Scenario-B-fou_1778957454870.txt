@@ -1,0 +1,231 @@
+Authorize the Layer A fix.
+
+P3A live smoke Scenario B found a confirmed blocker:
+- Fresh quick-taste user stated Nonfiction.
+- The app recommended fiction books with the reason:
+  “Matches your stated nonfiction preference.”
+- Examples:
+  - The Fault in Our Stars — John Green
+  - The Song of Achilles — Madeline Miller
+- Control:
+  - Murder in the High Himalaya — Jonathan Green appears to be a valid nonfiction match.
+
+We accept the investigation verdict:
+- Composer is not the root cause.
+- Projection is not the root cause.
+- deriveScoringContributions is not the root cause.
+- The issue is upstream in the Book Intelligence Layer:
+  `lib/bookTraits.ts::detectGenre`.
+
+Root cause:
+- `detectGenre()` uses substring `corpus.includes(...)` matching.
+- Broad standalone tokens like `history`, `science`, `psychology`, `philosophy`, `technology`, `sociology` can match fiction-side metadata:
+  - “historical fiction”
+  - “science fiction”
+  - “psychological thriller”
+  - “Greek mythology / ancient history”
+- `nonfiction` is evaluated before several fiction buckets, so first-match-wins can classify fiction books as nonfiction.
+- This produces false `bt.primaryGenre = nonfiction`.
+- Then `computeStatedTasteContribution(...)` honestly adds `stated_favorite:nonfiction`.
+- Then P3A composer honestly emits “Matches your stated nonfiction preference.”
+- Therefore the falsehood begins in `detectGenre`, not in the composer.
+
+Task type:
+Targeted Book Intelligence / genre detection fix only.
+
+Goal:
+Fix `detectGenre()` so fiction books are not classified as nonfiction due to broad substring matching, while preserving true nonfiction detection.
+
+## 1. Replace substring matching with safer matching
+
+In `lib/bookTraits.ts::detectGenre`:
+- Replace `corpus.includes(signal)` style checks with safe word-boundary / token-aware matching.
+- Use escaped regex or equivalent tokenization.
+- Ensure terms do not match inside larger phrases where they invert meaning.
+
+Examples that must NOT classify as nonfiction:
+- `science fiction`
+- `historical fiction`
+- `psychological thriller`
+- `philosophical novel`
+- `Greek mythology`
+- `young adult fiction`
+
+Use the existing project gotcha as a hard rule:
+- subject/content-warning matching should use word-boundary matching, never raw `includes()`.
+
+## 2. Prune overly broad nonfiction signals
+
+Remove or demote standalone nonfiction signals that are too ambiguous in book-subject corpora, especially:
+- `science`
+- `history`
+- `psychology`
+- `philosophy`
+- `technology`
+- `sociology`
+
+Keep unambiguous nonfiction signals such as:
+- `nonfiction`
+- `non-fiction`
+- `self-help`
+- `business`
+- `economics`
+- `politics`
+- `true crime`
+- clearly nonfiction-specific variants like `popular science`, `science nonfiction`, `history nonfiction`, etc., if already present or easy to add safely.
+
+Do not overfit to only the three smoke books. Fix the matching class.
+
+## 3. Reorder genre detection defensively
+
+Adjust detection order so fiction buckets are not preempted by broad nonfiction matches.
+
+Recommended order:
+1. memoir_bio
+2. fantasy_scifi
+3. thriller_mystery
+4. romance
+5. horror
+6. literary
+7. nonfiction
+8. general
+
+If you choose a different order, justify it.
+
+## 4. Preserve valid nonfiction controls
+
+Make sure genuine nonfiction still maps correctly.
+
+Positive controls:
+- subjects including `nonfiction`
+- `true crime`
+- `business`
+- `self-help`
+- `economics`
+- `politics`
+- `mountaineering` + `nonfiction`
+
+## 5. Validator
+
+Add:
+
+- `scripts/validate_detect_genre.ts`
+
+Required test cases:
+
+### Must NOT classify as nonfiction
+1. `science fiction`, `space opera`
+   - expected: `fantasy_scifi`
+
+2. `historical fiction`, `ancient Greece`
+   - expected: `literary` or `general`, but NOT nonfiction
+
+3. `psychological thriller`, `suspense`
+   - expected: `thriller_mystery`
+
+4. `Greek mythology`, `Trojan War`
+   - expected: `literary` or `general`, but NOT nonfiction
+
+5. `young adult fiction`, `love story`, `cancer`
+   - expected: `romance` or `general`, but NOT nonfiction
+
+6. `philosophical novel`
+   - expected: `literary` or `general`, but NOT nonfiction
+
+### Must still classify as nonfiction
+7. `mountaineering`, `nonfiction`, `true crime`
+   - expected: `nonfiction`
+
+8. `self-help`, `business`
+   - expected: `nonfiction`
+
+9. `memoir`, `autobiography`
+   - expected: `memoir_bio`
+
+10. `economics`, `public policy`, `nonfiction`
+   - expected: `nonfiction`
+
+## 6. P3A live-smoke regression validator
+
+Add or extend a fixture that recreates Scenario B:
+
+User signals:
+- stated favorites include `nonfiction`
+- stated favorites include `thriller_mystery`
+- tone/intent may be present but should not matter for this bug
+
+Books:
+- The Fault in Our Stars
+- The Song of Achilles
+- Murder in the High Himalaya
+
+Assert:
+- The Fault in Our Stars does NOT receive `stated_favorite:nonfiction`
+- The Song of Achilles does NOT receive `stated_favorite:nonfiction`
+- Murder in the High Himalaya CAN receive `stated_favorite:nonfiction`
+- Composer does not emit “Matches your stated nonfiction preference” for the fiction books
+- Composer may emit the nonfiction reason for the control book
+
+## 7. Cache/versioning audit
+
+Important:
+This fix changes classification used by scoring/reasons. If cached recommendation payloads can preserve old misclassified scored books or reason strings, then bump rec validity version in the same commit.
+
+Please audit:
+- whether rec payload caches store already-scored/reasoned ScoredBook payloads
+- whether old bad decks could survive after the `detectGenre` fix
+- whether `recValidity.VERSION` should bump from `rcv2` to `rcv3`
+
+If a cache bump is needed:
+- do it in this fix
+- explain why
+- keep it limited to rec validity/cache invalidation
+
+If no cache bump is needed:
+- explain exactly why cached bad reason payloads cannot survive
+
+## Hard constraints
+
+- Do not start P3B.
+- Do not change composer logic unless the validator proves a separate composer bug.
+- Do not patch by weakening all stated-preference copy.
+- Do not change RecCard layout.
+- Do not change ranking rules.
+- Do not change scoring math beyond the natural effect of corrected `primaryGenre`.
+- Do not hide the issue with vague copy.
+- Do not touch onboarding/import/cold-start UX.
+- No opportunistic cleanup.
+
+## Validation required
+
+Run and report:
+1. `validate_detect_genre`
+2. Scenario B genre/reason fixture
+3. `validate_explanation_default_flip`
+4. `validate_explanation_quality_contribution`
+5. `smoke_explanation_projection`
+6. `validate_explanation_projection`
+7. `validate_explanation_faithfulness`
+8. `validate_scoring_contributions`
+9. `validate_retrieval_contributions`
+10. `validate_multi_source_provenance`
+11. `validate_stated_reservation`
+
+Also report:
+- typecheck delta against current baseline
+- workflow/app status
+- cache/versioning decision
+- whether P3A product acceptance remains blocked pending live re-smoke
+
+## Return format
+
+1. Executive verdict
+2. Root cause fixed
+3. Files touched
+4. detectGenre changes
+5. Validator results
+6. Scenario B fixture result
+7. Cache/versioning decision
+8. Behavior guarantees
+9. Required live re-smoke
+10. Go/no-go for resuming P3A live smoke

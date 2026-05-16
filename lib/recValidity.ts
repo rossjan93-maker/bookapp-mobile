@@ -25,19 +25,19 @@
 //     value-agnostic — swapping the producer is a one-line change at every
 //     call site, with no validity-store rewrite.
 //   - The version prefix (`rcv1`) lets P1 force-invalidate every pre-P1 deck
-//     by bumping to `rcv2` (or by switching to RecRequest's hash directly).
+//     by bumping to `rcv3` (or by switching to RecRequest's hash directly).
 // =============================================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-// P3A-6-C (2026-05-16): bumped rcv1 → rcv2 alongside the
+// P3A-6-C (2026-05-16): bumped rcv1 → rcv3 alongside the
 // COMPOSER_REASONS_PROJECTION_ENABLED flip in lib/explanations/projection.ts.
 // Persisted `PersistedRecPayload.recs[].reasons[]` survives up to 2h via
 // `recPayloadCache`; the bump force-invalidates any pre-flip payload so the
 // For-You surface never mixes legacy + composer-derived reason strings after
 // deploy. All three deck-state stores (recPayloadCache, recSession,
 // recQueue) self-invalidate on mismatch via `assertCurrent`.
-const VERSION = 'rcv2';
+const VERSION = 'rcv3';
 
 export type RecConfigInputs = {
   favorite_genres:  readonly string[];

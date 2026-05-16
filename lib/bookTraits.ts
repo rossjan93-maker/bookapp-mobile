@@ -147,21 +147,78 @@ const FORM_TRAIT_BASE: Partial<Record<BookForm, Record<string, number>>> = {
 
 // ── Genre detection signals (ordered by specificity — first match wins) ────────
 
+// Order is load-bearing: first-match wins inside detectGenre().
+//
+// History of this list:
+//   1. Original: memoir_bio → nonfiction → horror → romance → thriller →
+//      fantasy_scifi → literary. With `corpus.includes()` substring
+//      matching this leaked fiction books into nonfiction because the
+//      nonfiction signal list contained broad single tokens (`science`,
+//      `history`, `psychology`, `philosophy`, `technology`, `sociology`)
+//      that appear inside fiction subjects (`science fiction`,
+//      `historical fiction`, `psychological thriller`, `Greek mythology
+//      / ancient history`, `psychology of grief`). This was the Scenario
+//      B P3A live-smoke blocker.
+//
+//   2. Two complementary changes close the leak:
+//      (a) detectGenre() switched from `includes()` to pre-compiled
+//          word-boundary regex (`\b<token>\b`, case-insensitive) — see
+//          GENRE_SIGNAL_MATCHERS below. This is the documented Gotcha in
+//          replit.md ("word-boundary regex, never includes()").
+//      (b) The broad single tokens were pruned from the nonfiction list.
+//          Coverage of those domains is preserved via unambiguous
+//          compound forms (`popular science`, `science nonfiction`,
+//          `pop history`, etc.) plus the umbrella `nonfiction` /
+//          `non-fiction` tokens that genuine nonfiction subjects nearly
+//          always carry.
+//
+//   3. Bucket order: memoir_bio → nonfiction → fiction buckets →
+//      literary. The user-supplied spec recommended putting `nonfiction`
+//      LAST, but the architect surfaced a regression on mixed-tag true
+//      nonfiction — e.g. `['true crime','mystery','nonfiction']` or
+//      `['political thriller','nonfiction']` — where the fiction bucket
+//      fires first and traps a book that is clearly nonfiction by its
+//      `nonfiction` anchor tag. The spec explicitly permitted deviation
+//      ("If you choose a different order, justify it.") and the prune
+//      in (2b) makes nonfiction-second safe: every remaining signal in
+//      the nonfiction list now requires either the literal `nonfiction`
+//      / `non-fiction` token or an unambiguous compound nonfiction
+//      string (`popular science`, `true crime`, etc.), none of which
+//      appear inside fiction subjects under word-boundary matching.
 export const GENRE_SIGNALS: Array<[string, string[]]> = [
   ['memoir_bio',       ['memoir', 'autobiography', 'biography', 'biographical']],
   ['nonfiction',       ['nonfiction', 'non-fiction', 'self-help', 'business', 'economics',
-                        'psychology', 'science', 'history', 'philosophy', 'technology',
-                        'politics', 'sociology', 'true crime']],
-  ['horror',           ['horror', 'gothic', 'ghost story', 'supernatural', 'occult',
-                        'vampire', 'zombie']],
-  ['romance',          ['romance', 'romantic fiction', 'love story', "women's fiction", 'chick lit']],
-  ['thriller_mystery', ['thriller', 'mystery', 'crime fiction', 'detective', 'suspense',
-                        'noir', 'whodunit', 'spy fiction']],
+                        'politics', 'true crime', 'popular science', 'pop science',
+                        'science nonfiction', 'popular nonfiction', 'public policy',
+                        'history nonfiction', 'pop history', 'narrative nonfiction',
+                        'creative nonfiction', 'investigative journalism']],
   ['fantasy_scifi',    ['fantasy', 'science fiction', 'sci-fi', 'speculative fiction',
                         'dystopian', 'magical realism', 'space opera', 'epic fantasy',
                         'urban fantasy', 'alternate history']],
+  ['thriller_mystery', ['thriller', 'mystery', 'crime fiction', 'detective', 'suspense',
+                        'noir', 'whodunit', 'spy fiction']],
+  ['romance',          ['romance', 'romantic fiction', 'love story', "women's fiction", 'chick lit']],
+  ['horror',           ['horror', 'gothic', 'ghost story', 'supernatural', 'occult',
+                        'vampire', 'zombie']],
   ['literary',         ['literary fiction', 'literary', 'contemporary fiction']],
 ];
+
+// Pre-compiled word-boundary matchers for each signal. Compiled once at
+// module load (not per-detectGenre call) so the hot scoring path stays
+// allocation-free. `\b` works at the boundary between a word character
+// (`[A-Za-z0-9_]`) and a non-word character, so multi-word signals like
+// `"science fiction"` and hyphenated signals like `"non-fiction"` still
+// match cleanly (the hyphen is a non-word char, the boundary lands on
+// each word's edges).
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+const GENRE_SIGNAL_MATCHERS: Array<[string, RegExp[]]> = GENRE_SIGNALS.map(
+  ([genre, signals]) => [
+    genre,
+    signals.map(s => new RegExp(`\\b${escapeRegex(s)}\\b`, 'i')),
+  ],
+);
 
 // ── Base trait scores per genre ───────────────────────────────────────────────
 //
@@ -212,14 +269,19 @@ export function detectGenre(book: {
   title?: string | null;
   author?: string | null;
 }): string | null {
+  // Word-boundary matching, not substring. Substring matching is the
+  // documented Gotcha in replit.md and was the root cause of the
+  // Scenario B P3A live-smoke blocker — `'history'` matching inside
+  // `'historical fiction'`, `'science'` matching inside
+  // `'science fiction'`, etc. See GENRE_SIGNAL_MATCHERS above.
   const corpus = [
     ...(book.subjects ?? []),
     book.title  ?? '',
     book.author ?? '',
-  ].join(' ').toLowerCase();
+  ].join(' ');
 
-  for (const [genre, signals] of GENRE_SIGNALS) {
-    if (signals.some(s => corpus.includes(s))) return genre;
+  for (const [genre, matchers] of GENRE_SIGNAL_MATCHERS) {
+    if (matchers.some(re => re.test(corpus))) return genre;
   }
   return null;
 }

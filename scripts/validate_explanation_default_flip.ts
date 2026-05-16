@@ -47,15 +47,23 @@ function section(name: string): void {
   console.log(`\n── ${name} ──`);
 }
 
-// ── §3.11 — cache version moved to rcv2 (source grep) ────────────────────────
-section('§3.11 — recValidity VERSION moved to rcv2');
+// ── §3.11 — cache version moved to rcv3 (source grep) ────────────────────────
+// rcv1 → rcv2 was the P3A-6-C default-on flip.
+// rcv2 → rcv3 is the Scenario B detectGenre fix: cached ScoredBook payloads
+// from before the fix carry false `stated_favorite:nonfiction` audit flags
+// and false "Matches your stated nonfiction preference" reason strings on
+// misclassified fiction books. Bumping the version invalidates all three
+// deck-state stores (recPayloadCache, recSession, recQueue) at next read.
+section('§3.11 — recValidity VERSION moved to rcv3');
 {
   const recValSrc = fs.readFileSync(
     path.resolve(__dirname, '../lib/recValidity.ts'), 'utf8');
-  check("lib/recValidity.ts contains `const VERSION = 'rcv2'`",
-    /const\s+VERSION\s*=\s*['"]rcv2['"]/.test(recValSrc));
+  check("lib/recValidity.ts contains `const VERSION = 'rcv3'`",
+    /const\s+VERSION\s*=\s*['"]rcv3['"]/.test(recValSrc));
   check("lib/recValidity.ts no longer contains `const VERSION = 'rcv1'`",
     !/const\s+VERSION\s*=\s*['"]rcv1['"]/.test(recValSrc));
+  check("lib/recValidity.ts no longer contains `const VERSION = 'rcv2'`",
+    !/const\s+VERSION\s*=\s*['"]rcv2['"]/.test(recValSrc));
 }
 
 // ── §3.12 — legacy fallback path remains available ───────────────────────────
@@ -114,7 +122,7 @@ const FIXTURE: FixtureBook[] = [
     legacyReasons: ['By Donna Tartt, a consistent favorite of yours',
                     'Aligns with your preference for slow-burn pacing'],
     repeatedAuthorMatch: true, traitAlignment: 0.30,
-    retrieval: [{ phase: 'retrieval', source: 'revealed_authors',
+    retrieval: [{ phase: 'retrieval', source: 'revealedAuthors',
                   reason: 'author_anchor:donna tartt' }],
     scoring: [
       mkStated(0.08, 'literary_fiction'),
@@ -129,7 +137,7 @@ const FIXTURE: FixtureBook[] = [
     legacyReasons: ['Closer to the thriller and suspense you read most',
                     'Aligns with your preference for atmospheric prose'],
     repeatedAuthorMatch: false, traitAlignment: 0.32,
-    retrieval: [{ phase: 'retrieval', source: 'stated_genres',
+    retrieval: [{ phase: 'retrieval', source: 'statedGenres',
                   reason: 'stated_genre:thriller_mystery' }],
     scoring: [
       mkStated(0.10, 'thriller_mystery'),
@@ -142,7 +150,7 @@ const FIXTURE: FixtureBook[] = [
     legacyReasons: ['Closer to the literary fiction you read most',
                     'Similar to books you asked for more of'],
     repeatedAuthorMatch: false, traitAlignment: 0.08,
-    retrieval: [{ phase: 'retrieval', source: 'feedback',
+    retrieval: [{ phase: 'retrieval', source: 'unknown',
                   reason: 'feedback_more_like_this' }],
     scoring: [
       { phase: 'scoring', kind: 'feedback_fit', value: 0.08,
@@ -157,7 +165,7 @@ const FIXTURE: FixtureBook[] = [
     legacyReasons: ['Closer to the literary fiction you read most',
                     'Resonates with a recurring trait in your reading'],
     repeatedAuthorMatch: true, traitAlignment: 0.10,
-    retrieval: [{ phase: 'retrieval', source: 'revealed_authors',
+    retrieval: [{ phase: 'retrieval', source: 'revealedAuthors',
                   reason: 'author_anchor:sally rooney' }],
     scoring: [
       { phase: 'scoring', kind: 'behavioral_fit', value: 0.12,
@@ -171,7 +179,7 @@ const FIXTURE: FixtureBook[] = [
     legacyReasons: ['Closer to the literary fiction you read most',
                     'Matches your appreciation for elegiac tone'],
     repeatedAuthorMatch: false, traitAlignment: 0.18,
-    retrieval: [{ phase: 'retrieval', source: 'stated_genres',
+    retrieval: [{ phase: 'retrieval', source: 'statedGenres',
                   reason: 'stated_genre:literary_fiction' }],
     scoring: [ mkStated(0.05, null) ],
   },
@@ -181,7 +189,7 @@ const FIXTURE: FixtureBook[] = [
     id: 'b6', score: 0.55, fitClass: 'adjacent_fit',
     legacyReasons: ['Closer to the suspense and mystery you read most'],
     repeatedAuthorMatch: false, traitAlignment: 0.14,
-    retrieval: [{ phase: 'retrieval', source: 'revealed_lanes',
+    retrieval: [{ phase: 'retrieval', source: 'revealedLanes',
                   reason: 'revealed_lane:modern_suspense' }],
     scoring: [
       { phase: 'scoring', kind: 'behavioral_fit', value: 0.13,
@@ -195,7 +203,7 @@ const FIXTURE: FixtureBook[] = [
     legacyReasons: ['Closer to the contemporary fiction you read most',
                     'Fits a genre you consistently enjoy'],
     repeatedAuthorMatch: false, traitAlignment: 0.05,
-    retrieval: [{ phase: 'retrieval', source: 'stated_genres',
+    retrieval: [{ phase: 'retrieval', source: 'statedGenres',
                   reason: 'stated_genre:contemporary_fiction' }],
     scoring: [
       { phase: 'scoring', kind: 'quality_reliability', value: 0.06,
@@ -208,7 +216,7 @@ const FIXTURE: FixtureBook[] = [
     id: 'b8', score: 0.45, fitClass: 'stretch_fit',
     legacyReasons: ['A reasonable next read that sits near your reading center'],
     repeatedAuthorMatch: false, traitAlignment: 0.04,
-    retrieval: [{ phase: 'retrieval', source: 'exploration',
+    retrieval: [{ phase: 'retrieval', source: 'unknown',
                   reason: 'exploration:adjacent_lane' }],
     scoring: [
       { phase: 'scoring', kind: 'behavioral_fit', value: 0.05,
@@ -221,7 +229,7 @@ const FIXTURE: FixtureBook[] = [
     id: 'b9', score: 0.42, fitClass: 'adjacent_fit',
     legacyReasons: ['Strongly aligned with your most repeated reading patterns'],
     repeatedAuthorMatch: false, traitAlignment: 0.03,
-    retrieval: [{ phase: 'retrieval', source: 'stated_genres',
+    retrieval: [{ phase: 'retrieval', source: 'statedGenres',
                   reason: 'stated_genre:nonfiction' }],
     scoring: [
       { phase: 'scoring', kind: 'soft_avoid_penalty', value: -0.22,
