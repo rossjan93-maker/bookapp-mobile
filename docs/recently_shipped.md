@@ -2,6 +2,24 @@
 
 Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/onboarding sprints. Moved out of replit.md on 2026-05-14 to keep the live operating reference compact. Order is reverse-chronological. For full diffs use `git log -p -- <path>`.
 
+## P3A — product accepted (2026-05-16)
+
+All four live-smoke scenarios captured clean. P3A flips from "shipped" to "product accepted." No further code change required for the P3A explanation-faithfulness promise.
+
+**Scenario A — Import-first: PASS WITH NOTE.** Goodreads import (273 rows replay), open For You, top-4 reasons cite real positive contributions; no false-attribution; no empty reason; behavioral_fit contributions trace back to actual high-rated history entries. Notes were cosmetic.
+
+**Scenario B — Quick-taste: PASS WITH NOTE** (re-smoke 2026-05-16 after display-label fix). Inputs `{Thriller & Mystery, escape, lighter, fast pacing, less of Young Adult}`. Top-4 reasons: three "Matches your stated **thriller & mystery** preference" (humanised label, raw `thriller_mystery` absent), one author-anchor "Start with book one of the Mrs. Parrish." Negative checks all clear (no raw snake_case key, no false nonfiction reason, no empty reason, no library-history overclaiming, no "not personalized yet" regression). Strategic note about onboarding capturing pace/tone/intent without surfacing them as reasons → tracked under Current Intent Layer follow-up; explicitly NOT a P3A blocker.
+
+**Scenario C — Cold-start Tier-0: PASS WITH NOTE.** Zero-library user sees the "POPULAR STARTING POINTS · Not personalized yet" strip (per the cold-start seeded strip contract), no rec reasons emitted on the seeded path (correct — those cards don't go through the composer), tap-through routes through standard `/book/[id]`. Notes were cosmetic.
+
+**Scenario D — Explicit preference edit: PASS WITH NOTE.** Edit `{added Romance, avoided Thriller, style: Character-driven}`. Slate visibly responded; stated `romance` claim supported. Top-4: "Me Before You" (author-anchor "Start with book one of the Me Before You."), "Winter in Paradise" (author-anchor "Start with book one of the Paradise."), "To Capture What We Cannot Keep" (stated-taste "Matches your stated **romance** preference"), "Hopeless" (author-anchor "Start with book one of the Hopeless."). All four PASS individually: romance/relationship-adjacent, no overclaim, the stated-romance claim is correctly grounded in the new preference. Negative checks all clear (no raw snake_case keys, no unsupported stated-key claim, no empty reason regression, no visible RecCard layout regression). **Non-blocking observation:** Profile pills did not update instantaneously after save; For You deck was slow to update (but eventually correct). Likely state-sync issue (stale `tasteProfile` snapshot on Profile, deferred rebuild on For You) rather than a recommender correctness bug. Captured in `replit.md` Parked / explicitly deferred as "Preference-edit responsiveness polish" — out of scope for P3B, schedule as its own small batch.
+
+**Code/cache state at acceptance.** `recValidity.VERSION = rcv4`; `COMPOSER_REASONS_PROJECTION_ENABLED = true`; contribution-based `explanation_quality` authoritative under the flag; legacy classifier + legacy reasons builder retained as non-empty fallback for one release (first opportunity to retire is P4 per the phase table). 13 owned validators green at acceptance time. Pre-existing `validate_rec_request` + `validate_retrieval_planner` `__DEV__` failures unrelated, unchanged.
+
+**Hard constraints honoured across the P3A stream.** No P3B start. No retrieval / scoring math / composition / RecCard layout change post-flip. No onboarding / cold-start / import touch. No copy weakening. No opportunistic cleanup.
+
+**Next.** P4 (semantic intelligence foundation) becomes the next architectural phase. Two carry-over items captured as their own deferred entries in `replit.md` Parked / explicitly deferred — Preference-edit responsiveness polish (Scenario D note) and Current Intent Layer follow-up (post-P3A) — neither blocks P4 entry; they slot as independent small batches.
+
 ## P3A live-smoke Scenario B copy fix — stated-preference display labels + cache bump rcv3→rcv4 (2026-05-16)
 
 **User-visible bug.** After the detectGenre fix landed (rcv2→rcv3), Scenario B re-smoke with inputs `{Thriller & Mystery, escape, lighter, less of Self-Help}` returned the correct fit class but with a leaked internal key in the visible reason line: "Matches your stated **thriller_mystery** preference." Faithful (the stated taste contribution genuinely matched `affinityKey='thriller_mystery'`) but not user-ready — snake_case keys aren't a copy register users should see.
