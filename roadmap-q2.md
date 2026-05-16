@@ -101,7 +101,7 @@ It is the mountain in the distance that should influence architectural optionali
 ## Active now
 1. Recommendation Architecture Refinement
 2. ~~Finish P2 retrieval responsiveness workstream~~ ✅ product accepted 2026-05-14
-3. ~~Phase 1 closeout — auth / onboarding / intake / import / account-data-lifecycle~~ ✅ accepted 2026-05-16 (see §5C-bis); FK migration `20260516000000` pending application
+3. ~~Phase 1 closeout — auth / onboarding / intake / import / account-data-lifecycle~~ ✅ accepted 2026-05-16 (see §5C-bis); FK migration `20260516000000` applied/verified 2026-05-16
 4. P3A contribution-grounded ranking + explanation faithfulness (next active workstream — D1–D5 approved, gated on FK migration applied; not yet started)
 5. Then retest recommendation responsiveness and explanation quality in-app
 6. Then resume first-session wow work and broader UX roadmap
@@ -367,7 +367,7 @@ Captured as a roadmap milestone because P3A is gated on it. Five workstreams rea
 
 **Account-data-lifecycle fixes:**
 - `20260515000000_account_deletion_fix_import_rows.sql` (procedural) — `DELETE FROM import_rows WHERE user_id = v_uid` BEFORE `user_books` in `delete_own_account` / `admin_reset_account` / `reset_own_data_cold` + matching Edge Function step. Applied.
-- `20260516000000_import_rows_user_book_id_set_null.sql` (schema) — promotes the FK to `ON DELETE SET NULL` so deleting a single imported `user_books` row no longer raises `import_rows_user_book_id_fkey`. Audit row preserved (resolution / matched_book_id / raw_data intact). Procedural pre-step retained as defence-in-depth. Pending application.
+- `20260516000000_import_rows_user_book_id_set_null.sql` (schema) — promotes the FK to `ON DELETE SET NULL` so deleting a single imported `user_books` row no longer raises `import_rows_user_book_id_fkey`. Audit row preserved (resolution / matched_book_id / raw_data intact). Procedural pre-step retained as defence-in-depth. Applied/verified 2026-05-16 (constraint shape confirmed in Supabase).
 
 ### Phase 1 closeout — import follow-up backlog (non-blocking, NOT P3 scope)
 - "Already in Readstack" copy → rename to "Matched in our catalog" (or similar). Current copy reads as if the user already had the book.
@@ -398,7 +398,7 @@ to:
 
 ### P3A readiness — D1–D5 approved 2026-05-16
 
-P3A may begin once (a) this Phase 1 closeout is captured in docs (done), and (b) migration `20260516000000_import_rows_user_book_id_set_null.sql` has been applied via the Supabase dashboard SQL editor (pending). The migration is a pure FK promotion to `ON DELETE SET NULL` (idempotent DO block); no code change required to land. Five decisions locked:
+P3A unblocked 2026-05-16 — both prerequisites satisfied: (a) Phase 1 closeout captured in docs, and (b) migration `20260516000000_import_rows_user_book_id_set_null.sql` applied/verified in Supabase. P3A-1 foundation batch shipped same day. Five decisions locked:
 
 - **D1 — Multi-source retrieval provenance.** Approved. Candidates carry `_retrieval_reason[]` (array, not single string). Today's single-string entry becomes the first array element; AND-gate behaviour unchanged, additive only. Required for truthful contribution attribution.
 - **D2 — Fix `fetchOLByAuthor` hardcoded reason label.** Approved. Currently emits a literal `'author_anchor:'` for every book regardless of the queried author. Smallest correct fix: thread the resolved author key into the call site, emit `author_anchor:<authorKey>`. No retrieval policy change.

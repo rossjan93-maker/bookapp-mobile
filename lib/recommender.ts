@@ -79,6 +79,7 @@ import { loadCachedRecs, persistRecCache, shouldRebuild, buildSignalSnapshot } f
 import { computeStatedTasteContribution } from './recPolicy';
 import type { RecRequest } from './recRequest';
 import { planBranches } from './retrieval/branchPlanner';
+import { mergeRetrievalReasons } from './scoring/contributions';
 import { applyLocalSoftAvoidFilter } from './retrieval/softAvoidLocal';
 import { SOFT_AVOID_RETRIEVAL_MULTIPLIER } from './recPolicy';
 import type { AffinityKey } from './taxonomy/genres';
@@ -165,7 +166,20 @@ export type CandidateBook = {
   page_count:         number | null;
   description:        string | null;
   _source:            CandidateSource;
+  /** Dominant (first-seen) retrieval reason. Backward-compatible single
+   *  string. The P2B.1 stated-reservation AND-gate
+   *  (lib/composition/statedReservation.ts) and the cache-restore trace
+   *  reconstruction (cache_hit branch below) read from this field. */
   _retrieval_reason:  string;
+  /** P3A-1 D1 multi-source retrieval provenance. Holds every reason this
+   *  candidate was retrieved with, in branch-arrival order. The dominant
+   *  reason (`_retrieval_reason`) is always `_retrieval_reasons[0]`. A
+   *  candidate retrieved by exactly one branch has length 1; one returned
+   *  by N distinct branches has length N. Mutated only via
+   *  `mergeRetrievalReasons` from lib/scoring/contributions.ts. Optional
+   *  for backward compatibility with code paths that construct
+   *  CandidateBook outside the recommender (scanFitEval, evidencePack). */
+  _retrieval_reasons?: string[];
 };
 
 export type ScoreBreakdown = {
@@ -687,6 +701,7 @@ async function fetchOLSubject(
       id:                `ol:${doc.key}`,
       title:             stripTitleSubtitle(doc.title ?? ''),
       author:            doc.author_name?.[0] ?? 'Unknown author',
+      _retrieval_reasons: [retrieval_reason],
       cover_url:         doc.cover_i
                            ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
                            : null,
@@ -725,8 +740,9 @@ async function fetchOLSubject(
 // ── OL author search ──────────────────────────────────────────────────────────
 
 async function fetchOLByAuthor(
-  author: string,
-  limit:  number,
+  author:           string,
+  limit:            number,
+  retrieval_reason: string = `author_anchor:${author}`,
 ): Promise<CandidateBook[]> {
   const _started = Date.now();
   const url =
@@ -781,7 +797,8 @@ async function fetchOLByAuthor(
                            : null,
       description:       null,
       _source:           'open_library',
-      _retrieval_reason: `author_anchor:${author}`,
+      _retrieval_reason: retrieval_reason,
+      _retrieval_reasons: [retrieval_reason],
     }));
 
     if (__DEV__) console.log('[OLFETCH/author:result]',
@@ -856,6 +873,7 @@ async function fetchOLByTitle(
         description:       null,
         _source:           'open_library',
         _retrieval_reason: `exact_series_seed:${series}#${position}`,
+        _retrieval_reasons: [`exact_series_seed:${series}#${position}`],
       }));
   } catch {
     return [];
@@ -1031,6 +1049,7 @@ async function getLocalCandidates(
       description:       b.description,
       _source:           'catalog',
       _retrieval_reason: 'local:eligible',
+      _retrieval_reasons: ['local:eligible'],
     }));
 
   return { candidates, readIds, readExternalIds, readBooks, finishedReadBooks, trueReadExternalIds, finishedDnfNormalized, finishedDnfCount };
@@ -1119,6 +1138,7 @@ async function getCachedExternalCandidates(
         description:       null,
         _source:           'cached_external',
         _retrieval_reason: stripCacheVersion(r.retrieval_reason),
+        _retrieval_reasons: [stripCacheVersion(r.retrieval_reason)],
       }));
 
     return { candidates, isFresh };
@@ -1253,7 +1273,11 @@ async function getOLCandidates(
     plan.fetchItems.map(item => {
       ol_queries.push(item.value);
       if (item.kind === 'author') {
-        return fetchOLByAuthor(item.value, 12);
+        // P3A-1 D2: thread the planner-emitted reason through so the candidate
+        // carries the actual branch label (`repeated_author:` for dense path,
+        // `author_anchor:` for non-dense path) instead of the pre-fix hardcoded
+        // `author_anchor:` that masked dense-path provenance.
+        return fetchOLByAuthor(item.value, 12, item.reason);
       }
       return fetchOLSubject(item.value, 18, item.reason);
     })
@@ -1267,10 +1291,28 @@ async function getOLCandidates(
   // so callers can supplement buildSeriesReadSet when the DB join is incomplete.
   const excludedReadBooksMap = new Map<string, { title: string; author: string }>();
 
+  // Track index of each merged candidate so we can append multi-source
+  // provenance when a duplicate is dropped (D1).
+  const mergedIndexByKey = new Map<string, number>();
   for (const set of resultSets) {
     for (const book of set) {
       const key = book.external_id ?? book.id;
-      if (seen.has(key)) continue;
+      if (seen.has(key)) {
+        // P3A-1 D1: same candidate returned by another branch. Keep the
+        // first-seen candidate's identity (so `_retrieval_reason` and the
+        // P2B.1 AND-gate behaviour stay unchanged), but accumulate the
+        // duplicate's reason onto `_retrieval_reasons[]` so downstream
+        // contribution attribution can read the union.
+        const idx = mergedIndexByKey.get(key);
+        if (idx !== undefined && book._retrieval_reason) {
+          const existing = merged[idx];
+          existing._retrieval_reasons = mergeRetrievalReasons(
+            existing._retrieval_reasons ?? [existing._retrieval_reason],
+            book._retrieval_reason,
+          );
+        }
+        continue;
+      }
       if (exclude.has(key)) {
         // Only collect if the user has TRULY READ this OL book (not just saved it).
         // Use trueReadExternalIds when available; fall back to readExternalIds for
@@ -1282,6 +1324,12 @@ async function getOLCandidates(
         continue;
       }
       seen.add(key);
+      // Ensure first-seen candidate has its provenance array initialized so
+      // subsequent duplicate arrivals can append against a defined slot.
+      if (!book._retrieval_reasons) {
+        book._retrieval_reasons = book._retrieval_reason ? [book._retrieval_reason] : [];
+      }
+      mergedIndexByKey.set(key, merged.length);
       merged.push(book);
     }
   }
@@ -2940,6 +2988,7 @@ export async function getCandidateBooks(
         description:       b.description,
         _source:           'catalog',
         _retrieval_reason: 'local:fallback_scan',
+        _retrieval_reasons: ['local:fallback_scan'],
       }));
 
     if (newCandidates.length > 0) {

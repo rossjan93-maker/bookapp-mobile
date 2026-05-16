@@ -1,0 +1,134 @@
+Phase 1 closeout is complete and the pending lifecycle migration has now been applied and verified in Supabase.
+
+Verified constraint:
+
+import_rows_user_book_id_fkey:
+FOREIGN KEY (user_book_id) REFERENCES user_books(id) ON DELETE SET NULL
+
+This confirms the per-book imported user_book deletion risk is closed at the schema level.
+
+Before starting implementation:
+- Update replit.md / roadmap-q2.md / docs/recently_shipped.md as needed to change the migration status from “pending application” to “applied/verified.”
+- Then start P3A-1 only.
+
+Context:
+P3A is contribution/provenance + explanation faithfulness groundwork. Do not change ranking behavior yet.
+
+Approved P3 decisions:
+D1 — Multi-source retrieval provenance: Approved
+D2 — Fix fetchOLByAuthor hardcoded reason label: Approved
+D3 — Keep slate diversity guard in its own file: Approved
+D4 — Per-kind display floors in lib/scoring/contributions.ts, not recPolicy.ts: Approved
+D5 — Preserve book.reasons[] as derived compatibility output: Approved
+
+Task type:
+Foundational P3A implementation only.
+
+Goal:
+Implement the smallest safe P3A-1 foundation batch:
+1. typed contribution/provenance model
+2. multi-source retrieval provenance support
+3. fetchOLByAuthor reason-label fix
+4. first validator proving multi-source provenance integrity
+
+Do not rewire explanations yet.
+Do not alter ranking.
+Do not alter scoring math.
+Do not change RecCard rendering yet.
+
+## 1. Contribution/provenance model
+
+Add a new contribution/provenance model file, likely:
+
+- `lib/scoring/contributions.ts`
+
+or the exact file path already recorded in the docs.
+
+The model must distinguish phases:
+- retrieval
+- scoring
+- composition
+
+Do not collapse everything into a semantically muddy `ScoreContribution` type. Only scoring-phase contributions should ever participate in score-sum validation later.
+
+Define enough structure for future use:
+- phase
+- source
+- kind
+- value where applicable
+- evidence
+- explanation/display eligibility
+
+Keep this P3A-1 lightweight. This batch does not need to fully populate scoring contributions yet.
+
+## 2. Multi-source retrieval provenance
+
+Add `_retrieval_reasons: string[]` while preserving existing `_retrieval_reason`.
+
+Requirements:
+- `_retrieval_reason` remains the first/dominant reason for backward compatibility.
+- `_retrieval_reasons` preserves all retrieval reasons for candidates that arrive from multiple retrieval branches.
+- Existing stated-preference / reservation checks that depend on `_retrieval_reason` must continue working.
+- No ranking or candidate-selection behavior should change.
+
+Pay special attention to:
+- merge/dedupe sites
+- restored/cache-normalized candidates
+- branch ordering
+- stated preference priority semantics
+- any place that currently overwrites `_retrieval_reason`
+
+## 3. Fix `fetchOLByAuthor` reason label
+
+Remove hardcoded author retrieval reason behavior where different author-triggered retrieval paths collapse into the same label.
+
+Requirements:
+- pass the actual triggering reason into `fetchOLByAuthor` or the equivalent helper
+- preserve existing behavior except for improved provenance labeling
+- no ranking changes
+- no candidate set changes
+
+## 4. Validator
+
+Add a first validator, likely:
+
+- `scripts/validate_multi_source_provenance.ts`
+
+It should assert:
+- a candidate retrieved from multiple branches preserves multiple reasons
+- `_retrieval_reason === _retrieval_reasons[0]`
+- stated-branch priority remains intact where currently required
+- no behavior change in candidate ordering/ranking
+
+Use a deterministic fixture or minimal synthetic case. Do not depend on live API instability if avoidable.
+
+## Hard constraints
+- Do not start the P3A explanation rewrite yet.
+- Do not touch RecCard.
+- Do not alter ranking.
+- Do not alter scoring math.
+- Do not change recommendation copy.
+- Do not start P3B.
+- No opportunistic cleanup.
+- Preserve `book.reasons[]` compatibility.
+- Do not reopen first-run/import/onboarding work unless a direct regression is discovered.
+
+## Validation required
+1. Exact files touched.
+2. Typecheck delta against current baseline.
+3. Workflow/app status.
+4. Validator output.
+5. Confirmation no ranking/scoring behavior changed.
+6. Confirmation existing P2 explicit-preference acceptance path should remain unaffected.
+7. Cache/versioning implications, if any.
+8. Recommended P3A-2 next step.
+
+Return format:
+1. Executive verdict
+2. What changed
+3. Files touched
+4. Validator results
+5. Typecheck/workflow status
+6. Behavior guarantees
+7. Cache/versioning implications
+8. Recommended P3A-2 next step
