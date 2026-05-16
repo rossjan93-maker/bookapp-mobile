@@ -1,0 +1,266 @@
+P3A is product accepted and the preference-edit responsiveness polish has passed.
+
+We are now starting P4, but this first task is architecture mapping only. Do not implement yet.
+
+P4 working theme:
+Current Intent Layer + Semantic Book Intelligence Foundation.
+
+Context:
+During P3A live smoke, quick-taste onboarding captured more than genres:
+- reading purpose / escape
+- what grips the reader
+- pacing
+- tone / heavier vs lighter
+- avoid signals
+- anchor books
+- liked genres
+
+But the first deck and explanations currently mostly reflect genre/stated category signals. That was acceptable for P3A because the composer should only explain evidence that actually exists. But strategically, P4 should make these richer intent/tone/pace signals operational rather than decorative.
+
+Task type:
+Architecture audit / implementation plan only. No code changes.
+
+Goal:
+Map how quick-taste, reading-taste, imported-history, and feedback signals currently flow into:
+1. reader profile
+2. book traits
+3. retrieval
+4. scoring
+5. ranking/composition
+6. explanation contributions
+7. visible copy
+
+Then propose the smallest correct P4 implementation sequence to make current intent and semantic book intelligence first-class.
+
+## 1. Audit current captured signals
+
+Inspect the current onboarding / intake / preference-edit paths and identify every signal captured.
+
+At minimum, inspect:
+- components/RecEntryScreen.tsx
+- lib/intakeDraft.ts
+- app/onboarding-questions.tsx
+- app/edit-preferences.tsx
+- lib/tasteProfile.ts
+- lib/tasteReadoutCopy.ts
+- lib/recommender.ts
+- lib/scoring/contributions.ts
+- lib/bookTraits.ts
+- components/RecommendationsFeed.tsx
+
+For each signal, report:
+
+- where it is captured
+- where it is persisted
+- whether it affects Taste Readout
+- whether it affects retrieval
+- whether it affects scoring
+- whether it affects ranking/composition
+- whether it affects explanation contributions
+- whether it appears in visible copy
+- whether it is durable taste or current/session intent
+
+Include at least:
+- favorite genres
+- avoid genres
+- q_outcome / reading purpose
+- pacing answer
+- tone answer
+- what grips the reader
+- fiction/nonfiction split
+- anchor book
+- liked authors, if any
+- imported reading history
+- ratings
+- finished/current/want-to-read statuses
+- save / dismiss / more-like-this feedback
+
+## 2. Separate durable taste from current intent
+
+Define a clean distinction between:
+
+### Durable taste
+Long-running reader identity:
+- genres
+- repeated authors
+- recurring book traits
+- imported history
+- ratings
+- finishes
+- DNFs later
+- repeated preferences
+
+### Current intent
+What the reader wants now:
+- escape
+- challenge
+- comfort
+- fast pacing
+- depth
+- lighter tone
+- darker tone
+- continuation
+- palette cleanser
+- short read
+- not-right-now
+
+Explain where current code currently mixes these concepts, if it does.
+
+## 3. Book Intelligence Layer audit
+
+Inspect current book-trait inference.
+
+Report what bookTraits currently supports:
+- primaryGenre
+- fictionality
+- tone
+- pacing
+- complexity
+- subject/trait hints
+- metadata reliability
+- series data
+- author signals
+- any weakness exposed by the recent detectGenre bug
+
+Identify gaps required for P4:
+- tone fit
+- pace fit
+- emotional payoff
+- complexity / density
+- novelty/familiarity
+- comfort/challenge
+- short vs long read
+- series-continuation fit
+- “not right now” suitability
+
+Do not over-design a full semantic model. Propose the minimum useful trait set for P4.
+
+## 4. Contribution model extension
+
+P3A created retrieval and scoring contributions.
+
+Propose how P4 should add current-intent and semantic-fit contributions without breaking P3A.
+
+Suggested candidates:
+- `current_intent_fit`
+- `tone_fit`
+- `pace_fit`
+- `complexity_fit`
+- `series_continuation_fit`
+- `avoidance_conflict`
+- `not_right_now_risk`
+- `semantic_trait_fit`
+
+For each proposed contribution kind:
+- source signal
+- book-side evidence required
+- user-side evidence required
+- whether it can support visible explanation copy
+- display floor
+- whether it is durable or current-session
+- whether it should affect ranking immediately or only be observed first
+
+## 5. Hard-avoid / soft-avoid strategy
+
+P4 should also clarify avoid semantics.
+
+Current system has avoid genres and some penalties, but we need a stronger distinction:
+
+- hard avoid: do not recommend unless overridden
+- soft avoid: penalize / caution
+- temporary avoid: not right now
+- negative feedback: learned from dismissals/DNFs later
+
+Audit current avoid handling and propose the right P4 sequence.
+
+Do not implement hard-avoid UI yet. Just propose where it belongs.
+
+## 6. Decision Engine implications
+
+Recommendations should become decision support, not a flat feed.
+
+Propose how P4 should begin supporting role-based recommendations, such as:
+- best fit
+- safest bet
+- stretch pick
+- wildcard
+- short read
+- series continuation
+- from your shelf
+- friend-backed later
+- not-right-now
+
+For this architecture pass, identify:
+- which roles are already implicit today
+- which roles require new data
+- which roles can be implemented soon
+- which should wait for richer semantic intelligence
+
+## 7. Explanation implications
+
+Do not rewrite explanations yet.
+
+But propose how the P4 contribution kinds would eventually surface in composer-backed reasons.
+
+Examples:
+- “Matches your stated thriller & mystery preference” remains genre/stated-taste.
+- “Fits your faster-paced mood” should require both current-intent evidence and book-side pacing evidence.
+- “A lighter option after darker reads” should require reading-state / tone evidence.
+- “Good fit, but maybe not right now” should require conflict evidence.
+
+Be explicit about what should remain blocked until evidence is stronger.
+
+## 8. Validators / proof plan
+
+Propose validators for P4 before implementation.
+
+At minimum:
+- quick-taste signal coverage validator
+- current-intent contribution validator
+- tone/pace fit validator
+- hard/soft avoid validator
+- explanation faithfulness validator for current-intent copy
+- no-overclaim validator
+- ranking no-regression validator
+- fixture replay for cold-start, quick-taste, import-first, and explicit preference edit users
+
+## 9. Implementation sequencing
+
+Propose a staged P4 plan.
+
+Recommended style:
+- P4A: audit + data model / typed current-intent contract
+- P4B: emit current_intent contributions without ranking change
+- P4C: limited scoring influence for pace/tone/intent
+- P4D: composer explanations for current-intent only where evidence exists
+- P4E: hard/soft avoid semantics
+- P4F: first-deck decision roles / role labels
+
+But adjust if the codebase suggests a better sequence.
+
+## Hard constraints
+
+- No implementation in this task.
+- Do not change ranking.
+- Do not change scoring.
+- Do not touch RecCard.
+- Do not change onboarding UX.
+- Do not alter P3A composer logic.
+- Do not start P3B.
+- Do not do opportunistic cleanup.
+- Do not mark any P4 work complete.
+
+## Return format
+
+1. Executive recommendation
+2. Current signal audit table
+3. Durable taste vs current intent model
+4. Book Intelligence Layer audit
+5. Proposed P4 contribution model
+6. Avoid semantics proposal
+7. Decision Engine implications
+8. Explanation implications
+9. Validator / proof plan
+10. Recommended P4 implementation sequence
+11. Risks and deferred items
+12. Exact files likely touched later
