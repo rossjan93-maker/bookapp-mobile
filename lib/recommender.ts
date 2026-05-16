@@ -433,7 +433,11 @@ export type ExplanationQuality = 'strong' | 'acceptable_specific' | 'acceptable_
 // because they require ≥2 independent trait matches.
 const SINGLE_TRAIT_STRONG_FLOOR = 0.25;
 
-function classifyExplanationQuality(
+// Exported (P3A-6-C) so `scripts/validate_explanation_default_flip.ts` can
+// drive both classifiers from the same fixture and prove the no-ranking-
+// shift invariant end-to-end. No production behaviour change — call sites
+// inside this module continue to invoke it identically.
+export function classifyExplanationQuality(
   reasons:             string[],
   fitClass:            string,
   repeatedAuthorMatch: boolean,

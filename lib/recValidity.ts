@@ -30,7 +30,14 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-const VERSION = 'rcv1';
+// P3A-6-C (2026-05-16): bumped rcv1 → rcv2 alongside the
+// COMPOSER_REASONS_PROJECTION_ENABLED flip in lib/explanations/projection.ts.
+// Persisted `PersistedRecPayload.recs[].reasons[]` survives up to 2h via
+// `recPayloadCache`; the bump force-invalidates any pre-flip payload so the
+// For-You surface never mixes legacy + composer-derived reason strings after
+// deploy. All three deck-state stores (recPayloadCache, recSession,
+// recQueue) self-invalidate on mismatch via `assertCurrent`.
+const VERSION = 'rcv2';
 
 export type RecConfigInputs = {
   favorite_genres:  readonly string[];

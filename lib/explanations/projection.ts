@@ -32,10 +32,16 @@ import {
 import type { ExplanationBundle } from './compose';
 
 // ── Flag ─────────────────────────────────────────────────────────────────────
-/** Default OFF. Flip to true ONLY for local fixture replay or a future
- *  staged rollout per the P3A-6 plan. NOT user-configurable; NOT read
- *  from env so it cannot accidentally flip in production. */
-export const COMPOSER_REASONS_PROJECTION_ENABLED: boolean = false;
+/** P3A-6-C (2026-05-16): flipped to TRUE. Composer-backed reasons
+ *  projection is now the production default. The legacy reasons builder
+ *  remains in place as a non-empty fallback (see `projectComposerReasons`
+ *  below) so any candidate the composer cannot speak for keeps the
+ *  pre-P3A reason line — never an empty card. Co-shipped with
+ *  `lib/recValidity.ts` VERSION bump `rcv1` → `rcv2` to invalidate any
+ *  persisted `recPayloadCache` payload that still carries pre-flip
+ *  legacy `book.reasons[]`. NOT user-configurable; NOT read from env so
+ *  it cannot accidentally flip back in production. */
+export const COMPOSER_REASONS_PROJECTION_ENABLED: boolean = true;
 
 // ── Pure projection (always projects; used by the validator) ────────────────
 /** Returns the composer-derived back-compat `reasons[]` projection from

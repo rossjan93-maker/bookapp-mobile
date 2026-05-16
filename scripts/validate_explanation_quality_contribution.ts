@@ -44,9 +44,15 @@ function section(name: string): void {
 }
 
 // ── Pre-flight ───────────────────────────────────────────────────────────────
-section('Pre-flight — committed flag is OFF');
-check('COMPOSER_REASONS_PROJECTION_ENABLED === false',
-  COMPOSER_REASONS_PROJECTION_ENABLED === false);
+// P3A-6-C (2026-05-16): committed flag is now ON in production. The
+// classifier itself is pure and flag-agnostic, so all mapping
+// assertions (Q4–Q9) hold under either flag state; the Q1/Q2/Q3 wiring
+// checks below continue to verify the `if (COMPOSER_REASONS_PROJECTION_ENABLED)`
+// guard is structurally present so a future flag-toggle never bypasses
+// the recompute.
+section('Pre-flight — committed flag is ON (P3A-6-C)');
+check('COMPOSER_REASONS_PROJECTION_ENABLED === true',
+  COMPOSER_REASONS_PROJECTION_ENABLED === true);
 
 // ── Q1 / Q2 / Q3 — wiring and gating (structural source greps) ──────────────
 section('Q1 / Q2 / Q3 — wiring and gating');

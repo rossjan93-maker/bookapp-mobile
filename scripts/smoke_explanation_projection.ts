@@ -39,9 +39,15 @@ import type {
   ScoreBreakdownLike,
 } from '../lib/scoring/contributions';
 
-// ── Pre-flight: confirm flag is OFF in committed code ────────────────────────
-if (COMPOSER_REASONS_PROJECTION_ENABLED !== false) {
-  console.error('\x1b[31mABORT\x1b[0m — committed flag is not OFF. Revert before smoke.');
+// ── Pre-flight: confirm flag is ON in committed code (P3A-6-C default) ──────
+// Originally this smoke aborted when the flag was true; after the P3A-6-C
+// default-on flip the committed flag is true in production, so the smoke
+// now asserts that state rather than mutating it. The flag-on path is
+// still simulated via projectComposerReasonsPure() — byte-equivalent to
+// the production code path through projectComposerReasons() in this
+// committed state.
+if (COMPOSER_REASONS_PROJECTION_ENABLED !== true) {
+  console.error('\x1b[31mABORT\x1b[0m — committed flag is not ON. Revert before smoke.');
   process.exit(2);
 }
 
@@ -112,8 +118,13 @@ function runCandidate(scenarioId: string, c: Candidate, opts: {
   console.log(`    OFF: ${JSON.stringify(off)}`);
   console.log(`    ON : ${JSON.stringify(on)}`);
 
-  // (1) flag OFF → byte-identical to legacy (reference identity)
-  expect('flag OFF returns legacy reasons by reference', off === c.legacy);
+  // (1) The "flag OFF" simulation here invokes projectComposerReasons,
+  // which under P3A-6-C's flag-on default no longer returns legacy by
+  // reference — it projects whenever contributions are non-empty. The
+  // assertion is replaced by the stricter "no empty-reasons regression"
+  // check below (2) which is the user-visible promise. Reference
+  // identity to legacy is no longer a production invariant.
+  void off;
 
   // (2) no empty-reasons regression — fallback guard
   if (c.legacy.length > 0) {

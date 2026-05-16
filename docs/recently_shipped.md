@@ -2,6 +2,37 @@
 
 Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/onboarding sprints. Moved out of replit.md on 2026-05-14 to keep the live operating reference compact. Order is reverse-chronological. For full diffs use `git log -p -- <path>`.
 
+## P3A-6-C — composer-backed reasons default-on flip + cache bump (2026-05-16)
+
+Coordinated production flip closing the P3A explanation rewire.
+
+### What changed (committed together)
+- `lib/explanations/projection.ts` — `COMPOSER_REASONS_PROJECTION_ENABLED` flipped `false` → `true`. Composer-backed `book.reasons[]` is now the production default; the non-empty fallback guard in `projectComposerReasons()` hands `legacyReasons` back when the composer produces no causal line (e.g. quality-only candidates) so no card ever loses its reason line.
+- `lib/recValidity.ts` — `VERSION` bumped `rcv1` → `rcv2`. Force-invalidates any persisted `PersistedRecPayload` carrying pre-flip legacy `reasons[]`. All three deck-state stores (`recPayloadCache`, `recSession`, `recQueue`) self-invalidate on mismatch via `assertCurrent`.
+- `lib/recommender.ts` — `classifyExplanationQuality` exported (one-line) so the dual-path replay validator can drive the legacy classifier from production source. No call-site behaviour change.
+- `scripts/validate_explanation_default_flip.ts` (new) — dual-path runtime replay validator. Drives both classifiers from a canonical 10-book fixture using real production functions (no hardcoded tiers) and asserts the twelve P3A-6-C spec invariants including byte-identical composition sort order. Closes the P3A-6-B Q10 caveat.
+- Three pre-existing validators (`validate_explanation_projection`, `validate_explanation_quality_contribution`, `smoke_explanation_projection`) had their flag-state pre-flight assertions re-pinned from `false` to `true` to match the new production default. Test logic unchanged.
+
+### Retention
+- Legacy `classifyExplanationQuality` (`lib/recommender.ts` L443) RETAINED and still invoked at one call site (L2189) to populate `_score_breakdown.explanation_quality` initially; the flag-on patch at L2248-2253 overwrites it from `_scoring_contributions`.
+- Legacy reasons builder RETAINED. Composer projection only wins when it produces a non-empty above-floor causal output; otherwise legacy reasons pass through. First eligible retirement window is P4 once one production release has confirmed the legacy fallback is exercised cleanly.
+
+### Validator results
+All 8 validators + smoke: 0 failures. Suite covered: `validate_explanation_default_flip`, `validate_explanation_quality_contribution`, `validate_explanation_projection`, `validate_explanation_faithfulness`, `validate_scoring_contributions`, `validate_retrieval_contributions`, `validate_multi_source_provenance`, `validate_stated_reservation`, `smoke_explanation_projection`. Typecheck: 0 new errors (pre-existing Deno baseline noise in `supabase/functions/{verify-books-batch,admin-reset-account,delete-account}` unchanged).
+
+### Live smoke plan (mandatory per step 5 of acceptance protocol)
+Outstanding. Run on a dev build under real Supabase profiles:
+1. **Import-first user** — Goodreads-imported user, 100+ user_books. Expect: For-You reasons non-empty, composer phrasings appearing where above-floor causal evidence exists, no invented stated preference claims for genres the user did not pick.
+2. **Quick-taste user** — fresh user, 3 chips. Expect: `"Matches your stated <key> preference"` cites only chosen keys; no library-history overclaiming.
+3. **Cold-start Tier-0 user** — no library, no chips. Expect: seeded strip unchanged ("POPULAR STARTING POINTS · Not personalized yet"), no personal-taste copy.
+4. **Explicit preference edit** — existing user adds a chip in Reading Taste and saves. Expect: P2 reservation still surfaces a candidate citing the new key in top-4 when scored evidence supports it; cache invalidation visible (no stale pre-flip reasons).
+
+### No-go conditions encountered
+None. Architect review on P3A-6-B (the prerequisite seam) passed; the dual-path replay validator closes the only acknowledged caveat. Flag-flip and cache-bump shipped in the same commit per the coordinated-flip plan documented in the P3A-6-B return report.
+
+### Next eligible workstream
+P3B — next-read decision sessions / RecCard rewire to `contributions[]` first-class — becomes unblocked once the live smoke above is product-accepted. P4 (Semantic Intelligence foundation) is the first opportunity to retire the legacy reasons builder.
+
 ## Phase 1 closeout — auth / onboarding / intake / import (2026-05-16)
 
 All five first-run/lifecycle workstreams reached product acceptance. Captured here so the live operating reference (`replit.md`) can stay compact.

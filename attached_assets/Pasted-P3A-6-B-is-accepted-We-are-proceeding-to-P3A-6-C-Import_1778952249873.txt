@@ -1,0 +1,177 @@
+P3A-6-B is accepted.
+
+We are proceeding to P3A-6-C.
+
+Important:
+This is the coordinated production default-on flip for the composer-backed reasons projection.
+
+Current accepted state:
+- P3A-1: multi-source retrieval provenance accepted.
+- P3A-2: retrieval contributions accepted.
+- P3A-3: scoring contributions accepted.
+- P3A-4: internal explanation composer + faithfulness gate accepted.
+- P3A-5: default-off composer-backed `book.reasons[]` projection accepted.
+- P3A-6-A: dev-only flag-on smoke accepted, but found two blockers.
+- P3A-6-B: contribution-based explanation_quality classifier accepted, closing the ranking-shift seam.
+
+Known remaining P3A-6-C requirements:
+1. Flip `COMPOSER_REASONS_PROJECTION_ENABLED` from false to true.
+2. Bump `lib/recValidity.ts` VERSION from `rcv1` to `rcv2`.
+3. Add the stronger dual-path runtime replay validator to close the Q10 caveat from P3A-6-B.
+4. Run the full validator suite.
+5. Provide a live smoke plan / execution notes for the four key profiles.
+
+Task type:
+Coordinated production default-on flip + cache bump + stronger replay validation.
+
+## 1. Flip composer-backed projection ON
+
+In `lib/explanations/projection.ts`:
+- set `COMPOSER_REASONS_PROJECTION_ENABLED = true`
+
+This should make composer-backed `book.reasons[]` the production default.
+
+Do not delete the legacy reasons builder yet unless the task proves that is safe. Prefer leaving legacy as fallback for one release.
+
+## 2. Bump rec validity / cache version
+
+In `lib/recValidity.ts`:
+- bump VERSION from `rcv1` to `rcv2`
+
+Reason:
+Persisted `PersistedRecPayload.recs[].reasons[]` can survive up to 2h via rec payload cache. Without the bump, the For You surface may mix legacy and composer-generated reason strings after deploy.
+
+Confirm affected stores:
+- recPayloadCache
+- recSession
+- recQueue
+
+Do not make unrelated cache changes.
+
+## 3. Add stronger dual-path runtime replay validator
+
+Add or extend a validator, likely:
+
+- `scripts/validate_explanation_default_flip.ts`
+
+Goal:
+Close the P3A-6-B caveat that Q10 was fixture-calibrated rather than a true dual-path runtime replay.
+
+The validator should compare:
+
+A. Legacy/default-off path simulation
+B. Composer/default-on path simulation
+
+Use identical fixture payloads or a controlled pipeline replay.
+
+It should assert:
+1. ranking/order is byte-identical where the only change is reasons projection + contribution-quality classifier
+2. scores are byte-identical
+3. composition outputs are byte-identical
+4. `_score_breakdown.explanation_quality` is contribution-grounded under composer ON
+5. `book.reasons[]` is composer-derived under composer ON
+6. no empty-reason regression
+7. no unsupported causal claims
+8. no retrieval-only candidate gets causal fit language
+9. no quality-only candidate gets personal-taste language
+10. P2 stated-reservation path remains unaffected
+11. cache version moved to `rcv2`
+12. legacy fallback path remains available if the code keeps it
+
+Use deterministic fixtures. Avoid live API dependency for the validator.
+
+## 4. Run full regression suite
+
+Run and report:
+
+- `validate_explanation_default_flip` or equivalent new validator
+- `validate_explanation_quality_contribution`
+- `smoke_explanation_projection`
+- `validate_explanation_projection`
+- `validate_explanation_faithfulness`
+- `validate_scoring_contributions`
+- `validate_retrieval_contributions`
+- `validate_multi_source_provenance`
+- `validate_stated_reservation`
+
+## 5. Live smoke
+
+Run or provide execution notes for live smoke with the composer ON across:
+
+### A. Import-first user
+- Goodreads-imported user with meaningful library history.
+- Expect:
+  - reasons are non-empty where evidence exists
+  - behavioral/genre copy remains generic unless specific evidence exists
+  - no invented stated preference claims
+
+### B. Quick-taste user
+- Fresh user with selected genres/preferences.
+- Expect:
+  - stated_taste_fit can cite matched stated evidence when above floor
+  - no library-history overclaiming
+
+### C. Cold-start Tier-0 user
+- No library, no chips.
+- Expect:
+  - Tier-0 seeded strip remains non-personalized
+  - no personal claims appear
+
+### D. Explicit preference edit user
+- Existing user edits Reading Taste and saves.
+- Expect:
+  - P2 preference responsiveness still holds
+  - top slate reflects the edit
+  - reasons cite the newly added stated key only when scored evidence supports it
+
+## 6. Hard constraints
+
+- Do not start P3B.
+- Do not migrate reservation AND-gate.
+- Do not alter scoring math.
+- Do not alter ranking rules.
+- Do not alter composition rules except through the already-approved contribution-quality seam.
+- Do not touch RecCard layout.
+- Do not rewrite recommendation card UX.
+- Do not delete legacy reasons builder unless explicitly proven safe and justified.
+- No opportunistic cleanup except minimal docs updates.
+
+## 7. Docs
+
+Update docs to reflect:
+- P3A-6-C composer default-on status
+- `recValidity.VERSION = rcv2`
+- composer-backed reasons are now production default
+- legacy builder retained or retired, whichever is true
+- next recommended phase
+
+If this wraps the P3A-6 series, trim duplicated `replit.md` phase-history prose into `docs/recently_shipped.md` as previously recommended.
+
+## Validation required
+
+1. Exact files touched.
+2. Flag flip confirmed.
+3. Cache version bump confirmed.
+4. New dual-path replay validator output.
+5. Full regression validator output.
+6. Typecheck delta against current baseline.
+7. Workflow/app status.
+8. Live smoke result or precise manual smoke instructions.
+9. Confirmation no scoring/ranking/composition regression.
+10. Confirmation P2 stated-reservation path remains unaffected.
+11. Cache/versioning implications.
+12. Go/no-go recommendation for considering P3A productionized.
+
+Return format:
+1. Executive verdict
+2. What changed
+3. Files touched
+4. Dual-path replay result
+5. Full validator results
+6. Typecheck/workflow status
+7. Live smoke results or instructions
+8. Behavior guarantees
+9. Cache/versioning confirmation
+10. Docs updated
+11. Remaining risks
+12. Recommended next phase

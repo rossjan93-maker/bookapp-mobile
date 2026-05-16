@@ -76,13 +76,19 @@ const BANNED_PHRASES = [
 ];
 
 // ── Pre-flight: flag default ─────────────────────────────────────────────────
-section('Pre-flight — flag default is OFF');
-check('COMPOSER_REASONS_PROJECTION_ENABLED === false',
-  COMPOSER_REASONS_PROJECTION_ENABLED === false,
+// P3A-6-C (2026-05-16): committed flag is now ON. The legacy-path
+// assertions below still hold structurally: `projectComposerReasons`
+// returns `legacyReasons` byte-identically when contributions are empty
+// (the non-empty fallback guard at projection.ts L65), so the P9 fixture
+// continues to round-trip as designed. We simply re-pin the pre-flight
+// assertion to the new production state.
+section('Pre-flight — flag default is ON (P3A-6-C)');
+check('COMPOSER_REASONS_PROJECTION_ENABLED === true',
+  COMPOSER_REASONS_PROJECTION_ENABLED === true,
   `actual=${COMPOSER_REASONS_PROJECTION_ENABLED}`);
 
-// ── P9 — flag OFF path returns legacyReasons byte-identically ────────────────
-section('P9 — legacy default path unchanged when flag is OFF');
+// ── P9 — empty-contribution path falls back to legacyReasons ─────────────────
+section('P9 — empty-contribution fallback returns legacyReasons unchanged');
 {
   const legacy = ['A literary novel that fits your stated nonfiction interest',
                   'Resonates with a recurring trait in your reading'];
@@ -90,11 +96,13 @@ section('P9 — legacy default path unchanged when flag is OFF');
     { retrieval: [], scoring: [] },
     legacy,
   );
-  check('returned value === legacyReasons (reference identity)',
+  check('returned value === legacyReasons (reference identity, empty contributions)',
     out === legacy);
   check('content byte-identical', JSON.stringify(out) === JSON.stringify(legacy));
 
-  // Even with rich contributions, flag OFF must not project.
+  // P3A-6-C: rich contributions now DO project (flag ON is the
+  // production default). Verify the composer output is non-empty and
+  // wins over legacy when above-floor causal evidence exists.
   const sc = deriveScoringContributions(
     { trait_alignment: 0.30, avoided_penalty: 0, genre_bonus: 0.10,
       feedback_boost: 0, enrichment_bonus: 0, metadata_penalty: 0,
@@ -102,8 +110,8 @@ section('P9 — legacy default path unchanged when flag is OFF');
     ['stated_favorite:thriller_mystery']);
   const rc = mapRetrievalContributions(['stated_genre:thriller_mystery']);
   const out2 = projectComposerReasons({ scoring: sc, retrieval: rc }, legacy);
-  check('rich-contribution input + flag OFF → legacyReasons unchanged',
-    JSON.stringify(out2) === JSON.stringify(legacy));
+  check('rich-contribution input + flag ON → composer projection wins',
+    JSON.stringify(out2) !== JSON.stringify(legacy) && out2.length > 0);
 }
 
 // ── Simulate flag ON via the pure helper ─────────────────────────────────────
