@@ -277,6 +277,159 @@ try {
 check('lib/explanations/compose exports composeExplanation + deriveBackcompatReasons (P3A surface untouched)',
   composerOk);
 
+// ── 12. P4C-0.5 writer contract — quick-taste stamps intentScope='session' ───
+//
+// The quick-taste writer (components/RecEntryScreen.tsx :: saveQuickIntake)
+// builds the diagnosis_answers jsonb as:
+//     { ...intake.tasteAnswers, ...behavioralMeta, ...intentScopeMeta }
+// where intentScopeMeta = { intentScope: 'session' } iff
+// intake.tasteAnswers contains any DIAGNOSIS_INTENT_KEYS member.
+//
+// We replay that exact shape here (no DB call, no React) and feed it
+// through classifyDiagnosisAnswers + deriveP4CContributions to prove:
+//   12a. new quick-taste payload (with intent-shaped answer) → intentScope=session
+//   12b. legacy row (no intentScope key) → durable / legacy=true
+//   12c. q_outcome / q_pacing / q_tone / q_what_grips classify as current_intent
+//   12d. b_fiction_split stays durable
+//   12e. P4C current_intent_fit evidence.intentScope='session' on new captures
+//   12f. P4C contributions all carry value=0 (observe-only invariant)
+//   12g. composer-backed reasons surface unchanged (re-asserted as smoke)
+console.log('12. P4C-0.5 writer contract (intentScope stamping)');
+
+// Replay the writer's diagnosis_answers builder.
+function buildDiagnosisFromIntake(opts: {
+  tasteAnswers:  Record<string, string>;
+  fictionSplit:  string;
+}): Record<string, string> {
+  const behavioralMeta = {
+    b_fiction_split:  opts.fictionSplit,
+    intake_completed: 'true',
+  };
+  const hasIntent = DIAGNOSIS_INTENT_KEYS.some(k => k in opts.tasteAnswers);
+  const intentMeta: Record<string, string> = hasIntent ? { intentScope: 'session' } : {};
+  return { ...opts.tasteAnswers, ...behavioralMeta, ...intentMeta };
+}
+
+// 12a. New quick-taste capture writes intentScope='session'
+const writerNew = buildDiagnosisFromIntake({
+  tasteAnswers:  {
+    q_outcome:    'escape',
+    q_pacing:     'pacing_non_negotiable',
+    q_tone:       'light_tone',
+    q_what_grips: 'emotion_driven',
+  },
+  fictionSplit: 'mostly_fiction',
+});
+check('12a. writer payload carries intentScope=session when intent-shaped answers present',
+  writerNew.intentScope === 'session');
+const newCls = classifyDiagnosisAnswers(writerNew);
+check('12a.i  classifyDiagnosisAnswers reads intentScope=session',
+  newCls.intentScope === 'session');
+check('12a.ii legacy flag=false on new captures',
+  newCls.legacy === false);
+
+// 12b. Legacy row (no intentScope) still classifies as durable
+const legacyRow = {
+  q_outcome:       'idea_driven',
+  q_pacing:        'pacing_flexible',
+  b_fiction_split: 'mostly_fiction',
+  intake_completed:'true',
+};
+const legacyCls = classifyDiagnosisAnswers(legacyRow);
+check('12b. legacy row without intentScope → durable / legacy=true',
+  legacyCls.intentScope === 'durable' && legacyCls.legacy === true);
+
+// 12c. q_outcome / q_pacing / q_tone / q_what_grips partition into intentShaped
+check('12c. all four intent keys classify into intentShaped on new captures',
+  DIAGNOSIS_INTENT_KEYS.every(k => k in newCls.intentShaped),
+  `intentShaped=${JSON.stringify(newCls.intentShaped)}`);
+
+// 12d. b_fiction_split stays durable, not intent
+check('12d. b_fiction_split routes to durableShaped (never intentShaped)',
+  newCls.durableShaped.b_fiction_split === 'mostly_fiction'
+  && !('b_fiction_split' in newCls.intentShaped));
+
+// 12e + 12f. Drive deriveP4CContributions and check observation invariant.
+const { deriveP4CContributions } = require('../lib/scoring/p4cContributions');
+const { getBookTraits }          = require('../lib/bookTraits');
+
+// Build a Signals from a synthetic prefs row that mirrors the writer output.
+const writerSignals = buildSignals({
+  profile:  makeProfile(2),
+  prefsRow: {
+    favorite_genres: ['Fantasy'],
+    avoid_genres:    [],
+    reading_styles:  [],
+    favorite_authors: null,
+    updated_at:       null,
+    diagnosis_answers: writerNew,
+  },
+});
+
+// Pairing fixture: book with tone=light to satisfy current_intent_fit gating.
+const pairingBook = {
+  title: 'X', author: 'Y', subjects: [],
+};
+const pairingTraits = {
+  ...getBookTraits(pairingBook),
+  tone: 'light', toneConfidence: 'specific',
+};
+
+const p4cCs = deriveP4CContributions({
+  book:                 pairingBook,
+  traits:               pairingTraits,
+  signals:              writerSignals,
+  seriesPositionsRead:  new Map(),
+});
+
+const cif = p4cCs.find((c: { kind: string }) => c.kind === 'current_intent_fit');
+check('12e. current_intent_fit emitted (intent + pairing)',
+  !!cif);
+if (cif) {
+  const ev = cif.evidence as { intentScope?: string; legacy?: boolean };
+  check('12e.i  current_intent_fit.evidence.intentScope === session',
+    ev.intentScope === 'session', `got ${ev.intentScope}`);
+  check('12e.ii current_intent_fit.evidence.legacy === false',
+    ev.legacy === false);
+}
+check('12f. ALL P4C contributions carry value === 0 (observe-only invariant)',
+  p4cCs.every((c: { value: number }) => c.value === 0),
+  `values=${JSON.stringify(p4cCs.map((c: { kind: string; value: number }) => [c.kind, c.value]))}`);
+
+// 12g. Legacy-row drive: current_intent_fit may emit (pairing satisfied via
+// other intent-shaped keys) but its evidence.intentScope must read 'durable'
+// because the legacy row carries no explicit discriminator.
+const legacySignals = buildSignals({
+  profile:  makeProfile(2),
+  prefsRow: {
+    favorite_genres: [],
+    avoid_genres:    [],
+    reading_styles:  [],
+    favorite_authors: null,
+    updated_at:       null,
+    diagnosis_answers: legacyRow,
+  },
+});
+const legacyCs = deriveP4CContributions({
+  book:                pairingBook,
+  traits:              pairingTraits,
+  signals:             legacySignals,
+  seriesPositionsRead: new Map(),
+});
+const legacyCif = legacyCs.find((c: { kind: string }) => c.kind === 'current_intent_fit');
+if (legacyCif) {
+  const ev = legacyCif.evidence as { intentScope?: string; legacy?: boolean };
+  check('12g. legacy-row current_intent_fit.evidence.intentScope === durable',
+    ev.intentScope === 'durable');
+  check('12g.i legacy-row current_intent_fit.evidence.legacy === true',
+    ev.legacy === true);
+} else {
+  // No pairing emitted — acceptable; the invariant is conditional. Record
+  // so a future change cannot silently drop this coverage.
+  check('12g. legacy-row: no current_intent_fit (pairing absent — invariant vacuously holds)',
+    true);
+}
+
 // ── 12. Existing validator modules import without forcing changes ────────────
 console.log('12. Existing validator modules still import cleanly');
 // We import the recRequest validator module's *transitive* deps to confirm

@@ -40,6 +40,7 @@ import { clearAllTabCaches } from '../lib/tabCache';
 import { clearRecSession } from '../lib/recSession';
 import { clearRecPayload } from '../lib/recPayloadCache';
 import { clearAll as clearRecQueue } from '../lib/recQueue';
+import { DIAGNOSIS_INTENT_KEYS } from '../lib/recSignals/partitions';
 import { CoverThumb } from './CoverThumb';
 import { OB, OnboardingShell, StepDots, SubProgressBar } from './OnboardingShell';
 import {
@@ -224,12 +225,25 @@ async function saveQuickIntake(intake: IntakeState): Promise<void> {
     intake_completed:   'true',
   };
 
+  // P4C-0.5: when this newly captured quick-taste includes any
+  // intent-shaped answer (q_outcome / q_pacing / q_tone / q_what_grips),
+  // stamp the row with intentScope='session' so the read-side
+  // classifyDiagnosisAnswers() (lib/recSignals/partitions.ts) routes the
+  // intent-shaped subset through the current_intent signal class with
+  // legacy=false. Durable b_-prefixed keys (e.g. b_fiction_split) stay
+  // durable regardless. Legacy rows (no intentScope) keep classifying
+  // as durable/back-compat — we never migrate existing rows.
+  const hasIntentShaped = DIAGNOSIS_INTENT_KEYS.some(k => k in intake.tasteAnswers);
+  const intentScopeMeta: Record<string, string> = hasIntentShaped
+    ? { intentScope: 'session' }
+    : {};
+
   await supabase.from('reader_preferences').upsert(
     {
       user_id:           user.id,
       favorite_genres:   intake.likedGenres,
       avoid_genres:      intake.avoidGenres,
-      diagnosis_answers: { ...intake.tasteAnswers, ...behavioralMeta },
+      diagnosis_answers: { ...intake.tasteAnswers, ...behavioralMeta, ...intentScopeMeta },
       updated_at:        new Date().toISOString(),
     },
     { onConflict: 'user_id' },

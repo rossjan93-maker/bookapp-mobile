@@ -1,0 +1,109 @@
+P4C observe-only contribution wiring is accepted at the contract/code level.
+
+Before P4C.1 ranking influence, do one small bridge task:
+
+P4C-0.5 — intentScope writer + observe-only trace validation.
+
+Task type:
+Small correctness bridge only. No ranking/scoring/composition/RecCard visible changes.
+
+Context:
+P4A added signal partitioning.
+P4B added BookTraits.
+P4C emits observe-only contributions with value=0.
+However, P4C notes that current_intent_fit evidence can still carry legacy:true / intentScope:'durable' defaults because the writer that marks newly captured quick-taste intent-shaped answers as session intent has not landed yet.
+
+Goal:
+Ensure newly captured quick-taste answers write diagnosis_answers.intentScope='session' where appropriate, while preserving legacy/back-compat behavior for existing rows.
+
+## 1. Update quick-taste writer only
+
+Find the current quick-taste save path, likely in:
+- components/RecEntryScreen.tsx
+- app/onboarding-questions.tsx
+
+When saving newly captured quick-taste answers, set:
+
+diagnosis_answers.intentScope = 'session'
+
+for intent-shaped answers:
+- q_outcome
+- q_pacing
+- q_tone
+- q_what_grips
+
+Do not migrate existing rows.
+Do not alter legacy/back-compat behavior.
+Do not change Taste Readout behavior.
+Do not change onboarding UI.
+
+## 2. Preserve durable fields
+
+Confirm:
+- b_fiction_split remains durable/profile-shaping
+- favorite_genres remain stated_durable
+- avoid_genres remain soft_avoid
+- anchor book remains durable/revealed behavior via user_books
+- raw diagnosis_answers remain preserved for existing consumers
+
+## 3. Observe-only trace validation
+
+Add or extend a validator to prove:
+
+1. new quick-taste fixture writes intentScope='session'
+2. legacy rows without intentScope still classify as durable/back-compatible
+3. q_outcome/q_pacing/q_tone/q_what_grips classify as current_intent for new captures
+4. b_fiction_split remains durable
+5. P4C contributions remain value=0
+6. P4C contributions carry explicit evidence.intentScope='session' for new quick-taste fixtures
+7. ranking/order is unchanged
+8. P3A composer-backed reasons remain unchanged
+
+## 4. Optional DEV-only trace
+
+If there is already a safe DEV logging pattern, add a compact DEV-only trace for quick-taste completion showing:
+- intentScope
+- intent-shaped keys detected
+- emitted P4C contribution kinds
+
+Do not add noisy production logs.
+
+## Hard constraints
+- Do not change ranking.
+- Do not change scoring math.
+- Do not change composition.
+- Do not change RecCard.
+- Do not change visible copy.
+- Do not admit P4C contributions into composer.
+- Do not start P4C.1.
+- Do not start P4D.
+- No opportunistic cleanup.
+
+## Validation required
+Run:
+- validate_signal_partition
+- validate_intent_contribution
+- validate_tone_pace_fit
+- validate_series_continuation
+- validate_book_trait_coverage
+- validate_explanation_default_flip
+- validate_explanation_faithfulness
+- validate_scoring_contributions
+- validate_rec_validity
+- validate_taxonomy
+
+Also report:
+- typecheck delta
+- workflow/app status
+- behavior guarantees
+- whether P4C.1 is unblocked
+
+Return format:
+1. Executive verdict
+2. What changed
+3. Files touched
+4. intentScope writer behavior
+5. Validator results
+6. Typecheck/workflow status
+7. Behavior guarantees
+8. Go/no-go for P4C.1
