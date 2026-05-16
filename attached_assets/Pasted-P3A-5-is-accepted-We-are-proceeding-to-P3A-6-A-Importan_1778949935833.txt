@@ -1,0 +1,141 @@
+P3A-5 is accepted.
+
+We are proceeding to P3A-6-A.
+
+Important:
+Do not flip COMPOSER_REASONS_PROJECTION_ENABLED to true in committed production code yet.
+Do not delete the legacy reasons builder yet.
+Do not change RecCard.
+Do not start P3B.
+
+P3A-6-A is a local flag-on smoke / readiness pass.
+
+Current accepted state:
+- P3A-1: multi-source retrieval provenance.
+- P3A-2: retrieval contributions.
+- P3A-3: scoring contributions.
+- P3A-4: internal explanation composer + faithfulness gate.
+- P3A-5: hidden default-off composer-backed book.reasons[] projection.
+- Production visible behavior remains unchanged.
+- All validators are green.
+
+Goal:
+Run a controlled flag-on validation of the composer-backed reasons path and identify any blockers before we flip the default in a later committed batch.
+
+## 1. Local flag-on smoke only
+
+Temporarily enable the composer-backed projection path in a local/dev-only way.
+
+Requirements:
+- Do not commit COMPOSER_REASONS_PROJECTION_ENABLED = true as the final production state in this batch.
+- Either use a temporary local edit that is reverted before completion, or add a dev-only smoke mechanism that cannot affect production.
+- Clearly report exactly how the smoke was run.
+
+## 2. Smoke scenarios
+
+Run or simulate the following scenarios and inspect top recommendation reasons:
+
+### A. Import-first user
+- Goodreads-imported user with meaningful library history.
+- Expectation:
+  - reasons are non-empty
+  - behavioral_fit copy remains generic unless specific evidence exists
+  - no invented stated preference claims
+
+### B. Quick-taste user
+- Fresh user who completed quick taste with selected genres/preferences.
+- Expectation:
+  - stated_taste_fit can cite matched stated evidence when above floor
+  - no behavioral overclaiming if no library history exists
+
+### C. Cold-start Tier-0 user
+- No library, no chips.
+- Expectation:
+  - Tier-0 seeded strip remains unchanged
+  - no personalized claims appear
+
+### D. Explicit preference edit user
+- Existing user edits Reading Taste and saves.
+- Expectation:
+  - P2 preference-edit responsiveness still holds
+  - top slate still reflects the edit
+  - reasons cite newly added stated key only when actual scored evidence exists
+
+## 3. Acceptance criteria
+
+For each scenario, verify:
+
+1. Top cards have at least one reason when eligible evidence exists.
+2. No empty-reasons regression.
+3. No reason cites a stated key the user did not state.
+4. No specific trait / subject / genre claim appears unless composer evidence supports it.
+5. No quality_reliability-only book receives personal-taste language.
+6. Retrieval-only candidates do not receive causal fit explanations.
+7. Negative contributions surface only as caution/risk, not positive reason.
+8. Ranking/order remains observably stable versus flag OFF.
+9. P2 stated reservation path remains unaffected.
+10. No banned phrasing appears.
+
+## 4. Explanation quality mismatch audit
+
+P3A-5 documented that, with the composer projection ON, `_score_breakdown.explanation_quality` still reflects the legacy reason classifier.
+
+Please investigate and propose the minimal P3A-6-B fix:
+- move or recompute `classifyExplanationQuality(...)` so it evaluates whichever `book.reasons[]` is final
+- preserve legacy behavior when flag is OFF
+- avoid ranking/scoring/composition changes
+
+Do not implement this fix yet unless it is trivial and safe; first report the exact seam.
+
+## 5. Cache/versioning decision
+
+P3A-5 noted that a cache version bump should be considered when the composer-backed path becomes production default.
+
+Please confirm:
+- whether flipping the default ON should bump CACHE_VERSION from v5 to v6
+- which stores are affected
+- whether this should happen in the same commit as the default-on flip
+- whether any cached legacy reason payload can survive otherwise
+
+Do not bump cache version in P3A-6-A unless you are also flipping production default, which we are not doing yet.
+
+## Hard constraints
+
+- Do not start P3B.
+- Do not change ranking.
+- Do not change scoring math.
+- Do not change composition.
+- Do not touch RecCard.
+- Do not delete legacy reasons builder.
+- Do not permanently flip the composer projection default.
+- No opportunistic cleanup except small doc updates if needed.
+
+## Validation required
+
+1. Exact smoke method used.
+2. Scenarios tested.
+3. Observed reason examples, with any sensitive/private data minimized.
+4. Validator outputs:
+   - explanation projection
+   - explanation faithfulness
+   - scoring contributions
+   - retrieval contributions
+   - multi-source provenance
+   - stated reservation
+5. Typecheck delta against current baseline.
+6. Workflow/app status.
+7. Explanation-quality recompute recommendation.
+8. Cache-version recommendation.
+9. Clear go/no-go recommendation for P3A-6-B production flip.
+
+Return format:
+1. Executive verdict
+2. Smoke method
+3. Scenario results
+4. Any overclaiming / empty-reason / copy issues found
+5. Validator results
+6. Typecheck/workflow status
+7. Explanation-quality recompute plan
+8. Cache-version plan
+9. Go/no-go for production default-on
+10. Recommended next task
