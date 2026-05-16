@@ -1,0 +1,111 @@
+P3A-6-C is accepted at code/contract level.
+
+Do not start P3B yet.
+
+We need the final P3A product-acceptance live smoke now that composer-backed reasons are production default.
+
+Current accepted P3A-6-C state:
+- COMPOSER_REASONS_PROJECTION_ENABLED is true
+- recValidity.VERSION is rcv2
+- dual-path replay validator exists
+- full validator suite is green
+- no scoring/ranking/composition math changed
+- no RecCard layout changes
+- legacy reasons builder retained
+
+Task type:
+Live product acceptance smoke / targeted verification.
+
+Goal:
+Verify that the production composer-backed reasons behave correctly in real app states, not just fixtures.
+
+## Smoke profiles
+
+Please run or guide live smoke across these four profiles:
+
+### A. Import-first user
+A user with a meaningful Goodreads-imported library.
+
+Validate:
+- For You loads under rcv2 / fresh cache
+- top card reasons are non-empty where evidence exists
+- no invented stated-preference claims
+- behavioral/genre copy stays generic unless specific evidence exists
+- no already-read imported books reappear as fresh recs
+
+### B. Quick-taste user
+A fresh user who completed quick taste with selected preferences/genres.
+
+Validate:
+- stated preference reasons appear only when actual stated_taste evidence exists
+- no library-history overclaiming
+- no “not personalized yet” regression after completing intake
+- reasons are not empty on eligible top cards
+
+### C. Cold-start Tier-0 user
+A user with no library, no quick taste, no imported data.
+
+Validate:
+- seeded Tier-0 surface still appears as non-personalized
+- no personal-taste claims appear
+- “Popular starting points” / setup surface remains coherent
+- no composer reason projection causes personalized language on seeded content
+
+### D. Explicit preference edit user
+An existing user edits Reading Taste and saves.
+
+Validate:
+- P2 explicit-preference responsiveness still holds
+- top slate reflects the newly added preference
+- reasons cite the newly added stated key only when scored evidence supports it
+- reservation behavior remains intact
+
+## Acceptance criteria
+
+Across all four profiles:
+
+1. No empty-reason regression on eligible recommendation cards.
+2. No stated key is cited unless the user actually stated it.
+3. No retrieval-only candidate receives a causal fit explanation.
+4. No quality-only candidate receives personal-taste language.
+5. Negative/avoidance contributions do not become positive reasons.
+6. No banned phrasing appears.
+7. No obvious ranking/composition regression.
+8. P2 explicit-preference path remains intact.
+9. Cache behavior is clean after rcv2 bump.
+10. RecCard layout remains visually unchanged.
+
+## Evidence required
+
+Please provide:
+- exact profile/scenario tested
+- top 5 For You cards per scenario
+- visible reason text for each top card
+- any relevant debug logs if available
+- whether cache was cleared or naturally invalidated by rcv2
+- whether any reason looked vague, overconfident, or unsupported
+- pass/fail per scenario
+
+## Hard constraints
+
+- Do not start P3B.
+- Do not alter ranking.
+- Do not alter scoring math.
+- Do not alter composition.
+- Do not change RecCard layout.
+- Do not delete legacy reasons builder.
+- Do not rewrite copy during smoke.
+- Do not patch unless a concrete defect is found.
+
+## Return format
+
+1. Executive verdict
+2. Scenario A — Import-first results
+3. Scenario B — Quick-taste results
+4. Scenario C — Cold-start Tier-0 results
+5. Scenario D — Explicit preference edit results
+6. Any explanation-copy issues found
+7. Any ranking/composition regressions found
+8. Cache/versioning observations
+9. Go/no-go for marking P3A product accepted
+10. Recommended next phase
