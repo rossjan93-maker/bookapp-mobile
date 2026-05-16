@@ -1,0 +1,183 @@
+P3A-2 is accepted.
+
+We are proceeding to P3A-3, but with one sequencing adjustment.
+
+Do not start the explanation composer yet.
+
+Reason:
+P3A-2 now carries retrieval-phase contributions, but retrieval evidence only answers:
+“Why was this candidate considered?”
+
+It does not answer:
+“Why did this candidate score well?”
+“Why did this candidate rank well?”
+“What user-facing explanation is causally supported?”
+
+To keep P3 faithful, we need scoring-phase contributions before explanation composition.
+
+Task type:
+P3A-3 foundational implementation only.
+
+Goal:
+Emit scoring-phase contributions from the existing scoring pipeline and attach them to ScoredBook, without changing scoring math, ranking, composition, RecCard, recommendation copy, or reservation behavior.
+
+## Current accepted state
+
+P3A-1:
+- contribution/provenance model exists
+- `_retrieval_reasons[]` exists
+- `_retrieval_reason` remains dominant legacy field
+- `fetchOLByAuthor` provenance labeling fixed
+
+P3A-2:
+- `_retrieval_contributions[]` now attached to scored candidates
+- retrieval contribution classifier exists
+- validator passes
+- ranking/scoring/composition behavior unchanged
+- P2 stated reservation compatibility preserved
+
+## P3A-3 scope
+
+### 1. Add scoring-phase contributions
+
+For each ScoredBook, emit structured scoring-phase contributions corresponding to the existing score components.
+
+Use the existing contribution/provenance model.
+
+The goal is to represent current scoring math as evidence, not change it.
+
+At minimum, cover the existing score breakdown fields where applicable:
+
+- `stated_taste`
+- `trait_alignment`
+- `genre_bonus`
+- `feedback_boost`
+- `enrichment_bonus`
+- `metadata_penalty`
+- `avoided_penalty`
+
+If there are other score components already present in `_score_breakdown`, include them or explain why they are deferred.
+
+Each scoring contribution should include:
+- `phase: 'scoring'`
+- contribution source
+- contribution kind
+- signed value where applicable
+- evidence where available
+- conservative display/explanation eligibility defaults
+
+Important:
+Do not infer more evidence than currently exists. If a score component has value but weak evidence attribution, represent it conservatively and document the limitation.
+
+### 2. Preserve retrieval contributions
+
+ScoredBook should now carry:
+- retrieval-phase contributions from P3A-2
+- scoring-phase contributions from this batch
+
+Do not collapse them into a vague `ScoreContribution[]`.
+
+Keep phase separation explicit:
+- retrieval = why considered
+- scoring = why score moved
+- composition = why preserved/moved/slotted later
+
+### 3. Preserve all legacy fields
+
+Keep:
+- `_retrieval_reason`
+- `_retrieval_reasons`
+- `_retrieval_contributions`
+- `_score_breakdown`
+- `audit_flags`
+- `book.reasons[]`
+
+Do not delete or replace legacy fields.
+
+### 4. No behavior changes
+
+Hard requirement:
+The output ranking and score values must remain identical.
+
+This batch should only add structured contribution metadata derived from the existing score calculation.
+
+Do not change:
+- score math
+- ranking
+- composition
+- EXP_QUALITY sort
+- reservation logic
+- RecCard copy
+- explanation generation
+- recommendation payload shape in any breaking way
+
+### 5. Score-contribution validator
+
+Add a validator, likely:
+
+- `scripts/validate_scoring_contributions.ts`
+
+It should assert:
+
+1. scoring contributions are emitted for non-zero scoring components
+2. scoring contribution values sum back to the corresponding `_score_breakdown` components within a small epsilon where possible
+3. negative contributions are represented correctly for penalties
+4. zero or absent components do not produce misleading contributions
+5. retrieval contributions remain intact
+6. ranking/order is byte-identical before and after contribution attachment
+7. P2 stated-reservation compatibility remains intact
+8. no user-facing explanation or RecCard behavior changes
+
+Use deterministic fixtures. Avoid live API dependency where possible.
+
+### 6. Evidence limitations
+
+For each score component, report whether the contribution can currently identify:
+
+- exact signal source
+- signal class
+- matched value
+- only aggregate score value
+
+For example:
+- if `stated_taste` can identify a favorite genre, include that evidence
+- if `enrichment_bonus` only reflects metadata quality, do not pretend it is personal taste evidence
+- if `trait_alignment` lacks exact trait provenance, mark it conservatively
+
+This evidence audit will determine what P3A-4 is allowed to explain.
+
+## Hard constraints
+
+- Do not start explanation composer yet.
+- Do not create `lib/explanations/compose.ts` yet unless it is an inert stub absolutely required for types.
+- Do not touch RecCard.
+- Do not change recommendation copy.
+- Do not alter ranking.
+- Do not alter scoring math.
+- Do not migrate reservation AND-gate.
+- Do not start P3B.
+- Do not delete legacy fields.
+- No opportunistic cleanup.
+
+## Validation required
+
+1. Exact files touched.
+2. Validator output.
+3. Typecheck delta against current baseline.
+4. Workflow/app status.
+5. Confirmation no scoring/ranking behavior changed.
+6. Confirmation P2 explicit-preference acceptance path remains unaffected.
+7. Cache/versioning implications.
+8. Evidence-limitation audit by score component.
+9. Recommended P3A-4 next step.
+
+Return format:
+1. Executive verdict
+2. What changed
+3. Files touched
+4. Validator results
+5. Typecheck/workflow status
+6. Behavior guarantees
+7. Score-component evidence audit
+8. Cache/versioning implications
+9. Recommended P3A-4 next step

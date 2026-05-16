@@ -211,6 +211,176 @@ export function mapRetrievalContributions(
   return reasons.map(classifyRetrievalReason);
 }
 
+// ── Scoring-phase derivation (P3A-3) ─────────────────────────────────────────
+//
+// Pure projection from the existing `_score_breakdown` (+ `audit_flags`)
+// into typed `ScoringContribution[]`. NO scoring math change — every field
+// is read verbatim from the breakdown produced by `scoreBookForUser`.
+//
+// Component → kind mapping (mirrors `lib/recommender.ts` Steps 1–7):
+//
+//   trait_alignment   → behavioral_fit       source='preferred_traits+liked_subjects'
+//                       Step 1 (preferred trait alignment, capped) + Step 1b
+//                       (liked-subject overlap). Aggregate value only; the
+//                       breakdown does not retain per-trait sub-attribution,
+//                       so contribution.evidence is intentionally empty.
+//
+//   avoided_penalty   → soft_avoid_penalty   source='avoided_traits'
+//                       Step 2. Aggregate (negative); no per-trait split.
+//
+//   genre_bonus       → behavioral_fit       source='genre_affinity'
+//                       Step 3 (revealed-from-rated genre affinity). Signed
+//                       — bonus or penalty. Aggregate value only.
+//
+//   feedback_boost    → feedback_fit         source='more_like_this'
+//                       Step 4 (per-genre MLT boost). Aggregate.
+//
+//   enrichment_bonus  → quality_reliability  source='enrichment_signals'
+//                       Step 5 — consensus traits + popularity signal.
+//                       NOT personal-taste evidence; do not let downstream
+//                       (P3A-4 compose) surface this as a "you like X"
+//                       reason. Marker is conveyed via kind=quality_reliability
+//                       and source='enrichment_signals'.
+//
+//   metadata_penalty  → hygiene_floor        source='metadata+subtype_drift'
+//                       Step 6 (metadata-quality penalty) + 7b/7c (noir /
+//                       spy / philosophy / literary / graphic-format drift
+//                       penalties + commercial-prior boost), already floored
+//                       at S6_PENALTY_FLOOR. Aggregate — the recommender
+//                       does not retain per-rule attribution beyond the
+//                       string entries in `audit_flags`. Treated as a
+//                       hygiene/drift penalty for explanation purposes.
+//
+//   stated_taste      → stated_taste_fit     source=matched stated key (when
+//                       audit_flags carries `stated_favorite:<key>` or
+//                       `stated_softavoid:<key>` from `computeStatedTasteContribution`).
+//                       The ONLY scoring component with per-signal evidence
+//                       attribution today (via audit_flags). Other kinds
+//                       must wait for P3A-5+ to gain real attribution.
+//
+// Components from the existing model deferred (not emitted):
+//   - intent_fit / novelty_diversity / repetition_suppression — not yet
+//     implemented as breakdown fields in `scoreBookForUser`. Listed in the
+//     locked architecture for P3 but require scoring-side wiring outside
+//     P3A-3's "represent current math" scope.
+//
+// Zero/absent components produce NO contribution entry — explicit silence
+// rather than a zero-valued contribution avoids polluting the eligibility
+// check downstream consumers will do (P3A-4 compose, sum invariant tests).
+//
+// `displayEligible` is intentionally left undefined here. The P3A-4
+// explanation rewire owns per-kind eligibility (gated by DISPLAY_FLOORS).
+// =============================================================================
+
+/** Minimal shape this helper reads from `_score_breakdown`. Mirrors the
+ *  `ScoreBreakdown` type in `lib/recommender.ts` but kept local so this
+ *  module stays free of a circular dependency on the recommender. */
+export type ScoreBreakdownLike = {
+  trait_alignment:  number;
+  avoided_penalty:  number;
+  genre_bonus:      number;
+  feedback_boost:   number;
+  enrichment_bonus: number;
+  metadata_penalty: number;
+  stated_taste?:    number;
+  raw_score:        number;
+};
+
+/** Parse a single `audit_flags[]` entry that records stated-taste match
+ *  evidence (`stated_favorite:<key>` / `stated_softavoid:<key>`), if any. */
+function findStatedTasteEvidence(
+  audit_flags: readonly string[],
+): { kind: 'favorite' | 'softavoid'; key: string } | null {
+  for (const f of audit_flags) {
+    if (f.startsWith('stated_favorite:')) {
+      return { kind: 'favorite', key: f.slice('stated_favorite:'.length) };
+    }
+    if (f.startsWith('stated_softavoid:')) {
+      return { kind: 'softavoid', key: f.slice('stated_softavoid:'.length) };
+    }
+  }
+  return null;
+}
+
+/** Derive typed scoring-phase contributions from an existing
+ *  `_score_breakdown` + `audit_flags`. Pure / synchronous / read-only. */
+export function deriveScoringContributions(
+  breakdown:   ScoreBreakdownLike,
+  audit_flags: readonly string[] = [],
+): ScoringContribution[] {
+  const out: ScoringContribution[] = [];
+
+  if (breakdown.trait_alignment !== 0) {
+    out.push({
+      phase: 'scoring', kind: 'behavioral_fit',
+      value: breakdown.trait_alignment,
+      source: 'preferred_traits+liked_subjects',
+    });
+  }
+  if (breakdown.avoided_penalty !== 0) {
+    out.push({
+      phase: 'scoring', kind: 'soft_avoid_penalty',
+      value: breakdown.avoided_penalty,
+      source: 'avoided_traits',
+    });
+  }
+  if (breakdown.genre_bonus !== 0) {
+    out.push({
+      phase: 'scoring', kind: 'behavioral_fit',
+      value: breakdown.genre_bonus,
+      source: 'genre_affinity',
+    });
+  }
+  if (breakdown.feedback_boost !== 0) {
+    out.push({
+      phase: 'scoring', kind: 'feedback_fit',
+      value: breakdown.feedback_boost,
+      source: 'more_like_this',
+    });
+  }
+  if (breakdown.enrichment_bonus !== 0) {
+    out.push({
+      phase: 'scoring', kind: 'quality_reliability',
+      value: breakdown.enrichment_bonus,
+      source: 'enrichment_signals',
+    });
+  }
+  if (breakdown.metadata_penalty !== 0) {
+    out.push({
+      phase: 'scoring', kind: 'hygiene_floor',
+      value: breakdown.metadata_penalty,
+      source: 'metadata+subtype_drift',
+      // The drift sub-rules that fired are visible in audit_flags
+      // (noir_drift / spy_drift / philosophy_drift / literary_drift /
+      // weak_metadata / classic_signal / graphic_format / etc.) — pass
+      // them through as evidence so any future surface can disambiguate
+      // without re-parsing the recommender.
+      evidence: { audit_subflags: audit_flags.filter(f =>
+           f === 'weak_metadata'
+        || f === 'classic_signal'
+        || f === 'noir_drift'
+        || f === 'noir_drift_confirmed'
+        || f === 'spy_drift'
+        || f === 'philosophy_drift'
+        || f === 'literary_drift'
+        || f === 'graphic_format'
+      ) },
+    });
+  }
+  const stated = breakdown.stated_taste ?? 0;
+  if (stated !== 0) {
+    const ev = findStatedTasteEvidence(audit_flags);
+    out.push({
+      phase: 'scoring', kind: 'stated_taste_fit',
+      value: stated,
+      source: ev ? `stated_${ev.kind}:${ev.key}` : 'stated_taste',
+      ...(ev ? { evidence: { matchedKind: ev.kind, matchedKey: ev.key } } : {}),
+    });
+  }
+
+  return out;
+}
+
 // ── Retrieval-phase merge helper (D1) ────────────────────────────────────────
 //
 // Single source of truth for accumulating `_retrieval_reasons[]` when the

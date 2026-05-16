@@ -79,8 +79,8 @@ import { loadCachedRecs, persistRecCache, shouldRebuild, buildSignalSnapshot } f
 import { computeStatedTasteContribution } from './recPolicy';
 import type { RecRequest } from './recRequest';
 import { planBranches } from './retrieval/branchPlanner';
-import { mergeRetrievalReasons, mapRetrievalContributions } from './scoring/contributions';
-import type { RetrievalContribution } from './scoring/contributions';
+import { mergeRetrievalReasons, mapRetrievalContributions, deriveScoringContributions } from './scoring/contributions';
+import type { RetrievalContribution, ScoringContribution } from './scoring/contributions';
 import { applyLocalSoftAvoidFilter } from './retrieval/softAvoidLocal';
 import { SOFT_AVOID_RETRIEVAL_MULTIPLIER } from './recPolicy';
 import type { AffinityKey } from './taxonomy/genres';
@@ -257,6 +257,14 @@ export type ScoredBook = CandidateBook & {
    *  metadata for the P3A-3 explanation-faithfulness rewire. Optional for
    *  backward compatibility with non-recommender ScoredBook constructors. */
   _retrieval_contributions?: readonly RetrievalContribution[];
+  /** P3A-3: scoring-phase contribution evidence — one entry per non-zero
+   *  component of `_score_breakdown`. Pure projection (no scoring math
+   *  change); values sum back to `_score_breakdown.raw_score` within
+   *  rounding epsilon. Answers "why did this score move?" — NOT yet "why
+   *  was this surfaced?" (that lives on the composition phase / P3A-4).
+   *  Optional / read-only; no production consumer in this batch beyond
+   *  the validator. */
+  _scoring_contributions?: readonly ScoringContribution[];
 };
 
 export type QualityGate =
@@ -2116,11 +2124,19 @@ export function getRankedRecs(
     const reasonsForContrib =
          book._retrieval_reasons
       ?? (book._retrieval_reason ? [book._retrieval_reason] : []);
+    const scoredFields = scoreBookForUser(book, profile, feedback, enrichment, req);
+    // P3A-3: derive scoring-phase contributions from the breakdown we just
+    // produced. Pure projection — does NOT call back into scoring, does NOT
+    // change `score`/`reasons`/`risks`, and contributes nothing to ranking.
     return {
       ...book,
-      ...scoreBookForUser(book, profile, feedback, enrichment, req),
+      ...scoredFields,
       _debug: { pool_size: poolSize, rank: 0 },
       _retrieval_contributions: mapRetrievalContributions(reasonsForContrib),
+      _scoring_contributions: deriveScoringContributions(
+        scoredFields._score_breakdown,
+        scoredFields._score_breakdown.audit_flags ?? [],
+      ),
     } as ScoredBook;
   });
 
