@@ -2,6 +2,47 @@
 
 Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/onboarding sprints. Moved out of replit.md on 2026-05-14 to keep the live operating reference compact. Order is reverse-chronological. For full diffs use `git log -p -- <path>`.
 
+## Phase 1 closeout — auth / onboarding / intake / import (2026-05-16)
+
+All five first-run/lifecycle workstreams reached product acceptance. Captured here so the live operating reference (`replit.md`) can stay compact.
+
+### 1. Google OAuth standalone-browser warm boot — accepted
+- 10-second "Almost there…" false-freeze fixed; no auth-token lock warning; no `checkOnboardingCompleted` timeout.
+- New Google users route promptly into onboarding; returning Google users land on Home/For You without an interstitial spinner.
+- Shared race-safe helper in `lib/socialAuth.ts` remains the single ingress for social sign-in.
+
+### 2. Final setup → quick taste check — accepted
+- Opens immediately on completion of final setup; no blank/loading interstitial.
+- Progresses through intake screens; Taste Readout appears with synthesis copy where eligible (`buildIntakeSynthesis` in `lib/tasteReadoutCopy.ts`).
+- "See my picks" routes into For You without a bounce through cold-start setup.
+
+### 3. Quick taste → For You handoff — accepted
+- Closed the state-honesty bug where a completed-intake user transiently saw "POPULAR STARTING POINTS · Not personalized yet" while their Tier-1 profile was still resolving. Completed quick-intake users now bypass the Tier-0 cold-start strip during unresolved profile loading and after Tier-1 profile resolution; non-personalized strip is reserved for users with truly empty libraries.
+
+### 4. Mid-intake refresh / resume — accepted
+- Refresh or reopen during intake resumes the in-progress step instead of bouncing to onboarding start or app home. Stage cursor (`onboardingStage`) drives resume; no regression in completed-intake JWT fast-path.
+
+### 5. Skip → "let me browse" — routing accepted, destination deferred
+- Routing passes cleanly (no bounce, no auth-state confusion). Destination UX is misaligned: it lands on a second setup-choice screen rather than the browsable Tier-0 For You surface. Deferred to the cold-start redesign workstream; **not a beta blocker** and explicitly not in scope for P3.
+
+### 6. Goodreads import — persistence + acceptance
+- Upload / preview / import execution path is healthy; post-import cache invalidation runs; author-strength sorting works (Sarah J. Maas now surfaces over one-book authors like Alka Joshi); no bad recs caused by missing `user_books`.
+- Live 273-row replay (2026-05-16): 273 staged → 273 linked → 271 distinct user_books (two correct intra-batch duplicate collapses). Royal Assassin → finished, Ship of Destiny → finished, Lightlark → want_to_read, The Two Towers → reading, The Immortal Life of Henrietta Lacks → reading.
+- Underlying fix shipped 2026-05-15 (`lib/goodreadsExecutor.ts` + `lib/goodreadsStager.ts`):
+  - Pre-fix: bulk inserts to `books` / `user_books` are atomic per PG statement — a single constraint / RLS / trigger failure or a duplicate `(user_id, book_id)` from staging collapsing two Goodreads source IDs onto one canonical `books.id` (typically via shared ISBN13) silently dropped the whole 100-row chunk.
+  - Stager: added Priority-4 title+author fallback in `resolveMatch`, P1.5a-gated (`provenance_state IN ('verified','legacy') OR provenance_inserted_by = userId`); subtitle-stripping helper exported.
+  - Executor: hoisted `normBookKey` to module level with subtitle stripping (was missing → "Royal Assassin (Farseer Trilogy, #2)" silently missed catalog "Royal Assassin"); replaced bulk-then-zip with bulk-then-rekey-by-(title,author) with per-row fallback on chunk error or partial result; switched `user_books` to `.upsert({onConflict:'user_id,book_id', ignoreDuplicates:true})`; `counters.added++` only after post-fetch confirms a real `user_books.id` (else `counters.failed++`); intra-batch duplicate-collapsed rows demoted to `resolution='skipped'` / `counters.skipped` so `imported + skipped + failed = staged` audit math stays honest; `matched_book_id` written back from executor recovery.
+  - Validator: `scripts/validate_goodreads_import_persistence.ts` (12 assertions including subtitle stripping + safety properties). Green.
+
+### 7. Account deletion after Goodreads import — accepted, plus per-book FK fix
+- Migration `20260515000000_account_deletion_fix_import_rows.sql` (procedural fix): three SECURITY DEFINER functions (`delete_own_account` / `admin_reset_account` / `reset_own_data_cold`) and the matching Edge Function step now `DELETE FROM import_rows WHERE user_id = v_uid` BEFORE deleting `user_books`. Closes the production failure where account deletion raised `import_rows_user_book_id_fkey`. Status: applied.
+- Migration `20260516000000_import_rows_user_book_id_set_null.sql` (schema fix): promotes the FK to `ON DELETE SET NULL` so deleting a single imported `user_books` row no longer trips the same FK. Audit row preserved (resolution / matched_book_id / raw_data intact). The procedural pre-step from `20260515000000` is intentionally retained as defence-in-depth — correctness of the deletion functions should not couple to schema state. Status: pending application via Supabase dashboard SQL editor (no destructive change; idempotent DO block).
+
+### Why this is captured as Phase 1 closeout
+P3A is the next active workstream. Without an explicit closeout, the open lifecycle / onboarding / import items would re-surface as "bugs" inside P3 work and pollute the contribution-grounded ranking diff. Pre-beta gate "first-run flow lands users in a usable, honest state" is now met.
+
+---
+
 ## Phase 2 product-acceptance arc (2026-05-13 → 2026-05-14)
 
 This section captures the iterative path from "P2A/P2B/P2B.1/P2C all shipped with green validators" to "Phase 2 product-accepted in live use". It is the canonical example for the new phase-acceptance protocol in `replit.md` ("Operating standard — phase acceptance protocol") and `roadmap-q2.md` §5G: validators going green is necessary but not sufficient.

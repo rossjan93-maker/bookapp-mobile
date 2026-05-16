@@ -1,0 +1,138 @@
+We are proceeding with Phase 1 closeout before starting P3.
+
+Goal:
+Close the first-run/auth/onboarding/import acceptance arc in the project docs, and fix the remaining known account/data-lifecycle risk around deleting individual imported user_books.
+
+Do not start P3 implementation yet. P3A begins after this closeout pass.
+
+Context:
+The following workstreams have now passed live or SQL-backed acceptance:
+
+1. Google OAuth standalone-browser warm boot
+- The 10-second “Almost there…” false-freeze is fixed.
+- No auth-token lock warning.
+- No checkOnboardingCompleted timeout.
+- New Google user routes promptly into onboarding.
+
+2. Final setup → quick taste check
+- Opens immediately.
+- Progresses through intake.
+- Taste Readout appears.
+- “See my picks” routes into For You without bounce.
+
+3. Quick taste → For You handoff
+- Fixed the state-honesty bug where a completed intake user saw “Popular starting points · Not personalized yet.”
+- Completed quick-intake users now avoid the Tier-0 setup UI during unresolved profile loading and after Tier-1 profile resolution.
+
+4. Mid-intake refresh/resume
+- Live tested and passed.
+- Refresh/reopen during intake resumes rather than bouncing to onboarding start or app home.
+
+5. Skip → let me browse
+- Routing passes.
+- Product note: destination UX is misaligned. It should likely land directly on the browsable Tier-0 For You surface later, not another setup-choice screen. Defer to cold-start redesign.
+
+6. Goodreads import
+- Upload / preview / import execution works.
+- Post-import cache invalidation now runs.
+- Author-strength sorting works; Sarah J. Maas now surfaces over one-book authors like Alka Joshi.
+- Import persistence/linking is now validated:
+  - 273 import_rows
+  - 273 linked import_rows
+  - 0 unlinked import_rows
+  - 271 distinct user_books because two duplicate Goodreads rows correctly collapse
+  - Royal Assassin → finished
+  - Ship of Destiny → finished
+  - Lightlark → want_to_read
+  - The Two Towers → reading
+  - The Immortal Life of Henrietta Lacks → reading
+- Prior bad recs caused by missing user_books are resolved.
+
+7. Account deletion after Goodreads import
+- Code/migration fix shipped:
+  - delete import_rows before user_books in delete_own_account/admin_reset/reset_own_data_cold
+  - matching Edge Function step added
+- Confirm current migration status and document whether the migration has been applied.
+
+Task type:
+Closeout documentation + one targeted lifecycle/security migration.
+
+Part A — Documentation closeout
+Update the project docs so the current state is accurate.
+
+Please:
+1. Update replit.md / roadmap-q2.md / docs/recently_shipped.md as appropriate.
+2. Mark the above first-run/auth/onboarding/import workstreams as accepted.
+3. Record the Skip → browse UX note as deferred, not blocker.
+4. Record the import follow-up backlog:
+   - “Already in Readstack” should be renamed to “Matched in our catalog” or similar.
+   - Import result copy should distinguish Goodreads rows vs unique books.
+   - Import loader should eventually use real progress/intelligence signals.
+   - Taste Readout evidence composition still needs refinement.
+   - For You “Currently Reading” continuation bucket should be renamed later.
+5. Record current active next workstream:
+   - P3A contribution/provenance + explanation faithfulness
+   - but not started until this closeout/lifecycle pass is complete.
+6. Move historical shipped-detail bullets out of replit.md into docs/recently_shipped.md if needed to reduce replit.md size. Preserve operational guidance; reduce repetition.
+
+Part B — Per-book imported user_book deletion lifecycle fix
+Known remaining lifecycle risk:
+- import_rows.user_book_id references user_books(id)
+- account deletion is now fixed by deleting import_rows before user_books
+- but deleting a single imported user_book may still violate import_rows_user_book_id_fkey
+
+Investigate and implement the smallest correct schema fix.
+
+Expected likely fix:
+- alter import_rows.user_book_id foreign key to ON DELETE SET NULL
+- column is nullable
+- import_rows can remain as audit records even if the linked user_book row is removed
+
+Please verify this is correct before implementing.
+
+Requirements:
+1. Inspect current import_rows_user_book_id_fkey definition.
+2. Confirm import_rows.user_book_id is nullable.
+3. Confirm ON DELETE SET NULL preserves import_rows as an audit trail.
+4. Add a new migration that replaces the FK with ON DELETE SET NULL.
+5. Do not delete global books.
+6. Do not change importer behavior.
+7. Do not change recommender behavior.
+8. Do not start P3.
+9. Do not broaden into account lifecycle redesign.
+
+Validation required:
+1. Typecheck delta against current baseline.
+2. Workflow/app status.
+3. Migration SQL reviewed.
+4. Confirm imported user account deletion still works under the new FK.
+5. Confirm deleting a single imported user_book no longer violates import_rows_user_book_id_fkey and leaves import_rows.user_book_id = null.
+6. Confirm import_rows remain user-scoped and RLS/security posture is not weakened.
+7. Confirm global books catalog rows are untouched.
+
+Part C — P3 readiness notes
+Add a short P3 readiness section confirming the five decisions we are approving for P3A:
+
+D1 — Multi-source retrieval provenance: Approved
+- Needed for truthful contribution attribution.
+
+D2 — Fix fetchOLByAuthor hardcoded reason label: Approved
+- Small provenance correction.
+
+D3 — Keep slate diversity guard in its own file: Approved
+- Better testability and future extension.
+
+D4 — Per-kind display floors in lib/scoring/contributions.ts, not recPolicy.ts: Approved
+- Keeps explainability/contribution semantics separate from broader rec policy.
+
+D5 — Preserve book.reasons[] as derived compatibility output: Approved
+- Avoids breaking downstream consumers while P3 upgrades the underlying reasoning model.
+
+Return format:
+1. Executive verdict
+2. Docs updated
+3. Migration / schema changes
+4. Validation results
+5. Remaining lifecycle risks, if any
+6. P3 readiness state
+7. Recommended exact next task after this

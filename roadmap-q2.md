@@ -101,9 +101,10 @@ It is the mountain in the distance that should influence architectural optionali
 ## Active now
 1. Recommendation Architecture Refinement
 2. ~~Finish P2 retrieval responsiveness workstream~~ ✅ product accepted 2026-05-14
-3. P3 contribution-grounded ranking + explanation faithfulness (next active workstream)
-4. Then retest recommendation responsiveness and explanation quality in-app
-5. Then resume first-session wow work and broader UX roadmap
+3. ~~Phase 1 closeout — auth / onboarding / intake / import / account-data-lifecycle~~ ✅ accepted 2026-05-16 (see §5C-bis); FK migration `20260516000000` pending application
+4. P3A contribution-grounded ranking + explanation faithfulness (next active workstream — D1–D5 approved, gated on FK migration applied; not yet started)
+5. Then retest recommendation responsiveness and explanation quality in-app
+6. Then resume first-session wow work and broader UX roadmap
 
 ## Ordered roadmap after current recommender architecture work
 1. Retest recommendation responsiveness and explanation quality in-app under the new architecture
@@ -352,6 +353,31 @@ Live acceptance: Reading Taste edit (Business + Mystery favorites) → save → 
 
 ---
 
+## 5C-bis. Phase 1 closeout — auth / onboarding / intake / import ✅ accepted 2026-05-16
+
+Captured as a roadmap milestone because P3A is gated on it. Five workstreams reached product acceptance:
+
+1. **Google OAuth standalone-browser warm boot** — 10-second "Almost there…" false-freeze fixed; no token-lock warning; new Google users route into onboarding promptly.
+2. **Final setup → quick taste check** — opens immediately, progresses through intake, Taste Readout appears, "See my picks" routes into For You without bounce.
+3. **Quick taste → For You handoff** — completed-intake users no longer transiently see the Tier-0 "POPULAR STARTING POINTS · Not personalized yet" strip; cold-start strip reserved for genuinely empty libraries.
+4. **Mid-intake refresh / resume** — live tested; refresh during intake resumes rather than bouncing to onboarding start or app home.
+5. **Goodreads import** — 273-row live replay clean (273 staged → 273 linked → 271 distinct user_books; two correct intra-batch duplicate collapses). Underlying executor/stager persistence fix shipped 2026-05-15; full root-cause walkthrough lives in `docs/recently_shipped.md`.
+
+**Skip → "let me browse"** — routing accepted, but the destination lands on a second setup-choice screen rather than the browsable Tier-0 For You surface. Deferred to the cold-start redesign workstream; **not a beta blocker** and explicitly not in scope for P3.
+
+**Account-data-lifecycle fixes:**
+- `20260515000000_account_deletion_fix_import_rows.sql` (procedural) — `DELETE FROM import_rows WHERE user_id = v_uid` BEFORE `user_books` in `delete_own_account` / `admin_reset_account` / `reset_own_data_cold` + matching Edge Function step. Applied.
+- `20260516000000_import_rows_user_book_id_set_null.sql` (schema) — promotes the FK to `ON DELETE SET NULL` so deleting a single imported `user_books` row no longer raises `import_rows_user_book_id_fkey`. Audit row preserved (resolution / matched_book_id / raw_data intact). Procedural pre-step retained as defence-in-depth. Pending application.
+
+### Phase 1 closeout — import follow-up backlog (non-blocking, NOT P3 scope)
+- "Already in Readstack" copy → rename to "Matched in our catalog" (or similar). Current copy reads as if the user already had the book.
+- Import result summary should distinguish Goodreads CSV rows vs. unique catalog books (273 → 271 reads as data loss without the explanation).
+- Import progress loader uses synthetic stages — eventually wire to real per-stage signals (parse / stage / match / fetch / link).
+- Taste Readout evidence composition still needs refinement (over-weights single-book signals on imported users).
+- For You "Currently Reading" continuation bucket label is misleading when the user has 30+ in-flight books — rename later.
+
+---
+
 ## 5D. P3 — Score Contributions + Explanation Faithfulness
 Goal:
 - recommendations should explain the real reason a book won
@@ -369,6 +395,18 @@ This is the phase that moves explanations from:
 
 to:
 > auditable reasoning
+
+### P3A readiness — D1–D5 approved 2026-05-16
+
+P3A may begin once (a) this Phase 1 closeout is captured in docs (done), and (b) migration `20260516000000_import_rows_user_book_id_set_null.sql` has been applied via the Supabase dashboard SQL editor (pending). The migration is a pure FK promotion to `ON DELETE SET NULL` (idempotent DO block); no code change required to land. Five decisions locked:
+
+- **D1 — Multi-source retrieval provenance.** Approved. Candidates carry `_retrieval_reason[]` (array, not single string). Today's single-string entry becomes the first array element; AND-gate behaviour unchanged, additive only. Required for truthful contribution attribution.
+- **D2 — Fix `fetchOLByAuthor` hardcoded reason label.** Approved. Currently emits a literal `'author_anchor:'` for every book regardless of the queried author. Smallest correct fix: thread the resolved author key into the call site, emit `author_anchor:<authorKey>`. No retrieval policy change.
+- **D3 — Slate diversity guard in its own file.** Approved. New `lib/composition/slateDiversity.ts`, pure function `(composed, topN, contributions) → composed`. Keeps the kind-frequency rule (reject 3rd instance of same dominant `kind` in top-N unless no alternative) testable in isolation; lets P5 plug in a richer diversity model without touching `recommender.ts` or `statedReservation.ts`.
+- **D4 — Per-kind display floors live in `lib/scoring/contributions.ts`, NOT `lib/recPolicy.ts`.** Approved. Floors are explanation-faithfulness thresholds (display gating), not branch-quota / score-cap policy. Co-locating with the contribution model keeps explainability semantics together and prevents recPolicy from accreting display logic.
+- **D5 — Preserve `book.reasons[]` as a derived compatibility output.** Approved. `ScoreContribution[]` becomes the authoritative reasoning surface; `book.reasons[]` is computed as a derived projection from top-K positive contributions formatted via the existing variant-pool templates so RecCard / HomeShortlist / cache-restore continue to work unchanged through the transition. RecCard rewires to `contributions[]` first-class in a follow-up phase, not P3A.
+
+P3A scope: typed `ScoreContribution[]` attached during `scoreBookForUser`; `lib/explanations/compose.ts` reading them with per-kind display floors; slate-diversity guard wired into composition; new validator `scripts/validate_explanation_faithfulness.ts`; end-to-end fixture replay (per §5G — explanations cite real positive contributions on canonical fixtures). Do **not** start P3A work outside this scope.
 
 ---
 
