@@ -1,0 +1,184 @@
+Approve the P4 Architecture Mapping.
+
+Proceed with P4A — Signal Partition Contract.
+
+Do not run a separate migration audit first unless you find a concrete migration risk during P4A.
+
+Important framing:
+P4 is a contract-extension program, not a recommender rewrite. P4A should classify and partition signals correctly without changing ranking, scoring, composition, RecCard, or visible behavior.
+
+Current accepted diagnosis:
+- Quick-taste captures richer signals: outcome/escape, pacing, tone, what-grips, avoids, anchor books, liked genres.
+- Some intent-shaped answers are persisted in diagnosis_answers and applied as durable trait priors.
+- Session current_intent exists but mutates scores opaquely and is not emitted as typed ScoreContribution evidence.
+- Therefore the composer correctly refuses to cite those signals today.
+- P4A should create the contract that separates durable taste from current/session intent.
+
+Task type:
+P4A implementation only.
+No product behavior change.
+
+Goal:
+Implement the Signal Partition Contract.
+
+## 1. Add typed signal partition
+
+Add or extend signal typing so every recommendation-relevant signal can be classified as one of:
+
+- stated_durable
+- revealed_behavioral
+- soft_avoid
+- hard_avoid
+- current_intent
+- short_term_feedback
+
+Use existing architecture files where appropriate:
+- lib/recSignals/types.ts
+- lib/recSignals/build.ts
+- lib/recRequest.ts
+- lib/tasteProfile.ts
+
+The goal is a typed contract, not a behavior change.
+
+## 2. Add diagnosisAnswers intent scope
+
+Introduce a backward-compatible discriminator for diagnosis_answers:
+
+- intentScope: 'session' | 'durable'
+
+Rules:
+- Existing diagnosis_answers rows without intentScope should continue to be treated as durable/back-compatible for now.
+- Newly captured quick-taste intent-shaped answers should default to session intent going forward.
+- Do not run a migration that changes existing user behavior.
+- Do not remove existing diagnosis_answers fields.
+- Do not change Taste Readout behavior in this batch.
+
+Intent-shaped answers include at least:
+- q_outcome / reading purpose
+- pacing
+- tone
+- what_grips
+
+Fiction/nonfiction split may remain durable/profile-shaping.
+
+## 3. Split reading_styles at read layer
+
+Do not change UI yet.
+
+At the read/contract layer, classify reading_styles into:
+
+### durable-style signals
+Examples:
+- character-driven
+- plot-driven
+- reflective
+- dense prose / literary, if present as enduring preference
+
+### intent-shaped style signals
+Examples:
+- fast-paced
+- slow-burn
+- dark themes
+- funny / witty
+- light read
+- action-packed
+
+Requirement:
+A style must belong to exactly one partition.
+Do not double-count any style as both durable and current intent.
+
+## 4. Preserve current behavior
+
+This batch must be behavior-neutral.
+
+Requirements:
+- no ranking changes
+- no scoring math changes
+- no recommendation composition changes
+- no explanation/composer changes
+- no RecCard changes
+- no onboarding UI changes
+- no hard-avoid implementation yet
+- no schema migration unless absolutely required; prefer type/read-layer partition first
+
+If any existing code currently applies diagnosis_answers or reading_styles as durable priors, preserve that behavior for existing/back-compat rows unless explicitly flagged as new session-intent input.
+
+## 5. Read-only legacy-shape audit
+
+Include a small read-only audit in the return report:
+- how many existing rows have diagnosis_answers without intentScope, if easy to determine
+- what shapes/keys are present
+- whether any existing rows would change behavior under the new default
+- confirm no migration was applied
+
+This is informational only. Do not alter existing rows.
+
+## 6. Validator
+
+Add:
+
+- scripts/validate_signal_partition.ts
+
+It should assert:
+
+1. every captured quick-taste signal has an explicit signal_class
+2. diagnosis_answers intent-shaped fields can be represented as current_intent for new captures
+3. legacy diagnosis_answers without intentScope remain durable/back-compatible
+4. reading_styles split into durable vs intent partitions
+5. no reading_style is double-counted
+6. avoid_genres remain soft_avoid
+7. favorite_genres remain stated_durable
+8. ratings/statuses/imported history remain revealed_behavioral or durable as appropriate
+9. short-term feedback remains short_term_feedback
+10. no ranking/scoring/composition behavior changes
+11. P3A composer-backed reasons remain unchanged
+12. existing validators still pass
+
+## 7. Regression validation
+
+Run:
+- validate_signal_partition
+- validate_explanation_default_flip
+- validate_explanation_faithfulness
+- validate_explanation_projection
+- validate_explanation_quality_contribution
+- validate_scoring_contributions
+- validate_retrieval_contributions
+- validate_multi_source_provenance
+- validate_stated_reservation
+- validate_rec_validity
+- validate_detect_genre
+- validate_taxonomy
+
+Also report:
+- typecheck delta against current baseline
+- workflow/app status
+
+## Hard constraints
+
+- Do not start P4B.
+- Do not implement book trait expansion yet.
+- Do not emit current_intent ScoreContributions yet.
+- Do not change ranking.
+- Do not change scoring.
+- Do not change composition.
+- Do not touch RecCard.
+- Do not change visible copy.
+- Do not implement hard-avoid storage/UI yet.
+- Do not spot-patch Business → nonfiction collapse.
+- No opportunistic cleanup.
+
+## Return format
+
+1. Executive verdict
+2. What changed
+3. Files touched
+4. Signal partition model
+5. diagnosis_answers intentScope behavior
+6. reading_styles partition
+7. Legacy-shape audit
+8. Validator results
+9. Typecheck/workflow status
+10. Behavior guarantees
+11. Risks / deferred items
+12. Recommended P4B next step

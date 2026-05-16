@@ -140,19 +140,41 @@ export async function buildRecRequest(
   },
 ): Promise<RecRequest> {
   let prefsRow: RawPrefsRow | null = null;
+  // P4A: select diagnosis_answers alongside existing columns. Migration
+  // 20260318000001_reader_preferences_diagnosis adds the jsonb column with a
+  // default '{}'; on stale projects without the migration the select would
+  // raise 42703/PGRST204 and the outer catch falls through to the legacy
+  // shape (schema-tolerant — same pattern as book-detail user_books select).
   try {
-    const { data } = await client
+    const { data, error } = await client
       .from('reader_preferences')
-      .select('favorite_genres, avoid_genres, reading_styles, favorite_authors, updated_at')
+      .select('favorite_genres, avoid_genres, reading_styles, favorite_authors, updated_at, diagnosis_answers')
       .eq('user_id', opts.userId)
       .maybeSingle();
-    if (data) {
+    if (error && (error.code === '42703' || error.code === 'PGRST204')) {
+      const fallback = await client
+        .from('reader_preferences')
+        .select('favorite_genres, avoid_genres, reading_styles, favorite_authors, updated_at')
+        .eq('user_id', opts.userId)
+        .maybeSingle();
+      if (fallback.data) {
+        prefsRow = {
+          favorite_genres:  (fallback.data as any).favorite_genres  ?? [],
+          avoid_genres:     (fallback.data as any).avoid_genres     ?? [],
+          reading_styles:   (fallback.data as any).reading_styles   ?? [],
+          favorite_authors: (fallback.data as any).favorite_authors ?? null,
+          updated_at:       (fallback.data as any).updated_at       ?? null,
+          diagnosis_answers: null,
+        };
+      }
+    } else if (data) {
       prefsRow = {
         favorite_genres:  (data as any).favorite_genres  ?? [],
         avoid_genres:     (data as any).avoid_genres     ?? [],
         reading_styles:   (data as any).reading_styles   ?? [],
         favorite_authors: (data as any).favorite_authors ?? null,
         updated_at:       (data as any).updated_at       ?? null,
+        diagnosis_answers: (data as any).diagnosis_answers ?? null,
       };
     }
   } catch {

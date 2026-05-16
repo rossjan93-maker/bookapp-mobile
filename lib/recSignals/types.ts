@@ -40,7 +40,27 @@ export type SignalClass =
 export type StatedTasteSignal = {
   signalClass:     'stated_durable';
   favoriteGenres:  readonly AffinityKey[];
+  /**
+   * Full reading_styles list as stored — preserved unchanged for back-compat
+   * with applyStyleBoosts in lib/tasteProfile.ts which still consumes the
+   * union. P4A introduces the partition fields below alongside it; no
+   * existing consumer is rewired.
+   */
   readingStyles:   readonly string[];
+  /**
+   * P4A partition (additive). `readingStylesDurable` are enduring craft
+   * preferences (character-driven, plot-driven, reflective, dense prose);
+   * `readingStylesIntent` are mood/pace/tone chips that a reader may toggle
+   * session-to-session. A style appears in EXACTLY ONE of these arrays
+   * (validator-enforced). `readingStylesUnknown` captures any stored chip
+   * not yet classified, for telemetry — never silently merged.
+   *
+   * Behavior contract for P4A: emitted but NOT yet consumed by the scorer.
+   * Forward-compat surface for P4B/P4C.
+   */
+  readingStylesDurable: readonly string[];
+  readingStylesIntent:  readonly string[];
+  readingStylesUnknown: readonly string[];
   favoriteAuthors: readonly string[];
   /** Source row updated_at; null if unknown. P1 does not use it for decay. */
   updatedAt:       number | null;
@@ -80,6 +100,28 @@ export type CurrentIntentSignal = {
   payload:     unknown | null;
 };
 
+// ── Diagnosis-answer signal (P4A) ────────────────────────────────────────────
+//
+// Quick-taste answers carried explicitly so downstream code can route the
+// intent-shaped subset (q_outcome / pacing / tone / what_grips) separately
+// from durable answers (fic_nonfic_split, etc.). P4A introduces the typed
+// surface ONLY — existing applyDiagnosisBoosts in lib/tasteProfile.ts still
+// consumes the raw map unchanged. `intentScope` defaults to 'durable' with
+// legacy=true for any row written before this contract landed.
+
+export type DiagnosisAnswersSignal = {
+  signalClass:   'current_intent';
+  intentScope:   'session' | 'durable';
+  /** true iff source row lacked an explicit intentScope key (back-compat). */
+  legacy:        boolean;
+  /** Subset whose keys are intent-shaped (DIAGNOSIS_INTENT_KEYS). */
+  intentShaped:  Readonly<Record<string, string>>;
+  /** Subset whose keys are durable-shaped (everything else). */
+  durableShaped: Readonly<Record<string, string>>;
+  /** Full raw answers map — preserved for back-compat consumers. */
+  raw:           Readonly<Record<string, string>>;
+};
+
 export type ShortTermFeedbackSignal = {
   signalClass: 'short_term_feedback';
   /** Opaque payload — P1 carries the pre-existing FeedbackContext shape unmodified. */
@@ -96,5 +138,7 @@ export type Signals = {
   revealedTaste:      RevealedTasteSignal;
   softAvoids:         SoftAvoidSignal;
   currentIntent?:     CurrentIntentSignal;
+  /** P4A: typed quick-taste diagnosis answers with intentScope discriminator. */
+  diagnosisAnswers?:  DiagnosisAnswersSignal;
   shortTermFeedback?: ShortTermFeedbackSignal;
 };

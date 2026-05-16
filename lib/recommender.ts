@@ -1276,7 +1276,7 @@ async function getOLCandidates(
   const effectiveReq: RecRequest = req ?? {
     userId:  '',
     signals: {
-      statedTaste:   { signalClass: 'stated_durable', favoriteGenres: [], readingStyles: [], favoriteAuthors: [], updatedAt: null },
+      statedTaste:   { signalClass: 'stated_durable', favoriteGenres: [], readingStyles: [], readingStylesDurable: [], readingStylesIntent: [], readingStylesUnknown: [], favoriteAuthors: [], updatedAt: null },
       revealedTaste: { signalClass: 'revealed_behavioral', profile },
       softAvoids:    { signalClass: 'soft_avoid', genres: [], updatedAt: null },
     },

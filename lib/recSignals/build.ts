@@ -15,8 +15,10 @@ import type {
   RevealedTasteSignal,
   SoftAvoidSignal,
   CurrentIntentSignal,
+  DiagnosisAnswersSignal,
   ShortTermFeedbackSignal,
 } from './types';
+import { partitionReadingStyles, classifyDiagnosisAnswers } from './partitions';
 
 export type RawPrefsRow = {
   favorite_genres:  string[] | null;
@@ -24,6 +26,12 @@ export type RawPrefsRow = {
   reading_styles:   string[] | null;
   favorite_authors: string | null;
   updated_at:       string | null;
+  /**
+   * P4A: jsonb column from reader_preferences. Shape is an open record of
+   * answer-key → answer-value strings, plus an optional `intentScope`
+   * discriminator. Null when the column is absent or empty.
+   */
+  diagnosis_answers?: Record<string, unknown> | null;
 };
 
 function resolveGenresToAffinityKeys(labels: readonly string[]): AffinityKey[] {
@@ -63,12 +71,17 @@ export function buildSignals(opts: {
     favorite_genres: [], avoid_genres: [], reading_styles: [], favorite_authors: null, updated_at: null,
   };
 
+  const rawStyles = (prefs.reading_styles ?? []).slice();
+  const stylePartition = partitionReadingStyles(rawStyles);
   const stated: StatedTasteSignal = {
-    signalClass:     'stated_durable',
-    favoriteGenres:  resolveGenresToAffinityKeys(prefs.favorite_genres ?? []),
-    readingStyles:   (prefs.reading_styles ?? []).slice(),
-    favoriteAuthors: parseAuthors(prefs.favorite_authors),
-    updatedAt:       parseIsoToMs(prefs.updated_at),
+    signalClass:          'stated_durable',
+    favoriteGenres:       resolveGenresToAffinityKeys(prefs.favorite_genres ?? []),
+    readingStyles:        rawStyles,
+    readingStylesDurable: stylePartition.durable,
+    readingStylesIntent:  stylePartition.intent,
+    readingStylesUnknown: stylePartition.unknown,
+    favoriteAuthors:      parseAuthors(prefs.favorite_authors),
+    updatedAt:            parseIsoToMs(prefs.updated_at),
   };
 
   const revealed: RevealedTasteSignal = {
@@ -92,5 +105,22 @@ export function buildSignals(opts: {
       ? { signalClass: 'short_term_feedback', payload: opts.feedback }
       : undefined;
 
-  return { statedTaste: stated, revealedTaste: revealed, softAvoids, currentIntent, shortTermFeedback };
+  // P4A: typed diagnosis-answer surface. Always emitted when the prefs row
+  // is present (even if empty), so downstream consumers can rely on shape
+  // rather than null-checking. Behavior-neutral: applyDiagnosisBoosts in
+  // lib/tasteProfile.ts continues to read the raw jsonb directly.
+  let diagnosisAnswers: DiagnosisAnswersSignal | undefined;
+  if (opts.prefsRow != null) {
+    const cls = classifyDiagnosisAnswers(prefs.diagnosis_answers ?? null);
+    diagnosisAnswers = {
+      signalClass:   'current_intent',
+      intentScope:   cls.intentScope,
+      legacy:        cls.legacy,
+      intentShaped:  cls.intentShaped,
+      durableShaped: cls.durableShaped,
+      raw:           cls.raw,
+    };
+  }
+
+  return { statedTaste: stated, revealedTaste: revealed, softAvoids, currentIntent, diagnosisAnswers, shortTermFeedback };
 }
