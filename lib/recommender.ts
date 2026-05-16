@@ -81,7 +81,8 @@ import type { RecRequest } from './recRequest';
 import { planBranches } from './retrieval/branchPlanner';
 import { mergeRetrievalReasons, mapRetrievalContributions, deriveScoringContributions } from './scoring/contributions';
 import type { RetrievalContribution, ScoringContribution } from './scoring/contributions';
-import { projectComposerReasons } from './explanations/projection';
+import { projectComposerReasons, COMPOSER_REASONS_PROJECTION_ENABLED } from './explanations/projection';
+import { classifyContributionExplanationQuality } from './explanations/contributionQuality';
 import { applyLocalSoftAvoidFilter } from './retrieval/softAvoidLocal';
 import { SOFT_AVOID_RETRIEVAL_MULTIPLIER } from './recPolicy';
 import type { AffinityKey } from './taxonomy/genres';
@@ -2229,6 +2230,24 @@ export function getRankedRecs(
       },
       book.reasons,
     ) as string[];
+
+    // P3A-6-B: contribution-based explanation_quality recompute.
+    // Runs ONLY when the composer-backed reasons projection is active.
+    // The legacy `classifyExplanationQuality(...)` above (L2189-2194) is
+    // phrasing-keyed and would degrade composer-projected reasons to
+    // 'weak', shifting the composition sort at L2810-2815. When the flag
+    // is true we patch `_score_breakdown.explanation_quality` in place
+    // with a phrasing-independent verdict derived from
+    // `_scoring_contributions`. Under the production default
+    // (COMPOSER_REASONS_PROJECTION_ENABLED === false) this branch is
+    // structurally skipped — the legacy classifier remains the sole
+    // authority and visible behaviour is byte-identical.
+    if (COMPOSER_REASONS_PROJECTION_ENABLED) {
+      const contribQuality = classifyContributionExplanationQuality(
+        book._scoring_contributions ?? [],
+      );
+      book._score_breakdown.explanation_quality = contribQuality;
+    }
   }
 
   if (__DEV__) {

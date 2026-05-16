@@ -1,0 +1,161 @@
+P3A-6-A is accepted as a readiness pass.
+
+Do not flip COMPOSER_REASONS_PROJECTION_ENABLED to true yet.
+Do not bump recValidity / cache version yet.
+Do not delete the legacy reasons builder yet.
+Do not touch RecCard.
+Do not start P3B.
+
+We are proceeding to P3A-6-B.
+
+Context:
+P3A-6-A proved the composer-backed projection path behaves correctly under simulated flag-on and all validators passed. However, production default-on remains blocked because `_score_breakdown.explanation_quality` is still computed by the legacy phrasing-keyed classifier. Since `explanation_quality` is used as a composition sort key, flipping the composer on without fixing this seam would create a ranking shift.
+
+Task type:
+P3A-6-B internal classifier seam fix only.
+
+Goal:
+Add a contribution-based explanation-quality classifier and wire it behind the existing composer projection flag so that, when composer-backed reasons are enabled, `_score_breakdown.explanation_quality` is computed from `_scoring_contributions` rather than legacy reason phrasing.
+
+This batch should not flip the composer default on.
+
+## 1. Add contribution-based explanation quality classifier
+
+Create:
+
+- `lib/explanations/contributionQuality.ts`
+
+or the equivalent file if the existing docs specify a path.
+
+Export:
+
+- `classifyContributionExplanationQuality(scoringContributions)`
+
+It should classify quality using contribution evidence, not reason-string prefixes.
+
+Suggested mapping from P3A-6-A:
+
+- `stated_taste_fit` above floor + matchedKey present → `strong`
+- `stated_taste_fit` above floor but generic → `acceptable_specific`
+- `behavioral_fit` above floor with `genre_affinity` source → `acceptable_specific`
+- `behavioral_fit` above floor but aggregate → `acceptable_generic`
+- `feedback_fit` above floor → `acceptable_specific`
+- `quality_reliability` only → `acceptable_generic`
+- no above-floor supported contribution → `weak`
+
+Please verify or refine this mapping based on the existing contribution kinds and display floors.
+
+## 2. Wire conditionally after projection override
+
+In `lib/recommender.ts`, after the composer-backed `book.reasons[]` projection override seam, patch:
+
+- `book._score_breakdown.explanation_quality`
+
+only when:
+
+- `COMPOSER_REASONS_PROJECTION_ENABLED === true`
+
+When the flag is OFF:
+- legacy `classifyExplanationQuality(...)` behavior must remain exactly unchanged.
+
+When the flag is ON:
+- `explanation_quality` should reflect contribution evidence, not the legacy reason-string classifier.
+
+Do not change ranking, scoring math, composition rules, or RecCard.
+
+## 3. Preserve current default behavior
+
+Default production state remains:
+
+- `COMPOSER_REASONS_PROJECTION_ENABLED = false`
+
+Therefore:
+- visible behavior remains unchanged
+- legacy reasons remain default
+- legacy explanation-quality classifier remains active
+- cache version remains unchanged
+
+## 4. Validator
+
+Add:
+
+- `scripts/validate_explanation_quality_contribution.ts`
+
+It should assert:
+
+1. flag-OFF behavior is unchanged.
+2. the legacy classifier remains active when flag is OFF.
+3. contribution-based classifier is used only when composer projection is ON.
+4. contribution-quality tiers match the intended mapping.
+5. quality-only candidates do not receive personal-taste quality classification.
+6. retrieval-only candidates classify as weak or no supported explanation quality.
+7. stated-taste with matchedKey can classify strong.
+8. stated-taste without matchedKey does not overclassify as strong.
+9. negative-only candidates do not classify as positive quality.
+10. composition sort order is byte-identical pre/post flag-on on a canonical 10-book fixture.
+
+The 10-book fixture is critical:
+- simulate legacy/default path
+- simulate composer projection ON plus contribution-quality classifier
+- assert no ranking/order shift.
+
+## 5. Regression suite
+
+Run and report:
+
+- `validate_explanation_quality_contribution`
+- `smoke_explanation_projection`
+- `validate_explanation_projection`
+- `validate_explanation_faithfulness`
+- `validate_scoring_contributions`
+- `validate_retrieval_contributions`
+- `validate_multi_source_provenance`
+- `validate_stated_reservation`
+
+## 6. Cache/versioning decision
+
+Do not bump cache version in this batch.
+
+But confirm again:
+- default-on flip in P3A-6-C should co-commit `recValidity` bump from `rcv1` to `rcv2`
+- because persisted payloads include `book.reasons[]`
+- and otherwise legacy reason payloads may survive after the composer becomes default
+
+## Hard constraints
+
+- Do not flip COMPOSER_REASONS_PROJECTION_ENABLED to true.
+- Do not bump cache version.
+- Do not delete legacy reasons builder.
+- Do not touch RecCard.
+- Do not change visible copy.
+- Do not alter scoring math.
+- Do not alter ranking rules.
+- Do not alter composition rules except preventing the flag-on explanation_quality mismatch from causing a ranking shift.
+- Do not migrate reservation AND-gate.
+- Do not start P3B.
+- No opportunistic cleanup.
+
+## Validation required
+
+1. Exact files touched.
+2. New validator output.
+3. Full regression validator output.
+4. Typecheck delta against current baseline.
+5. Workflow/app status.
+6. Confirmation flag-OFF production behavior is unchanged.
+7. Confirmation flag-ON contribution-quality path avoids ranking shift.
+8. Cache-version recommendation for P3A-6-C.
+9. Go/no-go recommendation for default-on flip after this batch.
+
+Return format:
+1. Executive verdict
+2. What changed
+3. Files touched
+4. Validator results
+5. Typecheck/workflow status
+6. Behavior guarantees
+7. Explanation-quality mapping
+8. No-ranking-shift proof
+9. Cache/versioning plan
+10. Go/no-go for P3A-6-C default-on flip
+11. Recommended next task
