@@ -1,0 +1,69 @@
+Before continuing P4C.1 calibration, we need to clarify product semantics for Reading Taste vs Your Next Read.
+
+Current product distinction:
+- Reading Taste in Profile = durable reader identity / baseline preferences.
+- Your Next Read filter in For You = temporary session lens over the baseline.
+
+Example:
+A user may generally like dark thrillers, but today select:
+- Slow burn
+- Light
+- Low intensity
+- Light & fun
+- No dark
+- No literary
+
+That should not rewrite their durable taste. It should temporarily reshape the current deck.
+
+Task type:
+Architecture/semantics audit only. Do not implement yet.
+
+Goal:
+Audit how the current “Your Next Read” filter is represented and whether its semantics match the UI language.
+
+Questions to answer:
+
+1. Where is the For You “Your Next Read” filter state stored?
+2. Is it session-only or persisted?
+3. Does it currently write into Reading Taste / reader_preferences?
+4. Which selected values are treated as positive preferences?
+5. Which selected values are treated as temporary avoids?
+6. Does “No dark” currently behave like:
+   - a hard temporary exclusion,
+   - a strong negative not-right-now risk,
+   - a soft nudge,
+   - or just a label?
+7. Does “No literary” behave similarly?
+8. Does “Low intensity” suppress high-intensity/dark/dense books?
+9. Are current-intent filters allowed to overpower durable taste?
+10. Should the UI language be changed if the behavior is only a nudge?
+
+Use this product model:
+- Profile Reading Taste = durable baseline.
+- Your Next Read = temporary lens.
+- Temporary lens should not silently modify durable taste.
+- “No X” labels imply stronger session suppression than “Less X.”
+- The user should be able to clear the lens and return to baseline recommendations.
+
+Please recommend the smallest next implementation step:
+A. keep current behavior but rename labels to softer language,
+B. strengthen not_right_now_risk / avoidance_conflict for “No X” filters,
+C. introduce an explicit currentIntentLens contract,
+D. or defer until P4D/P4E.
+
+Hard constraints:
+- No code changes yet.
+- Do not change durable Reading Taste behavior.
+- Do not alter RecCard.
+- Do not start hard-avoid storage.
+- Do not change explanations yet.
+- Do not start P4D until this lens semantics are clear.
+
+Return:
+1. Executive verdict
+2. Current implementation of Your Next Read filter
+3. Durable vs session persistence audit
+4. Current behavior of “No dark” / “No literary” / low intensity
+5. Recommended semantics
+6. Minimal implementation plan
+7. Risks / deferred items
