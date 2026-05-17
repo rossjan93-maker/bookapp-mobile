@@ -268,6 +268,95 @@ header('§7 composer suppresses every P4C kind (no visible RecCard copy change)'
   ok('compose.ts still routes every P4C kind through the not_yet_emitted suppression sentinel');
 }
 
+// ── 8. Dark-signal coverage on canonical fixtures (P4C.1 live-smoke blocker) ─
+//      Asserts the user-facing promise: explicit "No dark" hard-removes
+//      Gone Girl / The Silent Patient (canonical psychological thrillers)
+//      while leaving Thursday Murder Club (cozy) and Everything I Never
+//      Told You (literary) eligible. And "Less dark" alone (intensity='low'
+//      typed signal, no avoid_dark) must NOT hard-remove any of them.
+header('§8 dark-signal coverage on canonical fixtures');
+{
+  const { getIntentExclusionReason } = require('../lib/nextReadIntent') as
+    typeof import('../lib/nextReadIntent');
+
+  // Canonical OL-style subject sets — representative of what each book
+  // actually returns from Open Library / Google Books today. These are
+  // used as test fixtures only; they are not a manual blocklist.
+  const fixtures = [
+    {
+      name: 'Gone Girl',
+      // OL typical: psychological thriller, missing persons, marriage,
+      // suspense, fiction.
+      subjects: ['Psychological thriller', 'Missing persons', 'Marriage',
+                 'Suspense', 'Fiction', 'Domestic suspense'],
+      title:   'Gone Girl',
+      shouldExcludeOnNoDark:    true,
+      shouldExcludeOnLessDark:  false,
+    },
+    {
+      name: 'The Silent Patient',
+      // OL typical: psychological thriller, psychotherapy, murder,
+      // mental illness, suspense.
+      subjects: ['Psychological thriller', 'Psychotherapy', 'Suspense',
+                 'Mental illness', 'Fiction', 'Murder'],
+      title:   'The Silent Patient',
+      shouldExcludeOnNoDark:    true,
+      shouldExcludeOnLessDark:  false,
+    },
+    {
+      name: 'The Thursday Murder Club',
+      // OL typical: cozy mystery, retirement, friendship, humor, mystery.
+      // Has 'murder' / 'crime' but no dark phrasal marker.
+      subjects: ['Cozy mystery', 'Detective and mystery stories', 'Murder',
+                 'Older people', 'Fiction', 'Humorous fiction'],
+      title:   'The Thursday Murder Club',
+      shouldExcludeOnNoDark:    false,
+      shouldExcludeOnLessDark:  false,
+    },
+    {
+      name: 'Everything I Never Told You',
+      // OL typical: literary fiction, family, grief, secrets, Chinese-American.
+      subjects: ['Family secrets', 'Chinese Americans', 'Mothers and daughters',
+                 'Fiction', 'Domestic fiction', 'Literary fiction'],
+      title:   'Everything I Never Told You',
+      shouldExcludeOnNoDark:    false,
+      shouldExcludeOnLessDark:  false,
+    },
+  ];
+
+  const noDarkIntent:    NextReadIntent = { hard: {}, soft: { tone: 'light' }, exclude: { avoid_dark: true } };
+  const lessDarkIntent:  NextReadIntent = { hard: {}, soft: { intensity: 'low' }, exclude: {} };
+
+  for (const f of fixtures) {
+    // marketPos is only consulted for avoid_classics / avoid_literary /
+    // avoid_romance / avoid_nonfiction. None of those are active in either
+    // fixture intent — 'book_club_fiction' is a neutral placeholder that
+    // cannot trigger any of those exclusion paths.
+    const neutralMarketPos = 'book_club_fiction' as const;
+    const noDarkReason   = getIntentExclusionReason(
+      { subjects: f.subjects, title: f.title },
+      noDarkIntent,
+      neutralMarketPos,
+    );
+    const lessDarkReason = getIntentExclusionReason(
+      { subjects: f.subjects, title: f.title },
+      lessDarkIntent,
+      neutralMarketPos,
+    );
+
+    const noDarkExcluded   = noDarkReason   === 'avoid_dark';
+    const lessDarkExcluded = lessDarkReason === 'avoid_dark';
+
+    if (noDarkExcluded !== f.shouldExcludeOnNoDark) {
+      fail(`"${f.name}" under explicit No-dark: expected excluded=${f.shouldExcludeOnNoDark}, got excluded=${noDarkExcluded} (reason=${noDarkReason})`);
+    }
+    if (lessDarkExcluded !== f.shouldExcludeOnLessDark) {
+      fail(`"${f.name}" under Less-dark only: expected excluded=${f.shouldExcludeOnLessDark}, got excluded=${lessDarkExcluded} (Less dark must NEVER hard-exclude)`);
+    }
+    ok(`"${f.name}": No-dark excludes=${noDarkExcluded} (want ${f.shouldExcludeOnNoDark}); Less-dark excludes=${lessDarkExcluded} (want ${f.shouldExcludeOnLessDark})`);
+  }
+}
+
 // ── Lens classifier sanity (tier assignment matches new behavior) ──────────
 header('§lens classifier — chip tier assignment');
 {

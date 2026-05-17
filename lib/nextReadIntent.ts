@@ -115,10 +115,42 @@ const SERIES_SIGNALS = [
   'part 1', 'part one', 'saga', 'volume 1', 'vol. 1', 'book two', 'book three',
 ];
 
+// Dark exclusion signals — corpus = book.subjects + book.title (lowercased).
+// These are the markers that fire `exclude.avoid_dark = true` and HARD-remove
+// the book from the deck. The bar is intentionally specific: every term here
+// must reliably mark a book as dark/intense WITHOUT also catching cozy
+// mysteries (Thursday Murder Club has 'murder' / 'crime fiction'), literary
+// family fiction (Everything I Never Told You has 'grief' / 'family secrets'),
+// or general thrillers (Reacher books carry 'thriller' / 'violence').
+//
+// Coverage gap fix (P4C.1 live-smoke blocker, 2026-05-17):
+// The original list contained only mood descriptors ('gritty', 'bleak',
+// 'disturbing') and missed the canonical genre markers ('psychological
+// thriller', 'noir', 'serial killer') that OL/GBooks actually stamp on
+// Gone Girl / The Silent Patient. The trait classifier's TONE_DARK_SPECIFIC
+// already had them — this list now aligns with that *phrasal* (specific)
+// set, deliberately omitting the broad single-token terms ('thriller',
+// 'murder', 'horror', 'death') that would over-exclude cozies and
+// literary work.
+//
+// Bare 'trauma' / 'abuse' / 'assault' are kept (already shipped behavior)
+// even though they could touch some memoir/literary fiction — they are
+// narrow enough relative to the user's promise ("no dark") that demoting
+// them on an active No-dark lens is more user-aligned than over-including.
 const DARK_SIGNALS = [
+  // Mood / content descriptors (legacy — kept).
   'dark themes', 'dark fiction', 'disturbing content', 'graphic violence',
   'trauma', 'abuse', 'assault', 'gritty', 'bleak', 'depressing',
   'disturbing', 'sinister', 'unsettling', 'nihilistic', 'horror fiction',
+  // P4C.1 follow-up — canonical genre markers (mirrors TONE_DARK_SPECIFIC
+  // in lib/bookTraits.ts so the hard exclusion has the same dark-coverage
+  // as the trait classifier). Phrasal only — single tokens stay out so
+  // cozies / general thrillers are not over-excluded.
+  'dark fantasy', 'noir', 'grimdark',
+  'psychological thriller', 'psychological suspense',
+  'psychological horror',  'gothic horror',
+  'domestic thriller',     'domestic suspense',
+  'serial killer',         'true crime',
 ];
 
 const PACE_FAST_SIGNALS = [
