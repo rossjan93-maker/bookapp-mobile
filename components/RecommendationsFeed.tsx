@@ -1467,11 +1467,16 @@ export function RecommendationsFeed({
                     style={{ marginBottom: 16 }}
                   >
                     {([
-                      ['light_fun',         'Light & fun'],
+                      // P4C.1 follow-up — labels renamed to match real behavior:
+                      //   'light_fun'       → hard excludes dark + literary
+                      //   'palate_cleanser' → hard excludes dark + caps length 400p
+                      // Subtitles surface the secondary effect inline; the
+                      // primary "no dark" effect is reflected in the label.
+                      ['light_fun',         'Light & accessible'],
                       ['immersive',         'Immersive'],
                       ['deep_demanding',    'Deep & demanding'],
                       ['emotionally_heavy', 'Emotionally heavy'],
-                      ['palate_cleanser',   'Palate cleanser'],
+                      ['palate_cleanser',   'Short & light'],
                     ] as [ReadingEnergyMode, string][]).map(([mode, label]) => {
                       const active = moodChip === mode;
                       return (
@@ -1563,7 +1568,13 @@ export function RecommendationsFeed({
                     Emotional intensity
                   </Text>
                   <View style={{ flexDirection: 'row', gap: 6, marginBottom: 16 }}>
-                    {([['high', 'High intensity'], ['low', 'Low-key']] as ['high' | 'low', string][]).map(([iv, label]) => {
+                    {/*
+                      P4C.1 follow-up — 'low' currently maps to a hard
+                      exclude.avoid_dark exclusion (unless tone='dark'),
+                      so the user-facing label says what it actually does.
+                      'high' remains a pure soft boost.
+                    */}
+                    {([['high', 'High intensity'], ['low', 'Less dark']] as ['high' | 'low', string][]).map(([iv, label]) => {
                       const active = intensityChip === iv;
                       return (
                         <TouchableOpacity

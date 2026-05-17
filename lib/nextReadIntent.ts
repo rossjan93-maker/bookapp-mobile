@@ -305,15 +305,17 @@ export function intentSummaryLabel(intent: NextReadIntent): string {
 
   if (s.pace)      parts.push(s.pace === 'fast' ? 'Fast-paced' : s.pace === 'slow' ? 'Slow burn' : '');
   if (s.tone)      parts.push(s.tone === 'light' ? 'Light' : s.tone === 'dark' ? 'Dark' : '');
-  if (s.intensity) parts.push(s.intensity === 'high' ? 'Emotionally intense' : s.intensity === 'low' ? 'Low intensity' : '');
+  // P4C.1 follow-up — 'low' intensity maps to hard exclude.avoid_dark,
+  // so the active-lens summary pill says "Less dark" to match the chip label.
+  if (s.intensity) parts.push(s.intensity === 'high' ? 'Emotionally intense' : s.intensity === 'low' ? 'Less dark' : '');
 
   if (s.readingEnergy) {
     const ENERGY_LABELS: Record<ReadingEnergyMode, string> = {
-      light_fun:         'Light & fun',
+      light_fun:         'Light & accessible',
       immersive:         'Immersive',
       deep_demanding:    'Deep & demanding',
       emotionally_heavy: 'Emotionally heavy',
-      palate_cleanser:   'Palate cleanser',
+      palate_cleanser:   'Short & light',
     };
     parts.push(ENERGY_LABELS[s.readingEnergy]);
   }

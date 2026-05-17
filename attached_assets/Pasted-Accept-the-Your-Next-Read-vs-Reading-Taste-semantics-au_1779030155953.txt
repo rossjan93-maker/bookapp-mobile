@@ -1,0 +1,100 @@
+Accept the “Your Next Read vs Reading Taste” semantics audit.
+
+We are not proceeding to P4D yet.
+
+The audit changed the interpretation of the last filter smoke:
+- The “Your Next Read” filter is correctly session-only and does not mutate durable Reading Taste.
+- But the filter currently bypasses P4C typed contribution plumbing.
+- It uses legacy hard/exclude rules through `handleApplyIntent` / `getIntentExclusionReason`.
+- Therefore the recent filter smoke validates the temporary lens behavior, not P4C.1 contribution behavior.
+
+Task type:
+Targeted Your Next Read lens semantics fix.
+No composer changes. No RecCard changes. No durable storage changes.
+
+Goal:
+Make the temporary lens honest and prepare it to flow into the P4C contribution model later.
+
+## Part A — label honesty
+
+Update the user-facing “Your Next Read” filter labels/subtitles so they match actual behavior.
+
+Audit findings:
+- “No dark” / “No literary” / “No romance” are true hard exclusions. These labels are honest.
+- “Low intensity” currently maps to `exclude.avoid_dark`, which is effectively “no dark content,” not just a low-intensity nudge.
+- “Light & fun” currently maps to `avoid_dark + avoid_literary`.
+- “Palate cleanser” currently maps to `avoid_dark + max_page_count=400`.
+
+Please make labels/subtitles honest.
+
+Possible direction:
+- “Low intensity” → “Less dark” or split into “Low intensity” as a soft lens and “No dark” as a hard lens.
+- “Palate cleanser” → “Short & light”
+- “Light & fun” → “Light & accessible”
+
+Do not change behavior in this Part A unless the label would otherwise become misleading.
+
+## Part B — architecture prep, no full implementation unless very small
+
+Add or sketch a `currentIntentLens` view-model that explicitly separates:
+- hard session exclusions: No dark, No romance, No literary, max length, fiction/nonfiction-only, standalone-only
+- soft session preferences: lighter, slower/faster, lower intensity, more playful, more challenging, etc.
+- temporary avoids / not-right-now risks
+
+If implementing the view-model is small and behavior-neutral, do it.
+If not, document the exact implementation seam for the next batch.
+
+Important:
+The lens should remain session-only.
+It must not write into durable Reading Taste.
+It must not mutate `reader_preferences`.
+
+## Part C — conflict awareness
+
+If easy, add non-invasive instrumentation or a placeholder hook to detect when the session lens hides books matching stated durable favorites.
+
+Example:
+- user’s Reading Taste includes Romance
+- lens says No romance
+- app should eventually be able to say: “Hiding romance picks while this lens is active.”
+
+Do not build the UI yet unless trivial.
+Document the seam.
+
+## Hard constraints
+
+- Do not change RecCard.
+- Do not change composer/explanation copy.
+- Do not start P4D.
+- Do not implement durable hard-avoid storage.
+- Do not persist the lens.
+- Do not change Reading Taste behavior.
+- Do not change ranking except where unavoidable due to label-behavior consistency; prefer no behavior change in this batch.
+- No opportunistic cleanup.
+
+## Validation
+
+1. Confirm Your Next Read lens remains session-only.
+2. Confirm no writes to `reader_preferences`.
+3. Confirm existing hard “No X” exclusions still behave as hard exclusions.
+4. Confirm renamed labels accurately describe behavior.
+5. Confirm clear lens returns to baseline.
+6. Confirm no RecCard / composer / ranking math changes.
+7. Run relevant validators:
+   - validate_intent_contribution
+   - validate_tone_pace_fit
+   - validate_p4c_limited_ranking
+   - validate_rec_validity
+   - validate_taxonomy
+   - plus any lens-specific validator if added
+8. Typecheck delta and workflow status.
+
+Return format:
+1. Executive verdict
+2. Current lens semantics after fix
+3. Labels/subtitles changed
+4. Whether a currentIntentLens view-model was added or deferred
+5. Persistence guarantees
+6. Validation results
+7. Remaining risks
+8. Recommended next step
