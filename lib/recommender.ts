@@ -3806,8 +3806,51 @@ export async function getPersonalizedRecsWithExpert(
 
     if (!rebuildDecision.should_rebuild) {
       // Return cached expert result — forward continuation bucket from deterministic pass
-      const cachedRecs = cacheCheck.entry.rec_set;
-      const cachedCont = baseResult.continuations ?? [];
+      const rawCachedRecs = cacheCheck.entry.rec_set;
+      const cachedCont    = baseResult.continuations ?? [];
+
+      // ── Session-only intent filter on cached recs ─────────────────────────
+      // P4C.1 follow-up (2026-05-17 live-smoke blocker — Gone Girl / Silent
+      // Patient still visible under "No dark"):
+      //
+      // The Supabase-side `rec_cache` is intent-blind: `shouldRebuild` only
+      // triggers on { forceRefresh | import_completed | new_reading_signal |
+      // feedback_changed }. Applying / clearing a Your-Next-Read lens is
+      // none of those, so a cache HIT used to return the previously-built
+      // `rec_set` untouched — bypassing the intent filter that lives in
+      // `getRankedRecs` at the discoveryPool loop.
+      //
+      // This caused the live-smoke failure: even though DARK_SIGNALS now
+      // covers 'psychological thriller' / 'domestic suspense' / etc., the
+      // exclusion path was never reached for these users because the cache
+      // returned a pre-lens deck unfiltered.
+      //
+      // Architectural decision: the lens is session-only by spec (never
+      // persisted, never part of configHash, never a cache-key input). The
+      // correct fix is therefore to KEEP cache reuse (cost benefit
+      // preserved) but apply the active intent's exclusion + hard-filter
+      // gates to the cached recs before returning. Soft boosts and reorder
+      // are deliberately NOT re-run here — only the *eligibility* gates,
+      // which is what the user's "No dark" promise binds.
+      //
+      // When no intent is active, this is a no-op (filter passes every
+      // book) and the function behaves exactly as before.
+      let cachedRecs = rawCachedRecs;
+      let cacheIntentRejected = 0;
+      if (intent && isIntentActive(intent)) {
+        cachedRecs = rawCachedRecs.filter((book) => {
+          const bookLane  = detectBookLane(book);
+          const marketPos = (book._score_breakdown?.market_position as MarketPosition) ?? 'general_fiction';
+          if (getIntentExclusionReason(book, intent, marketPos)) return false;
+          if (!passesIntentHardFilters(book, intent, bookLane, marketPos)) return false;
+          return true;
+        });
+        cacheIntentRejected = rawCachedRecs.length - cachedRecs.length;
+        if (__DEV__ && cacheIntentRejected > 0) {
+          console.log(`[INTENT_CACHE_FILTER] removed ${cacheIntentRejected} of ${rawCachedRecs.length} cached recs under active lens`);
+        }
+      }
+
       return {
         recs:          [...cachedCont, ...cachedRecs],
         continuations: cachedCont,

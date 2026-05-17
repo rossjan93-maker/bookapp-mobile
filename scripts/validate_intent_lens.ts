@@ -357,6 +357,76 @@ header('§8 dark-signal coverage on canonical fixtures');
   }
 }
 
+// ── 9. Cache-path intent filter (lens MUST gate even cached recs) ─────────
+//      2026-05-17 live-smoke root cause: `lib/recCache.ts shouldRebuild`
+//      does NOT trigger on lens apply, so a cache HIT inside
+//      `getPersonalizedRecsWithExpert` used to return `rec_set` untouched
+//      and skip the intent filter that lives in the discoveryPool loop.
+//      The fix is a post-cache filter at the cache-hit return path that
+//      reuses `getIntentExclusionReason` + `passesIntentHardFilters`.
+//      This section locks BOTH halves:
+//        (a) The recommender source actually contains the post-cache filter
+//            inside the active-intent branch.
+//        (b) The same helper combo applied to the canonical four fixtures
+//            produces the verdicts the live UI must show.
+header('§9 cache-path intent filter (locks live-smoke fix)');
+{
+  const fs   = require('fs') as typeof import('fs');
+  const path = require('path') as typeof import('path');
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', 'lib', 'recommender.ts'),
+    'utf8',
+  );
+
+  // (a) Architectural assertion — both gates must be called inside the
+  //     cache-hit return path, gated by isIntentActive.
+  const cacheBlockMatch = src.match(
+    /if\s*\(\s*!rebuildDecision\.should_rebuild\s*\)\s*\{[\s\S]{0,4000}?\n\s*\}\s*\n/,
+  );
+  if (!cacheBlockMatch) {
+    fail('could not locate `if (!rebuildDecision.should_rebuild) { ... }` block in lib/recommender.ts — the cache-hit return shape changed; re-confirm the post-cache filter is still wired before re-asserting');
+  }
+  const cacheBlock = cacheBlockMatch[0];
+  if (!/isIntentActive\s*\(\s*intent\s*\)/.test(cacheBlock)) {
+    fail('cache-hit return path does not call isIntentActive(intent) — the post-cache lens filter is not gated correctly');
+  }
+  if (!/getIntentExclusionReason\s*\(/.test(cacheBlock)) {
+    fail('cache-hit return path does not call getIntentExclusionReason — cached recs would bypass No-dark exclusion');
+  }
+  if (!/passesIntentHardFilters\s*\(/.test(cacheBlock)) {
+    fail('cache-hit return path does not call passesIntentHardFilters — cached recs would bypass length / fiction-only / standalone hard gates');
+  }
+  ok('cache-hit return path wires both intent gates inside isIntentActive(intent) branch');
+
+  // (b) Behavior assertion — same helper combo as the cache-path filter,
+  //     applied to canonical four fixtures, produces correct verdicts.
+  const { getIntentExclusionReason, passesIntentHardFilters } = require('../lib/nextReadIntent') as
+    typeof import('../lib/nextReadIntent');
+
+  const cacheFixtures = [
+    { name: 'Gone Girl',                 subjects: ['Psychological thriller', 'Domestic suspense', 'Missing persons'], shouldSurvive: false },
+    { name: 'The Silent Patient',        subjects: ['Psychological thriller', 'Psychotherapy', 'Suspense', 'Murder'],  shouldSurvive: false },
+    { name: 'The Thursday Murder Club',  subjects: ['Cozy mystery', 'Humorous fiction', 'Murder'],                      shouldSurvive: true  },
+    { name: 'Everything I Never Told You', subjects: ['Literary fiction', 'Family secrets', 'Domestic fiction'],         shouldSurvive: true  },
+  ];
+
+  const noDarkIntent: NextReadIntent = { hard: {}, soft: { tone: 'light' }, exclude: { avoid_dark: true } };
+  const neutralMarketPos = 'book_club_fiction' as const;
+
+  for (const f of cacheFixtures) {
+    const book = { subjects: f.subjects, title: f.name, page_count: 350 };
+    // Mirror the exact filter chain used in the cache-hit return path:
+    const excluded =
+      !!getIntentExclusionReason(book, noDarkIntent, neutralMarketPos) ||
+      !passesIntentHardFilters(book, noDarkIntent, null, neutralMarketPos);
+    const survives = !excluded;
+    if (survives !== f.shouldSurvive) {
+      fail(`cache-path filter verdict mismatch for "${f.name}": expected survives=${f.shouldSurvive}, got ${survives}`);
+    }
+    ok(`cache-path filter: "${f.name}" survives=${survives} (want ${f.shouldSurvive})`);
+  }
+}
+
 // ── Lens classifier sanity (tier assignment matches new behavior) ──────────
 header('§lens classifier — chip tier assignment');
 {

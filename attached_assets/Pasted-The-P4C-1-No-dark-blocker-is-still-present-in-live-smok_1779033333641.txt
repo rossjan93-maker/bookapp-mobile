@@ -1,0 +1,80 @@
+The P4C.1 “No dark” blocker is still present in live smoke after the DARK_SIGNALS fix.
+
+Do not proceed to P4D.
+Do not mark P4C.1 product accepted.
+
+Scenario:
+Durable Reading Taste:
+- Likes: Mystery, Thriller
+- Avoids: Horror
+
+Active Your Next Read lens:
+- Fast-paced
+- Light
+- Less dark
+- Light & accessible
+- No dark
+
+Live For You result still shows:
+1. The Thursday Murder Club — acceptable
+2. Everything I Never Told You — maybe acceptable / ambiguous
+3. Gone Girl — should be excluded under No dark
+4. The Silent Patient — should be excluded under No dark
+
+Problem:
+The visible lens includes “No dark,” but Gone Girl and The Silent Patient remain in the displayed deck. This means the live product still violates the hard-session-exclusion semantics.
+
+The prior fix extended DARK_SIGNALS, but the live path still fails.
+
+Please investigate the actual runtime path, not just the static validator.
+
+Questions to answer:
+
+1. Is the latest DARK_SIGNALS fix actually running in the tested build?
+2. Did recValidity/cache need a bump after the DARK_SIGNALS change?
+3. When the user applies this lens, does the active RecRequest include `exclude.avoid_dark = true`?
+4. Does `getIntentExclusionReason(...)` run against the final displayed cards after the lens is applied?
+5. For the exact displayed candidate objects, what corpus is used by `getIntentExclusionReason(...)`?
+6. Do the final displayed Gone Girl / The Silent Patient objects contain subjects/description/metadata that include:
+   - psychological thriller
+   - domestic suspense
+   - psychotherapy
+   - mental illness
+   - noir / dark / etc.
+7. Are these cards coming from cached rec payloads or a pre-filtered deck that bypasses the exclusion step?
+8. Is the filter applied before candidate replenishment, but later replenishment can add unfiltered cards?
+9. Is the UI summary showing “No dark” even if the actual active intent used by the pipeline does not include the hard exclusion?
+
+Required diagnostic patch if needed:
+Add DEV-only logging for one filtered run:
+- active intent summary
+- exclude.avoid_dark value
+- candidate title
+- candidate corpus excerpts or matched dark signal
+- exclusion result
+- final displayed top 10 after filtering
+
+Specific titles to trace:
+- Gone Girl
+- The Silent Patient
+- The Thursday Murder Club
+- Everything I Never Told You
+
+Hard constraints:
+- Do not change RecCard.
+- Do not touch composer.
+- Do not persist the lens.
+- Do not mutate Reading Taste.
+- Do not weaken “No dark” into a soft nudge.
+- Do not blacklist titles manually except as validator fixtures.
+- Investigate first; implement minimal fix once root cause is pinned.
+
+Return:
+1. Executive verdict
+2. Whether latest fix was active in the tested build
+3. Runtime path trace for No dark
+4. Candidate metadata/corpus table for the four titles
+5. Root cause
+6. Minimal fix
+7. Validator/live-smoke proof
+8. Whether P4C.1 remains blocked
