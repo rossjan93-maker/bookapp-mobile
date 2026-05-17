@@ -128,6 +128,48 @@ export type ShortTermFeedbackSignal = {
   payload:     unknown | null;
 };
 
+// ── NextRead chip signal (P4C.1 follow-up · "Your Next Read" lens) ───────────
+//
+// Typed projection of the user's currently-active Your Next Read chip
+// selections. Always intentScope='session' — the lens never persists.
+//
+// Why a dedicated typed signal (vs. overloading `currentIntent.payload`):
+//   - `currentIntent.payload` stays the opaque `NextReadIntent` carrier that
+//     the legacy retrieval / exclusion pipeline already consumes. We don't
+//     want to disturb that channel.
+//   - This typed surface is what `deriveP4CContributions` reads via
+//     `deriveUserTone` / `deriveUserPace`, so chips flow through the same
+//     P4C.1 per-kind / stack / floor caps as `q_tone` / `q_pacing`.
+//   - Keeping the two channels disjoint makes it explicit which chips
+//     drive hard rules (still on `NextReadIntent`) and which drive typed
+//     ranking influence (here).
+//
+// Field semantics:
+//   - `tone='light'` is the explicit "Light / uplifting" chip. It STILL
+//     also writes `exclude.avoid_dark` on the legacy intent (explicit
+//     No dark stays hard per spec). The typed signal is additive evidence.
+//   - `tone='dark'`, `pace`, `intensity`, `energy` are pure typed —
+//     no accompanying legacy exclude/hard rule, except `palate_cleanser`
+//     which keeps its `hard.max_page_count=400` length cap.
+
+export type NextReadChipsSignal = {
+  signalClass: 'current_intent';
+  intentScope: 'session';
+  /** From toneChip — 'light' | 'dark'. 'balanced' omitted (no chip emits it). */
+  tone?:       'light' | 'dark';
+  /** From paceChip — 'fast' | 'slow'. 'medium' omitted (no chip emits it). */
+  pace?:       'fast'  | 'slow';
+  /** From intensityChip. */
+  intensity?:  'low'   | 'high';
+  /** From moodChip (ReadingEnergyMode). */
+  energy?:
+    | 'light_fun'
+    | 'immersive'
+    | 'deep_demanding'
+    | 'emotionally_heavy'
+    | 'palate_cleanser';
+};
+
 // ── Aggregate ────────────────────────────────────────────────────────────────
 //
 // All signal classes addressable from a single root. P1 consumes
@@ -140,5 +182,10 @@ export type Signals = {
   currentIntent?:     CurrentIntentSignal;
   /** P4A: typed quick-taste diagnosis answers with intentScope discriminator. */
   diagnosisAnswers?:  DiagnosisAnswersSignal;
+  /**
+   * P4C.1 follow-up: typed projection of "Your Next Read" lens chip
+   * selections. Undefined when no lens is active. Always session-scoped.
+   */
+  nextReadChips?:     NextReadChipsSignal;
   shortTermFeedback?: ShortTermFeedbackSignal;
 };

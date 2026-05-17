@@ -63,8 +63,20 @@ type UserPace = 'fast'  | 'slow' | 'unknown';
 type UserComplexity = 'dense' | 'unknown';
 
 /** Derive the user's current tone preference from intent chips first, then
- *  intent-shaped diagnosis answers (q_tone). Returns 'unknown' when the user
- *  has not expressed a tone preference either way. */
+ *  intent-shaped diagnosis answers (q_tone), then (P4C.1 follow-up) the
+ *  typed Your Next Read chip signal. Returns 'unknown' when the user
+ *  has not expressed a tone preference either way.
+ *
+ *  Source precedence (last-wins is intentional — chips reflect the user's
+ *  most recently expressed session intent, so they override stale q_*
+ *  answers and durable reading-style chips when both are present):
+ *    1. durable reading_styles chips  → source `reading_style:<chip>`
+ *    2. quick-taste q_tone answer     → source `q_tone:<value>`
+ *    3. Your Next Read chip selection → source `chip:tone:<value>`,
+ *       `chip:intensity:low` (Less dark), or `chip:energy:<mode>`
+ *       (Light & accessible / Short & light infer tone=light).
+ *  All chip-sourced values are session-eligible (see isRankingEligible).
+ */
 function deriveUserTone(signals: Signals): { value: UserTone; sources: string[] } {
   const sources: string[] = [];
   const intentChips = signals.statedTaste.readingStylesIntent ?? [];
@@ -79,10 +91,35 @@ function deriveUserTone(signals: Signals): { value: UserTone; sources: string[] 
     if (v.includes('light')) { value = 'light'; sources.push('q_tone:light'); }
     else if (v.includes('dark')) { value = 'dark'; sources.push('q_tone:dark'); }
   }
+  // P4C.1 follow-up — Your Next Read chip selections.
+  // Mapping rationale:
+  //   tone='light' / tone='dark' → direct tone inference
+  //   intensity='low' (label "Less dark") → tone='light' (this is the
+  //     migration path off the legacy hard exclude.avoid_dark rule)
+  //   energy='light_fun' (label "Light & accessible") → tone='light'
+  //   energy='palate_cleanser' (label "Short & light") → tone='light'
+  //     (length cap remains a hard rule on `NextReadIntent.hard`)
+  // 'dark' chip wins over any light inference (matches the existing
+  // legacy `wantsDark` override in handleApplyIntent).
+  const chips = signals.nextReadChips;
+  if (chips) {
+    if (chips.tone === 'dark') {
+      value = 'dark'; sources.push('chip:tone:dark');
+    } else {
+      let lightFromChip = false;
+      if (chips.tone === 'light')                 { lightFromChip = true; sources.push('chip:tone:light'); }
+      if (chips.intensity === 'low')              { lightFromChip = true; sources.push('chip:intensity:low'); }
+      if (chips.energy === 'light_fun')           { lightFromChip = true; sources.push('chip:energy:light_fun'); }
+      if (chips.energy === 'palate_cleanser')     { lightFromChip = true; sources.push('chip:energy:palate_cleanser'); }
+      if (lightFromChip) value = 'light';
+    }
+  }
   return { value, sources };
 }
 
-/** Same shape as deriveUserTone but for pace. */
+/** Same shape as deriveUserTone but for pace. P4C.1 follow-up — also reads
+ *  the typed Your Next Read chip signal so chip selections drive
+ *  pace_fit / not_right_now_risk under the same P4C.1 caps. */
 function deriveUserPace(signals: Signals): { value: UserPace; sources: string[] } {
   const sources: string[] = [];
   const intentChips = signals.statedTaste.readingStylesIntent ?? [];
@@ -97,6 +134,9 @@ function deriveUserPace(signals: Signals): { value: UserPace; sources: string[] 
     if (v.includes('fast') || v.includes('quick')) { value = 'fast'; sources.push('q_pacing:fast'); }
     else if (v.includes('slow')) { value = 'slow'; sources.push('q_pacing:slow'); }
   }
+  const chips = signals.nextReadChips;
+  if (chips?.pace === 'fast') { value = 'fast'; sources.push('chip:pace:fast'); }
+  else if (chips?.pace === 'slow') { value = 'slow'; sources.push('chip:pace:slow'); }
   return { value, sources };
 }
 
@@ -127,6 +167,11 @@ function deriveUserComplexity(signals: Signals): { value: UserComplexity; source
 function isRankingEligible(sources: readonly string[], legacy: boolean): boolean {
   if (sources.some(s => s.startsWith('reading_style:'))) return true;
   if (sources.some(s => s.startsWith('q_')) && !legacy)  return true;
+  // P4C.1 follow-up: Your Next Read chips are always session-live by
+  // construction (lens is not persisted; chips exist only while the user
+  // has an active intent). They are always ranking-eligible, independent
+  // of the diagnosisAnswers legacy flag.
+  if (sources.some(s => s.startsWith('chip:'))) return true;
   return false;
 }
 

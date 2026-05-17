@@ -964,48 +964,50 @@ export function RecommendationsFeed({
   }, [isFilterRefreshing, filterPulseAnim, dotAnim0, dotAnim1, dotAnim2, shimmerAnim, contentDimAnim]);
 
   function handleApplyIntent() {
-    // Build the intent from chip state. Soft boosts alone (±0.05 cap) are
-    // too small to visibly reorder books at typical score ranges, so we
-    // ALSO derive the natural hard filters / exclusions for each chip so
-    // the pool composition actually shifts when the user hits Apply.
+    // Build the intent from chip state.
     //
-    // Mapping rationale (kept conservative — only obvious semantic
-    // overlaps map to hard rules; ambiguous chips stay soft):
+    // P4C.1 follow-up (chip → typed current_intent signal plumbing):
+    // The "softer" lens values (intensity='low', mood='light_fun',
+    // mood='palate_cleanser' tone-side) used to be implemented as hard
+    // `exclude.avoid_dark` / `exclude.avoid_literary` rules. They are
+    // now routed through the typed `nextReadChips` signal so they flow
+    // through `deriveP4CContributions` (tone_fit / pace_fit /
+    // not_right_now_risk) under the P4C.1 per-kind ±0.20 / stack ±0.30
+    // caps and `clampP4IntentStack` stated-taste floor protection.
     //
-    //   tone='light'          → exclude.avoid_dark
-    //   tone='dark'           → soft only (boost dark, no exclusion)
-    //   intensity='low'       → exclude.avoid_dark   (unless tone='dark')
-    //   intensity='high'      → soft only
-    //   pace='fast' / 'slow'  → soft only (no clean hard signal)
-    //   mood='light_fun'      → exclude.avoid_dark + avoid_literary
-    //                            (unless tone='dark')
-    //   mood='palate_cleanser'→ exclude.avoid_dark (unless tone='dark')
-    //                          + hard.max_page_count = 400
-    //                          (standalone_only intentionally NOT set —
-    //                           series-heavy libraries would empty the
-    //                           pool; page count is enough to enforce
-    //                           "quick read")
+    // What remains hard (per spec — these are true must-not-violate
+    // session filters, not soft preferences):
+    //
+    //   tone='light'          → exclude.avoid_dark    (explicit "No dark"
+    //                            chip — user is asking to hide dark.
+    //                            Also emits a typed chip:tone:light signal.)
+    //   length chips          → hard.max_page_count
+    //   mood='palate_cleanser'→ hard.max_page_count = 400 (length cap
+    //                            remains hard; tone implication moves to
+    //                            the typed signal via nextReadChips.energy)
+    //   format chips          → hard.fiction_only | hard.nonfiction_only
+    //   series chip           → hard.standalone_only
+    //
+    // What is now typed (no hard rule emitted):
+    //
+    //   tone='dark'           → typed chip signal only (was already soft)
+    //   intensity='low'/'high'→ typed chip signal (low used to be hard)
+    //   pace='fast'/'slow'    → typed chip signal (was already soft)
+    //   mood='light_fun'      → typed chip signal (was hard avoid_dark+literary)
     //   mood='immersive' / 'deep_demanding' / 'emotionally_heavy'
-    //                         → soft only
+    //                         → typed chip signal (was already soft)
     //
-    // A user can still pick tone='dark' WITH intensity='low' or
-    // mood='light_fun' if they want — tone='dark' wins and we don't
-    // exclude dark themes (otherwise the chip would silently filter
-    // itself out and the list would go empty).
-    const wantsDark = toneChip === 'dark';
-
+    // tone='dark' still wins over light-inferring chips inside
+    // deriveUserTone (last-wins ordering with 'dark' check first).
     const exclude: NextReadIntent['exclude'] = {};
     const hard:    NextReadIntent['hard']    = {};
 
-    if (toneChip === 'light')                 exclude.avoid_dark     = true;
-    if (intensityChip === 'low' && !wantsDark) exclude.avoid_dark    = true;
+    // Explicit "No dark" chip stays hard.
+    if (toneChip === 'light') exclude.avoid_dark = true;
 
-    if (moodChip === 'light_fun' && !wantsDark) {
-      exclude.avoid_dark     = true;
-      exclude.avoid_literary = true;
-    }
+    // Palate cleanser keeps its length cap; the avoid_dark implication
+    // moves to the typed signal via nextReadChips.energy='palate_cleanser'.
     if (moodChip === 'palate_cleanser') {
-      if (!wantsDark) exclude.avoid_dark = true;
       hard.max_page_count = 400;
     }
 

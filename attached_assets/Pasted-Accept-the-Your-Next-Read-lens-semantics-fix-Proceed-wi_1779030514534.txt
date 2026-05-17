@@ -1,0 +1,117 @@
+Accept the Your Next Read lens semantics fix.
+
+Proceed with the next narrow batch: chip → typed current_intent signal plumbing.
+
+Do not start P4D.
+Do not change RecCard.
+Do not change composer copy.
+Do not persist the lens.
+Do not change durable Reading Taste.
+
+Context:
+The current Your Next Read lens is session-only and does not mutate reader_preferences.
+Recent batch made labels more honest:
+- Low-key / Low intensity → Less dark
+- Light & fun → Light & accessible
+- Palate cleanser → Short & light
+and added lib/currentIntentLens.ts with classifyIntentLens(...) and detectStatedFavoriteConflicts(...).
+
+Remaining issue:
+The Your Next Read chips still bypass P4C typed contribution plumbing. They drive legacy hard/exclude rules directly. Therefore P4C.1 caps and stated-taste floor protection do not govern chip-driven behavior.
+
+Goal:
+Wire soft Your Next Read lens selections into typed current_intent signals so they can flow through P4C contributions, while preserving true hard filters.
+
+## 1. Preserve hard filters
+
+These should remain hard session filters:
+- explicit No dark
+- explicit No romance
+- explicit No literary
+- length caps
+- fiction-only / nonfiction-only
+- standalone-only
+
+Do not soften these unless there is a specific product reason.
+
+## 2. Move softer lens values into typed current_intent
+
+The following should stop behaving as implicit hard exclusions and instead emit session-scoped current_intent signals:
+
+- Less dark
+- Light & accessible
+- Short & light, except its length cap may remain hard
+- pace preferences
+- tone preferences that are not explicit No X
+- intensity preferences
+
+These should flow through RecRequest/signals and deriveP4CContributions where possible.
+
+## 3. Keep lens session-only
+
+- Do not write to reader_preferences.
+- Do not persist the lens.
+- Clear lens should restore baseline behavior.
+- Sign-out clears lens.
+
+## 4. Use currentIntentLens view-model
+
+Wire or extend lib/currentIntentLens.ts so it classifies lens entries as:
+- hard
+- soft/current_intent
+- notRightNow
+
+Add a validator:
+- scripts/validate_intent_lens.ts
+
+Assert:
+1. No X chips stay hard.
+2. Less X / softer mood chips become typed current_intent.
+3. Session lens does not persist.
+4. Clear lens restores baseline contract.
+5. P4C contribution caps apply to soft lens values.
+6. Stated favorite floors are not overpowered by soft lens values.
+7. No RecCard/composer visible copy changes.
+
+## 5. Conflict detection remains non-UI for now
+
+Keep detectStatedFavoriteConflicts(...) as data-only.
+Do not add the inline “hiding N favorites” UI yet unless it is trivial and explicitly isolated.
+
+## 6. Validation
+
+Run:
+- validate_intent_lens
+- validate_p4c_limited_ranking
+- validate_intent_contribution
+- validate_tone_pace_fit
+- validate_rec_validity
+- validate_taxonomy
+- any existing P4/P3 validators affected
+
+Report:
+- typecheck delta
+- workflow/app status
+- behavior guarantees
+- live smoke plan
+
+Hard constraints:
+- no P4D
+- no composer admission
+- no RecCard changes
+- no durable storage changes
+- no hard-avoid storage
+- no visible explanation changes
+- no opportunistic cleanup
+
+Return:
+1. Executive verdict
+2. What changed
+3. Files touched
+4. Lens tier model
+5. Hard vs soft behavior
+6. Persistence guarantees
+7. Validator results
+8. Behavior guarantees
+9. Recommended live smoke
+10. Go/no-go for P4D

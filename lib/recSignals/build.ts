@@ -16,6 +16,7 @@ import type {
   SoftAvoidSignal,
   CurrentIntentSignal,
   DiagnosisAnswersSignal,
+  NextReadChipsSignal,
   ShortTermFeedbackSignal,
 } from './types';
 import { partitionReadingStyles, classifyDiagnosisAnswers } from './partitions';
@@ -100,6 +101,41 @@ export function buildSignals(opts: {
       ? { signalClass: 'current_intent', payload: opts.intent }
       : undefined;
 
+  // P4C.1 follow-up: derive a typed `nextReadChips` projection from the
+  // legacy NextReadIntent payload's `soft` block. This is the seam that
+  // routes "Your Next Read" chip selections into the P4C contribution
+  // pipeline via deriveUserTone / deriveUserPace — without disturbing
+  // the opaque `currentIntent.payload` retrieval/exclusion channel.
+  //
+  // Pure projection: no mutation, no fallbacks beyond shape-checking.
+  // Returns undefined when no chip-derived softs are present, so the
+  // contribution layer can short-circuit cheaply.
+  let nextReadChips: NextReadChipsSignal | undefined;
+  if (opts.intent != null && typeof opts.intent === 'object') {
+    const soft = (opts.intent as { soft?: unknown }).soft;
+    if (soft && typeof soft === 'object') {
+      const s = soft as Record<string, unknown>;
+      const tone      = (s.tone === 'light' || s.tone === 'dark') ? s.tone : undefined;
+      const pace      = (s.pace === 'fast'  || s.pace === 'slow') ? s.pace : undefined;
+      const intensity = (s.intensity === 'low' || s.intensity === 'high') ? s.intensity : undefined;
+      const energyRaw = s.readingEnergy;
+      const energy: NextReadChipsSignal['energy'] | undefined =
+        (energyRaw === 'light_fun' || energyRaw === 'immersive'
+         || energyRaw === 'deep_demanding' || energyRaw === 'emotionally_heavy'
+         || energyRaw === 'palate_cleanser') ? energyRaw : undefined;
+      if (tone || pace || intensity || energy) {
+        nextReadChips = {
+          signalClass: 'current_intent',
+          intentScope: 'session',
+          ...(tone      ? { tone }      : {}),
+          ...(pace      ? { pace }      : {}),
+          ...(intensity ? { intensity } : {}),
+          ...(energy    ? { energy }    : {}),
+        };
+      }
+    }
+  }
+
   const shortTermFeedback: ShortTermFeedbackSignal | undefined =
     opts.feedback != null
       ? { signalClass: 'short_term_feedback', payload: opts.feedback }
@@ -122,5 +158,5 @@ export function buildSignals(opts: {
     };
   }
 
-  return { statedTaste: stated, revealedTaste: revealed, softAvoids, currentIntent, diagnosisAnswers, shortTermFeedback };
+  return { statedTaste: stated, revealedTaste: revealed, softAvoids, currentIntent, diagnosisAnswers, nextReadChips, shortTermFeedback };
 }

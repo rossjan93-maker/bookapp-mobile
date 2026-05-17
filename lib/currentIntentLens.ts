@@ -174,24 +174,37 @@ export function classifyIntentLens(intent: NextReadIntent | null | undefined): C
     });
   }
 
-  // ── Soft preferences (true nudges) ──────────────────────────────────────
+  // ── Soft preferences + notRightNow (P4C.1 follow-up batch) ─────────────
+  //
+  // After the chip→typed signal plumbing batch, these chips emit typed
+  // `current_intent` signals through `nextReadChips` and flow through
+  // `deriveP4CContributions` (tone_fit / pace_fit / not_right_now_risk).
+  // No accompanying `exclude.*` rules are written.
+  //
+  // Tier assignment:
+  //   - `soft`        — pure directional nudges with no negative implication
+  //                     ("prefer faster", "prefer immersive")
+  //   - `notRightNow` — directional nudges that imply demoting the opposite
+  //                     ("Less dark" → prefer light, demote dark; same for
+  //                     "Light & accessible" and "Short & light"). These
+  //                     used to be hard excludes — now they are signed
+  //                     contributions under the P4C.1 caps.
   const s = intent.soft ?? {};
   if (s.pace === 'fast') {
     soft.push({ id: 'pace_fast', label: 'Fast-paced', tier: 'soft',
-      effect: 'Prefer faster-paced books', legacyRules: ['soft.pace'] });
+      effect: 'Prefer faster-paced books (typed chip signal)' });
   }
   if (s.pace === 'slow') {
     soft.push({ id: 'pace_slow', label: 'Slow burn', tier: 'soft',
-      effect: 'Prefer slower-paced books', legacyRules: ['soft.pace'] });
+      effect: 'Prefer slower-paced books (typed chip signal)' });
   }
   if (s.tone === 'dark') {
     soft.push({ id: 'tone_dark', label: 'Dark / serious', tier: 'soft',
-      effect: 'Prefer darker tone (overrides Less dark / Light & accessible / Short & light if also picked)',
-      legacyRules: ['soft.tone'] });
+      effect: 'Prefer darker tone (typed chip signal; overrides light-inferring chips)' });
   }
   if (s.intensity === 'high') {
     soft.push({ id: 'intensity_high', label: 'High intensity', tier: 'soft',
-      effect: 'Prefer emotionally intense books', legacyRules: ['soft.intensity'] });
+      effect: 'Prefer emotionally intense books (typed chip signal)' });
   }
   const ENERGY_SOFT_LABELS: Partial<Record<ReadingEnergyMode, string>> = {
     immersive:         'Immersive',
@@ -203,31 +216,30 @@ export function classifyIntentLens(intent: NextReadIntent | null | undefined): C
       id: `energy_${s.readingEnergy}`,
       label: ENERGY_SOFT_LABELS[s.readingEnergy]!,
       tier: 'soft',
-      effect: 'Energy preference (soft nudge)',
-      legacyRules: ['soft.readingEnergy'],
+      effect: 'Energy preference (typed chip signal — soft nudge)',
     });
   }
 
-  // ── notRightNow (currently empty — placeholder tier) ─────────────────────
-  // "Less X" chips that today execute as hard exclusions (tone='light',
-  // intensity='low', readingEnergy='light_fun', readingEnergy='palate_cleanser')
-  // already appear in `hard` above via their accompanying `exclude.*` /
-  // `hard.*` rules. When the next batch routes them through the P4C
-  // contribution model, the classifier will move those entries from
-  // `hard` to `notRightNow` here — consumers of this view-model do not
-  // need to change.
-  //
-  // Implementation seam:
-  //   1. `handleApplyIntent` in components/RecommendationsFeed.tsx stops
-  //      writing exclude.avoid_dark for `intensityChip === 'low'` and
-  //      `moodChip === 'light_fun' | 'palate_cleanser'`.
-  //   2. Instead it emits `current_intent` signals (intentScope='session')
-  //      via the typed `RecRequest.signals` channel.
-  //   3. `deriveP4CContributions` already reads `signals.diagnosisAnswers`
-  //      with the same session-scope eligibility gate — extend it to read
-  //      the new chip-derived intent shape.
-  //   4. This classifier then routes those chips into `notRightNow` and
-  //      drops their `legacyRules` references.
+  // notRightNow — chips with light-tone implication that demote dark books
+  // via the typed signal, instead of removing them via a hard exclude.
+  if (s.intensity === 'low') {
+    notRightNow.push({
+      id: 'intensity_low', label: 'Less dark', tier: 'notRightNow',
+      effect: 'Prefer lighter tone; demotes dark books under P4C.1 caps (no hard removal)',
+    });
+  }
+  if (s.readingEnergy === 'light_fun') {
+    notRightNow.push({
+      id: 'energy_light_fun', label: 'Light & accessible', tier: 'notRightNow',
+      effect: 'Prefer lighter, less-literary feel; demotes dark / dense books under P4C.1 caps',
+    });
+  }
+  if (s.readingEnergy === 'palate_cleanser') {
+    notRightNow.push({
+      id: 'energy_palate_cleanser', label: 'Short & light', tier: 'notRightNow',
+      effect: 'Prefer lighter tone via typed signal; length cap (≤400p) remains a hard rule',
+    });
+  }
 
   const totalEntries = hard.length + soft.length + notRightNow.length;
   return {
