@@ -1,0 +1,67 @@
+Approve forensic DEV log cleanup.
+
+Proceed with the implementation plan as proposed.
+
+Decision:
+- Keep [FINAL_GATE_LEAK].
+- Keep [FINAL_GATE] unchanged.
+- Keep [PERSIST_CACHE] skip_lens_tagged.
+- Keep [PERSIST_CACHE] lens_tagged_payload.
+- Remove the path-by-path forensic traces from the patch-loop era.
+- Downgrade [INTENT_APPLY] only if you think it is still useful; otherwise remove it too. If kept, it must be one compact line only.
+
+Hard constraints:
+- No product behavior change.
+- Do not modify lib/intent/finalGate.ts.
+- Do not modify scripts/validate_intent_final_gate.ts.
+- Do not modify the final gate invariant.
+- Do not touch RecCard.
+- Do not touch composer.
+- Do not change ranking/scoring.
+- Do not change durable taste or lens persistence.
+- recValidity.VERSION remains rcv6.
+
+Remove from components/RecommendationsFeed.tsx:
+- [INTENT_PRE_RENDER]
+- [INTENT_FOCUS_TITLES_IN_DECK]
+- [INTENT_FINAL_RENDER]
+- full JSON [INTENT_APPLY], or replace with a compact breadcrumb only if justified
+
+Remove from lib/recommender.ts:
+- [INTENT_RECPATH_ENTRY]
+- [INTENT_FORENSIC_RANKED]
+- [INTENT_FORENSIC_CACHE]
+- [INTENT_FORENSIC_EXPERT]
+- [INTENT_CACHE_FILTER_PRE]
+- [INTENT_CACHE_FILTER_POST]
+- [INTENT_EXPERT_FILTER_PRE]
+- [INTENT_EXPERT_FILTER_POST]
+
+Also remove unused helpers/accumulators that only supported these traces:
+- isIntentFocusTitle
+- hard-coded focus-title list
+- intentRejectedCount / cacheIntentRejected / similar, if no longer used
+
+Validation required:
+- grep confirms removed tags are gone
+- validate_intent_final_gate
+- validate_intent_lens
+- validate_p4c_limited_ranking
+- validate_intent_contribution
+- validate_tone_pace_fit
+- validate_series_continuation
+- validate_explanation_faithfulness
+- validate_rec_validity
+- validate_rec_payload_cache_lens
+- typecheck delta against baseline
+- architect review PASS
+
+Return:
+1. Executive verdict
+2. Logs removed
+3. Logs retained
+4. Files touched
+5. Validator results
+6. Typecheck/workflow status
+7. Behavior guarantees
+8. Recommended next step

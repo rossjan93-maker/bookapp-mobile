@@ -2495,19 +2495,6 @@ export function getRankedRecs(
 
       // 1. Exclusions take priority over hard filters
       const exclusionReason = getIntentExclusionReason(book, intent, marketPos);
-      if (__DEV__ && isIntentFocusTitle(book.title)) {
-        console.log('[INTENT_FORENSIC_RANKED]', JSON.stringify({
-          path:           'getRankedRecs/discoveryPool',
-          title:          book.title,
-          author:         book.author,
-          market_position: marketPos,
-          lane:           bookLane,
-          subjects_head:  (book.subjects ?? []).slice(0, 12),
-          has_desc:       !!book.description,
-          exclusion_reason: exclusionReason ?? null,
-          verdict_so_far: exclusionReason ? 'WILL_EXCLUDE' : 'continues_to_hard_filter',
-        }));
-      }
       if (exclusionReason) {
         intentRejectedCount++;
         removedByExclusion++;
@@ -3590,29 +3577,6 @@ export async function getPersonalizedRecs(
 
 const EXPERT_JUDGE_CAP = 20;
 
-// ── DEV-only per-title forensic trace ─────────────────────────────────────────
-// P4C.1 follow-up #4 (2026-05-17): user reports Gone Girl + Silent Patient
-// STILL visible under "No dark" after both cache-hit and fresh-build filters.
-// Need runtime per-title path evidence to prove where they enter the deck.
-// Lowercase, trimmed match — normalises Goodreads vs OL casing.
-const INTENT_FOCUS_TITLES: ReadonlySet<string> = new Set([
-  'gone girl',
-  'the silent patient',
-  'the thursday murder club',
-  'everything i never told you',
-  // P4C.1 follow-up #6 (2026-05-18) — newly surfaced No-dark edge cases.
-  // User reports both still visible under No-dark after the #5 fix that
-  // correctly removed Gone Girl + Silent Patient. Need per-title corpus
-  // evidence (subjects, market_position, exclusion_reason) to decide
-  // whether either is a real signal gap or a contract-interpretation call.
-  'verity',
-  'the secret history',
-]);
-export function isIntentFocusTitle(title: string | null | undefined): boolean {
-  if (!title) return false;
-  return INTENT_FOCUS_TITLES.has(title.trim().toLowerCase());
-}
-
 export async function getPersonalizedRecsWithExpert(
   client:      SupabaseClient,
   userId:      string,
@@ -3818,18 +3782,6 @@ export async function getPersonalizedRecsWithExpert(
   }
 
   // ── Step 3: Cache check (skip rebuild if results are still fresh) ─────────
-  // DEV-only path-of-execution trace (P4C.1 #4 instrumentation):
-  if (__DEV__) {
-    const intentActive = !!(intent && isIntentActive(intent));
-    console.log('[INTENT_RECPATH_ENTRY]', JSON.stringify({
-      userId_tail:    userId.slice(-6),
-      intentActive,
-      avoid_dark:     intent?.exclude?.avoid_dark ?? false,
-      hard:           intent?.hard ?? null,
-      soft:           intent?.soft ?? null,
-      ts:             Date.now(),
-    }));
-  }
   // Forensic mode: skip rec_cache entirely so we always see live expert run
   if (__DEV__ && userId === FORENSIC_USER_ID) {
     console.log('[FORENSIC] rec_cache BYPASSED for expert path');
@@ -3884,48 +3836,16 @@ export async function getPersonalizedRecsWithExpert(
       // When no intent is active, this is a no-op (filter passes every
       // book) and the function behaves exactly as before.
       let cachedRecs = rawCachedRecs;
-      let cacheIntentRejected = 0;
       if (intent && isIntentActive(intent)) {
-        if (__DEV__) {
-          console.log('[INTENT_CACHE_FILTER_PRE]', JSON.stringify({
-            titles: rawCachedRecs.map(b => b.title),
-            count:  rawCachedRecs.length,
-          }));
-        }
-        const removed: { title: string; author: string; reason: string }[] = [];
         cachedRecs = rawCachedRecs.filter((book) => {
           const bookLane  = detectBookLane(book);
           const marketPos = (book._score_breakdown?.market_position as MarketPosition) ?? 'general_fiction';
           const exReason  = getIntentExclusionReason(book, intent, marketPos);
           const hardPass  = passesIntentHardFilters(book, intent, bookLane, marketPos);
-          // Per-title forensic for the four focus books, regardless of verdict.
-          if (__DEV__ && isIntentFocusTitle(book.title)) {
-            const subj = (book.subjects ?? []).slice(0, 12);
-            console.log('[INTENT_FORENSIC_CACHE]', JSON.stringify({
-              path:           'cache_hit',
-              title:          book.title,
-              author:         book.author,
-              market_position: marketPos,
-              lane:           bookLane,
-              subjects_head:  subj,
-              has_desc:       !!book.description,
-              exclusion_reason: exReason ?? null,
-              hard_filter_passes: hardPass,
-              verdict:        exReason || !hardPass ? 'EXCLUDED' : 'KEPT',
-            }));
-          }
-          if (exReason) { removed.push({ title: book.title, author: book.author, reason: exReason }); return false; }
-          if (!hardPass) { removed.push({ title: book.title, author: book.author, reason: 'hard_filter_fail' }); return false; }
+          if (exReason) return false;
+          if (!hardPass) return false;
           return true;
         });
-        cacheIntentRejected = removed.length;
-        if (__DEV__) {
-          console.log('[INTENT_CACHE_FILTER_POST]', JSON.stringify({
-            kept_titles:    cachedRecs.map(b => b.title),
-            removed,
-            removed_count:  cacheIntentRejected,
-          }));
-        }
       }
 
       return {
@@ -4096,44 +4016,15 @@ export async function getPersonalizedRecsWithExpert(
   // session's cache); the cache-hit filter handles future lens applies.
   let returnedExpertRecs = expertRecs;
   if (intent && isIntentActive(intent)) {
-    const before = expertRecs.length;
-    if (__DEV__) {
-      console.log('[INTENT_EXPERT_FILTER_PRE]', JSON.stringify({
-        titles: expertRecs.map(b => b.title),
-        count:  before,
-      }));
-    }
-    const removed: { title: string; author: string; reason: string }[] = [];
     returnedExpertRecs = expertRecs.filter((book) => {
       const bookLane  = detectBookLane(book);
       const marketPos = (book._score_breakdown?.market_position as MarketPosition) ?? 'general_fiction';
       const exReason  = getIntentExclusionReason(book, intent, marketPos);
       const hardPass  = passesIntentHardFilters(book, intent, bookLane, marketPos);
-      if (__DEV__ && isIntentFocusTitle(book.title)) {
-        console.log('[INTENT_FORENSIC_EXPERT]', JSON.stringify({
-          path:           'fresh_expert',
-          title:          book.title,
-          author:         book.author,
-          market_position: marketPos,
-          lane:           bookLane,
-          subjects_head:  (book.subjects ?? []).slice(0, 12),
-          has_desc:       !!book.description,
-          exclusion_reason: exReason ?? null,
-          hard_filter_passes: hardPass,
-          verdict:        exReason || !hardPass ? 'EXCLUDED' : 'KEPT',
-        }));
-      }
-      if (exReason) { removed.push({ title: book.title, author: book.author, reason: exReason }); return false; }
-      if (!hardPass) { removed.push({ title: book.title, author: book.author, reason: 'hard_filter_fail' }); return false; }
+      if (exReason) return false;
+      if (!hardPass) return false;
       return true;
     });
-    if (__DEV__) {
-      console.log('[INTENT_EXPERT_FILTER_POST]', JSON.stringify({
-        kept_titles:   returnedExpertRecs.map(b => b.title),
-        removed,
-        removed_count: removed.length,
-      }));
-    }
   }
 
   return {
