@@ -2,6 +2,64 @@
 
 Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/onboarding sprints. Moved out of replit.md on 2026-05-14 to keep the live operating reference compact. Order is reverse-chronological. For full diffs use `git log -p -- <path>`.
 
+## P4D-followup · persistent rec cache lens-bypass closeout — shipped (2026-05-18)
+
+**Root cause.** `lib/recPayloadCache.ts` could restore a deck-as-filtered-under-a-past-lens because configHash protects only durable preferences, not the session-only lens or evaluator-logic shifts (e.g. Batch A `DARK_SIGNALS` word-boundary tightening). Live-smoke evidence: `[PERSIST_CACHE] hit | ... | fingerprint=v1:0:deterministic:nfp:Fast-paced · Light · Less dark · Light & accessible · No dark` replayed a pre-Batch-A lens deck without re-running `evaluateBookAgainstIntentLens`.
+
+**Minimal fix (writer + reader symmetric).**
+1. `components/RecommendationsFeed.tsx` skips `saveRecPayload` entirely when `sessionIntentTag != null` and logs `[PERSIST_CACHE] skip_lens_tagged`; the non-lens save path now writes `intentTag: null` unconditionally.
+2. `lib/recPayloadCache.ts` `loadRecPayload` discards + clears any persisted payload with `intentTag != null && intentTag !== 'none'` (sentinel `'none'` matches `computeRecFingerprint`'s `intentTag ?? 'none'`).
+
+Gate order preserved: structure → TTL → empty → configHash → NEW lens-tagged. `recPrewarm.ts` already writes `intentTag: null`; pinned by validator. No RecCard / composer / Reading Taste / recValidity changes.
+
+**Validator.** New `scripts/validate_rec_payload_cache_lens.ts` (19 checks, all green): §1 writer guard, §1b recPrewarm sibling contract, §2 reader guard source, §3.1–§3.5 behavioral (lens discard + storage clear, non-lens restore, `'none'` sentinel restore, gate-ordering proofs for corrupt JSON / missing recs / TTL-expired / empty payloads all carrying a dangerous lens tag, stale configHash + lens combined). Architect review: pass after the §3.4 ordering-proof + §1b prewarm contract additions.
+
+---
+
+## BookEvidence consolidation — Batch A · shared evidence signal map — shipped (2026-05-18)
+
+`DARK_SIGNALS` + `DOMESTIC_SUSPENSE_SUPPORT_SIGNALS` moved out of `lib/nextReadIntent.ts` into new module `lib/evidence/signals.ts` as typed `SignalSet { specific, broad }`. Matching tightened from `corpus.includes(s)` (substring) to `\b<phrase>\b` (word-boundary, case-insensitive).
+
+To preserve P4C.1 coverage under the stricter matching, plural variants explicitly enumerated: phrasal — `'serial killers'`, `'psychotherapy patients'`; support broad — `'thrillers'`, `'mysteries'`, `'murders'`, `'crimes'`; dark broad — `'traumas'`, `'abuses'`, `'assaults'`. Adjective inflections (`'traumatic'`, `'abusive'`) intentionally NOT re-added — low OL-corpus frequency and re-adding would risk over-firing on memoir / literary work; documented as accepted tightening.
+
+`evaluateBookAgainstIntentLens` now calls `firstSignalMatch(corpus, SET)` — first matching phrase still surfaces in evidence kind for forensic traces. **Behavior equivalent to P4C.1 within fixture matrix and locked OL-corpus plurals.**
+
+Validator `validate_intent_lens` §10 (12 fixtures × 4 lenses, 48 hardExclusion assertions + 2 invariants) green; sibling validators `validate_p4c_limited_ranking`, `validate_intent_contribution`, `validate_tone_pace_fit`, `validate_series_continuation` all green. Architect review surfaced the inflection-coverage risk pre-acceptance → addressed by plural additions above before close-out. `lib/bookTraits.ts` TONE_DARK_SPECIFIC / TONE_DARK_BROAD untouched (Batch B scope). `recValidity.VERSION` unchanged at `rcv5` (no scoring shape change).
+
+---
+
+## P4C.1 follow-up #7 · cozy false-positive under No-dark — shipped (2026-05-18)
+
+**Root cause (two coupled bugs).**
+1. `lib/fitClassifier.ts` misclassified subject sets containing both cozy markers and a generic `'crime fiction'` OL tag as `domestic_suspense` because the bare crime-fiction rule fired BEFORE the cozy_detective rule.
+2. `lib/evidence/signals.ts` `DARK_SIGNALS.specific` contained `'crime fiction'` (so the phrasal rule hard-excluded any book with that OL tag) AND `DOMESTIC_SUSPENSE_SUPPORT_SIGNALS.broad` contained generic `mystery / mysteries / crime / crimes / murder / murders / thriller / thrillers` (so the market-position coupled rule hard-excluded any domestic_suspense-classified book carrying ordinary mystery tags).
+
+Live evidence: `[INTENT_FORENSIC_RANKED] title="The Thursday Murder Club" market_position="domestic_suspense" subjects_head=["mystery","cozy mystery","detective","crime fiction","mystery fiction"] exclusion_reason="avoid_dark"`.
+
+**Minimal policy correction (no title blacklists outside fixtures, no RecCard / composer / Reading Taste / lens-persistence change).**
+- (a) `fitClassifier` — reordered cozy_detective check above the bare `'crime fiction'` rule AND added explicit cozy guard (`!has('cozy','cozy mystery','whodunit','amateur detective','humorous fiction')`) to the crime-fiction rule, mirroring the existing L307 thriller guard.
+- (b) `signals.ts` — removed `'crime fiction'` from `DARK_SIGNALS.specific` (kept `family violence`, `psychotherapy patient/s`, `psychological thriller`, `domestic thriller`, `serial killer/s`, `true crime`, etc.); tightened `DOMESTIC_SUSPENSE_SUPPORT_SIGNALS.broad` to `psychological / suspense / violence / psychotherapy` plus the `mental illness` specific.
+
+Coverage preserved: Gone Girl + Verity still excluded via market-position belt (`domestic_suspense` + `psychological`/`suspense`); The Silent Patient still excluded via `family violence` + `psychotherapy patient` phrasal hits.
+
+Validator `validate_intent_lens` extended: §10 now 13 fixtures × 4 lenses (52 hardExclusion assertions) incl. new `Thursday Murder Club (runtime subjects, mp=domestic_suspense)` defense-in-depth fixture; new §11 `fitClassifier — cozy guard on generic crime/mystery rules` with 3 assertions (Thursday Murder Club runtime → cozy_detective; generic cozy → cozy_detective; Gone-Girl-style psych thriller → domestic_suspense). Full suite green: `validate_intent_lens`, `validate_p4c_limited_ranking`, `validate_intent_contribution`, `validate_tone_pace_fit`, `validate_series_continuation`, `validate_explanation_faithfulness`, `validate_rec_validity`, `validate_rec_payload_cache_lens`. `recValidity.VERSION` unchanged at `rcv6` (policy/classification change, no scoring shape change). Architect review: PASS.
+
+---
+
+## Forensic DEV log cleanup — shipped (2026-05-18)
+
+Removed 11 path-by-path forensic traces from the P4C.1 follow-up patch loop and the Intent Lens Eligibility Stabilization chapter, now that the queue-boundary final gate is the structural invariant and `validate_intent_final_gate` is the primary acceptance gate.
+
+**Removed (`components/RecommendationsFeed.tsx`):** `[INTENT_PRE_RENDER]`, `[INTENT_FOCUS_TITLES_IN_DECK]`, `[INTENT_FINAL_RENDER]`, full-JSON `[INTENT_APPLY]` (replaced with single-line `tag=<intentSummaryLabel>` breadcrumb).
+
+**Removed (`lib/recommender.ts`):** `[INTENT_RECPATH_ENTRY]`, `[INTENT_FORENSIC_RANKED]` / `_CACHE` / `_EXPERT`, `[INTENT_CACHE_FILTER_PRE]` / `_POST`, `[INTENT_EXPERT_FILTER_PRE]` / `_POST`, plus `INTENT_FOCUS_TITLES` set + `isIntentFocusTitle()` helper + `cacheIntentRejected` accumulator (only fed the removed logs).
+
+**Kept verbatim:** `[FINAL_GATE_LEAK]` invariant-breach alarm, `[FINAL_GATE]` validator-pinned gate summary, `[PERSIST_CACHE] skip_lens_tagged` writer guard, `[PERSIST_CACHE] lens_tagged_payload` reader guard, all non-Intent-Lens `[PERSIST_CACHE]` / `[REC_*]` lines.
+
+Behavior unchanged — cache-hit + expert-rebuild eligibility-gate semantics preserved byte-for-byte; `intentRejectedCount` still drives non-DEV `intent_filtered_count` / `intent_filtered_empty` meta path. All 9 validators green. Architect review: PASS. Diffstat: 2 files, +5 / −169.
+
+---
+
 ## P4D · narrow composer admission — product accepted (2026-05-18)
 
 **Status.** PASS WITH NOTE under the planning-first if/then protocol. Flipped from "shipped" to "product accepted" the same day as the original ship.
