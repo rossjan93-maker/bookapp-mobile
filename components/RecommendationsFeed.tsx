@@ -22,6 +22,7 @@ import {
   isIntentActive,
   intentSummaryLabel,
 } from '../lib/nextReadIntent';
+import { applyFinalIntentEligibility } from '../lib/intent/finalGate';
 import type { TasteProfile } from '../lib/tasteProfile';
 import type { RecEntitlement } from '../lib/recEntitlement';
 import { loadFeedbackContext, persistFeedback } from '../lib/recFeedback';
@@ -299,6 +300,28 @@ export function RecommendationsFeed({
   // ── syncVisible: derive React state from module-level queue ───────────────
   function syncVisible() {
     const visible = getVisibleStack();
+    // Intent Lens Eligibility Stabilization (2026-05-18) — DEV-only
+    // defense-in-depth leak assert. The queue boundary
+    // (initQueue / appendToQueue) is the enforcement site; if a
+    // hard-excluded book ever reaches getVisibleStack() under an active
+    // lens, that signals a gate-wiring bug (a producer path bypassed the
+    // queue writes, or the gate was called without the active intent).
+    // Production renders are unaffected.
+    if (__DEV__) {
+      const activeIntent = activeIntentRef.current ?? null;
+      if (activeIntent != null) {
+        const leakCheck = applyFinalIntentEligibility({
+          recs:        visible,
+          intent:      activeIntent,
+          source:      'initQueue_cold_restore', // sentinel; this path is read-only
+          intentTag:   intentSummaryLabel(activeIntent),
+          projectBook: (e) => e.book as any,
+        });
+        if (leakCheck.diagnostics && leakCheck.diagnostics.removedCount > 0) {
+          console.error('[FINAL_GATE_LEAK]', JSON.stringify(leakCheck.diagnostics));
+        }
+      }
+    }
     setVisibleConts(visible.filter(e => e.bucket === 'continuations').map(e => e.book));
     setVisibleDiscs(visible.filter(e => e.bucket === 'discoveries').map(e => e.book));
   }
@@ -368,7 +391,13 @@ export function RecommendationsFeed({
         // subsequent assertQueueConfig() call doesn't immediately drop a
         // freshly-seeded queue. If the session lacks a hash (legacy/prewarm),
         // the queue inherits null and will be invalidated on first strict read.
-        initQueue(entries, s.configHash ?? null);
+        initQueue(
+          entries,
+          s.configHash ?? null,
+          activeIntentRef.current ?? null,
+          'initQueue_cold_restore',
+          activeIntentRef.current ? intentSummaryLabel(activeIntentRef.current) : null,
+        );
       }
       if (s?.recMode)      setRecMode(s.recMode);
       if (s?.readerThesis) setReaderThesis(s.readerThesis);
@@ -628,8 +657,15 @@ export function RecommendationsFeed({
           ...discoveriesRaw.map((b: ScoredBook) => ({ book: b, bucket: 'discoveries' as QueueBucket })),
         ];
 
+        // Intent Lens Eligibility Stabilization (2026-05-18): every queue
+        // write passes the active session intent + typed FinalGateSource tag,
+        // so the final visible-deck safety gate in lib/recQueue.ts can drop
+        // any book the shared evaluator marks hard-excluded under the lens.
+        const _gateIntent  = activeIntentRef.current ?? null;
+        const _gateIntentTag = _gateIntent ? intentSummaryLabel(_gateIntent) : null;
         if (opts?.isBgRefresh || opts?.exhaustionBypass) {
-          const appended = appendToQueue(newEntries);
+          const _gateSource = opts?.exhaustionBypass ? 'append_exhaustion' : 'append_background';
+          const appended = appendToQueue(newEntries, _gateIntent, _gateSource, _gateIntentTag);
           if (__DEV__) console.log('[REC_REFRESH]',
             `reason=${opts.exhaustionBypass ? 'exhaustion_bypass' : 'background_refresh'}`,
             `| visible_disruption=false`,
@@ -637,8 +673,11 @@ export function RecommendationsFeed({
             `| queue_depth=${getQueueDepth()}`,
           );
         } else {
-          if (getQueueDepth() === 0) initQueue(newEntries, currentConfigHash);
-          else appendToQueue(newEntries);
+          if (getQueueDepth() === 0) {
+            initQueue(newEntries, currentConfigHash, _gateIntent, 'initQueue_fresh', _gateIntentTag);
+          } else {
+            appendToQueue(newEntries, _gateIntent, 'append_into_existing', _gateIntentTag);
+          }
         }
         // P0B: stamp / refresh the queue's identity. Safe to call after either
         // initQueue (which already stamped) or appendToQueue (which inherits
@@ -1097,6 +1136,17 @@ export function RecommendationsFeed({
     setActiveIntentLabel(intentSummaryLabel(intent));
     setIntentPanelOpen(false);
     clearAll();
+    // Intent Lens Eligibility Stabilization (2026-05-18) — stale-render leak
+    // closure. activeIntentRef is now set; visibleConts/visibleDiscs are
+    // React state snapshots that would otherwise keep rendering the
+    // pre-lens cards until the async runPipeline below eventually calls
+    // syncVisible(). During that window a previously-visible hard-excluded
+    // title could still render UNDER an active lens, violating the strict
+    // invariant. Reconciling visible state immediately after clearAll()
+    // collapses that window to zero: queue is empty → syncVisible sets
+    // visibleConts/visibleDiscs = [] → render falls through to the loading
+    // state (setIsInitialLoading(true) below).
+    syncVisible();
     clearRecSession();
     setIsInitialLoading(true);
     setIsFilterRefreshing(true);
@@ -1134,6 +1184,12 @@ export function RecommendationsFeed({
     setSeriesChip(false);
     setIntentPanelOpen(false);
     clearAll();
+    // Mirror of handleApplyIntent's stale-render reconciliation — clearing
+    // an active lens widens eligibility (no new leak vector), but
+    // immediately reconciling visible state keeps the apply / clear paths
+    // symmetric and prevents any stale pre-clear card from rendering
+    // mid-rebuild.
+    syncVisible();
     clearRecSession();
     setIsInitialLoading(true);
     setIsFilterRefreshing(true);

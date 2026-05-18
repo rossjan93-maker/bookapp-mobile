@@ -1,0 +1,55 @@
+Approve the Intent Lens Eligibility Stabilization plan.
+
+Proceed with implementation.
+
+Decision:
+Choose Resolution A — strict invariant. The final gate applies to continuations too.
+
+Reason:
+The user-facing promise is unconditional:
+If a book has a hardExclusion under the active Your Next Read lens, it must not render, regardless of whether it came from deterministic ranking, expert recs, cache, queue, background append, or continuation bucket.
+
+Proceed with Option D:
+Keep upstream filters for efficiency, but add the final visible-deck safety gate as the product guarantee.
+
+Implementation scope:
+- Add lib/intent/finalGate.ts
+- Wire applyFinalIntentEligibility into lib/recQueue.ts at initQueue and appendToQueue
+- Update RecommendationsFeed queue write call sites
+- Add DEV-only [FINAL_GATE] diagnostics
+- Add DEV-only [FINAL_GATE_LEAK] assert in syncVisible
+- Add scripts/validate_intent_final_gate.ts
+- Update replit.md with the stabilization chapter result
+
+Hard constraints:
+- Do not touch RecCard.
+- Do not touch composer.
+- Do not add visible explanations.
+- Do not persist the lens.
+- Do not mutate Reading Taste.
+- Do not hardcode title blacklists except validator fixtures.
+- Do not broaden No-dark with generic single words.
+- Do not start deriveBookEvidence / BookEvidence Batch B or C.
+- Do not resume P4D composer admission in this batch.
+
+Required validators:
+- validate_intent_final_gate
+- validate_intent_lens
+- validate_p4c_limited_ranking
+- validate_intent_contribution
+- validate_tone_pace_fit
+- validate_series_continuation
+- validate_explanation_faithfulness
+- validate_rec_validity
+- validate_rec_payload_cache_lens
+
+Acceptance:
+- Validator suite green
+- Architect review PASS
+- Final gate catches hard-excluded books even if upstream source contains them
+- Less-dark never hard-removes
+- Cozy mystery remains eligible
+- Unknown evidence remains eligible
+- Relative order of kept books preserved
+- No RecCard/composer/reason-copy changes
+- No manual smoke required for hard-exclusion correctness after validator pass

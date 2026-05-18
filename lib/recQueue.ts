@@ -1,6 +1,12 @@
 import type { ScoredBook } from './recommender';
 import { addActedOnIds } from './recPayloadCache';
 import { assertCurrent } from './recValidity';
+import {
+  applyFinalIntentEligibility,
+  formatFinalGateLog,
+  type FinalGateSource,
+} from './intent/finalGate';
+import type { NextReadIntent } from './nextReadIntent';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 export const VISIBLE_STACK_SIZE  = 4;    // cards shown to the user at once
@@ -133,8 +139,30 @@ export function getBackstageDepth(): number        { return Math.max(0, _queue.l
  * produced under, so subsequent assertQueueConfig() reads can detect when
  * the queue has outlived its source recommendation-config.
  */
-export function initQueue(entries: QueueEntry[], configHash?: string | null): void {
-  _queue = entries.filter(e => isEligible(e.book));
+export function initQueue(
+  entries: QueueEntry[],
+  configHash?: string | null,
+  intent?: NextReadIntent | null,
+  source: FinalGateSource = 'initQueue_cold_restore',
+  intentTag: string | null = null,
+): void {
+  // Intent Lens Eligibility Stabilization (2026-05-18) — final visible-deck
+  // safety gate. Runs BEFORE the actedOn eligibility filter so the queue
+  // singleton cannot hold a hard-excluded book under an active lens,
+  // regardless of which producer path delivered the entries (cold-start
+  // restore, fresh pipeline, append-into-existing, background, exhaustion).
+  // See lib/intent/finalGate.ts for the contract.
+  const gated = applyFinalIntentEligibility({
+    recs:        entries,
+    intent:      intent ?? null,
+    source,
+    intentTag,
+    projectBook: (e) => e.book as any,
+  });
+  if (__DEV__ && gated.diagnostics && gated.diagnostics.removedCount > 0) {
+    console.log(formatFinalGateLog(gated.diagnostics));
+  }
+  _queue = gated.kept.filter(e => isEligible(e.book));
   if (configHash !== undefined) _configHash = configHash;
 }
 
@@ -145,13 +173,32 @@ export function initQueue(entries: QueueEntry[], configHash?: string | null): vo
  *
  * Returns the number of books actually appended.
  */
-export function appendToQueue(entries: QueueEntry[]): number {
+export function appendToQueue(
+  entries: QueueEntry[],
+  intent: NextReadIntent | null = null,
+  source: FinalGateSource = 'append_into_existing',
+  intentTag: string | null = null,
+): number {
+  // Intent Lens Eligibility Stabilization (2026-05-18) — final visible-deck
+  // safety gate (see lib/intent/finalGate.ts). Runs BEFORE the dedupe /
+  // actedOn filters so the queue singleton cannot grow to hold a
+  // hard-excluded book under an active lens, regardless of source path.
+  const gated = applyFinalIntentEligibility({
+    recs:        entries,
+    intent,
+    source,
+    intentTag,
+    projectBook: (e) => e.book as any,
+  });
+  if (__DEV__ && gated.diagnostics && gated.diagnostics.removedCount > 0) {
+    console.log(formatFinalGateLog(gated.diagnostics));
+  }
   const existingIds = new Set<string>();
   for (const e of _queue) {
     existingIds.add(e.book.id);
     if (e.book.external_id) existingIds.add(e.book.external_id);
   }
-  const eligible = entries.filter(e =>
+  const eligible = gated.kept.filter(e =>
     isEligible(e.book) &&
     !existingIds.has(e.book.id) &&
     !(e.book.external_id && existingIds.has(e.book.external_id))
