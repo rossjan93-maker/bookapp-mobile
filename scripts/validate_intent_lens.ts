@@ -282,43 +282,56 @@ header('§8 dark-signal coverage on canonical fixtures');
   // Canonical OL-style subject sets — representative of what each book
   // actually returns from Open Library / Google Books today. These are
   // used as test fixtures only; they are not a manual blocklist.
+  // P4C.1 follow-up #5 (2026-05-17 runtime-log driven) — fixtures now
+  // mirror the EXACT subjects captured by [INTENT_FORENSIC_RANKED] in the
+  // live failure log, plus the per-book market_position from the trait
+  // pipeline. Subjects here are pasted verbatim from the user's log so we
+  // are validating against actual OL/Google Books corpus, not idealized
+  // taxonomy.
   const fixtures = [
     {
       name: 'Gone Girl',
-      // OL typical: psychological thriller, missing persons, marriage,
-      // suspense, fiction.
-      subjects: ['Psychological thriller', 'Missing persons', 'Marriage',
-                 'Suspense', 'Fiction', 'Domestic suspense'],
+      // Live log: thriller, mystery, suspense, psychological fiction,
+      //          crime fiction
+      subjects: ['thriller', 'mystery', 'suspense',
+                 'psychological fiction', 'crime fiction'],
       title:   'Gone Girl',
-      shouldExcludeOnNoDark:    true,
+      marketPos: 'domestic_suspense' as const,
+      shouldExcludeOnNoDark:    true,   // 'crime fiction' phrasal hit + market-position belt
       shouldExcludeOnLessDark:  false,
     },
     {
       name: 'The Silent Patient',
-      // OL typical: psychological thriller, psychotherapy, murder,
-      // mental illness, suspense.
-      subjects: ['Psychological thriller', 'Psychotherapy', 'Suspense',
-                 'Mental illness', 'Fiction', 'Murder'],
+      // Live log: Fiction, psychological / Fiction, thrillers /
+      //          Family violence / Psychotherapy patients
+      subjects: ['Fiction, psychological', 'Fiction, thrillers',
+                 'Family violence', 'Psychotherapy patients'],
       title:   'The Silent Patient',
-      shouldExcludeOnNoDark:    true,
+      marketPos: 'domestic_suspense' as const,
+      shouldExcludeOnNoDark:    true,   // 'family violence' + 'psychotherapy patient' phrasal hits
       shouldExcludeOnLessDark:  false,
     },
     {
       name: 'The Thursday Murder Club',
-      // OL typical: cozy mystery, retirement, friendship, humor, mystery.
-      // Has 'murder' / 'crime' but no dark phrasal marker.
-      subjects: ['Cozy mystery', 'Detective and mystery stories', 'Murder',
-                 'Older people', 'Fiction', 'Humorous fiction'],
+      // Cozy mystery — must remain eligible. No dark phrasal marker;
+      // single-token 'murder' / 'mystery' deliberately not in DARK_SIGNALS.
+      subjects: ['cozy mystery', 'detective and mystery stories', 'murder',
+                 'older people', 'fiction', 'humorous fiction'],
       title:   'The Thursday Murder Club',
+      marketPos: 'book_club_fiction' as const,
       shouldExcludeOnNoDark:    false,
       shouldExcludeOnLessDark:  false,
     },
     {
       name: 'Everything I Never Told You',
-      // OL typical: literary fiction, family, grief, secrets, Chinese-American.
-      subjects: ['Family secrets', 'Chinese Americans', 'Mothers and daughters',
-                 'Fiction', 'Domestic fiction', 'Literary fiction'],
+      // Literary grief novel — user explicitly left this ambiguous in the
+      // follow-up brief. We deliberately did NOT add 'psychological
+      // fiction' or 'grief' to DARK_SIGNALS, so ENITY stays eligible.
+      subjects: ['grief', 'drowning', 'literary fiction',
+                 'psychological fiction', 'family secrets',
+                 'mothers and daughters'],
       title:   'Everything I Never Told You',
+      marketPos: 'literary_prestige' as const,
       shouldExcludeOnNoDark:    false,
       shouldExcludeOnLessDark:  false,
     },
@@ -328,20 +341,15 @@ header('§8 dark-signal coverage on canonical fixtures');
   const lessDarkIntent:  NextReadIntent = { hard: {}, soft: { intensity: 'low' }, exclude: {} };
 
   for (const f of fixtures) {
-    // marketPos is only consulted for avoid_classics / avoid_literary /
-    // avoid_romance / avoid_nonfiction. None of those are active in either
-    // fixture intent — 'book_club_fiction' is a neutral placeholder that
-    // cannot trigger any of those exclusion paths.
-    const neutralMarketPos = 'book_club_fiction' as const;
     const noDarkReason   = getIntentExclusionReason(
       { subjects: f.subjects, title: f.title },
       noDarkIntent,
-      neutralMarketPos,
+      f.marketPos,
     );
     const lessDarkReason = getIntentExclusionReason(
       { subjects: f.subjects, title: f.title },
       lessDarkIntent,
-      neutralMarketPos,
+      f.marketPos,
     );
 
     const noDarkExcluded   = noDarkReason   === 'avoid_dark';

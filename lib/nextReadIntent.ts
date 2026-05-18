@@ -142,7 +142,7 @@ const DARK_SIGNALS = [
   'dark themes', 'dark fiction', 'disturbing content', 'graphic violence',
   'trauma', 'abuse', 'assault', 'gritty', 'bleak', 'depressing',
   'disturbing', 'sinister', 'unsettling', 'nihilistic', 'horror fiction',
-  // P4C.1 follow-up — canonical genre markers (mirrors TONE_DARK_SPECIFIC
+  // P4C.1 follow-up #2 — canonical genre markers (mirrors TONE_DARK_SPECIFIC
   // in lib/bookTraits.ts so the hard exclusion has the same dark-coverage
   // as the trait classifier). Phrasal only — single tokens stay out so
   // cozies / general thrillers are not over-excluded.
@@ -151,7 +151,42 @@ const DARK_SIGNALS = [
   'psychological horror',  'gothic horror',
   'domestic thriller',     'domestic suspense',
   'serial killer',         'true crime',
+  // P4C.1 follow-up #5 (2026-05-17, runtime-log driven) — phrasal markers
+  // observed in the LIVE candidate corpus for Gone Girl / The Silent
+  // Patient that the prior set missed:
+  //   Gone Girl subjects:        thriller, mystery, suspense,
+  //                              psychological fiction, crime fiction
+  //   Silent Patient subjects:   Fiction, psychological  /  Fiction, thrillers
+  //                              Family violence  /  Psychotherapy patients
+  // 'crime fiction' covers Gone Girl. 'family violence' +
+  // 'psychotherapy patient' cover Silent Patient. We DELIBERATELY skip
+  // 'psychological fiction' because it would also fire on Everything I
+  // Never Told You (literary grief novel — fixture-confirmed eligible
+  // under No-dark; user explicitly left that book ambiguous in the
+  // follow-up brief). All three new markers are phrasal so cozy
+  // mysteries / general literary fiction remain eligible.
+  'crime fiction', 'family violence', 'psychotherapy patient',
 ];
+
+// P4C.1 follow-up #5 — market-position coupled exclusion ────────────────────
+// When the trait pipeline has already classified a book as
+// `domestic_suspense` (a market position whose textbook examples are Gone
+// Girl, Silent Patient, Behind Closed Doors, The Couple Next Door…), the
+// "No dark" promise should fire even if the OL subject corpus is
+// minimally tagged. The phrasal DARK_SIGNALS list above is the primary
+// gate; this market-position rule is belt-and-suspenders for books whose
+// subject metadata is too thin to phrase-match. Coupled with a
+// supporting-signal check so a `domestic_suspense` book with no
+// reinforcing dark/psychological/crime/violence/suspense subject would
+// still pass (preserves the spec's "no false positives on cozies" rule).
+const DOMESTIC_SUSPENSE_SUPPORT_SIGNALS = [
+  'psychological', 'suspense', 'crime', 'violence', 'murder',
+  'thriller',      'mystery',  'mental illness', 'psychotherapy',
+];
+function domesticSuspenseDark(corpus: string, marketPos: MarketPosition): boolean {
+  if (marketPos !== 'domestic_suspense') return false;
+  return DOMESTIC_SUSPENSE_SUPPORT_SIGNALS.some(s => corpus.includes(s));
+}
 
 const PACE_FAST_SIGNALS = [
   'fast-paced', 'fast paced', 'page-turner', 'page turner', 'action-packed',
@@ -264,6 +299,7 @@ export function getIntentExclusionReason(
   if (e.avoid_romance    && (marketPos === 'romance' || marketPos === 'romantasy')) return 'avoid_romance';
   if (e.avoid_nonfiction && marketPos === 'memoir_nonfiction')  return 'avoid_nonfiction';
   if (e.avoid_dark       && anySignal(corpus, DARK_SIGNALS))    return 'avoid_dark';
+  if (e.avoid_dark       && domesticSuspenseDark(corpus, marketPos)) return 'avoid_dark';
   if (e.avoid_series     && isSeries(corpus))                   return 'avoid_series';
 
   return null;

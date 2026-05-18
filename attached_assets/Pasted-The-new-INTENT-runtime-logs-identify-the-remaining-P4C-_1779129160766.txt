@@ -1,0 +1,113 @@
+The new INTENT runtime logs identify the remaining P4C.1 No-dark failure path.
+
+Do not proceed to P4D.
+Do not mark P4C.1 product accepted.
+
+Key log evidence:
+
+1. The intent object is correct:
+[INTENT_APPLY]
+- intent_active: true
+- intent_summary: “Fast-paced · Light · Less dark · Light & accessible · No dark”
+- exclude.avoid_dark: true
+
+2. The failure happens in the ranked/discovery path:
+[INTENT_FORENSIC_RANKED]
+- path: getRankedRecs/discoveryPool
+
+3. Gone Girl survives because exclusion_reason is null:
+Gone Girl:
+- market_position: domestic_suspense
+- lane: modern_suspense
+- subjects_head:
+  - thriller
+  - mystery
+  - suspense
+  - psychological fiction
+  - crime fiction
+- exclusion_reason: null
+- verdict_so_far: continues_to_hard_filter
+
+4. The Silent Patient survives because exclusion_reason is null:
+The Silent Patient:
+- market_position: domestic_suspense
+- lane: modern_suspense
+- subjects_head:
+  - Fiction, psychological
+  - Fiction, thrillers
+  - Family violence
+  - Psychotherapy patients
+- exclusion_reason: null
+- verdict_so_far: continues_to_hard_filter
+
+5. Final render confirms the same books are still displayed:
+[INTENT_FINAL_RENDER]
+- summary includes No dark
+- avoid_dark: true
+- topTitles include:
+  - Gone Girl
+  - The Silent Patient
+
+Conclusion:
+The active intent and UI summary are correct. The remaining issue is that getIntentExclusionReason returns null for the actual live candidate metadata in the ranked/discovery path.
+
+This is likely a live DARK_SIGNALS / corpus-normalization gap, not a cache-hit or expert-build bypass anymore.
+
+Please investigate and implement the minimal fix.
+
+Likely root cause:
+The prior DARK_SIGNALS fix included markers like “psychological thriller” and “domestic suspense,” but the live candidate subjects are variants like:
+- psychological fiction
+- Fiction, psychological
+- Fiction, thrillers
+- crime fiction
+- family violence
+- psychotherapy patients
+
+Questions:
+1. Does getIntentExclusionReason normalize subject strings like “Fiction, psychological” into “psychological fiction”?
+2. Should DARK_SIGNALS include “psychological fiction”?
+3. Should “family violence,” “psychotherapy patients,” or “mental illness” trigger No-dark exclusion?
+4. Should market_position = domestic_suspense contribute to exclusion only when paired with psychological / suspense / crime signals?
+5. Why does BookTraits identify these as dark but getIntentExclusionReason still returns null?
+6. Can we share the same dark-signal helper between BookTraits and No-dark exclusion to prevent future drift?
+
+Minimal fix constraints:
+- Do not treat generic “thriller” or “murder” alone as dark, because cozy mysteries should remain eligible.
+- Do not manually blacklist titles except as validator fixtures.
+- Preserve:
+  - No dark = hard session exclusion
+  - Less dark = bounded demotion
+- Do not touch composer or RecCard.
+- Do not mutate durable Reading Taste.
+- Do not persist the lens.
+
+Validation required:
+1. Add live-metadata fixtures matching the actual logged subjects:
+   - Gone Girl with psychological fiction / crime fiction / suspense
+   - The Silent Patient with Fiction, psychological / Fiction, thrillers / Family violence / Psychotherapy patients
+   - The Thursday Murder Club with cozy mystery / murder / humorous fiction
+   - Everything I Never Told You with grief / drowning / literary fiction / psychological fiction if you decide it should be excluded or explicitly treated as ambiguous
+2. Assert under No dark:
+   - Gone Girl is excluded
+   - The Silent Patient is excluded
+   - The Thursday Murder Club remains eligible
+3. Assert under Less dark:
+   - Gone Girl / Silent Patient are not hard-excluded, only demoted by P4C.1
+4. Rerun:
+   - validate_intent_lens
+   - validate_p4c_limited_ranking
+   - validate_tone_pace_fit
+   - validate_rec_validity
+   - validate_taxonomy
+5. Provide a final live-smoke instruction.
+
+Return:
+1. Executive verdict
+2. Root cause
+3. Exact corpus normalization / signal gap
+4. Files touched
+5. No-dark before/after behavior
+6. Less-dark before/after behavior
+7. Validator results
+8. Whether P4C.1 can resume live smoke
