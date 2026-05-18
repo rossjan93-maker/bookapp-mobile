@@ -4,9 +4,11 @@ Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/
 
 ## Intent Lens Eligibility Stabilization — product accepted (2026-05-18)
 
-**Status:** Intent Lens Eligibility Stabilization — accepted.
+**Status:** Accepted and closed.
 
 **Options chosen.** Option D (final visible-deck safety gate at the queue boundary) + Resolution A (gate applies to continuations too — a truly-dark next-in-series IS hard-excluded under No-dark; user clears the lens to see it).
+
+**Product invariant (locked).** If `evaluateBookAgainstIntentLens` returns a `hardExclusion` for a book under the active Your Next Read lens, that book MUST NOT render in the visible deck. The invariant is enforced at the queue write boundary (single chokepoint) and re-asserted at render time as DEV defense-in-depth — it is not a property of any one producer path or composer call site.
 
 **What shipped.**
 - Final visible-deck safety gate enforces the product invariant: any book the shared `evaluateBookAgainstIntentLens` marks `hardExclusion` under an active Your-Next-Read lens cannot render — regardless of producer path (cold restore, fresh build, foreground append, background watermark replenish, exhaustion bypass) or bucket (discoveries AND continuations).
@@ -19,18 +21,21 @@ Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/
 
 **Architect review.** PASS. Initial review flagged the stale-render leak (activeIntentRef set + queue cleared but visible state not reconciled until async pipeline completes) → addressed by inserting immediate `syncVisible()` after `clearAll()` in both handlers + adding §12 validator coverage → re-review confirmed closure with no new vectors introduced.
 
+**Process note (load-bearing for future hard-exclusion work).** This chapter replaces manual smoke as the primary acceptance gate for hard-exclusion correctness. Future hard-exclusion regressions should be caught by `scripts/validate_intent_final_gate.ts` and the queue invariant — NOT by path-by-path live debugging. The earlier P4C.1 follow-up stream (#1 → #7) demonstrated the failure mode of treating live smoke as primary: each new dark-psych title that slipped through triggered a fresh title-specific patch to `DARK_SIGNALS`, and the cycle only broke when the work was re-architected around a single shared evaluator (follow-up #6) and a queue-boundary gate (this chapter). Hold the line: if a hard-exclusion bug ships, the first remediation step is "extend the validator fixture matrix to reproduce it," not "open the app and inspect the deck."
+
 **Pinned constraints honored.**
 - `recValidity.VERSION` remains at `rcv6` (no scoring shape change).
-- No RecCard / composer / `book.reasons[]` / Reading-Taste / lens-persistence change.
+- No RecCard / composer / `book.reasons[]` / Reading-Taste / lens-persistence / durable-taste change.
 - No visible explanation copy change.
 - No broadening of No-dark policy.
 - No title blacklists outside fixtures.
 - No `deriveBookEvidence` / BookEvidence Batch B/C work.
 
-**Next recommended work (queued, in order).**
-1. **Remove or reduce temporary DEV forensic logs if still noisy.** The `[FINAL_GATE]`, `[FINAL_GATE_LEAK]`, `[INTENT_PRE_RENDER]`, `[INTENT_FORENSIC_RANKED]`, and `[PERSIST_CACHE]` lines were instrumented to support the multi-batch eligibility / cache-bypass investigation. Sweep them for redundancy now that the invariant is enforced at the queue boundary; keep the leak assert and anything still load-bearing for ongoing triage.
-2. **Proceed to P4D narrow composer admission.** Already shipped per replit.md phase table (2026-05-18) — confirm live smoke under a No-dark + Less-dark composed lens and flip it from "shipped" to "product accepted" once the user-visible projection is verified.
+**Recommended next sequence.**
+1. **Forensic DEV log cleanup.** The `[FINAL_GATE]`, `[FINAL_GATE_LEAK]`, `[INTENT_PRE_RENDER]`, `[INTENT_FORENSIC_RANKED]`, and `[PERSIST_CACHE]` lines were instrumented to support the multi-batch eligibility / cache-bypass investigation. Sweep them for redundancy now that the invariant is enforced at the queue boundary; keep the leak assert and anything still load-bearing for ongoing triage.
+2. **P4D narrow composer admission.** Already shipped per replit.md phase table (2026-05-18) — confirm live smoke under a No-dark + Less-dark composed lens and flip it from "shipped" to "product accepted" once the user-visible projection is verified.
 3. **Keep full BookEvidence Batch B/C deferred** until the shadow-mode calibration window opens (per the planned `P4 hygiene` sequence). Batch A signal-map consolidation already shipped; Batch B (typed `BookEvidence` + `deriveBookEvidence` single entry point + byte-identical contract validator) and Batch C (`intensity` + `emotionalWeight` dimensions + 12×6 fixture matrix) stay out of scope until then.
+4. **Continue using planning-first chapter protocol for multi-path recommender / cache / filter work.** The Intent Lens stabilization chapter validated the protocol: lock the invariant, identify every code path that could violate it, choose between fixing each path or installing a single chokepoint, then validate via a fixture matrix that pins the invariant before live smoke. Apply the same protocol to any future multi-path recommender / cache / filter work — do not start ad-hoc edits before the invariant + enforcement-locus question is answered.
 
 ## P4C.1 — product accepted (2026-05-18)
 
