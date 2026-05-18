@@ -1,0 +1,147 @@
+Pause further title-specific fixes.
+
+We are concerned that we are still approaching the No-dark / lens problem too narrowly by patching specific titles or adding isolated signal phrases.
+
+The goal is broader:
+Readstack needs a holistic Book Evidence + Intent Lens Eligibility system that can evaluate any book against any temporary reader lens.
+
+Specific titles should be validator fixtures, not the basis of product logic.
+
+Task type:
+Architecture consolidation + minimal implementation plan. Implement only if contained.
+
+Current accepted state:
+- Reading Taste = durable baseline.
+- Your Next Read = temporary session lens.
+- Shared evaluateBookAgainstIntentLens(...) now exists.
+- No-dark should be hard exclusion only with specific evidence.
+- Less-dark should be bounded demotion.
+- Unknown evidence should not hard-exclude.
+
+Concern:
+The evaluator may still be relying too much on isolated phrase lists rather than a normalized book-evidence model. This risks whack-a-mole fixes for Verity, The Secret History, etc.
+
+Goal:
+Define and, if contained, implement a normalized BookEvidence layer that the evaluator consumes.
+
+## Desired model
+
+Create or identify a normalized evidence object for each book, derived from existing metadata and BookTraits:
+
+- tone
+- toneConfidence
+- pace
+- paceConfidence
+- complexity
+- complexityConfidence
+- intensity
+- intensityConfidence
+- emotionalWeight
+- emotionalWeightConfidence
+- lengthClass
+- seriesPosition
+- genre/lane/market_position
+- evidence phrases / supporting metadata
+
+Do not invent certainty.
+Unknown remains unknown.
+
+## Lens policy
+
+Map session lenses to evidence requirements:
+
+### Hard exclusions
+- No dark
+- No romance
+- No literary
+- format-only filters
+- max length
+- standalone-only
+
+Hard exclusions require specific evidence.
+
+### Soft demotions / not-right-now
+- Less dark
+- light & accessible
+- short & light
+- low intensity
+- slower/faster
+- palate cleanser / low-burden mood
+
+These should use P4C.1 bounded contribution influence, not hard exclusion unless an explicit No-X filter is selected.
+
+## Questions to answer
+
+1. Does BookTraits currently provide enough normalized evidence for:
+   - dark
+   - intensity
+   - emotional burden
+   - literary/dense
+   - accessible/light
+   - cozy
+   - romantic suspense
+2. Where are gaps?
+3. Should evaluateBookAgainstIntentLens call BookTraits directly?
+4. Should BookTraits and evaluateBookAgainstIntentLens share a lower-level evidence extractor?
+5. How do we avoid duplicate signal lists drifting again?
+6. Which title fixtures reveal structural gaps versus one-off metadata gaps?
+
+## Fixtures
+
+Use these only as regression cases:
+- Gone Girl
+- The Silent Patient
+- Verity
+- The Secret History
+- The Thursday Murder Club
+- Everything I Never Told You
+- Beach Read
+- pure romance control
+- romantic suspense control
+- cozy mystery control
+- dark literary control
+- emotionally heavy non-dark control
+
+For each, define expected behavior under:
+- No dark
+- Less dark
+- Light & accessible
+- Short & light
+- No literary
+- No romance
+
+## Minimal implementation preference
+
+If implementation is contained:
+1. Add `deriveBookEvidence(...)` or equivalent pure helper.
+2. Make `evaluateBookAgainstIntentLens(...)` consume that evidence.
+3. Keep getIntentExclusionReason as a wrapper.
+4. Keep current call sites unchanged if possible.
+5. Add validator matrix proving general policy, not title patches.
+
+If implementation is not contained:
+Return the exact smallest safe sequence before coding.
+
+## Hard constraints
+
+- Do not touch RecCard.
+- Do not touch composer.
+- Do not add visible explanations.
+- Do not persist the lens.
+- Do not mutate Reading Taste.
+- Do not hardcode title blacklists except as validator fixtures.
+- Do not broaden No-dark with generic single words like murder, thriller, or death.
+- Preserve:
+  - No dark = hard session exclusion
+  - Less dark = bounded demotion
+  - unknown = do not hard-exclude
+
+Return:
+1. Executive recommendation
+2. Current evaluator strengths and weaknesses
+3. Proposed BookEvidence contract
+4. Lens policy matrix
+5. Fixture matrix
+6. Minimal implementation plan
+7. Risks
+8. Whether P4C.1 should remain blocked
