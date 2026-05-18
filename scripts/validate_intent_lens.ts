@@ -379,9 +379,11 @@ header('§9 cache-path intent filter (locks live-smoke fix)');
   );
 
   // (a) Architectural assertion — both gates must be called inside the
-  //     cache-hit return path, gated by isIntentActive.
+  //     cache-hit return path, gated by isIntentActive. Anchor on the
+  //     "Session-only intent filter on cached recs" banner so the assertion
+  //     survives any future addition of nested DEV traces.
   const cacheBlockMatch = src.match(
-    /if\s*\(\s*!rebuildDecision\.should_rebuild\s*\)\s*\{[\s\S]{0,4000}?\n\s*\}\s*\n/,
+    /Session-only intent filter on cached recs[\s\S]{0,6000}?\n\s*return\s*\{\s*\n\s*recs:\s*\[\.\.\.cachedCont/,
   );
   if (!cacheBlockMatch) {
     fail('could not locate `if (!rebuildDecision.should_rebuild) { ... }` block in lib/recommender.ts — the cache-hit return shape changed; re-confirm the post-cache filter is still wired before re-asserting');
@@ -406,7 +408,7 @@ header('§9 cache-path intent filter (locks live-smoke fix)');
   //       would reject. Without this gate, the cache-hit fix alone leaves
   //       a hole on the very first build (or any shouldRebuild trigger).
   const expertReturnMatch = src.match(
-    /const\s+expertCont\s*=\s*baseResult\.continuations[\s\S]{0,4000}?\n\s*return\s*\{[\s\S]{0,1500}?expert_decision:\s*decision[\s\S]{0,500}?\n\s*\}\s*;\s*\n\s*\}\s*\n/,
+    /const\s+expertCont\s*=\s*baseResult\.continuations[\s\S]{0,8000}?\n\s*return\s*\{\s*\n\s*recs:\s*\[\.\.\.expertCont/,
   );
   if (!expertReturnMatch) {
     fail('could not locate the fresh expert-build return block in lib/recommender.ts — re-confirm the post-build intent filter is still wired before re-asserting');

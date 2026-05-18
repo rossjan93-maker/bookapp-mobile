@@ -1,0 +1,89 @@
+The P4C.1 No-dark live smoke is still failing.
+
+Active lens:
+- Fast-paced
+- Light
+- Less dark
+- Light & accessible
+- No dark
+
+Displayed cards still include:
+- Gone Girl
+- The Silent Patient
+
+We need runtime instrumentation, not another static validator.
+
+Please add temporary DEV-only diagnostic logs that trace the actual path from intent apply to rendered For You cards.
+
+Required logs:
+
+1. In RecommendationsFeed.handleApplyIntent:
+- active chip values
+- assembled intent object
+- active intent summary
+- whether exclude.avoid_dark is true
+- whether runPipeline is called
+- timestamp / build id if available
+
+2. In getPersonalizedRecsWithExpert / recommender entry:
+- whether request has active intent
+- whether cache hit or fresh expert build path is used
+- whether cache-hit filter runs
+- whether fresh expert filter runs
+
+3. Around every intent filter:
+For the active lens, log:
+- titles before filter
+- titles after filter
+- removed titles
+- exclusion reason per removed title
+
+Specifically trace:
+- Gone Girl
+- The Silent Patient
+- The Thursday Murder Club
+- Everything I Never Told You
+
+For each of these four, log:
+- title
+- author
+- source path: cache-hit / fresh expert / deterministic / queue / session / visible state
+- market_position
+- detected lane
+- corpus fields used by getIntentExclusionReason
+- matched DARK_SIGNAL, if any
+- exclusion result
+
+4. Immediately before final UI state is committed in RecommendationsFeed:
+- final visible title list
+- source array used for render
+- whether it came from recSession, recQueue, recPayloadCache, _hubCache, or local state
+- whether any post-filter replenishment or syncVisible step added cards
+
+5. Add one final consolidated log:
+[INTENT_FINAL_RENDER] {
+  summary,
+  avoid_dark,
+  source,
+  topTitles,
+  removedByIntent,
+  reintroducedTitles
+}
+
+Hard constraints:
+- DEV-only logs only.
+- Do not change ranking/scoring/composer/RecCard.
+- Do not persist lens state.
+- Do not mutate Reading Taste.
+- Do not manually blacklist titles except as validator fixtures.
+- Investigate first. Patch only after the exact bypass is proven.
+
+Return:
+1. Which runtime path was used.
+2. Whether cache-hit filter fired.
+3. Whether fresh expert filter fired.
+4. Whether Gone Girl / Silent Patient were removed.
+5. If removed, where they were reintroduced.
+6. If not removed, why getIntentExclusionReason failed.
+7. Minimal fix.
+8. Whether P4C.1 remains blocked.

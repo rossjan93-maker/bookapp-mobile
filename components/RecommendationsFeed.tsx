@@ -653,6 +653,46 @@ export function RecommendationsFeed({
           exhaustionAttemptRef.current = 0;
         }
 
+        // P4C.1 #4 DEV-only consolidated render trace ─────────────────────────
+        if (__DEV__) {
+          const activeIntent = activeIntentRef.current;
+          const recTitles  = recs.map((b: any) => b.title);
+          const contTitles = continuationsRaw.map((b: any) => b.title);
+          const discTitles = discoveriesRaw.map((b: any) => b.title);
+          console.log('[INTENT_PRE_RENDER]', JSON.stringify({
+            source_path:        opts?.isBgRefresh ? 'append_background'
+                              : opts?.exhaustionBypass ? 'append_exhaustion'
+                              : (getQueueDepth() === newEntries.length ? 'initQueue_fresh' : 'append_into_existing'),
+            recMode:            meta.mode,
+            is_from_cache:      (meta as any).is_from_cache ?? false,
+            continuation_titles: contTitles,
+            discovery_titles:    discTitles,
+            queue_depth_after:   getQueueDepth(),
+          }));
+          // Focus-title forensic across all three buckets.
+          const sawFocus = [...recTitles, ...contTitles, ...discTitles]
+            .filter((t: string) => {
+              const k = (t ?? '').trim().toLowerCase();
+              return k === 'gone girl' || k === 'the silent patient'
+                  || k === 'the thursday murder club' || k === 'everything i never told you';
+            });
+          if (sawFocus.length) {
+            console.log('[INTENT_FOCUS_TITLES_IN_DECK]', JSON.stringify({
+              titles_seen: sawFocus,
+              in_continuations: contTitles.filter((t: string) => sawFocus.includes(t)),
+              in_discoveries:   discTitles.filter((t: string) => sawFocus.includes(t)),
+            }));
+          }
+          console.log('[INTENT_FINAL_RENDER]', JSON.stringify({
+            summary:        activeIntent ? intentSummaryLabel(activeIntent) : null,
+            avoid_dark:     activeIntent?.exclude?.avoid_dark ?? false,
+            source:         (meta as any).is_from_cache ? 'rec_cache_hit' : 'fresh_expert_build',
+            topTitles:      [...contTitles, ...discTitles].slice(0, 10),
+            removedByIntent: '(see INTENT_*_FILTER_POST logs above this entry)',
+            reintroducedTitles: sawFocus,
+          }));
+        }
+
         LayoutAnimation.configureNext(REFLOW_LAYOUT_ANIM);
         syncVisible();
 
@@ -1047,11 +1087,18 @@ export function RecommendationsFeed({
     const reqId = ++filterRefreshReqRef.current;
     if (__DEV__) {
       console.log('[INTENT_APPLY]', JSON.stringify({
-        mood:  moodChip,    pace:   paceChip,
-        tone:  toneChip,    int:    intensityChip,
-        len:   lengthChip,  fmt:    formatChip,
-        stand: seriesChip,
-        hard, exclude,
+        chips: {
+          mood:  moodChip,    pace:   paceChip,
+          tone:  toneChip,    int:    intensityChip,
+          len:   lengthChip,  fmt:    formatChip,
+          stand: seriesChip,
+        },
+        intent,
+        intent_active:  isIntentActive(intent),
+        intent_summary: intentSummaryLabel(intent),
+        avoid_dark:     exclude.avoid_dark === true,
+        runPipeline_called: true,
+        ts:             Date.now(),
       }));
     }
     runPipeline({ isBgRefresh: false }).finally(() => {
