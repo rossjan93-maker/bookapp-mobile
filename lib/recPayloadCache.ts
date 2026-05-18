@@ -169,6 +169,41 @@ export async function loadRecPayload(
       }
     }
 
+    // ── P4D-followup (2026-05-18): lens-tagged payload guard ─────────────
+    //
+    // Your-Next-Read intent (the "lens") is session-only by design: it is
+    // never persisted, the user must re-apply it on every cold start, and
+    // its retrieval/scoring effects (avoid_dark, hard.max_page_count,
+    // soft pace/tone boosts, evaluateBookAgainstIntentLens decisions) are
+    // produced inline against the *current* signal map.
+    //
+    // A persisted payload with a non-null `intentTag` is therefore a
+    // contradiction: it captures the deck-as-filtered-under-a-past-lens
+    // and replays it without re-running the evaluator. If the lens-eval
+    // logic shifts (e.g., DARK_SIGNALS extension, word-boundary
+    // tightening, new evidence dimension), the restored deck may include
+    // titles the current evaluator would reject — exactly the
+    // "stale eligibility decision" failure mode from the 2026-05-18
+    // No-dark live smoke.
+    //
+    // We could rebuild this safely by either (a) re-running the
+    // evaluator at restore time, but the lens itself isn't persisted so
+    // we have no intent object to evaluate against, or (b) versioning
+    // the lens fingerprint and discarding on version drift. The clean
+    // minimal answer is to never restore a lens-tagged payload at all:
+    // the writer path is now gated symmetrically (RecommendationsFeed
+    // skips `saveRecPayload` when an intent is active), and this guard
+    // catches any payload written before the writer guard shipped (or
+    // by a future caller that forgets the contract).
+    if (p.intentTag != null && p.intentTag !== 'none') {
+      if (__DEV__) console.log('[PERSIST_CACHE] lens_tagged_payload — discarding',
+        `| intentTag=${p.intentTag}`,
+        `| fingerprint=${p.fingerprint ?? 'legacy'}`,
+      );
+      try { await AsyncStorage.removeItem(KEY_PREFIX + userId); } catch {}
+      return null;
+    }
+
     if (__DEV__) console.log('[PERSIST_CACHE] hit',
       `| age_ms=${age}`,
       `| recs=${p.recs.length}`,

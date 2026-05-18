@@ -725,26 +725,42 @@ export function RecommendationsFeed({
         // canonical writer of hash-stamped payloads; recPrewarm.ts continues
         // to write hashless legacy payloads, which will be downgraded by the
         // session-level gate on first strict read in the bootstrap useEffect.
-        void saveRecPayload(userId, {
-          recs,
-          continuations: continuationsRaw,
-          discoveries:   discoveriesRaw,
-          meta,
-          recMode:       sessionRecMode,
-          readerThesis:  meta.reader_thesis ?? null,
-          qualityGate:   gate ?? null,
-          isFreePreview: sessionIsFreePreview,
-          signalCount:   tasteProfile.strongSignalCount ?? 0,
-          intentTag:     sessionIntentTag,
-          fingerprint:   computeRecFingerprint(
-            tasteProfile.strongSignalCount ?? 0,
-            sessionRecMode,
-            sessionIsFreePreview,
-            sessionIntentTag,
-          ),
-          configHash:    currentConfigHash,
-          loadedAt:      Date.now(),
-        });
+        //
+        // P4D-followup (2026-05-18): NEVER persist lens-tagged decks. The
+        // Your-Next-Read intent is session-only by design; persisting the
+        // deck-as-filtered-under-the-lens would replay stale eligibility
+        // decisions on the next cold start without re-running
+        // `evaluateBookAgainstIntentLens`. The reader-side guard in
+        // `loadRecPayload` discards any lens-tagged payload it encounters
+        // (catches in-flight stale writes from before this guard shipped);
+        // this writer-side guard is the matching upstream half.
+        if (sessionIntentTag != null) {
+          if (__DEV__) console.log('[PERSIST_CACHE] skip_lens_tagged',
+            `| intentTag=${sessionIntentTag}`,
+            `| recs=${recs.length}`,
+          );
+        } else {
+          void saveRecPayload(userId, {
+            recs,
+            continuations: continuationsRaw,
+            discoveries:   discoveriesRaw,
+            meta,
+            recMode:       sessionRecMode,
+            readerThesis:  meta.reader_thesis ?? null,
+            qualityGate:   gate ?? null,
+            isFreePreview: sessionIsFreePreview,
+            signalCount:   tasteProfile.strongSignalCount ?? 0,
+            intentTag:     null,
+            fingerprint:   computeRecFingerprint(
+              tasteProfile.strongSignalCount ?? 0,
+              sessionRecMode,
+              sessionIsFreePreview,
+              null,
+            ),
+            configHash:    currentConfigHash,
+            loadedAt:      Date.now(),
+          });
+        }
       } else {
         if (__DEV__) console.log('[REC_REFRESH]', `quality_gate=${gate}`, 'commit=skipped');
       }

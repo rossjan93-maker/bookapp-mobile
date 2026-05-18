@@ -1,0 +1,43 @@
+The latest live-smoke log did not exercise the evaluator path.
+
+The key line is:
+[PERSIST_CACHE] hit | age_ms=273386 | recs=12 | signal=0 | fingerprint=v1:0:deterministic:nfp:Fast-paced · Light · Less dark · Light & accessible · No dark | configHash=rcv5|fg:mystery,thriller|ag:horror|rs:|fa: | mode=deterministic
+
+Problem:
+The app restored a persisted lens-specific deck from the client-side payload cache. Therefore the test did not hit the recommender/evaluator path and did not emit the expected INTENT forensic logs.
+
+Questions:
+1. Should this cache have been invalidated by the latest recValidity version?
+2. If current expected version is rcv6, why is rcv5 still accepted?
+3. Does recPayloadCache restore bypass the evaluator entirely?
+4. When an active Your Next Read lens is present, should persistent payload cache be bypassed or re-filtered through evaluateBookAgainstIntentLens before render?
+5. How do we force a clean live smoke without manually clearing all browser storage every time?
+
+Task:
+Implement the minimal test/product-safe fix so active lens decks cannot restore stale eligibility decisions.
+
+Preferred options:
+- Bump recValidity if needed.
+- Or apply the shared evaluator as a final safety pass on restored recPayloadCache results when an active lens exists.
+- Or include an evaluator/version component in the lens fingerprint so old lens decks do not restore after evaluator changes.
+
+Hard constraints:
+- Do not touch RecCard.
+- Do not touch composer.
+- Do not mutate Reading Taste.
+- Do not persist the lens.
+- Do not weaken No-dark.
+- Do not hardcode titles except validator fixtures.
+
+Validation:
+1. A cached lens deck from before the evaluator change should not render stale excluded books.
+2. With active No-dark, restored payloads must still pass evaluateBookAgainstIntentLens before render.
+3. Console should show either a fresh build or a cache restore with an explicit evaluator safety pass.
+4. Rerun live smoke with Mystery/Thriller + No-dark lens.
+
+Return:
+1. Root cause
+2. Cache path involved
+3. Minimal fix
+4. Validator results
+5. How to run a clean final smoke
