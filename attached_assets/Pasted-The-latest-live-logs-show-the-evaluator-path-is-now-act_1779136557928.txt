@@ -1,0 +1,79 @@
+The latest live logs show the evaluator path is now active and the cache issue is fixed, but P4C.1 still should not be product-accepted.
+
+Good news:
+- rcv5 cache was discarded against current rcv6.
+- Active lens applied correctly:
+  Fast-paced · Light · Less dark · Light & accessible · No dark
+- avoid_dark=true reached the runtime path.
+- PERSIST_CACHE skipped lens-tagged payload.
+- Gone Girl, The Silent Patient, Verity, and The Secret History now show exclusion_reason="avoid_dark".
+
+New blocker:
+The Thursday Murder Club is also being hard-excluded:
+[INTENT_FORENSIC_RANKED]
+title="The Thursday Murder Club"
+market_position="domestic_suspense"
+subjects_head=["mystery","cozy mystery","detective","crime fiction","mystery fiction"]
+exclusion_reason="avoid_dark"
+verdict_so_far="WILL_EXCLUDE"
+
+This violates the intended product rule:
+- No dark = hard session exclusion only with specific dark evidence.
+- Cozy mysteries should remain eligible.
+- Generic crime/mystery evidence should not hard-exclude by itself.
+- Less dark = bounded demotion, not hard exclusion.
+
+Root-cause hypothesis:
+The shared evaluator is overfiring because:
+1. `crime fiction` is treated as hard dark evidence, or
+2. domestic_suspense + support signals includes support terms that are too broad, such as crime / mystery, or
+3. cozy evidence is not overriding or downgrading domestic_suspense classification.
+
+Please investigate and fix at the shared evaluator policy level, not with a title blacklist.
+
+Questions:
+1. Which exact evidence phrase caused The Thursday Murder Club hardExclusion?
+2. Is `crime fiction` currently in the hard-specific DARK signal set?
+3. Is the domestic_suspense support rule allowing generic crime/mystery terms to trigger avoid_dark?
+4. Should cozy markers like `cozy mystery`, `humorous fiction`, or similar downgrade No-dark from hardExclusion to eligible / soft risk unless stronger dark evidence exists?
+5. Does BookTraits or market_position misclassify cozy mystery as domestic_suspense too broadly?
+
+Minimal policy correction:
+- Generic crime/mystery terms should not hard-exclude under No-dark.
+- `crime fiction` should likely become broad/supporting evidence, not specific hard evidence.
+- domestic_suspense + support should require stronger support than generic crime/mystery.
+- cozy/cozy-mystery markers should preserve eligibility unless paired with specific dark evidence like psychological thriller, serial killer, family violence, trauma/abuse/assault, etc.
+
+Validation:
+1. Add/update fixture using the actual runtime metadata:
+   The Thursday Murder Club:
+   - market_position=domestic_suspense
+   - subjects: mystery, cozy mystery, detective, crime fiction, mystery fiction
+   Expected under No-dark: eligible.
+2. Gone Girl remains excluded.
+3. The Silent Patient remains excluded.
+4. Verity remains excluded if evidence remains specific.
+5. The Secret History can remain excluded or be not-right-now depending on final policy, but the result must be explainable by the shared evaluator.
+6. Less-dark still hard-excludes none of these.
+7. Unknown evidence still does not hard-exclude.
+
+Hard constraints:
+- Do not touch RecCard.
+- Do not touch composer.
+- Do not persist the lens.
+- Do not mutate Reading Taste.
+- Do not add title blacklists except validator fixtures.
+- Do not broaden No-dark with generic terms.
+- Preserve:
+  No dark = hard session exclusion with specific evidence.
+  Less dark = bounded demotion.
+  Cozy mysteries remain eligible unless specifically dark.
+
+Return:
+1. Executive verdict
+2. Exact evidence that caused Thursday Murder Club exclusion
+3. Policy fix
+4. Files touched
+5. Fixture updates
+6. Validator results
+7. Whether P4C.1 can resume live smoke

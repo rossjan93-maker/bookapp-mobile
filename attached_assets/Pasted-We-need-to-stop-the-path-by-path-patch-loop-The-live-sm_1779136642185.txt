@@ -1,0 +1,161 @@
+We need to stop the path-by-path patch loop.
+
+The live smoke process has shown that individual fixes are not enough. We need a final centralized eligibility guarantee and an automated acceptance harness.
+
+Task type:
+Stabilization / product-safety implementation.
+
+Goal:
+Make it impossible for a hard-excluded book to render under an active Your Next Read lens, regardless of which upstream path produced it.
+
+Current accepted product semantics:
+- Reading Taste = durable baseline.
+- Your Next Read = temporary session lens.
+- No dark = hard session exclusion with specific evidence.
+- Less dark = bounded demotion / not-right-now risk.
+- Unknown evidence = do not hard-exclude.
+- Cozy mysteries should remain eligible unless specifically dark.
+- Title examples are validator fixtures, not product logic.
+
+Current architecture:
+- evaluateBookAgainstIntentLens(...) exists.
+- getIntentExclusionReason(...) delegates to the shared evaluator.
+- Several upstream paths have been patched, but live testing keeps revealing new bypasses or policy calibration issues.
+
+Problem:
+We need one final visible-deck enforcement point.
+
+## Part A — Add final visible-deck safety gate
+
+Create a pure helper, likely:
+
+applyFinalIntentEligibility({
+  recs,
+  intent,
+  source,
+}): {
+  kept,
+  removed,
+  diagnostics
+}
+
+Rules:
+- If no active intent, return original list unchanged.
+- If active intent exists, every book must be evaluated by evaluateBookAgainstIntentLens.
+- Any hardExclusion removes the book.
+- SoftDemotions / notRightNowRisks do not remove.
+- Unknown does not remove.
+- Preserve relative order of kept books.
+- Do not mutate input.
+- Emit DEV-only diagnostics:
+  - source
+  - removed titles
+  - hard exclusion kind
+  - evidence/confidence
+  - final top titles
+
+Wire this helper at the final point immediately before the visible deck/session/queue state is committed.
+
+It must cover:
+- initQueue_fresh
+- append_into_existing
+- append_background
+- append_exhaustion
+- restored recSession / recQueue if applicable
+- any final render/syncVisible path
+
+If there are multiple commit sites, wrap them with the same helper. Do not duplicate logic.
+
+## Part B — Keep upstream filters
+
+Do not remove existing upstream filters. They are still useful for efficiency. The final gate is the guarantee.
+
+## Part C — Automated lens acceptance harness
+
+Add a validator, likely:
+
+scripts/validate_intent_final_gate.ts
+
+It should assert:
+
+1. No active intent returns input unchanged.
+2. No-dark removes hard-excluded books.
+3. Less-dark does not hard-remove those same books.
+4. Cozy mystery remains eligible.
+5. Unknown evidence remains eligible.
+6. Relative order of kept books is preserved.
+7. Final gate catches books even if upstream source contains them.
+8. Lens-tagged persistent payloads are not restored.
+9. No RecCard/composer/reason copy changes.
+10. The same fixture matrix used by evaluateBookAgainstIntentLens passes through the final gate.
+
+Fixture set:
+- Gone Girl
+- The Silent Patient
+- Verity
+- The Secret History
+- The Thursday Murder Club
+- Everything I Never Told You
+- pure romance control
+- cozy mystery control
+- domestic suspense control
+- dark literary control
+- emotionally heavy non-dark control
+
+Important:
+Use titles as fixtures only. Do not blacklist them in product logic.
+
+## Part D — Policy calibration
+
+Do not broaden signal lists ad hoc.
+
+If a fixture fails, classify the failure as one of:
+1. path bypass,
+2. evidence-policy gap,
+3. metadata gap,
+4. UI semantics mismatch.
+
+Only patch the relevant layer.
+
+## Hard constraints
+
+- Do not touch RecCard.
+- Do not touch composer.
+- Do not add visible explanations.
+- Do not persist the lens.
+- Do not mutate Reading Taste.
+- Do not hardcode title blacklists except validator fixtures.
+- Do not broaden No-dark with generic single words like murder, thriller, or death.
+- Preserve:
+  - No dark = hard exclusion
+  - Less dark = bounded demotion
+  - unknown = do not hard-exclude
+  - cozy remains eligible unless specifically dark
+
+## Validation required
+
+Run:
+- validate_intent_final_gate
+- validate_intent_lens
+- validate_p4c_limited_ranking
+- validate_tone_pace_fit
+- validate_rec_payload_cache_lens
+- validate_rec_validity
+- validate_taxonomy
+- validate_stated_reservation
+- existing P3A explanation validators if touched
+
+Also report:
+- typecheck delta
+- workflow status
+- DEV log examples showing final gate removed any hard-excluded books before render
+
+Return:
+1. Executive verdict
+2. Where final gate was wired
+3. Files touched
+4. Final-gate behavior
+5. Fixture matrix result
+6. Validator results
+7. Runtime diagnostic shape
+8. Whether P4C.1 can be accepted after one final live check

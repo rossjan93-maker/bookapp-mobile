@@ -297,7 +297,7 @@ header('§8 dark-signal coverage on canonical fixtures');
                  'psychological fiction', 'crime fiction'],
       title:   'Gone Girl',
       marketPos: 'domestic_suspense' as const,
-      shouldExcludeOnNoDark:    true,   // 'crime fiction' phrasal hit + market-position belt
+      shouldExcludeOnNoDark:    true,   // market-position belt (domestic_suspense + 'psychological'/'suspense'); 'crime fiction' no longer hard-excludes by itself post follow-up #7
       shouldExcludeOnLessDark:  false,
     },
     {
@@ -539,6 +539,22 @@ header('§10 shared Intent Eligibility Evaluator — fixture matrix');
       noDarkExcluded: false,  // classifyTone → light/specific; cozy invariant
       lessDarkExcluded: false, noLiteraryExcluded: false, noRomanceExcluded: false },
 
+    // P4C.1 follow-up #7 — runtime regression fixture. The trait
+    // classifier used to misclassify this exact subject set as
+    // domestic_suspense (because 'crime fiction' fired the bare
+    // crime-fiction rule before the cozy_detective check), and then
+    // DOMESTIC_SUSPENSE_SUPPORT_SIGNALS.broad contained 'mystery' so
+    // the No-dark market-position rule hard-excluded the book. Both
+    // bugs are fixed; this fixture pins the corrected behavior even
+    // if marketPos slips back to domestic_suspense in the future
+    // (defense-in-depth).
+    { name: 'The Thursday Murder Club (runtime subjects, mp=domestic_suspense)',
+      subjects: ['mystery', 'cozy mystery', 'detective', 'crime fiction',
+                 'mystery fiction'],
+      title: 'The Thursday Murder Club', marketPos: 'domestic_suspense',
+      noDarkExcluded: false,  // cozy: no specific dark; support set tightened
+      lessDarkExcluded: false, noLiteraryExcluded: false, noRomanceExcluded: false },
+
     { name: 'Everything I Never Told You',
       subjects: ['grief', 'drowning', 'literary fiction', 'psychological fiction',
                  'family secrets', 'mothers and daughters'],
@@ -637,9 +653,45 @@ header('§10 shared Intent Eligibility Evaluator — fixture matrix');
     }
   }
   if (fixtureFailures > 0) fail(`§10 fixture matrix: ${fixtureFailures} assertion(s) failed`);
-  ok(`§10 fixture matrix: 12 fixtures × 4 lenses (48 hardExclusion assertions) all green`);
-  ok(`§10 invariant: Less-dark produced ZERO hard exclusions across all 12 fixtures (rule 4 preserved)`);
-  ok(`§10 invariant: status === 'excluded' iff hardExclusions non-empty (12 fixtures verified)`);
+  const fxCount = fixtures.length;
+  ok(`§10 fixture matrix: ${fxCount} fixtures × 4 lenses (${fxCount * 4} hardExclusion assertions) all green`);
+  ok(`§10 invariant: Less-dark produced ZERO hard exclusions across all ${fxCount} fixtures (rule 4 preserved)`);
+  ok(`§10 invariant: status === 'excluded' iff hardExclusions non-empty (${fxCount} fixtures verified)`);
+}
+
+// ── §11 fitClassifier — cozy survives generic 'crime fiction' tag ─────────
+// P4C.1 follow-up #7 (2026-05-18). Lock the upstream half of the fix:
+// the trait classifier must classify a book carrying BOTH cozy markers
+// AND a generic 'crime fiction' tag as 'cozy_detective', not
+// 'domestic_suspense'. Without this, the No-dark market-position
+// coupled rule would still hard-exclude cozies via the support set.
+header('§11 fitClassifier — cozy guard on generic crime/mystery rules');
+{
+  const { classifyMarketPosition } = require('../lib/fitClassifier') as
+    typeof import('../lib/fitClassifier');
+
+  const cases: Array<{ name: string; subjects: string[]; expected: string }> = [
+    { name: 'Thursday Murder Club (runtime subjects)',
+      subjects: ['mystery', 'cozy mystery', 'detective', 'crime fiction',
+                 'mystery fiction'],
+      expected: 'cozy_detective' },
+    { name: 'Generic cozy (cozy mystery + crime fiction only)',
+      subjects: ['cozy mystery', 'crime fiction'],
+      expected: 'cozy_detective' },
+    { name: 'Gone Girl-style psych thriller stays domestic_suspense',
+      subjects: ['thriller', 'mystery', 'suspense', 'psychological fiction',
+                 'crime fiction'],
+      expected: 'domestic_suspense' },
+  ];
+
+  for (const c of cases) {
+    const got = classifyMarketPosition({ subjects: c.subjects, title: c.name });
+    if (got !== c.expected) {
+      fail(`fitClassifier: "${c.name}" expected ${c.expected}, got ${got}`);
+    } else {
+      ok(`fitClassifier: "${c.name}" → ${got}`);
+    }
+  }
 }
 
 // ── Lens classifier sanity (tier assignment matches new behavior) ──────────

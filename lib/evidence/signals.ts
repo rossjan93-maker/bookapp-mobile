@@ -64,7 +64,16 @@ export const DARK_SIGNALS: SignalSet = {
     // 'psychological fiction' is DELIBERATELY omitted — it also fires on
     // Everything I Never Told You (literary grief novel, fixture-confirmed
     // eligible under No-dark).
-    'crime fiction', 'family violence',
+    //
+    // P4C.1 follow-up #7 (2026-05-18, live-corpus driven) — 'crime fiction'
+    // REMOVED from this set. It is a broad OL genre tag that fires on
+    // cozies (Thursday Murder Club has subjects: 'mystery', 'cozy mystery',
+    // 'detective', 'crime fiction', 'mystery fiction'). Hard-excluding on
+    // it alone violates the "No dark = specific evidence only" rule. Gone
+    // Girl coverage is preserved via the market-position coupled rule
+    // (domestic_suspense + 'psychological'/'suspense'). Silent Patient
+    // coverage is preserved via 'family violence' + 'psychotherapy patient'.
+    'family violence',
     'psychotherapy patient', 'psychotherapy patients',
   ],
   broad: [
@@ -97,18 +106,21 @@ export const DOMESTIC_SUSPENSE_SUPPORT_SIGNALS: SignalSet = {
     'mental illness',
   ],
   broad: [
+    // Tightened by P4C.1 follow-up #7 (2026-05-18). Previously this set
+    // also contained 'crime'/'crimes', 'murder'/'murders', 'thriller'/
+    // 'thrillers', 'mystery'/'mysteries'. Those generic genre tokens
+    // were causing No-dark to hard-exclude cozies that happened to be
+    // misclassified upstream as domestic_suspense (Thursday Murder
+    // Club had 'mystery' and 'crime' tags). Per the locked product
+    // rule, "domestic_suspense + support" requires stronger support
+    // than generic crime/mystery — psychological / suspense /
+    // violence / psychotherapy are the genuinely dark-leaning
+    // reinforcers. Gone Girl, Silent Patient, Verity (all live
+    // fixtures) still hit via these reinforcers; Thursday Murder
+    // Club no longer false-positives even if marketPos slips.
     'psychological', 'suspense',
-    'crime',         'crimes',
     'violence',
-    'murder',        'murders',
-    'thriller',      'thrillers',
-    'mystery',       'mysteries',
     'psychotherapy',
-    // Plural variants explicitly enumerated to preserve P4C.1 substring-era
-    // coverage. OL frequently tags books with the plural form ("Mysteries
-    // (Fiction)", "Fiction, thrillers", "Detective and mystery stories") —
-    // under the new word-boundary contract the singular alone would no
-    // longer fire on these.
   ],
 };
 

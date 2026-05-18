@@ -308,17 +308,27 @@ export function classifyMarketPosition(book: {
                                'spy', 'espionage', 'cozy')) {
     return 'domestic_suspense';
   }
-  if (has('mystery thriller', 'crime thriller', 'police procedural', 'crime fiction')) {
-    return 'domestic_suspense';
-  }
-
-  // Cozy / puzzle detective
+  // Cozy / puzzle detective — checked BEFORE generic crime/mystery thriller
+  // rules so a book carrying both 'cozy mystery' and a generic crime-fiction
+  // tag (Thursday Murder Club: subjects include 'crime fiction' and
+  // 'mystery fiction') doesn't get pulled into domestic_suspense by the
+  // bare 'crime fiction' rule below. P4C.1 follow-up #7 (2026-05-18).
   if (has('cozy mystery', 'whodunit', 'amateur detective', 'classic detective',
           'puzzle mystery', 'village mystery', 'country house')) {
     return 'cozy_detective';
   }
   if (has('mystery fiction', 'mystery novel') && !has('thriller', 'suspense')) {
     return 'cozy_detective';
+  }
+
+  // Generic crime/mystery thriller — cozy guard mirrors L307. Without this
+  // guard, 'crime fiction' alone (a broad OL genre tag) would misclassify
+  // cozy mysteries as domestic_suspense, which then triggers the No-dark
+  // market-position coupled rule downstream.
+  if (has('mystery thriller', 'crime thriller', 'police procedural', 'crime fiction')
+      && !has('cozy', 'cozy mystery', 'whodunit', 'amateur detective',
+              'humorous fiction')) {
+    return 'domestic_suspense';
   }
 
   // Pure romance (no fantasy element)
