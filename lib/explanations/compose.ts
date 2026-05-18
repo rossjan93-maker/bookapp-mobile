@@ -166,6 +166,44 @@ function phrasingForSoftAvoid(): string {
   return 'Leans into traits you have asked to avoid';
 }
 
+// ── P4D phrasings ────────────────────────────────────────────────────────────
+//
+// Narrow composer admission for the three P4C kinds with strong, real
+// evidence: tone_fit, pace_fit, series_continuation_fit. All phrasings stay
+// conservative — no `"you want"`, `"you'll love"`, `"perfect for you"` or
+// other absolute-claim language (per replit.md banned phrasings + the P4D
+// spec). The user-facing line names the trait, not the inferred desire.
+//
+// Admission gates are enforced in the switch cases below, NOT here. Each
+// helper assumes the gate has already passed (value above floor, evidence
+// is `specific` confidence, match==='match', signedEligible===true). The
+// composer remains pure / synchronous; ranking/scoring/composition unchanged.
+
+function phrasingForToneFit(ev?: Record<string, unknown>): string {
+  const bookTone = (ev?.bookTone as string | undefined) ?? '';
+  // userTone is the matched-on side; bookTone === userTone here (gate).
+  if (bookTone === 'light') return 'Lighter tone, in line with your current intent';
+  if (bookTone === 'dark')  return 'Darker tone, in line with your current intent';
+  return 'Tone fits your current intent';
+}
+
+function phrasingForPaceFit(ev?: Record<string, unknown>): string {
+  const bookPace = (ev?.bookPace as string | undefined) ?? '';
+  if (bookPace === 'fast') return 'Faster pace, in line with your current intent';
+  if (bookPace === 'slow') return 'Slow-burn pacing, in line with your current intent';
+  return 'Pacing fits your current intent';
+}
+
+function phrasingForSeriesContinuation(ev?: Record<string, unknown>): string {
+  const name = (ev?.seriesName as string | undefined) ?? '';
+  // P4C emit guarantees seriesName + priorReadCount > 0 when the
+  // contribution exists at all, so we can name the series directly. Avoid
+  // any "you'll love" / "you've been waiting" absolute-claim language —
+  // just describe the position relative to what the user has finished.
+  if (name) return `Next in ${name}`;
+  return 'Continues a series you have started';
+}
+
 function phrasingForHygiene(subflags: readonly string[]): string {
   // Conservative: surface the named drift subflag if present, but do not
   // fabricate specifics beyond the audit list.
@@ -187,6 +225,24 @@ const PRIMARY_PRIORITY: ScoringContribution['kind'][] = [
   'stated_taste_fit',
   'behavioral_fit',
   'feedback_fit',
+];
+
+// ── P4D — narrow composer admission ─────────────────────────────────────────
+// Three P4C kinds eligible for composer-backed visible explanations under
+// strict gates (enforced in lineFor() below). Iterated AFTER
+// PRIMARY_PRIORITY so they cannot displace stated_taste_fit / behavioral_fit
+// / feedback_fit from the primary slot — they only fill the secondary slot
+// (or become primary if no PRIMARY kind cleared its floor, e.g. cold-start
+// users with a strong tone/pace intent on a confident-tone book).
+//
+// Ordering by evidence strength: series_continuation_fit cites a named
+// real-read prior, tone_fit/pace_fit cite a current intent + specific book
+// trait. complexity_fit, current_intent_fit, avoidance_conflict, and
+// not_right_now_risk remain suppressed in this batch (see switch cases).
+const SECONDARY_PRIORITY: ScoringContribution['kind'][] = [
+  'series_continuation_fit',
+  'tone_fit',
+  'pace_fit',
 ];
 
 const MAX_SECONDARY = 1;
@@ -307,20 +363,79 @@ export function composeExplanation(bundle: ExplanationBundle): ExplanationOutput
       case 'intent_fit':
       case 'novelty_diversity':
       case 'repetition_suppression':
-      // ── P4C observe-only kinds ────────────────────────────────────────
-      // Emitted with value=0 by `deriveP4CContributions` so they carry
-      // typed evidence forward without changing visible copy. The composer
-      // stays silent on them; P4D will move them out of `not_yet_emitted`
-      // once user-facing phrasing + calibrated floors land.
+      // ── P4D-suppressed P4C kinds (still observe-only) ─────────────────
+      // These four kinds remain suppressed in this batch:
+      //   - current_intent_fit is a paired-coverage signal, not a
+      //     standalone book attribute; surfacing it would overclaim.
+      //   - complexity_fit's user-side signal is durable-only today;
+      //     no current-intent surface exists yet.
+      //   - avoidance_conflict + not_right_now_risk are negative-only
+      //     and need a dedicated caution surface (not a positive
+      //     reason). Held until that surface lands.
       case 'current_intent_fit':
-      case 'tone_fit':
-      case 'pace_fit':
       case 'complexity_fit':
-      case 'series_continuation_fit':
       case 'avoidance_conflict':
       case 'not_right_now_risk':
         suppressed.push(`${kind}:not_yet_emitted`);
         return null;
+
+      // ── P4D-admitted P4C kinds (narrow first pass) ────────────────────
+      // Each gate independently enforces: (a) above-floor value (already
+      // checked above via DISPLAY_FLOORS), (b) positive aggregate (no
+      // mismatch / negative variant slips through as a "reason"),
+      // (c) `specific` book confidence (no broad/unknown traits), AND
+      // (d) `signedEligible === true` on the underlying contribution
+      // evidence (a live session signal — durable chip or session q_* /
+      // chip:* source, never legacy alone). Faithfulness rules in
+      // replit.md + the P4D spec are enforced here.
+      case 'tone_fit': {
+        if (sum <= 0) { suppressed.push(`${kind}:non_positive_aggregate`); return null; }
+        const ev = entries.find(e => e.value > 0)?.evidence ?? entries[0]?.evidence;
+        const conf       = (ev?.bookToneConfidence as string | undefined);
+        const eligible   = ev?.signedEligible === true;
+        const match      = (ev?.match as string | undefined);
+        if (conf !== 'specific' || !eligible || match !== 'match') {
+          suppressed.push(`${kind}:gate_failed(conf=${conf},eligible=${eligible},match=${match})`);
+          return null;
+        }
+        return {
+          kind: 'causal', source: 'tone_fit',
+          text: phrasingForToneFit(ev),
+          evidence: ev, scoringRef: { kind, value: sum },
+        };
+      }
+      case 'pace_fit': {
+        if (sum <= 0) { suppressed.push(`${kind}:non_positive_aggregate`); return null; }
+        const ev = entries.find(e => e.value > 0)?.evidence ?? entries[0]?.evidence;
+        const conf     = (ev?.bookPaceConfidence as string | undefined);
+        const eligible = ev?.signedEligible === true;
+        const match    = (ev?.match as string | undefined);
+        if (conf !== 'specific' || !eligible || match !== 'match') {
+          suppressed.push(`${kind}:gate_failed(conf=${conf},eligible=${eligible},match=${match})`);
+          return null;
+        }
+        return {
+          kind: 'causal', source: 'pace_fit',
+          text: phrasingForPaceFit(ev),
+          evidence: ev, scoringRef: { kind, value: sum },
+        };
+      }
+      case 'series_continuation_fit': {
+        if (sum <= 0) { suppressed.push(`${kind}:non_positive_aggregate`); return null; }
+        const ev = entries.find(e => e.value > 0)?.evidence ?? entries[0]?.evidence;
+        const priorReadCount = ev?.priorReadCount;
+        const continuesPrior = ev?.continuesPrior;
+        if (typeof priorReadCount !== 'number' || priorReadCount <= 0
+            || continuesPrior !== true) {
+          suppressed.push(`${kind}:gate_failed(prior=${priorReadCount},cont=${continuesPrior})`);
+          return null;
+        }
+        return {
+          kind: 'causal', source: 'series_continuation_fit',
+          text: phrasingForSeriesContinuation(ev),
+          evidence: ev, scoringRef: { kind, value: sum },
+        };
+      }
     }
   }
 
@@ -334,6 +449,22 @@ export function composeExplanation(bundle: ExplanationBundle): ExplanationOutput
     } else if (line && line.kind === 'caution') {
       cautions.push(line);
       emittedKinds.add(kind);
+    }
+  }
+  // P4D — admit the narrow P4C kinds AFTER the legacy primary three so
+  // they fill the secondary slot (cap MAX_SECONDARY=1 still applies
+  // below). They become primary only when no PRIMARY_PRIORITY kind
+  // cleared its floor (e.g. cold-start user with a strong tone/pace
+  // intent on a confident-tone book) — preserves "explanation never
+  // empty when an above-floor positive contribution exists".
+  for (const kind of SECONDARY_PRIORITY) {
+    const line = lineFor(kind);
+    if (line && line.kind === 'causal') {
+      causal.push(line);
+      emittedKinds.add(kind);
+      // NOT added to causalCoverageKinds — these kinds do not "cover"
+      // a retrieval source (e.g. stated_genre retrieval is still
+      // retrieval-only when only tone_fit clears its floor).
     }
   }
   {

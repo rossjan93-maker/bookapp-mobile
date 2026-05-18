@@ -413,6 +413,300 @@ section('FR7 — multi-source retrieval candidate');
     out.debug.retrievalOnly.includes('stated_genre:thriller_mystery'));
 }
 
+// ── P4D — narrow composer admission ──────────────────────────────────────────
+//
+// Asserts the gates for the three P4D-admitted P4C kinds:
+//   tone_fit, pace_fit, series_continuation_fit
+// and proves the four still-suppressed kinds (current_intent_fit,
+// complexity_fit, avoidance_conflict, not_right_now_risk) never produce
+// visible lines. Also asserts the new lines never displace the legacy
+// PRIMARY kinds (no ranking/order effect) and contain no overclaiming
+// or raw internal keys.
+
+const P4D_BANNED_PHRASES = [
+  ...BANNED_PHRASES,
+  'you want',
+  "you'll love",
+];
+
+function p4cScoring(
+  kind: ScoringContribution['kind'],
+  value: number,
+  evidence: Record<string, unknown>,
+): ScoringContribution {
+  // mirror p4cContributions.emit shape
+  return { phase: 'scoring', kind, value, source: 'p4d_test', evidence };
+}
+
+// ── P4D-1 — tone_fit admission gates ─────────────────────────────────────────
+section('P4D-1 — tone_fit admitted only when all gates pass');
+{
+  const ev = {
+    bookTone: 'light', bookToneConfidence: 'specific',
+    userTone: 'light', userToneSources: ['reading_style:Light read'],
+    match: 'match', signedEligible: true,
+  };
+  const out = composeExplanation(emit([p4cScoring('tone_fit', 0.10, ev)]));
+  check('all-gates-pass: tone_fit emitted as primary',
+    out.primary?.source === 'tone_fit', JSON.stringify(out.primary));
+  check('all-gates-pass: line.kind=causal',
+    out.primary?.kind === 'causal');
+  check('all-gates-pass: text does not leak raw internal evidence keys',
+    out.primary !== undefined
+    && !out.primary.text.includes('bookTone')
+    && !out.primary.text.includes('signedEligible')
+    && !out.primary.text.includes('match'),
+    out.primary?.text);
+  check('all-gates-pass: text describes lighter tone',
+    out.primary?.text.toLowerCase().includes('light') ?? false,
+    out.primary?.text);
+  check('all-gates-pass: no banned/overclaim phrasing',
+    P4D_BANNED_PHRASES.every(p => !(out.primary?.text.toLowerCase().includes(p) ?? false)),
+    out.primary?.text);
+
+  // Below floor (DISPLAY_FLOORS.tone_fit = 0.04) — must be suppressed.
+  const justBelow = DISPLAY_FLOORS.tone_fit - 0.001;
+  const outBelow = composeExplanation(emit([
+    p4cScoring('tone_fit', justBelow, ev),
+  ]));
+  check('below floor: tone_fit suppressed (no primary)',
+    outBelow.primary === undefined);
+  check('below floor: suppressed reason recorded',
+    outBelow.debug.suppressed.some(s => s.startsWith('tone_fit:below_floor')));
+
+  // Broad book confidence — must be suppressed even if value above floor.
+  const outBroad = composeExplanation(emit([
+    p4cScoring('tone_fit', 0.10, { ...ev, bookToneConfidence: 'broad' }),
+  ]));
+  check('broad book tone confidence: tone_fit suppressed',
+    outBroad.primary === undefined);
+  check('broad: gate_failed reason recorded',
+    outBroad.debug.suppressed.some(s => s.startsWith('tone_fit:gate_failed')));
+
+  // Unknown book confidence — same.
+  const outUnknown = composeExplanation(emit([
+    p4cScoring('tone_fit', 0.10, { ...ev, bookToneConfidence: 'unknown' }),
+  ]));
+  check('unknown book tone confidence: tone_fit suppressed',
+    outUnknown.primary === undefined);
+
+  // signedEligible=false (legacy q_* alone) — must be suppressed.
+  const outIneligible = composeExplanation(emit([
+    p4cScoring('tone_fit', 0.10, { ...ev, signedEligible: false }),
+  ]));
+  check('signedEligible=false: tone_fit suppressed',
+    outIneligible.primary === undefined);
+
+  // match!=='match' (mismatch or partial) — must be suppressed even if
+  // value somehow ended up positive (defensive).
+  const outMismatch = composeExplanation(emit([
+    p4cScoring('tone_fit', 0.10, { ...ev, match: 'mismatch' }),
+  ]));
+  check('match=mismatch: tone_fit suppressed',
+    outMismatch.primary === undefined);
+  const outPartial = composeExplanation(emit([
+    p4cScoring('tone_fit', 0.10, { ...ev, match: 'partial' }),
+  ]));
+  check('match=partial: tone_fit suppressed',
+    outPartial.primary === undefined);
+
+  // Negative aggregate — must be a non-result (and never a positive reason).
+  const outNeg = composeExplanation(emit([
+    p4cScoring('tone_fit', -0.10, ev),
+  ]));
+  check('negative aggregate: tone_fit not emitted',
+    outNeg.primary === undefined && outNeg.secondary.length === 0);
+}
+
+// ── P4D-2 — pace_fit admission gates ─────────────────────────────────────────
+section('P4D-2 — pace_fit admitted only when all gates pass');
+{
+  const ev = {
+    bookPace: 'fast', bookPaceConfidence: 'specific',
+    userPace: 'fast', userPaceSources: ['reading_style:Fast-paced'],
+    match: 'match', signedEligible: true,
+  };
+  const out = composeExplanation(emit([p4cScoring('pace_fit', 0.08, ev)]));
+  check('all-gates-pass: pace_fit emitted as primary',
+    out.primary?.source === 'pace_fit');
+  check('all-gates-pass: text mentions faster pace',
+    out.primary?.text.toLowerCase().includes('fast') ?? false,
+    out.primary?.text);
+  check('all-gates-pass: no banned/overclaim phrasing',
+    P4D_BANNED_PHRASES.every(p => !(out.primary?.text.toLowerCase().includes(p) ?? false)));
+  check('all-gates-pass: text does not leak internal keys',
+    out.primary !== undefined
+    && !out.primary.text.includes('bookPace')
+    && !out.primary.text.includes('signedEligible'));
+
+  const outBroad = composeExplanation(emit([
+    p4cScoring('pace_fit', 0.10, { ...ev, bookPaceConfidence: 'broad' }),
+  ]));
+  check('broad book pace confidence: pace_fit suppressed',
+    outBroad.primary === undefined);
+
+  const outIneligible = composeExplanation(emit([
+    p4cScoring('pace_fit', 0.10, { ...ev, signedEligible: false }),
+  ]));
+  check('signedEligible=false: pace_fit suppressed',
+    outIneligible.primary === undefined);
+}
+
+// ── P4D-3 — series_continuation_fit admission gates ──────────────────────────
+section('P4D-3 — series_continuation_fit admitted only with prior-read evidence');
+{
+  const evOk = {
+    seriesName: 'The Broken Earth', bookSeriesIndex: 2,
+    seriesTotal: 3, priorReadCount: 1, continuesPrior: true,
+  };
+  const out = composeExplanation(emit([
+    p4cScoring('series_continuation_fit', DISPLAY_FLOORS.series_continuation_fit, evOk),
+  ]));
+  check('priorReadCount=1: series_continuation_fit emitted',
+    out.primary?.source === 'series_continuation_fit');
+  check('text names the series (cites real evidence, not generic)',
+    out.primary?.text.includes('The Broken Earth') ?? false,
+    out.primary?.text);
+  check('no overclaim / banned phrasing',
+    P4D_BANNED_PHRASES.every(p => !(out.primary?.text.toLowerCase().includes(p) ?? false)));
+
+  // priorReadCount=0 (book is first in a series the user hasn't started)
+  // — must NOT produce a reason. p4cContributions never emits this case,
+  // but the composer enforces defensively in case the contract evolves.
+  const outNone = composeExplanation(emit([
+    p4cScoring('series_continuation_fit', 0.08,
+      { ...evOk, priorReadCount: 0, continuesPrior: false }),
+  ]));
+  check('priorReadCount=0: series_continuation_fit suppressed',
+    outNone.primary === undefined);
+  check('priorReadCount=0: gate_failed reason recorded',
+    outNone.debug.suppressed.some(s => s.startsWith('series_continuation_fit:gate_failed')));
+}
+
+// ── P4D-4 — still-suppressed P4C kinds never visible ─────────────────────────
+section('P4D-4 — current_intent_fit / complexity_fit / avoidance_conflict / not_right_now_risk stay suppressed');
+{
+  const cases: Array<{ kind: ScoringContribution['kind']; value: number; ev: Record<string, unknown> }> = [
+    { kind: 'current_intent_fit', value:  0.10, ev: { intentKeys: ['q_tone'], intentScope: 'session', legacy: false, pairedKinds: ['tone_fit'] } },
+    { kind: 'complexity_fit',     value:  0.10, ev: { bookComplexity: 'dense', bookComplexityConfidence: 'specific', userComplexity: 'dense', match: 'match', signedEligible: true } },
+    { kind: 'avoidance_conflict', value: -0.10, ev: { conflictKeys: ['horror'] } },
+    { kind: 'not_right_now_risk', value: -0.10, ev: { risks: [{ axis: 'tone', userWant: 'light', bookHas: 'dark' }] } },
+  ];
+  for (const c of cases) {
+    const out = composeExplanation(emit([p4cScoring(c.kind, c.value, c.ev)]));
+    const allLines = [
+      ...(out.primary ? [out.primary] : []),
+      ...out.secondary, ...out.cautions, ...out.descriptive,
+    ];
+    // Structural suppression: these four P4C kinds are not listed in
+    // PRIMARY_PRIORITY or SECONDARY_PRIORITY, so the composer never
+    // iterates them and they cannot produce a visible line under any
+    // value / evidence combination. The "zero visible lines" assertion
+    // is therefore the load-bearing P4D-4 contract — no `suppressed[]`
+    // entry is expected because lineFor() is never called for these.
+    check(`${c.kind}: produces zero visible lines`,
+      allLines.every(l => l.source !== c.kind),
+      JSON.stringify(allLines.map(l => ({ k: l.kind, s: l.source }))));
+    check(`${c.kind}: not present in aboveFloorKinds (never iterated)`,
+      !out.debug.aboveFloorKinds.includes(c.kind),
+      JSON.stringify(out.debug.aboveFloorKinds));
+  }
+}
+
+// ── P4D-5 — admitted P4C kinds never displace legacy PRIMARY ─────────────────
+section('P4D-5 — P4D admissions never displace legacy PRIMARY priority');
+{
+  const toneEv = {
+    bookTone: 'light', bookToneConfidence: 'specific',
+    userTone: 'light', match: 'match', signedEligible: true,
+  };
+  const paceEv = {
+    bookPace: 'fast', bookPaceConfidence: 'specific',
+    userPace: 'fast', match: 'match', signedEligible: true,
+  };
+  const seriesEv = {
+    seriesName: 'X', bookSeriesIndex: 2,
+    priorReadCount: 1, continuesPrior: true,
+  };
+  // PRIMARY (stated_taste_fit) + all three P4D kinds eligible →
+  // primary MUST be stated_taste_fit, secondary may be one P4D line.
+  const out = composeExplanation(emit([
+    scoring('stated_taste_fit', 0.09, 'stated_favorite:nonfiction',
+      { matchedKind: 'favorite', matchedKey: 'nonfiction' }),
+    p4cScoring('tone_fit',                0.10, toneEv),
+    p4cScoring('pace_fit',                0.08, paceEv),
+    p4cScoring('series_continuation_fit', 0.06, seriesEv),
+  ]));
+  check('stated_taste_fit retains primary slot',
+    out.primary?.source === 'stated_taste_fit',
+    `got ${out.primary?.source}`);
+  check('secondary is capped at MAX_SECONDARY=1',
+    out.secondary.length <= 1);
+  check('secondary (if present) is one of the P4D kinds',
+    out.secondary.length === 0
+    || ['tone_fit', 'pace_fit', 'series_continuation_fit']
+        .includes(out.secondary[0].source));
+
+  // No legacy PRIMARY → P4D admission may take primary (cold-start /
+  // intent-only). series_continuation_fit listed first in SECONDARY_PRIORITY,
+  // so when all three fire equally above-floor it wins primary.
+  const outColdStart = composeExplanation(emit([
+    p4cScoring('tone_fit',                0.10, toneEv),
+    p4cScoring('pace_fit',                0.08, paceEv),
+    p4cScoring('series_continuation_fit', 0.06, seriesEv),
+  ]));
+  check('cold-start: P4D admission produces a primary',
+    outColdStart.primary !== undefined);
+  check('cold-start primary is from SECONDARY_PRIORITY set',
+    ['tone_fit', 'pace_fit', 'series_continuation_fit']
+      .includes(outColdStart.primary?.source ?? ''),
+    outColdStart.primary?.source);
+}
+
+// ── P4D-6 — back-compat projection still ≤ 2 lines, no banned phrasing ──────
+section('P4D-6 — derived book.reasons[] projection unchanged in shape, banned phrasings absent');
+{
+  const out = composeExplanation(emit([
+    scoring('stated_taste_fit', 0.09, 'stated_favorite:nonfiction',
+      { matchedKind: 'favorite', matchedKey: 'nonfiction' }),
+    p4cScoring('tone_fit', 0.10, {
+      bookTone: 'light', bookToneConfidence: 'specific',
+      userTone: 'light', match: 'match', signedEligible: true,
+    }),
+  ]));
+  const proj = deriveBackcompatReasons(out);
+  check('projection length ≤ 2 (RecCard cap unchanged)', proj.length <= 2);
+  check('projection contains no banned/overclaim phrasing',
+    proj.every(s => {
+      const low = s.toLowerCase();
+      return P4D_BANNED_PHRASES.every(b => !low.includes(b));
+    }),
+    JSON.stringify(proj));
+  check('projection contains the P4D tone line in second slot',
+    proj.length === 2 && proj[1].toLowerCase().includes('light'),
+    JSON.stringify(proj));
+}
+
+// ── P4D-7 — composer remains pure (no ranking side effect) ──────────────────
+section('P4D-7 — composer is pure; admitting P4C kinds does not mutate inputs');
+{
+  const inputs = [
+    p4cScoring('tone_fit', 0.10, {
+      bookTone: 'light', bookToneConfidence: 'specific',
+      userTone: 'light', match: 'match', signedEligible: true,
+    }),
+    p4cScoring('series_continuation_fit', 0.06, {
+      seriesName: 'X', bookSeriesIndex: 2,
+      priorReadCount: 1, continuesPrior: true,
+    }),
+  ];
+  const before = JSON.stringify(inputs);
+  composeExplanation({ scoring: inputs, retrieval: [] });
+  composeExplanation({ scoring: inputs, retrieval: [] });
+  check('inputs unchanged after multiple composes',
+    JSON.stringify(inputs) === before);
+}
+
 // ── Summary ──────────────────────────────────────────────────────────────────
 // eslint-disable-next-line no-console
 console.log(`\n${failures === 0 ? '\x1b[32m' : '\x1b[31m'}` +

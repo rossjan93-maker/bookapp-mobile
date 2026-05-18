@@ -46,7 +46,15 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 // session-open after deploy. Composer output remains byte-identical (P4C
 // kinds stay suppressed in `not_yet_emitted`), so the bump is purely
 // score/order-driven, not reason-text-driven.
-const VERSION = 'rcv5';
+// rcv6 (2026-05-18) — P4D narrow composer admission lands. tone_fit,
+// pace_fit, and series_continuation_fit may now produce visible
+// composer-backed reasons[] lines under strict per-kind gates
+// (specific confidence + signedEligible + above floor; match-only for
+// tone/pace; priorReadCount > 0 for series). Bumped from rcv5 to
+// invalidate any persisted recPayloadCache that still carries
+// pre-P4D reasons[] (the visible text surface can now include lines
+// the legacy builder never emitted).
+const VERSION = 'rcv6';
 
 export type RecConfigInputs = {
   favorite_genres:  readonly string[];

@@ -1,0 +1,62 @@
+BookEvidence Batch A is accepted.
+
+Proceed to P4D planning / implementation, but keep it narrow.
+
+Goal:
+Admit a limited set of P4C intent/semantic contributions into composer-backed visible explanations only when evidence is strong enough.
+
+Current accepted state:
+- P4C.1 product accepted.
+- Shared intent eligibility evaluator accepted.
+- BookEvidence Batch A accepted.
+- P4C contribution kinds exist and influence ranking under caps.
+- Composer currently suppresses all P4C kinds.
+
+Task:
+P4D composer admission — narrow first pass.
+
+Do not touch RecCard layout.
+Do not change ranking/scoring/composition.
+Do not add new BookEvidence dimensions.
+Do not implement full deriveBookEvidence.
+Do not add emotionalWeight or intensity explanations yet.
+Do not persist lens state.
+Do not mutate Reading Taste.
+
+Allowed explanation candidates:
+- tone_fit, only when:
+  - contribution exists,
+  - value is non-zero or evidence is ranking-eligible,
+  - book tone confidence is specific,
+  - user signal is session-scoped or live lens-derived.
+- pace_fit, under the same standard.
+- series_continuation_fit, only when prior finished book evidence exists.
+- not_right_now_risk may be held back unless there is a safe caution surface.
+- avoidance_conflict should remain suppressed unless it can be rendered as a caution, not a positive reason.
+
+Hard rules:
+- No intent explanation without matching contribution evidence.
+- No “you want” / “you’ll love” overclaiming.
+- No tone/pace explanation on broad or unknown evidence.
+- No emotional-weight explanation in this batch.
+- Visible reasons must remain conservative.
+- Existing P3A explanation faithfulness must remain green.
+
+Validation:
+- Add/update explanation faithfulness validator for P4D.
+- Assert P4C explanations only appear when contribution evidence meets floor.
+- Assert broad/unknown book traits produce no visible intent explanation.
+- Assert no raw internal keys.
+- Assert no change to ranking/order.
+- Run full P3A/P4 validator suite.
+
+Return:
+1. Executive verdict
+2. Contributions admitted vs still suppressed
+3. Files touched
+4. Explanation templates added
+5. Faithfulness gates
+6. Validator results
+7. Typecheck/workflow status
+8. Live smoke plan
+9. Remaining deferred items
