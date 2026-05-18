@@ -2,6 +2,41 @@
 
 Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/onboarding sprints. Moved out of replit.md on 2026-05-14 to keep the live operating reference compact. Order is reverse-chronological. For full diffs use `git log -p -- <path>`.
 
+## P4C.1 — product accepted (2026-05-18)
+
+No-dark re-smoke clean after two follow-up batches (#5 phrasal/market-position extension, #6 shared evaluator consolidation). P4C.1 flips from "shipped" to "product accepted."
+
+**Active lens (re-smoke):** Fast-paced + Light + Less dark + Light & accessible + No dark.
+
+**Visible deck (top 4):**
+1. Everything I Never Told You — "Matches your stated thriller & mystery preference"
+2. The Academy — "Start with book one of the Academy Series."
+3. In Love: A Memoir of Love and Loss — "Aligns with your reading patterns"
+4. All the Ugly and Wonderful Things — "Aligns with your reading patterns"
+
+**Acceptance (all met):** Gone Girl no longer appears; The Silent Patient no longer appears; no obvious dark psychological thriller remains in the top visible deck; visible explanation copy unchanged/conservative; no RecCard or composer regression; temporary lens stays session-only.
+
+**Carry-forward note (non-blocking).** Remaining concern is **not** No-dark. Deck still includes books that may be emotionally heavy or low-burden mismatches (the memoir of love/loss, and a literary trauma-adjacent fiction). These should be addressed through the planned holistic BookEvidence work — specifically `intensity` and `emotionalWeight` dimensions — **not** through more title-specific No-dark patches. Tracked under the BookEvidence consolidation row in replit.md (P4 hygiene track, Batch A → Batch B → Batch C).
+
+### P4C.1 follow-up #6 — shared Intent Eligibility Evaluator (2026-05-18)
+
+**Root concern.** Prior batches (#4, #5) were patching the title-specific DARK_SIGNALS list whenever a new dark-psych-thriller slipped through. Two parallel classifiers had been diverging: `DARK_SIGNALS` (substring matching, multi-word phrasal) in `lib/nextReadIntent.ts` and `TONE_DARK_SPECIFIC` (word-boundary matching, specific/broad partition) in `lib/bookTraits.ts`. User paused title-specific work and asked for architectural consolidation: build a shared `evaluateBookAgainstIntentLens(book, traits, intent)` that returns typed `{ hardExclusions, softDemotions, notRightNowRisks, evidence, confidence, status }`, and wrap `getIntentExclusionReason` as a thin delegate so all four call sites (recommender.ts lines 2497 deterministic-ranked pool, 3899 cache-hit filter, 4110 expert-fresh-build filter, plus the trace-aware twin) inherit the new behavior without call-site changes.
+
+**Implementation.** Added `evaluateBookAgainstIntentLens` (~150 lines) in `lib/nextReadIntent.ts`. Imports `classifyTone` from `bookTraits.ts` as the shared evidence model. Combines three SPECIFIC-evidence sources for No-dark:
+1. `classifyTone(book).tone === 'dark' && confidence === 'specific'` (uses subjects + description; word-boundary; broad signals require corroboration).
+2. Phrasal hit in curated `DARK_SIGNALS` list (overwhelmingly multi-word; small documented single-token exceptions for `trauma`/`abuse`/`assault`).
+3. `marketPosition === 'domestic_suspense'` AND at least one supporting subject-corpus signal (psychological/suspense/crime/violence/murder/thriller/mystery/mental illness/psychotherapy).
+
+Broad-only dark evidence routes to `notRightNowRisks` (NOT `hardExclusions`) per rule 5 (unknown evidence → do not hard-exclude). `getIntentExclusionReason` is now a 2-line wrapper that delegates to the evaluator and returns the first `hardExclusions[0].reason` for backward compat. Removed dead `domesticSuspenseDark` helper (sole caller deleted). Removed unused `ToneCategory` import. RecCard, composer, durable taste, lens persistence, soft-boost path, and `passesIntentHardFilters` all untouched.
+
+**Validator §10 (12-fixture × 4-lens matrix, 48 hardExclusion assertions + 2 cross-cutting invariants).** Fixtures: Gone Girl, The Silent Patient, Verity, The Secret History, The Thursday Murder Club, Everything I Never Told You, Beach Read, Pure Romance Control, Romantic Suspense Control, Cozy Mystery Control, Dark Literary Control, Domestic Suspense Control. Lenses: No-dark, Less-dark, No-literary, No-romance. Invariants asserted: (a) Less-dark NEVER produces a hard exclusion (rule 4); (b) `status === 'excluded'` iff `hardExclusions` non-empty. Notable verdicts: Verity excluded via market-position rule (`domestic_suspense + thriller/psychological/suspense` corpus); Secret History NOT hard-excluded under No-dark (broad-only dark evidence; rule 5 — broad-only routes to `notRightNowRisks` once description corroborates); Cozy Mystery + Romantic Suspense controls remain eligible under No-dark (rule 10). All 48 assertions green; full validator suite green (`validate_intent_lens` + 6 others). `recValidity.VERSION` unchanged at `rcv5` (no scoring or contribution-shape change).
+
+### P4C.1 follow-up #5 — DARK_SIGNALS phrasal extension + market-position rule (2026-05-17, retired by #6)
+
+Pre-#6 batch: extended `DARK_SIGNALS` with `'crime fiction'`, `'family violence'`, `'psychotherapy patient'` phrasals; introduced `DOMESTIC_SUSPENSE_SUPPORT_SIGNALS` for the market-position coupled rule (`domestic_suspense + ≥1 supporting`). Gone Girl + The Silent Patient confirmed excluded by user. User then identified Verity + Secret History as still-visible cases and paused further title-specific patching → triggered the #6 architectural consolidation above. The signal-list additions from #5 are preserved inside the new evaluator; only the `domesticSuspenseDark` helper was retired (its logic inlined into the evaluator).
+
+---
+
 ## P3A — product accepted (2026-05-16)
 
 All four live-smoke scenarios captured clean. P3A flips from "shipped" to "product accepted." No further code change required for the P3A explanation-faithfulness promise.
