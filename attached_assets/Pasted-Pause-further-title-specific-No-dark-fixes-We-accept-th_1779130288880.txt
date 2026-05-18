@@ -1,0 +1,118 @@
+Pause further title-specific No-dark fixes.
+
+We accept the latest investigation as evidence of the real issue:
+- Verity needs runtime corpus evidence before a title-level verdict.
+- The Secret History exposes a larger asymmetry: BookTraits can classify a book as dark, while getIntentExclusionReason can still allow it.
+- This shows our No-dark behavior is being governed by duplicated book-classification logic.
+
+We do not want to keep patching individual titles or DARK_SIGNALS phrases one by one.
+
+Task type:
+Targeted architecture consolidation + minimal implementation plan.
+Implement only if the seam is clear and contained.
+
+Goal:
+Create a shared Intent Eligibility Evaluator so all “Your Next Read” hard/soft lens decisions use the same book-side evidence.
+
+Proposed target:
+evaluateBookAgainstIntentLens(book, traits, intent)
+
+It should return:
+- hardExclusions
+- softDemotions
+- notRightNowRisks
+- evidence
+- confidence
+- unknown / ambiguous status
+
+Core product rules:
+1. Reading Taste = durable baseline.
+2. Your Next Read = temporary session lens.
+3. No dark = hard temporary exclusion, but only with specific evidence.
+4. Less dark = bounded demotion / not-right-now risk, not hard exclusion.
+5. Unknown evidence = do not hard-exclude.
+6. Generic single tokens like murder, thriller, death should not hard-exclude by themselves.
+7. Cozy mysteries should remain eligible.
+8. Psychological/domestic suspense should be excluded under No dark when evidence is specific.
+9. Literary dark books should be judged by the same evidence model as BookTraits, not a separate DARK_SIGNALS list.
+10. Pure romance should not be excluded; romantic suspense should depend on actual suspense/dark evidence.
+
+Questions to answer before implementation:
+1. Should the evaluator call BookTraits directly, or should BookTraits and the evaluator share a lower-level evidence helper?
+2. Which current logic should be replaced by the evaluator:
+   - getIntentExclusionReason
+   - passesIntentHardFilters
+   - cache-hit filtering
+   - expert fresh-build filtering
+   - deterministic ranked-pool filtering
+   - final visible deck safety pass
+3. Which fields should the evaluator rely on:
+   - BookTraits.tone / toneConfidence
+   - market_position
+   - lane
+   - subjects
+   - description
+   - title / series metadata
+4. How do we preserve the existing behavior where:
+   - No dark is hard
+   - Less dark is soft
+   - unknown does not exclude
+   - broad single-token evidence is not enough
+
+Minimal implementation preference:
+A. Add shared evaluator as a pure helper.
+B. Keep getIntentExclusionReason as a wrapper around it for backward compatibility.
+C. Wire the evaluator into the known return paths:
+   - deterministic ranked pool
+   - expert fresh build
+   - Supabase rec_cache hit
+   - final visible deck safety pass, if needed
+D. Convert current title examples into validator fixtures, not hardcoded product logic.
+E. Do not add another title-specific patch unless the evaluator shows a narrowly missing evidence class.
+
+Validator fixtures:
+Use these as regression cases:
+- Gone Girl
+- The Silent Patient
+- Verity
+- The Secret History
+- The Thursday Murder Club
+- Everything I Never Told You
+- Beach Read
+- pure romance control
+- cozy mystery control
+- dark literary control
+- domestic suspense control
+- romantic suspense control
+
+For each fixture, assert behavior under:
+- No dark
+- Less dark
+- Light & accessible
+- Short & light
+- No literary
+- No romance
+
+Hard constraints:
+- Do not touch RecCard.
+- Do not touch composer.
+- Do not add visible explanations.
+- Do not persist the lens.
+- Do not mutate Reading Taste.
+- Do not hardcode title blacklists except validator fixtures.
+- Do not broaden No-dark with generic single words like murder, thriller, death.
+- Preserve the current product semantics:
+  - No dark = hard session exclusion
+  - Less dark = bounded demotion
+  - unknown evidence = do not hard-exclude
+
+Return:
+1. Executive verdict
+2. Proposed shared evaluator contract
+3. Whether implementation is small enough to do now
+4. Files touched, if implemented
+5. What existing logic was replaced or wrapped
+6. Fixture matrix and expected outcomes
+7. Validator results
+8. Live smoke plan
+9. Whether P4C.1 remains blocked

@@ -26,8 +26,9 @@
 //   - Hard filters are only applied when the pool is large enough to handle them.
 // =============================================================================
 
-import type { DeterministicLane } from './bookTraits';
-import type { MarketPosition }              from './fitClassifier';
+import type { DeterministicLane, TraitConfidence } from './bookTraits';
+import { classifyTone }                            from './bookTraits';
+import type { MarketPosition }                     from './fitClassifier';
 
 // ── Intent shape ──────────────────────────────────────────────────────────────
 
@@ -183,10 +184,9 @@ const DOMESTIC_SUSPENSE_SUPPORT_SIGNALS = [
   'psychological', 'suspense', 'crime', 'violence', 'murder',
   'thriller',      'mystery',  'mental illness', 'psychotherapy',
 ];
-function domesticSuspenseDark(corpus: string, marketPos: MarketPosition): boolean {
-  if (marketPos !== 'domestic_suspense') return false;
-  return DOMESTIC_SUSPENSE_SUPPORT_SIGNALS.some(s => corpus.includes(s));
-}
+// Note: the runtime implementation of this rule lives inline in
+// `evaluateBookAgainstIntentLens` (the prior `domesticSuspenseDark`
+// helper was removed after the #6 consolidation — sole caller deleted).
 
 const PACE_FAST_SIGNALS = [
   'fast-paced', 'fast paced', 'page-turner', 'page turner', 'action-packed',
@@ -285,24 +285,178 @@ export function passesIntentHardFilters(
 
 export function getIntentExclusionReason(
   book: {
-    subjects?: string[] | null;
-    title?:    string   | null;
+    subjects?:    string[] | null;
+    title?:       string   | null;
+    description?: string   | null;
   },
   intent:    NextReadIntent,
   marketPos: MarketPosition,
 ): string | null {
-  const { exclude: e } = intent;
+  // P4C.1 follow-up #6 (2026-05-18) — single seam: delegate to the shared
+  // Intent Eligibility Evaluator. Callers (deterministic ranked pool, cache
+  // hit, expert fresh build) keep their existing call shape; the
+  // evaluator now produces the verdict using BookTraits' tone classifier
+  // PLUS the curated phrasal list PLUS the market-position rule, so dark
+  // evidence comes from one place rather than two diverging lists.
+  const verdict = evaluateBookAgainstIntentLens(book, intent, marketPos);
+  return verdict.hardExclusions[0]?.reason ?? null;
+}
+
+// ── Public: shared Intent Eligibility Evaluator ──────────────────────────────
+// P4C.1 follow-up #6 — replaces title-by-title DARK_SIGNALS patching.
+//
+// One book-side evidence model, used by every "Your Next Read" lens
+// decision (cache hit, expert fresh build, deterministic ranked pool,
+// visible-deck safety pass — all flow through `getIntentExclusionReason`,
+// which is now a thin wrapper around this evaluator).
+//
+// Hard product rules this evaluator enforces:
+//   • Reading Taste is the durable baseline (not touched here).
+//   • Your Next Read is a temporary session lens.
+//   • No dark            → hard temporary exclusion, ONLY with specific evidence.
+//   • Less dark          → bounded demotion / not-right-now risk, never hard.
+//   • Unknown evidence   → do not hard-exclude.
+//   • Generic single tokens (murder / thriller / death alone) never hard-exclude.
+//   • Cozy mysteries     → eligible (corroborated light evidence beats single broad).
+//   • Domestic/psych suspense → excluded under No dark when evidence is specific.
+//   • Pure romance       → not excluded; romantic suspense depends on suspense evidence.
+//
+// Evidence sources combined for the No-dark verdict (each is "specific"
+// in its own right — none is a generic single token in isolation):
+//   1. BookTraits.classifyTone(book) === 'dark' && confidence === 'specific'
+//      (uses subjects + description; broad signals require corroboration).
+//   2. Hit in the curated DARK_SIGNALS list. List is overwhelmingly
+//      phrasal/hyphenated; a small set of single-token entries
+//      ('trauma', 'abuse', 'assault') is intentionally retained as
+//      already-shipped behavior (documented exception). New entries
+//      should be phrasal unless explicitly approved.
+//   3. market_position === 'domestic_suspense' AND at least one supporting
+//      subject-corpus signal (psychological/suspense/crime/violence/murder/
+//      thriller/mystery/mental illness/psychotherapy).
+//
+// Less-dark + Light & accessible + Short & light remain bounded preferences
+// — they appear in `softDemotions` / `notRightNowRisks` for downstream
+// scoring/composer use, but never produce a `hardExclusion`.
+
+export type IntentEligibilityEvidence = {
+  source: 'classify_tone' | 'phrasal_subject' | 'market_position'
+        | 'market_position_only' | 'series_marker' | 'fiction_gate'
+        | 'page_count' | 'lane_scope';
+  kind:   string;             // e.g. 'tone=dark/specific', 'crime fiction', 'domestic_suspense+thriller'
+  detail: string;             // human-readable evidence summary
+};
+
+export type IntentEligibilityVerdict = {
+  hardExclusions:    Array<{ reason: string; evidence: IntentEligibilityEvidence[] }>;
+  softDemotions:     Array<{ reason: string; evidence: IntentEligibilityEvidence[] }>;
+  notRightNowRisks:  Array<{ reason: string; evidence: IntentEligibilityEvidence[] }>;
+  evidence:          IntentEligibilityEvidence[];   // all collected, flat
+  confidence:        TraitConfidence;               // overall confidence of the dark verdict
+  status:            'eligible' | 'excluded' | 'demoted' | 'ambiguous' | 'unknown';
+};
+
+export function evaluateBookAgainstIntentLens(
+  book: {
+    subjects?:    string[] | null;
+    title?:       string   | null;
+    description?: string   | null;
+  },
+  intent:    NextReadIntent,
+  marketPos: MarketPosition,
+): IntentEligibilityVerdict {
+  const { exclude: e, soft: s } = intent;
   const corpus = buildCorpus(book);
 
-  if (e.avoid_classics   && marketPos === 'classic_canon')      return 'avoid_classics';
-  if (e.avoid_literary   && marketPos === 'literary_prestige')  return 'avoid_literary';
-  if (e.avoid_romance    && (marketPos === 'romance' || marketPos === 'romantasy')) return 'avoid_romance';
-  if (e.avoid_nonfiction && marketPos === 'memoir_nonfiction')  return 'avoid_nonfiction';
-  if (e.avoid_dark       && anySignal(corpus, DARK_SIGNALS))    return 'avoid_dark';
-  if (e.avoid_dark       && domesticSuspenseDark(corpus, marketPos)) return 'avoid_dark';
-  if (e.avoid_series     && isSeries(corpus))                   return 'avoid_series';
+  const evidence:         IntentEligibilityEvidence[] = [];
+  const hardExclusions:   IntentEligibilityVerdict['hardExclusions']   = [];
+  const softDemotions:    IntentEligibilityVerdict['softDemotions']    = [];
+  const notRightNowRisks: IntentEligibilityVerdict['notRightNowRisks'] = [];
 
-  return null;
+  // ── Market-position-only exclusions (classics/literary/romance/nonfiction) ──
+  if (e.avoid_classics && marketPos === 'classic_canon') {
+    const ev: IntentEligibilityEvidence = { source: 'market_position_only', kind: 'classic_canon', detail: 'market_position=classic_canon' };
+    evidence.push(ev); hardExclusions.push({ reason: 'avoid_classics', evidence: [ev] });
+  }
+  if (e.avoid_literary && marketPos === 'literary_prestige') {
+    const ev: IntentEligibilityEvidence = { source: 'market_position_only', kind: 'literary_prestige', detail: 'market_position=literary_prestige' };
+    evidence.push(ev); hardExclusions.push({ reason: 'avoid_literary', evidence: [ev] });
+  }
+  if (e.avoid_romance && (marketPos === 'romance' || marketPos === 'romantasy')) {
+    const ev: IntentEligibilityEvidence = { source: 'market_position_only', kind: marketPos, detail: `market_position=${marketPos}` };
+    evidence.push(ev); hardExclusions.push({ reason: 'avoid_romance', evidence: [ev] });
+  }
+  if (e.avoid_nonfiction && marketPos === 'memoir_nonfiction') {
+    const ev: IntentEligibilityEvidence = { source: 'market_position_only', kind: 'memoir_nonfiction', detail: 'market_position=memoir_nonfiction' };
+    evidence.push(ev); hardExclusions.push({ reason: 'avoid_nonfiction', evidence: [ev] });
+  }
+
+  // ── No-dark: union of three specific-evidence sources ─────────────────────
+  let darkConfidence: TraitConfidence = 'unknown';
+  if (e.avoid_dark) {
+    const darkEv: IntentEligibilityEvidence[] = [];
+
+    // (1) BookTraits.classifyTone — shared evidence model (subjects + description).
+    const tone = classifyTone({ subjects: book.subjects, description: book.description });
+    if (tone.tone === 'dark' && tone.confidence === 'specific') {
+      darkEv.push({ source: 'classify_tone', kind: 'tone=dark/specific', detail: 'classifyTone returned dark with specific confidence' });
+      darkConfidence = 'specific';
+    }
+
+    // (2) Phrasal hit in curated DARK_SIGNALS (multi-word/hyphenated only).
+    const phrasalHit = DARK_SIGNALS.find(s => corpus.includes(s));
+    if (phrasalHit) {
+      darkEv.push({ source: 'phrasal_subject', kind: phrasalHit, detail: `corpus contains phrasal '${phrasalHit}'` });
+      darkConfidence = 'specific';
+    }
+
+    // (3) Market-position coupled rule (domestic_suspense + ≥1 supporting signal).
+    if (marketPos === 'domestic_suspense') {
+      const supporting = DOMESTIC_SUSPENSE_SUPPORT_SIGNALS.find(sig => corpus.includes(sig));
+      if (supporting) {
+        darkEv.push({ source: 'market_position', kind: `domestic_suspense+${supporting}`, detail: `market_position=domestic_suspense AND corpus contains '${supporting}'` });
+        darkConfidence = 'specific';
+      }
+    }
+
+    if (darkEv.length > 0) {
+      evidence.push(...darkEv);
+      hardExclusions.push({ reason: 'avoid_dark', evidence: darkEv });
+    } else if (tone.tone === 'dark' && tone.confidence === 'broad') {
+      // Broad-only dark evidence: ambiguous. Do NOT hard-exclude (rule 5),
+      // but flag as not-right-now risk for downstream demotion.
+      const ev: IntentEligibilityEvidence = { source: 'classify_tone', kind: 'tone=dark/broad', detail: 'broad dark signal only; insufficient for hard exclusion' };
+      evidence.push(ev);
+      notRightNowRisks.push({ reason: 'avoid_dark', evidence: [ev] });
+      darkConfidence = 'broad';
+    }
+  }
+
+  // ── No-series ─────────────────────────────────────────────────────────────
+  if (e.avoid_series && isSeries(corpus)) {
+    const ev: IntentEligibilityEvidence = { source: 'series_marker', kind: 'series', detail: 'corpus contains series marker' };
+    evidence.push(ev); hardExclusions.push({ reason: 'avoid_series', evidence: [ev] });
+  }
+
+  // ── Soft demotions (Less-dark / Light intensity) — never hard-exclude ─────
+  if (s.intensity === 'low' || s.tone === 'light') {
+    // Mirror classifyTone-derived risk for downstream P4C.1 bounded demotion.
+    // Important: this does NOT hard-exclude (preserves the "Less dark = bounded
+    // demotion, not hard exclusion" rule). It surfaces evidence for ranking.
+    const tone = classifyTone({ subjects: book.subjects, description: book.description });
+    if (tone.tone === 'dark') {
+      const ev: IntentEligibilityEvidence = { source: 'classify_tone', kind: `tone=dark/${tone.confidence}`, detail: 'dark tone under less-dark/light soft pref → bounded demotion candidate' };
+      evidence.push(ev); softDemotions.push({ reason: 'less_dark_demotion', evidence: [ev] });
+    }
+  }
+
+  // Status synthesis
+  let status: IntentEligibilityVerdict['status'] = 'eligible';
+  if (hardExclusions.length > 0)        status = 'excluded';
+  else if (softDemotions.length > 0)    status = 'demoted';
+  else if (notRightNowRisks.length > 0) status = 'ambiguous';
+  else if (evidence.length === 0)       status = 'unknown';
+
+  return { hardExclusions, softDemotions, notRightNowRisks, evidence, confidence: darkConfidence, status };
 }
 
 // ── Public: soft intent boost ─────────────────────────────────────────────────

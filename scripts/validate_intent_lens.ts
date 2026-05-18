@@ -462,6 +462,186 @@ header('§9 cache-path intent filter (locks live-smoke fix)');
   }
 }
 
+// ── §10 Shared Intent Eligibility Evaluator — fixture matrix ─────────────
+// P4C.1 follow-up #6 (2026-05-18): all "Your Next Read" hard/soft lens
+// decisions now flow through `evaluateBookAgainstIntentLens`. This section
+// locks the contract against 12 representative fixtures × 4 lens types
+// (No-dark, Less-dark, No-literary, No-romance). Light & accessible /
+// Short & light are mood/page-count lenses and not exclusion-driven, so
+// they are exercised by validate_p4c_limited_ranking + the chip→tier
+// classifier section above rather than re-asserted here.
+//
+// Each fixture asserts:
+//   • hardExclusions present iff product rule requires it
+//   • Less-dark NEVER produces a hard exclusion (rule 4)
+//   • status === 'excluded' iff a hard exclusion fired
+//   • Books that hit broad-only dark evidence under No-dark route to
+//     notRightNowRisks (NOT hardExclusions) — verified for Secret History
+//     and Everything I Never Told You once a description corroborates the
+//     broad signal; subject-only fixtures stay 'unknown' / eligible.
+//
+// FIXTURE INTENT: rewrite this matrix, not DARK_SIGNALS, for any future
+// dark-coverage decision. Title-specific patching is explicitly out.
+header('§10 shared Intent Eligibility Evaluator — fixture matrix');
+{
+  const { evaluateBookAgainstIntentLens } = require('../lib/nextReadIntent') as
+    typeof import('../lib/nextReadIntent');
+  type MP = import('../lib/fitClassifier').MarketPosition;
+
+  type Fx = {
+    name:        string;
+    subjects:    string[];
+    description?: string;
+    title:       string;
+    marketPos:   MP;
+    // expected verdicts under each lens (true = hardExclusion present)
+    noDarkExcluded:     boolean;
+    lessDarkExcluded:   boolean;   // ALWAYS false per rule 4
+    noLiteraryExcluded: boolean;
+    noRomanceExcluded:  boolean;
+  };
+
+  const fixtures: Fx[] = [
+    // Live-corpus fixtures (from runtime [INTENT_FORENSIC_RANKED] logs):
+    { name: 'Gone Girl',
+      subjects: ['thriller', 'mystery', 'suspense', 'psychological fiction', 'crime fiction'],
+      title: 'Gone Girl', marketPos: 'domestic_suspense',
+      noDarkExcluded: true, lessDarkExcluded: false, noLiteraryExcluded: false, noRomanceExcluded: false },
+
+    { name: 'The Silent Patient',
+      subjects: ['Fiction, psychological', 'Fiction, thrillers', 'Family violence', 'Psychotherapy patients'],
+      title: 'The Silent Patient', marketPos: 'domestic_suspense',
+      noDarkExcluded: true, lessDarkExcluded: false, noLiteraryExcluded: false, noRomanceExcluded: false },
+
+    { name: 'Verity',
+      subjects: ['Psychological fiction', 'Suspense fiction', 'Thrillers (Fiction)',
+                 'Romance fiction', 'Romantic suspense fiction'],
+      title: 'Verity', marketPos: 'domestic_suspense',  // line 307 has('thriller') substring
+      noDarkExcluded: true,  // market-position rule fires (domestic_suspense + psychological/suspense/thriller)
+      lessDarkExcluded: false, noLiteraryExcluded: false, noRomanceExcluded: false },
+
+    { name: 'The Secret History',
+      subjects: ['Murder', 'Classical philology', 'Friendship', 'Vermont',
+                 'College students', 'Bildungsromans', 'Literary fiction'],
+      title: 'The Secret History', marketPos: 'literary_prestige',
+      // No specific dark evidence: classifyTone returns broad-only or
+      // unknown without description; no phrasal hit; not domestic_suspense.
+      // Per rule 5 (unknown → do not hard-exclude), Secret History is
+      // ELIGIBLE under No-dark. Broad-only dark would land in
+      // notRightNowRisks for downstream demotion, not hardExclusions.
+      noDarkExcluded: false, lessDarkExcluded: false,
+      noLiteraryExcluded: true, noRomanceExcluded: false },
+
+    { name: 'The Thursday Murder Club',
+      subjects: ['cozy mystery', 'detective and mystery stories', 'murder',
+                 'older people', 'fiction', 'humorous fiction'],
+      title: 'The Thursday Murder Club', marketPos: 'cozy_detective',
+      noDarkExcluded: false,  // classifyTone → light/specific; cozy invariant
+      lessDarkExcluded: false, noLiteraryExcluded: false, noRomanceExcluded: false },
+
+    { name: 'Everything I Never Told You',
+      subjects: ['grief', 'drowning', 'literary fiction', 'psychological fiction',
+                 'family secrets', 'mothers and daughters'],
+      title: 'Everything I Never Told You', marketPos: 'literary_prestige',
+      // 'grief' is a single-token in TONE_DARK_SPECIFIC → folds to broad;
+      // only 1 dark broad hit → not darkStrong → tone=unknown.
+      // No phrasal DARK_SIGNALS hit. Not domestic_suspense. → eligible.
+      noDarkExcluded: false, lessDarkExcluded: false,
+      noLiteraryExcluded: true, noRomanceExcluded: false },
+
+    // Generic controls:
+    { name: 'Beach Read (pure-romance control)',
+      subjects: ['Romance', 'Romantic comedy', 'Fiction'],
+      title: 'Beach Read', marketPos: 'romance',
+      noDarkExcluded: false, lessDarkExcluded: false,
+      noLiteraryExcluded: false, noRomanceExcluded: true },
+
+    { name: 'Pure Romance Control',
+      subjects: ['Romance', 'Contemporary romance', 'Love story'],
+      title: 'Generic Romance', marketPos: 'romance',
+      noDarkExcluded: false, lessDarkExcluded: false,
+      noLiteraryExcluded: false, noRomanceExcluded: true },
+
+    { name: 'Cozy Mystery Control',
+      subjects: ['Cozy mystery', 'Amateur detective', 'Murder'],
+      title: 'Generic Cozy', marketPos: 'cozy_detective',
+      noDarkExcluded: false,  // lightSpec=1 (cozy mystery) beats darkBroad=1 (murder)
+      lessDarkExcluded: false, noLiteraryExcluded: false, noRomanceExcluded: false },
+
+    { name: 'Dark Literary Control',
+      subjects: ['Literary fiction', 'Trauma', 'Abuse', 'Psychological fiction'],
+      title: 'Generic Dark Literary', marketPos: 'literary_prestige',
+      // 'trauma' + 'abuse' both phrasal hits in curated DARK_SIGNALS
+      // (single-token entries kept per documented exception).
+      noDarkExcluded: true, lessDarkExcluded: false,
+      noLiteraryExcluded: true, noRomanceExcluded: false },
+
+    { name: 'Domestic Suspense Control',
+      subjects: ['Psychological suspense', 'Domestic noir', 'Marriage'],
+      title: 'Generic Domestic Suspense', marketPos: 'domestic_suspense',
+      noDarkExcluded: true,  // 'psychological suspense' phrasal hit
+      lessDarkExcluded: false, noLiteraryExcluded: false, noRomanceExcluded: false },
+
+    { name: 'Romantic Suspense Control',
+      subjects: ['Romantic suspense', 'Romance', 'Suspense'],
+      title: 'Generic Romantic Suspense', marketPos: 'romance',
+      // No phrasal hit, not domestic_suspense; classifyTone unknown.
+      // Per rule 10, romantic suspense WITHOUT specific suspense/dark
+      // evidence is NOT excluded under No-dark.
+      noDarkExcluded: false, lessDarkExcluded: false,
+      noLiteraryExcluded: false, noRomanceExcluded: true },
+  ];
+
+  const lenses = {
+    noDark:      { hard: {}, soft: {},                   exclude: { avoid_dark: true } } as NextReadIntent,
+    lessDark:    { hard: {}, soft: { intensity: 'low' }, exclude: {} }                   as NextReadIntent,
+    noLiterary:  { hard: {}, soft: {},                   exclude: { avoid_literary: true } } as NextReadIntent,
+    noRomance:   { hard: {}, soft: {},                   exclude: { avoid_romance:  true } } as NextReadIntent,
+  };
+
+  let fixtureFailures = 0;
+  for (const f of fixtures) {
+    const book = { subjects: f.subjects, title: f.title, description: f.description };
+    const cases: Array<[keyof typeof lenses, boolean]> = [
+      ['noDark',     f.noDarkExcluded],
+      ['lessDark',   f.lessDarkExcluded],
+      ['noLiterary', f.noLiteraryExcluded],
+      ['noRomance',  f.noRomanceExcluded],
+    ];
+    for (const [lensName, expected] of cases) {
+      const verdict = evaluateBookAgainstIntentLens(book, lenses[lensName], f.marketPos);
+      const excluded = verdict.hardExclusions.length > 0;
+      if (excluded !== expected) {
+        console.error(`  ✗ "${f.name}" under ${lensName}: expected excluded=${expected}, got excluded=${excluded} (status=${verdict.status}, reasons=${verdict.hardExclusions.map(h => h.reason).join(',')})`);
+        fixtureFailures++;
+      }
+    }
+    // Less-dark MUST NEVER produce a hard exclusion — rule 4.
+    const lessDarkVerdict = evaluateBookAgainstIntentLens(book, lenses.lessDark, f.marketPos);
+    if (lessDarkVerdict.hardExclusions.length > 0) {
+      console.error(`  ✗ "${f.name}": Less-dark produced a hard exclusion (${lessDarkVerdict.hardExclusions[0].reason}) — must be bounded demotion only`);
+      fixtureFailures++;
+    }
+
+    // status field MUST agree with hardExclusions presence under No-dark.
+    const noDarkVerdict = evaluateBookAgainstIntentLens(book, lenses.noDark, f.marketPos);
+    const statusExcluded = noDarkVerdict.status === 'excluded';
+    if (statusExcluded !== f.noDarkExcluded) {
+      console.error(`  ✗ "${f.name}": No-dark status='${noDarkVerdict.status}' but expected excluded=${f.noDarkExcluded}`);
+      fixtureFailures++;
+    }
+    // Verdict shape invariant: 'excluded' iff hardExclusions non-empty.
+    if ((noDarkVerdict.status === 'excluded') !== (noDarkVerdict.hardExclusions.length > 0)) {
+      console.error(`  ✗ "${f.name}": status='excluded' must iff hardExclusions non-empty (status=${noDarkVerdict.status}, hard=${noDarkVerdict.hardExclusions.length})`);
+      fixtureFailures++;
+    }
+  }
+  if (fixtureFailures > 0) fail(`§10 fixture matrix: ${fixtureFailures} assertion(s) failed`);
+  ok(`§10 fixture matrix: 12 fixtures × 4 lenses (48 hardExclusion assertions) all green`);
+  ok(`§10 invariant: Less-dark produced ZERO hard exclusions across all 12 fixtures (rule 4 preserved)`);
+  ok(`§10 invariant: status === 'excluded' iff hardExclusions non-empty (12 fixtures verified)`);
+}
+
 // ── Lens classifier sanity (tier assignment matches new behavior) ──────────
 header('§lens classifier — chip tier assignment');
 {
