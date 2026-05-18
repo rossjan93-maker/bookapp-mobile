@@ -2,6 +2,36 @@
 
 Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/onboarding sprints. Moved out of replit.md on 2026-05-14 to keep the live operating reference compact. Order is reverse-chronological. For full diffs use `git log -p -- <path>`.
 
+## Intent Lens Eligibility Stabilization — product accepted (2026-05-18)
+
+**Status:** Intent Lens Eligibility Stabilization — accepted.
+
+**Options chosen.** Option D (final visible-deck safety gate at the queue boundary) + Resolution A (gate applies to continuations too — a truly-dark next-in-series IS hard-excluded under No-dark; user clears the lens to see it).
+
+**What shipped.**
+- Final visible-deck safety gate enforces the product invariant: any book the shared `evaluateBookAgainstIntentLens` marks `hardExclusion` under an active Your-Next-Read lens cannot render — regardless of producer path (cold restore, fresh build, foreground append, background watermark replenish, exhaustion bypass) or bucket (discoveries AND continuations).
+- Gate lives in `lib/intent/finalGate.ts` as a pure module — `applyFinalIntentEligibility({ recs, intent, source, intentTag?, projectBook, marketPosOf? })` returning `{ kept, removed, diagnostics }`. Inactive intent → shallow copy + `removed=[]` + `diagnostics=null`. Active intent → single forward-filter pass via `evaluateBookAgainstIntentLens(book, intent, classifyMarketPosition(book))`; relative order preserved verbatim; input never mutated. No I/O, no module state, no composer / RecCard / explanation references.
+- Queue write chokepoints in `lib/recQueue.ts` (`initQueue` and `appendToQueue`) enforce the invariant — gate runs BEFORE existing actedOn / dedupe filters; `__DEV__`-only single-line `[FINAL_GATE]` log via `formatFinalGateLog(diagnostics)` when removals occur. Typed `FinalGateSource` union (`initQueue_cold_restore` / `initQueue_fresh` / `append_into_existing` / `append_background` / `append_exhaustion`) stamped at every queue write.
+- `components/RecommendationsFeed.tsx` callsites wired at all four producer paths (cold-restore initQueue L374, foreground initQueue_fresh, append_into_existing, append_background, append_exhaustion). DEV `[FINAL_GATE_LEAK]` `console.error` assert added to `syncVisible` as defense-in-depth.
+- Stale-render race fixed in `handleApplyIntent` / `handleClearIntent`: both now call `syncVisible()` between `clearAll()` and the async `runPipeline(...)` launch, collapsing to zero the prior window where pre-lens `visibleConts` / `visibleDiscs` snapshots could keep rendering hard-excluded cards under an active lens.
+
+**Validators.** `scripts/validate_intent_final_gate.ts` passed all 12 sections — including the §12 stale-render ordering pin (structural regex extraction of `handleApplyIntent` / `handleClearIntent` ordering + behavioral pin that `getVisibleStack()` returns `[]` after `clearAll()`). Sibling validators all green: `validate_intent_lens`, `validate_p4c_limited_ranking`, `validate_intent_contribution`, `validate_tone_pace_fit`, `validate_series_continuation`, `validate_explanation_faithfulness`, `validate_rec_validity`, `validate_rec_payload_cache_lens`.
+
+**Architect review.** PASS. Initial review flagged the stale-render leak (activeIntentRef set + queue cleared but visible state not reconciled until async pipeline completes) → addressed by inserting immediate `syncVisible()` after `clearAll()` in both handlers + adding §12 validator coverage → re-review confirmed closure with no new vectors introduced.
+
+**Pinned constraints honored.**
+- `recValidity.VERSION` remains at `rcv6` (no scoring shape change).
+- No RecCard / composer / `book.reasons[]` / Reading-Taste / lens-persistence change.
+- No visible explanation copy change.
+- No broadening of No-dark policy.
+- No title blacklists outside fixtures.
+- No `deriveBookEvidence` / BookEvidence Batch B/C work.
+
+**Next recommended work (queued, in order).**
+1. **Remove or reduce temporary DEV forensic logs if still noisy.** The `[FINAL_GATE]`, `[FINAL_GATE_LEAK]`, `[INTENT_PRE_RENDER]`, `[INTENT_FORENSIC_RANKED]`, and `[PERSIST_CACHE]` lines were instrumented to support the multi-batch eligibility / cache-bypass investigation. Sweep them for redundancy now that the invariant is enforced at the queue boundary; keep the leak assert and anything still load-bearing for ongoing triage.
+2. **Proceed to P4D narrow composer admission.** Already shipped per replit.md phase table (2026-05-18) — confirm live smoke under a No-dark + Less-dark composed lens and flip it from "shipped" to "product accepted" once the user-visible projection is verified.
+3. **Keep full BookEvidence Batch B/C deferred** until the shadow-mode calibration window opens (per the planned `P4 hygiene` sequence). Batch A signal-map consolidation already shipped; Batch B (typed `BookEvidence` + `deriveBookEvidence` single entry point + byte-identical contract validator) and Batch C (`intensity` + `emotionalWeight` dimensions + 12×6 fixture matrix) stay out of scope until then.
+
 ## P4C.1 — product accepted (2026-05-18)
 
 No-dark re-smoke clean after two follow-up batches (#5 phrasal/market-position extension, #6 shared evaluator consolidation). P4C.1 flips from "shipped" to "product accepted."
