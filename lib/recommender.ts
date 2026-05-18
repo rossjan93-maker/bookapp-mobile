@@ -3600,6 +3600,13 @@ const INTENT_FOCUS_TITLES: ReadonlySet<string> = new Set([
   'the silent patient',
   'the thursday murder club',
   'everything i never told you',
+  // P4C.1 follow-up #6 (2026-05-18) — newly surfaced No-dark edge cases.
+  // User reports both still visible under No-dark after the #5 fix that
+  // correctly removed Gone Girl + Silent Patient. Need per-title corpus
+  // evidence (subjects, market_position, exclusion_reason) to decide
+  // whether either is a real signal gap or a contract-interpretation call.
+  'verity',
+  'the secret history',
 ]);
 export function isIntentFocusTitle(title: string | null | undefined): boolean {
   if (!title) return false;
