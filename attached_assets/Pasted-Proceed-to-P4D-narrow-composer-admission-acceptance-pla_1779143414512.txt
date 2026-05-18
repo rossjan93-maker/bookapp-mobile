@@ -1,0 +1,117 @@
+Proceed to P4D narrow composer admission acceptance planning.
+
+Do not change code yet.
+Do not run live smoke yet.
+Use the planning-first if/then protocol.
+
+Goal:
+Decide whether P4D is ready for product acceptance and define the acceptance path before any further action.
+
+Current context:
+- Intent Lens Eligibility Stabilization is accepted and closed.
+- Final visible-deck gate is now the hard-exclusion invariant.
+- Forensic DEV logs have been cleaned up.
+- P4D narrow composer admission has shipped but is not yet product accepted.
+- P4D admitted only a narrow set of contribution kinds into visible book.reasons[].
+- We need to confirm expected visible behavior, validator coverage, and failure branches before testing.
+
+Required return:
+
+## 1. P4D admission map
+List each P4C/P4D contribution kind and classify it as:
+- admitted into visible reasons
+- still suppressed
+- caution-only
+- internal/debug only
+
+At minimum include:
+- tone_fit
+- pace_fit
+- series_continuation_fit
+- current_intent_fit
+- complexity_fit
+- avoidance_conflict
+- not_right_now_risk
+
+## 2. Evidence gates
+For each admitted kind, state the exact gates required before it can produce visible copy.
+
+For example:
+- contribution value / floor
+- specific vs broad confidence
+- signed eligibility
+- match vs mismatch
+- session scope vs durable scope
+- prior-read evidence for series continuation
+
+## 3. Expected visible copy
+Provide example copy that should appear only when evidence gates are met.
+
+Also state banned/blocked copy:
+- no “you’ll love”
+- no unsupported “because you want”
+- no tone/pace claim on broad or unknown evidence
+- no emotionalWeight/intensity claims yet
+
+## 4. Validator proof
+List which validators currently prove:
+- no visible copy without contribution evidence
+- broad/unknown evidence stays suppressed
+- existing P3A reasons are not displaced incorrectly
+- visible reasons remain capped / not overlong
+- no ranking/scoring changes
+- final gate remains untouched
+
+## 5. If/then acceptance tree
+
+Define the branches before any live check:
+
+IF visible top cards show expected tone/pace/series reasons with valid evidence,
+THEN P4D can be product accepted.
+
+IF no tone/pace reasons appear, but validators prove gates are strict and fixture coverage shows conditions are rare,
+THEN classify as “pass with note,” not necessarily failure.
+
+IF tone/pace reasons appear on broad or unknown evidence,
+THEN block P4D and fix composer gating.
+
+IF current_intent_fit, complexity_fit, avoidance_conflict, or not_right_now_risk appear in visible reasons,
+THEN block P4D because they are supposed to remain suppressed.
+
+IF existing stated-taste reasons disappear unexpectedly,
+THEN investigate displacement/priority.
+
+IF ranking/order changes,
+THEN block, because P4D should be explanation-only.
+
+IF final-gate / No-dark behavior changes,
+THEN block as regression outside P4D scope.
+
+IF the only concern is that emotionally heavy books still feel wrong,
+THEN defer to BookEvidence Batch C, not P4D.
+
+## 6. Live smoke plan
+Only after the if/then tree is stated, propose the smallest live smoke needed.
+
+It should include:
+- one quick-taste / Your Next Read lens scenario likely to produce tone/pace evidence
+- one series-continuation scenario if available
+- one negative check where broad/unknown evidence should not produce intent copy
+
+## 7. Product acceptance criteria
+Define what counts as:
+- PASS
+- PASS WITH NOTE
+- BLOCKED
+
+## 8. Exact next prompt
+End with the exact prompt we should send after reviewing this plan.
+
+Hard constraints:
+- Do not change code.
+- Do not touch RecCard.
+- Do not change scoring/ranking.
+- Do not change final gate.
+- Do not change No-dark policy.
+- Do not start BookEvidence Batch B/C.
+- Do not broaden visible explanations.
