@@ -1,0 +1,58 @@
+Begin item 1: forensic DEV log cleanup.
+
+Use the planning-first chapter protocol.
+
+Do not implement yet.
+
+Task type:
+Planning-first cleanup audit.
+
+Goal:
+Audit every __DEV__-gated console.log / console.error introduced during the P4C.1 follow-up stream and the Intent Lens Eligibility Stabilization chapter, then propose what should stay vs be removed.
+
+Context:
+Intent Lens Eligibility Stabilization is accepted and closed. The final visible-deck safety gate is now the hard-exclusion product invariant, with validate_intent_final_gate as the primary acceptance gate. Manual smoke is no longer the primary correctness mechanism for hard-exclusion behavior.
+
+Logs to audit include at least:
+- [FINAL_GATE]
+- [FINAL_GATE_LEAK]
+- [INTENT_PRE_RENDER]
+- [INTENT_FORENSIC_RANKED]
+- [PERSIST_CACHE]
+- [INTENT_APPLY]
+- [INTENT_RECPATH_ENTRY]
+- [INTENT_CACHE_FILTER_PRE]
+- [INTENT_CACHE_FILTER_POST]
+- [INTENT_EXPERT_FILTER_PRE]
+- [INTENT_EXPERT_FILTER_POST]
+- [INTENT_FOCUS_TITLES_IN_DECK]
+- [INTENT_FINAL_RENDER]
+- any sibling traces added during this arc
+
+For each log, classify as:
+A. still load-bearing for ongoing triage
+B. redundant now that the queue invariant is enforced
+C. noisy / low-signal
+
+Likely principle:
+- Keep [FINAL_GATE_LEAK] because it is an invariant breach alarm.
+- Consider keeping [FINAL_GATE] only if it is compact and fires only on removals.
+- Remove or downgrade verbose forensic title traces that were only needed during the patch loop.
+
+Hard constraints:
+- Do not change product behavior.
+- Do not alter final gate logic.
+- Do not alter validate_intent_final_gate.
+- Do not touch RecCard.
+- Do not touch composer.
+- Do not change recommendation ranking/scoring.
+- Do not remove logs that are required by validators unless replaced with an explicit test-only assertion.
+
+Return:
+1. Executive recommendation
+2. Log inventory table
+3. Keep/remove/downgrade classification
+4. Risk of removing each log
+5. Proposed implementation plan
+6. Validators to run after cleanup
+7. Exact implementation prompt for approval
