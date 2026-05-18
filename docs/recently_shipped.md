@@ -2,6 +2,44 @@
 
 Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/onboarding sprints. Moved out of replit.md on 2026-05-14 to keep the live operating reference compact. Order is reverse-chronological. For full diffs use `git log -p -- <path>`.
 
+## P4D · narrow composer admission — product accepted (2026-05-18)
+
+**Status.** PASS WITH NOTE under the planning-first if/then protocol. Flipped from "shipped" to "product accepted" the same day as the original ship.
+
+**Acceptance form.** Validator-authoritative. The planning chapter explicitly authorized this branch: "If no valid P4D copy appears live, rely on validators and mark PASS WITH NOTE" (acceptance priority #7). Live deck top-card inspection was not reachable from the agent surface in this acceptance session — the running web build sat in pre-auth `[ROOT_GUARD] no session — redirecting to /login`, and clarification #1 prohibited mutating a real user's library to construct a series-continuation fixture. Per clarification #2, absence of visible tone/pace copy in such a session is PASS WITH NOTE, not BLOCKED, as long as the structural contract proofs hold.
+
+**Validator evidence (re-run at acceptance time, all green).**
+- `validate_explanation_faithfulness` — sections P4D-1..P4D-7 (load-bearing): tone gates (5 failure modes — below-floor, broad confidence, unknown confidence, signedEligible=false, match=mismatch, match=partial, negative aggregate), pace gates (broad + ineligible), series gates (priorReadCount=0 suppression), suppressed-kinds structural invariant (current_intent_fit / complexity_fit / avoidance_conflict / not_right_now_risk never visible), no-displacement of legacy PRIMARY (stated_taste_fit stays primary; P4D fills secondary), ≤2-line projection, composer purity (banned phrasings absent — `P4D_BANNED_PHRASES` check).
+- `validate_intent_final_gate` — final visible-deck gate untouched (§9 source-grep isolation; §11 log-format stability).
+- `validate_intent_lens` — Intent Lens hard-exclusion contract still green (52 hardExclusion assertions across 13 fixtures × 4 lenses).
+- `validate_p4c_limited_ranking` — per-kind ±0.20 / stack ±0.30 caps + stated-taste floor protection unchanged.
+- `validate_intent_contribution`, `validate_tone_pace_fit`, `validate_series_continuation` — upstream signed-eligibility derivation still emits per the gates the composer relies on.
+- `validate_rec_validity` — rcv6 hash determinism + assertCurrent semantics intact.
+- `validate_rec_payload_cache_lens` — lens-tagged cache discard contract still pinned (no pre-Batch-A lens deck can be restored).
+
+**Browser-console evidence (clean at acceptance).**
+- No `[FINAL_GATE_LEAK]` firing.
+- No `[PERSIST_CACHE] lens_tagged_payload` (no lens-tagged cache restore attempts).
+- No banned-phrase substring in any log line ("you'll love", "perfect for you", "because you liked", etc.).
+- Only normal pre-auth lifecycle (`[ROOT_GUARD]`, `[STAGE] mount_read`, `[SERIES_CATALOG]` strip-fallback warning, `useNativeDriver` warning — all pre-existing, unrelated to P4D).
+
+**Hard contracts re-confirmed source-side (no code change at acceptance).**
+- `lib/explanations/compose.ts` — `PRIMARY_PRIORITY = ['stated_taste_fit', 'behavioral_fit', 'feedback_fit']`; `SECONDARY_PRIORITY = ['series_continuation_fit', 'tone_fit', 'pace_fit']`; `MAX_SECONDARY = 1`. Switch arms for the four suppressed kinds still return `null` with `suppressed: 'not_yet_emitted'` (defense-in-depth on top of the structural unreachability via priority lists).
+- Tone gate (lines 391–406): `sum > 0` AND `Math.abs(sum) ≥ DISPLAY_FLOORS.tone_fit` AND `bookToneConfidence === 'specific'` AND `signedEligible === true` AND `match === 'match'`.
+- Pace gate (lines 407–422): same pattern with pace traits.
+- Series gate (lines 423–438): `sum > 0` AND `Math.abs(sum) ≥ DISPLAY_FLOORS.series_continuation_fit` AND `priorReadCount > 0` AND `continuesPrior === true`.
+- Composer phrasings unchanged ("Lighter/Darker tone, in line with your current intent"; "Faster pace/Slow-burn pacing, in line with your current intent"; "Next in {seriesName}" / "Continues a series you have started").
+- `recValidity.VERSION` stays `rcv6` (no scoring shape change, no schema bump).
+- RecCard layout, scoring, ranking, final gate, No-dark policy, BookEvidence Batches B/C — all untouched. No forensic logs re-added.
+
+**Carry-forward concerns (explicitly NOT P4D failures, scheduled elsewhere).**
+- Emotionally heavy non-dark mismatches still appear in the visible deck under composed lenses (already-known from P4C.1 acceptance note). Routed to BookEvidence Batch C (intensity + emotionalWeight dimensions); does not block P4D.
+- Follow-up live gate when a fresh signed-in onboarded user state is available: under a `tone=light` + `energy=light_fun` Your Next Read lens, confirm at least one card surfaces "Lighter tone, in line with your current intent" or "Faster pace, in line with your current intent" with `bookToneConfidence === 'specific'` (or `bookPaceConfidence === 'specific'`) evidence, and that no suppressed P4C kind appears in visible `book.reasons[]`. If a series-prior state becomes available without mutating a real user library, also confirm a "Next in {seriesName}" line on the appropriate later-position card.
+
+**Diff footprint.** Documentation only — `replit.md` phase-table row (P4D shipped → product accepted, with PASS-WITH-NOTE rationale appended) and this `docs/recently_shipped.md` entry. Zero product code changes at acceptance.
+
+---
+
 ## Intent Lens Eligibility Stabilization — product accepted (2026-05-18)
 
 **Status:** Accepted and closed.
