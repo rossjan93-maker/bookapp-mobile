@@ -1,0 +1,213 @@
+We are not running another manual smoke test.
+
+Proceed with a planning-first stabilization chapter before any more P4D work.
+
+Chapter name:
+Intent Lens Eligibility Stabilization
+
+Task type:
+Planning first. Do not implement until you return the chapter plan and I approve it.
+
+Context:
+P4C.1 has had repeated path/policy issues around the Your Next Read lens:
+- cache-hit bypass
+- fresh expert-build bypass
+- stale lens-tagged payload restore
+- under-filtering of No-dark
+- over-filtering of cozy mystery
+- duplicated/differing book evidence logic
+- static validators passing before live UI exposed additional path issues
+
+Latest state:
+- Shared evaluator exists: evaluateBookAgainstIntentLens(...)
+- getIntentExclusionReason delegates to the evaluator
+- BookEvidence Batch A moved signal lists toward shared evidence
+- Thursday Murder Club false exclusion was fixed at the policy/evaluator level
+- Validators are green
+- We are not doing more manual smoke as the acceptance gate
+
+Product semantics to preserve:
+- Reading Taste = durable baseline
+- Your Next Read = temporary session lens
+- No dark = hard session exclusion with specific evidence
+- Less dark = bounded demotion / not-right-now risk
+- Unknown evidence = do not hard-exclude
+- Cozy mysteries remain eligible unless specifically dark
+- Titles are validator fixtures, not product logic
+
+Goal:
+Design a final centralized eligibility guarantee and automated acceptance harness so a hard-excluded book cannot render under an active Your Next Read lens, regardless of upstream path.
+
+The desired invariant:
+If evaluateBookAgainstIntentLens(...) returns a hardExclusion for a book under the active lens, that book must not appear in the rendered deck.
+
+## Required planning output
+
+### 1. Executive diagnosis
+Explain whether the remaining risk is:
+- path bypass
+- evaluator policy
+- cache/session lifecycle
+- final-render guarantee
+- or all of the above
+
+### 2. Current visible-card path map
+Map every route by which a book can reach the rendered deck:
+- deterministic ranked pool
+- expert fresh build
+- Supabase rec_cache
+- AsyncStorage recPayloadCache
+- recSession
+- recQueue
+- continuation bucket
+- initQueue_fresh
+- append_into_existing
+- append_background
+- append_exhaustion
+- syncVisible / final render commit
+
+For each path, report:
+- whether it currently calls evaluateBookAgainstIntentLens
+- whether it can bypass hard session exclusions
+- whether it reads/writes persistent state
+- whether it is covered by existing validators
+
+### 3. Options
+Compare:
+
+A. Continue upstream patches only  
+B. Add final visible-deck safety gate  
+C. Full BookEvidence refactor first  
+D. Hybrid: keep upstream filters for efficiency, add final gate as product guarantee
+
+Recommend one.
+
+My current preference:
+Option D.
+
+### 4. Final gate contract
+Define a pure helper:
+
+applyFinalIntentEligibility({
+  recs,
+  intent,
+  source,
+}): {
+  kept,
+  removed,
+  diagnostics
+}
+
+Required behavior:
+- if no active intent, return original list unchanged
+- if active intent exists, evaluate every book
+- hardExclusion removes the book
+- softDemotions / notRightNowRisks do not remove
+- unknown does not remove
+- preserve relative order
+- do not mutate input
+- DEV-only diagnostics include:
+  - source
+  - removed titles
+  - hard exclusion kind
+  - evidence/confidence
+  - final top titles
+
+### 5. Integration plan
+Identify the lowest-risk commit points to wire this final gate.
+
+It must cover:
+- initQueue_fresh
+- append_into_existing
+- append_background
+- append_exhaustion
+- restored recSession / recQueue
+- any final visible/render state commit
+
+If multiple places are involved, propose how to centralize without duplicating logic.
+
+### 6. Automated acceptance harness
+Propose a validator:
+
+scripts/validate_intent_final_gate.ts
+
+It must assert:
+1. no active intent returns input unchanged
+2. No-dark removes hard-excluded books
+3. Less-dark does not hard-remove those same books
+4. cozy mystery remains eligible
+5. unknown evidence remains eligible
+6. relative order of kept books is preserved
+7. final gate catches hard-excluded books even if upstream source contains them
+8. lens-tagged persistent payloads are not restored
+9. RecCard/composer/reason copy is unchanged
+10. evaluator fixture matrix passes through the final gate
+
+Fixture set:
+- Gone Girl
+- The Silent Patient
+- Verity
+- The Secret History
+- The Thursday Murder Club
+- Everything I Never Told You
+- pure romance control
+- cozy mystery control
+- domestic suspense control
+- dark literary control
+- emotionally heavy non-dark control
+
+Use titles as validator fixtures only. Do not blacklist titles in product logic.
+
+### 7. If/then decision tree
+Include:
+- IF evaluator returns hardExclusion and the book renders, THEN final gate wiring failed.
+- IF evaluator returns eligible but the book feels wrong, THEN evidence-policy / BookEvidence gap, not render-path bug.
+- IF emotionally heavy but non-dark books feel wrong, THEN defer to emotionalWeight / intensity model.
+- IF No-dark removes cozy mystery, THEN evaluator policy is overbroad.
+- IF Less-dark removes books, THEN lens semantics are wrong.
+- IF lens-tagged payload restores, THEN cache boundary failed.
+- IF final-gate validator passes, THEN manual smoke is no longer required for basic hard-exclusion correctness.
+
+### 8. Risks and anti-goals
+Hard constraints:
+- Do not implement yet.
+- Do not touch RecCard.
+- Do not touch composer.
+- Do not add visible explanations.
+- Do not persist the lens.
+- Do not mutate Reading Taste.
+- Do not hardcode title blacklists except validator fixtures.
+- Do not broaden No-dark with generic single words like murder, thriller, or death.
+- Do not start full deriveBookEvidence unless you prove final gate is insufficient.
+- Do not start P4D until this chapter is accepted or explicitly waived.
+
+### 9. Chapter boundary
+Likely included:
+- final visible-deck safety gate
+- automated final-gate validator
+- DEV diagnostic shape
+- no visible UI/copy changes
+
+Likely deferred:
+- full deriveBookEvidence
+- emotionalWeight / intensity modeling
+- P4D composer admission
+- RecCard changes
+- durable hard-avoid storage
+- forensic log cleanup until after acceptance
+
+### 10. Implementation prompt
+End your response with the exact implementation prompt for the recommended option, so I can approve the chapter without rewriting it.
+
+Return format:
+1. Executive diagnosis
+2. Current path map
+3. Options compared
+4. Recommended path
+5. Proposed final gate contract
+6. Integration plan
+7. If/then decision tree
+8. Validator / fixture plan
+9. Risks and anti-goals
+10. Chapter boundary
+11. Exact implementation prompt for approval
