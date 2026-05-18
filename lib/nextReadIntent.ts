@@ -29,6 +29,11 @@
 import type { DeterministicLane, TraitConfidence } from './bookTraits';
 import { classifyTone }                            from './bookTraits';
 import type { MarketPosition }                     from './fitClassifier';
+import {
+  DARK_SIGNALS,
+  DOMESTIC_SUSPENSE_SUPPORT_SIGNALS,
+  firstSignalMatch,
+} from './evidence/signals';
 
 // ── Intent shape ──────────────────────────────────────────────────────────────
 
@@ -129,63 +134,22 @@ const SERIES_SIGNALS = [
 // 'disturbing') and missed the canonical genre markers ('psychological
 // thriller', 'noir', 'serial killer') that OL/GBooks actually stamp on
 // Gone Girl / The Silent Patient. The trait classifier's TONE_DARK_SPECIFIC
-// already had them — this list now aligns with that *phrasal* (specific)
+// already had them — these lists now align with that *phrasal* (specific)
 // set, deliberately omitting the broad single-token terms ('thriller',
 // 'murder', 'horror', 'death') that would over-exclude cozies and
 // literary work.
 //
-// Bare 'trauma' / 'abuse' / 'assault' are kept (already shipped behavior)
+// As of the BookEvidence consolidation Batch A (P4 hygiene), DARK_SIGNALS
+// and DOMESTIC_SUSPENSE_SUPPORT_SIGNALS live in `lib/evidence/signals.ts`
+// — see that module for the partitioning rationale (specific / phrasal vs
+// broad single-token) and the word-boundary matching contract.
+//
+// Bare 'trauma' / 'abuse' / 'assault' are still listed (under `broad`)
 // even though they could touch some memoir/literary fiction — they are
 // narrow enough relative to the user's promise ("no dark") that demoting
 // them on an active No-dark lens is more user-aligned than over-including.
-const DARK_SIGNALS = [
-  // Mood / content descriptors (legacy — kept).
-  'dark themes', 'dark fiction', 'disturbing content', 'graphic violence',
-  'trauma', 'abuse', 'assault', 'gritty', 'bleak', 'depressing',
-  'disturbing', 'sinister', 'unsettling', 'nihilistic', 'horror fiction',
-  // P4C.1 follow-up #2 — canonical genre markers (mirrors TONE_DARK_SPECIFIC
-  // in lib/bookTraits.ts so the hard exclusion has the same dark-coverage
-  // as the trait classifier). Phrasal only — single tokens stay out so
-  // cozies / general thrillers are not over-excluded.
-  'dark fantasy', 'noir', 'grimdark',
-  'psychological thriller', 'psychological suspense',
-  'psychological horror',  'gothic horror',
-  'domestic thriller',     'domestic suspense',
-  'serial killer',         'true crime',
-  // P4C.1 follow-up #5 (2026-05-17, runtime-log driven) — phrasal markers
-  // observed in the LIVE candidate corpus for Gone Girl / The Silent
-  // Patient that the prior set missed:
-  //   Gone Girl subjects:        thriller, mystery, suspense,
-  //                              psychological fiction, crime fiction
-  //   Silent Patient subjects:   Fiction, psychological  /  Fiction, thrillers
-  //                              Family violence  /  Psychotherapy patients
-  // 'crime fiction' covers Gone Girl. 'family violence' +
-  // 'psychotherapy patient' cover Silent Patient. We DELIBERATELY skip
-  // 'psychological fiction' because it would also fire on Everything I
-  // Never Told You (literary grief novel — fixture-confirmed eligible
-  // under No-dark; user explicitly left that book ambiguous in the
-  // follow-up brief). All three new markers are phrasal so cozy
-  // mysteries / general literary fiction remain eligible.
-  'crime fiction', 'family violence', 'psychotherapy patient',
-];
-
-// P4C.1 follow-up #5 — market-position coupled exclusion ────────────────────
-// When the trait pipeline has already classified a book as
-// `domestic_suspense` (a market position whose textbook examples are Gone
-// Girl, Silent Patient, Behind Closed Doors, The Couple Next Door…), the
-// "No dark" promise should fire even if the OL subject corpus is
-// minimally tagged. The phrasal DARK_SIGNALS list above is the primary
-// gate; this market-position rule is belt-and-suspenders for books whose
-// subject metadata is too thin to phrase-match. Coupled with a
-// supporting-signal check so a `domestic_suspense` book with no
-// reinforcing dark/psychological/crime/violence/suspense subject would
-// still pass (preserves the spec's "no false positives on cozies" rule).
-const DOMESTIC_SUSPENSE_SUPPORT_SIGNALS = [
-  'psychological', 'suspense', 'crime', 'violence', 'murder',
-  'thriller',      'mystery',  'mental illness', 'psychotherapy',
-];
-// Note: the runtime implementation of this rule lives inline in
-// `evaluateBookAgainstIntentLens` (the prior `domesticSuspenseDark`
+// Note: the runtime implementation of the market-position rule lives inline
+// in `evaluateBookAgainstIntentLens` (the prior `domesticSuspenseDark`
 // helper was removed after the #6 consolidation — sole caller deleted).
 
 const PACE_FAST_SIGNALS = [
@@ -402,8 +366,9 @@ export function evaluateBookAgainstIntentLens(
       darkConfidence = 'specific';
     }
 
-    // (2) Phrasal hit in curated DARK_SIGNALS (multi-word/hyphenated only).
-    const phrasalHit = DARK_SIGNALS.find(s => corpus.includes(s));
+    // (2) Phrasal hit in curated DARK_SIGNALS (word-boundary, case-insensitive).
+    //     See lib/evidence/signals.ts for the specific/broad partition.
+    const phrasalHit = firstSignalMatch(corpus, DARK_SIGNALS);
     if (phrasalHit) {
       darkEv.push({ source: 'phrasal_subject', kind: phrasalHit, detail: `corpus contains phrasal '${phrasalHit}'` });
       darkConfidence = 'specific';
@@ -411,7 +376,7 @@ export function evaluateBookAgainstIntentLens(
 
     // (3) Market-position coupled rule (domestic_suspense + ≥1 supporting signal).
     if (marketPos === 'domestic_suspense') {
-      const supporting = DOMESTIC_SUSPENSE_SUPPORT_SIGNALS.find(sig => corpus.includes(sig));
+      const supporting = firstSignalMatch(corpus, DOMESTIC_SUSPENSE_SUPPORT_SIGNALS);
       if (supporting) {
         darkEv.push({ source: 'market_position', kind: `domestic_suspense+${supporting}`, detail: `market_position=domestic_suspense AND corpus contains '${supporting}'` });
         darkConfidence = 'specific';
