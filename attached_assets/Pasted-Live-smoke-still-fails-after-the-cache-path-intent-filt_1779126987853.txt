@@ -1,0 +1,65 @@
+Live smoke still fails after the cache-path intent filter fix.
+
+Scenario:
+Reading Taste:
+- Likes: Mystery, Thriller
+- Avoids: Horror
+
+Baseline deck:
+- Sometimes I Lie
+- Verity
+- The Perfect Marriage
+- Never Lie
+
+Active Your Next Read lens:
+- Fast-paced
+- Light
+- Less dark
+- Light & accessible
+- No dark
+
+Filtered deck still shows:
+1. The Thursday Murder Club
+2. Everything I Never Told You
+3. Gone Girl
+4. The Silent Patient
+
+Problem:
+Gone Girl and The Silent Patient remain visible under explicit “No dark.” This still violates the hard session-exclusion promise.
+
+Please investigate runtime execution, not static validator state.
+
+Questions:
+1. Did the latest bundle with the cache-path filter actually load?
+2. Did `[INTENT_CACHE_FILTER] removed N of M cached recs under active lens` fire?
+3. If not, why not?
+4. Is the deck rendering from a local mounted state array that was not replaced after filtering?
+5. Is another cache path or replenishment path still bypassing the intent filter?
+6. Are Gone Girl / The Silent Patient removed by the cache filter and then reintroduced later?
+7. Does final rendered top-10 match the post-filter result or a stale/pre-filter list?
+
+Please add a temporary DEV trace if needed:
+- active lens object
+- exclude.avoid_dark
+- source of displayed deck: rec_cache / recPayloadCache / recSession / local state / queue
+- titles before filter
+- titles after filter
+- final rendered titles
+- per-title exclusion reason for Gone Girl, The Silent Patient, Thursday Murder Club, Everything I Never Told You
+
+Hard constraints:
+- Do not weaken No dark.
+- Do not touch composer.
+- Do not touch RecCard.
+- Do not mutate Reading Taste.
+- Do not persist the lens.
+- Do not blacklist titles manually except as validator fixtures.
+
+Return:
+1. Executive verdict
+2. Whether latest bundle was active
+3. Whether INTENT_CACHE_FILTER fired
+4. Runtime path from apply lens to final render
+5. Exact point where Gone Girl / Silent Patient survive or re-enter
+6. Minimal fix
+7. Whether P4C.1 remains blocked

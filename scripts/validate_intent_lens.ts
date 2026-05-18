@@ -398,6 +398,31 @@ header('§9 cache-path intent filter (locks live-smoke fix)');
   }
   ok('cache-hit return path wires both intent gates inside isIntentActive(intent) branch');
 
+  // (a.2) Architectural assertion — the fresh expert-build return path
+  //       (after composeRecommendationSet, before the final return) must
+  //       ALSO apply the same intent gates. composeRecommendationSet
+  //       (lib/expertRec.ts:460) picks from pack.candidates, which is
+  //       intent-blind, so expertRecs can include books the intent filter
+  //       would reject. Without this gate, the cache-hit fix alone leaves
+  //       a hole on the very first build (or any shouldRebuild trigger).
+  const expertReturnMatch = src.match(
+    /const\s+expertCont\s*=\s*baseResult\.continuations[\s\S]{0,4000}?\n\s*return\s*\{[\s\S]{0,1500}?expert_decision:\s*decision[\s\S]{0,500}?\n\s*\}\s*;\s*\n\s*\}\s*\n/,
+  );
+  if (!expertReturnMatch) {
+    fail('could not locate the fresh expert-build return block in lib/recommender.ts — re-confirm the post-build intent filter is still wired before re-asserting');
+  }
+  const expertBlock = expertReturnMatch[0];
+  if (!/isIntentActive\s*\(\s*intent\s*\)/.test(expertBlock)) {
+    fail('fresh expert-build return path does not call isIntentActive(intent) — expert picks would bypass No-dark when shouldRebuild triggers (new_reading_signal / feedback_changed / TTL / first build)');
+  }
+  if (!/getIntentExclusionReason\s*\(/.test(expertBlock)) {
+    fail('fresh expert-build return path does not call getIntentExclusionReason — fresh expert recs would bypass No-dark exclusion (e.g. Gone Girl / Silent Patient survive even though composeRecommendationSet is intent-blind)');
+  }
+  if (!/passesIntentHardFilters\s*\(/.test(expertBlock)) {
+    fail('fresh expert-build return path does not call passesIntentHardFilters — fresh expert recs would bypass length / fiction-only / standalone hard gates');
+  }
+  ok('fresh expert-build return path wires both intent gates inside isIntentActive(intent) branch');
+
   // (b) Behavior assertion — same helper combo as the cache-path filter,
   //     applied to canonical four fixtures, produces correct verdicts.
   const { getIntentExclusionReason, passesIntentHardFilters } = require('../lib/nextReadIntent') as

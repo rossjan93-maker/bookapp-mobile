@@ -3993,10 +3993,49 @@ export async function getPersonalizedRecsWithExpert(
   }
 
   const expertCont = baseResult.continuations ?? [];
+
+  // ── Session-only intent filter on fresh expert recs ───────────────────────
+  // P4C.1 follow-up #3 (2026-05-17 live-smoke blocker — Gone Girl / Silent
+  // Patient STILL visible after the cache-hit filter shipped):
+  //
+  // Root cause this time is in the fresh build itself, not the cache. The
+  // expert layer's `composeRecommendationSet` (lib/expertRec.ts:460) builds
+  // its pick list from `pack.candidates` (the FULL evidence-pack candidates,
+  // intent-blind) sorted by expert verdict + fit_score, NOT from
+  // `allScored.recs` (which was the only thing `getRankedRecs` ran the
+  // intent filter against at recommender.ts:2497). So `expertRecs` can
+  // include books the intent filter would have rejected; the deterministic
+  // path is filtered, but the expert overlay is not.
+  //
+  // The cache-hit filter shipped in the previous batch only protects the
+  // cache-HIT return path. On a FRESH expert build (or whenever
+  // `shouldRebuild` triggers — `new_reading_signal`, `feedback_changed`,
+  // `import_completed`, TTL expiry) we return intent-blind picks.
+  //
+  // Mirror the cache-hit fix: apply the same exclusion + hard-filter pair
+  // here on `expertRecs` before returning. Cache persistence above
+  // (line ~3976) deliberately stores the UNFILTERED set so the cache
+  // remains lens-agnostic (one user's "No dark" must not pollute another
+  // session's cache); the cache-hit filter handles future lens applies.
+  let returnedExpertRecs = expertRecs;
+  if (intent && isIntentActive(intent)) {
+    const before = expertRecs.length;
+    returnedExpertRecs = expertRecs.filter((book) => {
+      const bookLane  = detectBookLane(book);
+      const marketPos = (book._score_breakdown?.market_position as MarketPosition) ?? 'general_fiction';
+      if (getIntentExclusionReason(book, intent, marketPos)) return false;
+      if (!passesIntentHardFilters(book, intent, bookLane, marketPos)) return false;
+      return true;
+    });
+    if (__DEV__ && returnedExpertRecs.length < before) {
+      console.log(`[INTENT_EXPERT_FILTER] removed ${before - returnedExpertRecs.length} of ${before} fresh expert recs under active lens`);
+    }
+  }
+
   return {
-    recs:          [...expertCont, ...expertRecs],
+    recs:          [...expertCont, ...returnedExpertRecs],
     continuations: expertCont,
-    discoveries:   expertRecs,
+    discoveries:   returnedExpertRecs,
     meta: {
       ...baseResult.meta,
       mode:            'expert',
