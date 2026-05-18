@@ -1,0 +1,44 @@
+Approve BookEvidence Batch B as scoped.
+
+Proceed with implementation exactly within the planning chapter.
+
+Decision:
+Use the full Batch B plan, not a further split, unless you discover a concrete implementation risk during the work.
+
+Goal:
+Introduce typed deriveBookEvidence(book) as the normalized book-side evidence layer while preserving byte-identical behavior for BookTraits and evaluateBookAgainstIntentLens.
+
+Acceptance:
+Contract-only. No live smoke required.
+
+Hard constraints:
+- No behavior change.
+- No ranking/scoring changes.
+- No composer changes.
+- No RecCard changes.
+- No visible copy changes.
+- No intensity or emotionalWeight fields.
+- No new evidence axes.
+- No broadening No-dark.
+- No new DARK_SIGNALS or DOMESTIC_SUSPENSE_SUPPORT_SIGNALS entries.
+- No title-specific exclusions outside validator fixtures.
+- recValidity.VERSION remains rcv6.
+- passesIntentHardFilters, computeIntentBoost, detectBookForm, and detectGenre remain untouched.
+
+Required implementation:
+1. Add lib/evidence/bookEvidence.ts with deriveBookEvidence(book) and typed evidence output.
+2. Extend lib/evidence/signals.ts with shared SignalSet exports for tone, pace, and complexity.
+3. Refactor lib/bookTraits.ts so classifyTone / classifyPace / classifyComplexity become evidence-backed shims with byte-identical return shapes.
+4. Refactor getBookTraits to derive evidence once and project tone/pace/complexity from it.
+5. Refactor evaluateBookAgainstIntentLens to consume the same evidence layer while preserving IntentEligibilityVerdict shape and evidence strings.
+6. Add scripts/validate_book_evidence.ts with the full §1–§9 contract from the planning doc.
+7. Re-run all 9 existing validators.
+8. Run architect review.
+9. Update replit.md and docs/recently_shipped.md.
+
+Acceptance gate:
+- validate_book_evidence exits 0.
+- Existing validators remain green.
+- Architect review PASS.
+- No observable behavior diff.
+- Phase status should be “shipped,” not “product accepted,” because this is a contract-only foundation with no visible user promise.

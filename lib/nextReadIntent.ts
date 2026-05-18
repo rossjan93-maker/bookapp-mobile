@@ -27,13 +27,9 @@
 // =============================================================================
 
 import type { DeterministicLane, TraitConfidence } from './bookTraits';
-import { classifyTone }                            from './bookTraits';
+import { classifyToneFromEvidence }                from './bookTraits';
 import type { MarketPosition }                     from './fitClassifier';
-import {
-  DARK_SIGNALS,
-  DOMESTIC_SUSPENSE_SUPPORT_SIGNALS,
-  firstSignalMatch,
-} from './evidence/signals';
+import { deriveBookEvidence }                      from './evidence/bookEvidence';
 
 // ── Intent shape ──────────────────────────────────────────────────────────────
 
@@ -329,7 +325,13 @@ export function evaluateBookAgainstIntentLens(
   marketPos: MarketPosition,
 ): IntentEligibilityVerdict {
   const { exclude: e, soft: s } = intent;
-  const corpus = buildCorpus(book);
+
+  // BookEvidence Batch B — derive the canonical book-side evidence once and
+  // project every downstream check off it. `corpus` keeps its prior meaning
+  // (surface corpus = subjects + title, lowercased) — see
+  // `evidence.corpus.surface` in lib/evidence/bookEvidence.ts.
+  const bookEvidence = deriveBookEvidence(book);
+  const corpus       = bookEvidence.corpus.surface;
 
   const evidence:         IntentEligibilityEvidence[] = [];
   const hardExclusions:   IntentEligibilityVerdict['hardExclusions']   = [];
@@ -360,15 +362,16 @@ export function evaluateBookAgainstIntentLens(
     const darkEv: IntentEligibilityEvidence[] = [];
 
     // (1) BookTraits.classifyTone — shared evidence model (subjects + description).
-    const tone = classifyTone({ subjects: book.subjects, description: book.description });
+    const tone = classifyToneFromEvidence(bookEvidence);
     if (tone.tone === 'dark' && tone.confidence === 'specific') {
       darkEv.push({ source: 'classify_tone', kind: 'tone=dark/specific', detail: 'classifyTone returned dark with specific confidence' });
       darkConfidence = 'specific';
     }
 
     // (2) Phrasal hit in curated DARK_SIGNALS (word-boundary, case-insensitive).
-    //     See lib/evidence/signals.ts for the specific/broad partition.
-    const phrasalHit = firstSignalMatch(corpus, DARK_SIGNALS);
+    //     Pre-computed on the surface corpus inside deriveBookEvidence; see
+    //     lib/evidence/signals.ts for the specific/broad partition.
+    const phrasalHit = bookEvidence.darkPhrasal.phrase;
     if (phrasalHit) {
       darkEv.push({ source: 'phrasal_subject', kind: phrasalHit, detail: `corpus contains phrasal '${phrasalHit}'` });
       darkConfidence = 'specific';
@@ -376,7 +379,7 @@ export function evaluateBookAgainstIntentLens(
 
     // (3) Market-position coupled rule (domestic_suspense + ≥1 supporting signal).
     if (marketPos === 'domestic_suspense') {
-      const supporting = firstSignalMatch(corpus, DOMESTIC_SUSPENSE_SUPPORT_SIGNALS);
+      const supporting = bookEvidence.domesticSuspenseSupport.phrase;
       if (supporting) {
         darkEv.push({ source: 'market_position', kind: `domestic_suspense+${supporting}`, detail: `market_position=domestic_suspense AND corpus contains '${supporting}'` });
         darkConfidence = 'specific';
@@ -407,7 +410,7 @@ export function evaluateBookAgainstIntentLens(
     // Mirror classifyTone-derived risk for downstream P4C.1 bounded demotion.
     // Important: this does NOT hard-exclude (preserves the "Less dark = bounded
     // demotion, not hard exclusion" rule). It surfaces evidence for ranking.
-    const tone = classifyTone({ subjects: book.subjects, description: book.description });
+    const tone = classifyToneFromEvidence(bookEvidence);
     if (tone.tone === 'dark') {
       const ev: IntentEligibilityEvidence = { source: 'classify_tone', kind: `tone=dark/${tone.confidence}`, detail: 'dark tone under less-dark/light soft pref → bounded demotion candidate' };
       evidence.push(ev); softDemotions.push({ reason: 'less_dark_demotion', evidence: [ev] });

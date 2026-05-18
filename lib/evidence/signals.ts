@@ -175,3 +175,167 @@ export function firstSignalMatch(corpus: string, set: SignalSet): string | null 
 export function hasAnySignal(corpus: string, set: SignalSet): boolean {
   return firstSignalMatch(corpus, set) !== null;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BookEvidence Batch B (P4 hygiene) — typed trait-classifier signal sets.
+//
+// These sets are the migration of the previously-private constants in
+// `lib/bookTraits.ts` (TONE_DARK_SPECIFIC / TONE_DARK_BROAD / TONE_LIGHT_*,
+// PACE_FAST_*, PACE_SLOW_*, COMPLEXITY_ACCESSIBLE_*, COMPLEXITY_LITERARY_*,
+// COMPLEXITY_DENSE_*) into a shape consumable by `deriveBookEvidence`.
+//
+// Partition rule (locked, identical to the bookTraits classifier):
+//   • A phrase is `specific` iff it contains a space or a hyphen after trim.
+//   • Single-token entries that were authored in the original "_SPECIFIC"
+//     list are folded into `broad` here (matching the prior runtime
+//     `partitionBySpecificity` behavior). This pre-application means the
+//     runtime no longer needs to re-partition.
+//
+// Acceptance gate: `scripts/validate_book_evidence.ts §1` asserts that
+// element-by-element these sets equal the partition of the original
+// bookTraits constants (inline-snapshotted in the validator).
+//
+// Matching is word-boundary + case-insensitive (same as DARK_SIGNALS).
+// Counts are computed via `countMatches`; thresholds (≥1 specific OR ≥2
+// broad → "strong") live in the classifiers, not here.
+
+// Tone — dark.
+export const TONE_DARK: SignalSet = {
+  specific: [
+    'dark fantasy', 'dark fiction', 'dark themes',
+    'psychological thriller', 'psychological horror', 'gothic horror',
+    'true crime',
+  ],
+  broad: [
+    // Original TONE_DARK_BROAD (in order).
+    'horror', 'thriller', 'murder', 'death', 'war', 'violence',
+    // Folded-in single-token entries from the original TONE_DARK_SPECIFIC.
+    'grimdark', 'noir', 'trauma', 'grief', 'bleak', 'grim',
+    'tragedy', 'tragic',
+  ],
+};
+
+// Tone — light.
+export const TONE_LIGHT: SignalSet = {
+  specific: [
+    'cozy mystery', 'cozy fantasy', 'cozy fiction', 'romantic comedy',
+    'feel-good', 'feel good',
+    'humorous fiction', 'comic fiction',
+    'beach read',
+  ],
+  broad: [
+    // Original TONE_LIGHT_BROAD (in order).
+    'humor', 'humour', 'comedy', 'funny', 'witty', 'cozy',
+    'lighthearted', 'light-hearted',
+    // Folded-in single-token entries from TONE_LIGHT_SPECIFIC.
+    'heartwarming', 'uplifting', 'comedic',
+  ],
+};
+
+// Pace — fast.
+export const PACE_FAST: SignalSet = {
+  specific: [
+    'page-turner', 'page turner', 'fast-paced', 'fast paced',
+    'psychological thriller', 'action-packed', 'action packed',
+    'spy thriller', 'spy novel', 'crime thriller', 'legal thriller',
+    'medical thriller',
+  ],
+  broad: [
+    'thriller', 'suspense', 'action', 'fast',
+    // No single-token entries to fold in (all PACE_FAST_SPECIFIC are phrasal).
+  ],
+};
+
+// Pace — slow.
+export const PACE_SLOW: SignalSet = {
+  specific: [
+    'slow-burn', 'slow burn', 'literary fiction', 'literary novel',
+    'philosophical fiction', 'character study',
+  ],
+  broad: [
+    'literary', 'philosophical', 'contemplation', 'introspective',
+    // Folded-in single-token entries from PACE_SLOW_SPECIFIC.
+    'meditative', 'contemplative', 'reflective',
+  ],
+};
+
+// Complexity — accessible.
+export const COMPLEXITY_ACCESSIBLE: SignalSet = {
+  specific: [
+    'self-help', 'self help', 'how-to', 'beach read', 'cozy mystery',
+    'cozy fantasy', 'popular nonfiction', 'popular science', 'pop science',
+    'commercial fiction',
+  ],
+  broad: [
+    'accessible', 'commercial', 'popular', 'beginner',
+    // No single-token entries to fold in.
+  ],
+};
+
+// Complexity — literary.
+export const COMPLEXITY_LITERARY: SignalSet = {
+  specific: [
+    'literary fiction', 'literary novel', 'lyrical prose',
+    'man booker', 'booker prize', 'national book award', 'pulitzer prize',
+  ],
+  broad: [
+    'literary', 'lyrical',
+    // No single-token entries to fold in.
+  ],
+};
+
+// Complexity — dense.
+export const COMPLEXITY_DENSE: SignalSet = {
+  specific: [
+    'experimental fiction', 'philosophical treatise', 'critical theory',
+  ],
+  broad: [
+    'dense', 'epic', 'philosophy', 'theology', 'theory',
+    // Folded-in single-token entries from COMPLEXITY_DENSE_SPECIFIC.
+    'academic', 'scholarly', 'theoretical', 'postmodern',
+    'monograph', 'dissertation',
+  ],
+};
+
+/**
+ * Count of distinct matched phrases (not total hits across the corpus).
+ * One phrase matching twice still counts as one — mirrors the prior
+ * `countMatches` in `lib/bookTraits.ts`.
+ */
+export function countMatches(corpus: string, set: SignalSet): { specific: number; broad: number } {
+  if (!corpus) return { specific: 0, broad: 0 };
+  let s = 0;
+  let b = 0;
+  for (const { re } of compile(set.specific)) if (re.test(corpus)) s++;
+  for (const { re } of compile(set.broad))    if (re.test(corpus)) b++;
+  return { specific: s, broad: b };
+}
+
+/**
+ * Same as `countMatches` but also returns the first matched phrase in each
+ * tier — used by `deriveBookEvidence` to populate AxisMatch. `compile()`
+ * memoizes per signal array, so repeated calls across axes are cheap and a
+ * separate tiered cache is unnecessary.
+ */
+export function countMatchesDetailed(
+  corpus: string,
+  set: SignalSet,
+): { specificCount: number; broadCount: number; firstSpecific: string | null; firstBroad: string | null } {
+  if (!corpus) return { specificCount: 0, broadCount: 0, firstSpecific: null, firstBroad: null };
+  let s = 0, b = 0;
+  let firstSpec: string | null = null;
+  let firstBroad: string | null = null;
+  for (const { phrase, re } of compile(set.specific)) {
+    if (re.test(corpus)) {
+      s++;
+      if (firstSpec === null) firstSpec = phrase;
+    }
+  }
+  for (const { phrase, re } of compile(set.broad)) {
+    if (re.test(corpus)) {
+      b++;
+      if (firstBroad === null) firstBroad = phrase;
+    }
+  }
+  return { specificCount: s, broadCount: b, firstSpecific: firstSpec, firstBroad: firstBroad };
+}

@@ -2,6 +2,29 @@
 
 Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/onboarding sprints. Moved out of replit.md on 2026-05-14 to keep the live operating reference compact. Order is reverse-chronological. For full diffs use `git log -p -- <path>`.
 
+## BookEvidence consolidation — Batch B · typed `deriveBookEvidence` classifier entry point — shipped (2026-05-18)
+
+**Scope (planning-locked, no expansion).** P4 hygiene follow-up to Batch A. Introduce a typed `BookEvidence` record and a single derivation function `deriveBookEvidence(book)` that becomes the **sole classifier entry point** for `getBookTraits` (tone / pace / complexity) and for `evaluateBookAgainstIntentLens` (Intent Lens No-dark / Less-dark / supporting checks). Migrate the private tone/pace/complexity signal constants out of `lib/bookTraits.ts` into `lib/evidence/signals.ts` as exported `SignalSet`s, applying the `partitionBySpecificity` rule **at authoring time** so the runtime no longer re-partitions.
+
+**Hard constraints (every one held).**
+- Byte-identical user-visible behavior — no ranking, scoring, composer, RecCard, or copy changes.
+- No new axes (`intensity` / `emotionalWeight` stay in Batch C).
+- No broadening of No-dark; `passesIntentHardFilters`, `computeIntentBoost`, `detectBookForm`, `detectGenre` untouched.
+- `recValidity.VERSION` stays `rcv6` (non-scoring-shape change).
+- Contract-only acceptance per the operating standard (no UI surface promise, so step-5 live smoke is not required).
+
+**What shipped.**
+- `lib/evidence/signals.ts` — extended with seven new `SignalSet` exports (`TONE_DARK`, `TONE_LIGHT`, `PACE_FAST`, `PACE_SLOW`, `COMPLEXITY_ACCESSIBLE`, `COMPLEXITY_LITERARY`, `COMPLEXITY_DENSE`), partition pre-applied so single-token entries from the old `SPECIFIC` lists are folded into `broad`. Helpers `countMatches` / `countMatchesDetailed` added.
+- `lib/evidence/bookEvidence.ts` (new) — defines `BookEvidenceInput`, `BookEvidence`, `AxisMatch`, `PhraseMatch`. `deriveBookEvidence(book)` builds the semantic and surface corpora once, runs all seven axes against the semantic corpus, runs `DARK_SIGNALS` against both surface and semantic (the semantic variant `darkPhrasalSemantic` is stored for future use but not consumed today), and runs `DOMESTIC_SUSPENSE_SUPPORT_SIGNALS` against the surface corpus. Result is `Object.freeze`d (defense-in-depth).
+- `lib/bookTraits.ts` — removed the private `TONE_*_SPECIFIC/BROAD`, `PACE_*`, `COMPLEXITY_*` constants and the `partitionBySpecificity` / `isPhrasal` / `buildSemanticCorpus` / `compileMatchers` / `countMatches` helpers. Added pure projections `classifyToneFromEvidence` / `classifyPaceFromEvidence` / `classifyComplexityFromEvidence` plus thin `classifyTone(book)` / `classifyPace(book)` / `classifyComplexity(book)` shims that call `deriveBookEvidence` once and project. `escapeRegex` kept (still used by form / genre / lane matchers).
+- `lib/nextReadIntent.ts → evaluateBookAgainstIntentLens` — derives `bookEvidence` once at function entry. Uses `evidence.corpus.surface` as the local `corpus`, calls `classifyToneFromEvidence(bookEvidence)`, reads `bookEvidence.darkPhrasal.phrase` and `bookEvidence.domesticSuspenseSupport.phrase`. Every emitted `IntentEligibilityEvidence` string / kind / source is byte-identical to the pre-batch shape. Direct `DARK_SIGNALS` / `firstSignalMatch` imports removed in favor of evidence projections.
+
+**Acceptance gate.** `scripts/validate_book_evidence.ts` — 222 assertions across nine sections (signal-list migration parity, derive purity + frozen, corpus parity, BookTraits byte-identity, IntentEligibilityVerdict byte-identity per fixture × four lenses, fixture-superset inclusion proof, public surface stability, composer/RecCard import-surface untouched, `recValidity.VERSION = 'rcv6'`). All sibling validators (`validate_intent_final_gate`, `validate_intent_lens`, `validate_p4c_limited_ranking`, `validate_intent_contribution`, `validate_tone_pace_fit`, `validate_series_continuation`, `validate_explanation_faithfulness`, `validate_rec_validity`, `validate_rec_payload_cache_lens`) green.
+
+**Why "shipped" and not "product accepted".** Contract-only batch; no user-visible promise crosses pipeline stages beyond what was already shipped under P4D + Intent Lens stabilization. The contract validator IS the acceptance gate here, as called out in the operating standard for purely contract-level phases. Batch C ( `intensity` + `emotionalWeight` dimensions + 12×6 fixture matrix incl. Emotionally Heavy Non-dark control) stays deferred until the shadow-mode calibration window opens.
+
+**Carry-forward.** The "emotionally heavy non-dark mismatches" concern noted under Batch A remains owned by Batch C — Batch B was a structural / hygiene refactor only and did not change any classification thresholds.
+
 ## P4D-followup · persistent rec cache lens-bypass closeout — shipped (2026-05-18)
 
 **Root cause.** `lib/recPayloadCache.ts` could restore a deck-as-filtered-under-a-past-lens because configHash protects only durable preferences, not the session-only lens or evaluator-logic shifts (e.g. Batch A `DARK_SIGNALS` word-boundary tightening). Live-smoke evidence: `[PERSIST_CACHE] hit | ... | fingerprint=v1:0:deterministic:nfp:Fast-paced · Light · Less dark · Light & accessible · No dark` replayed a pre-Batch-A lens deck without re-running `evaluateBookAgainstIntentLens`.
