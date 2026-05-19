@@ -3828,6 +3828,34 @@ export async function getPersonalizedRecsWithExpert(
         // Phase 2 will replace this proxy with a real cap-profile re-run.
         const wouldEjectUnderMoodFirst = tasteFitButLensMismatch && altsAvailable;
 
+        // ── Phase 1.1 observation-assist fields (shadow-only) ──────────────
+        // Seven additional fields sourced as pure read-only projections of
+        // values the recommender has already computed for this rec at this
+        // point in `getRankedRecs`. NO new pipeline stages, NO re-runs of
+        // finalGate (Option A — single source of truth per the planning
+        // chapter docs/plan_lens_arbitration_observation_assist.md §4.1).
+        //
+        //   au  — `r.author` truncated to mirror `t` policy (≤ 28 chars).
+        //   vr  — first visible composer reason (≤ 80 chars).
+        //   tn  — toneDark/toneLight bucket via the same `bucket()` helper
+        //         used for int/wt above.
+        //   pc  — paceFast/paceSlow bucket via the same `bucket()` helper.
+        //   cx  — complexity bucket: literary+dense (summed) vs accessible.
+        //   mp  — market_position from _score_breakdown.
+        //   fg  — `_intent_trace.excluded_by` if populated by the in-process
+        //         intent filter (lib/recommender.ts:2499). NOTE: this is
+        //         DIAGNOSTIC CONTEXT, not authoritative enforcement —
+        //         queue-boundary finalGate runs AFTER this log fires, so any
+        //         book excluded there will not appear in baseResult.recs at
+        //         all. For top-10 visible books `fg` will typically be null.
+        const tnB = bucket(ev.toneDark, ev.toneLight);
+        const pcB = bucket(ev.paceFast, ev.paceSlow);
+        const cxHi = {
+          specificCount: ev.complexityLiterary.specificCount + ev.complexityDense.specificCount,
+          broadCount:    ev.complexityLiterary.broadCount    + ev.complexityDense.broadCount,
+        };
+        const cxB = bucket(cxHi, ev.complexityAccessible);
+
         console.log('[LENS_ARBITRATION]', JSON.stringify({
           r:    i + 1,
           t:    (r.title ?? '').slice(0, 28),
@@ -3841,6 +3869,14 @@ export async function getPersonalizedRecsWithExpert(
           lk:   lensKind.slice(0, 64),
           wem:  wouldEjectUnderMoodFirst,
           lfa:  altsAvailable,
+          // Phase 1.1 additions (shadow-only diagnostic context):
+          au:   (r.author ?? '').slice(0, 28),
+          vr:   (r.reasons?.[0] ?? '').slice(0, 80),
+          tn:   `${tnB.bucket}/${tnB.conf}`,
+          pc:   `${pcB.bucket}/${pcB.conf}`,
+          cx:   `${cxB.bucket}/${cxB.conf}`,
+          mp:   bd?.market_position ?? null,
+          fg:   r._intent_trace?.excluded_by ?? null,
         }));
       });
     }

@@ -133,6 +133,42 @@ For each `[LENS_ARBITRATION]` JSON line, the fields are:
 | `lk` | Compact active-lens summary (see §2 expected substrings) |
 | `wem` | **Would-eject-under-mood-first** (Pattern A shadow simulation) |
 | `lfa` | **Lens-fit alternative nearby** in deck positions 11-25 |
+| `au` | Author, truncated ≤ 28 chars (Phase 1.1) |
+| `vr` | First visible composer reason, truncated ≤ 80 chars (Phase 1.1) |
+| `tn` | Tone bucket — `<bucket>/<conf>`, same shape as `int`/`wt` (Phase 1.1) |
+| `pc` | Pace bucket — `<bucket>/<conf>` (Phase 1.1) |
+| `cx` | Complexity bucket — `<bucket>/<conf>` (literary + dense vs accessible) (Phase 1.1) |
+| `mp` | `market_position` from `_score_breakdown` (e.g. `romantasy`, `domestic_suspense`), or `null` (Phase 1.1) |
+| `fg` | **Diagnostic context only.** `_intent_trace.excluded_by` if the in-process intent filter rejected this book on a soft path, else `null`. NOT a finalGate re-run — queue-boundary finalGate happens AFTER this log fires, so hard-excluded books never reach the top-10. Top-10 visible books typically have `fg === null`. (Phase 1.1) |
+
+### 3.5 Browser-console capture protocol (Phase 1.1)
+
+The payload is now self-contained — capturing one console pane per scenario
+produces a complete report. No additional `[BOOK_EVIDENCE_C]` / `[FINAL_GATE]`
+correlation is required for the original-task field set.
+
+```
+1. Open Chrome DevTools → Console.
+2. Right-click anywhere in the console pane → "Save as…" → write to:
+      .local/lens_arb_logs/<YYYY-MM-DD>_S<n>_<lens-shorthand>.log
+3. The aggregator's regex tolerates console prefixes (timestamps, file:line
+   annotations, `>` / `log:` Chrome wrappers) — it extracts only the trailing
+   `[LENS_ARBITRATION] {…}` JSON. No manual cleanup required.
+4. Sanity check before running the aggregator:
+      grep -c '\[LENS_ARBITRATION\]' .local/lens_arb_logs/<file>.log
+      # expect 10 per scenario (top-10 deck)
+```
+
+**File-naming convention:**
+
+```
+.local/lens_arb_logs/<YYYY-MM-DD>_S<0|1|2|3|4>_<lens-shorthand>.log
+                     date          scenario id   one of: baseline, light,
+                                                 palate, less-dark, fast
+```
+
+`.local/` is gitignored by project convention — confirm `.local/lens_arb_logs/`
+is also ignored before first capture (a one-line `.gitignore` addition if not).
 
 For analysis, the per-scenario aggregates to record are:
 - `n_tlm` — count of `tlm === true` across the 10 lines.

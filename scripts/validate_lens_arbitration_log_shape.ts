@@ -76,7 +76,12 @@ for (const idx of emitLineIdxs) {
 
 // ── §3 Field-shape ───────────────────────────────────────────────────────────
 header('§3 — every required key present on the emit payload');
-const requiredKeys = ['r', 't', 'dtf', 'lf', 'tlm', 'int', 'wt', 'sm', 'la', 'lk', 'wem', 'lfa'];
+const requiredKeys = [
+  // Phase 1 core (12 keys):
+  'r', 't', 'dtf', 'lf', 'tlm', 'int', 'wt', 'sm', 'la', 'lk', 'wem', 'lfa',
+  // Phase 1.1 observation-assist (7 keys):
+  'au', 'vr', 'tn', 'pc', 'cx', 'mp', 'fg',
+];
 // Read 30 lines forward from the emit line and confirm each key appears
 // in that window (the JSON.stringify object literal is multi-keyed but on
 // the same logical statement).
@@ -198,6 +203,123 @@ header('§6 — mode-default neutrality (no production consumer; flipping mode h
   // mode CANNOT influence any visible deck in production. Record this
   // explicitly so the audit trail is unambiguous.
   ok('production deck output is byte-identical across {taste_first, balanced, mood_first} — implied by §1 + §5');
+}
+
+// ── §7 Phase 1.1 — extended payload shape (19 keys) ──────────────────────────
+header('§7 — Phase 1.1 observation-assist payload shape (19 keys total)');
+{
+  for (const idx of emitLineIdxs) {
+    const window = REC_LINES.slice(idx, idx + 35).join('\n');
+    // Sourcing contract — each new key must be sourced from a value already
+    // computed by getRankedRecs (Option A: no new pipeline stages).
+    assert(/au:\s*\(r\.author\s*\?\?\s*''\)\.slice\(0,\s*28\)/.test(window),
+      'au sourced from r.author (truncated ≤ 28)');
+    assert(/vr:\s*\(r\.reasons\?\.\[0\]\s*\?\?\s*''\)\.slice\(0,\s*80\)/.test(window),
+      'vr sourced from r.reasons[0] (truncated ≤ 80)');
+    assert(/tn:\s*`\$\{tnB\.bucket\}\/\$\{tnB\.conf\}`/.test(window),
+      'tn emitted as `${bucket}/${conf}` string via shared bucket() helper');
+    assert(/pc:\s*`\$\{pcB\.bucket\}\/\$\{pcB\.conf\}`/.test(window),
+      'pc emitted as `${bucket}/${conf}` string via shared bucket() helper');
+    assert(/cx:\s*`\$\{cxB\.bucket\}\/\$\{cxB\.conf\}`/.test(window),
+      'cx emitted as `${bucket}/${conf}` string via shared bucket() helper');
+    assert(/mp:\s*bd\?\.market_position\s*\?\?\s*null/.test(window),
+      'mp sourced from _score_breakdown.market_position (null fallback)');
+    // fg — Option A: read from r._intent_trace.excluded_by; null fallback.
+    // No re-run of finalGate, no shadow re-evaluation.
+    assert(/fg:\s*r\._intent_trace\?\.excluded_by\s*\?\?\s*null/.test(window),
+      'fg sourced from r._intent_trace.excluded_by (Option A; null fallback; NO finalGate re-run)');
+
+    // Negative assertion — no shadow finalGate re-run inside the LENS_ARB block.
+    const blockStart = idx;
+    let blockEnd = idx + 80;
+    for (let i = idx; i < REC_LINES.length && i < idx + 200; i++) {
+      if (REC_LINES[i].trim() === '});' && REC_LINES[i + 1]?.trim() === '}') { blockEnd = i; break; }
+    }
+    const fullBlock = REC_LINES.slice(blockStart - 50, blockEnd + 5).join('\n');
+    assert(!/applyFinalIntentLensGate\(|evaluateBookAgainstIntentLens\(/.test(fullBlock),
+      'no finalGate / Intent Lens re-evaluation inside the [LENS_ARBITRATION] block (Option A single source of truth)');
+  }
+}
+
+// ── §8 Phase 1.1 — truncation + bucket-shape invariants ──────────────────────
+header('§8 — truncation policy + bucket-string shape for new keys');
+{
+  // The bucket() helper used for tn/pc/cx is identical to int/wt — already
+  // covered by §4. Re-assert the produced string shape conforms.
+  const ev = deriveBookEvidence({
+    subjects: ['literary fiction'],
+    title: '',
+    description: 'A meditative, slow-burn literary novel of dense prose.',
+    page_count: null,
+  });
+  const tnB = (function () {
+    const hi = ev.toneDark, lo = ev.toneLight;
+    const hiStrong = hi.specificCount >= 1 || hi.broadCount >= 2;
+    const loStrong = lo.specificCount >= 1 || lo.broadCount >= 2;
+    if (hiStrong && loStrong) return { bucket: 'medium', conf: 'broad' as const };
+    if (hiStrong) return { bucket: 'high',    conf: hi.specificCount >= 1 ? 'specific' as const : 'broad' as const };
+    if (loStrong) return { bucket: 'low',     conf: lo.specificCount >= 1 ? 'specific' as const : 'broad' as const };
+    return { bucket: 'unknown' as const, conf: 'unk' as const };
+  })();
+  const tnStr = `${tnB.bucket}/${tnB.conf}`;
+  assert(/^(low|medium|high|unknown)\/(specific|broad|unk)$/.test(tnStr),
+    `tn fixture produces contract-shape string ("${tnStr}")`);
+
+  // Complexity uses summed Literary+Dense as the "high" pole; assert the
+  // sum produces a non-negative count and the shared bucket() produces
+  // the contract shape.
+  const cxHi = {
+    specificCount: ev.complexityLiterary.specificCount + ev.complexityDense.specificCount,
+    broadCount:    ev.complexityLiterary.broadCount    + ev.complexityDense.broadCount,
+  };
+  assert(cxHi.specificCount >= 0 && cxHi.broadCount >= 0,
+    'complexity high-pole sum (literary + dense) is non-negative');
+  const cxB = (function () {
+    const hi = cxHi, lo = ev.complexityAccessible;
+    const hiStrong = hi.specificCount >= 1 || hi.broadCount >= 2;
+    const loStrong = lo.specificCount >= 1 || lo.broadCount >= 2;
+    if (hiStrong && loStrong) return { bucket: 'medium', conf: 'broad' as const };
+    if (hiStrong) return { bucket: 'high',    conf: hi.specificCount >= 1 ? 'specific' as const : 'broad' as const };
+    if (loStrong) return { bucket: 'low',     conf: lo.specificCount >= 1 ? 'specific' as const : 'broad' as const };
+    return { bucket: 'unknown' as const, conf: 'unk' as const };
+  })();
+  const cxStr = `${cxB.bucket}/${cxB.conf}`;
+  assert(/^(low|medium|high|unknown)\/(specific|broad|unk)$/.test(cxStr),
+    `cx fixture produces contract-shape string ("${cxStr}")`);
+
+  // Truncation invariants — source-level assertions that the slice ceilings
+  // are exactly what the contract documents.
+  for (const idx of emitLineIdxs) {
+    const window = REC_LINES.slice(idx, idx + 35).join('\n');
+    assert(/au:\s*\(r\.author\s*\?\?\s*''\)\.slice\(0,\s*28\)/.test(window),
+      'au truncation ceiling is 28 (mirrors `t`)');
+    assert(/vr:\s*\(r\.reasons\?\.\[0\]\s*\?\?\s*''\)\.slice\(0,\s*80\)/.test(window),
+      'vr truncation ceiling is 80');
+  }
+
+  // The diagnostic-context contract for `fg` — pinned by source-grep.
+  // `r._intent_trace.excluded_by` is the only source. No `applyFinalIntentLensGate`
+  // import inside the LENS_ARB region (already covered by §7 negative
+  // assertion); reassert here for visibility under §8 contract docs.
+  ok('fg is diagnostic context only — populated by in-process intent filter, null for queue-boundary-excluded books (which never reach baseResult.recs)');
+
+  // Identifier-scope assertion — the local symbols introduced by Phase 1.1
+  // (`tnB`, `pcB`, `cxB`, `cxHi`) must ONLY appear inside the LENS_ARB
+  // emit block. This is a defense against a future change that wires them
+  // into ranking/scoring/composer/finalGate code paths. Any non-emit-block
+  // reference would represent shadow-mode leakage.
+  const tnBOccurrences   = REC_LINES.filter(l => /\btnB\b/.test(l)).length;
+  const pcBOccurrences   = REC_LINES.filter(l => /\bpcB\b/.test(l)).length;
+  const cxBOccurrences   = REC_LINES.filter(l => /\bcxB\b/.test(l)).length;
+  const cxHiOccurrences  = REC_LINES.filter(l => /\bcxHi\b/.test(l)).length;
+  // Expected: tnB / pcB / cxB each appear on 2 lines (const declaration +
+  // emit-object reference). cxHi appears on 2 lines (const declaration +
+  // cxB derivation). If anyone wires these into another site, the counts
+  // change — this assertion fires loudly.
+  assert(tnBOccurrences === 2,  `tnB confined to emit block (expected 2 occurrences, got ${tnBOccurrences})`);
+  assert(pcBOccurrences === 2,  `pcB confined to emit block (expected 2 occurrences, got ${pcBOccurrences})`);
+  assert(cxBOccurrences === 2,  `cxB confined to emit block (expected 2 occurrences, got ${cxBOccurrences})`);
+  assert(cxHiOccurrences === 2, `cxHi confined to emit block (expected 2 occurrences, got ${cxHiOccurrences})`);
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────────

@@ -42,12 +42,22 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 type Line = {
+  // Phase 1 core payload (12 keys):
   r: number; t: string; dtf: boolean;
   lf: 'match' | 'neutral' | 'mismatch';
   tlm: boolean; int: string; wt: string;
   sm: 'taste_first' | 'balanced' | 'mood_first';
   la: boolean; lk: string;
   wem: boolean; lfa: boolean;
+  // Phase 1.1 observation-assist additions (7 keys, all optional for
+  // backward compatibility with logs captured before Phase 1.1 shipped):
+  au?: string;
+  vr?: string;
+  tn?: string;
+  pc?: string;
+  cx?: string;
+  mp?: string | null;
+  fg?: string | null;
 };
 
 const SCENARIOS = ['S0', 'S1', 'S2', 'S3', 'S4'] as const;
@@ -145,7 +155,7 @@ function formatScenarioTable(id: ScenarioId, lines: Line[], agg: Aggregates): st
   const cols = ['r', 'title', 'dtf', 'lf', 'tlm', 'int', 'wt', 'wem', 'lfa'];
   const rows = lines.map(l => [
     String(l.r),
-    `\`${(l.t || '').replace(/`/g, '\\`').slice(0, 28)}\``,
+    `${BT}${(l.t || '').replace(/`/g, '\\`').slice(0, 28)}${BT}`,
     l.dtf ? '✓' : '·',
     l.lf,
     l.tlm ? '✗' : '·',
@@ -160,6 +170,31 @@ function formatScenarioTable(id: ScenarioId, lines: Line[], agg: Aggregates): st
     ...rows.map(r => `| ${r.join(' | ')} |`),
   ].join('\n');
 
+  // Phase 1.1 — second table for the observation-assist fields. Rendered
+  // only when at least one row has any of them (logs captured before
+  // Phase 1.1 shipped will silently omit this block).
+  const hasAssist = lines.some(l => l.au !== undefined || l.vr !== undefined || l.tn !== undefined || l.pc !== undefined || l.cx !== undefined || l.mp !== undefined || l.fg !== undefined);
+  let assistTable = '';
+  if (hasAssist) {
+    const cols2 = ['r', 'au', 'vr', 'tn', 'pc', 'cx', 'mp', 'fg'];
+    const rows2 = lines.map(l => [
+      String(l.r),
+      `${BT}${(l.au ?? '').replace(/`/g, '\\`').slice(0, 28)}${BT}`,
+      `${BT}${(l.vr ?? '').replace(/`/g, '\\`').slice(0, 80)}${BT}`,
+      l.tn ?? '·',
+      l.pc ?? '·',
+      l.cx ?? '·',
+      l.mp ?? '·',
+      l.fg ?? '·',
+    ]);
+    assistTable = '\n\n_Observation-assist fields (Phase 1.1):_\n\n'
+      + [
+          `| ${cols2.join(' | ')} |`,
+          `| ${cols2.map(() => '---').join(' | ')} |`,
+          ...rows2.map(r => `| ${r.join(' | ')} |`),
+        ].join('\n');
+  }
+
   const aggBlock = [
     ``,
     `**Aggregates**`,
@@ -171,7 +206,7 @@ function formatScenarioTable(id: ScenarioId, lines: Line[], agg: Aggregates): st
     ``,
   ].join('\n');
 
-  return header + table + aggBlock;
+  return header + table + assistTable + aggBlock;
 }
 
 function decide(allAgg: Record<ScenarioId, Aggregates>): { verdict: string; rationale: string[] } {
@@ -291,7 +326,7 @@ for (const id of SCENARIOS) {
 }
 sections.push('## Field-coverage note');
 sections.push('');
-sections.push('The `[LENS_ARBITRATION]` payload (12 keys: `r, t, dtf, lf, tlm, int, wt, sm, la, lk, wem, lfa`) is the entire input to this report. The original task asked for additional fields (`author`, `visible reason`, `tone/pace/complexity confidences`, `market_position`, `finalGate hard exclusion`) that the Phase 1 log does NOT emit. To include those, either (a) correlate captured `[BOOK_EVIDENCE_C]` / `[FINAL_GATE]` log lines manually per book, or (b) open a small additive Phase 1.1 DEV-only log extension chapter. Option (b) is a planning-first change since it touches `lib/recommender.ts`.');
+sections.push('The `[LENS_ARBITRATION]` payload after Phase 1.1 carries 19 keys: 12 Phase-1 core fields (`r, t, dtf, lf, tlm, int, wt, sm, la, lk, wem, lfa`) plus 7 observation-assist fields (`au, vr, tn, pc, cx, mp, fg`). The assist fields are emitted as shadow-only diagnostic context and rendered in a second per-scenario table beneath the core table. Pre-Phase-1.1 logs are still accepted — the assist table is omitted when no row carries any assist field, so the original-shape report is byte-identical for older captures. `fg` reflects the in-process intent filter (`_intent_trace.excluded_by`); queue-boundary `finalGate` runs AFTER the log fires, so hard-excluded books never appear in the top-10 and `fg` is typically `null` on visible rows.');
 sections.push('');
 sections.push('## Honest limits of `wem` and `lfa`');
 sections.push('');
