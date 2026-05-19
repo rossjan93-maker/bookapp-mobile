@@ -363,3 +363,49 @@ export function detectStatedFavoriteConflicts(
   }
   return out;
 }
+
+// =============================================================================
+// Lens-vs-Taste Steering — Phase 1 (shadow-mode arbitration field)
+//
+// Session-only steering mode controlling how much the active intent lens is
+// allowed to override durable Reading Taste. Phase 1 is contract-only:
+//   - `getSessionSteering()` is consumed ONLY by the DEV+forensic-gated
+//     `[LENS_ARBITRATION]` diagnostic log in `lib/recommender.ts`. No
+//     production ranking, scoring, composer, RecCard, finalGate, or
+//     No-dark code path reads this value.
+//   - Default is `'balanced'`. At the default value, the recommender is
+//     byte-identical to a build without this field — pinned by
+//     `scripts/validate_lens_arbitration_log_shape.ts §6`.
+//   - Module-state only. Never persisted. Never included in `configHash`.
+//
+// Phase 2 (separate chapter, separate approval) will wire the modes into
+// ranking arbitration. Until then, treat this as an observation knob.
+//
+// See: docs/plan_lens_steering_phase1.md
+// =============================================================================
+
+export type TasteVsIntent = 'taste_first' | 'balanced' | 'mood_first';
+
+const DEFAULT_STEERING: TasteVsIntent = 'balanced';
+
+let _sessionSteering: TasteVsIntent = DEFAULT_STEERING;
+
+/** Read the current session steering mode. Default `'balanced'`. Never
+ *  persisted. In Phase 1 this is read only by the DEV+forensic diagnostic
+ *  log — no production code path consumes it. */
+export function getSessionSteering(): TasteVsIntent {
+  return _sessionSteering;
+}
+
+/** Set the steering mode for the current session. Phase 1: only intended
+ *  for forensic toggling (dev menu / test fixture). Never wired to a user
+ *  control in this phase. Does NOT persist. */
+export function setSessionSteering(mode: TasteVsIntent): void {
+  _sessionSteering = mode;
+}
+
+/** Test-only reset hook — mirrors `_resetPendingBuildCauseForTest()` in
+ *  `lib/recRequest.ts`. */
+export function _resetSessionSteeringForTest(): void {
+  _sessionSteering = DEFAULT_STEERING;
+}

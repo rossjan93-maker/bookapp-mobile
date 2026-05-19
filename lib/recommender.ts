@@ -66,6 +66,7 @@ import {
   computeIntentBoostWithReasons,
 } from './nextReadIntent';
 import type { NextReadIntent, IntentBookTrace, IntentSetSummary } from './nextReadIntent';
+import { getSessionSteering } from './currentIntentLens';
 import type { FeedbackContext }      from './recFeedback';
 import type { BookEnrichmentProfile } from './bookEnrichment';
 import { getEnrichmentForCandidates } from './bookEnrichment';
@@ -3724,6 +3725,122 @@ export async function getPersonalizedRecsWithExpert(
           c_len:  ev.corpus.semantic.length,
           fiSpec: fiSpc.slice(0, 32),
           fwSpec: fwSpc.slice(0, 32),
+        }));
+      });
+    }
+
+    // ── Lens-vs-Taste Steering Phase 1 — shadow-mode [LENS_ARBITRATION] ─
+    // DEV+FORENSIC_USER_ID gated (inherited from enclosing block). Top-10
+    // visible deck only — matches `[BOOK_EVIDENCE_C]` scope. Observation
+    // only: NO ranking input, NO composer reason, NO RecCard surface, NO
+    // hard exclusion. `getSessionSteering()` is called ONLY here in Phase 1
+    // — production ranking/scoring/composer/RecCard/finalGate/No-dark code
+    // paths do not consume the steering field.
+    //
+    // Pattern A shadow simulations (pure derivation — no re-scoring, no
+    // re-retrieval): `would_eject_under_mood_first` and
+    // `lens_fit_alternative_nearby` are derived from already-computed deck
+    // contributions + a peek at deck positions 11-25.
+    //
+    // See: docs/plan_lens_steering_phase1.md §4
+    {
+      const steering = getSessionSteering();
+      const lensActive = !!(intent && isIntentActive(intent));
+      const lensKindParts: string[] = [];
+      if (lensActive && intent) {
+        if (intent.soft?.tone)          lensKindParts.push(`tone=${intent.soft.tone}`);
+        if (intent.soft?.pace)          lensKindParts.push(`pace=${intent.soft.pace}`);
+        if (intent.soft?.intensity)     lensKindParts.push(`int=${intent.soft.intensity}`);
+        if (intent.soft?.readingEnergy) lensKindParts.push(`energy=${intent.soft.readingEnergy}`);
+        if (intent.hard?.max_page_count) lensKindParts.push(`max_pg=${intent.hard.max_page_count}`);
+        if (intent.exclude?.avoid_dark)  lensKindParts.push('avoid_dark');
+        if (intent.exclude?.avoid_classics) lensKindParts.push('avoid_classics');
+        if (intent.exclude?.avoid_literary) lensKindParts.push('avoid_literary');
+        if (intent.exclude?.avoid_romance)  lensKindParts.push('avoid_romance');
+        if (intent.exclude?.avoid_nonfiction) lensKindParts.push('avoid_nonfiction');
+      }
+      const lensKind = lensKindParts.join(',') || '(none)';
+
+      // Pre-compute lens-fit-alternative window once (deck positions 11-25).
+      // "Lens-fit alternative" heuristic (Phase 1 — Pattern A pure derivation):
+      // a deck book scored below the top-10 whose intensity OR emotionalWeight
+      // bucket is `low` while the active lens is light/low-intensity. NOT a
+      // claim about Phase 2 ranking math — just an observation about whether
+      // alternatives exist in the pool the recommender already produced.
+      const lensPrefersLow = lensActive && (
+        intent?.soft?.tone === 'light'
+        || intent?.soft?.intensity === 'low'
+        || intent?.soft?.readingEnergy === 'light_fun'
+        || intent?.soft?.readingEnergy === 'palate_cleanser'
+        || !!intent?.exclude?.avoid_dark
+      );
+      const altWindow = baseResult.recs.slice(10, 25).map(r => {
+        const ev = deriveBookEvidence(r);
+        const intHi = ev.intensityHigh.specificCount >= 1 || ev.intensityHigh.broadCount >= 2;
+        const intLo = ev.intensityLow.specificCount  >= 1 || ev.intensityLow.broadCount  >= 2;
+        const wtHi  = ev.emotionalWeightHigh.specificCount >= 1 || ev.emotionalWeightHigh.broadCount >= 2;
+        const wtLo  = ev.emotionalWeightLow.specificCount  >= 1 || ev.emotionalWeightLow.broadCount  >= 2;
+        // "Low" wins only when low pole is strong AND high pole is not.
+        const lowLeaning = (intLo && !intHi) || (wtLo && !wtHi);
+        return lowLeaning;
+      });
+      const altsAvailable = lensPrefersLow && altWindow.some(Boolean);
+
+      baseResult.recs.slice(0, 10).forEach((r, i) => {
+        const bd = r._score_breakdown;
+        const ev = deriveBookEvidence(r);
+
+        // Durable taste fit — proxy: presence of `stated_favorite:*` in
+        // audit_flags (the same provenance marker `statedReservation.ts`
+        // uses as its AND-gate predicate).
+        const flags = bd?.audit_flags ?? [];
+        const durableTasteFit = flags.some((f: string) => typeof f === 'string' && f.startsWith('stated_favorite:'));
+
+        // Intensity + emotionalWeight buckets — reuse the `[BOOK_EVIDENCE_C]`
+        // projection above. Same `bucket()` helper, same fixtures match.
+        const intB = bucket(ev.intensityHigh,       ev.intensityLow);
+        const wtB  = bucket(ev.emotionalWeightHigh, ev.emotionalWeightLow);
+
+        // Current lens fit — diagnostic heuristic over BookEvidence axes
+        // and the active lens shape. `mismatch` when the active lens
+        // prefers low/light and the book leans high/dark; `match` when
+        // both agree; `neutral` otherwise (incl. lens inactive).
+        let lensFit: 'match' | 'neutral' | 'mismatch' = 'neutral';
+        if (lensActive) {
+          const bookLeansHigh = intB.bucket === 'high' || wtB.bucket === 'high';
+          const bookLeansLow  = intB.bucket === 'low'  && wtB.bucket !== 'high';
+          if (lensPrefersLow && bookLeansHigh)      lensFit = 'mismatch';
+          else if (lensPrefersLow && bookLeansLow)  lensFit = 'match';
+          else if (intent?.soft?.pace === 'fast' || intent?.soft?.readingEnergy === 'immersive') {
+            // pace-leaning lenses: read pace classifier indirectly via
+            // intensity proxy (page-turner / propulsive / relentless).
+            if (intB.bucket === 'high') lensFit = 'match';
+          }
+        }
+
+        const tasteFitButLensMismatch = durableTasteFit && lensFit === 'mismatch';
+
+        // Shadow simulation — Pattern A (pure derivation).
+        // `would_eject_under_mood_first` proxy: a taste-fit book that the
+        // current lens says mismatches AND a lens-fit alternative exists
+        // in deck positions 11-25 would be a candidate for ejection under
+        // a `mood_first` arbitration profile. Phase 1 is observation-only;
+        // Phase 2 will replace this proxy with a real cap-profile re-run.
+        const wouldEjectUnderMoodFirst = tasteFitButLensMismatch && altsAvailable;
+
+        console.log('[LENS_ARBITRATION]', JSON.stringify({
+          r:    i + 1,
+          t:    (r.title ?? '').slice(0, 28),
+          dtf:  durableTasteFit,
+          lf:   lensFit,
+          tlm:  tasteFitButLensMismatch,
+          int:  `${intB.bucket}/${intB.conf}`,
+          wt:   `${wtB.bucket}/${wtB.conf}`,
+          sm:   steering,
+          la:   lensActive,
+          lk:   lensKind.slice(0, 64),
+          wem:  wouldEjectUnderMoodFirst,
+          lfa:  altsAvailable,
         }));
       });
     }

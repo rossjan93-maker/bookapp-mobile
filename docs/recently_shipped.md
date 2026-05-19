@@ -2,6 +2,38 @@
 
 Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/onboarding sprints. Moved out of replit.md on 2026-05-14 to keep the live operating reference compact. Order is reverse-chronological. For full diffs use `git log -p -- <path>`.
 
+## Lens-vs-Taste Steering — Phase 1 · shadow-mode `TasteVsIntent` field + `[LENS_ARBITRATION]` DEV log — shipped (2026-05-19)
+
+**Scope (planning-locked, no expansion).** Introduce a session-scoped steering field (`TasteVsIntent ∈ {taste_first, balanced, mood_first}`) and a DEV-only diagnostic log that observes, per top-10 deck book, whether the active intent lens and the user's durable Reading Taste agree, disagree, or would suggest different choices under a hypothetical `mood_first` arbitration profile. Phase 1 is **observation infrastructure only** — it neither moves rankings nor changes any visible byte. The diagnostic data it captures is the input to a separate Phase 2 chapter (arbitration wiring) that will go through its own planning + approval cycle.
+
+**Hard constraints (every one held).**
+- No ranking change. No scoring change. No composer change. No RecCard change. No copy change.
+- No finalGate / No-dark / hard-exclusion change. No signal-list change.
+- Not a `configHash` input — `recValidity.VERSION = rcv6` unchanged.
+- Never persisted (no AsyncStorage, no Supabase, no recPayloadCache / recSession / recQueue touch).
+- Default mode `'balanced'` is byte-identical to a build without the field — pinned by the two new validators.
+- All 12 pre-existing acceptance validators stay green; 2 new validators added.
+
+**What shipped.**
+- **`lib/currentIntentLens.ts`** — appended `TasteVsIntent` type + `getSessionSteering()` / `setSessionSteering(mode)` / `_resetSessionSteeringForTest()` exports backed by a module-local `let _sessionSteering: TasteVsIntent = 'balanced'`. Inline doc-comment block records the Phase 1 contract: read-only by the DEV+forensic diagnostic, never persisted, not in `configHash`, Phase 2 wiring requires separate approval.
+- **`lib/recommender.ts`** — added `import { getSessionSteering } from './currentIntentLens'` and a `[LENS_ARBITRATION]` emit block placed immediately after the existing `[BOOK_EVIDENCE_C]` block, inside the same `if (__DEV__ && userId === FORENSIC_USER_ID)` guard. One log line per book in the top-10 visible deck (matches `[BOOK_EVIDENCE_C]` scope). 12-key payload:
+  - `r` (1-indexed rank), `t` (truncated title)
+  - `dtf` (durable taste fit — `audit_flags` contains `stated_favorite:*`, matching the `statedReservation.ts` AND-gate predicate)
+  - `lf` (current lens fit — `'match' | 'neutral' | 'mismatch'`, derived heuristically from BookEvidence intensity/emotionalWeight buckets vs the active lens shape)
+  - `tlm` (taste-fit-but-lens-mismatch — `dtf && lf === 'mismatch'`)
+  - `int`, `wt` (intensity / emotionalWeight bucket strings — identical projection to `[BOOK_EVIDENCE_C]`)
+  - `sm` (current session steering mode), `la` (lens active boolean), `lk` (compact lens-kind summary)
+  - `wem` (would_eject_under_mood_first — Pattern A pure derivation: `tlm && lensFitAlternativeNearby`)
+  - `lfa` (lens_fit_alternative_nearby — peek at deck positions 11-25 for a low-intensity/low-weight book when the lens prefers light)
+- **`scripts/validate_steering_field_contract.ts`** — 44 assertions, §1–§7. §1 default + round-trip + reset; §2 no persistence-surface imports in `currentIntentLens.ts`; §3 steering symbols absent from `recValidity.ts` + `recRequest.ts`; §4 every `getSessionSteering(` call in `lib/recommender.ts` is preceded by a `__DEV__ && FORENSIC_USER_ID` guard; §5 zero references in `compose.ts` / `RecCard.tsx` / `finalGate.ts` / `nextReadIntent.ts`; §6 zero references in `lib/evidence/signals.ts`; §7 source-grep pins `const VERSION = 'rcv6'` in `lib/recValidity.ts`.
+- **`scripts/validate_lens_arbitration_log_shape.ts`** — 50 assertions, §1–§6. §1 exactly one `[LENS_ARBITRATION]` emit, DEV+forensic-guarded; §2 `slice(0, 10)` scope matches `[BOOK_EVIDENCE_C]`; §3 all 12 required keys present on the emit payload; §4 bucket-string projection is byte-identical to `[BOOK_EVIDENCE_C]` across 12 fixtures (page-turner, gentle cozy, conflicting strong, memoir-trap, phrased grief, etc.); §5 directory walk across `lib/ components/ app/ hooks/` finds zero unexpected consumers of `getSessionSteering` (only `lib/recommender.ts` is allowed); §6 mode-default neutrality — flipping the mode is observable only via the explicit getter, and §1+§5 together prove the production deck is byte-identical across `{taste_first, balanced, mood_first}`.
+
+**Acceptance.** All 14 validators green (12 pre-existing + 2 new). `[0]` exit on every script. No code path outside the DEV-gated diagnostic reads the steering field. Live-smoke is not required for this phase per the operating standard — Phase 1 has no user-visible promise. The diagnostic itself is the deliverable, and its shape is locked by the two new contract validators.
+
+**Plan reference.** `docs/plan_lens_steering_phase1.md` (planning-locked; §4 log shape, §5 validator sections, §7 file-touch list, §8 implementation prompt). Diagnostic that justified the phase: `docs/diag_taste_vs_lens_c0_report.md` (45% of top-10 deck books are taste-fit-but-lens-mismatch under realistic lens choices; 100% C0 catch rate on the carry-forward "emotionally heavy non-dark mismatch" class). Phase 2 (wiring the steering modes into actual arbitration math) is explicitly out of scope and requires its own planning chapter + approval.
+
+---
+
 ## BookEvidence consolidation — Batch C slice C0 · shadow-mode `intensity` + `emotionalWeight` — shipped (2026-05-18)
 
 **Scope (planning-locked, no expansion).** P4 hygiene follow-up to Batch B. Introduce two new evidence axes — `intensity` (experiential charge *during* reading) and `emotionalWeight` (residue the book leaves *after*) — as **shadow-mode-only** `AxisMatch` fields on `BookEvidence`. The axes are observed via a top-10-deck `[BOOK_EVIDENCE_C]` `__DEV__` log, never consumed by any No-dark gate, ranking input, composer reason, or RecCard surface. Closes the carry-forward "emotionally heavy non-dark mismatches" concern at the *measurement* layer without changing any user-visible byte. Slice C1+ (admission into ranking/composer) is explicitly out of scope and requires its own planning chapter + approval.
