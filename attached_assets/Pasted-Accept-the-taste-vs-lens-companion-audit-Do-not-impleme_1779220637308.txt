@@ -1,0 +1,72 @@
+Accept the taste-vs-lens companion audit.
+
+Do not implement steering UI yet.
+Do not start C1 yet.
+Do not change ranking, scoring, composer, RecCard, finalGate, No-dark, or recValidity.
+
+Next task:
+Create an automated C0 + taste-vs-lens observation report using actual current BookEvidence outputs, not predicted classifications.
+
+Goal:
+For the Mystery/Thriller test user and the observed lenses, produce a table that shows whether each top recommendation is:
+1. durable taste fit,
+2. current lens fit,
+3. taste-fit but lens-mismatch,
+4. classifier mismatch,
+5. ranking arbitration mismatch,
+6. or UI semantics mismatch.
+
+Observed scenarios to evaluate:
+1. Baseline / no lens
+2. Light & accessible
+3. Fast-paced / immersive
+4. Short & light / No dark
+5. Less dark, if easy
+
+For each top visible recommendation, output:
+- title
+- author
+- lens
+- visible reason
+- durable taste fit
+- current lens fit
+- tone / toneConfidence
+- pace / paceConfidence
+- complexity / complexityConfidence
+- intensity / first evidence phrase
+- emotionalWeight / first evidence phrase
+- market_position
+- finalGate hard exclusion? yes/no
+- taste-fit but lens-mismatch? yes/no
+- issue type:
+  - classifier underfiring
+  - classifier overfiring
+  - classifier correct but not used
+  - durable taste overpowering current lens
+  - UI semantics underdefined
+  - metadata/corpus gap
+
+Important:
+Use actual BookEvidence output from deriveBookEvidence, not inferred/predicted labels.
+
+If a script/report is needed, keep it diagnostic-only:
+- no product code behavior change
+- no ranking changes
+- no recValidity bump
+- no UI change
+- no composer change
+- no RecCard change
+- no signal-list changes unless separately approved
+
+Return:
+1. Executive diagnosis
+2. Observation table by lens
+3. % of top-10 that are taste-fit but lens-mismatch
+4. Whether C0 classifier is accurate enough to use
+5. Whether the main issue is arbitration, classifier calibration, or UI semantics
+6. If/then decision:
+   - if classifier accurate and mismatch rate high → plan Lens-vs-Taste Steering Phase 1
+   - if classifier inaccurate → calibrate signal lists first
+   - if mismatch rate low → defer steering
+   - if UI semantics unclear → plan copy/control semantics before ranking
+7. Recommended next chapter
