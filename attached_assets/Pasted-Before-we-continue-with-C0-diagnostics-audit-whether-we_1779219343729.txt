@@ -1,0 +1,53 @@
+Before we continue with C0 diagnostics, audit whether we are dealing with a taste-vs-current-lens conflict.
+
+Do not implement yet.
+
+Product question:
+Reading Taste is durable baseline. Your Next Read is temporary session intent. When those conflict, what does the recommender currently prioritize?
+
+Observed issue:
+User profile says Mystery / Thriller. When applying lenses like Light & accessible or Short & light, the deck still heavily reflects mystery/thriller. This may not only be a BookEvidence classifier issue. It may be a conflict-resolution issue between durable taste and temporary intent.
+
+Questions to answer:
+
+1. Where does durable Reading Taste enter ranking?
+2. Where does Your Next Read lens enter ranking?
+3. When they conflict, which wins today?
+4. Is current lens treated as:
+   - a hard filter,
+   - a soft boost/demotion,
+   - a reranking lens,
+   - or merely metadata?
+5. Does Light & accessible currently mean:
+   - “lighter books within my existing taste,”
+   - “lighter books even outside my usual taste,”
+   - or undefined?
+6. Does Short & light / palate cleanser currently have authority to pull the deck outside the user’s preferred genres?
+7. Are stated genre preferences overpowering current intent?
+8. Are P4C caps preventing the lens from moving the deck enough?
+9. Should the product expose a steering option such as:
+   - Stay close to my taste
+   - Balanced
+   - Prioritize today’s mood
+10. If yes, where should that live and how should it map to ranking?
+
+Also include the C0 observation report:
+For each visible top recommendation under baseline, Light & accessible, Fast-paced / immersive, Short & light / No dark, and Less dark:
+- title
+- reason
+- durable taste fit
+- current lens fit
+- tone / pace / complexity
+- intensity / emotionalWeight shadow classifications
+- whether it appears to be a taste-fit but lens-mismatch
+- whether the issue is classifier error, ranking arbitration, or UI semantics
+
+Return:
+1. Executive diagnosis
+2. Durable taste vs session lens path map
+3. Current conflict-resolution behavior
+4. Whether the current product semantics are underdefined
+5. Recommendation: classifier calibration, ranking arbitration, UI steering option, or all three
+6. If/then decision tree
+7. Minimal next chapter proposal
+8. No implementation yet
