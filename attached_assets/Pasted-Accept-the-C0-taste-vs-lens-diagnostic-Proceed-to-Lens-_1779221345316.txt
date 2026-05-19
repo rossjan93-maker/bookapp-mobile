@@ -1,0 +1,138 @@
+Accept the C0 + taste-vs-lens diagnostic.
+
+Proceed to Lens-vs-Taste Steering Phase 1 planning.
+
+Do not implement yet.
+
+Chapter name:
+Lens-vs-Taste Steering Phase 1 — shadow-mode arbitration field
+
+Goal:
+Define a session-only steering model that controls how much Your Next Read should be allowed to override durable Reading Taste.
+
+Current diagnosis:
+- C0 classifier output is directionally useful.
+- Diagnostic showed 45.0% taste-fit-but-lens-mismatch across non-baseline lenses.
+- Classifier catch rate on mismatches was 100%.
+- The Short & light + No dark diagnostic reproduced the observed deck exactly.
+- Therefore the primary issue is ranking arbitration / UI semantics, not classifier underfiring.
+
+Product principle:
+Reading Taste = durable baseline.
+Your Next Read = temporary session lens.
+The user may want either:
+1. Stay close to my taste
+2. Balance taste and mood
+3. Prioritize today’s mood
+
+Task type:
+Planning-first chapter only. No implementation.
+
+Questions to answer:
+
+1. Where should steering mode live?
+   - currentIntentLens?
+   - RecRequest?
+   - recSignals?
+   - local RecommendationsFeed state?
+   - another session-only object?
+
+2. Should the initial default be:
+   - balanced, matching today’s behavior?
+   - taste_first, to preserve current product behavior?
+   - or inferred from the selected lens?
+
+3. What should each steering mode mean?
+
+Proposed semantics:
+- taste_first: durable taste dominates; lens softens within existing lanes.
+- balanced: durable taste and lens both matter; current default-ish.
+- mood_first: current lens can meaningfully pull the deck outside durable genre lanes.
+
+4. What should Phase 1 implement in shadow mode?
+
+Expected:
+- no ranking change
+- no scoring change
+- no RecCard change
+- no composer change
+- no visible UI control yet
+- no recValidity bump unless necessary
+- no durable taste mutation
+- no lens persistence
+
+5. What should [LENS_ARBITRATION] log?
+
+For each top visible recommendation, capture:
+- title
+- durable taste fit
+- current lens fit
+- taste-fit-but-lens-mismatch
+- intensity / emotionalWeight
+- steering mode
+- hypothetical adjustment under taste_first / balanced / mood_first
+- whether the book would have moved down under mood_first
+- whether a non-taste but lens-fit book was available nearby
+
+6. How should validators prove Phase 1?
+
+Add or propose validators for:
+- steering mode is session-only
+- default mode preserves current behavior
+- no ranking/scoring change in shadow mode
+- no composer/RecCard changes
+- mood_first simulation does not alter output yet
+- durable taste is not mutated
+- no lens persistence
+- shadow logs are DEV-gated
+
+7. If/then tree
+
+IF shadow logs show high taste-fit/lens-mismatch rate and lens-fit alternatives exist,
+THEN plan Phase 2 ranking arbitration.
+
+IF classifier labels are wrong,
+THEN calibrate BookEvidence C0 signal lists first.
+
+IF lens-fit alternatives do not exist in candidate pool,
+THEN retrieval must be expanded before arbitration can work.
+
+IF mood_first would mostly surface low-quality or off-taste books,
+THEN keep steering hidden and improve retrieval/book evidence first.
+
+IF shadow mode proves useful,
+THEN plan UI semantics:
+- Stay close to my taste
+- Balance taste and mood
+- Prioritize today’s mood
+
+8. Minimal implementation proposal
+
+Return the smallest safe implementation plan for Phase 1 shadow mode:
+- files likely touched
+- no behavior-change guarantees
+- validators
+- acceptance criteria
+- exact implementation prompt for approval
+
+Hard constraints:
+- Do not implement yet.
+- No ranking changes.
+- No scoring changes.
+- No composer changes.
+- No RecCard changes.
+- No visible UI yet.
+- Do not mutate durable Reading Taste.
+- Do not persist steering mode beyond session.
+- Do not start C1.
+- Do not start BookEvidence calibration unless the if/then tree requires it.
+
+Return:
+1. Executive diagnosis
+2. Proposed steering model
+3. Session-state design
+4. Shadow log design
+5. Validator plan
+6. If/then decision tree
+7. Minimal implementation chapter
+8. Exact implementation prompt for approval
