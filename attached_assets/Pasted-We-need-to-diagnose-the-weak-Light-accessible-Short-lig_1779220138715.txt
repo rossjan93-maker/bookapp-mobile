@@ -1,0 +1,106 @@
+We need to diagnose the weak Light & accessible / Short & light behavior as both a BookEvidence C0 issue and a taste-vs-current-lens arbitration issue.
+
+Do not implement yet.
+
+Context:
+User durable Reading Taste:
+- Mystery
+- Thriller
+
+Observed decks:
+1. Baseline:
+- Sometimes I Lie
+- Verity
+- The Perfect Marriage
+- Never Lie
+
+2. Light & accessible:
+- The Thursday Murder Club
+- Gone Girl
+- Everything I Never Told You
+- The Silent Patient
+
+3. Fast-paced / immersive:
+- Sometimes I Lie
+- Verity
+- The Perfect Marriage
+- Never Lie
+
+4. Short & light / No dark:
+- The Thursday Murder Club
+- Everything I Never Told You
+- The Maid
+- In Love
+
+Product concern:
+The app remains too strongly anchored to durable Mystery/Thriller taste when the user applies a temporary lens like Light & accessible or Short & light. This may not be only a classifier problem. It may be a conflict-resolution problem between:
+- durable Reading Taste
+- temporary Your Next Read lens
+
+Task type:
+Planning-first audit / diagnostic only. No implementation.
+
+Questions to answer:
+
+1. Where does durable Reading Taste enter retrieval and scoring?
+2. Where does the Your Next Read lens enter retrieval and scoring?
+3. When they conflict, which wins today?
+4. Are P4C caps and stated-taste floor protection intentionally preventing the lens from moving the deck far enough?
+5. Does Light & accessible currently mean:
+   - lighter books within my usual taste,
+   - lighter books even outside my usual taste,
+   - or undefined?
+6. Does Short & light / palate cleanser have enough authority to leave the user’s durable genre lanes?
+7. Is the issue:
+   - classifier underfiring,
+   - classifier correct but not used,
+   - durable taste overpowering current lens,
+   - UI semantics underdefined,
+   - or all of the above?
+
+Also include the C0 observation report:
+For each visible top recommendation under baseline, Light & accessible, Fast-paced / immersive, Short & light / No dark, and Less dark if easy, output:
+- title
+- author
+- visible reason
+- durable taste fit
+- current lens fit
+- tone / toneConfidence
+- pace / paceConfidence
+- complexity / complexityConfidence
+- intensity / evidence phrase
+- emotionalWeight / evidence phrase
+- market_position
+- taste-fit but lens-mismatch? yes/no
+- issue type: classifier / ranking arbitration / UI semantics / metadata gap
+
+Product concept to evaluate:
+Should Your Next Read include a steering strength such as:
+- Stay close to my taste
+- Balance taste and mood
+- Prioritize today’s mood
+
+If yes, propose:
+- how it should behave,
+- how it maps to ranking/scoring,
+- whether it is session-only,
+- whether it should be visible as a UI control,
+- what validators would prove it.
+
+Hard constraints:
+- Do not change code.
+- Do not change ranking.
+- Do not change RecCard or composer.
+- Do not change No-dark.
+- Do not start C1.
+- Do not add signal phrases.
+- Titles are diagnostic fixtures, not product logic.
+
+Return:
+1. Executive diagnosis
+2. Durable taste vs lens path map
+3. C0 evidence table for the observed decks
+4. Current conflict-resolution behavior
+5. Recommendation: classifier calibration, ranking arbitration, steering UI, or combination
+6. If/then decision tree
+7. Minimal next chapter proposal
