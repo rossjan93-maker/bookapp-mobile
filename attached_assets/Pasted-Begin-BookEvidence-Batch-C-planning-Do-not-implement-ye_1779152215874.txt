@@ -1,0 +1,68 @@
+Begin BookEvidence Batch C planning.
+
+Do not implement yet.
+
+Chapter name:
+BookEvidence Batch C — intensity + emotionalWeight shadow calibration
+
+Context:
+BookEvidence Batch B shipped successfully as a contract-only foundation:
+- deriveBookEvidence(book) is now the normalized book-side evidence entry point.
+- getBookTraits consumes BookEvidence for tone / pace / complexity.
+- evaluateBookAgainstIntentLens consumes the same evidence for No-dark / Less-dark.
+- Behavior is byte-identical.
+- No intensity or emotionalWeight fields exist yet.
+- recValidity remains rcv6.
+
+Problem:
+The remaining product gap is not No-dark anymore. It is low-burden / emotional-intensity understanding:
+- “not dark” is not the same as “light”
+- emotionally heavy non-dark books can still feel wrong under Light & accessible / Short & light
+- we need to distinguish darkness, intensity, burden, complexity, and emotional weight
+
+Task type:
+Planning-first chapter only.
+
+Goal:
+Design a shadow-mode calibration plan for intensity and emotionalWeight before adding them to BookEvidence or using them in ranking/explanations.
+
+Questions to answer:
+1. What should intensity mean for Readstack?
+2. What should emotionalWeight mean?
+3. How are they different from tone, complexity, and pace?
+4. Which existing metadata fields can support them?
+5. Which signals are safe as specific evidence vs broad evidence?
+6. Which cases should remain unknown?
+7. How do we avoid turning grief/death/memoir into automatic hard exclusions?
+8. What should shadow-mode logging capture?
+9. What fixture set should define calibration?
+10. What should be deferred until after observation?
+
+Important product semantics:
+- No dark = hard exclusion only with specific dark evidence.
+- Less dark = bounded demotion.
+- Light & accessible should eventually consider intensity and emotionalWeight.
+- Short & light should eventually consider length + emotional burden.
+- Unknown evidence should not penalize strongly.
+- Emotionally heavy non-dark should not be forced into No-dark logic.
+
+Propose:
+1. intensity definition
+2. emotionalWeight definition
+3. evidence taxonomy
+4. fixture matrix
+5. shadow-mode instrumentation plan
+6. validators
+7. implementation sequence
+8. risks / anti-goals
+9. exact implementation prompt for the first approved slice
+
+Hard constraints:
+- No implementation yet.
+- No ranking changes.
+- No composer changes.
+- No RecCard changes.
+- No visible copy changes.
+- No durable taste mutation.
+- No broad signal-list expansion without calibration.
+- Titles are fixtures, not product logic.
