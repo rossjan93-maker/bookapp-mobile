@@ -22,6 +22,8 @@ import {
   TONE_DARK, TONE_LIGHT,
   PACE_FAST, PACE_SLOW,
   COMPLEXITY_ACCESSIBLE, COMPLEXITY_LITERARY, COMPLEXITY_DENSE,
+  INTENSITY_HIGH, INTENSITY_LOW,
+  EMOTIONAL_WEIGHT_HIGH, EMOTIONAL_WEIGHT_LOW,
   DARK_SIGNALS, DOMESTIC_SUSPENSE_SUPPORT_SIGNALS,
   countMatchesDetailed,
   firstSignalMatch,
@@ -74,6 +76,22 @@ export type BookEvidence = {
   readonly complexityAccessible: AxisMatch;
   readonly complexityLiterary:   AxisMatch;
   readonly complexityDense:      AxisMatch;
+
+  // ── Batch C (shadow-mode) ──────────────────────────────────────────────
+  // Observational only. NOT consumed by any No-dark gate, ranking input,
+  // composer reason, or RecCard surface in slice C0. Isolation is pinned
+  // by scripts/validate_no_dark_isolation.ts.
+  //
+  // `intensity` = experiential charge during reading (high = propulsive /
+  // page-turner / pulse-pounding; low = gentle / quiet / cozy).
+  // `emotionalWeight` = residue after finishing (high = grief / family
+  // secrets / trauma; low = light entertainment / escapist / comic).
+  // Both are orthogonal to tone, pace, and complexity — see the planning
+  // chapter §3 "trap matrix" for the explicit non-equivalences.
+  readonly intensityHigh:        AxisMatch;
+  readonly intensityLow:         AxisMatch;
+  readonly emotionalWeightHigh:  AxisMatch;
+  readonly emotionalWeightLow:   AxisMatch;
 
   // No-dark hard-exclusion evidence (curated DARK_SIGNALS, computed against
   // the SURFACE corpus — matches the prior `evaluateBookAgainstIntentLens`
@@ -142,6 +160,11 @@ export function deriveBookEvidence(book: BookEvidenceInput | null | undefined): 
     complexityAccessible: axisMatch(semantic, COMPLEXITY_ACCESSIBLE),
     complexityLiterary:   axisMatch(semantic, COMPLEXITY_LITERARY),
     complexityDense:      axisMatch(semantic, COMPLEXITY_DENSE),
+
+    intensityHigh:        axisMatch(semantic, INTENSITY_HIGH),
+    intensityLow:         axisMatch(semantic, INTENSITY_LOW),
+    emotionalWeightHigh:  axisMatch(semantic, EMOTIONAL_WEIGHT_HIGH),
+    emotionalWeightLow:   axisMatch(semantic, EMOTIONAL_WEIGHT_LOW),
 
     darkPhrasal:             phraseMatch(surface,  DARK_SIGNALS),
     darkPhrasalSemantic:     phraseMatch(semantic, DARK_SIGNALS),

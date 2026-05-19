@@ -2,6 +2,43 @@
 
 Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/onboarding sprints. Moved out of replit.md on 2026-05-14 to keep the live operating reference compact. Order is reverse-chronological. For full diffs use `git log -p -- <path>`.
 
+## BookEvidence consolidation — Batch C slice C0 · shadow-mode `intensity` + `emotionalWeight` — shipped (2026-05-18)
+
+**Scope (planning-locked, no expansion).** P4 hygiene follow-up to Batch B. Introduce two new evidence axes — `intensity` (experiential charge *during* reading) and `emotionalWeight` (residue the book leaves *after*) — as **shadow-mode-only** `AxisMatch` fields on `BookEvidence`. The axes are observed via a top-10-deck `[BOOK_EVIDENCE_C]` `__DEV__` log, never consumed by any No-dark gate, ranking input, composer reason, or RecCard surface. Closes the carry-forward "emotionally heavy non-dark mismatches" concern at the *measurement* layer without changing any user-visible byte. Slice C1+ (admission into ranking/composer) is explicitly out of scope and requires its own planning chapter + approval.
+
+**Hard constraints (every one held).**
+- No visible behavior change. No ranking change. No composer change. No RecCard change. No copy change.
+- No No-dark behavior change. No hard-exclusion use of `intensity` or `emotionalWeight`.
+- `recValidity.VERSION = rcv6` unchanged (book-side classification is not a configHash input).
+- No title blacklists outside fixtures.
+- No new env vars, dependencies, migrations, or RLS work.
+- All 10 pre-existing validators stay green; 2 new validators introduced as additional acceptance gates.
+
+**What shipped.**
+- **`lib/evidence/signals.ts`** — four new `SignalSet`s authored under the existing partitionBySpecificity-at-authoring rule (phrasal entries → `specific`, single-token entries → `broad`).
+  - `INTENSITY_HIGH` — specific: `propulsive thriller`, `relentlessly paced`, `breathless pace`, `non-stop action`, `action-packed`, `page-turner`, `edge of your seat`, `pulse-pounding`. Broad: `propulsive`, `relentless`, `breathless`, `frenetic`, `taut`.
+  - `INTENSITY_LOW` — specific: `gentle read`, `quiet novel`, `understated prose`, `cozy mystery`, `cozy fantasy`, `feel-good`, `feel good`, `quiet meditation`. Broad: `gentle`, `quiet`, `cozy`, `understated`, `pastoral`.
+  - `EMOTIONAL_WEIGHT_HIGH` — specific: `family secrets`, `intergenerational trauma`, `grief and loss`, `processing grief`, `coming of age`, `memoir of loss`, `meditation on mortality`, `marriage in crisis`. Broad: `grief`, `loss`, `mourning`, `bereavement`, `regret`. **Bare `memoir` is deliberately absent from both tiers** — only phrased forms ("memoir of loss") trigger weight.
+  - `EMOTIONAL_WEIGHT_LOW` — specific: `light entertainment`, `beach read`, `comic novel`, `romantic comedy`, `cozy mystery`, `escapist fiction`. Broad: `light`, `fun`, `escapist`, `entertaining`.
+- **`lib/evidence/bookEvidence.ts`** — `BookEvidence` gains four optional `AxisMatch` fields (`intensityHigh`, `intensityLow`, `emotionalWeightHigh`, `emotionalWeightLow`), populated by `deriveBookEvidence` against the SEMANTIC corpus via the existing `countMatchesDetailed` helper. Fields are frozen, deterministic, and robust to null/undefined input. Type-level header note pins them as "observational only in slice C0".
+- **`lib/recommender.ts`** — added a static import of `deriveBookEvidence` and one new DEV log block emitted from inside the existing FORENSIC_USER_ID-gated trace section (so the log is scoped to the top-10 visible deck only and lives behind the same opt-in gate as the rest of the forensic trace). Each line is compact JSON: `{ r, id, t, int, wt, c_len, fiSpec, fwSpec }`. Bucket projection: `spec≥1 → spec`; `broad≥2 → broad`; conflicting strong on both poles → `medium/broad`; else `unknown`. No other change in this file.
+- **`scripts/validate_book_evidence_intensity.ts`** (new) — 122 assertions across 7 sections. §1 authoring rule (specific=phrasal, broad=single-token; ≥4 specific entries; ≥3 broad entries; bare `memoir` forbidden in EMOTIONAL_WEIGHT_HIGH). §2 `deriveBookEvidence` shape (frozen, deterministic, null-safe). §3 the **12-fixture × 2-axis matrix** from the planning chapter §9: `gone_girl`, `thursday_murder_club`, `silent_patient`, `verity`, `everything_i_never_told_you`, `a_little_life`, `project_hail_mary`, `house_of_leaves`, `beach_read_canonical`, `klara_and_the_sun`, `educated_memoir`, `empty_book`. §4 bucket projection invariants. §5 carry-forward diagonal-stress fixture proof (gentle + grief → low/specific intensity + high/specific weight). §6 memoir-trap (bare `memoir` → unknown; `memoir of loss` → high/specific). §7 single-broad isolation (one broad-only `grief` hit → unknown, not high; two broad → high/broad).
+- **`scripts/validate_no_dark_isolation.ts`** (new) — 73 assertions across 4 sections. §1 source-grep `lib/intent/finalGate.ts` for the 10 forbidden tokens (`intensityHigh`, `intensityLow`, `emotionalWeightHigh`, `emotionalWeightLow`, `INTENSITY_HIGH`, `INTENSITY_LOW`, `EMOTIONAL_WEIGHT_HIGH`, `EMOTIONAL_WEIGHT_LOW`, `evidence.intensity`, `evidence.emotionalWeight`) → zero matches required. §2 same source-grep against the extracted `evaluateBookAgainstIntentLens` function block → zero matches required. §3 same against `lib/explanations/compose.ts` + `components/RecCard.tsx` → zero matches. §4 fixture-replay: 7 canonical Batch B fixtures × 4 lenses (`empty`, `no_dark`, `less_dark`, `light_fun`) = 28 verdicts; each verdict's `hardExclusions[].reason` must not contain "intensity" or "emotional weight"; sanity check that the new evidence fields ARE populated (carry-forward fixture: `intensityLow.specificCount ≥ 1` AND `emotionalWeightHigh.specificCount ≥ 1`).
+
+**Acceptance evidence.**
+- Step 3 contract validators — all 11 validators green at acceptance (`validate_intent_final_gate`, `validate_intent_lens`, `validate_p4c_limited_ranking`, `validate_intent_contribution`, `validate_tone_pace_fit`, `validate_series_continuation`, `validate_explanation_faithfulness`, `validate_book_evidence`, `validate_rec_validity`, `validate_rec_payload_cache_lens`, plus the two new validators). 0 unrelated regressions.
+- Step 4 fixture-replay — `validate_no_dark_isolation §4` replays 28 verdicts across 7×4 fixture×lens combinations and confirms zero hard-exclusion entries cite the new axes; sanity-replay confirms the shadow evidence IS populated for the carry-forward case (low-intensity + high-weight).
+- Step 5 live smoke — **not applicable** for slice C0. C0 is a contract-only / observe-only slice with no user-visible promise; per the operating standard's status vocabulary, "shipped" is the correct status, not "product accepted". A live smoke becomes meaningful only when C1+ admits the axes into ranking or composer.
+
+**Status:** shipped (contract-only). The shadow-mode log is the calibration window's data source for any future C1+ slice. Recommended observation period: at least one representative session with `FORENSIC_USER_ID` set, so the top-10 `[BOOK_EVIDENCE_C]` log writes and the operator can eyeball which books fire which buckets under which lenses. Calibration adjustments to the four `SignalSet`s during the observation window do NOT require a `recValidity` bump because the axes do not feed scoring or contribution shape.
+
+**Out of scope (parked for explicit C1+ approval).**
+- Admission of `intensity` / `emotionalWeight` into `softDemotions` under `light_fun` / `palate_cleanser` lenses (would be Batch C.1 / C.2).
+- Composer admission of `weight_fit` / `intensity_fit` reason kinds (would be Batch C.3, mirroring the P4D tone/pace admission gate shape).
+- Any hard-exclusion use (explicitly out of scope for the entire Batch C envelope; lives with P4 hard-avoid UI work).
+
+---
+
 ## BookEvidence consolidation — Batch B · typed `deriveBookEvidence` classifier entry point — shipped (2026-05-18)
 
 **Scope (planning-locked, no expansion).** P4 hygiene follow-up to Batch A. Introduce a typed `BookEvidence` record and a single derivation function `deriveBookEvidence(book)` that becomes the **sole classifier entry point** for `getBookTraits` (tone / pace / complexity) and for `evaluateBookAgainstIntentLens` (Intent Lens No-dark / Less-dark / supporting checks). Migrate the private tone/pace/complexity signal constants out of `lib/bookTraits.ts` into `lib/evidence/signals.ts` as exported `SignalSet`s, applying the `partitionBySpecificity` rule **at authoring time** so the runtime no longer re-partitions.

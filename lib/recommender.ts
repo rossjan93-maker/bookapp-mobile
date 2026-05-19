@@ -52,6 +52,7 @@
 import type { SupabaseClient }       from '@supabase/supabase-js';
 import type { TasteProfile }         from './tasteProfile';
 import { getBookTraits, assessMetadataQuality, detectBookLane, detectBookMysterySubtype, isPhilosophyOrSpiritual } from './bookTraits';
+import { deriveBookEvidence } from './evidence/bookEvidence';
 import type { DeterministicLane }    from './bookTraits';
 import { computeCenterOfGravity, classifyMarketPosition, computeFitClass } from './fitClassifier';
 import type { MarketPosition }       from './fitClassifier';
@@ -3693,6 +3694,39 @@ export async function getPersonalizedRecsWithExpert(
     });
     console.log('[FC1_TOP10]', JSON.stringify(top20.slice(0, 10)));
     console.log('[FC2_TOP20]', JSON.stringify(top20.slice(10, 20)));
+
+    // ── BookEvidence Batch C (shadow-mode, slice C0) ─────────────────────
+    // Top-10 visible deck only. Observation-only — these axes do not feed
+    // any ranking, composer reason, RecCard surface, or hard exclusion.
+    // Bucket projection: spec>=1 → 'high-spec', broad>=2 → 'broad', else
+    // 'unk'. Conflicting strong on both poles → 'med-broad'.
+    {
+      const bucket = (hi: { specificCount: number; broadCount: number }, lo: { specificCount: number; broadCount: number }) => {
+        const hiStrong = hi.specificCount >= 1 || hi.broadCount >= 2;
+        const loStrong = lo.specificCount >= 1 || lo.broadCount >= 2;
+        if (hiStrong && loStrong) return { bucket: 'medium', conf: 'broad' as const };
+        if (hiStrong) return { bucket: 'high',    conf: hi.specificCount >= 1 ? 'specific' as const : 'broad' as const };
+        if (loStrong) return { bucket: 'low',     conf: lo.specificCount >= 1 ? 'specific' as const : 'broad' as const };
+        return { bucket: 'unknown', conf: 'unk' as const };
+      };
+      baseResult.recs.slice(0, 10).forEach((r, i) => {
+        const ev    = deriveBookEvidence(r);
+        const intB  = bucket(ev.intensityHigh,       ev.intensityLow);
+        const wtB   = bucket(ev.emotionalWeightHigh, ev.emotionalWeightLow);
+        const fiSpc = ev.intensityHigh.firstSpecific ?? ev.intensityLow.firstSpecific ?? '';
+        const fwSpc = ev.emotionalWeightHigh.firstSpecific ?? ev.emotionalWeightLow.firstSpecific ?? '';
+        console.log('[BOOK_EVIDENCE_C]', JSON.stringify({
+          r:      i + 1,
+          id:     r.id,
+          t:      (r.title ?? '').slice(0, 28),
+          int:    `${intB.bucket}/${intB.conf}`,
+          wt:     `${wtB.bucket}/${wtB.conf}`,
+          c_len:  ev.corpus.semantic.length,
+          fiSpec: fiSpc.slice(0, 32),
+          fwSpec: fwSpc.slice(0, 32),
+        }));
+      });
+    }
 
     // ── BLOCK D: Final ranked feed — top 15 (one per log call) ───────────
     baseResult.recs.slice(0, 15).forEach((r, i) => {

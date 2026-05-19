@@ -284,6 +284,69 @@ export const COMPLEXITY_LITERARY: SignalSet = {
   ],
 };
 
+// ── Batch C (shadow-mode) ─────────────────────────────────────────────────────
+// Intensity = experiential charge during reading. Distinct from `pace` (which
+// is structural reading speed) and from `tone` (dark vs light surface content).
+// A book can be high-pace + low-intensity (a brisk cozy mystery) or
+// low-pace + high-intensity (a slow-burn psychological thriller whose every
+// scene is taut). Phrasal rule from `partitionBySpecificity` is pre-applied
+// at authoring time: anything single-token lives in `broad`.
+//
+// SAFETY: these SignalSets are observational only in slice C0. They are NOT
+// consumed by any No-dark hard exclusion, ranking input, or composer reason.
+// Acceptance is gated by validate_no_dark_isolation.
+
+export const INTENSITY_HIGH: SignalSet = {
+  specific: [
+    'propulsive thriller', 'relentlessly paced', 'breathless pace',
+    'non-stop action', 'action-packed', 'page-turner',
+    'edge of your seat', 'pulse-pounding',
+  ],
+  broad: [
+    'propulsive', 'relentless', 'breathless', 'frenetic', 'taut',
+  ],
+};
+
+export const INTENSITY_LOW: SignalSet = {
+  specific: [
+    'gentle read', 'quiet novel', 'understated prose',
+    'cozy mystery', 'cozy fantasy',
+    'feel-good', 'feel good',
+    'quiet meditation',
+  ],
+  broad: [
+    'gentle', 'quiet', 'cozy', 'understated', 'pastoral',
+  ],
+};
+
+// EmotionalWeight = residue the book leaves after finishing. Distinct from
+// `tone` (Gone Girl is dark / low-weight) and from `intensity` (a quiet grief
+// novel is low-intensity / high-weight). The HIGH list is the most dangerous
+// in the file — `grief` is broad on purpose; `processing grief` is specific.
+// Bare `memoir` is deliberately not in either tier.
+
+export const EMOTIONAL_WEIGHT_HIGH: SignalSet = {
+  specific: [
+    'family secrets', 'intergenerational trauma',
+    'grief and loss', 'processing grief',
+    'coming of age', 'memoir of loss',
+    'meditation on mortality', 'marriage in crisis',
+  ],
+  broad: [
+    'grief', 'loss', 'mourning', 'bereavement', 'regret',
+  ],
+};
+
+export const EMOTIONAL_WEIGHT_LOW: SignalSet = {
+  specific: [
+    'light entertainment', 'beach read', 'comic novel', 'romantic comedy',
+    'cozy mystery', 'escapist fiction',
+  ],
+  broad: [
+    'light', 'fun', 'escapist', 'entertaining',
+  ],
+};
+
 // Complexity — dense.
 export const COMPLEXITY_DENSE: SignalSet = {
   specific: [
