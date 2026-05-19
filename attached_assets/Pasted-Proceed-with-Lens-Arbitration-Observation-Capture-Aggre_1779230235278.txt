@@ -1,0 +1,101 @@
+Proceed with Lens Arbitration Observation Capture + Aggregation.
+
+Task type:
+Observation support only.
+No product behavior changes.
+
+Current state:
+- Lens-vs-Taste Steering Phase 1 is shipped as shadow mode.
+- Phase 1.1 Observation Assist is shipped.
+- [LENS_ARBITRATION] now includes the enhanced fields:
+  au, vr, tn, pc, cx, mp, fg.
+- Aggregator supports the enhanced log shape.
+- FORENSIC_USER_ID remains empty by default.
+- Phase 2 steering is not approved.
+
+Goal:
+Help run the Lens Arbitration observation using the existing runbook and aggregator, then produce the diagnostic verdict.
+
+Important:
+Do not change ranking, scoring, composer, RecCard, finalGate, No-dark policy, durable taste, lens persistence, or recValidity.
+Do not start Phase 2.
+Do not add new logs.
+Do not alter the aggregator unless it fails on valid input.
+Do not commit a populated FORENSIC_USER_ID.
+
+Steps:
+
+1. Confirm readiness
+- Confirm docs/runbook_lens_arbitration_observation.md exists.
+- Confirm .local/lens_arb_logs/ is gitignored.
+- Confirm FORENSIC_USER_ID is currently empty by default.
+- Confirm scripts/diag_lens_arbitration_aggregate.ts is available.
+
+2. Prepare observation capture
+Provide the exact local-only instruction for setting FORENSIC_USER_ID to the test user UUID, including:
+- file path
+- exact constant to edit
+- reminder not to commit the UUID
+- reminder to revert it to '' after capture
+
+3. Observation scenarios
+Use the five runbook scenarios:
+- S0 baseline
+- S1 Light & accessible
+- S2 Short & light / palate cleanser
+- S3 Less-dark
+- S4 Fast + immersive
+
+For each scenario, confirm what lens substring should appear in the [LENS_ARBITRATION] lk field so we know the lens applied.
+
+4. Log capture
+Provide the exact browser-console filtering/copy instructions for collecting only [LENS_ARBITRATION] JSON lines.
+
+Save or ask me to save them as:
+- .local/lens_arb_logs/S0.jsonl
+- .local/lens_arb_logs/S1.jsonl
+- .local/lens_arb_logs/S2.jsonl
+- .local/lens_arb_logs/S3.jsonl
+- .local/lens_arb_logs/S4.jsonl
+
+5. Aggregation
+Once the five files exist, run:
+scripts/diag_lens_arbitration_aggregate.ts
+
+Generate the markdown diagnostic report.
+
+6. Output required
+Return:
+- whether all five scenario files were found
+- row counts per scenario
+- aggregate stats:
+  - n_tlm
+  - n_wem
+  - lfa_any
+  - slot1_tlm
+  - classifier-miss rate
+- executive diagnosis
+- routing verdict:
+  1. proceed to Phase 2 steering planning
+  2. calibrate BookEvidence first
+  3. expand retrieval first
+  4. defer steering UI
+- concise explanation of why
+
+7. Safety checks
+Before closing:
+- confirm FORENSIC_USER_ID was reverted to ''
+- confirm no UUID is staged or committed
+- confirm no product code changed
+- confirm recValidity.VERSION remains rcv6
+- confirm Phase 2 remains unapproved
+
+Hard constraints:
+- No ranking/scoring changes.
+- No composer/RecCard changes.
+- No finalGate changes.
+- No No-dark changes.
+- No durable Reading Taste mutation.
+- No lens persistence.
+- No Phase 2 implementation.
+- No BookEvidence calibration in this task.
