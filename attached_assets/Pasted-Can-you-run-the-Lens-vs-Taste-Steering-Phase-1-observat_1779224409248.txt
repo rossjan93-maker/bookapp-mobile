@@ -1,0 +1,75 @@
+Can you run the Lens-vs-Taste Steering Phase 1 observation for me as a read-only diagnostic script, instead of requiring manual app testing?
+
+Task type:
+Read-only diagnostic automation.
+No product behavior changes.
+
+Goal:
+Generate the Lens Arbitration observation report for one test user across the five prescribed scenarios, without manually clicking through the app.
+
+Input:
+Use this test user ID:
+<PASTE_FULL_USER_UUID_HERE>
+
+Scenarios:
+S0 — baseline / no lens
+S1 — Light & accessible
+S2 — Short & light / palate cleanser
+S3 — Less dark
+S4 — Fast + immersive
+
+For each scenario, run the same recommender path or closest available pure diagnostic pipeline used by For You, then output top 10 recommendations with:
+
+- rank
+- title
+- author
+- visible reason, if available
+- durable taste fit
+- current lens fit
+- taste-fit-but-lens-mismatch
+- would_eject_under_mood_first
+- lens_fit_alternative_nearby
+- tone / toneConfidence
+- pace / paceConfidence
+- complexity / complexityConfidence
+- intensity
+- emotionalWeight
+- market_position
+- finalGate hard exclusion, if any
+
+Also compute aggregate stats per scenario:
+- n_tlm
+- n_wem
+- lfa_any
+- slot1_tlm
+- classifier_miss_rate, if computable
+
+Hard constraints:
+- Read-only.
+- Do not mutate reader_preferences.
+- Do not mutate user_books.
+- Do not persist a lens.
+- Do not change ranking/scoring.
+- Do not change composer.
+- Do not change RecCard.
+- Do not change finalGate.
+- Do not change recValidity.
+- Do not set FORENSIC_USER_ID permanently.
+- Do not commit any user UUID.
+- Do not add product code unless a small diagnostic script is required.
+
+Preferred output:
+- docs/diag_lens_arbitration_observation_<date>.md
+- include a concise executive summary
+- include per-scenario tables
+- include the aggregate stats
+- include a decision recommendation:
+  1. proceed to Phase 2 steering planning
+  2. calibrate BookEvidence first
+  3. expand retrieval first
+  4. defer steering UI
+
+If this cannot be run from the Replit environment because the recommender requires an authenticated browser session, return:
+1. exactly what is blocking automation,
+2. what minimal data or access is needed,
+3. the smallest fallback manual step.
