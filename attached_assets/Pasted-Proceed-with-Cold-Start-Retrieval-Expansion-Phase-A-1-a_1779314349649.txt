@@ -1,0 +1,83 @@
+Proceed with Cold-Start Retrieval Expansion Phase A.1 — anchor calibration.
+
+Task type:
+Planning-first, then bounded implementation only if the plan is clear.
+
+Current state:
+
+* Cold-Start Retrieval Expansion Phase A is shipped and production-inert.
+* coldStartAdjacent quota remains 0 across all modes.
+* Shadow evidence capture fetched 72 candidates across 9 anchors.
+* Phase B is not approved.
+
+Evidence:
+
+* 0/72 domestic-suspense saturation hits, so adjacency direction is promising.
+* However, several anchors are mis-calibrated against Open Library:
+
+  * humorous mystery
+  * historical mystery
+  * domestic fiction
+  * literary suspense
+  * noir fiction
+* Better-calibrated anchors:
+
+  * cozy mystery
+  * cozy crime
+  * amateur sleuth
+  * spy fiction
+* Classifier unknown rate remains severe on the adjacent pool:
+
+  * about 97% intensity unknown
+  * about 96% emotional-weight unknown
+* The diagnostic used sort=editions, which may over-surface public-domain classics.
+
+Goal:
+Calibrate the Mystery/Thriller adjacency anchor set before Phase B planning.
+
+Planning requirements:
+
+1. Decide whether Phase A.1 should prune to the four well-calibrated anchors only, or probe replacements for the mis-calibrated anchors.
+2. If probing replacements, propose candidate replacement anchors and why they should perform better under Open Library subject search.
+3. Update the diagnostic strategy to test:
+
+   * sort=relevance or no sort
+   * first_publish_year >= 1980, if feasible
+   * top-N candidates per anchor
+4. Define acceptance criteria:
+
+   * 0 domestic-suspense saturation
+   * materially lower mis-calibration
+   * acceptable overlap with primary branches
+   * no generic/popular fallback
+   * classifier unknown rate target or a clear decision to open C1.2 vocabulary pass
+5. Keep Phase A.1 production-inert:
+
+   * coldStartAdjacent quota stays 0
+   * no ranking/scoring/composer/RecCard/finalGate/No-dark/durable taste/lens persistence changes
+   * no recValidity bump
+6. Preserve Mystery/Thriller-only scope.
+7. Do not expand to other genres.
+8. Do not revive Subject Coverage work.
+9. Do not start Phase B.
+10. Do not implement until the plan is clear.
+
+Recommended default:
+Prune to the four well-calibrated anchors first:
+
+* cozy mystery
+* cozy crime
+* amateur sleuth
+* spy fiction
+
+Then rerun the diagnostic with improved OL query settings before considering replacement anchors.
+
+Return:
+
+1. Recommended A.1 plan
+2. Anchor set decision
+3. Replacement-anchor options, if any
+4. Diagnostic changes
+5. Validator changes
+6. Risk assessment
+7. Exact implementation prompt for approval
