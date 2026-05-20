@@ -1,0 +1,79 @@
+Proceed with Cold-Start Retrieval Expansion Phase B planning only.
+
+Do not implement Phase B yet.
+
+Current accepted state:
+
+* BookEvidence Batch C slice C1 shipped.
+* Cold-Start Retrieval Expansion Phase A shipped production-inert.
+* Phase A.1 anchor calibration shipped and merged.
+* ADJACENT_RETRIEVAL_ANCHORS is now pruned to:
+
+  * mystery: cozy mystery, cozy crime, amateur sleuth
+  * thriller: spy fiction
+* v2 diagnostic showed likely-low/light rate improved from 3% to 25%.
+* Domestic-suspense saturation remained 0%.
+* All 17 validators were green.
+* coldStartAdjacent quota remains 0.
+* recValidity remains rcv6.
+* C1.2 vocabulary pass is not required before Phase B.
+
+Task:
+Write a planning-only chapter for:
+
+Cold-Start Retrieval Expansion Phase B — Live Quotas + Cache Policy
+
+Goal:
+Plan the first live admission of coldStartAdjacent candidates for sparse-profile / cold-start users only.
+
+Questions to answer:
+
+1. What exact BRANCH_QUOTAS changes are proposed for cold_start?
+2. Should thin profile get any base adjacency quota now, or remain unchanged?
+3. Confirm high_signal remains coldStartAdjacent = 0.
+4. Should lens-aware breadth modulation ship in this same Phase B or be split into Phase B.1?
+5. How should active lenses such as Light & accessible / Short & light / Less dark influence adjacency quota?
+6. How will cache invalidation work?
+
+   * retrieval-policy-version in cache hash?
+   * recValidity rcv7?
+   * both?
+7. What user actions should trigger a rebuild so old cold-start decks do not persist?
+8. What validators need to change?
+9. What regression fixtures are required for:
+
+   * sparse Mystery + Thriller
+   * sparse Fantasy/Sci-fi no-op
+   * thin profile
+   * high_signal mature profile
+   * active lens
+   * no active lens
+   * avoid Horror / No-dark invariants
+10. What metrics should we expect to improve in the next Lens Arbitration re-observation?
+11. What is the exact bounded implementation prompt?
+
+Hard constraints:
+
+* Do not change composer.
+* Do not change RecCard.
+* Do not change finalGate.
+* Do not change No-dark policy.
+* Do not mutate durable Reading Taste.
+* Do not persist lens state.
+* Do not start Phase 2 steering.
+* Do not title-blacklist.
+* Do not introduce popular/generic fallback.
+* Do not expand anchors beyond the Phase A.1 pruned set.
+* Do not revive Subject Coverage work.
+* Do not implement Phase B in this turn.
+
+Return:
+
+1. Executive diagnosis
+2. Proposed quota table
+3. Cache/versioning decision
+4. Lens-breadth decision
+5. If/then implementation tree
+6. Validator plan
+7. Risk assessment
+8. Exact implementation prompt for approval
