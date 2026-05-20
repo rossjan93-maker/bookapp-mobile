@@ -1,0 +1,153 @@
+Observation accepted, but reinterpretation required before implementation.
+
+Important product context:
+This was effectively a sparse-profile / cold-start user:
+
+* no Goodreads / StoryGraph import
+* little or no completed reading history
+* minimal onboarding data
+* durable taste mostly limited to Mystery + Thriller, skip Horror
+* no rich ratings / DNF / loved-book / judgment-ledger signal yet
+
+We need to preserve the bigger product principle:
+Readstack must wow the user early. Onboarding and early recommendation behavior need to gather enough high-signal information to produce impressive, confident recommendations before long-term history exists.
+
+Readstack must support the full intake spectrum:
+
+1. sparse completion
+2. medium-density taste setup
+3. book-anchor onboarding
+4. conversational taste capture
+5. dense competitor-library import from Goodreads / StoryGraph or similar
+
+Cold-start should not be treated as one weak state. It should have graded pathways and confidence-aware recommendation behavior.
+
+Current observation evidence:
+
+* classifier_miss_rate = 70%
+* lfa_any = false across all scenarios
+* n_tlm = 2 in lens-active scenarios
+* UI vocabulary missing avoid_dark and immersive
+* lens chips carried over between scenarios
+* many books remained despite filter changes
+* some requested observation labels were not available as current UI controls
+* current filters are implementation artifacts, not final product vocabulary
+
+Task type:
+Planning + teardown only.
+Do not implement product changes.
+
+Step 1 — Write planning doc
+
+Create a planning-only chapter titled:
+
+First-Session Intelligence Foundations — Intake Density · Cold-Start Retrieval · Lens Vocabulary
+
+The plan should answer:
+
+1. Executive diagnosis
+   Reinterpret the observation as sparse-profile / cold-start behavior, not mature-profile recommender failure.
+
+2. What conclusions still hold
+   Identify which findings remain valid despite sparse profile status: classifier blindness, candidate-pool homogeneity, vocabulary gap, chip lifecycle confusion.
+
+3. What conclusions should be softened
+   Explain which outcomes are expected given minimal user history and no imported library.
+
+4. What becomes more important
+   Explain why this matters more because Readstack’s promise is early wow / first-session intelligence.
+
+5. Intake-density model
+   Define recommendation behavior for:
+
+   * sparse user
+   * medium-density onboarding user
+   * book-anchor user
+   * conversational-intake user
+   * dense-import user
+
+6. Cold-start retrieval strategy
+   Explain how retrieval should behave when durable taste is only genre-level.
+   Example: Mystery + Thriller + Light & accessible should not collapse to domestic suspense. It should intentionally sample cozy mystery, lighter detective fiction, witty crime, shorter mysteries, lower-emotional-burden suspense, and adjacent non-thriller options.
+
+7. Lens/filter vocabulary strategy
+   Evaluate current filters as provisional implementation controls, not final product vocabulary.
+   Propose a better vocabulary space including mood, burden, pace, length, complexity, novelty/familiarity, genre distance, emotional weight, series/standalone, reread/comfort, discovery/stretch, and other reading-state dimensions.
+
+8. Onboarding signal strategy
+   Propose how onboarding should collect more high-signal information without becoming heavy:
+
+   * a few books the user loved
+   * one book they expected to like but did not
+   * why, in their own words
+   * current reading-state questions
+   * optional import path
+   * skip/progressive profiling path
+
+9. First-deck structure
+   Propose how the first recommendation deck should be structured as a decision surface, not a flat list:
+
+   * safest fit
+   * lighter fit
+   * close fit with a twist
+   * familiar-but-different
+   * stretch pick
+   * wildcard
+
+10. Dependency tree
+    Decide ordering across:
+
+* BookEvidence calibration
+* lens-aware retrieval expansion
+* onboarding/intake improvements
+* filter vocabulary/lifecycle improvements
+* Phase 2 steering arbitration
+
+11. Validator / acceptance harness
+    Propose how to test cold-start vs mature-profile behavior separately.
+    Include fixture profiles:
+
+* sparse Mystery + Thriller
+* sparse Fantasy/Sci-fi
+* medium-density taste setup
+* book-anchor profile
+* dense imported library profile
+
+12. Exact next implementation chapter
+    Recommend the smallest implementation chapter after this planning doc, but do not implement it.
+
+Hard constraints:
+
+* Do not change ranking.
+* Do not change scoring.
+* Do not change composer.
+* Do not change RecCard.
+* Do not change finalGate.
+* Do not change No-dark policy.
+* Do not mutate durable Reading Taste.
+* Do not persist lens state.
+* Do not bump recValidity.
+* Do not start Phase 2 steering.
+* Do not implement BookEvidence calibration in this turn.
+* Do not implement UI filter changes in this turn.
+
+Step 2 — Teardown temporary diagnostics after the planning doc is written
+
+After the planning doc is complete:
+
+* Revert FORENSIC_USER_ID in lib/recommender.ts to ''.
+* Remove temporary [FORENSIC_GATE] diagnostic block.
+* Keep the defensive [LENS_ARBITRATION] try/catch.
+* Keep the aggregator --combined flag.
+* Confirm no populated UUID remains.
+* Confirm no temporary forensic gate remains.
+* Restart workflow and report status.
+
+Return:
+
+1. Planning doc path
+2. Executive diagnosis
+3. Recommended implementation sequence
+4. Teardown changes
+5. Validator/status checks
+6. Whether Phase 2 steering remains deferred
