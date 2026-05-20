@@ -1,0 +1,76 @@
+Proceed with Cold-Start Adjacent Shadow Evidence Capture.
+
+Task type:
+Diagnostic / evidence-gathering only.
+Do not change production behavior.
+
+Context:
+Cold-Start Retrieval Expansion Phase A is shipped and production-inert.
+coldStartAdjacent is wired end-to-end with quota = 0 across all confidence modes.
+[COLD_START_ADJACENT] shadow logging exists but is dormant unless FORENSIC_USER_ID is set.
+Phase B is not approved.
+
+Goal:
+Produce title-level evidence for the Mystery + Thriller coldStartAdjacent anchors before Phase B planning.
+
+Hard constraints:
+
+* Do not flip coldStartAdjacent quotas.
+* Do not change ranking.
+* Do not change scoring.
+* Do not change composer.
+* Do not change RecCard.
+* Do not change finalGate.
+* Do not change No-dark policy.
+* Do not mutate durable Reading Taste.
+* Do not persist lens state.
+* Do not start Phase 2 steering.
+* Do not bump recValidity.
+* Do not commit a populated FORENSIC_USER_ID.
+
+Steps:
+
+1. Confirm current Phase A state:
+
+   * coldStartAdjacent quota = 0 in all BRANCH_QUOTAS rows
+   * FORENSIC_USER_ID is currently ''
+   * [COLD_START_ADJACENT] log is DEV+FORENSIC gated
+   * validate_cold_start_adjacent is green
+
+2. Add or run a diagnostic-only offline script, if one does not already exist, that takes the Phase A Mystery + Thriller adjacency anchors and fetches top-N Open Library candidates per anchor.
+
+3. The script should output:
+
+   * anchor
+   * title
+   * author
+   * source subject
+   * whether already overlapping with primary thriller/mystery anchors
+   * whether likely low/light/adjacent based on BookEvidence C1
+   * whether it looks like domestic-suspense saturation
+   * whether it looks like generic/popular slop
+
+4. Do not admit candidates into production retrieval.
+
+5. Do not change live deck behavior.
+
+6. Run the script and save the report to docs or .local, whichever is appropriate.
+
+7. Run required validators:
+
+   * validate_cold_start_adjacent
+   * validate_retrieval_planner
+   * validate_taxonomy
+   * validate_rec_validity
+   * relevant sibling validators
+
+Return:
+
+1. Executive verdict
+2. Anchors tested
+3. Candidate evidence table
+4. Quality assessment by anchor
+5. Overlap / slop risk
+6. Whether Phase B is justified
+7. Whether Phase B needs rcv7 or retrieval-policy-version in cache hash
+8. Exact Phase B planning prompt, but do not implement Phase B
