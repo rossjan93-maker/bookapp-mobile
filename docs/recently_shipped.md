@@ -2,6 +2,60 @@
 
 Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/onboarding sprints. Moved out of replit.md on 2026-05-14 to keep the live operating reference compact. Order is reverse-chronological. For full diffs use `git log -p -- <path>`.
 
+## Cold-Start Retrieval Expansion · Phase A.1 · anchor prune + diagnostic re-capture — shipped (2026-05-20)
+
+**Scope.** Calibrate the Phase A `ADJACENT_RETRIEVAL_ANCHORS` set against shadow-evidence the Phase A diagnostic produced. Production stays inert (`coldStartAdjacent` quota = 0 everywhere; `recValidity` = rcv6). No ranking / scoring / composer / RecCard / finalGate / No-dark / lens-persistence / durable-taste / Phase 2 steering change.
+
+**Why.** Phase A's v1 capture (`.local/cold_start_adjacent_evidence_report.md`, 9 anchors / 72 candidates, `sort=editions`) showed 0/72 domestic-suspense saturation — adjacency direction validated — but 5 of 9 anchors returned canonical 19th-century literature instead of the modern cozy/lit-suspense pool the anchor strings suggested. OL's subject endpoint matches these strings far more loosely than expected. v1 also revealed `sort=editions` over-surfaces public-domain classics, biasing the entire capture toward false-negative classification.
+
+**Anchor decision.** Prune to the 4 anchors v1 demonstrated on-pool. Each dropped anchor recorded with its v1 evidence in the source comment so a future reader / reviewer of any re-expansion sees the reasoning.
+
+| Anchor | Action | v1 evidence (why) |
+|---|---|---|
+| `cozy mystery` | KEEP | Christie / Joanne Fluke / Thursday Murder Club / Vera Wong |
+| `cozy crime` | KEEP | Thursday Murder Club, Lucy Foley, Killers of a Certain Age |
+| `amateur sleuth` | KEEP | Christie + Anthony Horowitz + Mary Higgins Clark |
+| `spy fiction` | KEEP | Buchan/Kipling/Oppenheim — period-skewed but tonally aligned |
+| `humorous mystery` | DROP | Mark Twain general fiction (OL `humorous` matches loosely) |
+| `historical mystery` | DROP | Oliver Twist, Crime & Punishment, Castle of Otranto (OL `historical` is a period tag) |
+| `domestic fiction` | DROP | Pride & Prejudice, Wuthering Heights, Little Women (OL category = Victorian novel) |
+| `literary suspense` | DROP | Picture of Dorian Gray, Treasure Island, Romeo & Juliet (no modern OL corpus) |
+| `noir fiction` | DROP | Frederick Douglass narrative, Stendhal's `Le rouge et le noir`, Beloved (OL `noir` conflates French + AfAm canon) |
+
+Final set: `mystery: [cozy mystery, cozy crime, amateur sleuth]` (3), `thriller: [spy fiction]` (1), all 19 other GenreIds = `[]`. Replacement-anchor probing (hardboiled, regency, etc.) deferred to a stage-2 slice with its own approval.
+
+**Side-by-side v1 vs v2 (post-prune, `sort=relevance`, `first_publish_year >= 1980`).**
+
+| Metric | v1 (`editions` / no year filter) | v2 (`relevance` / >= 1980) | Δ |
+|---|---|---|---|
+| Anchors | 9 | 4 | −5 |
+| Total candidates | 72 | 32 | −40 |
+| Domestic-suspense saturation | 0 / 72 (0%) | 0 / 32 (0%) | unchanged ✅ |
+| Overlap with primary olSubjects | 13 / 72 (18%) | 10 / 32 (31%) | +13pp (expected — cozy anchors share the `mystery` subject tag with primary) |
+| Likely low/light (C1) | 2 / 72 (3%) | 8 / 32 (25%) | **+22pp ✅ — primary win** |
+| Slop risk | 0 / 72 | 0 / 32 | unchanged |
+| C1 intensity unknown | 70 / 72 (97%) | 24 / 32 (75%) | −22pp |
+| C1 weight unknown | 69 / 72 (96%) | 24 / 32 (75%) | −22pp |
+| Anchors below N=4 after year filter | n/a | none triggered | ✅ |
+
+Headline: the prune + improved query did exactly what the planning chapter predicted on the discriminative axis — the Likely-low/light rate jumped 3% → 25% — because we stopped surfacing public-domain canon as our "cozy mystery" exemplars. The 31% overlap is structurally expected (cozy mysteries ARE mysteries; OL tags them accordingly) and is not a Phase B blocker.
+
+**C1.2 vocabulary pass — go/no-go decision: NO-GO (do NOT block Phase B planning on a C1.2 pass).** Three reasons: (1) The 25% likely-low/light rate gives lens-aware breadth modulation enough signal to discriminate — the planning chapter's threshold was "C1 unknown rate < 50% OR a clear go/no-go". v2 unknown rate is 75% but the *useful-signal* rate (likely-light) is 25%, which is functionally what Phase B needs. (2) The 75% unknown rate is dominated by `amateur sleuth` and `spy fiction` candidates whose subject lists are genuinely vocabulary-thin in OL — these books simply don't carry "cosy/cozy/feel-good/lighthearted" tags. A C1.2 vocabulary widening can't fix data that isn't there; it would risk over-firing on the wrong fixtures. (3) C1's purpose is to *isolate* low-intensity / low-weight signal, not to classify every book; `unknown` is a valid outcome and lens-aware scoring already handles it gracefully. **Recommendation:** Phase B planning can begin without a C1.2 prerequisite. If Phase B live capture later shows lens-aware modulation cannot discriminate adjacency candidates, revisit C1.2 against THAT live capture, not against this shadow report.
+
+**What shipped (files).**
+- `lib/taxonomy/genres.ts` — `ADJACENT_RETRIEVAL_ANCHORS` pruned; new in-literal comment block documents each dropped anchor with v1 evidence + references both report files (v1 + v2) by exact name.
+- `scripts/diag_cold_start_adjacent_candidates.ts` — extended with CLI flags `--sort=<relevance|editions>` (default `relevance`), `--min-year=N` (default `1980`), `--top-n=N` (default `8`). Parameterized output path `.local/cold_start_adjacent_evidence_report_<sort>_<minyear>.md` so v1 + v2 + future re-captures coexist. Aggregate rollup gains an "Anchors with < 4 candidates after year filter" alert line. OL fetch over-fetches `N*3` and filters client-side by `first_publish_year` to honor the year floor. Script remains read-only / exit 0.
+- `scripts/validate_cold_start_adjacent.ts` — §4 lower-burden regex updated to the pruned anchor vocabulary (`cozy|amateur sleuth|spy fiction`); new §8 calibration-provenance assertion reads `lib/taxonomy/genres.ts` as text and asserts the comment near `ADJACENT_RETRIEVAL_ANCHORS` cites a `cold_start_adjacent_evidence_report*.md` file. Prevents silent re-expansion without re-probe.
+- `.gitignore` — pattern broadened from `cold_start_adjacent_evidence_report.md` to `cold_start_adjacent_evidence_report*.md`.
+
+**Validator results — all 17 green.**
+`validate_cold_start_adjacent` (§1–§8 incl. new §8 provenance), `validate_intent_final_gate`, `validate_intent_lens`, `validate_p4c_limited_ranking`, `validate_intent_contribution`, `validate_tone_pace_fit`, `validate_series_continuation`, `validate_explanation_faithfulness`, `validate_book_evidence`, `validate_book_evidence_intensity` (190/0), `validate_no_dark_isolation` (73/0), `validate_rec_validity` (rcv6 pinned), `validate_rec_payload_cache_lens`, `validate_steering_field_contract`, `validate_lens_arbitration_log_shape`, `validate_taxonomy` (no count change required — §6 enforces ≤5-cap + lowercase + no-sibling-overlap, all still satisfied), `validate_retrieval_planner`.
+
+**Phase B planning — recommendation: BEGIN.**
+Prerequisites met: (a) Phase A.1 anchor set frozen on evidence; (b) likely-light signal rate at 25% on the adjacency pool — sufficient for lens-aware breadth modulation; (c) `coldStartAdjacent` plumbing already wired end-to-end in Phase A. Phase B's planning chapter must still propose either `recValidity rcv7` OR a retrieval-policy-version on the cache hash (non-negotiable — silently flipping quotas would leave old cold-start decks cached indefinitely). Mature-profile invariant (`BRANCH_QUOTAS.high_signal.coldStartAdjacent = 0` in Phase B too) stays pinned.
+
+**Constraints honored (every one).** `coldStartAdjacent` quota = 0 across `cold_start`, `thin`, `high_signal`. `recValidity` = rcv6. `FORENSIC_USER_ID` = `''`. No composer / RecCard / finalGate / No-dark / lens-persistence / durable-taste / Phase 2 steering touched. No replacement-anchor probing. No Subject Coverage revival. No Phase B work.
+
 ## Cold-Start Retrieval Expansion · Phase A · wire-and-observe, production-inert — shipped (2026-05-20)
 
 **Scope (planning-locked, no expansion).** New `coldStartAdjacent` retrieval branch wired end-to-end as a fourth `BranchKind`, with production quota = 0 at every `confidenceMode`. The branch is plumbed but emits ZERO items in production decks — the safety-pin design that lets Phase B (separate approval, separate chapter) flip quotas without an architectural change. Phase A's job is to prove the pipe works and to make Phase B's would-be retrieval observable, NOT to change a single user-visible byte.

@@ -13,4 +13,4 @@ expo-env.d.ts
 # @end expo-cli
 # Lens arbitration observation logs (local-only diagnostics)
 .local/lens_arb_logs/
-.local/cold_start_adjacent_evidence_report.md
+.local/cold_start_adjacent_evidence_report*.md

@@ -24,6 +24,10 @@
 //       identical RetrievalPlan.fetchItems.
 //   §7  Soft-avoid defense-in-depth — adjacency branch skips a favorite
 //       AffinityKey that's also in softAvoids (same rule as statedGenres).
+//   §8  Calibration provenance (Phase A.1) — source comment in
+//       lib/taxonomy/genres.ts above ADJACENT_RETRIEVAL_ANCHORS references at
+//       least one dated `cold_start_adjacent_evidence_report*.md` file. This
+//       prevents silent re-expansion of the anchor set without a re-probe.
 // =============================================================================
 
 import { planBranches } from '../lib/retrieval/branchPlanner';
@@ -217,11 +221,12 @@ section('§4 — slice scope: Mystery + Thriller only');
       `expected one of: ${[...adjacencyVocab].join(', ')}`);
   }
   // Phase B's value-add: lower-burden / non-domestic-suspense alternatives
-  // appear. We assert at least one cozy/humorous/literary-suspense anchor is
-  // present (proves the slice would diversify away from the current
-  // domestic-suspense saturation).
+  // appear. After Phase A.1 prune the on-pool anchors are cozy / amateur-
+  // sleuth / spy fiction; the mis-calibrated 5 were dropped. We assert at
+  // least one cozy/amateur/spy anchor is present (proves the slice would
+  // diversify away from the current domestic-suspense saturation).
   const lowerBurden = sim.anchorsWouldRun.filter(a =>
-    /cozy|humorous|amateur sleuth|historical mystery|literary suspense/.test(a)
+    /cozy|amateur sleuth|spy fiction/.test(a)
   );
   check('shadow sim includes ≥1 lower-burden / non-domestic-suspense anchor',
     lowerBurden.length >= 1, `lower-burden: ${lowerBurden.join(', ')}`);
@@ -282,6 +287,39 @@ section('§7 — soft-avoid defense-in-depth in adjacency branch');
   const items = buildColdStartAdjacentBranch(req, 5);
   check('soft-avoided favorite produces zero adjacency items', items.length === 0,
     `leaked ${items.length}: ${items.map(i => i.value).join(', ')}`);
+}
+
+// ── §8 Calibration provenance (Phase A.1) ───────────────────────────────────
+section('§8 — calibration provenance: source comment references dated evidence report');
+{
+  // Read genres.ts as text and check that the comment block immediately
+  // preceding ADJACENT_RETRIEVAL_ANCHORS references at least one
+  // cold_start_adjacent_evidence_report*.md file. This is the load-bearing
+  // documentation contract — future readers (and reviewers of any
+  // anchor-set change) must see the evidence that justified the current set.
+  // Pinned in Phase A.1 (2026-05-20) when 5 of the original 9 anchors were
+  // dropped after v1 evidence showed OL-taxonomy mismatches.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs = require('fs') as typeof import('fs');
+  const src = fs.readFileSync(require.resolve('../lib/taxonomy/genres.ts'), 'utf-8');
+  const anchorsIdx = src.indexOf('ADJACENT_RETRIEVAL_ANCHORS');
+  check('ADJACENT_RETRIEVAL_ANCHORS export found in source', anchorsIdx > 0);
+  // Window covers ~3 KiB before AND the full object literal after the export —
+  // the per-anchor justification comments live INSIDE the literal in our
+  // current authoring style.
+  const before = src.slice(Math.max(0, anchorsIdx - 3072), anchorsIdx);
+  const after  = src.slice(anchorsIdx, anchorsIdx + 4096);
+  // Require at least one DATED report reference (must contain a digit in the
+  // suffix, e.g. `_relevance_1980` or a YYYYMMDD stamp). Bare v1
+  // `cold_start_adjacent_evidence_report.md` alone is not sufficient — the
+  // dated form proves the prune was justified by a re-probe under controlled
+  // capture settings, not by the legacy editions/no-year-filter capture.
+  const datedPattern = /cold_start_adjacent_evidence_report_[a-z0-9_]*\d[a-z0-9_]*\.md/;
+  check(
+    'source comment cites a DATED evidence report (cold_start_adjacent_evidence_report_<...digit...>.md)',
+    datedPattern.test(before) || datedPattern.test(after),
+    `no dated evidence-report reference found near ADJACENT_RETRIEVAL_ANCHORS`,
+  );
 }
 
 // ── Report ──────────────────────────────────────────────────────────────────

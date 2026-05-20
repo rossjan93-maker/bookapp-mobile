@@ -460,19 +460,25 @@ export const ADJACENT_RETRIEVAL_ANCHORS: Readonly<Record<GenreId, readonly strin
   literary_fiction:   [],
   fantasy:            [],
   sci_fi:             [],
-  // Mystery adjacency: cozy + amateur-sleuth + humorous + historical. Pulls
-  // lower-burden + classic-detective alternatives instead of the
-  // psychological-thriller / crime-fiction lane the primary anchor already
-  // saturates. No overlap with Mystery.olSubjects (mystery, detective
-  // fiction, crime fiction) or Thriller.olSubjects (thriller, psychological
-  // thriller, suspense fiction).
-  mystery:            ['cozy mystery', 'cozy crime', 'amateur sleuth', 'humorous mystery', 'historical mystery'],
-  // Thriller adjacency: domestic-fiction + literary-suspense + spy + noir.
-  // Deliberately NOT more "psychological thriller" (already a primary anchor
-  // and the root cause of the domestic-suspense saturation we're trying to
-  // diversify away from). No overlap with shared thriller_mystery affinity
-  // olSubjects.
-  thriller:           ['domestic fiction', 'literary suspense', 'spy fiction', 'noir fiction'],
+  // Phase A.1 anchor calibration (2026-05-20). Evidence reports:
+  //   .local/cold_start_adjacent_evidence_report.md                  (v1: sort=editions, no year filter)
+  //   .local/cold_start_adjacent_evidence_report_relevance_1980.md   (v2: sort=relevance, first_publish_year>=1980)
+  // v1 capture (Phase A, 9 anchors, 72 candidates) showed 0/72 domestic-suspense
+  // saturation (good — adjacency does diversify away from primary pool) but
+  // 5/9 anchors were mis-calibrated against OL's subject endpoint, returning
+  // canonical 19th-century literature instead of the modern cozy/lit-suspense
+  // material intended. Dropped in Phase A.1 (each with v1 evidence):
+  //   - humorous mystery   → Mark Twain general fiction (OL `humorous` loose)
+  //   - historical mystery → Oliver Twist, Crime & Punishment (OL `historical` is a period tag)
+  //   - domestic fiction   → Pride & Prejudice, Wuthering Heights (OL `domestic fiction` = Victorian novel category)
+  //   - literary suspense  → Picture of Dorian Gray, Romeo & Juliet (no modern OL corpus)
+  //   - noir fiction       → Frederick Douglass, Stendhal's `Le rouge et le noir` (OL `noir` conflates French + AfAm canon)
+  // Kept anchors are the 4 that v1 evidence demonstrated were on-pool and
+  // structurally distinct from the thriller_mystery primary saturation lane.
+  // Replacement-anchor probing is deferred to a stage-2 slice (separate
+  // approval) and only if Phase B planning surfaces a concrete diversity gap.
+  mystery:            ['cozy mystery', 'cozy crime', 'amateur sleuth'],
+  thriller:           ['spy fiction'],
   romance:            [],
   horror:             [],
   historical_fiction: [],

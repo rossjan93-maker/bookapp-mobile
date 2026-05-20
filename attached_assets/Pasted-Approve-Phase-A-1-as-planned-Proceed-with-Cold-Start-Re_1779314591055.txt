@@ -1,0 +1,70 @@
+Approve Phase A.1 as planned.
+
+Proceed with:
+
+Cold-Start Retrieval Expansion · Phase A.1 — anchor prune + diagnostic re-capture.
+
+Implementation scope is approved with the following requirements:
+
+1. Prune ADJACENT_RETRIEVAL_ANCHORS:
+
+   * mystery: cozy mystery, cozy crime, amateur sleuth
+   * thriller: spy fiction
+   * all other GenreIds remain empty arrays
+
+2. Keep production inert:
+
+   * coldStartAdjacent quota remains 0 across all confidence modes
+   * no production deck behavior change
+   * no Phase B quota flip
+   * no lens-breadth modulation
+
+3. Extend the diagnostic script:
+
+   * --sort=<relevance|editions>, default relevance
+   * --min-year=N, default 1980
+   * --top-n=N, default 8
+   * output to .local/cold_start_adjacent_evidence_report_relevance_1980.md
+   * do not delete the original v1 report
+   * .local reports stay gitignored and are evidence artifacts, not committed docs
+
+4. Update validators:
+
+   * validate_taxonomy §6 for Mystery 3 / Thriller 1 / total 4
+   * validate_cold_start_adjacent §1 and §4 for the pruned anchor set
+   * add validate_cold_start_adjacent §8 provenance assertion that the source comment references the dated evidence report pattern
+   * keep validate_retrieval_planner unchanged unless needed for compatibility
+
+5. Run all acceptance validators and confirm green.
+
+6. Docs:
+
+   * update replit.md with a Phase A.1 row
+   * update docs/recently_shipped.md with the side-by-side v1/v2 summary and the go/no-go decision on whether C1.2 is required before Phase B
+
+Hard constraints:
+
+* Do not change ranking.
+* Do not change scoring.
+* Do not change composer.
+* Do not change RecCard.
+* Do not change finalGate.
+* Do not change No-dark policy.
+* Do not mutate durable Reading Taste.
+* Do not persist lens state.
+* Do not start Phase 2 steering.
+* Do not bump recValidity.
+* Do not expand anchors beyond the pruned 4.
+* Do not probe replacement anchors in this task.
+* Do not revive Subject Coverage work.
+* Do not implement Phase B.
+
+Return:
+
+1. Diff summary
+2. Side-by-side v1/v2 per-anchor comparison
+3. Classifier unknown-rate result
+4. Go/no-go on whether C1.2 vocabulary pass is required before Phase B
+5. Validator results
+6. Updated docs summary
+7. Recommendation on whether Phase B planning can begin
