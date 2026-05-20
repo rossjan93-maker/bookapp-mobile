@@ -158,19 +158,28 @@ export function computeStatedTasteContribution(
 // that is the entire P2A retrieval-side fix mirroring the P1 scoring fix.
 
 export type BranchQuotas = {
-  statedGenres:    number;
-  revealedAuthors: number;
-  revealedLanes:   number;
+  statedGenres:       number;
+  revealedAuthors:    number;
+  revealedLanes:      number;
+  /** Cold-Start Retrieval Expansion · Phase A (production-inert).
+   *  Quota intentionally 0 at every confidenceMode in Phase A: the branch is
+   *  wired end-to-end but emits zero items in production. Phase B (separate
+   *  approval) flips this for cold_start (and possibly thin) and may bump
+   *  recValidity.VERSION OR introduce a retrieval-policy-version in the
+   *  cache hash. Mature/high_signal profiles MUST stay at 0 even in Phase B
+   *  (mature-profile byte-identity invariant pinned by
+   *  scripts/validate_cold_start_adjacent.ts §5). */
+  coldStartAdjacent:  number;
 };
 
 export const BRANCH_QUOTAS: Readonly<Record<ConfidenceMode, BranchQuotas>> = {
   // Cold start: stated dominates because the user has nothing else to draw on.
-  cold_start:  { statedGenres: 4, revealedAuthors: 1, revealedLanes: 5 },
+  cold_start:  { statedGenres: 4, revealedAuthors: 1, revealedLanes: 5, coldStartAdjacent: 0 },
   // Thin: similar; revealed signals exist but are unreliable.
-  thin:        { statedGenres: 4, revealedAuthors: 1, revealedLanes: 5 },
+  thin:        { statedGenres: 4, revealedAuthors: 1, revealedLanes: 5, coldStartAdjacent: 0 },
   // High signal (dense / tier ≥ 2): revealed dominates BUT stated keeps a
   // material seat at the table — the pre-P2A bug was statedGenres = 0 here.
-  high_signal: { statedGenres: 3, revealedAuthors: 3, revealedLanes: 4 },
+  high_signal: { statedGenres: 3, revealedAuthors: 3, revealedLanes: 4, coldStartAdjacent: 0 },
 };
 
 /** BuildCause = 'explicit_preference_edit': boost stated, trim lanes,

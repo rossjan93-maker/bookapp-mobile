@@ -29,6 +29,7 @@ import {
   intakeLabel,
   GENRE_DEFS,
   AFFINITY_RETRIEVAL_SUBJECTS,
+  ADJACENT_RETRIEVAL_ANCHORS,
   getRetrievalSubjects,
   type RetrievalAffinityKey,
 } from '../lib/taxonomy/genres';
@@ -134,6 +135,53 @@ for (const [keyStr, tup] of Object.entries(AFFINITY_RETRIEVAL_SUBJECTS)) {
     });
   }
   seenTuples.set(sig, keyStr as RetrievalAffinityKey);
+}
+
+// ── 6: Cold-Start Retrieval Expansion · Phase A — adjacency-map integrity ──
+// Authoring rules pinned: keyed by GenreId, lowercase OL-canonical,
+// ≤ 5 anchors per genre, no overlap with sibling primary olSubjects under
+// the same affinityKey.
+{
+  const allGenreIds = GENRE_DEFS.map(d => d.id);
+  for (const gid of allGenreIds) {
+    if (!Object.hasOwn(ADJACENT_RETRIEVAL_ANCHORS, gid)) {
+      failures.push({
+        check: 'adjacency map covers GenreId',
+        detail: `missing GenreId=${gid}`,
+      });
+    }
+  }
+  for (const [gid, anchors] of Object.entries(ADJACENT_RETRIEVAL_ANCHORS)) {
+    if (anchors.length > 5) {
+      failures.push({
+        check: 'adjacency ≤ 5 anchors',
+        detail: `${gid} has ${anchors.length} anchors`,
+      });
+    }
+    for (const a of anchors) {
+      if (a !== a.toLowerCase() || a.trim().length === 0) {
+        failures.push({
+          check: 'adjacency anchor lowercase + non-empty',
+          detail: `${gid} anchor=${JSON.stringify(a)}`,
+        });
+      }
+    }
+    if (anchors.length === 0) continue;
+    const myDef = GENRE_DEFS.find(d => d.id === gid)!;
+    const siblingPrimaries = new Set<string>();
+    for (const def of GENRE_DEFS) {
+      if (def.affinityKey !== myDef.affinityKey) continue;
+      for (const s of def.olSubjects) siblingPrimaries.add(s.toLowerCase());
+    }
+    for (const a of anchors) {
+      if (siblingPrimaries.has(a)) {
+        failures.push({
+          check: 'adjacency does not duplicate sibling primary olSubjects',
+          detail: `${gid} affinity=${myDef.affinityKey} anchor=${a}`,
+        });
+      }
+    }
+  }
 }
 
 // ── 5: alias index size sanity ──────────────────────────────────────────────

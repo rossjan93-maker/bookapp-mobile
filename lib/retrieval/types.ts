@@ -20,11 +20,14 @@
 import type { AffinityKey } from '../taxonomy/genres';
 import type { BuildCause } from '../recRequest';
 
-/** Branch kinds implemented in P2A. Intent / exploration are explicitly
- *  deferred (intent is post-retrieval today; exploration is implicit in the
- *  catalog-fallback scan). Adding a new branch is additive and does not
- *  require touching the planner core. */
-export type BranchKind = 'statedGenres' | 'revealedLanes' | 'revealedAuthors';
+/** Branch kinds. `coldStartAdjacent` was added in Cold-Start Retrieval
+ *  Expansion Phase A (production-inert: BRANCH_QUOTAS.*.coldStartAdjacent = 0
+ *  at every confidenceMode in Phase A; the branch is plumbed end-to-end so
+ *  Phase B can flip the quotas without architecture change). Intent /
+ *  exploration are explicitly deferred (intent is post-retrieval today;
+ *  exploration is implicit in the catalog-fallback scan). Adding a new
+ *  branch is additive and does not require touching the planner core. */
+export type BranchKind = 'statedGenres' | 'revealedLanes' | 'revealedAuthors' | 'coldStartAdjacent';
 
 /** Provenance class on each FetchItem. Mirrors lib/recSignals/types.SignalClass
  *  but narrowed to the classes that produce retrieval (not e.g. feedback). */

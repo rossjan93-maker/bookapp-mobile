@@ -461,6 +461,35 @@ section('A7d — softAvoidDeprioritized flag set on revealedLanes items under re
     `flagged: ${statedItems.filter(i => i.softAvoidDeprioritized).length}`);
 }
 
+// =============================================================================
+// Cold-Start Retrieval Expansion · Phase A — planner-side no-regression
+// =============================================================================
+section('Phase A — coldStartAdjacent slot present, production-inert');
+{
+  // Branch policy exists in every plan; quota = 0 always (Phase A).
+  for (const mode of ['cold_start', 'thin', 'high_signal'] as const) {
+    const req = mkReq({ favorites: ['thriller_mystery'], confidenceMode: mode });
+    const ctx = mode === 'high_signal' ? mkDenseCtx() : mkColdCtx();
+    const plan = planBranches(req, ctx);
+    check(`${mode}: plan.branchPolicies.coldStartAdjacent present`,
+      plan.branchPolicies.coldStartAdjacent !== undefined);
+    check(`${mode}: coldStartAdjacent.quota === 0`,
+      plan.branchPolicies.coldStartAdjacent.quota === 0,
+      `got ${plan.branchPolicies.coldStartAdjacent.quota}`);
+    const adjItems = plan.fetchItems.filter(i => i.branch === 'coldStartAdjacent');
+    check(`${mode}: zero coldStartAdjacent fetchItems`, adjItems.length === 0,
+      `leaked ${adjItems.length}`);
+  }
+
+  // BRANCH_ORDER includes coldStartAdjacent at the end (so primary branches
+  // win quota races; adjacency is supplemental).
+  const req = mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'cold_start' });
+  const plan = planBranches(req, mkColdCtx());
+  check('branchOrder includes coldStartAdjacent', plan.branchOrder.includes('coldStartAdjacent'));
+  check('branchOrder places coldStartAdjacent last',
+    plan.branchOrder[plan.branchOrder.length - 1] === 'coldStartAdjacent');
+}
+
 // ── Case A7e: classifyCandidateAvoidKey heuristic ───────────────────────────
 section('A7e — classifyCandidateAvoidKey resolves subjects to soft-avoided AffinityKey');
 {

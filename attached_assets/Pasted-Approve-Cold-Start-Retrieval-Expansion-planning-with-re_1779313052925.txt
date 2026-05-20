@@ -1,0 +1,89 @@
+Approve Cold-Start Retrieval Expansion planning with revisions below.
+
+Decision responses:
+
+1. Phase A/B split:
+   Accept the Phase A/B split, but Phase A must be production-inert and diagnostically real. Do not ship a quota-zero branch that only proves the branch exists. Phase A should prove what coldStartAdjacent would retrieve under proposed Phase B quotas without admitting those candidates into the live deck.
+
+Acceptable approaches:
+
+* DEV/FORENSIC shadow sampling that fetches/logs would-be adjacency candidates without adding them to the deck, OR
+* a deterministic validator/script replay using the same adjacency anchors and retrieval helper shape.
+
+The required evidence is:
+
+* which anchors would run
+* how many candidates each anchor returns
+* candidate titles/authors
+* whether candidates are lower-burden / adjacent vs more domestic suspense
+* whether there are enough plausible alternatives to make lfa_any possible later
+
+2. Initial adjacency scope:
+   Accept Mystery + Thriller only for this slice.
+   Do not expand to Fantasy/Sci-Fi/Romance yet.
+   All other genres should no-op cleanly with empty adjacency arrays.
+   This is a product slice, not the final strategy.
+
+3. recValidity:
+   Accept no recValidity bump for Phase A because production deck behavior remains inert.
+   For Phase B, do not assume rcv6 can remain unchanged. If live retrieval quotas change or coldStartAdjacent candidates can enter cached decks, stop and propose either:
+
+* recValidity rcv7, or
+* a retrieval policy version in the cache hash.
+  Do not silently ship a live retrieval-policy change that leaves old cold-start decks cached indefinitely.
+
+4. Lens-breadth scope:
+   Accept lens-breadth modulation only for cold_start in the first live phase.
+   Mature/high_signal profiles must remain byte-identical.
+   Thin profiles can keep a small base adjacency quota later, but no lens-breadth bump yet.
+
+5. Anchor cap:
+   Accept a hard 5-anchor cap per genre for this slice.
+   Future expansion requires a separate planning chapter.
+
+Implementation approval:
+Proceed with Phase A only.
+
+Phase A goal:
+Wire and validate coldStartAdjacent as a production-inert, shadow-observable retrieval branch.
+
+Hard constraints:
+
+* Do not change visible ranking.
+* Do not change scoring.
+* Do not change composer.
+* Do not change RecCard.
+* Do not change finalGate.
+* Do not change No-dark policy.
+* Do not mutate durable Reading Taste.
+* Do not persist lens state.
+* Do not start Phase 2 steering.
+* Do not title-blacklist.
+* Do not introduce popular/generic fallback.
+* Do not revive Subject Coverage work.
+* Do not bump recValidity in Phase A.
+
+Required:
+
+1. Add ADJACENT_RETRIEVAL_ANCHORS with Mystery + Thriller only.
+2. Add typed coldStartAdjacent branch quota slot with production quota = 0.
+3. Add coldStartAdjacent branch module.
+4. Wire branch planner safely.
+5. Add shadow evidence proving what Phase B would retrieve, without admitting those candidates into the deck.
+6. Add validators:
+
+   * validate_cold_start_adjacent
+   * retrieval planner quota/no-regression assertions
+   * taxonomy adjacency integrity
+   * recValidity rcv6 pinned
+7. Confirm all sibling validators remain green.
+8. Update docs with Phase A shipped / production-inert status and Phase B requirements.
+
+Return:
+
+1. Executive verdict
+2. Files touched
+3. Shadow evidence shape
+4. Validator results
+5. Whether Phase A proves enough to consider Phase B
+6. Whether Phase B will require recValidity/cache-policy change

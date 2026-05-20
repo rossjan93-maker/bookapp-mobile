@@ -430,3 +430,63 @@ export function getRetrievalSubjects(key: string): readonly [string, string] {
   }
   return AFFINITY_RETRIEVAL_SUBJECTS.general;
 }
+
+// ─── Cold-Start Retrieval Expansion · Phase A (production-inert) ─────────────
+//
+// Per-GenreId adjacency anchors used by the `coldStartAdjacent` retrieval
+// branch (lib/retrieval/branches/coldStartAdjacent.ts). The branch is plumbed
+// end-to-end but ships with BRANCH_QUOTAS.*.coldStartAdjacent = 0 in Phase A,
+// so this map produces ZERO candidates in production. Phase B (separate
+// approval) flips the quotas and admits these anchors into live retrieval.
+//
+// Authoring rules (pinned by scripts/validate_cold_start_adjacent.ts §1 and
+// scripts/validate_taxonomy.ts §6):
+//   1. Keyed by GenreId (typed Record). Adding a new GenreId becomes a
+//      compile-time miss for this map.
+//   2. Each value is `readonly string[]` of lowercase, OL-canonical subjects.
+//   3. Hard cap: ≤ 5 anchors per genre (slice scope; expansion requires its
+//      own planning chapter).
+//   4. NO adjacency anchor may duplicate a primary GenreDef.olSubjects entry
+//      for ANY genre sharing the same `affinityKey` (otherwise we just retry
+//      the same retrieval the primary branch already runs).
+//   5. Phase A scope is Mystery + Thriller ONLY — all other genres ship with
+//      empty arrays so the branch no-ops cleanly for them. Widening to
+//      Fantasy / Sci-Fi / Romance / etc. requires its own approval.
+//   6. Vocabulary is co-authored with the C1 SignalSets in
+//      lib/evidence/signals.ts (`cozy mystery`, `humorous mystery`,
+//      `domestic fiction` are already C1 specific tokens) so retrieval +
+//      evidence speak the same language.
+export const ADJACENT_RETRIEVAL_ANCHORS: Readonly<Record<GenreId, readonly string[]>> = {
+  literary_fiction:   [],
+  fantasy:            [],
+  sci_fi:             [],
+  // Mystery adjacency: cozy + amateur-sleuth + humorous + historical. Pulls
+  // lower-burden + classic-detective alternatives instead of the
+  // psychological-thriller / crime-fiction lane the primary anchor already
+  // saturates. No overlap with Mystery.olSubjects (mystery, detective
+  // fiction, crime fiction) or Thriller.olSubjects (thriller, psychological
+  // thriller, suspense fiction).
+  mystery:            ['cozy mystery', 'cozy crime', 'amateur sleuth', 'humorous mystery', 'historical mystery'],
+  // Thriller adjacency: domestic-fiction + literary-suspense + spy + noir.
+  // Deliberately NOT more "psychological thriller" (already a primary anchor
+  // and the root cause of the domestic-suspense saturation we're trying to
+  // diversify away from). No overlap with shared thriller_mystery affinity
+  // olSubjects.
+  thriller:           ['domestic fiction', 'literary suspense', 'spy fiction', 'noir fiction'],
+  romance:            [],
+  horror:             [],
+  historical_fiction: [],
+  young_adult:        [],
+  graphic_novel:      [],
+  classic:            [],
+  poetry:             [],
+  nonfiction_general: [],
+  biography_memoir:   [],
+  self_help:          [],
+  history:            [],
+  business:           [],
+  science:            [],
+  true_crime:         [],
+  politics_society:   [],
+  essays_ideas:       [],
+};
