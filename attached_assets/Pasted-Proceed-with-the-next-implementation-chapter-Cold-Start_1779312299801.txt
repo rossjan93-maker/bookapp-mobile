@@ -1,0 +1,82 @@
+Proceed with the next implementation chapter:
+
+Cold-Start Retrieval Expansion — density-aware branch quotas + cold_start_adjacent branch.
+
+Task type:
+Planning-first, then bounded implementation only if the plan is clear and low-risk.
+
+Context:
+First-Session Intelligence Foundations planning is complete.
+BookEvidence Batch C slice C1 has shipped contract-only.
+C1 widened shadow-mode intensity/emotionalWeight signals for OL-subject vocabulary.
+Do not re-run Lens Arbitration observation yet.
+
+Current evidence:
+
+* Prior Lens Arbitration observation showed lfa_any=false across scenarios.
+* Sparse-profile user: Mystery + Thriller, skip Horror, no imported library, little/no reading history.
+* Current retrieval over-indexes on stated genres and returns a domestic-suspense-heavy pool.
+* C1 improves evidence labeling but does not fix candidate supply.
+* Phase 2 steering remains deferred.
+
+Goal:
+Improve cold-start candidate supply under active temporary lenses without changing visible ranking/scoring yet unless explicitly approved.
+
+Planning questions to answer first:
+
+1. Where are cold-start branch quotas currently defined?
+2. How does retrieval distinguish sparse vs medium vs dense profile today, if at all?
+3. Which branches currently dominate for sparse Mystery + Thriller?
+4. Where should a cold_start_adjacent branch be introduced?
+5. How should active lenses influence retrieval breadth without mutating durable taste?
+6. How should low/light lenses source candidates after BookEvidence C1?
+7. How do we prevent generic/popular slop while broadening?
+8. What should be observe-only first vs admitted into retrieval?
+9. What validators prove no mature-profile regression?
+10. What exact implementation slice is safest?
+
+Desired behavior:
+For a sparse Mystery + Thriller user applying Light & accessible / Short & light / Less dark, candidate generation should not collapse to domestic suspense. It should intentionally include adjacent lower-burden options such as:
+
+* cozy mystery
+* lighter detective fiction
+* witty crime
+* shorter mysteries
+* low-emotional-weight suspense
+* accessible mystery-adjacent fiction
+* possibly selected non-thriller adjacent options when confidence is low
+
+Hard constraints:
+
+* Do not change composer.
+* Do not change RecCard.
+* Do not change finalGate.
+* Do not change No-dark policy.
+* Do not mutate durable Reading Taste.
+* Do not persist lens state.
+* Do not start Phase 2 steering.
+* Do not bump recValidity unless the implementation truly changes cached recommendation behavior; if a bump is needed, explain before doing it.
+* Do not title-blacklist.
+* Treat observed titles as regression fixtures, not product logic.
+
+Validation plan should include:
+
+* sparse Mystery + Thriller profile
+* sparse Fantasy/Sci-fi profile
+* medium-density profile
+* dense/import-like profile
+* active light lens
+* no active lens
+* avoid horror / No-dark invariants
+* mature-profile no-regression
+
+Return first:
+
+1. Path map
+2. Proposed retrieval change
+3. If/then decision tree
+4. Validator plan
+5. Risk assessment
+6. Exact implementation prompt
+
+Do not implement until the plan is clear.
