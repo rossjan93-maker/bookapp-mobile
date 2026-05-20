@@ -70,17 +70,47 @@ const SCENARIO_LABELS: Record<ScenarioId, string> = {
   S4: 'Fast-paced / immersive',
 };
 
-function parseArgs(): { inputs: Partial<Record<ScenarioId, string>>; out: string } {
+function parseArgs(): { inputs: Partial<Record<ScenarioId, string>>; out: string; combined: string | null } {
   const argv = process.argv.slice(2);
   const inputs: Partial<Record<ScenarioId, string>> = {};
   let out = `docs/diag_lens_arbitration_observation_${new Date().toISOString().slice(0, 10)}.md`;
+  let combined: string | null = null;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--out') { out = argv[++i]; continue; }
+    if (a === '--combined') { combined = argv[++i]; continue; }
     const m = a.match(/^--(S[0-4])$/);
     if (m) { inputs[m[1] as ScenarioId] = argv[++i]; continue; }
   }
-  return { inputs, out };
+  return { inputs, out, combined };
+}
+
+// Parse the combined JSON capture format emitted by the browser-console
+// snippet documented in `docs/runbook_lens_arbitration_observation.md` §3.
+// Shape: { S0: Line[], S1: Line[], ..., S4: Line[] }. Keys not in the
+// SCENARIOS list are ignored. Each Line must already match the [LENS_ARBITRATION]
+// payload shape — no console-prefix stripping needed because the snippet
+// captures the parsed object, not the raw log line.
+function parseCombinedFile(file: string): Record<ScenarioId, Line[]> {
+  const out: Record<ScenarioId, Line[]> = { S0: [], S1: [], S2: [], S3: [], S4: [] };
+  if (!fs.existsSync(file)) {
+    console.error(`  ⚠ missing combined file: ${file}`);
+    return out;
+  }
+  let parsed: any;
+  try {
+    parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (err) {
+    console.error(`  ⚠ unparseable combined JSON in ${file}: ${(err as Error).message}`);
+    return out;
+  }
+  for (const sid of SCENARIOS) {
+    const rows = parsed?.[sid];
+    if (Array.isArray(rows)) {
+      out[sid] = (rows as Line[]).sort((a, b) => a.r - b.r);
+    }
+  }
+  return out;
 }
 
 function parseLogFile(file: string): Line[] {
@@ -291,16 +321,24 @@ function decide(allAgg: Record<ScenarioId, Aggregates>): { verdict: string; rati
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
-const { inputs, out } = parseArgs();
+const { inputs, out, combined } = parseArgs();
+
+const combinedRows: Record<ScenarioId, Line[]> = combined
+  ? parseCombinedFile(combined)
+  : { S0: [], S1: [], S2: [], S3: [], S4: [] };
 
 const parsed: Record<ScenarioId, Line[]> = { S0: [], S1: [], S2: [], S3: [], S4: [] };
 const agg: Record<ScenarioId, Aggregates> = {} as any;
 for (const id of SCENARIOS) {
   const file = inputs[id];
-  const lines = file ? parseLogFile(file) : [];
+  // Per-scenario --S{n} flags take precedence over --combined entries for
+  // the same scenario, so a partial re-capture can override the combined
+  // file without re-running every scenario.
+  const lines = file ? parseLogFile(file) : combinedRows[id];
   parsed[id] = lines;
   agg[id] = aggregate(lines);
-  console.log(`  ${id}: ${file ? path.basename(file) : '(no file)'} → ${lines.length} line(s)`);
+  const src = file ? path.basename(file) : (combined && lines.length > 0 ? `${path.basename(combined)}#${id}` : '(no file)');
+  console.log(`  ${id}: ${src} → ${lines.length} line(s)`);
 }
 
 const decision = decide(agg);
