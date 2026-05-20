@@ -1,0 +1,71 @@
+Proceed with the next implementation chapter:
+
+BookEvidence Batch C slice C1 — shadow-mode corpus widening.
+
+Task type:
+Contract-only / diagnostic-quality improvement.
+No ranking, scoring, composer, RecCard, finalGate, No-dark policy, durable taste, lens persistence, or recValidity changes.
+
+Context:
+The First-Session Intelligence Foundations planning chapter is complete at docs/plan_first_session_intelligence_foundations.md.
+
+The Lens Arbitration observation showed:
+
+* classifier_miss_rate = 70%
+* lfa_any = false across scenarios
+* sparse-profile / cold-start user
+* Mystery + Thriller + skip Horror
+* no imported library
+* little/no book history
+
+Phase 2 steering is deferred.
+
+Goal:
+Reduce BookEvidence Batch C classifier blindness for intensity and emotionalWeight in shadow mode only, without changing visible recommendations.
+
+Scope:
+
+* Extend INTENSITY_HIGH / INTENSITY_LOW / EMOTIONAL_WEIGHT_HIGH / EMOTIONAL_WEIGHT_LOW signal coverage carefully.
+* Keep the phrasal-specific / broad-token distinction.
+* Do not broaden No-dark.
+* Do not use title blacklists.
+* Do not tune for only the observed titles.
+* Treat observed books as regression fixtures, not product logic.
+* Preserve unknown when evidence is genuinely thin.
+
+Required:
+
+1. Audit current SignalSets before editing.
+2. Identify why the observed cold-start pool produced 70% unknown/unknown.
+3. Propose the calibration approach before applying changes if there are multiple viable approaches.
+4. Add/extend validator fixtures to cover:
+
+   * domestic suspense
+   * cozy mystery
+   * emotionally heavy literary fiction
+   * high-intensity thriller
+   * low-burden mystery
+   * low-burden fantasy/sci-fi
+   * unknown thin-metadata control
+5. Re-run:
+
+   * validate_book_evidence_intensity
+   * validate_book_evidence
+   * validate_no_dark_isolation
+   * validate_lens_arbitration_log_shape
+   * validate_rec_validity
+   * relevant sibling validators
+6. Confirm recValidity remains rcv6.
+7. Confirm no visible behavior changes.
+8. Update docs/recently_shipped.md and replit.md only as needed.
+
+Return:
+
+1. Executive verdict
+2. What signal gaps were found
+3. Files touched
+4. Calibration changes
+5. Fixture matrix result
+6. Validator results
+7. Any risks / overclaim concerns
+8. Whether re-observation should wait until cold-start retrieval expansion also ships

@@ -301,9 +301,24 @@ export const INTENSITY_HIGH: SignalSet = {
     'propulsive thriller', 'relentlessly paced', 'breathless pace',
     'non-stop action', 'action-packed', 'page-turner',
     'edge of your seat', 'pulse-pounding',
+    // Batch C slice C1 (2026-05-20) — OL-canonical genre tags. The capture-time
+    // 70% miss rate was structural: cold-start thrillers have OL subjects like
+    // 'thriller'/'suspense'/'domestic suspense' rather than marketing-copy
+    // phrases. Phrasal entries mirror PACE_FAST.specific so the two axes
+    // stay coherent on canonical OL strings; mirroring is intentional (same
+    // phrase legitimately implies both fast pace AND high experiential charge).
+    'domestic suspense', 'domestic thriller',
+    'psychological thriller', 'psychological suspense',
+    'crime thriller', 'spy thriller', 'legal thriller', 'medical thriller',
+    'gothic thriller', 'gothic suspense',
   ],
   broad: [
     'propulsive', 'relentless', 'breathless', 'frenetic', 'taut',
+    // Batch C slice C1 — generic OL family tags. Bucket projection requires
+    // ≥2 broad OR ≥1 specific, so a book tagged ONLY 'thriller' or ONLY
+    // 'suspense' still resolves to `unknown` (safe). A book tagged with
+    // both (typical of domestic suspense) resolves to high/broad.
+    'thriller', 'suspense',
   ],
 };
 
@@ -313,9 +328,18 @@ export const INTENSITY_LOW: SignalSet = {
     'cozy mystery', 'cozy fantasy',
     'feel-good', 'feel good',
     'quiet meditation',
+    // Batch C slice C1 (2026-05-20) — OL-canonical cozy/light tags observed
+    // on Thursday Murder Club / The Maid / cozy mystery sub-genre.
+    'gentle fiction', 'quiet fiction', 'cozy crime', 'cozy detective',
+    'humorous mystery', 'humorous fiction', 'comic novel',
+    'slice of life', 'slice-of-life',
   ],
   broad: [
     'gentle', 'quiet', 'cozy', 'understated', 'pastoral',
+    // Batch C slice C1 — single-token additions. 'cosy' is the UK-spelling
+    // mirror of 'cozy' (OL has both); 'sweet' is the cozy-adjacent OL tag
+    // for low-stakes contemporary/romance with no intensity charge.
+    'cosy', 'sweet',
   ],
 };
 
@@ -331,9 +355,25 @@ export const EMOTIONAL_WEIGHT_HIGH: SignalSet = {
     'grief and loss', 'processing grief',
     'coming of age', 'memoir of loss',
     'meditation on mortality', 'marriage in crisis',
+    // Batch C slice C1 (2026-05-20) — OL-canonical heavy-theme tags. The
+    // capture-time miss on `Everything I Never Told You` and similar literary
+    // family novels was because OL tags them 'family drama' / 'domestic
+    // fiction' rather than the specific blurb phrasings already covered.
+    // 'mothers and daughters' / 'fathers and daughters' are canonical OL
+    // theme tags for emotionally weighty family literary fiction.
+    'family drama', 'domestic fiction', 'family tragedy',
+    'loss and grief', 'terminal illness', 'chronic illness',
+    'mother-daughter relationships', 'father-daughter relationships',
+    'mothers and daughters', 'fathers and daughters',
+    'coming-of-age',
   ],
   broad: [
     'grief', 'loss', 'mourning', 'bereavement', 'regret',
+    // Batch C slice C1 — single-token additions. 'widow'/'widowed'/'widowhood'
+    // fire on the bereavement-narrative cluster; pairing with another broad
+    // on the HIGH side is required (≥2 broad rule), so one of these alone
+    // still resolves to `unknown`.
+    'widow', 'widowed', 'widowhood', 'bereaved',
   ],
 };
 
@@ -341,9 +381,22 @@ export const EMOTIONAL_WEIGHT_LOW: SignalSet = {
   specific: [
     'light entertainment', 'beach read', 'comic novel', 'romantic comedy',
     'cozy mystery', 'escapist fiction',
+    // Batch C slice C1 (2026-05-20) — OL-canonical light-theme tags. Mirrors
+    // INTENSITY_LOW additions on the residue axis: cozy mystery / humorous
+    // fiction / cozy fantasy are reliably low-weight in addition to
+    // low-intensity. 'feel-good fiction' / 'feel-good' are the canonical
+    // OL forms (already present as INTENSITY_LOW.specific; mirrored here
+    // for weight coverage).
+    'humorous mystery', 'comic mystery', 'cozy fantasy',
+    'feel-good fiction', 'feel-good', 'feel good',
+    'humorous fiction', 'witty mystery',
   ],
   broad: [
     'light', 'fun', 'escapist', 'entertaining',
+    // Batch C slice C1 — additions paired with existing tokens so a single
+    // generic 'fun' or 'witty' tag is still `unknown` (1 broad rule), but a
+    // 'witty, lighthearted' description hits high/broad on the low side.
+    'lighthearted', 'witty',
   ],
 };
 

@@ -9,7 +9,7 @@
 //      partitionBySpecificity-at-authoring contract).
 //   §2 deriveBookEvidence shape — new fields exist, are frozen AxisMatch
 //      shapes, and are observational only (no other field shape changed).
-//   §3 Fixture matrix (planning §9) — 12 fixtures × 2 axes verdicts.
+//   §3 Fixture matrix (planning §9 + C1 cold-start additions) — 21 fixtures × 2 axes verdicts.
 //   §4 Bucket projection invariants — strong rule (spec≥1 || broad≥2),
 //      conflicting strong → medium, empty corpus → unknown.
 //   §5 Diagonal-stress fixtures — high-weight + non-dark, high-weight +
@@ -124,7 +124,7 @@ assertEq(intensityBucket(evUndef), { bucket: 'unknown', conf: 'unk' }, 'undef in
 // ─────────────────────────────────────────────────────────────────────────────
 // §3 — Fixture matrix (planning §9)
 // ─────────────────────────────────────────────────────────────────────────────
-header('§3 — Fixture matrix (12 fixtures × 2 axes)');
+header('§3 — Fixture matrix (21 fixtures × 2 axes)');
 
 type Fixture = {
   id:       string;
@@ -233,6 +233,96 @@ const FIXTURES: Fixture[] = [
     expectedIntensity: 'unknown', expectedIntensityConf: 'unk',
     expectedWeight: 'unknown',    expectedWeightConf: 'unk',
     role: 'null fixture',
+  },
+  // ── Batch C slice C1 (2026-05-20) — cold-start coverage fixtures.
+  // These are OL-subject-only fixtures (empty descriptions) modeling the
+  // capture-time thin-metadata regime that produced the 70% miss rate.
+  // Together they prove the OL-canonical tag additions resolve `unknown`
+  // → strong on the cold-start corpus shape.
+  {
+    id: 'domestic_suspense_canonical',
+    subjects: ['domestic suspense', 'thriller', 'fiction'],
+    description: '',
+    expectedIntensity: 'high', expectedIntensityConf: 'specific',
+    expectedWeight: 'unknown', expectedWeightConf: 'unk',
+    role: 'C1 cold-start: OL-only domestic suspense — `domestic suspense` specific must fire',
+  },
+  {
+    id: 'psych_thriller_canonical',
+    subjects: ['psychological thriller', 'suspense'],
+    description: '',
+    expectedIntensity: 'high', expectedIntensityConf: 'specific',
+    expectedWeight: 'unknown', expectedWeightConf: 'unk',
+    role: 'C1 cold-start: OL-only psych thriller — specific + paired broad',
+  },
+  {
+    id: 'literary_grief_canonical',
+    subjects: ['literary fiction', 'family drama'],
+    description: '',
+    expectedIntensity: 'unknown', expectedIntensityConf: 'unk',
+    expectedWeight: 'high',      expectedWeightConf: 'specific',
+    role: 'C1 cold-start: OL-only literary family drama — `family drama` specific fires weight only',
+  },
+  {
+    id: 'cozy_mystery_canonical',
+    subjects: ['cozy mystery', 'humorous fiction', 'mystery'],
+    description: '',
+    expectedIntensity: 'low',  expectedIntensityConf: 'specific',
+    expectedWeight: 'low',     expectedWeightConf: 'specific',
+    role: 'C1 cold-start: OL-only cozy mystery — `cozy mystery` fires both axes via mirroring',
+  },
+  {
+    id: 'low_burden_fantasy_canonical',
+    subjects: ['cozy fantasy', 'fantasy'],
+    description: '',
+    expectedIntensity: 'low',  expectedIntensityConf: 'specific',
+    expectedWeight: 'low',     expectedWeightConf: 'specific',
+    role: 'C1 cold-start: OL-only cozy fantasy — low/low on both axes (subject-only)',
+  },
+  {
+    id: 'low_burden_scifi_canonical',
+    subjects: ['humorous fiction', 'science fiction'],
+    description: '',
+    expectedIntensity: 'low',  expectedIntensityConf: 'specific',
+    expectedWeight: 'low',     expectedWeightConf: 'specific',
+    role: 'C1 cold-start: OL-only humorous sci-fi — `humorous mystery` is NOT a match (only sci-fi), but `humorous fiction` is in EMOTIONAL_WEIGHT_LOW.specific',
+  },
+  {
+    id: 'thin_metadata_control',
+    subjects: ['fiction'],
+    description: '',
+    expectedIntensity: 'unknown', expectedIntensityConf: 'unk',
+    expectedWeight: 'unknown',    expectedWeightConf: 'unk',
+    role: 'C1 control: bare `fiction` tag must remain unknown (anti-overfire)',
+  },
+  // ── Batch C slice C1 anti-overfire fixtures.
+  // The new INTENSITY_HIGH.broad tokens (`thriller`, `suspense`) carry the
+  // largest single-source over-firing risk. These three fixtures explicitly
+  // pin the bucket projection: one of them alone is `unknown` (≥2-broad
+  // rule), both together is `high/broad` (the intended cold-start lift).
+  {
+    id: 'thriller_only_antioverfire',
+    subjects: ['thriller'],
+    description: '',
+    expectedIntensity: 'unknown', expectedIntensityConf: 'unk',
+    expectedWeight: 'unknown',    expectedWeightConf: 'unk',
+    role: 'C1 anti-overfire: bare `thriller` (1 broad) stays unknown',
+  },
+  {
+    id: 'suspense_only_antioverfire',
+    subjects: ['suspense'],
+    description: '',
+    expectedIntensity: 'unknown', expectedIntensityConf: 'unk',
+    expectedWeight: 'unknown',    expectedWeightConf: 'unk',
+    role: 'C1 anti-overfire: bare `suspense` (1 broad) stays unknown',
+  },
+  {
+    id: 'thriller_suspense_paired',
+    subjects: ['thriller', 'suspense'],
+    description: '',
+    expectedIntensity: 'high',    expectedIntensityConf: 'broad',
+    expectedWeight: 'unknown',    expectedWeightConf: 'unk',
+    role: 'C1 anti-overfire: `thriller`+`suspense` (2 broad) → high/broad (intended cold-start lift)',
   },
 ];
 

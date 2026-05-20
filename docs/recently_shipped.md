@@ -2,6 +2,56 @@
 
 Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/onboarding sprints. Moved out of replit.md on 2026-05-14 to keep the live operating reference compact. Order is reverse-chronological. For full diffs use `git log -p -- <path>`.
 
+## BookEvidence consolidation — Batch C slice C1 · shadow-mode corpus widening — shipped (2026-05-20)
+
+**Scope (planning-locked, no expansion).** Diagnostic-quality improvement on the four Batch C `SignalSet` exports — `INTENSITY_HIGH`, `INTENSITY_LOW`, `EMOTIONAL_WEIGHT_HIGH`, `EMOTIONAL_WEIGHT_LOW`. The Lens Arbitration observation pass captured a cold-start thriller-dominated deck where `classifier_miss_rate = 70%` (both `int` and `wt` bucket strings resolved to `unknown/unk` on 7 of every 10 top-deck books). Slice C1 cuts the structural cause — vocabulary mismatch between blurb-tuned signals and the blunt OL subject corpus on cold-start books — without changing any user-visible byte. Slice C1+ (admission into ranking / composer / RecCard surface) remains explicitly out of scope and requires its own planning chapter + approval.
+
+**Hard constraints (every one held).**
+- Shadow-mode-only. No ranking, scoring, composer, RecCard, finalGate, No-dark, durable taste, lens persistence, or `recValidity` change. `recValidity.VERSION = rcv6` unchanged.
+- Phrasal-specific / single-token-broad partition preserved at authoring time. Every new `specific` entry contains a space or hyphen; every new `broad` entry is a single token. Pinned by `validate_book_evidence_intensity §1`.
+- No title blacklists. Observed cold-start books (Flowers in the Attic, Gone Girl, Silent Patient, Thursday Murder Club, etc.) are treated as regression fixtures — not as product logic. Specifically `everything_i_never_told_you` / `a_little_life` / `klara_and_the_sun` / `educated_memoir` fixtures stay byte-identical on intensity + weight verdicts.
+- Bucket projection invariants untouched: `≥1 specific OR ≥2 broad → strong`; conflicting strong → `medium/broad`; single broad → `unknown` (anti-escalation). Memoir-trap (§6) and grief-class single-broad isolation (§7) preserved.
+- Unknown is still the honest answer when evidence is genuinely thin — proven by the new `thin_metadata_control` fixture (`subjects: ['fiction']` → `unknown/unknown` on both axes).
+- All 9 acceptance validators stay green. No new validators added — Batch C contract surface is unchanged; the fixture matrix is extended in-place.
+
+**Calibration approach (the decision before code).** Two viable approaches existed:
+1. **OL-subject-vocabulary alignment** — add canonical OL genre/theme tokens (`domestic suspense`, `psychological thriller`, `family drama`, `cozy mystery`, etc.) to the `specific` lists, plus two well-known broad tokens per HIGH/LOW pair (`thriller`+`suspense` on HIGH-intensity; `cosy`+`sweet` on LOW-intensity).
+2. **Description-corpus widening** — augment the semantic corpus with publisher description fields and tune signals against the wider text.
+
+Approach 1 chosen. The cold-start books that produced the 70% miss had thin OL subjects AND thin descriptions — the gap is structural to the corpus vocabulary, not to corpus availability. Approach 2 would not have helped on the captured pool and would have introduced a corpus-shape change requiring `validate_book_evidence` to re-baseline its Batch B byte-identity contract.
+
+**What shipped.**
+- **`lib/evidence/signals.ts`** — extended four `SignalSet` exports:
+  - `INTENSITY_HIGH`: +10 `specific` (`domestic suspense`, `domestic thriller`, `psychological thriller`, `psychological suspense`, `crime thriller`, `spy thriller`, `legal thriller`, `medical thriller`, `gothic thriller`, `gothic suspense`); +2 `broad` (`thriller`, `suspense`).
+  - `INTENSITY_LOW`: +8 `specific` (`gentle fiction`, `quiet fiction`, `cozy crime`, `cozy detective`, `humorous mystery`, `comic novel`, `slice of life`, `slice-of-life`); +2 `broad` (`cosy`, `sweet`).
+  - `EMOTIONAL_WEIGHT_HIGH`: +11 `specific` (`family drama`, `domestic fiction`, `family tragedy`, `loss and grief`, `terminal illness`, `chronic illness`, `mother-daughter relationships`, `father-daughter relationships`, `mothers and daughters`, `fathers and daughters`, `coming-of-age`); +4 `broad` (`widow`, `widowed`, `widowhood`, `bereaved`).
+  - `EMOTIONAL_WEIGHT_LOW`: +8 `specific` (`humorous mystery`, `comic mystery`, `cozy fantasy`, `feel-good fiction`, `feel-good`, `feel good`, `humorous fiction`, `witty mystery`); +2 `broad` (`lighthearted`, `witty`).
+- **`scripts/validate_book_evidence_intensity.ts`** — fixture matrix extended from 12 → 21. Six new cold-start canonical fixtures (`domestic_suspense_canonical`, `psych_thriller_canonical`, `literary_grief_canonical`, `cozy_mystery_canonical`, `low_burden_fantasy_canonical`, `low_burden_scifi_canonical`) all use OL-subject-only inputs (empty descriptions) to model the capture-time thin-metadata regime. One thin-metadata control (`thin_metadata_control` — bare `['fiction']` → unknown/unknown). Three anti-overfire fixtures specifically pin the two newly risky `INTENSITY_HIGH.broad` tokens (`thriller`, `suspense`): `thriller_only_antioverfire` and `suspense_only_antioverfire` (each must stay `unknown` under the ≥2-broad rule), and `thriller_suspense_paired` (must resolve to `high/broad` — the intended cold-start lift). Assertion count grew 122 → 190.
+
+**Fixture matrix result.** All 21 fixtures pass on both axes. All 12 carry-forward fixtures retain identical bucket + confidence verdicts vs. C0 — the new vocabulary cannot regress them because every prior verdict was already either `strong` (so additional matches stay `strong`) or `unknown` (and none of the new tokens fire on those corpora). The three anti-overfire fixtures pin the risky `thriller`/`suspense` broad-token additions: each single-token alone stays `unknown`; the paired case lifts to `high/broad`.
+
+**Validator results (full acceptance loop, all green).**
+- `validate_book_evidence_intensity` — 190/190 (was 122/122 at C0).
+- `validate_book_evidence` — 222/222 (Batch B byte-identity unaffected; the validator only snapshots tone/pace/complexity sets).
+- `validate_no_dark_isolation` — 73/73 (still no `intensity`/`emotionalWeight` refs in `finalGate.ts` / `evaluateBookAgainstIntentLens` avoid_dark branch / `compose.ts` / `RecCard.tsx`; 7×4 fixture-replay `hardExclusions` byte-identical).
+- `validate_lens_arbitration_log_shape` — 75/75 (Phase 1.1 19-key payload bucket-string contract holds).
+- `validate_steering_field_contract` — 44/44.
+- `validate_explanation_faithfulness` — 0 failures (composer purity + P4D-1..P4D-7 preserved).
+- `validate_rec_validity` — green; `rcv6` unchanged.
+- `validate_intent_final_gate` — green.
+- `validate_intent_lens` — green.
+
+**Risks / overclaim concerns.**
+- Adding `thriller` + `suspense` to `INTENSITY_HIGH.broad` is the single largest-payoff and largest-risk change. The bucket rule (`≥2 broad OR ≥1 specific`) means a single `thriller` tag alone is still `unknown` — only a book tagged with BOTH `thriller` AND `suspense` (typical of domestic suspense) lands `high/broad`. A literary novel mis-tagged with both would over-classify, but the shadow-mode contract makes that observable, not actionable.
+- The verified miss-rate reduction is **synthetic** — measured on the fixture matrix, not on a fresh capture. The realistic gain on cold-start corpora is a hypothesis until re-observation. See "re-observation gate" below.
+- `EMOTIONAL_WEIGHT_LOW` now mirrors many `INTENSITY_LOW.specific` entries (`cozy mystery`, `cozy fantasy`, `humorous mystery`, `feel-good`). This is intentional — cozies are reliably both low-intensity AND low-weight — but it does mean those books contribute to both axes from a single OL tag. Acceptable for shadow mode.
+
+**Re-observation should wait until cold-start retrieval expansion also ships.** The captured pool was thriller-saturated because cold-start retrieval (today) over-indexes on the user's two stated genres (Mystery + Thriller) without breadth. Even with C1's improved classification, a re-capture *today* would still show a thriller-heavy deck — the classifier would just label more of it correctly. The proper acceptance gate for "did C1 cut classifier_miss_rate ≤ 35%" is to re-capture *after* the planned cold-start retrieval expansion (planning §10 step 2) widens the pool. Running C1 in isolation as a recap would conflate vocabulary fix with corpus shape and risk a false-positive reading either direction.
+
+**Plan reference.** `docs/plan_first_session_intelligence_foundations.md` §10 step 1 (C1 scope), §11 (re-observation gate metrics).
+
+---
+
 ## Lens-vs-Taste Steering — Phase 1 · shadow-mode `TasteVsIntent` field + `[LENS_ARBITRATION]` DEV log — shipped (2026-05-19)
 
 **Scope (planning-locked, no expansion).** Introduce a session-scoped steering field (`TasteVsIntent ∈ {taste_first, balanced, mood_first}`) and a DEV-only diagnostic log that observes, per top-10 deck book, whether the active intent lens and the user's durable Reading Taste agree, disagree, or would suggest different choices under a hypothetical `mood_first` arbitration profile. Phase 1 is **observation infrastructure only** — it neither moves rankings nor changes any visible byte. The diagnostic data it captures is the input to a separate Phase 2 chapter (arbitration wiring) that will go through its own planning + approval cycle.
