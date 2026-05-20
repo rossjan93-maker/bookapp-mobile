@@ -3726,20 +3726,25 @@ export async function getPersonalizedRecsWithExpert(
     console.log('[FC1_TOP10]', JSON.stringify(top20.slice(0, 10)));
     console.log('[FC2_TOP20]', JSON.stringify(top20.slice(10, 20)));
 
+    // ── Shared bucket projection helper (used by BookEvidence Batch C and
+    // by the [LENS_ARBITRATION] tn/pc/cx fields). Hoisted to the enclosing
+    // forensic block so both sibling scopes can see it. Pure derivation — no
+    // pipeline side effects.
+    const bucket = (hi: { specificCount: number; broadCount: number }, lo: { specificCount: number; broadCount: number }) => {
+      const hiStrong = hi.specificCount >= 1 || hi.broadCount >= 2;
+      const loStrong = lo.specificCount >= 1 || lo.broadCount >= 2;
+      if (hiStrong && loStrong) return { bucket: 'medium', conf: 'broad' as const };
+      if (hiStrong) return { bucket: 'high',    conf: hi.specificCount >= 1 ? 'specific' as const : 'broad' as const };
+      if (loStrong) return { bucket: 'low',     conf: lo.specificCount >= 1 ? 'specific' as const : 'broad' as const };
+      return { bucket: 'unknown', conf: 'unk' as const };
+    };
+
     // ── BookEvidence Batch C (shadow-mode, slice C0) ─────────────────────
     // Top-10 visible deck only. Observation-only — these axes do not feed
     // any ranking, composer reason, RecCard surface, or hard exclusion.
     // Bucket projection: spec>=1 → 'high-spec', broad>=2 → 'broad', else
     // 'unk'. Conflicting strong on both poles → 'med-broad'.
     {
-      const bucket = (hi: { specificCount: number; broadCount: number }, lo: { specificCount: number; broadCount: number }) => {
-        const hiStrong = hi.specificCount >= 1 || hi.broadCount >= 2;
-        const loStrong = lo.specificCount >= 1 || lo.broadCount >= 2;
-        if (hiStrong && loStrong) return { bucket: 'medium', conf: 'broad' as const };
-        if (hiStrong) return { bucket: 'high',    conf: hi.specificCount >= 1 ? 'specific' as const : 'broad' as const };
-        if (loStrong) return { bucket: 'low',     conf: lo.specificCount >= 1 ? 'specific' as const : 'broad' as const };
-        return { bucket: 'unknown', conf: 'unk' as const };
-      };
       baseResult.recs.slice(0, 10).forEach((r, i) => {
         const ev    = deriveBookEvidence(r);
         const intB  = bucket(ev.intensityHigh,       ev.intensityLow);
@@ -3773,7 +3778,13 @@ export async function getPersonalizedRecsWithExpert(
     // contributions + a peek at deck positions 11-25.
     //
     // See: docs/plan_lens_steering_phase1.md §4
-    {
+    //
+    // Defensive wrap (added 2026-05-20 after [REC_PIPELINE_ERROR] regression):
+    // any throw inside this diagnostic block MUST NOT crash the recommender
+    // pipeline. We catch, emit `[LENS_ARB_ERR]` with the error message, and
+    // fall through to BLOCK D so the user still sees their deck. This is the
+    // observation-only contract — logging failure ≠ recommendation failure.
+    try {
       const steering = getSessionSteering();
       const lensActive = !!(intent && isIntentActive(intent));
       const lensKindParts: string[] = [];
@@ -3909,6 +3920,14 @@ export async function getPersonalizedRecsWithExpert(
           fg:   r._intent_trace?.excluded_by ?? null,
         }));
       });
+    } catch (err) {
+      // Observation-only contract: a thrown diagnostic must not propagate
+      // out of the recommender. Surface enough to debug, then continue.
+      console.log('[LENS_ARB_ERR]', JSON.stringify({
+        message: err instanceof Error ? err.message : String(err),
+        name:    err instanceof Error ? err.name    : 'Unknown',
+        stack:   err instanceof Error ? (err.stack ?? '').split('\n').slice(0, 5).join(' | ') : null,
+      }));
     }
 
     // ── BLOCK D: Final ranked feed — top 15 (one per log call) ───────────
