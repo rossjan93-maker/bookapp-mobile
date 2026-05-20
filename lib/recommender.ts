@@ -3601,6 +3601,36 @@ export async function getPersonalizedRecsWithExpert(
   const baseResult = getRankedRecs(candidates, profile, limit, feedback, enrichmentMap, retrieval_trace, intent, seriesReadSet, seriesProgress, authorReadCounts, seriesPositionsRead, req);
   if (__DEV__) console.log('[PERF] phase2_scoring_end', `| ms=${Date.now() - _scoreStart}`);
 
+  // ── [FORENSIC_GATE] diagnostic — TEMPORARY, REMOVE WITH FORENSIC_USER_ID ──
+  // Single line per recommender build. Reports whether the forensic guard at
+  // line ~3605 (and the nested [BOOK_EVIDENCE_C] / [LENS_ARBITRATION] blocks)
+  // will run for this build, with an explicit skip_reason when not. Read-only:
+  // no ranking/scoring/composer/RecCard/finalGate/No-dark/recValidity impact.
+  if (__DEV__) {
+    const uidStr  = userId ?? '';
+    const fidStr  = FORENSIC_USER_ID;
+    const match   = uidStr === fidStr && fidStr !== '';
+    const recsLen = baseResult.recs.length;
+    const willRun = match && recsLen > 0;
+    const skip_reason =
+      willRun                ? null
+      : fidStr === ''        ? 'FORENSIC_USER_ID_empty'
+      : !uidStr              ? 'user_mismatch'
+      : !match               ? 'user_mismatch'
+      : recsLen === 0        ? 'empty_recs'
+      :                        'other';
+    console.log('[FORENSIC_GATE]', JSON.stringify({
+      dev:          true,
+      uid8:         uidStr ? uidStr.slice(0, 8) : null,
+      fid8:         fidStr ? fidStr.slice(0, 8) : '',
+      match,
+      cause:        req?.cause ?? null,
+      recs_len:     recsLen,
+      will_run:     willRun,
+      skip_reason,
+    }));
+  }
+
   // ── Forensic audit log (forensic user only, dev mode) ────────────────────
   if (__DEV__ && userId === FORENSIC_USER_ID) {
     const fmt2 = (n: number) => +n.toFixed(2);
