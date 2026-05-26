@@ -219,11 +219,14 @@ expect(
   `got ${JSON.stringify(assertCurrent(undefined, restoreHashA))}`,
 );
 
-// ── 8: Phase B — VERSION = rcv7 + retrieval-policy-version folded in ───────
-// Cold-Start Retrieval Expansion · Phase B (2026-05-21) bumps the recValidity
-// VERSION from rcv6 to rcv7 (cold_start.coldStartAdjacent flips 0 → 3, first
-// live admission of adjacency candidates). It also folds an explicit
-// COLD_START_RETRIEVAL_POLICY_VERSION constant ('csrp1') into the hash via a
+// ── 8: Phase B.0 — VERSION = rcv8 + retrieval-policy-version csrp2 ─────────
+// Cold-Start Retrieval Expansion · Phase B (2026-05-21) bumped the recValidity
+// VERSION from rcv6 to rcv7 (cold_start.coldStartAdjacent flipped 0 → 3, first
+// live admission of adjacency candidates). Phase B.0 (2026-05-26 — Tier-
+// Definition Cleanup) splits ConfidenceMode 3 → 4 (zero_signal +
+// sparse_onboarding replace the single cold_start key), bumps VERSION to rcv8,
+// and bumps COLD_START_RETRIEVAL_POLICY_VERSION to 'csrp2'. The hash folds an
+// explicit COLD_START_RETRIEVAL_POLICY_VERSION constant ('csrp2') into a
 // `csrp:` segment, so any future cold-start policy change can invalidate
 // caches without a VERSION bump.
 //
@@ -238,9 +241,9 @@ import * as pathRcv from 'path';
 {
   const recValiditySrc = fsRcv.readFileSync(
     pathRcv.resolve(__dirname, '../lib/recValidity.ts'), 'utf-8');
-  expect('§8 VERSION constant pins rcv7',
-    /const\s+VERSION\s*=\s*['"]rcv7['"]/.test(recValiditySrc),
-    'expected `const VERSION = "rcv7"` in lib/recValidity.ts');
+  expect('§8 VERSION constant pins rcv8',
+    /const\s+VERSION\s*=\s*['"]rcv8['"]/.test(recValiditySrc),
+    'expected `const VERSION = "rcv8"` in lib/recValidity.ts');
   expect('§8 hash includes csrp:${COLD_START_RETRIEVAL_POLICY_VERSION} segment',
     /csrp:\$\{COLD_START_RETRIEVAL_POLICY_VERSION\}/.test(recValiditySrc),
     'computeRecConfigHash must fold retrieval-policy-version into hash');
@@ -250,37 +253,48 @@ import * as pathRcv from 'path';
 
   // Behavioral: live hash shape.
   const live = computeRecConfigHash(a);
-  expect('§8 live hash begins with "rcv7|"',
-    live.startsWith('rcv7|'),
+  expect('§8 live hash begins with "rcv8|"',
+    live.startsWith('rcv8|'),
     `got prefix=${live.split('|').slice(0,1).join('|')}`);
-  expect('§8 live hash second segment is "csrp:csrp1"',
-    live.split('|')[1] === 'csrp:csrp1',
+  expect('§8 live hash second segment is "csrp:csrp2"',
+    live.split('|')[1] === 'csrp:csrp2',
     `got second segment=${live.split('|')[1]}`);
 
-  // rcv6 -> rcv7 transition: simulated rcv6 payload hash MUST reject.
-  // Build a "stored" hash that mimics what rcv6 would have produced for
-  // the same logical inputs (rcv6 had no csrp segment).
+  // Phase B.0 cache-invalidation contract: every prior shape must reject.
+  //   - rcv7|csrp:csrp1|… (Phase B persisted decks)
+  //   - rcv7|csrp:csrp2|… (theoretical mid-flight upgrade)
+  //   - rcv8|csrp:csrp1|… (theoretical mid-flight upgrade)
+  //   - rcv6|fg:…         (Phase A, no csrp segment)
+  //   - rcv6|csrp:csrp1|… (defense)
+  const fakeRcv7Csrp1 = 'rcv7|csrp:csrp1|fg:fantasy,sci-fi|ag:romance|rs:dark themes,fast-paced|fa:n.k. jemisin,ursula k. le guin';
+  const r1 = assertCurrent(fakeRcv7Csrp1, live);
+  expect('§8 rcv7|csrp:csrp1 stored hash rejects under rcv8|csrp:csrp2 live',
+    r1.valid === false && r1.reason === 'config_mismatch',
+    `got ${JSON.stringify(r1)}`);
+
+  const fakeRcv7Csrp2 = 'rcv7|csrp:csrp2|fg:fantasy,sci-fi|ag:romance|rs:dark themes,fast-paced|fa:n.k. jemisin,ursula k. le guin';
+  const r2 = assertCurrent(fakeRcv7Csrp2, live);
+  expect('§8 rcv7|csrp:csrp2 stored hash rejects under rcv8|csrp:csrp2 live (VERSION bump only)',
+    r2.valid === false && r2.reason === 'config_mismatch',
+    `got ${JSON.stringify(r2)}`);
+
+  const fakeRcv8Csrp1 = 'rcv8|csrp:csrp1|fg:fantasy,sci-fi|ag:romance|rs:dark themes,fast-paced|fa:n.k. jemisin,ursula k. le guin';
+  const r3 = assertCurrent(fakeRcv8Csrp1, live);
+  expect('§8 rcv8|csrp:csrp1 stored hash rejects under rcv8|csrp:csrp2 live (csrp bump only)',
+    r3.valid === false && r3.reason === 'config_mismatch',
+    `got ${JSON.stringify(r3)}`);
+
   const fakeRcv6Stored = 'rcv6|fg:fantasy,sci-fi|ag:romance|rs:dark themes,fast-paced|fa:n.k. jemisin,ursula k. le guin';
-  const rcv6Reject = assertCurrent(fakeRcv6Stored, live);
-  expect('§8 simulated rcv6 stored hash rejects under rcv7 live (config_mismatch)',
-    rcv6Reject.valid === false && rcv6Reject.reason === 'config_mismatch',
-    `got ${JSON.stringify(rcv6Reject)}`);
+  const r4 = assertCurrent(fakeRcv6Stored, live);
+  expect('§8 simulated rcv6 stored hash rejects under rcv8 live (config_mismatch)',
+    r4.valid === false && r4.reason === 'config_mismatch',
+    `got ${JSON.stringify(r4)}`);
 
-  // A pre-existing rcv6+csrp shape (defense: even if a parallel branch had
-  // shipped csrp without bumping VERSION, the rcv7 bump still invalidates).
   const fakeRcv6WithCsrp = 'rcv6|csrp:csrp1|fg:fantasy,sci-fi|ag:romance|rs:dark themes,fast-paced|fa:n.k. jemisin,ursula k. le guin';
-  const rcv6CsrpReject = assertCurrent(fakeRcv6WithCsrp, live);
-  expect('§8 rcv6+csrp shape rejects under rcv7 live (config_mismatch)',
-    rcv6CsrpReject.valid === false && rcv6CsrpReject.reason === 'config_mismatch',
-    `got ${JSON.stringify(rcv6CsrpReject)}`);
-
-  // Future Phase B.1 simulation: bumping csrp also invalidates without a
-  // VERSION bump (pin the belt-and-suspenders contract).
-  const fakeRcv7CsrpNext = live.replace('csrp:csrp1', 'csrp:csrp2');
-  const csrpReject = assertCurrent(fakeRcv7CsrpNext, live);
-  expect('§8 rcv7+csrp:csrp2 simulated stored rejects under rcv7+csrp:csrp1 live',
-    csrpReject.valid === false && csrpReject.reason === 'config_mismatch',
-    `got ${JSON.stringify(csrpReject)}`);
+  const r5 = assertCurrent(fakeRcv6WithCsrp, live);
+  expect('§8 rcv6+csrp shape rejects under rcv8 live (config_mismatch)',
+    r5.valid === false && r5.reason === 'config_mismatch',
+    `got ${JSON.stringify(r5)}`);
 }
 
 // ── Report ─────────────────────────────────────────────────────────────────

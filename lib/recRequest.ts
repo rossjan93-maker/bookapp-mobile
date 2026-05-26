@@ -189,7 +189,11 @@ export async function buildRecRequest(
   });
 
   const policy: RecRequestPolicy = {
-    confidenceMode:         confidenceModeForTier(opts.profile.tier),
+    // Phase B.0 (2026-05-26): 2-arg projection. `profile.tier` still carries
+    // the BOOSTED tier value (unchanged for all other consumers);
+    // `profile.intakeBoosted` is the new flag that distinguishes
+    // sparse_onboarding (intake-boosted tier-0) from zero_signal (raw tier-0).
+    confidenceMode:         confidenceModeForTier(opts.profile.tier, opts.profile.intakeBoosted),
     statedPreferenceFloor:  STATED_TASTE_POLICY.prefFloor,
     statedPreferenceWeight: STATED_TASTE_POLICY.prefBonusHigh,
     softAvoidFloor:         STATED_TASTE_POLICY.avoidFloor,

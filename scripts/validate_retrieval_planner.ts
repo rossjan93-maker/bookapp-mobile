@@ -65,7 +65,7 @@ function mkReq(opts: {
   favorites?:      AffinityKey[];
   avoids?:         AffinityKey[];
   cause?:          BuildCause;
-  confidenceMode?: 'cold_start' | 'thin' | 'high_signal';
+  confidenceMode?: 'zero_signal' | 'sparse_onboarding' | 'thin' | 'high_signal';
 }): RecRequest {
   return {
     userId:  'test',
@@ -274,7 +274,7 @@ section('Degenerate — empty stated favorites disables statedGenres');
 section('Plan-size invariant');
 {
   const ctx = mkDenseCtx();
-  for (const mode of ['cold_start', 'thin', 'high_signal'] as const) {
+  for (const mode of ['zero_signal', 'sparse_onboarding', 'thin', 'high_signal'] as const) {
     for (const cause of ['session_open', 'explicit_preference_edit'] as const) {
       const req = mkReq({
         favorites: ['nonfiction', 'memoir_bio', 'literary', 'fantasy_scifi', 'horror'],
@@ -464,15 +464,16 @@ section('A7d — softAvoidDeprioritized flag set on revealedLanes items under re
 // =============================================================================
 // Cold-Start Retrieval Expansion · Phase B — planner-side no-regression
 // =============================================================================
-section('Phase B — coldStartAdjacent quota=3 for cold_start, 0 elsewhere');
+section('Phase B.0 — coldStartAdjacent quota=3 for zero_signal+sparse_onboarding, 0 elsewhere');
 {
-  // Branch policy exists in every plan; quota is mode-specific in Phase B.
-  const expected: Record<'cold_start' | 'thin' | 'high_signal', number> = {
-    cold_start: 3,
-    thin: 0,
-    high_signal: 0,
+  // Branch policy exists in every plan; quota is mode-specific in Phase B.0.
+  const expected: Record<'zero_signal' | 'sparse_onboarding' | 'thin' | 'high_signal', number> = {
+    zero_signal:       3,
+    sparse_onboarding: 3,
+    thin:              0,
+    high_signal:       0,
   };
-  for (const mode of ['cold_start', 'thin', 'high_signal'] as const) {
+  for (const mode of ['zero_signal', 'sparse_onboarding', 'thin', 'high_signal'] as const) {
     const req = mkReq({ favorites: ['thriller_mystery'], confidenceMode: mode });
     const ctx = mode === 'high_signal' ? mkDenseCtx() : mkColdCtx();
     const plan = planBranches(req, ctx);
@@ -482,7 +483,7 @@ section('Phase B — coldStartAdjacent quota=3 for cold_start, 0 elsewhere');
       plan.branchPolicies.coldStartAdjacent.quota === expected[mode],
       `got ${plan.branchPolicies.coldStartAdjacent.quota}`);
     const adjItems = plan.fetchItems.filter(i => i.branch === 'coldStartAdjacent');
-    if (mode === 'cold_start') {
+    if (mode === 'zero_signal' || mode === 'sparse_onboarding') {
       check(`${mode}: admits up to quota coldStartAdjacent fetchItems (≤3)`,
         adjItems.length <= 3 && adjItems.length > 0,
         `got ${adjItems.length}`);
@@ -495,7 +496,7 @@ section('Phase B — coldStartAdjacent quota=3 for cold_start, 0 elsewhere');
 
   // BRANCH_ORDER includes coldStartAdjacent at the end (so primary branches
   // win quota races; adjacency is supplemental).
-  const req = mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'cold_start' });
+  const req = mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'sparse_onboarding' });
   const plan = planBranches(req, mkColdCtx());
   check('branchOrder includes coldStartAdjacent', plan.branchOrder.includes('coldStartAdjacent'));
   check('branchOrder places coldStartAdjacent last',

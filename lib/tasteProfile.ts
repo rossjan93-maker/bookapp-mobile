@@ -38,6 +38,14 @@ export type TasteProfileEvidence = {
 
 export type TasteProfile = {
   tier:              ConfidenceTier;
+  /** Phase B.0 (2026-05-26): true iff the intake-boost predicate fired
+   *  (intake_completed='true' AND favorite_genres.length > 0 AND
+   *  strongSignalCount < 5). Read ONLY by `confidenceModeForTier` to
+   *  distinguish `sparse_onboarding` (intake-boosted tier-0) from
+   *  `zero_signal` (raw tier-0). All other consumers continue to read
+   *  `tier` (which still surfaces the BOOSTED value to preserve byte-
+   *  identical behavior in scoring, copy, hypotheses, etc.). */
+  intakeBoosted:     boolean;
   label:             string;
   confidence:        'low' | 'medium' | 'high';
   preferred_traits:  Record<string, number>;
@@ -721,6 +729,16 @@ export async function computeTasteProfile(
     ? Math.max(strongSignalCount, 5)
     : strongSignalCount;
 
+  // Phase B.0 (2026-05-26): the intake boost has been the silent reason why
+  // every onboarded sparse user landed on `thin` instead of cold-start. We
+  // now expose the boost predicate as a separate flag so
+  // `confidenceModeForTier` can distinguish `sparse_onboarding` (intake-
+  // boosted tier-0) from `zero_signal` (true raw tier-0). The boost still
+  // applies to `tier` itself so every other consumer (scoring, copy,
+  // hypotheses, det_lanes gates) sees byte-identical behavior — the new
+  // flag is read ONLY by the policy projection.
+  const intakeBoosted = intakeCompleted && hasIntakeGenres && strongSignalCount < 5;
+
   const tier       = computeConfidenceTier(evidence, effectiveSignalCount);
   const label      = CONFIDENCE_LABELS[tier];
   const confidence = confidenceLevel(tier);
@@ -830,6 +848,7 @@ export async function computeTasteProfile(
 
   return {
     tier,
+    intakeBoosted,
     label,
     confidence,
     preferred_traits,

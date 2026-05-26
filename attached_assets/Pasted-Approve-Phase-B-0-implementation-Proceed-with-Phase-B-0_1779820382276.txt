@@ -1,0 +1,121 @@
+Approve Phase B.0 implementation.
+
+Proceed with:
+
+Phase B.0 — Tier-Definition Cleanup
+
+Use the planning doc:
+
+docs/plan_phase_b0_tier_definition_cleanup.md
+
+Goal:
+Separate account/auth newness from recommendation signal-density so sparse-onboarding users receive coldStartAdjacent behavior, while real-library thin and high_signal users remain protected.
+
+Implement the approved model:
+
+ConfidenceMode:
+
+* zero_signal
+* sparse_onboarding
+* thin
+* high_signal
+
+Retire cold_start as a confidence mode value.
+Keep coldStartAdjacent as the branch/quota name.
+
+Implementation approach:
+Use the approved Option A:
+
+* expanded ConfidenceMode union
+* confidenceModeForTier(rawTier, intakeBoosted)
+* TasteProfile.tier stays byte-identical for non-policy readers
+* only policy routing learns the intakeBoosted distinction
+
+Approved quota table:
+
+zero_signal:
+statedGenres: 4
+revealedAuthors: 1
+revealedLanes: 5
+coldStartAdjacent: 3
+
+sparse_onboarding:
+statedGenres: 4
+revealedAuthors: 1
+revealedLanes: 5
+coldStartAdjacent: 3
+
+thin:
+statedGenres: 4
+revealedAuthors: 1
+revealedLanes: 5
+coldStartAdjacent: 0
+
+high_signal:
+statedGenres: 3
+revealedAuthors: 3
+revealedLanes: 4
+coldStartAdjacent: 0
+
+Cache/versioning:
+
+* bump recValidity rcv7 → rcv8
+* bump COLD_START_RETRIEVAL_POLICY_VERSION csrp1 → csrp2
+* resulting configHash should include rcv8|csrp:csrp2|...
+
+Validators:
+Implement the fixtures from §9 of the planning doc, especially:
+
+* zero_signal_no_intake
+* zero_signal_with_avoid_only
+* sparse_onboarding_mystery_thriller
+* early_library_3_ratings
+* thin_7_ratings
+* high_signal_20_books
+
+Update:
+
+* validate_cold_start_adjacent
+* validate_retrieval_planner
+* validate_rec_validity
+* validate_rec_payload_cache_lens
+* any affected RecRequest/policy validators
+
+Important invariant:
+After Phase B.0, both thin and high_signal must have coldStartAdjacent=0. This is now the mature/real-library no-regression boundary.
+
+Hard constraints:
+
+* Do not change ranking.
+* Do not change scoring.
+* Do not change composer.
+* Do not change RecCard.
+* Do not change finalGate.
+* Do not change No-dark policy.
+* Do not mutate durable Reading Taste.
+* Do not persist lens state.
+* Do not start Phase B.1.
+* Do not start Phase 2 steering.
+* Do not title-blacklist.
+* Do not introduce popular/generic fallback.
+* Do not revive Subject Coverage work.
+* Do not change anchors.
+* Do not admit adjacency to real-library thin users in this slice.
+
+Docs:
+
+* Update replit.md with a Phase B.0 row.
+* Update docs/recently_shipped.md.
+* Update the operator runbook sanity check so S0 expects density=sparse_onboarding, liveQuota=3, liveAdmittedCount>0 for the sparse Mystery + Thriller test account.
+
+Return:
+
+1. Executive verdict
+2. Files touched
+3. Exact confidenceMode changes
+4. Quota table result
+5. Cache/versioning proof
+6. Fixture results
+7. Full validator results
+8. Whether the sparse test account should now classify as sparse_onboarding
+9. Next manual capture steps

@@ -64,7 +64,17 @@ import { COLD_START_RETRIEVAL_POLICY_VERSION } from './recPolicy';
 // COLD_START_RETRIEVAL_POLICY_VERSION constant is also folded into the
 // hash below so any future cold-start policy change invalidates caches
 // without needing a separate VERSION bump.
-const VERSION = 'rcv7';
+// rcv8 (2026-05-26) — Phase B.0 Tier-Definition Cleanup lands.
+// `ConfidenceMode` union split 3 → 4: `cold_start` retired as a value;
+// `zero_signal` + `sparse_onboarding` replace it; `thin` + `high_signal`
+// unchanged at the type level. The live `coldStartAdjacent=3` quota
+// re-keys from `cold_start` (effectively unreachable) onto both new
+// tier-0 modes. Any persisted deck tagged with an rcv7 hash was scored
+// inside a recommender that thought `confidenceMode` could be
+// `'cold_start'`; that string is no longer in the union. Force-invalidate
+// at the hash layer so every device discards its cache and rebuilds on
+// next foreground rather than relying on consumer-side defensive coding.
+const VERSION = 'rcv8';
 
 export type RecConfigInputs = {
   favorite_genres:  readonly string[];

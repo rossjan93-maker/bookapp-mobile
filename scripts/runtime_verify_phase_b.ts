@@ -9,9 +9,9 @@
 // RecRequest fixtures and reports:
 //
 //   §A. Runtime status
-//   §B. Cache invalidation: rcv6-shaped stored hash rejects under live rcv7+csrp1
-//   §C. Cold-start adjacency admission (sparse Mystery+Thriller)
-//   §D. Thin profile: 0 admission
+//   §B. Cache invalidation: rcv7-shaped stored hash rejects under live rcv8+csrp2
+//   §C. Cold-start adjacency admission (sparse_onboarding Mystery+Thriller)
+//   §D. Thin profile: 0 admission (Phase B.0 broadened mature-profile invariant)
 //   §E. high_signal profile: 0 admission (mature-profile invariant)
 //   §F. Guardrail source-greps (forbidden surfaces untouched)
 //   §G. Lens-blindness: log payload byte-identical with/without a lens chip
@@ -34,7 +34,7 @@ const hr = () => log('─'.repeat(76));
 // surface stays empty (cold-start reality: no behavioral history).
 function makeReq(opts: {
   userId: string;
-  confidenceMode: 'cold_start' | 'thin' | 'high_signal';
+  confidenceMode: 'zero_signal' | 'sparse_onboarding' | 'thin' | 'high_signal';
   favoriteGenres: readonly string[];
   softAvoids?: readonly string[];
   withLensChip?: boolean;
@@ -100,9 +100,10 @@ const emptyCtx: BranchContext = {
 // ─────────────────────────────────────────────────────────────────────────────
 log('\n═══ §A · Runtime constants (live module reads) ════════════════════════');
 log(`COLD_START_RETRIEVAL_POLICY_VERSION = ${JSON.stringify(COLD_START_RETRIEVAL_POLICY_VERSION)}`);
-log(`BRANCH_QUOTAS.cold_start.coldStartAdjacent  = ${BRANCH_QUOTAS.cold_start.coldStartAdjacent}`);
-log(`BRANCH_QUOTAS.thin.coldStartAdjacent        = ${BRANCH_QUOTAS.thin.coldStartAdjacent}`);
-log(`BRANCH_QUOTAS.high_signal.coldStartAdjacent = ${BRANCH_QUOTAS.high_signal.coldStartAdjacent}`);
+log(`BRANCH_QUOTAS.zero_signal.coldStartAdjacent       = ${BRANCH_QUOTAS.zero_signal.coldStartAdjacent}`);
+log(`BRANCH_QUOTAS.sparse_onboarding.coldStartAdjacent = ${BRANCH_QUOTAS.sparse_onboarding.coldStartAdjacent}`);
+log(`BRANCH_QUOTAS.thin.coldStartAdjacent              = ${BRANCH_QUOTAS.thin.coldStartAdjacent}`);
+log(`BRANCH_QUOTAS.high_signal.coldStartAdjacent       = ${BRANCH_QUOTAS.high_signal.coldStartAdjacent}`);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // §B. Cache invalidation behaviour against the LIVE hash
@@ -115,24 +116,26 @@ const liveHash = computeRecConfigHash({
   reading_styles:   [],
   favorite_authors: null,
 });
-log(`live hash (rcv7+csrp1): ${liveHash}`);
-log(`  starts with "rcv7|csrp:csrp1|" → ${liveHash.startsWith('rcv7|csrp:csrp1|')}`);
-log(`  contains "|csrp:csrp1|"        → ${liveHash.includes('|csrp:csrp1|')}`);
+log(`live hash (rcv8+csrp2): ${liveHash}`);
+log(`  starts with "rcv8|csrp:csrp2|" → ${liveHash.startsWith('rcv8|csrp:csrp2|')}`);
+log(`  contains "|csrp:csrp2|"        → ${liveHash.includes('|csrp:csrp2|')}`);
 
-// Simulate three stored payloads representative of what real users would have
-// in AsyncStorage right after Phase B deploy.
+// Simulate stored payloads representative of what real users would have
+// in AsyncStorage right after Phase B.0 deploy.
 const storedSamples: Record<string, string | null | undefined> = {
   'pre_phase_b (rcv6)':            'rcv6|fg:mystery,thriller|ag:horror|rs:|fa:',
   'pre_phase_b (rcv6+csrp1 hyp.)': 'rcv6|csrp:csrp1|fg:mystery,thriller|ag:horror|rs:|fa:',
-  'future_csrp2 (rcv7+csrp2)':     'rcv7|csrp:csrp2|fg:mystery,thriller|ag:horror|rs:|fa:',
+  'phase_b (rcv7+csrp1)':          'rcv7|csrp:csrp1|fg:mystery,thriller|ag:horror|rs:|fa:',
+  'mixed (rcv7+csrp2)':            'rcv7|csrp:csrp2|fg:mystery,thriller|ag:horror|rs:|fa:',
+  'mixed (rcv8+csrp1)':            'rcv8|csrp:csrp1|fg:mystery,thriller|ag:horror|rs:|fa:',
   'no_stored_hash':                null,
-  'current (rcv7+csrp1)':          liveHash,
+  'current (rcv8+csrp2)':          liveHash,
 };
 for (const [label, stored] of Object.entries(storedSamples)) {
   const v = assertCurrent(stored as any, liveHash);
   log(`  ${label.padEnd(34)} → valid=${v.valid} reason=${v.reason}`);
 }
-log('  → rcv6 / rcv6+csrp1 / rcv7+csrp2 / absent all reject; only exact-match restores.');
+log('  → all pre-rcv8|csrp:csrp2 shapes reject; only exact-match restores.');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // §C. Cold-start admission: sparse Mystery + Thriller, avoid Horror
@@ -141,7 +144,7 @@ log('\n═══ §C · Cold-start admission (sparse Mystery+Thriller / avoid Ho
 
 const coldReq = makeReq({
   userId: 'verify-cold-001',
-  confidenceMode: 'cold_start',
+  confidenceMode: 'sparse_onboarding',
   favoriteGenres: ['thriller_mystery'],
   softAvoids:     ['horror'],
 });
@@ -156,35 +159,35 @@ log(`adjacency reasons                   = ${JSON.stringify(coldAdj.map(i => i.r
 log(`adjacency signalClass (all rows)    = ${JSON.stringify([...new Set(coldAdj.map(i => i.signalClass))])}`);
 log(`adjacency item kind (all rows)      = ${JSON.stringify([...new Set(coldAdj.map(i => i.kind))])}`);
 
-// Cold-start with no favorites — must produce zero admission (safety).
+// zero_signal with no favorites — must produce zero admission (safety).
 const coldNoFav = planBranches(
-  makeReq({ userId: 'verify-cold-002', confidenceMode: 'cold_start', favoriteGenres: [] }),
+  makeReq({ userId: 'verify-cold-002', confidenceMode: 'zero_signal', favoriteGenres: [] }),
   emptyCtx,
 );
-log(`\ncold_start with empty favorites → adjacency count = ${
+log(`\nzero_signal with empty favorites → adjacency count = ${
   coldNoFav.fetchItems.filter(i => i.branch === 'coldStartAdjacent').length
 }  (expected: 0)`);
 
-// Cold-start where the favorite is soft-avoided (defense-in-depth).
+// sparse_onboarding where the favorite is soft-avoided (defense-in-depth).
 const coldSoftAvoided = planBranches(
   makeReq({
     userId: 'verify-cold-003',
-    confidenceMode: 'cold_start',
+    confidenceMode: 'sparse_onboarding',
     favoriteGenres: ['thriller_mystery'],
     softAvoids:     ['thriller_mystery'],
   }),
   emptyCtx,
 );
-log(`cold_start where favorite ∈ softAvoids → adjacency count = ${
+log(`sparse_onboarding where favorite ∈ softAvoids → adjacency count = ${
   coldSoftAvoided.fetchItems.filter(i => i.branch === 'coldStartAdjacent').length
 }  (expected: 0 — defense-in-depth)`);
 
-// Cold-start fantasy-only — no adjacency entry for fantasy_scifi, must no-op.
+// sparse_onboarding fantasy-only — no adjacency entry for fantasy_scifi, must no-op.
 const coldFantasy = planBranches(
-  makeReq({ userId: 'verify-cold-004', confidenceMode: 'cold_start', favoriteGenres: ['fantasy_scifi'] }),
+  makeReq({ userId: 'verify-cold-004', confidenceMode: 'sparse_onboarding', favoriteGenres: ['fantasy_scifi'] }),
   emptyCtx,
 );
-log(`cold_start fantasy_scifi only → adjacency count = ${
+log(`sparse_onboarding fantasy_scifi only → adjacency count = ${
   coldFantasy.fetchItems.filter(i => i.branch === 'coldStartAdjacent').length
 }  (expected: 0 — no anchor entry)`);
 
@@ -269,8 +272,8 @@ for (const f of surfaceFiles) {
   try {
     const s = readSrc(f);
     const csrpRef = s.includes('COLD_START_RETRIEVAL_POLICY_VERSION');
-    const rcv7Ref = s.includes("'rcv7'");
-    log(`  ${f.padEnd(40)} csrp_ref=${csrpRef}  rcv7_ref=${rcv7Ref}  (both expected: false)`);
+    const rcv8Ref = s.includes("'rcv8'");
+    log(`  ${f.padEnd(40)} csrp_ref=${csrpRef}  rcv8_ref=${rcv8Ref}  (both expected: false)`);
   } catch {
     log(`  ${f.padEnd(40)} (file not found — skipped)`);
   }
@@ -280,8 +283,8 @@ for (const f of surfaceFiles) {
 // §G. Lens-blindness: planBranches output identical with and without a lens
 // ─────────────────────────────────────────────────────────────────────────────
 log('\n═══ §G · Lens-blindness (qAdjacent ignores chip presence) ═════════════');
-const noLens   = planBranches(makeReq({ userId: 'lens-test', confidenceMode: 'cold_start', favoriteGenres: ['thriller_mystery'] }), emptyCtx);
-const withLens = planBranches(makeReq({ userId: 'lens-test', confidenceMode: 'cold_start', favoriteGenres: ['thriller_mystery'], withLensChip: true }), emptyCtx);
+const noLens   = planBranches(makeReq({ userId: 'lens-test', confidenceMode: 'sparse_onboarding', favoriteGenres: ['thriller_mystery'] }), emptyCtx);
+const withLens = planBranches(makeReq({ userId: 'lens-test', confidenceMode: 'sparse_onboarding', favoriteGenres: ['thriller_mystery'], withLensChip: true }), emptyCtx);
 const a = JSON.stringify(noLens.fetchItems.filter(i => i.branch === 'coldStartAdjacent'));
 const b = JSON.stringify(withLens.fetchItems.filter(i => i.branch === 'coldStartAdjacent'));
 log(`adjacency items without lens chip = ${a}`);

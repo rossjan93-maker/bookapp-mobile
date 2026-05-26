@@ -1,14 +1,17 @@
 // =============================================================================
 // retrieval/branches/coldStartAdjacent.ts — Cold-Start Retrieval Expansion
-//                                            Phase B branch (live for cold_start)
+//                                            Phase B branch (live for tier-0)
 //
-// Pulls "one step adjacent" subject anchors for cold-start users whose
-// stated favorites map to a populated adjacency entry (Mystery + Thriller
-// in the current slice). Phase A shipped the branch production-inert
-// (quota=0 everywhere). Phase B (2026-05-21) flips
-// BRANCH_QUOTAS.cold_start.coldStartAdjacent to 3 — the first live
-// admission. thin and high_signal stay at 0 (high_signal forever, per
-// mature-profile invariant).
+// Pulls "one step adjacent" subject anchors for tier-0 users whose stated
+// favorites map to a populated adjacency entry (Mystery + Thriller in the
+// current slice). Phase A shipped the branch production-inert (quota=0
+// everywhere). Phase B (2026-05-21) flipped the live quota to 3 on what
+// was then the single `cold_start` ConfidenceMode. Phase B.0 (2026-05-26)
+// split the ConfidenceMode union 3 → 4 (cold_start retired); the live
+// quota now sits on BOTH `zero_signal` and `sparse_onboarding` — the
+// re-keyed tier-0 states. `thin` and `high_signal` stay at 0
+// (high_signal forever, per mature-profile invariant; thin's slot is
+// Phase B.1 territory).
 //
 // Branch contract (mirrors statedGenres.ts):
 //   - Pure / synchronous.
@@ -25,8 +28,10 @@
 //
 // Phase B hard constraints (do not weaken without a planning chapter +
 // approval; pinned by scripts/validate_cold_start_adjacent.ts):
-//   - cold_start quota = 3. thin = 0. high_signal = 0 (mature-profile
-//     invariant; locked forever).
+//   - zero_signal quota = 3. sparse_onboarding quota = 3. thin = 0.
+//     high_signal = 0 (mature-profile invariant; locked forever).
+//     Phase B.0 broadened the mature-profile byte-identity invariant
+//     to include `thin`.
 //   - No composer / RecCard / queue-boundary-gate / No-dark consumption.
 //     Adjacency items flow through the same scoring, lens, and queue-boundary
 //     machinery as primary candidates; lens-aware breadth modulation is

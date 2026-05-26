@@ -22,12 +22,33 @@ import type { AffinityKey } from './taxonomy/genres';
 // the codebase. Tier remains its own concept on TasteProfile; confidenceMode
 // is the policy projection.
 
-export type ConfidenceMode = 'cold_start' | 'thin' | 'high_signal';
+export type ConfidenceMode =
+  | 'zero_signal'        // tier 0, no intake boost — true net-new account
+  | 'sparse_onboarding'  // tier 0 raw, intake-boosted (onboarded but no library)
+  | 'thin'               // tier 1 from real signal (no boost dependency)
+  | 'high_signal';       // tier 2 or 3 — mature-profile invariant
 
-export function confidenceModeForTier(tier: number): ConfidenceMode {
-  if (tier <= 0) return 'cold_start';
-  if (tier <= 1) return 'thin';
-  return 'high_signal';
+// Phase B.0 (2026-05-26): ConfidenceMode split 3 → 4. `cold_start` retired as
+// a mode value; the "tier 0, no real history" lattice position is now
+// expressed via two states: `zero_signal` (auth-new, no onboarding) and
+// `sparse_onboarding` (onboarded with favorite genres, no library yet).
+// The Phase B `coldStartAdjacent=3` quota moves from the (unreachable in
+// practice) cold_start mode to sparse_onboarding, which is the product state
+// the Phase B planning chapter actually targeted. See
+// docs/plan_phase_b0_tier_definition_cleanup.md.
+//
+// `rawTier` is the tier computed from the UNBOOSTED strongSignalCount.
+// `intakeBoosted` is the new TasteProfile flag indicating the intake-boost
+// predicate fired (intake_completed=true AND favorite_genres.length > 0 AND
+// strongSignalCount < 5).
+export function confidenceModeForTier(
+  rawTier:       number,
+  intakeBoosted: boolean,
+): ConfidenceMode {
+  if (rawTier >= 2) return 'high_signal';
+  if (rawTier === 1) return 'thin';
+  // rawTier <= 0
+  return intakeBoosted ? 'sparse_onboarding' : 'zero_signal';
 }
 
 // ── Stated taste policy (P1) ─────────────────────────────────────────────────
@@ -161,33 +182,42 @@ export type BranchQuotas = {
   statedGenres:       number;
   revealedAuthors:    number;
   revealedLanes:      number;
-  /** Cold-Start Retrieval Expansion · Phase B (live; cold_start only).
+  /** Cold-Start Retrieval Expansion · Phase B (live).
    *  Phase A shipped this slot at quota=0 everywhere (production-inert).
-   *  Phase B (2026-05-21) flips cold_start to 3 — the first live admission of
-   *  adjacency candidates. thin and high_signal MUST stay 0:
-   *    - thin: adjacency targets users with effectively no behavioral signal;
-   *      thin users have some signal and admission there is Phase B.1 surface.
+   *  Phase B (2026-05-21) introduced live admission at cold_start=3.
+   *  Phase B.0 (2026-05-26) RE-KEYS the live quota: the ConfidenceMode union
+   *  split (cold_start → {zero_signal, sparse_onboarding}) moves the live
+   *  `=3` quota onto BOTH new tier-0 modes. thin and high_signal MUST stay 0:
+   *    - thin: real-library tier-1 user; whether adjacency helps here is a
+   *      Phase B.1 question with its own evidence cycle.
    *    - high_signal: mature-profile byte-identity invariant (pinned by
-   *      scripts/validate_cold_start_adjacent.ts §5).
+   *      scripts/validate_cold_start_adjacent.ts §5; broadened in Phase B.0
+   *      to include thin).
    *  Branch runs LAST in BRANCH_ORDER so primary branches always win quota
    *  races. ANY change to these numbers MUST bump
    *  COLD_START_RETRIEVAL_POLICY_VERSION below — that constant is folded into
-   *  the recValidity hash so cached cold-start decks invalidate cleanly. */
+   *  the recValidity hash so cached decks invalidate cleanly. */
   coldStartAdjacent:  number;
 };
 
 export const BRANCH_QUOTAS: Readonly<Record<ConfidenceMode, BranchQuotas>> = {
-  // Cold start: stated dominates because the user has nothing else to draw on.
-  // Phase B: coldStartAdjacent=3 admits adjacency anchors for cold-start users
-  // whose favorites map to populated adjacency entries (Mystery + Thriller
+  // Zero signal: auth-new user, no onboarding intake. Same retrieval recipe
+  // as sparse_onboarding — both are tier-0 raw; splitting at the type level
+  // future-proofs the surface without forcing a numeric difference now.
+  zero_signal:       { statedGenres: 4, revealedAuthors: 1, revealedLanes: 5, coldStartAdjacent: 3 },
+  // Sparse onboarding: intake-boosted tier-0 user. THE primary target of
+  // Cold-Start Retrieval Expansion Phase B — adjacency injection runs here
+  // for favorites that map to populated adjacency entries (Mystery + Thriller
   // only in the current slice).
-  cold_start:  { statedGenres: 4, revealedAuthors: 1, revealedLanes: 5, coldStartAdjacent: 3 },
-  // Thin: similar; revealed signals exist but are unreliable.
-  thin:        { statedGenres: 4, revealedAuthors: 1, revealedLanes: 5, coldStartAdjacent: 0 },
+  sparse_onboarding: { statedGenres: 4, revealedAuthors: 1, revealedLanes: 5, coldStartAdjacent: 3 },
+  // Thin (real-library tier 1, strong=5..9): library starts to anchor the
+  // deck. coldStartAdjacent stays 0 — Phase B.1 may revisit with its own
+  // evidence; Phase B.0 explicitly does not pre-commit.
+  thin:              { statedGenres: 4, revealedAuthors: 1, revealedLanes: 5, coldStartAdjacent: 0 },
   // High signal (dense / tier ≥ 2): revealed dominates BUT stated keeps a
   // material seat at the table — the pre-P2A bug was statedGenres = 0 here.
   // coldStartAdjacent stays 0 here forever (mature-profile invariant).
-  high_signal: { statedGenres: 3, revealedAuthors: 3, revealedLanes: 4, coldStartAdjacent: 0 },
+  high_signal:       { statedGenres: 3, revealedAuthors: 3, revealedLanes: 4, coldStartAdjacent: 0 },
 };
 
 // ── Cold-Start Retrieval Policy Version (Phase B) ────────────────────────────
@@ -209,7 +239,12 @@ export const BRANCH_QUOTAS: Readonly<Record<ConfidenceMode, BranchQuotas>> = {
 // History:
 //   csrp1 (2026-05-21) — Phase B initial live admission:
 //                        cold_start.coldStartAdjacent 0 → 3.
-export const COLD_START_RETRIEVAL_POLICY_VERSION = 'csrp1';
+//   csrp2 (2026-05-26) — Phase B.0 re-keying: cold_start retired as a
+//                        ConfidenceMode value; live quota=3 moves to
+//                        zero_signal AND sparse_onboarding. thin and
+//                        high_signal stay 0 (mature-profile invariant
+//                        broadened to both).
+export const COLD_START_RETRIEVAL_POLICY_VERSION = 'csrp2';
 
 /** BuildCause = 'explicit_preference_edit': boost stated, trim lanes,
  *  net plan size unchanged. Other causes leave quotas at base. */

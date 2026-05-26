@@ -2,6 +2,44 @@
 
 Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/onboarding sprints. Moved out of replit.md on 2026-05-14 to keep the live operating reference compact. Order is reverse-chronological. For full diffs use `git log -p -- <path>`.
 
+## Cold-Start Retrieval Expansion · Phase B.0 — Tier-Definition Cleanup — shipped (2026-05-26)
+
+**Scope.** Split `ConfidenceMode` from 3 values to 4 to remove the conceptual ambiguity of the single `cold_start` key (which conflated "zero signal" with "intake-completed, intake-boost still active"). Move the Phase B live `coldStartAdjacent` quota off the retired `cold_start` key onto the two new tier-0 keys (`zero_signal` + `sparse_onboarding`); broaden the mature-profile byte-identity invariant from `high_signal` only to BOTH `thin` + `high_signal`. No new retrieval behavior — same anchor set, same quota number (3), same plumbing. The slice exists to make Phase B.1 planning unambiguous about which population the adjacency expansion targets.
+
+**Why two bumps.** `rcv7 → rcv8` invalidates every persisted Phase B cold-start deck (built under the single-key `cold_start` ConfidenceMode) so the user sees a deck rebuilt under the new 4-mode plumbing on first foreground after deploy. `csrp1 → csrp2` is the belt — any future cold-start retrieval-policy change after Phase B.0 can still invalidate with just a `csrp` bump. Hash shape now reads `rcv8|csrp:csrp2|fg:…|ag:…|rs:…|fa:…`.
+
+**The 4-mode mapping.**
+- `zero_signal` — tier 0, intake-boost inactive (no favorites, no intake completed). Quota 3 (no anchor seed → no items in practice, but plumbing matches sparse_onboarding so the type union is honest).
+- `sparse_onboarding` — tier 0, intake completed, intake-boost still active (<5 strong signals). Quota 3. **Primary target population for cold-start adjacency.**
+- `thin` — tier 1, intake-boost has lapsed. Quota 0. **Phase B.1 territory** (lens-aware breadth modulation).
+- `high_signal` — tier ≥2, mature profile. Quota 0 forever (mature-profile invariant locked).
+
+**`confidenceModeForTier` signature.** Now 2-arg: `confidenceModeForTier(rawTier: number, intakeBoosted: boolean): ConfidenceMode`. Call site updated in `lib/recRequest.ts`; `TasteProfile.intakeBoosted: boolean` computed in `computeTasteProfile` as `intakeCompleted && hasIntakeGenres && strongSignalCount < 5` (boost only affects tier 0 — tier ≥1 ignores the flag).
+
+**Forbidden in this slice (explicit non-goals).**
+- Any ranking / scoring / composer / RecCard / finalGate / No-dark / lens-persistence change.
+- Phase B.1 lens-aware breadth modulation or thin admission.
+- Phase 2 steering wiring.
+- Anchor map changes (still `mystery: [cozy mystery, cozy crime, amateur sleuth]`, `thriller: [spy fiction]`).
+- Title blacklists or popular-book fallback.
+
+**Files touched.**
+- `lib/recPolicy.ts` — `ConfidenceMode` union 3 → 4; `confidenceModeForTier` 2-arg; 4-row `BRANCH_QUOTAS` (`zero_signal` + `sparse_onboarding` both `coldStartAdjacent: 3`; `thin` + `high_signal` both `0`); `COLD_START_RETRIEVAL_POLICY_VERSION = 'csrp2'`.
+- `lib/recValidity.ts` — `VERSION = 'rcv8'` with history comment (rcv6 → rcv7 → rcv8).
+- `lib/tasteProfile.ts` — `TasteProfile` gains `intakeBoosted: boolean`; computed from `intakeCompleted && hasIntakeGenres && strongSignalCount < 5`; `tier` derivation unchanged.
+- `lib/recRequest.ts` — 2-arg `confidenceModeForTier` call site.
+- `lib/retrieval/branchPlanner.ts` + `lib/retrieval/branches/coldStartAdjacent.ts` — header/comment updates only; `reason: 'cold_start_adjacent:${gid}'` runtime tag preserved as stable identifier.
+- Validators: `validate_cold_start_adjacent` (4-value type union, §2/§3 4-mode plumbing, §5 broadened mature invariant to thin+high_signal, F1–F12 renamed cold_start→sparse_onboarding + F10 rcv7→rcv8 + F12 cold_start→sparse_onboarding, new §10b 6-fixture Phase B.0 matrix), `validate_rec_validity` §8 (rcv8/csrp2 + 5 rejection fixtures: rcv7|csrp1, rcv7|csrp2, rcv8|csrp1, rcv6, rcv6|csrp1), `validate_rec_payload_cache_lens` §4/§4b/§4c (rcv7→rcv8 transition, rcv8 round-trip, csrp2 shape), `validate_retrieval_planner` (4-value union, plan-size 4-mode loop, per-mode table 3→4 rows), `validate_rec_request` §2 (2-arg signature + 4-mode mapping). Sibling runtime scripts (`runtime_observe_phase_b_s0_s4`, `runtime_verify_phase_b`) updated for the union split.
+- Docs: `docs/operator_runbook_phase_b_capture.md` §4.1 step 5 (note that captured account's `confidenceMode` must be `sparse_onboarding`).
+
+**Hash shape regression.** Live: `rcv8|csrp:csrp2|fg:…|ag:…|rs:…|fa:…`. All five pre-Phase-B.0 shapes fail `assertCurrent` under live with `config_mismatch`: `rcv7|csrp:csrp1|…` (Phase B), `rcv7|csrp:csrp2|…` (mid-flight), `rcv8|csrp:csrp1|…` (mid-flight), `rcv6|…` (Phase A), `rcv6|csrp:csrp1|…` (defense).
+
+**Production behavior change.** None at the retrieval/composer/RecCard surface. The same population that received cold-start adjacency under Phase B (tier-0 Mystery/Thriller users) still receives it — they're now classified under `sparse_onboarding` instead of `cold_start`, but the live quota is identical (3) and the anchor set is identical. Mature/thin users see no behavioral change (still quota 0). The user-visible effect is a one-time cache invalidation on first foreground after deploy.
+
+**What's locked.** `FORENSIC_USER_ID = ''` (log dormant). `BRANCH_ORDER` places `coldStartAdjacent` last. Pruned Phase A.1 anchor set unchanged. Mature-profile byte-identity invariant now applies to both `thin` and `high_signal`. No composer / RecCard / finalGate / No-dark / durable-taste / lens-persistence / Phase 2 steering surface touched. **Phase B.1 (lens-aware breadth modulation, thin admission) requires its own planning chapter + approval.**
+
+---
+
 ## Cold-Start Retrieval Expansion · Phase B — first live adjacency admission — shipped (2026-05-21)
 
 **Scope.** Flip the `coldStartAdjacent` retrieval branch from production-inert (Phase A/A.1) to live for cold-start users only. `BRANCH_QUOTAS.cold_start.coldStartAdjacent`: `0 → 3`. `thin` and `high_signal` stay `0` (the mature-profile byte-identity invariant continues to hold forever). `recValidity.VERSION`: `rcv6 → rcv7`. New explicit `COLD_START_RETRIEVAL_POLICY_VERSION = 'csrp1'` constant in `lib/recPolicy.ts`, folded into `computeRecConfigHash` as a `csrp:csrp1` segment alongside the version prefix.

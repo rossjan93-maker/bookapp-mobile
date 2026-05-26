@@ -40,16 +40,39 @@ function makeProfile(tier: number): TasteProfile {
   return { tier } as unknown as TasteProfile;
 }
 
+function makeProfileWithIntake(tier: number, intakeBoosted: boolean): TasteProfile {
+  return { tier, intakeBoosted } as unknown as TasteProfile;
+}
+
+// React Native's __DEV__ global is undefined in Node — stub it so recRequest
+// module's DEV-gated console logs do not throw under the validator harness.
+(globalThis as any).__DEV__ = (globalThis as any).__DEV__ ?? false;
+
 // ── 1. Schema version ────────────────────────────────────────────────────────
 console.log('1. Schema version');
 check('SCHEMA_VERSION === "rrv1"', SCHEMA_VERSION === 'rrv1', `got ${SCHEMA_VERSION}`);
 
-// ── 2. Confidence mode mapping ───────────────────────────────────────────────
-console.log('2. confidenceModeForTier mapping');
-check('tier 0 → cold_start', confidenceModeForTier(0) === 'cold_start');
-check('tier 1 → thin',        confidenceModeForTier(1) === 'thin');
-check('tier 2 → high_signal', confidenceModeForTier(2) === 'high_signal');
-check('tier 3 → high_signal', confidenceModeForTier(3) === 'high_signal');
+// ── 2. Confidence mode mapping (Phase B.0 — Tier-Definition Cleanup) ────────
+// `confidenceModeForTier(rawTier, intakeBoosted)` returns one of 4 modes.
+// tier 0 + intakeBoosted=false → 'zero_signal'   (genuinely zero signal)
+// tier 0 + intakeBoosted=true  → 'sparse_onboarding' (intake completed,
+//                                  boost still active — primary cold-start
+//                                  adjacency target population)
+// tier 1                       → 'thin'          (intake boost has lapsed)
+// tier ≥2                      → 'high_signal'
+console.log('2. confidenceModeForTier mapping (Phase B.0 4-mode split)');
+check('tier 0 + !intakeBoosted → zero_signal',
+  confidenceModeForTier(0, false) === 'zero_signal');
+check('tier 0 + intakeBoosted  → sparse_onboarding',
+  confidenceModeForTier(0, true) === 'sparse_onboarding');
+check('tier 1 + !intakeBoosted → thin',
+  confidenceModeForTier(1, false) === 'thin');
+check('tier 1 + intakeBoosted  → thin (boost only affects tier 0)',
+  confidenceModeForTier(1, true) === 'thin');
+check('tier 2 → high_signal',
+  confidenceModeForTier(2, false) === 'high_signal');
+check('tier 3 → high_signal',
+  confidenceModeForTier(3, false) === 'high_signal');
 
 // ── 3. Pending BuildCause module state ───────────────────────────────────────
 console.log('3. Pending BuildCause consume/clear semantics');

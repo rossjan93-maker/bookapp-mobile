@@ -175,6 +175,12 @@ today — no new product affordances.
    - `bookEv` ≥ 10 (correlates with `lensArb`, useful for §8 sanity).
    - `finalGate` may be 0 (queue-boundary gate often doesn't log on
      visible rows — that's normal; absence here is not a defect).
+   - **Phase B.0 (2026-05-26):** The captured account's `confidenceMode`
+     must be `sparse_onboarding` (intake completed, intake-boost still
+     active, <5 strong signals). `zero_signal` (no favorites at all) and
+     `thin` (intake-boost lapsed) are NOT valid for this capture —
+     `zero_signal` produces no anchor seed; `thin` is Phase B.1 territory
+     and stays at `coldStartAdjacent` quota 0.
 
    If `lensArb < 10`, scroll the deck fully, then re-check. If still <10,
    the deck didn't fully render — clear cache and reload.

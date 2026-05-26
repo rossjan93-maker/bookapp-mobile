@@ -47,7 +47,7 @@ const SCENARIOS: Array<{
 ];
 
 function makeReq(
-  confidenceMode: 'cold_start' | 'high_signal',
+  confidenceMode: 'zero_signal' | 'sparse_onboarding' | 'thin' | 'high_signal',
   chips: RecRequest['signals']['nextReadChips'] | undefined,
 ): RecRequest {
   return {
@@ -81,15 +81,16 @@ const ctx: BranchContext = {
 
 console.log('═══ Phase B re-observation · plan-level capture (sandbox-feasible) ═══');
 console.log(`COLD_START_RETRIEVAL_POLICY_VERSION = ${JSON.stringify(COLD_START_RETRIEVAL_POLICY_VERSION)}`);
-console.log(`BRANCH_QUOTAS.cold_start  = ${JSON.stringify(BRANCH_QUOTAS.cold_start)}`);
+console.log(`BRANCH_QUOTAS.sparse_onboarding  = ${JSON.stringify(BRANCH_QUOTAS.sparse_onboarding)}`);
+console.log(`BRANCH_QUOTAS.zero_signal        = ${JSON.stringify(BRANCH_QUOTAS.zero_signal)}`);
 console.log(`BRANCH_QUOTAS.high_signal = ${JSON.stringify(BRANCH_QUOTAS.high_signal)}`);
-console.log(`fixture profile: cold_start | favoriteGenres=['thriller_mystery'] | softAvoids=['horror']\n`);
+console.log(`fixture profile: sparse_onboarding | favoriteGenres=['thriller_mystery'] | softAvoids=['horror']\n`);
 
-console.log('## cold_start across S0..S4');
+console.log('## sparse_onboarding across S0..S4');
 console.log('| scn | label                         | lens chip                  | adj_quota | adj_admitted | total_plan | adj_anchors |');
 console.log('|-----|-------------------------------|----------------------------|-----------|--------------|------------|-------------|');
 for (const s of SCENARIOS) {
-  const plan = planBranches(makeReq('cold_start', s.chips), ctx);
+  const plan = planBranches(makeReq('sparse_onboarding', s.chips), ctx);
   const adj  = plan.fetchItems.filter(i => i.branch === 'coldStartAdjacent');
   const chipStr = s.chips ? JSON.stringify({
     ...(s.chips.tone ? { tone: s.chips.tone } : {}),
@@ -117,12 +118,12 @@ for (const s of SCENARIOS) {
 
 console.log('\n## Plan-level invariants');
 const coldFingerprints = SCENARIOS.map(s => {
-  const adj = planBranches(makeReq('cold_start', s.chips), ctx).fetchItems
+  const adj = planBranches(makeReq('sparse_onboarding', s.chips), ctx).fetchItems
     .filter(i => i.branch === 'coldStartAdjacent');
   return JSON.stringify(adj.map(i => ({ kind: i.kind, value: i.value, reason: i.reason })));
 });
 const allSame = coldFingerprints.every(f => f === coldFingerprints[0]);
-console.log(`cold_start adjacency fingerprint identical S0..S4 → ${allSame}`);
+console.log(`sparse_onboarding adjacency fingerprint identical S0..S4 → ${allSame}`);
 console.log(`  (expected true: Phase B is lens-BLIND at the plan; B.1 deferred)`);
 
 const matureNonZero = SCENARIOS.some(s =>

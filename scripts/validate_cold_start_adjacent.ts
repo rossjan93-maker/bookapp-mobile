@@ -5,8 +5,12 @@
 // Run: `npx tsx scripts/validate_cold_start_adjacent.ts` (exit 0 ok / 1 fail).
 //
 // Phase B (2026-05-21): first live admission. cold_start.coldStartAdjacent
-// flips 0 → 3; thin and high_signal stay 0. recValidity.VERSION = rcv7;
-// COLD_START_RETRIEVAL_POLICY_VERSION = 'csrp1'.
+// flipped 0 → 3; thin and high_signal stayed 0.
+// Phase B.0 (2026-05-26): ConfidenceMode split 3 → 4. cold_start retired;
+// live quota=3 re-keys to BOTH `zero_signal` and `sparse_onboarding`.
+// `thin` and `high_signal` stay 0 (mature-profile byte-identity invariant
+// broadened to include `thin`). recValidity.VERSION = rcv8;
+// COLD_START_RETRIEVAL_POLICY_VERSION = 'csrp2'.
 //
 // Sections (load-bearing for Phase B acceptance):
 //   §1  Adjacency-map authoring rules — keyed by GenreId, lowercase OL-canonical,
@@ -14,9 +18,10 @@
 //       genre sharing the same affinityKey.
 //   §2  Branch plumbing — `coldStartAdjacent` appears in BranchKind union,
 //       BranchQuotas type, BRANCH_QUOTAS, BRANCH_ORDER, planner output.
-//   §3  Phase B live-quota invariant — BRANCH_QUOTAS.cold_start.coldStartAdjacent
-//       === 3; thin === 0; high_signal === 0. Live admission count matches
-//       quota on the canonical fixtures.
+//   §3  Phase B live-quota invariant — BRANCH_QUOTAS.zero_signal.coldStartAdjacent
+//       === 3 AND BRANCH_QUOTAS.sparse_onboarding.coldStartAdjacent === 3;
+//       thin === 0; high_signal === 0. Live admission count matches quota on
+//       the canonical fixtures.
 //   §4  Mystery-only / Thriller-only / empty-genre slice scope — adjacency
 //       map populated for Mystery + Thriller; all other GenreIds → [].
 //   §5  Mature-profile byte-identity — high_signal users produce zero
@@ -69,7 +74,7 @@ function section(name: string): void { console.log(`\n— ${name} —`); }
 function mkReq(opts: {
   favorites?:      AffinityKey[];
   avoids?:         AffinityKey[];
-  confidenceMode?: 'cold_start' | 'thin' | 'high_signal';
+  confidenceMode?: 'zero_signal' | 'sparse_onboarding' | 'thin' | 'high_signal';
 }): RecRequest {
   return {
     userId:  'test',
@@ -85,7 +90,7 @@ function mkReq(opts: {
       softAvoids:    { signalClass: 'soft_avoid', genres: opts.avoids ?? [], updatedAt: null },
     },
     policy: {
-      confidenceMode:         opts.confidenceMode ?? 'cold_start',
+      confidenceMode:         opts.confidenceMode ?? 'sparse_onboarding',
       statedPreferenceFloor:  0.05,
       statedPreferenceWeight: 0.12,
       softAvoidFloor:        -0.06,
@@ -160,50 +165,63 @@ section('§1 — adjacency-map authoring rules');
 // ── §2 Branch plumbing ──────────────────────────────────────────────────────
 section('§2 — branch plumbing end-to-end');
 {
-  // BranchQuotas type carries the slot (compile-time).
-  check('BRANCH_QUOTAS.cold_start.coldStartAdjacent defined',
-    typeof BRANCH_QUOTAS.cold_start.coldStartAdjacent === 'number');
+  // BranchQuotas type carries the slot (compile-time) for all 4 modes.
+  check('BRANCH_QUOTAS.zero_signal.coldStartAdjacent defined',
+    typeof BRANCH_QUOTAS.zero_signal.coldStartAdjacent === 'number');
+  check('BRANCH_QUOTAS.sparse_onboarding.coldStartAdjacent defined',
+    typeof BRANCH_QUOTAS.sparse_onboarding.coldStartAdjacent === 'number');
   check('BRANCH_QUOTAS.thin.coldStartAdjacent defined',
     typeof BRANCH_QUOTAS.thin.coldStartAdjacent === 'number');
   check('BRANCH_QUOTAS.high_signal.coldStartAdjacent defined',
     typeof BRANCH_QUOTAS.high_signal.coldStartAdjacent === 'number');
 
   // Planner emits a coldStartAdjacent policy entry at the Phase B live quota.
-  const plan = planBranches(mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'cold_start' }), COLD_CTX);
+  const plan = planBranches(mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'sparse_onboarding' }), COLD_CTX);
   check('planner.branchOrder includes coldStartAdjacent',
     plan.branchOrder.includes('coldStartAdjacent'));
   check('planner.branchPolicies.coldStartAdjacent exists',
     plan.branchPolicies.coldStartAdjacent !== undefined);
-  check('planner.branchPolicies.coldStartAdjacent.quota === 3 (Phase B cold_start)',
+  check('planner.branchPolicies.coldStartAdjacent.quota === 3 (Phase B sparse_onboarding)',
     plan.branchPolicies.coldStartAdjacent.quota === 3,
     `got ${plan.branchPolicies.coldStartAdjacent.quota}`);
 }
 
 // ── §3 Phase B live-quota invariant ─────────────────────────────────────────
-section('§3 — Phase B live-quota invariant (cold=3, thin=0, high_signal=0)');
+section('§3 — Phase B live-quota invariant (zero_signal=3, sparse_onboarding=3, thin=0, high_signal=0)');
 {
-  // BRANCH_QUOTAS pin — exact Phase B values.
-  check('cold_start.coldStartAdjacent === 3 (Phase B live)',
-    BRANCH_QUOTAS.cold_start.coldStartAdjacent === 3,
-    `got ${BRANCH_QUOTAS.cold_start.coldStartAdjacent}`);
-  check('thin.coldStartAdjacent === 0 (Phase B.1 territory)',
+  // BRANCH_QUOTAS pin — exact Phase B.0 values.
+  check('zero_signal.coldStartAdjacent === 3 (Phase B.0 live)',
+    BRANCH_QUOTAS.zero_signal.coldStartAdjacent === 3,
+    `got ${BRANCH_QUOTAS.zero_signal.coldStartAdjacent}`);
+  check('sparse_onboarding.coldStartAdjacent === 3 (Phase B.0 live, primary target)',
+    BRANCH_QUOTAS.sparse_onboarding.coldStartAdjacent === 3,
+    `got ${BRANCH_QUOTAS.sparse_onboarding.coldStartAdjacent}`);
+  check('thin.coldStartAdjacent === 0 (Phase B.1 territory; mature-profile invariant broadened)',
     BRANCH_QUOTAS.thin.coldStartAdjacent === 0);
   check('high_signal.coldStartAdjacent === 0 (mature-profile invariant)',
     BRANCH_QUOTAS.high_signal.coldStartAdjacent === 0);
 
-  // Retrieval-policy-version constant exists and is the Phase B identifier.
-  check('COLD_START_RETRIEVAL_POLICY_VERSION === "csrp1"',
-    COLD_START_RETRIEVAL_POLICY_VERSION === 'csrp1',
+  // Retrieval-policy-version constant exists and is the Phase B.0 identifier.
+  check('COLD_START_RETRIEVAL_POLICY_VERSION === "csrp2"',
+    COLD_START_RETRIEVAL_POLICY_VERSION === 'csrp2',
     `got ${COLD_START_RETRIEVAL_POLICY_VERSION}`);
 
-  // Live admission count matches quota on a canonical cold-start mystery+
-  // thriller fixture (4 anchors available → admits exactly quota=3).
-  const coldReq = mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'cold_start' });
-  const coldPlan = planBranches(coldReq, COLD_CTX);
-  const coldAdj = coldPlan.fetchItems.filter(i => i.branch === 'coldStartAdjacent');
-  check('cold_start mystery+thriller: live admits exactly 3 adjacency items',
-    coldAdj.length === 3,
-    `got ${coldAdj.length}: ${coldAdj.map(i => i.value).join(', ')}`);
+  // Live admission count matches quota on a canonical sparse_onboarding
+  // mystery+thriller fixture (4 anchors available → admits exactly quota=3).
+  const sparseReq = mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'sparse_onboarding' });
+  const sparsePlan = planBranches(sparseReq, COLD_CTX);
+  const sparseAdj = sparsePlan.fetchItems.filter(i => i.branch === 'coldStartAdjacent');
+  check('sparse_onboarding mystery+thriller: live admits exactly 3 adjacency items',
+    sparseAdj.length === 3,
+    `got ${sparseAdj.length}: ${sparseAdj.map(i => i.value).join(', ')}`);
+
+  // zero_signal behaves identically to sparse_onboarding at the quota table.
+  const zeroReq = mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'zero_signal' });
+  const zeroPlan = planBranches(zeroReq, COLD_CTX);
+  const zeroAdj = zeroPlan.fetchItems.filter(i => i.branch === 'coldStartAdjacent');
+  check('zero_signal mystery+thriller: live admits exactly 3 adjacency items',
+    zeroAdj.length === 3,
+    `got ${zeroAdj.length}: ${zeroAdj.map(i => i.value).join(', ')}`);
 
   // thin and high_signal must remain dormant.
   const thinPlan = planBranches(
@@ -225,7 +243,7 @@ section('§3 — Phase B live-quota invariant (cold=3, thin=0, high_signal=0)');
     ...ADJACENT_RETRIEVAL_ANCHORS.mystery,
     ...ADJACENT_RETRIEVAL_ANCHORS.thriller,
   ]);
-  for (const item of coldAdj) {
+  for (const item of sparseAdj) {
     check(`live anchor "${item.value}" comes from Phase A.1 pruned vocabulary`,
       adjacencyVocab.has(item.value),
       `expected one of: ${[...adjacencyVocab].join(', ')}`);
@@ -233,7 +251,7 @@ section('§3 — Phase B live-quota invariant (cold=3, thin=0, high_signal=0)');
 
   // Branch must run LAST so primary branches always win quota races.
   check('branchOrder places coldStartAdjacent last',
-    coldPlan.branchOrder[coldPlan.branchOrder.length - 1] === 'coldStartAdjacent');
+    sparsePlan.branchOrder[sparsePlan.branchOrder.length - 1] === 'coldStartAdjacent');
 }
 
 // ── §4 Slice scope — Mystery + Thriller only ────────────────────────────────
@@ -251,11 +269,11 @@ section('§4 — slice scope: Mystery + Thriller only');
       `got ${anchors.length}: ${anchors.join(', ')}`);
   }
 
-  // Shadow simulation at hypothetical Phase B quota: cold-start mystery+thriller
+  // Shadow simulation at hypothetical Phase B quota: tier-0 mystery+thriller
   // user yields candidates whose anchors come from the adjacency map (NOT from
   // primary thriller_mystery olSubjects). This is the Phase A evidence that
   // Phase B has something material to admit.
-  const req = mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'cold_start' });
+  const req = mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'sparse_onboarding' });
   const sim = simulateColdStartAdjacent(req, 4);
   check('shadow sim emits ≥2 candidates at Phase B quota=4',
     sim.itemsWouldEmit.length >= 2, `got ${sim.itemsWouldEmit.length}`);
@@ -280,14 +298,21 @@ section('§4 — slice scope: Mystery + Thriller only');
     lowerBurden.length >= 1, `lower-burden: ${lowerBurden.join(', ')}`);
 }
 
-// ── §5 Mature-profile byte-identity ─────────────────────────────────────────
-section('§5 — mature profile (high_signal) zero shadow-emit even at high quota');
+// ── §5 Mature-profile byte-identity (broadened to thin + high_signal) ──────
+section('§5 — mature profile (thin + high_signal) zero shadow-emit even at high quota');
 {
-  // Even at a deliberately-large hypothetical quota, the branch should not
-  // suddenly start emitting for high_signal users because that's NOT the
-  // population we're expanding for. The branch builder itself doesn't know
-  // about density — it relies on the planner's quota=0 to stay silent — so
-  // we test the planner's resolved quota for high_signal specifically.
+  // Phase B.0 (2026-05-26) broadens the mature-profile byte-identity invariant
+  // to include `thin`. After the ConfidenceMode split, `thin` is genuinely
+  // tier-1-from-real-signal — its slot is Phase B.1 territory and must stay
+  // zero until that planning chapter ships. `high_signal` stays zero forever.
+  const thinReq = mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'thin' });
+  const thinPlan = planBranches(thinReq, COLD_CTX);
+  const thinItems = thinPlan.fetchItems.filter(i => i.branch === 'coldStartAdjacent');
+  check('thin: zero coldStartAdjacent items in plan', thinItems.length === 0,
+    `leaked ${thinItems.length}`);
+  check('thin: coldStartAdjacent policy.quota === 0',
+    thinPlan.branchPolicies.coldStartAdjacent.quota === 0);
+
   const denseReq = mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'high_signal' });
   const plan = planBranches(denseReq, DENSE_CTX);
   const adjItems = plan.fetchItems.filter(i => i.branch === 'coldStartAdjacent');
@@ -296,17 +321,17 @@ section('§5 — mature profile (high_signal) zero shadow-emit even at high quot
   check('high_signal: coldStartAdjacent policy.quota === 0',
     plan.branchPolicies.coldStartAdjacent.quota === 0);
 
-  // Mature-profile invariant for Phase B: BRANCH_QUOTAS.high_signal.coldStartAdjacent
-  // MUST stay 0 in Phase B too. Pinned as a documented contract here so
-  // Phase B can't silently bump it.
-  check('BRANCH_QUOTAS.high_signal.coldStartAdjacent stays 0 (Phase B invariant)',
+  // Mature-profile invariants pinned as documented contracts.
+  check('BRANCH_QUOTAS.thin.coldStartAdjacent stays 0 (Phase B.0 broadened invariant)',
+    BRANCH_QUOTAS.thin.coldStartAdjacent === 0);
+  check('BRANCH_QUOTAS.high_signal.coldStartAdjacent stays 0 (mature invariant)',
     BRANCH_QUOTAS.high_signal.coldStartAdjacent === 0);
 }
 
 // ── §6 Shadow-evidence helper purity ────────────────────────────────────────
 section('§6 — simulateColdStartAdjacent does not mutate live plan');
 {
-  const req = mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'cold_start' });
+  const req = mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'sparse_onboarding' });
   const planBefore = planBranches(req, COLD_CTX);
   const sigBefore = JSON.stringify(planBefore.fetchItems);
 
@@ -328,7 +353,7 @@ section('§7 — soft-avoid defense-in-depth in adjacency branch');
   const req = mkReq({
     favorites: ['thriller_mystery'],
     avoids:    ['thriller_mystery'],
-    confidenceMode: 'cold_start',
+    confidenceMode: 'sparse_onboarding',
   });
   // Call the builder directly with a non-zero quota (bypassing the planner's
   // quota=0) to prove the builder itself honors soft-avoid.
@@ -368,7 +393,7 @@ section('§9 — lens-blindness: adjacency quota is NOT modulated by lens state'
   // We pin the static-constant property here: two planBranches calls with
   // identical input must produce the same coldStartAdjacent quota every
   // time — quota is a function of confidenceMode only.
-  const req = mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'cold_start' });
+  const req = mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'sparse_onboarding' });
   const planA = planBranches(req, COLD_CTX);
   const planB = planBranches(req, COLD_CTX);
   check('coldStartAdjacent.quota is deterministic across calls',
@@ -376,7 +401,7 @@ section('§9 — lens-blindness: adjacency quota is NOT modulated by lens state'
       === planB.branchPolicies.coldStartAdjacent.quota);
   check('coldStartAdjacent.quota is the BRANCH_QUOTAS literal',
     planA.branchPolicies.coldStartAdjacent.quota
-      === BRANCH_QUOTAS.cold_start.coldStartAdjacent);
+      === BRANCH_QUOTAS.sparse_onboarding.coldStartAdjacent);
 
   // Planner source must not reference lens / steering modules in any
   // coldStartAdjacent context (qAdjacent resolution must remain a pure
@@ -406,23 +431,23 @@ section('§10 — F1–F12 canonical Phase B regression fixtures');
       .filter(i => i.branch === 'coldStartAdjacent')
       .map(i => i.value);
 
-  // F1 — Cold-start mystery+thriller emits exactly 3 from the pruned set.
-  const f1 = adj(mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'cold_start' }), COLD_CTX);
-  check('F1 cold_start thriller_mystery → exactly 3 adjacency items',
+  // F1 — sparse_onboarding mystery+thriller emits exactly 3 from the pruned set.
+  const f1 = adj(mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'sparse_onboarding' }), COLD_CTX);
+  check('F1 sparse_onboarding thriller_mystery → exactly 3 adjacency items',
     f1.length === 3, `got ${f1.length}: ${f1.join(', ')}`);
   check('F1 anchors all come from pruned Phase A.1 vocab',
     f1.every(v => [...ADJACENT_RETRIEVAL_ANCHORS.mystery, ...ADJACENT_RETRIEVAL_ANCHORS.thriller].includes(v)));
 
-  // F2 — Cold-start Fantasy/SciFi (no adjacency entry) → ZERO items.
-  const f2 = adj(mkReq({ favorites: ['fantasy_scifi'], confidenceMode: 'cold_start' }), COLD_CTX);
-  check('F2 cold_start fantasy_scifi → zero adjacency (empty anchor list)',
+  // F2 — sparse_onboarding Fantasy/SciFi (no adjacency entry) → ZERO items.
+  const f2 = adj(mkReq({ favorites: ['fantasy_scifi'], confidenceMode: 'sparse_onboarding' }), COLD_CTX);
+  check('F2 sparse_onboarding fantasy_scifi → zero adjacency (empty anchor list)',
     f2.length === 0, `leaked ${f2.length}: ${f2.join(', ')}`);
 
-  // F3 — Cold-start, no favorites → ZERO.
-  const f3 = adj(mkReq({ favorites: [], confidenceMode: 'cold_start' }), COLD_CTX);
-  check('F3 cold_start no favorites → zero adjacency', f3.length === 0);
+  // F3 — zero_signal, no favorites → ZERO.
+  const f3 = adj(mkReq({ favorites: [], confidenceMode: 'zero_signal' }), COLD_CTX);
+  check('F3 zero_signal no favorites → zero adjacency', f3.length === 0);
 
-  // F4 — Thin mystery+thriller → ZERO (quota=0 for thin).
+  // F4 — Thin mystery+thriller → ZERO (quota=0 for thin in Phase B.0).
   const f4 = adj(mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'thin' }), COLD_CTX);
   check('F4 thin thriller_mystery → zero adjacency (Phase B.1 territory)',
     f4.length === 0, `leaked ${f4.length}`);
@@ -432,11 +457,11 @@ section('§10 — F1–F12 canonical Phase B regression fixtures');
   check('F5 high_signal thriller_mystery → zero adjacency (mature invariant)',
     f5.length === 0, `leaked ${f5.length}`);
 
-  // F6 — Cold-start + (would-be) active No-dark lens. RecRequest has no
+  // F6 — sparse_onboarding + (would-be) active No-dark lens. RecRequest has no
   // lens field, so this is a structural assertion: the plan is identical
   // regardless of any external lens state. Proven by re-planning with the
   // same inputs — quota is a function of confidenceMode alone.
-  const reqF6 = mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'cold_start' });
+  const reqF6 = mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'sparse_onboarding' });
   const f6a = adj(reqF6, COLD_CTX);
   const f6b = adj(reqF6, COLD_CTX);
   check('F6 lens state cannot alter adjacency admission (deterministic plan)',
@@ -445,57 +470,56 @@ section('§10 — F1–F12 canonical Phase B regression fixtures');
   check('F6 admission count unchanged across calls (=3)',
     f6a.length === 3 && f6b.length === 3);
 
-  // F7 — Cold-start no lens (baseline) — same as F1, same output. Pinned
-  // here as the explicit "Phase B base case" fixture for documentation.
-  const f7 = adj(mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'cold_start' }), COLD_CTX);
-  check('F7 cold_start no-lens baseline matches F1',
+  // F7 — sparse_onboarding no lens (baseline) — same as F1, same output.
+  const f7 = adj(mkReq({ favorites: ['thriller_mystery'], confidenceMode: 'sparse_onboarding' }), COLD_CTX);
+  check('F7 sparse_onboarding no-lens baseline matches F1',
     JSON.stringify(f7) === JSON.stringify(f1));
 
-  // F8 — Cold-start thriller_mystery + softAvoid horror (unrelated to
-  // adjacency anchors) → 3 items unchanged.
+  // F8 — sparse_onboarding thriller_mystery + softAvoid horror (unrelated
+  // to adjacency anchors) → 3 items unchanged.
   const f8 = adj(mkReq({
     favorites: ['thriller_mystery'],
     avoids:    ['horror'],
-    confidenceMode: 'cold_start',
+    confidenceMode: 'sparse_onboarding',
   }), COLD_CTX);
-  check('F8 cold_start + softAvoid horror → 3 items unchanged',
+  check('F8 sparse_onboarding + softAvoid horror → 3 items unchanged',
     f8.length === 3, `got ${f8.length}: ${f8.join(', ')}`);
 
-  // F9 — Cold-start thriller_mystery + softAvoid thriller_mystery → ZERO
-  // (defense-in-depth: same key in favorites and avoids → skipped).
+  // F9 — sparse_onboarding thriller_mystery + softAvoid thriller_mystery
+  // → ZERO (defense-in-depth: same key in favorites and avoids → skipped).
   const f9 = adj(mkReq({
     favorites: ['thriller_mystery'],
     avoids:    ['thriller_mystery'],
-    confidenceMode: 'cold_start',
+    confidenceMode: 'sparse_onboarding',
   }), COLD_CTX);
-  check('F9 cold_start favorite ∈ softAvoids → zero adjacency (defense-in-depth)',
+  check('F9 sparse_onboarding favorite ∈ softAvoids → zero adjacency (defense-in-depth)',
     f9.length === 0, `leaked ${f9.length}: ${f9.join(', ')}`);
 
-  // F10 — Persisted rcv6 deck (Phase A) → discarded on read under rcv7.
-  // Covered structurally: COLD_START_RETRIEVAL_POLICY_VERSION 'csrp1' is in
-  // the hash via lib/recValidity.ts, and VERSION='rcv7' fronts the hash —
-  // any rcv6 payload mismatches. Behavioral fixture lives in
+  // F10 — Persisted rcv7|csrp:csrp1 deck (Phase B) → discarded on read under
+  // rcv8|csrp:csrp2 (Phase B.0). Covered structurally: VERSION='rcv8' fronts
+  // the hash and COLD_START_RETRIEVAL_POLICY_VERSION='csrp2' folds in — any
+  // rcv7 or csrp1 payload mismatches. Behavioral fixture lives in
   // validate_rec_payload_cache_lens §4.
   const recValiditySrc = fs.readFileSync(
     path.resolve(__dirname, '../lib/recValidity.ts'), 'utf-8',
   );
-  check('F10 lib/recValidity.ts pins VERSION=rcv7',
-    /const\s+VERSION\s*=\s*['"]rcv7['"]/.test(recValiditySrc));
+  check('F10 lib/recValidity.ts pins VERSION=rcv8',
+    /const\s+VERSION\s*=\s*['"]rcv8['"]/.test(recValiditySrc));
   check('F10 lib/recValidity.ts folds COLD_START_RETRIEVAL_POLICY_VERSION into hash',
     /csrp:\$\{COLD_START_RETRIEVAL_POLICY_VERSION\}/.test(recValiditySrc));
 
-  // F11 — Persisted rcv7 deck → restored normally. Covered by F10's hash
+  // F11 — Persisted rcv8 deck → restored normally. Covered by F10's hash
   // shape: hash is composable + stable. Behavioral fixture lives in
   // validate_rec_payload_cache_lens §4.
-  check('F11 rcv7 hash determinism: same inputs → same hash twice',
+  check('F11 rcv8 hash determinism: same inputs → same hash twice',
     true, // tautological under deterministic compute; behavioral test in sibling validator
   );
 
   // F12 — Lens-mode toggle (Phase 1 steering) must NOT change quota. The
   // steering field lives in lib/currentIntentLens.ts as session-module
   // state; it isn't an input to BRANCH_QUOTAS. We pin two assertions:
-  //   (a) BRANCH_QUOTAS.cold_start.coldStartAdjacent is a static literal,
-  //       not a function — re-evaluating returns the same value.
+  //   (a) BRANCH_QUOTAS.sparse_onboarding.coldStartAdjacent is a static
+  //       literal, not a function — re-evaluating returns the same value.
   //   (b) lib/recPolicy.ts source does NOT import currentIntentLens or
   //       any steering symbol.
   const policySrc = fs.readFileSync(
@@ -506,9 +530,67 @@ section('§10 — F1–F12 canonical Phase B regression fixtures');
       !policySrc.includes(sym),
       `found "${sym}" in lib/recPolicy.ts`);
   }
-  check('F12 BRANCH_QUOTAS.cold_start.coldStartAdjacent is stable across calls',
-    BRANCH_QUOTAS.cold_start.coldStartAdjacent === 3
-      && BRANCH_QUOTAS.cold_start.coldStartAdjacent === 3);
+  check('F12 BRANCH_QUOTAS.sparse_onboarding.coldStartAdjacent is stable across calls',
+    BRANCH_QUOTAS.sparse_onboarding.coldStartAdjacent === 3
+      && BRANCH_QUOTAS.sparse_onboarding.coldStartAdjacent === 3);
+}
+
+// ── §10b Phase B.0 tier-cleanup fixtures (6 new) ────────────────────────────
+section('§10b — Phase B.0 tier-definition cleanup fixtures (6 new)');
+{
+  const adj = (req: RecRequest, ctx: BranchContext): string[] =>
+    planBranches(req, ctx).fetchItems
+      .filter(i => i.branch === 'coldStartAdjacent')
+      .map(i => i.value);
+
+  // (1) zero_signal_no_intake — onboarding aborted, zero favorites.
+  //     Expect: zero adjacency items (no anchor seed).
+  const t1 = adj(mkReq({ favorites: [], confidenceMode: 'zero_signal' }), COLD_CTX);
+  check('B0-1 zero_signal + no favorites → 0 adjacency', t1.length === 0,
+    `got ${t1.length}: ${t1.join(', ')}`);
+
+  // (2) zero_signal_with_avoid_only — somehow soft-avoid set but no fav.
+  //     Expect: zero adjacency items.
+  const t2 = adj(mkReq({
+    favorites: [], avoids: ['horror'], confidenceMode: 'zero_signal',
+  }), COLD_CTX);
+  check('B0-2 zero_signal + softAvoid horror only → 0 adjacency', t2.length === 0,
+    `got ${t2.length}: ${t2.join(', ')}`);
+
+  // (3) ★ sparse_onboarding_mystery_thriller — primary target population.
+  //     Expect: exactly 3 adjacency items from the pruned vocab.
+  const t3 = adj(mkReq({
+    favorites: ['thriller_mystery'], confidenceMode: 'sparse_onboarding',
+  }), COLD_CTX);
+  check('B0-3 ★ sparse_onboarding mystery+thriller → exactly 3 adjacency',
+    t3.length === 3, `got ${t3.length}: ${t3.join(', ')}`);
+  check('B0-3 ★ all anchors from pruned Phase A.1 vocab',
+    t3.every(v => [...ADJACENT_RETRIEVAL_ANCHORS.mystery, ...ADJACENT_RETRIEVAL_ANCHORS.thriller].includes(v)));
+
+  // (4) early_library_3_ratings — small revealed signal, intake-completed
+  //     user. ConfidenceMode here is `sparse_onboarding` (intake-boost is
+  //     handled inside computeTasteProfile; this validator tests the
+  //     downstream quota path). Expect: 3 adjacency items.
+  const t4 = adj(mkReq({
+    favorites: ['thriller_mystery'], confidenceMode: 'sparse_onboarding',
+  }), COLD_CTX);
+  check('B0-4 early_library_3_ratings (sparse_onboarding) → 3 adjacency',
+    t4.length === 3, `got ${t4.length}: ${t4.join(', ')}`);
+
+  // (5) thin_7_ratings — genuine tier-1, intake boost lapsed. ConfidenceMode
+  //     `thin`. Expect: ZERO adjacency items (Phase B.1 territory).
+  const t5 = adj(mkReq({
+    favorites: ['thriller_mystery'], confidenceMode: 'thin',
+  }), COLD_CTX);
+  check('B0-5 thin_7_ratings → 0 adjacency (Phase B.1 territory)',
+    t5.length === 0, `leaked ${t5.length}: ${t5.join(', ')}`);
+
+  // (6) high_signal_20_books — mature profile. Expect: ZERO (locked invariant).
+  const t6 = adj(mkReq({
+    favorites: ['thriller_mystery'], confidenceMode: 'high_signal',
+  }), DENSE_CTX);
+  check('B0-6 high_signal_20_books → 0 adjacency (mature-profile invariant)',
+    t6.length === 0, `leaked ${t6.length}: ${t6.join(', ')}`);
 }
 
 // ── §8 Calibration provenance (Phase A.1) ───────────────────────────────────
