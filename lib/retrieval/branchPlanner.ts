@@ -53,7 +53,7 @@ const BRANCH_ORDER: readonly BranchKind[] = ['statedGenres', 'revealedAuthors', 
 // Setting this to a real userId in a dev build surfaces what
 // `coldStartAdjacent` ACTUALLY admitted into the plan under live Phase B
 // quotas. Mirrors the FORENSIC_USER_ID pattern in lib/recommender.ts.
-const FORENSIC_USER_ID = '';
+const FORENSIC_USER_ID = '7fb52f14-e447-42de-acf4-0120a1213294';
 
 /** Pure: decide which branches run and at what quota, before fetching. */
 export function planBranches(req: RecRequest, ctx: BranchContext): RetrievalPlan {

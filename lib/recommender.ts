@@ -156,7 +156,7 @@ function stripCacheVersion(reason: string | null | undefined): string {
 // structured trace logs). Only active in __DEV__ builds.
 // Set to an empty string in production to ensure the forensic path never fires
 // for any real user. Restore a specific UUID locally during deep debugging only.
-const FORENSIC_USER_ID = '';
+const FORENSIC_USER_ID = '7fb52f14-e447-42de-acf4-0120a1213294';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

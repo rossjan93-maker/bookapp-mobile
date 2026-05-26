@@ -1,0 +1,70 @@
+Pause the Phase B live capture.
+
+We need to define “cold start” precisely before continuing.
+
+Important clarification:
+The account I tested was not a net-new fresh auth account. The email/sign-in process had already happened before testing. But the recommendation profile was still sparse: Mystery + Thriller, skip Horror, no imported library, little/no meaningful reading history.
+
+The S0 capture showed:
+
+* preferences were Mystery + Thriller, avoid Horror
+* configHash included rcv7 and csrp1
+* [COLD_START_ADJACENT] reported density=thin
+* liveQuota=0
+* liveAdmittedCount=0
+
+So the capture did not test Phase B live admission because the user was classified as thin, not cold_start.
+
+Task:
+Diagnostic / planning only. Do not change product code yet.
+
+Please answer:
+
+1. How is confidenceMode / density currently derived?
+2. What exact conditions make a user cold_start vs thin vs high_signal?
+3. Does simply selecting genres/skips during onboarding move a user from cold_start to thin?
+4. If yes, is the current Phase B scope too narrow for the product problem we were trying to solve?
+5. What should the product definition of cold-start be?
+
+   * auth-new account?
+   * zero-signal recommendation profile?
+   * sparse onboarding profile?
+   * first-session user before library/import?
+6. Should we rename or separate the code concepts?
+   Example:
+
+   * zero_signal
+   * sparse_onboarding
+   * thin
+   * medium
+   * high_signal
+7. Which tier should coldStartAdjacent apply to?
+
+   * only true zero-signal cold_start?
+   * sparse onboarding after genres/skips?
+   * thin profiles with only basic onboarding signal?
+8. What test fixtures should we use for each state?
+9. What does this imply for Phase B acceptance?
+10. Should we modify Phase B scope, create Phase B.0 tier-definition cleanup, or rerun capture with a truly fresh account?
+
+Hard constraints:
+
+* Do not change ranking.
+* Do not change scoring.
+* Do not change composer.
+* Do not change RecCard.
+* Do not change finalGate.
+* Do not change No-dark policy.
+* Do not mutate durable Reading Taste.
+* Do not persist lens state.
+* Do not start Phase B.1.
+* Do not start Phase 2 steering.
+* Do not implement anything in this turn.
+
+Return:
+
+1. Current tier derivation path map
+2. Product definition recommendation
+3. Whether Phase B currently targets the right user state
+4. Recommended next action
+5. Exact implementation or capture prompt, but do not implement
