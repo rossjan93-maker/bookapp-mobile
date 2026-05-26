@@ -1,0 +1,75 @@
+Proceed with Phase B Lens Arbitration re-observation.
+
+Task type:
+Observation / diagnostic only.
+Do not implement product changes.
+
+Current accepted state:
+
+* Phase B is runtime-verified at the plan/module level.
+* coldStartAdjacent quota is live for cold_start at 3.
+* thin and high_signal remain 0.
+* recValidity is rcv7.
+* COLD_START_RETRIEVAL_POLICY_VERSION is csrp1.
+* cache invalidation is structurally verified.
+* adjacency enters the plan for sparse Mystery + Thriller.
+* top-deck product impact has not yet been verified.
+
+Goal:
+Verify whether Phase B changes the visible cold-start recommendation experience.
+
+Use the same sparse-profile setup as the earlier Lens Arbitration capture:
+
+* Mystery + Thriller
+* skip Horror
+* no imported library
+* little/no reading history
+
+Observation questions:
+
+1. Do coldStartAdjacent candidates enter the visible top deck?
+2. Which titles/authors enter via adjacency?
+3. Does domestic-suspense saturation drop compared with the previous observation?
+4. Does lfa_any improve?
+5. Does n_wem become meaningful?
+6. Does classifier_miss_rate remain acceptable after Phase B?
+7. Do Light & accessible / Short & light / Less dark produce more visibly different decks?
+8. Does the deck still over-preserve durable genre taste?
+9. Are any adjacency candidates filtered by finalGate?
+10. Does high_signal remain unchanged?
+
+Required capture:
+
+* Set FORENSIC_USER_ID temporarily for the test user only.
+* Capture [LENS_ARBITRATION] rows for S0–S4.
+* Capture [COLD_START_ADJACENT] rows for the same builds.
+* Use the combined capture flow if available.
+* Run the Lens Arbitration aggregator.
+* Include a small visible-title comparison for each scenario.
+
+Hard constraints:
+
+* Do not change ranking.
+* Do not change scoring.
+* Do not change composer.
+* Do not change RecCard.
+* Do not change finalGate.
+* Do not change No-dark policy.
+* Do not mutate durable Reading Taste.
+* Do not persist lens state.
+* Do not start Phase B.1.
+* Do not start Phase 2 steering.
+* Do not expand anchors.
+* Do not revive Subject Coverage work.
+* Revert FORENSIC_USER_ID to '' after capture.
+
+Return:
+
+1. Runtime capture status
+2. Per-scenario counts
+3. Top visible titles per scenario
+4. coldStartAdjacent admission evidence
+5. Domestic-suspense saturation comparison
+6. lfa_any / n_wem / classifier_miss_rate
+7. Whether Phase B is product-accepted
+8. Whether next step is Phase B.1, first-deck structure, lens vocabulary/lifecycle, or rollback
