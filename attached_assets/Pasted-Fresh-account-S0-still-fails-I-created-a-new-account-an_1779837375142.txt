@@ -1,0 +1,66 @@
+Fresh-account S0 still fails.
+
+I created a new account and completed basic onboarding. The app signed in as the new user:
+
+userId starts with 09ad951a
+
+The relevant preference config was correct:
+
+rcv8|csrp:csrp2|fg:mystery,thriller|ag:horror|rs:|fa:
+
+But the live recommender still logged:
+
+[COLD_START_ADJACENT] phase=B density=thin liveQuota=0 liveAdmittedCount=0 liveAnchors=[] statedGenresUsed=["thriller_mystery"]
+
+So this is no longer just hidden state on the old account. A fresh account with basic onboarding is still routing as thin instead of sparse_onboarding.
+
+There was also an operator mistake: I typed `scripts/browser_console_capture_snippet.js` directly into the console, so the capture snippet did not install. But the recommender log still proves the Phase B.0 sanity check failed before capture mattered.
+
+Please diagnose the live path now.
+
+Questions:
+
+1. Why does a fresh account with Mystery + Thriller + avoid Horror still classify as thin?
+2. Is TasteProfile.intakeBoosted true or false for this user?
+3. Is confidenceModeForTier(rawTier, intakeBoosted) actually being called in the live RecRequest path?
+4. Is the branch planner reading the new four-mode confidenceMode value or a stale derived density?
+5. Is some other path still mapping tier=1 directly to thin?
+6. Is intakeBoosted being attached after RecRequest.policy is already created?
+7. Is the new user’s onboarding state represented differently than the fixture assumed?
+
+Add a temporary DEV+FORENSIC diagnostic if needed showing:
+
+* userId
+* favoriteGenres
+* avoidGenres
+* intakeCompleted
+* strongSignalCount
+* rawTier before intake boost
+* boosted tier
+* intakeBoosted
+* confidenceMode
+* selected BRANCH_QUOTAS row
+* coldStartAdjacent quota
+
+Hard constraints:
+
+* Diagnostic first.
+* Do not change ranking.
+* Do not change scoring.
+* Do not change composer.
+* Do not change RecCard.
+* Do not change finalGate.
+* Do not change No-dark policy.
+* Do not mutate durable Reading Taste.
+* Do not persist lens state.
+* Do not start Phase B.1.
+* Do not start Phase 2 steering.
+* Do not continue S1–S4 until S0 logs density=sparse_onboarding, liveQuota=3, liveAdmittedCount>0.
+
+Return:
+
+1. Root cause
+2. Whether this is a fixture gap, live wiring issue, or onboarding-state mismatch
+3. Exact minimal fix
+4. Validator that would have caught this
+5. Whether manual S0 can resume

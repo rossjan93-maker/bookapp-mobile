@@ -45,9 +45,7 @@ import { buildColdStartAdjacentBranch, simulateColdStartAdjacent } from './branc
 
 // Cold-Start Retrieval Expansion — `coldStartAdjacent` appended at the END
 // of BRANCH_ORDER so primary branches always win quota races. Phase B
-// (2026-05-21): initial live admission at cold_start quota=3. Phase B.0
-// (2026-05-26): ConfidenceMode split 3 → 4 re-keys the live quota onto
-// zero_signal AND sparse_onboarding; thin/high_signal stay 0.
+// (2026-05-21): cold_start quota=3 live; thin/high_signal stay 0.
 const BRANCH_ORDER: readonly BranchKind[] = ['statedGenres', 'revealedAuthors', 'revealedLanes', 'coldStartAdjacent'];
 
 // FORENSIC_USER_ID for the live-admission observation log. Currently ''
@@ -55,7 +53,7 @@ const BRANCH_ORDER: readonly BranchKind[] = ['statedGenres', 'revealedAuthors', 
 // Setting this to a real userId in a dev build surfaces what
 // `coldStartAdjacent` ACTUALLY admitted into the plan under live Phase B
 // quotas. Mirrors the FORENSIC_USER_ID pattern in lib/recommender.ts.
-const FORENSIC_USER_ID = '7fb52f14-e447-42de-acf4-0120a1213294';
+const FORENSIC_USER_ID = '09ad951a-7ee4-4ef5-9cb5-dc12e32826ee';
 
 /** Pure: decide which branches run and at what quota, before fetching. */
 export function planBranches(req: RecRequest, ctx: BranchContext): RetrievalPlan {
