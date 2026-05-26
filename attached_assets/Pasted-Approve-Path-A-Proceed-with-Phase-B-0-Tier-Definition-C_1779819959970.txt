@@ -1,0 +1,108 @@
+Approve Path A.
+
+Proceed with Phase B.0 — Tier-Definition Cleanup as a planning chapter only.
+
+Do not implement yet.
+
+Context:
+The Phase B live capture showed the test user was classified as thin, not cold_start:
+
+* user had completed onboarding
+* favorite genres existed: Mystery + Thriller
+* avoid genre: Horror
+* no imported library / little or no meaningful reading history
+* [COLD_START_ADJACENT] showed density=thin, liveQuota=0
+
+Replit diagnosed the cause:
+computeTasteProfile applies an intake boost when intake_completed='true' and favorite_genres.length > 0, raising effectiveSignalCount to 5, which maps to tier 1 / confidenceMode='thin'. Therefore the current Phase B coldStartAdjacent quota applies to a near-zero-signal code path, not the sparse-onboarding user state we intended to improve.
+
+Task:
+Write a planning-only chapter:
+
+Phase B.0 — Tier-Definition Cleanup
+
+Goal:
+Separate account/auth newness from recommendation signal-density. Define confidence modes that match product reality, so sparse-onboarding users can receive coldStartAdjacent without affecting real-library thin or high_signal users incorrectly.
+
+Planning questions:
+
+1. Current path map:
+
+   * computeTasteProfile
+   * intake boost
+   * computeConfidenceTier
+   * confidenceModeForTier
+   * BRANCH_QUOTAS
+2. Proposed product states:
+
+   * zero_signal
+   * sparse_onboarding
+   * thin
+   * high_signal
+3. Exact rule for sparse_onboarding:
+
+   * intake_completed=true
+   * favorite_genres.length > 0
+   * no imported library
+   * no or very low real strongSignalCount
+4. Whether to implement this via:
+
+   * expanded ConfidenceMode union, or
+   * raw tier + intake_boosted flag, or
+   * separate signalDensity field
+5. Proposed quota table:
+
+   * zero_signal
+   * sparse_onboarding
+   * thin
+   * high_signal
+6. Whether sparse_onboarding should get coldStartAdjacent=3.
+7. Whether real-library thin should get 0, 1, or 2, and whether that should be deferred.
+8. Cache/versioning decision:
+
+   * rcv8?
+   * csrp2?
+   * both?
+9. Validator plan:
+
+   * zero-signal fixture
+   * sparse-onboarding fixture
+   * early-library fixture
+   * real-library thin fixture
+   * high-signal fixture
+   * cache migration fixture
+10. Manual capture plan after Phase B.0:
+
+* same sparse account should report density=sparse_onboarding
+* liveQuota=3
+* liveAdmittedCount > 0
+
+11. Risks and rollback.
+12. Exact implementation prompt, but do not implement.
+
+Hard constraints:
+
+* Do not change ranking.
+* Do not change scoring.
+* Do not change composer.
+* Do not change RecCard.
+* Do not change finalGate.
+* Do not change No-dark policy.
+* Do not mutate durable Reading Taste.
+* Do not persist lens state.
+* Do not start Phase B.1.
+* Do not start Phase 2 steering.
+* Do not title-blacklist.
+* Do not introduce popular/generic fallback.
+* Do not revive Subject Coverage work.
+* Do not implement in this turn.
+
+Return:
+
+1. Planning doc path
+2. Recommended product-state model
+3. Recommended implementation approach
+4. Proposed quota table
+5. Cache/versioning recommendation
+6. Validator plan
+7. Exact implementation prompt for approval
