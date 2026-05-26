@@ -219,6 +219,70 @@ expect(
   `got ${JSON.stringify(assertCurrent(undefined, restoreHashA))}`,
 );
 
+// ── 8: Phase B — VERSION = rcv7 + retrieval-policy-version folded in ───────
+// Cold-Start Retrieval Expansion · Phase B (2026-05-21) bumps the recValidity
+// VERSION from rcv6 to rcv7 (cold_start.coldStartAdjacent flips 0 → 3, first
+// live admission of adjacency candidates). It also folds an explicit
+// COLD_START_RETRIEVAL_POLICY_VERSION constant ('csrp1') into the hash via a
+// `csrp:` segment, so any future cold-start policy change can invalidate
+// caches without a VERSION bump.
+//
+// We assert via source-grep (the VERSION constant is module-private) plus a
+// behavioral check: the live hash MUST contain both `rcv7|` as a prefix and
+// `csrp:csrp1|` as the next segment. Any pre-rcv7 stored hash (e.g.
+// `rcv6|csrp:csrp1|fg:…`, `rcv6|fg:…`, `rcv5|fg:…`) MUST reject under
+// assertCurrent against a live hash, so persisted cold-start decks built
+// pre-Phase-B are discarded on first foreground after deploy.
+import * as fsRcv from 'fs';
+import * as pathRcv from 'path';
+{
+  const recValiditySrc = fsRcv.readFileSync(
+    pathRcv.resolve(__dirname, '../lib/recValidity.ts'), 'utf-8');
+  expect('§8 VERSION constant pins rcv7',
+    /const\s+VERSION\s*=\s*['"]rcv7['"]/.test(recValiditySrc),
+    'expected `const VERSION = "rcv7"` in lib/recValidity.ts');
+  expect('§8 hash includes csrp:${COLD_START_RETRIEVAL_POLICY_VERSION} segment',
+    /csrp:\$\{COLD_START_RETRIEVAL_POLICY_VERSION\}/.test(recValiditySrc),
+    'computeRecConfigHash must fold retrieval-policy-version into hash');
+  expect('§8 lib/recValidity.ts imports COLD_START_RETRIEVAL_POLICY_VERSION from recPolicy',
+    /import\s*\{[^}]*COLD_START_RETRIEVAL_POLICY_VERSION[^}]*\}\s*from\s*['"]\.\/recPolicy['"]/.test(recValiditySrc),
+    'expected named import of COLD_START_RETRIEVAL_POLICY_VERSION');
+
+  // Behavioral: live hash shape.
+  const live = computeRecConfigHash(a);
+  expect('§8 live hash begins with "rcv7|"',
+    live.startsWith('rcv7|'),
+    `got prefix=${live.split('|').slice(0,1).join('|')}`);
+  expect('§8 live hash second segment is "csrp:csrp1"',
+    live.split('|')[1] === 'csrp:csrp1',
+    `got second segment=${live.split('|')[1]}`);
+
+  // rcv6 -> rcv7 transition: simulated rcv6 payload hash MUST reject.
+  // Build a "stored" hash that mimics what rcv6 would have produced for
+  // the same logical inputs (rcv6 had no csrp segment).
+  const fakeRcv6Stored = 'rcv6|fg:fantasy,sci-fi|ag:romance|rs:dark themes,fast-paced|fa:n.k. jemisin,ursula k. le guin';
+  const rcv6Reject = assertCurrent(fakeRcv6Stored, live);
+  expect('§8 simulated rcv6 stored hash rejects under rcv7 live (config_mismatch)',
+    rcv6Reject.valid === false && rcv6Reject.reason === 'config_mismatch',
+    `got ${JSON.stringify(rcv6Reject)}`);
+
+  // A pre-existing rcv6+csrp shape (defense: even if a parallel branch had
+  // shipped csrp without bumping VERSION, the rcv7 bump still invalidates).
+  const fakeRcv6WithCsrp = 'rcv6|csrp:csrp1|fg:fantasy,sci-fi|ag:romance|rs:dark themes,fast-paced|fa:n.k. jemisin,ursula k. le guin';
+  const rcv6CsrpReject = assertCurrent(fakeRcv6WithCsrp, live);
+  expect('§8 rcv6+csrp shape rejects under rcv7 live (config_mismatch)',
+    rcv6CsrpReject.valid === false && rcv6CsrpReject.reason === 'config_mismatch',
+    `got ${JSON.stringify(rcv6CsrpReject)}`);
+
+  // Future Phase B.1 simulation: bumping csrp also invalidates without a
+  // VERSION bump (pin the belt-and-suspenders contract).
+  const fakeRcv7CsrpNext = live.replace('csrp:csrp1', 'csrp:csrp2');
+  const csrpReject = assertCurrent(fakeRcv7CsrpNext, live);
+  expect('§8 rcv7+csrp:csrp2 simulated stored rejects under rcv7+csrp:csrp1 live',
+    csrpReject.valid === false && csrpReject.reason === 'config_mismatch',
+    `got ${JSON.stringify(csrpReject)}`);
+}
+
 // ── Report ─────────────────────────────────────────────────────────────────
 if (failures.length > 0) {
   console.error(`[recValidity] FAIL — ${failures.length} check(s) failed:`);

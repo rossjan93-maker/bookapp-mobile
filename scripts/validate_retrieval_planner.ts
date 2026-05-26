@@ -462,23 +462,35 @@ section('A7d — softAvoidDeprioritized flag set on revealedLanes items under re
 }
 
 // =============================================================================
-// Cold-Start Retrieval Expansion · Phase A — planner-side no-regression
+// Cold-Start Retrieval Expansion · Phase B — planner-side no-regression
 // =============================================================================
-section('Phase A — coldStartAdjacent slot present, production-inert');
+section('Phase B — coldStartAdjacent quota=3 for cold_start, 0 elsewhere');
 {
-  // Branch policy exists in every plan; quota = 0 always (Phase A).
+  // Branch policy exists in every plan; quota is mode-specific in Phase B.
+  const expected: Record<'cold_start' | 'thin' | 'high_signal', number> = {
+    cold_start: 3,
+    thin: 0,
+    high_signal: 0,
+  };
   for (const mode of ['cold_start', 'thin', 'high_signal'] as const) {
     const req = mkReq({ favorites: ['thriller_mystery'], confidenceMode: mode });
     const ctx = mode === 'high_signal' ? mkDenseCtx() : mkColdCtx();
     const plan = planBranches(req, ctx);
     check(`${mode}: plan.branchPolicies.coldStartAdjacent present`,
       plan.branchPolicies.coldStartAdjacent !== undefined);
-    check(`${mode}: coldStartAdjacent.quota === 0`,
-      plan.branchPolicies.coldStartAdjacent.quota === 0,
+    check(`${mode}: coldStartAdjacent.quota === ${expected[mode]}`,
+      plan.branchPolicies.coldStartAdjacent.quota === expected[mode],
       `got ${plan.branchPolicies.coldStartAdjacent.quota}`);
     const adjItems = plan.fetchItems.filter(i => i.branch === 'coldStartAdjacent');
-    check(`${mode}: zero coldStartAdjacent fetchItems`, adjItems.length === 0,
-      `leaked ${adjItems.length}`);
+    if (mode === 'cold_start') {
+      check(`${mode}: admits up to quota coldStartAdjacent fetchItems (≤3)`,
+        adjItems.length <= 3 && adjItems.length > 0,
+        `got ${adjItems.length}`);
+    } else {
+      check(`${mode}: zero coldStartAdjacent fetchItems (mature-profile / thin invariant)`,
+        adjItems.length === 0,
+        `leaked ${adjItems.length}`);
+    }
   }
 
   // BRANCH_ORDER includes coldStartAdjacent at the end (so primary branches

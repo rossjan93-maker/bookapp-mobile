@@ -29,6 +29,7 @@
 // =============================================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { COLD_START_RETRIEVAL_POLICY_VERSION } from './recPolicy';
 
 // P3A-6-C (2026-05-16): bumped rcv1 → rcv4 alongside the
 // COMPOSER_REASONS_PROJECTION_ENABLED flip in lib/explanations/projection.ts.
@@ -54,7 +55,16 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 // invalidate any persisted recPayloadCache that still carries
 // pre-P4D reasons[] (the visible text surface can now include lines
 // the legacy builder never emitted).
-const VERSION = 'rcv6';
+// rcv7 (2026-05-21) — Cold-Start Retrieval Expansion · Phase B lands.
+// BRANCH_QUOTAS.cold_start.coldStartAdjacent flips 0 → 3 — the first
+// live admission of adjacency candidates. Any persisted cold-start deck
+// written under rcv6 was built under quota=0 (no adjacency) and must
+// be discarded so the next foreground produces a deck that includes
+// the new branch's contribution. Belt-and-suspenders: the explicit
+// COLD_START_RETRIEVAL_POLICY_VERSION constant is also folded into the
+// hash below so any future cold-start policy change invalidates caches
+// without needing a separate VERSION bump.
+const VERSION = 'rcv7';
 
 export type RecConfigInputs = {
   favorite_genres:  readonly string[];
@@ -96,6 +106,7 @@ function normalizeAuthorsString(s: string | null | undefined): string {
 export function computeRecConfigHash(inputs: RecConfigInputs): string {
   return [
     VERSION,
+    `csrp:${COLD_START_RETRIEVAL_POLICY_VERSION}`,
     `fg:${normalizeList(inputs.favorite_genres)}`,
     `ag:${normalizeList(inputs.avoid_genres)}`,
     `rs:${normalizeList(inputs.reading_styles)}`,

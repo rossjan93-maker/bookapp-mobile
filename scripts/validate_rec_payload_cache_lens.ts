@@ -273,6 +273,69 @@ section('§3 — behavioral: AsyncStorage round-trip discards lens-tagged payloa
     const out4 = await cache.loadRecPayload(userId, { currentConfigHash: configHash });
     check('§3.5 stale configHash + lens-tagged returns null', out4 === null);
 
+    // §4 — Cold-Start Retrieval Expansion Phase B: rcv6 → rcv7 transition.
+    //
+    // Any cold-start deck persisted under recValidity rcv6 was built with
+    // BRANCH_QUOTAS.cold_start.coldStartAdjacent = 0 (no adjacency
+    // admission). Under rcv7 that quota is 3, so the rcv6 deck is
+    // structurally stale. The configHash gate must discard it.
+    //
+    // We simulate by injecting a rcv6-shaped stored configHash alongside
+    // a non-lens, otherwise-valid payload, and confirm loadRecPayload
+    // returns null + clears storage.
+    memStore['readstack_rec_v1_' + userId] = JSON.stringify({
+      recs:          [{ id: 'b6', title: 'Phase A rcv6 Deck' }],
+      continuations: [],
+      discoveries:   [],
+      meta:          {},
+      recMode:       'deterministic',
+      readerThesis:  null,
+      qualityGate:   null,
+      isFreePreview: false,
+      signalCount:   0,
+      intentTag:     null,
+      fingerprint:   'v1:0:deterministic:nfp:none',
+      // Pre-Phase-B hash shape: rcv6 prefix, no `csrp:` segment.
+      configHash:    'rcv6|fg:thriller_mystery|ag:horror|rs:|fa:',
+      loadedAt:      Date.now(),
+    });
+    const outRcv6 = await cache.loadRecPayload(userId,
+      { currentConfigHash: configHash });
+    check('§4 rcv6 stored deck rejects under rcv7 live (configHash gate)',
+      outRcv6 === null);
+    check('§4 storage cleared after rcv6 → rcv7 discard',
+      !Object.prototype.hasOwnProperty.call(memStore, 'readstack_rec_v1_' + userId));
+
+    // §4b — rcv7 stored deck (current shape) restores normally.
+    memStore['readstack_rec_v1_' + userId] = JSON.stringify({
+      recs:          [{ id: 'b7', title: 'Phase B rcv7 Deck' }],
+      continuations: [],
+      discoveries:   [],
+      meta:          {},
+      recMode:       'deterministic',
+      readerThesis:  null,
+      qualityGate:   null,
+      isFreePreview: false,
+      signalCount:   0,
+      intentTag:     null,
+      fingerprint:   'v1:0:deterministic:nfp:none',
+      configHash,                                       // live rcv7 hash
+      loadedAt:      Date.now(),
+    });
+    const outRcv7 = await cache.loadRecPayload(userId,
+      { currentConfigHash: configHash });
+    check('§4b rcv7 stored deck restores under rcv7 live',
+      outRcv7 !== null && outRcv7.recs?.[0]?.title === 'Phase B rcv7 Deck',
+      outRcv7 === null ? 'null' : outRcv7.recs?.[0]?.title);
+
+    // §4c — Live hash shape regression: includes `csrp:csrp1` segment.
+    check('§4c live configHash includes "csrp:csrp1" segment',
+      configHash.includes('|csrp:csrp1|'),
+      `live=${configHash}`);
+    check('§4c live configHash begins with "rcv7|"',
+      configHash.startsWith('rcv7|'),
+      `live=${configHash}`);
+
     // Cleanup + summary.
     try { fs.unlinkSync(shimPath); } catch {}
     (Module as any)._resolveFilename = origResolve;

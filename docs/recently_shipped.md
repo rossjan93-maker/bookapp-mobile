@@ -2,6 +2,51 @@
 
 Verbatim history of completed Recommendation Architecture batches and pre-P2 UX/onboarding sprints. Moved out of replit.md on 2026-05-14 to keep the live operating reference compact. Order is reverse-chronological. For full diffs use `git log -p -- <path>`.
 
+## Cold-Start Retrieval Expansion · Phase B — first live adjacency admission — shipped (2026-05-21)
+
+**Scope.** Flip the `coldStartAdjacent` retrieval branch from production-inert (Phase A/A.1) to live for cold-start users only. `BRANCH_QUOTAS.cold_start.coldStartAdjacent`: `0 → 3`. `thin` and `high_signal` stay `0` (the mature-profile byte-identity invariant continues to hold forever). `recValidity.VERSION`: `rcv6 → rcv7`. New explicit `COLD_START_RETRIEVAL_POLICY_VERSION = 'csrp1'` constant in `lib/recPolicy.ts`, folded into `computeRecConfigHash` as a `csrp:csrp1` segment alongside the version prefix.
+
+**Why both bumps.** Belt + suspenders. `rcv7` invalidates every persisted cold-start deck written under quota=0 so the user sees fresh adjacency on first foreground after deploy. The `csrp` segment is a future-proofing hook — future cold-start retrieval-policy changes (anchor set expansion, Phase B.1 lens-aware breadth modulation, branch-order shuffles) can invalidate caches by bumping just the constant without a full `recValidity` bump that would also re-rebuild for unrelated reasons.
+
+**Forbidden in this slice (explicit non-goals).**
+- Lens-aware breadth modulation (Phase B.1 surface — own approval).
+- Composer / RecCard / finalGate / No-dark / durable-taste / lens-persistence / Phase 2 steering change.
+- Title blacklists, popular-book fallback, generic-slop fallback.
+- Anchor expansion beyond Phase A.1's pruned set (`mystery: [cozy mystery, cozy crime, amateur sleuth]`, `thriller: [spy fiction]`).
+- Subject-Coverage subsystem revival.
+- `thin` or `high_signal` quota changes.
+
+**Files touched.**
+- `lib/recPolicy.ts` — `BRANCH_QUOTAS.cold_start.coldStartAdjacent: 0 → 3`; new exported `COLD_START_RETRIEVAL_POLICY_VERSION = 'csrp1'` with rationale + history block.
+- `lib/recValidity.ts` — `VERSION: rcv6 → rcv7`; import `COLD_START_RETRIEVAL_POLICY_VERSION`; fold `csrp:${COLD_START_RETRIEVAL_POLICY_VERSION}` into `computeRecConfigHash` between `VERSION` and `fg:` segments.
+- `lib/retrieval/branchPlanner.ts` — retire `PHASE_B_HYPOTHETICAL_QUOTA` shadow constant; rewrite the `[COLD_START_ADJACENT]` DEV+FORENSIC log to observe LIVE admission (`liveQuota`, `liveAdmittedCount`, `liveAnchors`) with `simulateColdStartAdjacent` retained as a counterfactual lens for Phase B.1 calibration. `BRANCH_ORDER` unchanged (adjacency stays last). `FORENSIC_USER_ID = ''` retained — log dormant in normal operation.
+- `lib/retrieval/branches/coldStartAdjacent.ts` — header re-titled Phase B; constraint block updated (cold=3 / thin=0 / high=0, rcv7 hash, queue-boundary invariant). No code change.
+
+**Hash shape.** `rcv7|csrp:csrp1|fg:…|ag:…|rs:…|fa:…` — `csrp` segment is the second field. Stored `rcv6|fg:…` hashes (Phase A shape) fail `assertCurrent` with `config_mismatch` and the payload is cleared from AsyncStorage on read.
+
+**Observation log.** `[COLD_START_ADJACENT]` payload at Phase B (DEV + `req.userId === FORENSIC_USER_ID`):
+```
+phase=B density=cold_start liveQuota=3 liveAdmittedCount=3
+liveAnchors=["cozy mystery","cozy crime","amateur sleuth"]
+statedGenresUsed=[…] counterfactualAnchors=[…] admitted=true
+```
+
+**Validator suite (all 17 green).** New + updated:
+- `validate_cold_start_adjacent` rewritten Phase A→B: §3 live-quota invariant (cold=3, thin=0, high=0); new §9 lens-blindness (source-grep that adjacency branch + planner do NOT reference any lens/steering/finalGate symbol; `qAdjacent = base.coldStartAdjacent` is a static lookup); new §10 F1–F12 fixture matrix (sparse mystery+thriller=3, fantasy/scifi no-op, thin no-op, high_signal no-op, lens-state independence, soft-avoid defense-in-depth, favorites-empty, rcv7 hash shape).
+- `validate_retrieval_planner` Phase A section retitled Phase B; per-mode expectations updated (cold_start: 1–3 admitted; thin/high_signal: 0).
+- `validate_rec_validity` new §8: source-greps `const VERSION = 'rcv7'` + `csrp:${COLD_START_RETRIEVAL_POLICY_VERSION}` fold + named import; behavioral assertions that live hash begins `rcv7|csrp:csrp1|` and that simulated `rcv6|…` / `rcv6|csrp:csrp1|…` / `rcv7|csrp:csrp2|…` stored hashes all reject under live `rcv7|csrp:csrp1|` (config_mismatch).
+- `validate_rec_payload_cache_lens` new §4 / §4b / §4c: behavioral round-trip via in-memory AsyncStorage shim — rcv6-shaped stored deck rejects under rcv7 live and storage is cleared; rcv7-shaped stored deck restores; live hash contains `|csrp:csrp1|` and begins `rcv7|`.
+- `validate_book_evidence` §9: bumped `rcv6 → rcv7` expectation.
+- `validate_steering_field_contract` §7: bumped `rcv6 → rcv7` expectation.
+
+**Production behavior change.** Cold-start users (`confidenceMode === 'cold_start'`) whose stated favorites resolve to the Mystery or Thriller GenreId will now see up to 3 adjacency anchors fetched and admitted into the retrieval pool. Adjacency items flow through the existing scoring, soft-avoid deprioritization, lens evaluation, and queue-boundary final-gate pipeline as primary candidates — no special-cased downstream behavior. Mature (`high_signal`) and `thin` users see no behavioral change (their quota stays at 0). Users whose favorites map to any of the other 19 GenreIds (all have `ADJACENT_RETRIEVAL_ANCHORS[id] = []`) also see no change.
+
+**Calibration ownership.** The quota number 3 and the per-anchor item count come out of Phase A.1's evidence capture (`.local/cold_start_adjacent_evidence_report_relevance_1980.md`: 25% likely-light rate, 0/32 domestic-suspense saturation). Phase B.1 may revisit on observation.
+
+**What's locked.** `FORENSIC_USER_ID = ''` (log dormant). `BRANCH_ORDER` places `coldStartAdjacent` last. Pruned Phase A.1 anchor set unchanged. No `thin` / `high_signal` quota change. No composer / RecCard / finalGate / No-dark / durable-taste / lens-persistence / Phase 2 steering surface touched.
+
+---
+
 ## Cold-Start Retrieval Expansion · Phase A.1 · anchor prune + diagnostic re-capture — shipped (2026-05-20)
 
 **Scope.** Calibrate the Phase A `ADJACENT_RETRIEVAL_ANCHORS` set against shadow-evidence the Phase A diagnostic produced. Production stays inert (`coldStartAdjacent` quota = 0 everywhere; `recValidity` = rcv6). No ranking / scoring / composer / RecCard / finalGate / No-dark / lens-persistence / durable-taste / Phase 2 steering change.

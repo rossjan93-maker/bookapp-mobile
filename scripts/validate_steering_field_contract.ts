@@ -23,7 +23,7 @@
 //      symbols. Zero matches.
 //   §6 No signal-list change — source-grep `lib/evidence/signals.ts` for
 //      any of the new symbols. Zero matches.
-//   §7 recValidity.VERSION === 'rcv6' — import + assert.
+//   §7 recValidity.VERSION === 'rcv7' — import + assert (bumped Phase B 2026-05-21).
 //
 // Exit 0 on success; nonzero on any failure.
 // =============================================================================
@@ -153,14 +153,14 @@ header('§6 — lib/evidence/signals.ts contains no steering symbol');
   }
 }
 
-// ── §7 recValidity VERSION pinned at rcv6 (source-grep; const is module-private) ─
-header('§7 — recValidity VERSION === rcv6');
+// ── §7 recValidity VERSION pinned at rcv7 (source-grep; const is module-private) ─
+header('§7 — recValidity VERSION === rcv7');
 {
   const src = read('lib/recValidity.ts');
-  assert(/\bconst\s+VERSION\s*=\s*'rcv6'/.test(src), 'lib/recValidity.ts declares `const VERSION = \'rcv6\'`');
+  assert(/\bconst\s+VERSION\s*=\s*'rcv7'/.test(src), 'lib/recValidity.ts declares `const VERSION = \'rcv7\'`');
   // Sanity: no competing assignment to a different rcv value.
   const otherRcv = src.match(/\bVERSION\s*=\s*'(rcv\d+)'/);
-  assert(otherRcv?.[1] === 'rcv6', `VERSION assignment is exactly rcv6 (matched: ${otherRcv?.[1] ?? 'none'})`);
+  assert(otherRcv?.[1] === 'rcv7', `VERSION assignment is exactly rcv7 (matched: ${otherRcv?.[1] ?? 'none'})`);
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────────

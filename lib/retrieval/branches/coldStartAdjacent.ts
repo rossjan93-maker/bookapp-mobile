@@ -1,13 +1,14 @@
 // =============================================================================
 // retrieval/branches/coldStartAdjacent.ts — Cold-Start Retrieval Expansion
-//                                            Phase A branch (production-inert)
+//                                            Phase B branch (live for cold_start)
 //
-// Wires a fourth retrieval branch that, in Phase B, will pull "one step
-// adjacent" subject anchors for users with thin signal. In Phase A this
-// branch ships with BRANCH_QUOTAS.*.coldStartAdjacent = 0 at every
-// confidenceMode, so it emits ZERO items in production. The branch is
-// plumbed end-to-end so Phase B can flip the quotas without architecture
-// change.
+// Pulls "one step adjacent" subject anchors for cold-start users whose
+// stated favorites map to a populated adjacency entry (Mystery + Thriller
+// in the current slice). Phase A shipped the branch production-inert
+// (quota=0 everywhere). Phase B (2026-05-21) flips
+// BRANCH_QUOTAS.cold_start.coldStartAdjacent to 3 — the first live
+// admission. thin and high_signal stay at 0 (high_signal forever, per
+// mature-profile invariant).
 //
 // Branch contract (mirrors statedGenres.ts):
 //   - Pure / synchronous.
@@ -22,11 +23,17 @@
 //   - NO popular-book fallback. NO best-seller fallback. NO generic-slop
 //     fallback. Empty in → empty out. This is the safety invariant.
 //
-// Phase A hard constraints (do not weaken without a planning chapter +
+// Phase B hard constraints (do not weaken without a planning chapter +
 // approval; pinned by scripts/validate_cold_start_adjacent.ts):
-//   - Quota = 0 in production at every tier.
-//   - No composer / RecCard / finalGate / No-dark consumption.
-//   - Does NOT bump recValidity.VERSION (rcv6 pinned).
+//   - cold_start quota = 3. thin = 0. high_signal = 0 (mature-profile
+//     invariant; locked forever).
+//   - No composer / RecCard / queue-boundary-gate / No-dark consumption.
+//     Adjacency items flow through the same scoring, lens, and queue-boundary
+//     machinery as primary candidates; lens-aware breadth modulation is
+//     Phase B.1.
+//   - recValidity.VERSION = rcv7 + COLD_START_RETRIEVAL_POLICY_VERSION
+//     folded into the hash so cold-start decks built under quota=0
+//     (Phase A) are discarded on first foreground after deploy.
 //   - Adjacency map covers Mystery + Thriller ONLY this slice.
 // =============================================================================
 

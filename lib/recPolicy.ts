@@ -161,26 +161,55 @@ export type BranchQuotas = {
   statedGenres:       number;
   revealedAuthors:    number;
   revealedLanes:      number;
-  /** Cold-Start Retrieval Expansion · Phase A (production-inert).
-   *  Quota intentionally 0 at every confidenceMode in Phase A: the branch is
-   *  wired end-to-end but emits zero items in production. Phase B (separate
-   *  approval) flips this for cold_start (and possibly thin) and may bump
-   *  recValidity.VERSION OR introduce a retrieval-policy-version in the
-   *  cache hash. Mature/high_signal profiles MUST stay at 0 even in Phase B
-   *  (mature-profile byte-identity invariant pinned by
-   *  scripts/validate_cold_start_adjacent.ts §5). */
+  /** Cold-Start Retrieval Expansion · Phase B (live; cold_start only).
+   *  Phase A shipped this slot at quota=0 everywhere (production-inert).
+   *  Phase B (2026-05-21) flips cold_start to 3 — the first live admission of
+   *  adjacency candidates. thin and high_signal MUST stay 0:
+   *    - thin: adjacency targets users with effectively no behavioral signal;
+   *      thin users have some signal and admission there is Phase B.1 surface.
+   *    - high_signal: mature-profile byte-identity invariant (pinned by
+   *      scripts/validate_cold_start_adjacent.ts §5).
+   *  Branch runs LAST in BRANCH_ORDER so primary branches always win quota
+   *  races. ANY change to these numbers MUST bump
+   *  COLD_START_RETRIEVAL_POLICY_VERSION below — that constant is folded into
+   *  the recValidity hash so cached cold-start decks invalidate cleanly. */
   coldStartAdjacent:  number;
 };
 
 export const BRANCH_QUOTAS: Readonly<Record<ConfidenceMode, BranchQuotas>> = {
   // Cold start: stated dominates because the user has nothing else to draw on.
-  cold_start:  { statedGenres: 4, revealedAuthors: 1, revealedLanes: 5, coldStartAdjacent: 0 },
+  // Phase B: coldStartAdjacent=3 admits adjacency anchors for cold-start users
+  // whose favorites map to populated adjacency entries (Mystery + Thriller
+  // only in the current slice).
+  cold_start:  { statedGenres: 4, revealedAuthors: 1, revealedLanes: 5, coldStartAdjacent: 3 },
   // Thin: similar; revealed signals exist but are unreliable.
   thin:        { statedGenres: 4, revealedAuthors: 1, revealedLanes: 5, coldStartAdjacent: 0 },
   // High signal (dense / tier ≥ 2): revealed dominates BUT stated keeps a
   // material seat at the table — the pre-P2A bug was statedGenres = 0 here.
+  // coldStartAdjacent stays 0 here forever (mature-profile invariant).
   high_signal: { statedGenres: 3, revealedAuthors: 3, revealedLanes: 4, coldStartAdjacent: 0 },
 };
+
+// ── Cold-Start Retrieval Policy Version (Phase B) ────────────────────────────
+//
+// Explicit, stable, traceable retrieval-policy identifier folded into the
+// recValidity hash via lib/recValidity.ts. Bump this constant on any
+// MEANINGFUL change to cold-start retrieval policy (BRANCH_QUOTAS for
+// coldStartAdjacent, anchor set, branch order placement, soft-avoid
+// defense-in-depth rule). Bumping invalidates any persisted rec payload
+// whose hash was computed under the old policy version — the user gets a
+// fresh deck on next foreground without an explicit prefs edit.
+//
+// Why a constant rather than serialising BRANCH_QUOTAS into the hash:
+// future retrieval-policy changes should be INTENTIONAL and TRACEABLE.
+// Serialising the object would silently invalidate every device every time
+// any unrelated quota tweaked (e.g., statedGenres for high_signal). A
+// constant means a change is opt-in, code-reviewable, and grep-discoverable.
+//
+// History:
+//   csrp1 (2026-05-21) — Phase B initial live admission:
+//                        cold_start.coldStartAdjacent 0 → 3.
+export const COLD_START_RETRIEVAL_POLICY_VERSION = 'csrp1';
 
 /** BuildCause = 'explicit_preference_edit': boost stated, trim lanes,
  *  net plan size unchanged. Other causes leave quotas at base. */

@@ -21,7 +21,7 @@
 //   §7 Public surface stability — no removed exports from bookTraits.ts /
 //      nextReadIntent.ts; IntentEligibilityVerdict shape unchanged.
 //   §8 Composer / RecCard untouched (import surface check).
-//   §9 recValidity.VERSION stays rcv6.
+//   §9 recValidity.VERSION pinned (rcv7 from Phase B 2026-05-21).
 // =============================================================================
 
 import {
@@ -582,7 +582,7 @@ function section8() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §9 — recValidity.VERSION stays rcv6
+// §9 — recValidity.VERSION pinned (rcv7 since Phase B 2026-05-21)
 // ─────────────────────────────────────────────────────────────────────────────
 function section9() {
   header('§9 recValidity stability');
@@ -597,7 +597,7 @@ function section9() {
     }
   })();
   const src = fs.readFileSync(path.resolve(__dirname, '../lib/recValidity.ts'), 'utf8');
-  assert(/const\s+VERSION\s*=\s*'rcv6'/.test(src), '§9 lib/recValidity.ts has VERSION = \'rcv6\'');
+  assert(/const\s+VERSION\s*=\s*'rcv7'/.test(src), '§9 lib/recValidity.ts has VERSION = \'rcv7\'');
   void hash;
 }
 

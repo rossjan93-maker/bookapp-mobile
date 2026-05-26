@@ -43,28 +43,17 @@ import { buildRevealedAuthorsBranch } from './branches/revealedAuthors';
 import { buildRevealedLanesBranch, softAvoidedLanes, softAvoidedTopGenres } from './branches/revealedLanes';
 import { buildColdStartAdjacentBranch, simulateColdStartAdjacent } from './branches/coldStartAdjacent';
 
-// Cold-Start Retrieval Expansion · Phase A — `coldStartAdjacent` appended at
-// the END of BRANCH_ORDER. Phase A quota = 0 across all confidenceModes so it
-// produces zero items in production; the branch is plumbed for Phase B.
+// Cold-Start Retrieval Expansion — `coldStartAdjacent` appended at the END
+// of BRANCH_ORDER so primary branches always win quota races. Phase B
+// (2026-05-21): cold_start quota=3 live; thin/high_signal stay 0.
 const BRANCH_ORDER: readonly BranchKind[] = ['statedGenres', 'revealedAuthors', 'revealedLanes', 'coldStartAdjacent'];
 
-// FORENSIC_USER_ID for the Phase A shadow-evidence log. Currently '' (no live
-// user matches), so the log is dormant in normal operation. Setting this to
-// a real userId in a dev build surfaces what `coldStartAdjacent` WOULD
-// retrieve at proposed Phase B quotas without admitting those items into the
-// live deck. Mirrors the FORENSIC_USER_ID pattern in lib/recommender.ts.
+// FORENSIC_USER_ID for the live-admission observation log. Currently ''
+// (no live user matches), so the log is dormant in normal operation.
+// Setting this to a real userId in a dev build surfaces what
+// `coldStartAdjacent` ACTUALLY admitted into the plan under live Phase B
+// quotas. Mirrors the FORENSIC_USER_ID pattern in lib/recommender.ts.
 const FORENSIC_USER_ID = '';
-
-// Phase B hypothetical quotas the DEV+FORENSIC shadow log simulates against.
-// These are NOT applied in production — they only drive
-// simulateColdStartAdjacent() for evidence emission. Phase B will move these
-// numbers into BRANCH_QUOTAS proper (under its own approval + a possible
-// recValidity bump or retrieval-policy-version on the cache hash).
-const PHASE_B_HYPOTHETICAL_QUOTA: Readonly<Record<'cold_start' | 'thin' | 'high_signal', number>> = {
-  cold_start:  4,
-  thin:        1,
-  high_signal: 0,
-};
 
 /** Pure: decide which branches run and at what quota, before fetching. */
 export function planBranches(req: RecRequest, ctx: BranchContext): RetrievalPlan {
@@ -119,10 +108,10 @@ export function planBranches(req: RecRequest, ctx: BranchContext): RetrievalPlan
       ' | disabled (no mapped favorite_genres)';
   }
 
-  // Cold-Start Retrieval Expansion · Phase A — quota slot. Phase A always
-  // resolves to 0 (BRANCH_QUOTAS.*.coldStartAdjacent = 0); the slot exists
-  // so the branch is plumbed end-to-end for Phase B. NOT modulated by
-  // BuildCause or soft-avoid in Phase A.
+  // Cold-Start Retrieval Expansion · Phase B — quota slot. Live for
+  // cold_start (quota=3); zero for thin and high_signal (mature-profile
+  // invariant). NOT modulated by BuildCause or active lens in Phase B —
+  // lens-aware breadth modulation is Phase B.1 surface.
   const qAdjacent = base.coldStartAdjacent;
 
   const policies: Record<BranchKind, BranchPolicy> = {
@@ -144,7 +133,9 @@ export function planBranches(req: RecRequest, ctx: BranchContext): RetrievalPlan
     coldStartAdjacent: {
       enabled: qAdjacent > 0,
       quota:   qAdjacent,
-      notes:   qAdjacent === 0 ? 'phase_a: production-inert (quota=0)' : undefined,
+      notes:   qAdjacent === 0
+        ? `phase_b: inert at confidenceMode=${req.policy.confidenceMode} (quota=0)`
+        : `phase_b: live at confidenceMode=${req.policy.confidenceMode} (quota=${qAdjacent})`,
     },
   };
 
@@ -168,25 +159,29 @@ export function planBranches(req: RecRequest, ctx: BranchContext): RetrievalPlan
     items.push(...branchItems);
   }
 
-  // ── Phase A shadow-evidence log ────────────────────────────────────────────
+  // ── Phase B live-admission observation log ─────────────────────────────────
   // Gated by __DEV__ + FORENSIC_USER_ID. When a forensic user is set in a
   // dev build, this emits ONE `[COLD_START_ADJACENT]` line per planBranches
-  // call showing what `coldStartAdjacent` WOULD retrieve at proposed Phase B
-  // quotas, without admitting those items into the live deck. Drives the
-  // evidence the Phase B approval requires (anchors-would-run, item count
-  // per anchor at hypothetical quota). NEVER fires in production builds and
-  // NEVER fires for non-forensic users; FORENSIC_USER_ID is currently ''.
+  // call showing what `coldStartAdjacent` ACTUALLY admitted into the plan
+  // under the live Phase B quota. Plan-stage observation only — no
+  // downstream deck-survival hook this slice. NEVER fires in production
+  // builds and NEVER fires for non-forensic users; FORENSIC_USER_ID is
+  // currently ''.
   if (typeof __DEV__ !== 'undefined' && __DEV__ && req.userId === FORENSIC_USER_ID) {
-    const hypothetical = PHASE_B_HYPOTHETICAL_QUOTA[req.policy.confidenceMode];
-    const sim = simulateColdStartAdjacent(req, hypothetical);
+    const liveItems = items.filter(i => i.branch === 'coldStartAdjacent');
+    // simulateColdStartAdjacent stays available as a counterfactual lens
+    // (what WOULD a quota of N admit) — useful when calibrating Phase B.1
+    // increases. Default counterfactual mirrors the live quota.
+    const sim = simulateColdStartAdjacent(req, qAdjacent);
     console.log('[COLD_START_ADJACENT]',
+      `phase=B`,
       `density=${req.policy.confidenceMode}`,
-      `productionQuota=${qAdjacent}`,                       // always 0 in Phase A
-      `hypotheticalPhaseBQuota=${hypothetical}`,
+      `liveQuota=${qAdjacent}`,
+      `liveAdmittedCount=${liveItems.length}`,
+      `liveAnchors=${JSON.stringify(liveItems.map(i => i.value))}`,
       `statedGenresUsed=${JSON.stringify(sim.statedGenresUsed)}`,
-      `anchorsWouldRun=${JSON.stringify(sim.anchorsWouldRun)}`,
-      `wouldEmitCount=${sim.itemsWouldEmit.length}`,
-      `wouldAdmit=false`,                                   // Phase A invariant
+      `counterfactualAnchors=${JSON.stringify(sim.anchorsWouldRun)}`,
+      `admitted=true`,
     );
   }
 

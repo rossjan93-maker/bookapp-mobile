@@ -1,0 +1,110 @@
+Approve Cold-Start Retrieval Expansion Phase B implementation with these decisions:
+
+1. Quota:
+   Use the conservative quota:
+
+* cold_start.coldStartAdjacent: 3
+* thin.coldStartAdjacent: 0
+* high_signal.coldStartAdjacent: 0
+
+Do not use quota 4 yet. We want the first live slice to admit adjacent supply without letting it dominate the deck.
+
+2. Cache/versioning:
+   Use BOTH:
+
+* recValidity VERSION bump: rcv6 → rcv7
+* explicit retrieval-policy-version in the cache hash
+
+Do not serialize the full BRANCH_QUOTAS object into the hash. Add a clear retrieval policy version constant/string instead, such as a cold-start-retrieval-policy version, so future retrieval-policy changes are intentional and traceable.
+
+3. Forensic logging:
+   Keep the live-admission log behind the existing DEV + FORENSIC_USER_ID gate.
+   Do not broaden to a general DEV-only mode.
+   FORENSIC_USER_ID must remain '' by default.
+
+4. Scope boundary:
+   Do not implement lens-aware breadth modulation in Phase B.
+   That remains Phase B.1.
+   Phase B should test base live admission only.
+
+Implementation scope:
+
+* Update BRANCH_QUOTAS:
+
+  * cold_start.coldStartAdjacent: 0 → 3
+  * thin stays 0
+  * high_signal stays 0
+* Keep branchOrder LAST.
+* Keep EDIT_CAUSE_BRANCH_BOOST unchanged.
+* Keep the Phase A.1 pruned anchors only:
+
+  * mystery: cozy mystery, cozy crime, amateur sleuth
+  * thriller: spy fiction
+* Bump recValidity to rcv7.
+* Add retrieval-policy-version to configHash/cache hash as a stable explicit constant.
+* Update persistent rec cache read behavior so rcv6 payloads are discarded under rcv7.
+* Update [COLD_START_ADJACENT] logging to observe live admission at plan stage only. Do not add a downstream deck-survival hook in this slice unless already available without touching surface behavior.
+
+Hard constraints:
+
+* Do not change composer.
+* Do not change RecCard.
+* Do not change finalGate.
+* Do not change No-dark policy.
+* Do not mutate durable Reading Taste.
+* Do not persist lens state.
+* Do not start Phase 2 steering.
+* Do not title-blacklist.
+* Do not introduce popular/generic fallback.
+* Do not expand anchors.
+* Do not change thin or high_signal quotas.
+* Do not implement lens-aware breadth modulation.
+* Do not revive Subject Coverage work.
+
+Validators:
+Implement the F1–F12 fixture coverage from the Phase B plan.
+
+Required validator updates:
+
+* validate_cold_start_adjacent:
+
+  * cold_start emits quota 3
+  * thin emits 0
+  * high_signal emits 0
+  * mature-profile invariant stays pinned
+  * lens-blindness invariant proves Phase B.1 has not leaked
+* validate_retrieval_planner:
+
+  * quota expectations updated
+* validate_rec_validity:
+
+  * expected version rcv7
+  * rcv6 payload rejected
+* validate_rec_payload_cache_lens:
+
+  * rcv6 → rcv7 discard fixture
+  * existing lens-tagged discard remains green
+
+Run all 17 acceptance validators plus any newly affected validator sections.
+
+Docs:
+
+* Update replit.md with a Phase B row.
+* Update docs/recently_shipped.md with:
+
+  * quota table
+  * cache/versioning decision
+  * F1–F12 fixture results
+  * Phase B.1 verdict
+  * live re-observation plan
+
+Return:
+
+1. Executive verdict
+2. Diff summary
+3. Exact quota/cache changes
+4. F1–F12 fixture results
+5. Full validator results
+6. recValidity/cache behavior proof
+7. Phase B.1 verdict
+8. Live re-observation plan
