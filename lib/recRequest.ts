@@ -189,11 +189,13 @@ export async function buildRecRequest(
   });
 
   const policy: RecRequestPolicy = {
-    // Phase B.0 (2026-05-26): 2-arg projection. `profile.tier` still carries
-    // the BOOSTED tier value (unchanged for all other consumers);
-    // `profile.intakeBoosted` is the new flag that distinguishes
-    // sparse_onboarding (intake-boosted tier-0) from zero_signal (raw tier-0).
-    confidenceMode:         confidenceModeForTier(opts.profile.tier, opts.profile.intakeBoosted),
+    // rcv9 (2026-06-22): pass profile.rawTier (unboosted) instead of
+    // profile.tier (boosted). Fresh intake users have rawTier=0 +
+    // intakeBoosted=true → sparse_onboarding (quota=3). Previously,
+    // profile.tier=1 (after boost) caused confidenceModeForTier to return
+    // 'thin' (tier-1 exits before the intakeBoosted check), giving quota=0.
+    // The boosted profile.tier continues to feed all scoring, copy, and UI.
+    confidenceMode:         confidenceModeForTier(opts.profile.rawTier, opts.profile.intakeBoosted),
     statedPreferenceFloor:  STATED_TASTE_POLICY.prefFloor,
     statedPreferenceWeight: STATED_TASTE_POLICY.prefBonusHigh,
     softAvoidFloor:         STATED_TASTE_POLICY.avoidFloor,

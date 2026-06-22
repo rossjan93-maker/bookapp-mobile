@@ -303,7 +303,38 @@ section('§3 — behavioral: AsyncStorage round-trip discards lens-tagged payloa
     check('§4 storage cleared after rcv7 → rcv8 discard',
       !Object.prototype.hasOwnProperty.call(memStore, 'readstack_rec_v1_' + userId));
 
-    // §4b — rcv8 stored deck (current shape) restores normally.
+    // §4b — rcv9 stored deck (current shape) restores normally.
+    memStore['readstack_rec_v1_' + userId] = JSON.stringify({
+      recs:          [{ id: 'b9', title: 'rawTier-fix rcv9 Deck' }],
+      continuations: [],
+      discoveries:   [],
+      meta:          {},
+      recMode:       'deterministic',
+      readerThesis:  null,
+      qualityGate:   null,
+      isFreePreview: false,
+      signalCount:   0,
+      intentTag:     null,
+      fingerprint:   'v1:0:deterministic:nfp:none',
+      configHash,                                       // live rcv9 hash
+      loadedAt:      Date.now(),
+    });
+    const outRcv9 = await cache.loadRecPayload(userId,
+      { currentConfigHash: configHash });
+    check('§4b rcv9 stored deck restores under rcv9 live',
+      outRcv9 !== null && outRcv9.recs?.[0]?.title === 'rawTier-fix rcv9 Deck',
+      outRcv9 === null ? 'null' : outRcv9.recs?.[0]?.title);
+
+    // §4c — Live hash shape regression: includes `csrp:csrp3` segment.
+    check('§4c live configHash includes "csrp:csrp3" segment',
+      configHash.includes('|csrp:csrp3|'),
+      `live=${configHash}`);
+    check('§4c live configHash begins with "rcv9|"',
+      configHash.startsWith('rcv9|'),
+      `live=${configHash}`);
+
+    // §4d — rcv8|csrp:csrp2 stored deck (Phase B.0, wrong mode for intake
+    // users) rejects under rcv9|csrp:csrp3 live (configHash gate).
     memStore['readstack_rec_v1_' + userId] = JSON.stringify({
       recs:          [{ id: 'b8', title: 'Phase B.0 rcv8 Deck' }],
       continuations: [],
@@ -316,22 +347,15 @@ section('§3 — behavioral: AsyncStorage round-trip discards lens-tagged payloa
       signalCount:   0,
       intentTag:     null,
       fingerprint:   'v1:0:deterministic:nfp:none',
-      configHash,                                       // live rcv8 hash
+      configHash:    'rcv8|csrp:csrp2|fg:thriller_mystery|ag:horror|rs:|fa:',
       loadedAt:      Date.now(),
     });
     const outRcv8 = await cache.loadRecPayload(userId,
       { currentConfigHash: configHash });
-    check('§4b rcv8 stored deck restores under rcv8 live',
-      outRcv8 !== null && outRcv8.recs?.[0]?.title === 'Phase B.0 rcv8 Deck',
-      outRcv8 === null ? 'null' : outRcv8.recs?.[0]?.title);
-
-    // §4c — Live hash shape regression: includes `csrp:csrp2` segment.
-    check('§4c live configHash includes "csrp:csrp2" segment',
-      configHash.includes('|csrp:csrp2|'),
-      `live=${configHash}`);
-    check('§4c live configHash begins with "rcv8|"',
-      configHash.startsWith('rcv8|'),
-      `live=${configHash}`);
+    check('§4d rcv8|csrp:csrp2 stored deck rejects under rcv9 live (configHash gate)',
+      outRcv8 === null);
+    check('§4d storage cleared after rcv8 → rcv9 discard',
+      !Object.prototype.hasOwnProperty.call(memStore, 'readstack_rec_v1_' + userId));
 
     // Cleanup + summary.
     try { fs.unlinkSync(shimPath); } catch {}

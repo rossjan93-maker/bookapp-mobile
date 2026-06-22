@@ -1,0 +1,62 @@
+Good answer. I am not approving implementation yet because your own counterargument raises sufficiency risks.
+
+Problem:
+The rawTier fix appears necessary, but it may not be sufficient to produce a successful sparse_onboarding first-run experience.
+
+Before changing code, please run a read-only preflight and answer the following.
+
+1. Verify the actual stored intake shape
+   For the test account you referenced, inspect reader_preferences and confirm:
+
+* diagnosis_answers exists
+* diagnosis_answers.intake_completed value
+* whether it is the string 'true' or boolean true
+* favorite_genres exists
+* favorite_genres contains Mystery / Thriller or the normalized equivalent
+* strongSignalCount is actually 0
+* imported_books_count is actually 0
+
+Do not print secrets. Do not mutate the database.
+
+2. Inspect the write path
+   Inspect app/onboarding-questions.tsx and any helper it calls.
+
+Confirm exactly what the questionnaire writes to reader_preferences:
+
+* does it write intake_completed as string 'true' or boolean true?
+* does it write favorite_genres before or after diagnosis_answers?
+* are those writes in one transaction / upsert or multiple async calls?
+* could computeTasteProfile run between partial writes?
+* could app restart or network delay leave diagnosis_answers and favorite_genres out of sync?
+
+3. Verify the sparse_onboarding predicate from real data
+   Using the actual test account data, tell me what these values are before the proposed fix:
+
+* profile.tier
+* proposed profile.rawTier
+* intakeBoosted
+* hasIntakeGenres
+* confidenceMode
+* coldStartAdjacent quota
+
+Then tell me what they would be after the rawTier fix.
+
+4. Verify live cold-start candidate availability
+   Without changing code, test whether the current cold-start anchor subjects can return usable candidates for the relevant Mystery / Thriller sparse user.
+
+Confirm:
+
+* which subject anchors are used
+* whether Open Library returns candidates
+* how many survive filtering
+* whether liveAdmittedCount would plausibly reach 3
+* whether any failure is due to classification, retrieval, filtering, or candidate quality
+
+5. Give me a go / no-go
+   At the end, classify the rawTier fix as one of these:
+
+* Go: rawTier fix is sufficient for S0
+* Go with caveat: rawTier fix is necessary, but another small fix is required in the same patch
+* No-go: deeper onboarding persistence or retrieval issue must be fixed first
+
+Do not change code yet. I want the evidence first.

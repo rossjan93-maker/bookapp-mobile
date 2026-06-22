@@ -153,14 +153,14 @@ header('§6 — lib/evidence/signals.ts contains no steering symbol');
   }
 }
 
-// ── §7 recValidity VERSION pinned at rcv8 (source-grep; const is module-private) ─
-header('§7 — recValidity VERSION === rcv8');
+// ── §7 recValidity VERSION pinned at rcv9 (source-grep; const is module-private) ─
+header('§7 — recValidity VERSION === rcv9');
 {
   const src = read('lib/recValidity.ts');
-  assert(/\bconst\s+VERSION\s*=\s*'rcv8'/.test(src), 'lib/recValidity.ts declares `const VERSION = \'rcv8\'`');
+  assert(/\bconst\s+VERSION\s*=\s*'rcv9'/.test(src), 'lib/recValidity.ts declares `const VERSION = \'rcv9\'`');
   // Sanity: no competing assignment to a different rcv value.
   const otherRcv = src.match(/\bVERSION\s*=\s*'(rcv\d+)'/);
-  assert(otherRcv?.[1] === 'rcv8', `VERSION assignment is exactly rcv8 (matched: ${otherRcv?.[1] ?? 'none'})`);
+  assert(otherRcv?.[1] === 'rcv9', `VERSION assignment is exactly rcv9 (matched: ${otherRcv?.[1] ?? 'none'})`);
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────────

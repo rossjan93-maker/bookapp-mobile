@@ -1,0 +1,65 @@
+I want to challenge the proposed cold-start fix before approving implementation.
+
+Problem:
+Fresh onboarded users who provide intake signals, for example Mystery + Thriller, but have no library/import history, are currently being classified as confidenceMode='thin' instead of confidenceMode='sparse_onboarding'. That causes coldStartAdjacent quota to be 0 instead of 3, which likely weakens the first recommendation experience.
+
+You diagnosed the root cause as:
+
+* tasteProfile.ts boosts a fresh intake user to tier 1
+* recRequest.ts passes the boosted profile.tier into confidenceModeForTier
+* tier 1 maps to thin
+* therefore intakeBoosted users lose sparse_onboarding behavior
+
+Your proposed fix is:
+
+* add unboosted rawTier to TasteProfile
+* keep boosted tier where it is still needed
+* pass rawTier into confidenceModeForTier
+* bump rcv8 to rcv9 and csrp2 to csrp3
+* add an end-to-end validator
+
+Before changing code, please answer these questions:
+
+1. Is rawTier the right conceptual fix, or should confidenceMode be based on a more explicit signal like intakeBoosted, libraryCount, importCount, and diagnosisAnswers presence?
+
+2. Where else is profile.tier used today?
+   Please list each usage and whether it expects:
+
+* raw evidence depth
+* boosted product readiness
+* recommendation confidence
+* retrieval expansion behavior
+* UI labeling
+
+3. What is the intended difference between:
+
+* tier
+* rawTier
+* intakeBoosted
+* confidenceMode
+* coldStartAdjacent quota
+
+Please define each one in plain English and explain why the system needs all of them.
+
+4. What regression risk does this create?
+   For example:
+
+* Could imported users be downgraded incorrectly?
+* Could users with ratings but no intake be treated as sparse_onboarding?
+* Could cache invalidation fail and preserve old thin payloads?
+* Could validators pass while the actual app still shows thin recommendations?
+
+5. Give me the smallest safe implementation plan.
+   Do not implement yet. I want:
+
+* files to change
+* exact logic change
+* cache/version changes
+* validator to add
+* manual test case to run in the app
+* what success looks like in the recommendation payload
+
+6. Give me the counterargument.
+   Under what conditions would your original diagnosis be wrong, incomplete, or masking a deeper issue?
+
+Hold code changes until I approve the plan.

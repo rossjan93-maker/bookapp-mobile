@@ -582,7 +582,7 @@ function section8() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §9 — recValidity.VERSION pinned (rcv8 since Phase B.0 2026-05-26)
+// §9 — recValidity.VERSION pinned (rcv9 since rawTier fix 2026-06-22)
 // ─────────────────────────────────────────────────────────────────────────────
 function section9() {
   header('§9 recValidity stability');
@@ -597,7 +597,7 @@ function section9() {
     }
   })();
   const src = fs.readFileSync(path.resolve(__dirname, '../lib/recValidity.ts'), 'utf8');
-  assert(/const\s+VERSION\s*=\s*'rcv8'/.test(src), '§9 lib/recValidity.ts has VERSION = \'rcv8\'');
+  assert(/const\s+VERSION\s*=\s*'rcv9'/.test(src), '§9 lib/recValidity.ts has VERSION = \'rcv9\'');
   void hash;
 }
 

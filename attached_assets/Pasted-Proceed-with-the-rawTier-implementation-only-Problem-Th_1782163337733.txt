@@ -1,0 +1,52 @@
+Proceed with the rawTier implementation only.
+
+Problem:
+The cold-start sparse_onboarding classification is currently wrong. Fresh intake users with no library are being treated as thin because recRequest passes boosted profile.tier into confidenceModeForTier. We need to preserve boosted tier for scoring/UI, but use unboosted rawTier for retrieval policy.
+
+Approved scope:
+
+1. Add rawTier to TasteProfile.
+2. Compute rawTier from unboosted strongSignalCount before the intake boost is applied.
+3. Keep profile.tier boosted exactly as it is today.
+4. Change only the recRequest confidenceModeForTier call to use profile.rawTier.
+5. Bump recValidity and cold-start retrieval policy versions as proposed.
+6. Add the end-to-end validator that proves the full computeTasteProfile → buildRecRequest path.
+
+Do not change:
+
+* scoring
+* recommender ranking
+* branch planner
+* cold-start anchor ordering
+* onboarding UI
+* auth
+* Apple sign-in
+* migration files
+* existing stale validator baselines unless required by version bumps
+
+Required proof after implementation:
+
+1. Show files changed.
+2. Show exact diff summary.
+3. Run the full validator suite.
+4. Explicitly report whether the two known red validators are still pre-existing stale P4C baselines.
+5. Run or simulate the sparse onboarding case and show:
+
+   * profile.tier = 1
+   * profile.rawTier = 0
+   * intakeBoosted = true
+   * confidenceMode = sparse_onboarding
+   * coldStartAdjacent quota = 3
+   * new cache hash uses rcv9 and csrp3
+
+Important:
+Do not claim S0 is complete after this patch. This patch should only prove that classification and quota are fixed.
+
+After implementation, give me a separate section called “Remaining S0 risks” covering:
+
+* Supabase row still needs manual verification
+* cozy_crime is a dead anchor
+* spy_fiction is not reached because mystery consumes quota
+* whether liveAdmittedCount means anchor slots admitted or actual usable book candidates admitted
+
+Hold any retrieval quality fixes for the next planning step.

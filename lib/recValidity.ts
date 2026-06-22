@@ -74,7 +74,16 @@ import { COLD_START_RETRIEVAL_POLICY_VERSION } from './recPolicy';
 // `'cold_start'`; that string is no longer in the union. Force-invalidate
 // at the hash layer so every device discards its cache and rebuilds on
 // next foreground rather than relying on consumer-side defensive coding.
-const VERSION = 'rcv8';
+// rcv9 (2026-06-22) — rawTier fix. recRequest.ts now passes
+// profile.rawTier (computed from the UNBOOSTED strongSignalCount) into
+// confidenceModeForTier instead of the boosted profile.tier. Before this
+// fix, fresh intake-only users with no library were classified as `thin`
+// (tier=1 after boost) instead of `sparse_onboarding` (rawTier=0,
+// intakeBoosted=true), giving them quota=0 cold-start adjacency instead
+// of quota=3. The boosted `tier` field still feeds all scoring, copy,
+// and UI paths unchanged. Any deck persisted under rcv8 was built with
+// the wrong ConfidenceMode for intake users and must be discarded.
+const VERSION = 'rcv9';
 
 export type RecConfigInputs = {
   favorite_genres:  readonly string[];

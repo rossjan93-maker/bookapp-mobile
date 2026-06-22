@@ -38,6 +38,12 @@ export type TasteProfileEvidence = {
 
 export type TasteProfile = {
   tier:              ConfidenceTier;
+  /** rawTier: the tier computed from the UNBOOSTED strongSignalCount,
+   *  before the intake boost is applied. Used ONLY by recRequest.ts to
+   *  project the correct ConfidenceMode (sparse_onboarding vs thin).
+   *  All other consumers continue to read `tier` (the boosted value) for
+   *  byte-identical behavior in scoring, copy, UI guards, etc. */
+  rawTier:           ConfidenceTier;
   /** Phase B.0 (2026-05-26): true iff the intake-boost predicate fired
    *  (intake_completed='true' AND favorite_genres.length > 0 AND
    *  strongSignalCount < 5). Read ONLY by `confidenceModeForTier` to
@@ -711,6 +717,14 @@ export async function computeTasteProfile(
     isGoodreadsRow(r)
   ).length;
 
+  // ── rawTier (unboosted) ───────────────────────────────────────────────────
+  // Compute tier from the REAL strongSignalCount before any intake boost.
+  // recRequest.ts passes this to confidenceModeForTier so intake-only users
+  // (rawTier=0, intakeBoosted=true) correctly land on sparse_onboarding
+  // (quota=3) rather than thin (quota=0). The boosted `tier` below feeds
+  // all other consumers unchanged.
+  const rawTier = computeConfidenceTier(evidence, strongSignalCount);
+
   // ── Intake boost ──────────────────────────────────────────────────────────
   // A user who completed the quick intake (genres + taste questions) has given
   // explicit preference signal equivalent in quality to ~5 rated books.
@@ -848,6 +862,7 @@ export async function computeTasteProfile(
 
   return {
     tier,
+    rawTier,
     intakeBoosted,
     label,
     confidence,

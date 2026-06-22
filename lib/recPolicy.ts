@@ -244,7 +244,12 @@ export const BRANCH_QUOTAS: Readonly<Record<ConfidenceMode, BranchQuotas>> = {
 //                        zero_signal AND sparse_onboarding. thin and
 //                        high_signal stay 0 (mature-profile invariant
 //                        broadened to both).
-export const COLD_START_RETRIEVAL_POLICY_VERSION = 'csrp2';
+// csrp3 (2026-06-22) — rawTier fix: recRequest now passes profile.rawTier
+// into confidenceModeForTier, correctly routing intake-only users to
+// sparse_onboarding (quota=3) instead of thin (quota=0). No quota values
+// changed; this bump ensures decks built under csrp2 (wrong mode) are
+// discarded and rebuilt under the correct classification.
+export const COLD_START_RETRIEVAL_POLICY_VERSION = 'csrp3';
 
 /** BuildCause = 'explicit_preference_edit': boost stated, trim lanes,
  *  net plan size unchanged. Other causes leave quotas at base. */

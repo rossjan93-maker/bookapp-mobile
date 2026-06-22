@@ -202,8 +202,8 @@ section('§3 — Phase B live-quota invariant (zero_signal=3, sparse_onboarding=
     BRANCH_QUOTAS.high_signal.coldStartAdjacent === 0);
 
   // Retrieval-policy-version constant exists and is the Phase B.0 identifier.
-  check('COLD_START_RETRIEVAL_POLICY_VERSION === "csrp2"',
-    COLD_START_RETRIEVAL_POLICY_VERSION === 'csrp2',
+  check('COLD_START_RETRIEVAL_POLICY_VERSION === "csrp3"',
+    COLD_START_RETRIEVAL_POLICY_VERSION === 'csrp3',
     `got ${COLD_START_RETRIEVAL_POLICY_VERSION}`);
 
   // Live admission count matches quota on a canonical sparse_onboarding
@@ -495,16 +495,16 @@ section('§10 — F1–F12 canonical Phase B regression fixtures');
   check('F9 sparse_onboarding favorite ∈ softAvoids → zero adjacency (defense-in-depth)',
     f9.length === 0, `leaked ${f9.length}: ${f9.join(', ')}`);
 
-  // F10 — Persisted rcv7|csrp:csrp1 deck (Phase B) → discarded on read under
-  // rcv8|csrp:csrp2 (Phase B.0). Covered structurally: VERSION='rcv8' fronts
-  // the hash and COLD_START_RETRIEVAL_POLICY_VERSION='csrp2' folds in — any
-  // rcv7 or csrp1 payload mismatches. Behavioral fixture lives in
-  // validate_rec_payload_cache_lens §4.
+  // F10 — Persisted rcv8|csrp:csrp2 deck (Phase B.0) → discarded on read under
+  // rcv9|csrp:csrp3 (rawTier fix). Covered structurally: VERSION='rcv9' fronts
+  // the hash and COLD_START_RETRIEVAL_POLICY_VERSION='csrp3' folds in — any
+  // rcv8 or csrp2 payload mismatches. Behavioral fixture lives in
+  // validate_rec_payload_cache_lens §4 / §4d.
   const recValiditySrc = fs.readFileSync(
     path.resolve(__dirname, '../lib/recValidity.ts'), 'utf-8',
   );
-  check('F10 lib/recValidity.ts pins VERSION=rcv8',
-    /const\s+VERSION\s*=\s*['"]rcv8['"]/.test(recValiditySrc));
+  check('F10 lib/recValidity.ts pins VERSION=rcv9',
+    /const\s+VERSION\s*=\s*['"]rcv9['"]/.test(recValiditySrc));
   check('F10 lib/recValidity.ts folds COLD_START_RETRIEVAL_POLICY_VERSION into hash',
     /csrp:\$\{COLD_START_RETRIEVAL_POLICY_VERSION\}/.test(recValiditySrc));
 
