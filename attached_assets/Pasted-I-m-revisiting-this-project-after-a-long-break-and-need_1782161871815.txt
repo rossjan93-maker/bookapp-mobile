@@ -1,0 +1,73 @@
+I’m revisiting this project after a long break and need a current state report before making changes.
+
+Please inspect the current codebase and give me a structured project status report.
+
+Focus especially on:
+
+1. Current app architecture
+
+* Is this Expo / React Native, web, or both?
+* What are the main app routes?
+* What are the main auth and onboarding files?
+
+2. Current auth state
+
+* How does signup work now?
+* How does email confirmation work now?
+* Does the app use `readstack://auth/callback`?
+* Is there an app-side callback handler?
+* Are Google and Apple sign-in currently wired?
+* Are there known auth bugs?
+
+3. Current onboarding state
+
+* What are the onboarding stages?
+* Where is onboarding completion stored locally?
+* Where is onboarding completion stored in Supabase?
+* What routes are allowed through the root onboarding guard?
+* Do `/onboarding-import`, `/onboarding-final-setup`, and `/onboarding-questions` exist?
+* Is `completeOnboarding()` being called before final setup route changes?
+
+4. Current final setup paths
+   Please confirm the expected behavior for:
+
+* Import
+* Answer a few questions
+* Not right now
+
+For each one, tell me:
+
+* what file handles the button
+* what route it sends the user to
+* whether it writes local onboarding state
+* whether it writes DB onboarding completion
+* whether refresh or app restart breaks the path
+
+5. Current database / Supabase state
+
+* What tables are involved in profiles, onboarding, reader preferences, recommendations, ratings, and imports?
+* Are there pending migrations?
+* Are there schema assumptions in code that may no longer match the database?
+
+6. Current recommendation system state
+
+* What recommendation logic exists?
+* What inputs does it use?
+* What parts are rule-based vs LLM-based?
+* What explanation / provenance logic exists?
+* Are there any known gaps or TODOs?
+
+7. Current run/build state
+
+* What command starts the app?
+* Does it currently run without errors?
+* What errors or warnings appear?
+* What environment variables are required?
+* What build is needed for mobile testing?
+
+8. Last known blockers
+
+* List the top 5 unresolved issues.
+* For each, tell me the likely root cause, relevant files, and recommended next action.
+
+Do not make code changes yet. I only want the current state report.
