@@ -1,0 +1,81 @@
+Do not move to Phase B.1 yet. I want a verification pass on the rawTier patch and the live S0 path first.
+
+Problem:
+The rawTier implementation appears correct, but your report has two inconsistencies:
+
+1. You say “Files changed, 12 total,” but the table lists 10 files.
+2. You say “16 validators green,” but the validator table appears to list 17 validators.
+
+Before we do any new code, please reconcile this precisely.
+
+Step 1: Report cleanup
+Please provide:
+
+* exact git diff file list
+* exact file count
+* exact validator command or commands run
+* exact validator count
+* which validators are in the acceptance suite
+* which validators are outside the acceptance suite
+* which validators, if any, are still red
+
+Step 2: Scope confirmation
+Confirm that the patch did not change:
+
+* recommender ranking
+* scoring
+* branch planner
+* retrieval logic
+* cold-start anchor ordering
+* onboarding
+* auth
+* UI
+* migrations
+
+Step 3: Live S0 verification
+Now verify the live sparse-onboarding path.
+
+Use a fresh or known sparse test account with:
+
+* completed questions intake
+* favorite genres including Mystery / Thriller
+* 0 finished books
+* 0 imported books
+* no cached old recommendation payload
+
+Run the For You path and report the actual observed values:
+
+* profile.tier
+* profile.rawTier
+* intakeBoosted
+* strongSignalCount
+* confidenceMode
+* coldStartAdjacent quota
+* cache hash version
+* cold-start anchors attempted
+* Open Library works returned per anchor
+* candidate count after filtering
+* candidate count after dedupe
+* final recommendation cards shown to the user
+
+Step 4: Clarify liveAdmittedCount
+Please define exactly what liveAdmittedCount means in the current logging.
+
+Does it count:
+
+* anchor fetch attempts
+* FetchItems admitted to the branch
+* returned Open Library works
+* unique candidate books after dedupe/filtering
+* final recommendation cards shown
+
+This matters because a log showing liveAdmittedCount=3 may not mean the user actually sees 3 useful books.
+
+Step 5: Go / no-go
+At the end, classify the current state as:
+
+* Go: S0 live path is verified and user-visible recommendations appear
+* Go with caveat: classification is fixed, but candidate usefulness is weak
+* No-go: classification or retrieval still fails in the live app
+
+Do not implement retrieval quality fixes yet. I only want verification and a precise next recommendation.
